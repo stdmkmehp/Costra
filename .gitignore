@@ -1,0 +1,34 @@
+# Node / NPM
+node_modules/
+dist/
+.npm/
+*.log
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env / Secrets
+.env
+.env.*
+!.env.example
+*.local.json
+
+# WeChat DevTools
+project.private.config.json
+!project.private.config.json.example
+miniprogram_npm/
+
+# Build outputs
+coverage/
+*.tsbuildinfo
+
+# Husky internals
+.husky/_
+
+key/
