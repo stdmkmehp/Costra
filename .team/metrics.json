@@ -1,0 +1,22 @@
+{
+  "last_updated": "2026-04-20T19:54:00+08:00",
+  "sprint": {
+    "name": "Sprint-0 (Bootstrap)",
+    "start": "2026-04-21",
+    "end": "2026-05-04",
+    "planned_points": 0,
+    "completed_points": 0
+  },
+  "quality": {
+    "ios_unit_coverage": 0.0,
+    "backend_unit_coverage": 0.0,
+    "open_bugs": { "P0": 0, "P1": 0, "P2": 0, "P3": 0 },
+    "crash_free_rate": 1.0
+  },
+  "delivery": {
+    "cicd_avg_minutes": null,
+    "prod_availability": null,
+    "last_release_tag": null
+  },
+  "risks_open": 0
+}

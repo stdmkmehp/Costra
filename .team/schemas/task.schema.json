@@ -1,0 +1,21 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Costra Task Card",
+  "type": "object",
+  "required": ["task_id","title","epic","assignee_agent","status","priority","acceptance_criteria"],
+  "properties": {
+    "task_id":  { "type": "string", "pattern": "^COSTRA-[0-9]+$" },
+    "title":    { "type": "string" },
+    "epic":     { "type": "string" },
+    "assignee_agent": { "type": "string", "enum": ["PM-Agent","Design-Agent","iOS-Agent","Backend-Agent","DevOps-Agent","QA-Agent"] },
+    "status":   { "type": "string", "enum": ["Backlog","Todo","Doing","Review","Blocked","Done","Cancelled"] },
+    "priority": { "type": "string", "enum": ["P0","P1","P2","P3"] },
+    "dependencies": { "type": "array", "items": { "type": "string" } },
+    "acceptance_criteria": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "estimate_days": { "type": "number" },
+    "started_at":  { "type": "string", "format": "date-time" },
+    "finished_at": { "type": "string", "format": "date-time" },
+    "artifacts":   { "type": "array", "items": { "type": "string" } },
+    "notes":       { "type": "string" }
+  }
+}

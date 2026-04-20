@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Costra Human Intervention",
+  "description": "人工干预指令，写到 .team/interventions/*.yaml 后由 Orchestrator 转发给目标 Agent。",
+  "type": "object",
+  "required": ["command","target_agent","reason","created_at"],
+  "properties": {
+    "command": {
+      "type": "string",
+      "enum": ["approve","reject","revise","rollback","reassign","pause","resume","abort"]
+    },
+    "target_agent": { "type": "string", "enum": ["ALL","Orchestrator","PM-Agent","Design-Agent","iOS-Agent","Backend-Agent","DevOps-Agent","QA-Agent"] },
+    "task_id":      { "type": "string" },
+    "reason":       { "type": "string" },
+    "must_do":      { "type": "array", "items": { "type": "string" } },
+    "must_not_do":  { "type": "array", "items": { "type": "string" } },
+    "rollback_to":  { "type": "string", "description": "git commit / tag / 制品路径" },
+    "new_assignee": { "type": "string" },
+    "priority":     { "type": "string", "enum": ["P0","P1","P2","P3"] },
+    "deadline":     { "type": "string", "format": "date-time" },
+    "created_at":   { "type": "string", "format": "date-time" },
+    "created_by":   { "type": "string", "default": "Human" }
+  }
+}

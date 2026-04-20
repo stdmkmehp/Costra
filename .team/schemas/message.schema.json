@@ -1,0 +1,34 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Costra Agent Message",
+  "description": "所有 Agent 之间通信、以及 Agent 写入 .team/messages/*.jsonl 时必须遵循此 Schema。",
+  "type": "object",
+  "required": ["msg_id", "ts", "from", "to", "type"],
+  "properties": {
+    "msg_id":  { "type": "string", "description": "UUID v4" },
+    "ts":      { "type": "string", "format": "date-time" },
+    "from":    { "type": "string", "enum": ["Orchestrator","PM-Agent","Design-Agent","iOS-Agent","Backend-Agent","DevOps-Agent","QA-Agent","Human"] },
+    "to":      { "type": "string", "enum": ["Orchestrator","PM-Agent","Design-Agent","iOS-Agent","Backend-Agent","DevOps-Agent","QA-Agent","Human","ALL"] },
+    "type": {
+      "type": "string",
+      "enum": [
+        "task_assign",
+        "status_report",
+        "artifact_ready",
+        "review_request",
+        "approval_request",
+        "approval_response",
+        "blocker",
+        "question",
+        "answer",
+        "intervention",
+        "heartbeat"
+      ]
+    },
+    "task_id":       { "type": "string" },
+    "summary":       { "type": "string", "maxLength": 200 },
+    "payload":       { "type": "object" },
+    "artifact_path": { "type": "string" },
+    "requires_ack":  { "type": "boolean", "default": false }
+  }
+}
