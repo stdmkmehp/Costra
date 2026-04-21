@@ -76,3 +76,8 @@ result: dispatched_to:Backend-Agent
 ## 8. 代码/契约双签
 - 接口契约变更：Backend-Agent 发起 + MiniApp-Agent 确认 → G3
 - 合并 main：作者 Agent + 至少一个 review Agent + G4 签字
+
+## 9. 工程约束索引（2026-04-21 Human 追加）
+- **微信官方文档优先**：涉及 MINA / 登录 / 分包 / 订阅消息 / 隐私 / 审核等场景，**必须先查** <https://developers.weixin.qq.com/miniprogram/dev/framework/> 并在 PR/ADR/注释中引用锚点 URL。
+- **关键节点必须 Git 提交**：Story AC 通过、ADR 变更、契约冻结、骨架跑通、压测/审核/安全扫描通过、闸门流转后均需产生 commit，遵循 Conventional Commits（`<type>(<scope>): <subject>` + `Refs/Gate` footer）。
+- 完整细则与 checklist 见 [`.team/engineering-guidelines.md`](../engineering-guidelines.md)。

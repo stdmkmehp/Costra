@@ -10,6 +10,11 @@
 | R-006 | 主包体积超 2MB 上传失败 | 中 | 中 | 🟡 | MiniApp | 分包 + 图片走 CDN + CI 体积检查 | Open |
 | R-007 | 服务器域名未白名单导致真机网络失败 | 高 | 低 | 🟠 | DevOps | 微信后台配置清单 `infra/wechat/domains.md` + CI 校验 | Open |
 | R-008 | session_key / appsecret 泄漏 | 极高 | 低 | 🔴 | DevOps / Backend | Vault 存储 + 禁止下发 + 代码扫描阻断 | Open |
+| R-009 | Human 侧外部资源（AppID/主体/类目/域名/订阅消息模板/robot key）到位延迟 | 中 | 中 | 🟡 | PM / Human | charter.md §9 登记 + 降级预案：本地打包/人工上传兜底，不阻塞骨架开发 | Open |
+| R-010 | PRD v0.1 范围蔓延（Won't-Have 项被带入 MVP） | 中 | 中 | 🟡 | PM | 每 Sprint 评审 Won't-Have 边界；变更走 ADR | Open |
+| R-011 | 微信平台政策变更（API 能力收紧 / 订阅消息规则调整 / 类目细则） | 中 | 低 | 🟡 | DevOps / PM | DevOps 每月扫描"小程序最新公告"一次，产出平台变更监听周报 | Open |
 
 **等级说明**：🔴 红（立即处理） / 🟠 橙（一周内） / 🟡 黄（观察） / 🟢 绿（已缓解）
+
+**最后刷新**：2026-04-21（COSTRA-001 by PM-Agent，新增 R-009/R-010/R-011）
 
