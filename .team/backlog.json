@@ -1,16 +1,18 @@
 {
   "project": "Costra",
-  "version": "0.1.0",
-  "last_updated": "2026-04-20T19:54:00+08:00",
+  "version": "0.2.0",
+  "last_updated": "2026-04-21T13:00:00+08:00",
+  "platform": "wechat-miniprogram",
+  "notes": "v0.2.0: 发布平台由 iOS 改为微信小程序（见 ADR-0003），Epic-A/D/G 的 Story 名称与范围已同步。",
   "epics": [
     {
       "id": "Epic-A",
-      "name": "账号体系",
+      "name": "账号体系（微信登录）",
       "priority": "P0",
       "stories": [
-        { "id": "COSTRA-101", "title": "手机号登录 / 注册", "points": 5 },
-        { "id": "COSTRA-102", "title": "Apple ID 登录（App Store 强制）", "points": 3 },
-        { "id": "COSTRA-103", "title": "Token 鉴权 + 刷新", "points": 3 }
+        { "id": "COSTRA-101", "title": "微信登录（wx.login + code2Session）", "points": 5 },
+        { "id": "COSTRA-102", "title": "手机号绑定（wx.getPhoneNumber 可选）", "points": 3 },
+        { "id": "COSTRA-103", "title": "业务 Token 鉴权 + 刷新（存 wx.storage 封装）", "points": 3 }
       ]
     },
     {
@@ -29,7 +31,7 @@
       "name": "本地存储 + 云同步",
       "priority": "P0",
       "stories": [
-        { "id": "COSTRA-121", "title": "GRDB 本地库 + 迁移", "points": 5 },
+        { "id": "COSTRA-121", "title": "wx.storage 封装 + 版本化结构（含 LRU）", "points": 5 },
         { "id": "COSTRA-122", "title": "同步引擎（增量 + 版本号）", "points": 13 },
         { "id": "COSTRA-123", "title": "冲突解决策略", "points": 5 }
       ]
@@ -39,9 +41,9 @@
       "name": "家庭共享",
       "priority": "P1",
       "stories": [
-        { "id": "COSTRA-201", "title": "家庭邀请码", "points": 5 },
+        { "id": "COSTRA-201", "title": "家庭邀请码 + 微信群分享卡片", "points": 5 },
         { "id": "COSTRA-202", "title": "成员角色与权限", "points": 5 },
-        { "id": "COSTRA-203", "title": "WebSocket 实时变更推送", "points": 8 },
+        { "id": "COSTRA-203", "title": "实时变更推送（WebSocket + 订阅消息兜底）", "points": 8 },
         { "id": "COSTRA-204", "title": "审计日志", "points": 3 }
       ]
     },
@@ -50,8 +52,8 @@
       "name": "预算 / 周期账单",
       "priority": "P1",
       "stories": [
-        { "id": "COSTRA-301", "title": "月度预算 + 超支提醒", "points": 5 },
-        { "id": "COSTRA-302", "title": "周期账单（cron）", "points": 8 }
+        { "id": "COSTRA-301", "title": "月度预算 + 超支提醒（订阅消息）", "points": 5 },
+        { "id": "COSTRA-302", "title": "周期账单（cron + 订阅消息提醒）", "points": 8 }
       ]
     },
     {
@@ -59,8 +61,8 @@
       "name": "统计报表",
       "priority": "P1",
       "stories": [
-        { "id": "COSTRA-401", "title": "月度饼图 / 趋势折线", "points": 5 },
-        { "id": "COSTRA-402", "title": "年度报告 H5", "points": 8 }
+        { "id": "COSTRA-401", "title": "月度饼图 / 趋势折线（分包）", "points": 5 },
+        { "id": "COSTRA-402", "title": "年度报告分享页（分包 + 分享卡片）", "points": 8 }
       ]
     },
     {
@@ -68,10 +70,11 @@
       "name": "上线与运营",
       "priority": "P0",
       "stories": [
-        { "id": "COSTRA-901", "title": "隐私清单 + App Store 提审", "points": 5 },
-        { "id": "COSTRA-902", "title": "灰度发布（5%→50%→100%）", "points": 5 },
-        { "id": "COSTRA-903", "title": "APM + 崩溃监控", "points": 3 }
+        { "id": "COSTRA-901", "title": "隐私协议 + 类目合规 + 提交微信审核", "points": 5 },
+        { "id": "COSTRA-902", "title": "分阶段发布（1%→10%→50%→100%）", "points": 5 },
+        { "id": "COSTRA-903", "title": "APM + 微信小程序后台 JS 异常监控", "points": 3 }
       ]
     }
   ]
 }
+

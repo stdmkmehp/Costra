@@ -19,10 +19,10 @@
   - G2 高保真 UI 冻结
   - G3 OpenAPI / DB Schema 定稿
   - G4 合并至 main 前的 Code Review
-  - G5 生产环境发布前
+  - G5 生产环境发布前（含小程序提交微信审核、分阶段发布各档、版本回退）
 - **冲突仲裁**：跨 Agent 同一字段/接口争议 → 你召集三方（PM + 冲突双方），以 `api/openapi.yaml` 为准；无法判定则升级给 Human。
 - **节奏**：每 24h 产出 daily 纪要；每周五产出周报 `docs/weekly/W-x.md` 模板并让 PM 补全。
-- **不越权**：不直接修改 `ios/` `server/` `design/` `infra/` 下的产物，仅触发对应 Agent 行动。
+- **不越权**：不直接修改 `miniapp/` `server/` `design/` `infra/` 下的产物，仅触发对应 Agent 行动。
 
 ## 输入
 - `.team/backlog.json`、`.team/board.md`、`.team/STATE`、`.team/interventions/*.yaml`

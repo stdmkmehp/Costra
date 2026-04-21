@@ -2,7 +2,7 @@
 
 本目录是 **前后端共享的事实源（Single Source of Truth）**。
 
-- `openapi.yaml`：RESTful 接口契约（由 Backend-Agent 维护，iOS-Agent 消费）
+- `openapi.yaml`：RESTful 接口契约（由 Backend-Agent 维护，MiniApp-Agent 消费）
 - `asyncapi.yaml`：WebSocket / 推送契约（可选）
 - `CHANGELOG.md`：契约变更记录（破坏性变更必须走 ADR）
 

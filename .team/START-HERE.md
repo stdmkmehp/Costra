@@ -21,7 +21,7 @@
    | PM-Agent | plan（方案必须你批） |
    | Design-Agent | plan |
    | QA-Agent | plan |
-   | iOS-Agent | acceptEdits |
+   | MiniApp-Agent | acceptEdits |
    | Backend-Agent | acceptEdits |
    | DevOps-Agent | **default（最危险，每步必审）** |
 3. Orchestrator 会自动读 `.team/board.md` 开始分派任务。
@@ -30,18 +30,18 @@
 
 不用 team_create，而是让单个主 Agent **按角色切换**执行 SOP：
 1. 先扮演 PM-Agent → 输出 PRD
-2. 切到 Design-Agent → 输出设计稿
+2. 切到 Design-Agent → 输出设计稿（对齐 WeUI）
 3. 切到 Backend-Agent → 输出契约与代码
-4. 切到 iOS-Agent → 输出客户端代码
-5. 切到 DevOps-Agent → 输出 CI/CD
-6. 切到 QA-Agent → 输出测试与回归
+4. 切到 MiniApp-Agent → 输出小程序客户端代码
+5. 切到 DevOps-Agent → 输出 CI/CD（含 miniprogram-ci）
+6. 切到 QA-Agent → 输出测试与回归（含 miniprogram-automator）
 
 可以借助 `persona-switch` skill，但仍然要严格遵守 `COMMON-CONTRACT.md`。
 
 ## 方式 C：混合（稳妥）
 
 - PM / Design / QA 这类文档型角色 → 串行由主 Agent 扮演
-- iOS / Backend / DevOps 这类重代码角色 → 用 Team Mode 并行
+- MiniApp / Backend / DevOps 这类重代码角色 → 用 Team Mode 并行
 
 ## 首个 Sprint 启动仪式
 

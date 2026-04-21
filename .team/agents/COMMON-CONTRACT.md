@@ -9,7 +9,7 @@
   | Orchestrator | `.team/`（除 `interventions/` 的原始文件） |
   | PM-Agent | `docs/`、`.team/board.md`、`.team/backlog.json`、`.team/risks.md` |
   | Design-Agent | `design/` |
-  | iOS-Agent | `ios/` |
+  | MiniApp-Agent | `miniapp/` |
   | Backend-Agent | `server/`、`api/` |
   | DevOps-Agent | `infra/`、各模块 `.github/workflows/` |
   | QA-Agent | `qa/` |
@@ -36,7 +36,7 @@
 ## 3. 工具调用审计
 写类操作（create/modify/delete/exec）前后，必须向 `.team/tool_calls/YYYY-MM-DD.jsonl` 追加：
 ```json
-{"ts":"...","agent":"iOS-Agent","task_id":"COSTRA-030","tool":"write_to_file","target":"ios/App/Sources/AppEntry.swift","action":"create","diff_summary":"...","result":"success"}
+{"ts":"...","agent":"MiniApp-Agent","task_id":"COSTRA-030","tool":"write_to_file","target":"miniapp/src/app.ts","action":"create","diff_summary":"...","result":"success"}
 ```
 
 ## 4. 任务卡生命周期
@@ -54,8 +54,8 @@ Backlog → (PM 排期) → Todo → (Agent 领取) → Doing
 | G1 需求 | PM-Agent | PRD v0.x 出稿 | approve / revise |
 | G2 设计 | Design-Agent | 高保真 + 设计系统 | approve / revise |
 | G3 契约 | Backend-Agent | OpenAPI / DB Schema | approve / revise |
-| G4 合并 | iOS/Backend | PR 合入 main 前 | approve / reject |
-| G5 发布 | DevOps-Agent | 生产环境发布前 | approve / abort |
+| G4 合并 | MiniApp/Backend | PR 合入 main 前 | approve / reject |
+| G5 发布 | DevOps-Agent | 生产环境发布 / 小程序提审或分阶段发布前 | approve / abort |
 
 Agent 到闸门必须发 `approval_request` 消息，然后 **停止该任务线后续动作**，直到 Human 回复 `approve`。
 
@@ -74,5 +74,5 @@ result: dispatched_to:Backend-Agent
 - 架构错误 → Human 下 `rollback` → Agent 执行 git revert
 
 ## 8. 代码/契约双签
-- 接口契约变更：Backend-Agent 发起 + iOS-Agent 确认 → G3
+- 接口契约变更：Backend-Agent 发起 + MiniApp-Agent 确认 → G3
 - 合并 main：作者 Agent + 至少一个 review Agent + G4 签字
