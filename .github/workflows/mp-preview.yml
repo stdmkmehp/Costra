@@ -1,0 +1,91 @@
+name: mp-preview
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: '要打预览包的分支'
+        required: true
+        default: 'dev'
+      desc:
+        description: '预览描述（可选）'
+        required: false
+        default: 'CI preview'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '20.12.2'
+
+jobs:
+  preview:
+    name: MP Preview (placeholder)
+    runs-on: ubuntu-latest
+    # 仅非 fork PR / 仓库本体推送可读 secret
+    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install
+        run: npm ci --ignore-scripts || npm install --ignore-scripts
+
+      - name: Guard secrets
+        id: guard
+        run: |
+          if [ -z "${{ secrets.MP_CI_KEY_STAGING }}" ] || [ -z "${{ vars.MP_APPID_STAGING }}" ]; then
+            echo "::warning::MP_CI_KEY_STAGING / MP_APPID_STAGING missing, skipping preview upload (placeholder run OK)"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Write robot key
+        if: steps.guard.outputs.skip == 'false'
+        run: |
+          mkdir -p /tmp/mpci
+          echo "${{ secrets.MP_CI_KEY_STAGING }}" > /tmp/mpci/private.key
+          chmod 600 /tmp/mpci/private.key
+
+      - name: Run preview
+        if: steps.guard.outputs.skip == 'false'
+        env:
+          MP_APPID: ${{ vars.MP_APPID_STAGING }}
+          MP_CI_KEY_PATH: /tmp/mpci/private.key
+          MP_PROJECT_PATH: ${{ github.workspace }}
+          MP_ENV: staging
+          MP_DESC: ${{ inputs.desc }}
+        run: node scripts/mp-ci/preview.mjs
+
+      - name: Upload QR code
+        if: steps.guard.outputs.skip == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mp-preview-qrcode-${{ github.run_id }}
+          path: reports/mp-preview-*.png
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            if [ "${{ steps.guard.outputs.skip }}" = "true" ]; then
+              echo "## mp-preview Summary (placeholder)"
+              echo "- status: **skipped**"
+              echo "- reason: secrets missing (MP_CI_KEY_STAGING / MP_APPID_STAGING)"
+              echo "- next: 按 \`docs/devops/secrets.md\` 激活清单补齐后重跑"
+            else
+              echo "## mp-preview Summary"
+              echo "- status: **uploaded**"
+              echo "- env: staging"
+              echo "- artifact: mp-preview-qrcode-${{ github.run_id }}"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

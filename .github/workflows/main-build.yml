@@ -1,0 +1,75 @@
+name: main-build
+on:
+  push:
+    branches: [main, dev]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '20.12.2'
+
+jobs:
+  build:
+    name: Build & Package Artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install
+        run: npm ci --ignore-scripts || npm install --ignore-scripts
+
+      - name: Lint + Typecheck + Test
+        run: |
+          npm run lint --if-present
+          npm run typecheck --if-present
+          npm test --if-present
+
+      # ---- Package miniapp ----
+      - name: Package miniapp
+        if: hashFiles('miniprogram/project.config.json') != '' || hashFiles('project.config.json') != ''
+        run: |
+          mkdir -p dist
+          ZIPNAME="miniprogram-${{ github.sha }}.zip"
+          # 仅打包 miniprogram/ 源码，排除 node_modules / miniprogram_npm
+          cd miniprogram && zip -r -q "../dist/$ZIPNAME" . -x "node_modules/*" "miniprogram_npm/*"
+          echo "ZIPNAME=$ZIPNAME" >> "$GITHUB_ENV"
+
+      - name: Upload miniapp artifact
+        if: hashFiles('miniprogram/project.config.json') != '' || hashFiles('project.config.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: miniprogram-${{ github.sha }}
+          path: dist/*.zip
+          retention-days: 14
+
+      # ---- Package server ----
+      - name: Build server
+        if: hashFiles('server/package.json') != ''
+        working-directory: server
+        run: npm run build --if-present
+
+      - name: Upload server artifact
+        if: hashFiles('server/package.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-${{ github.sha }}
+          path: server/dist
+          retention-days: 14
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## main-build Summary"
+            echo "- commit: \`${{ github.sha }}\`"
+            echo "- ref: \`${{ github.ref }}\`"
+            echo "- miniapp artifact: miniprogram-${{ github.sha }}"
+            echo "- server artifact: server-${{ github.sha }} (if present)"
+          } >> "$GITHUB_STEP_SUMMARY"
