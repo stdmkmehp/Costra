@@ -1,0 +1,19 @@
+{
+  "name": "@costra/server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Costra Server - API/DB layer (v0.1 contract + dev env only)",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "lint": "echo \"[placeholder] lint OK (real ESLint wired in v0.2)\" && exit 0",
+    "typecheck": "echo \"[placeholder] typecheck OK (real tsc wired in v0.2)\" && exit 0",
+    "test": "echo \"[placeholder] test OK (real jest wired in v0.2)\" && exit 0",
+    "build": "echo \"[placeholder] build OK (real tsc wired in v0.2)\" && exit 0",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down -v",
+    "db:migrate": "echo \"Run: docker compose exec -T postgres psql -U costra -d costra < db/migrations/<file>.sql\""
+  }
+}
