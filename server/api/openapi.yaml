@@ -1,0 +1,943 @@
+openapi: 3.0.3
+info:
+  title: Costra API
+  description: |
+    Costra 家庭财务记账小程序 · 后端 RESTful 契约 v0.1
+
+    **硬约束**（见 ADR-0004 / engineering-guidelines）：
+    - 所有金额字段使用 **整数分**（`int64`），不使用浮点。
+    - 所有时间字段使用 **ISO-8601 UTC**（`YYYY-MM-DDTHH:mm:ss.sssZ`），客户端本地化渲染。
+    - 命名：JSON 字段统一 `snake_case`；客户端映射至 `camelCase` 由 MiniApp 负责。
+    - 鉴权：JWT Bearer（access 2h / refresh 30d，见 `/auth/*`）。
+    - 幂等：所有写操作必须携带 `Idempotency-Key` 请求头（UUID v4）。
+    - 分页：游标分页 `cursor` + `limit`（默认 20，最大 100）。
+    - 冲突：乐观锁 `version` 字段 + 409 Conflict（冲突策略见 `docs/api/conflict-strategy.md`）。
+    - 审计：所有写操作由服务端记录 audit log（见 `docs/api/audit-log.md`）。
+  version: 0.1.0-draft
+  contact:
+    name: Costra Backend Team
+    url: https://github.com/costra/costra
+  license:
+    name: Internal
+servers:
+  - url: https://api.costra.local/v1
+    description: 本地开发（docker-compose 起）
+  - url: https://api-staging.costra.example.com/v1
+    description: 预发布
+  - url: https://api.costra.example.com/v1
+    description: 生产
+
+tags:
+  - name: auth
+    description: 登录、Token 刷新、登出
+  - name: users
+    description: 用户画像
+  - name: families
+    description: 家庭 / 成员 / 邀请
+  - name: ledgers
+    description: 账本
+  - name: categories
+    description: 分类
+  - name: entries
+    description: 流水（记账条目）
+  - name: budgets
+    description: 预算
+  - name: sync
+    description: 离线同步（拉增量 / 推批量）
+  - name: reports
+    description: 统计报表
+  - name: notifications
+    description: 订阅消息触发
+
+security:
+  - BearerAuth: []
+
+paths:
+  # ============ auth ============
+  /auth/wx-login:
+    post:
+      tags: [auth]
+      summary: 微信 code 换 Token
+      description: 小程序 `wx.login()` 得到 `code` → 换取我方 access/refresh token。
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code:
+                  type: string
+                  description: 微信 wx.login() 返回的 code
+                encrypted_data:
+                  type: string
+                  description: 可选，getUserProfile 加密数据
+                iv:
+                  type: string
+                  description: 可选，配合 encrypted_data
+      responses:
+        '200':
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokenPair'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/refresh:
+    post:
+      tags: [auth]
+      summary: 刷新 access token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        '200':
+          description: 刷新成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthTokenPair' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: 登出（使 refresh_token 失效）
+      responses:
+        '204': { description: 成功 }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ============ users ============
+  /users/me:
+    get:
+      tags: [users]
+      summary: 当前用户画像
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    patch:
+      tags: [users]
+      summary: 更新当前用户资料
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                nickname: { type: string, maxLength: 32 }
+                avatar_url: { type: string, format: uri }
+                timezone: { type: string, example: Asia/Shanghai }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ============ families ============
+  /families:
+    get:
+      tags: [families]
+      summary: 我所属的家庭列表
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Family' }
+    post:
+      tags: [families]
+      summary: 创建家庭
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 32 }
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Family' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /families/{family_id}:
+    parameters:
+      - $ref: '#/components/parameters/FamilyId'
+    get:
+      tags: [families]
+      summary: 家庭详情
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FamilyDetail' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [families]
+      summary: 更新家庭（仅 owner）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 32 }
+                version: { type: integer, description: 乐观锁 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Family' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /families/{family_id}/invites:
+    parameters:
+      - $ref: '#/components/parameters/FamilyId'
+    post:
+      tags: [families]
+      summary: 生成邀请口令
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role:
+                  type: string
+                  enum: [member, viewer]
+                  default: member
+                ttl_hours:
+                  type: integer
+                  minimum: 1
+                  maximum: 168
+                  default: 24
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FamilyInvite' }
+
+  /families/invites/accept:
+    post:
+      tags: [families]
+      summary: 接受邀请（通过邀请 token）
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [invite_token]
+              properties:
+                invite_token: { type: string }
+      responses:
+        '200':
+          description: 加入成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Family' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '410':
+          description: 邀请已过期 / 已使用
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /families/{family_id}/members/{user_id}:
+    parameters:
+      - $ref: '#/components/parameters/FamilyId'
+      - name: user_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      tags: [families]
+      summary: 移除成员（仅 owner）
+      responses:
+        '204': { description: 成功 }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  # ============ ledgers ============
+  /ledgers:
+    get:
+      tags: [ledgers]
+      summary: 账本列表
+      parameters:
+        - name: family_id
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Ledger' }
+    post:
+      tags: [ledgers]
+      summary: 创建账本
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [family_id, name]
+              properties:
+                family_id: { type: string, format: uuid }
+                name: { type: string, maxLength: 32 }
+                currency: { type: string, default: CNY }
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ledger' }
+
+  # ============ categories ============
+  /categories:
+    get:
+      tags: [categories]
+      summary: 分类列表（系统预设 + 家庭自定义）
+      parameters:
+        - name: family_id
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Category' }
+    post:
+      tags: [categories]
+      summary: 创建自定义分类
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CategoryCreate' }
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Category' }
+
+  # ============ entries ============
+  /entries:
+    get:
+      tags: [entries]
+      summary: 流水列表（游标分页）
+      parameters:
+        - name: ledger_id
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+        - name: cursor
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: from
+          in: query
+          description: 起始时间（ISO-8601 UTC）
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          schema: { type: string, format: date-time }
+        - name: category_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: type
+          in: query
+          schema: { type: string, enum: [income, expense, transfer] }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Entry' }
+                  next_cursor:
+                    type: string
+                    nullable: true
+    post:
+      tags: [entries]
+      summary: 新增流水
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EntryCreate' }
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Entry' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /entries/{entry_id}:
+    parameters:
+      - name: entry_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [entries]
+      summary: 流水详情
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Entry' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [entries]
+      summary: 修改流水（需带 version）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EntryUpdate' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Entry' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [entries]
+      summary: 软删除流水
+      responses:
+        '204': { description: 成功 }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ============ budgets ============
+  /budgets:
+    get:
+      tags: [budgets]
+      summary: 预算列表
+      parameters:
+        - name: ledger_id
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Budget' }
+    post:
+      tags: [budgets]
+      summary: 创建预算
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BudgetCreate' }
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Budget' }
+
+  # ============ sync ============
+  /sync/pull:
+    get:
+      tags: [sync]
+      summary: 拉增量（基于 since 水位）
+      parameters:
+        - name: family_id
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+        - name: since
+          in: query
+          required: true
+          description: 上次同步水位（ISO-8601 UTC）；首次 1970-01-01T00:00:00.000Z
+          schema: { type: string, format: date-time }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 500, default: 200 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SyncPullResponse' }
+
+  /sync/push:
+    post:
+      tags: [sync]
+      summary: 推批量（离线本地变更）
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SyncPushRequest' }
+      responses:
+        '200':
+          description: OK（每条单独报告结果）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SyncPushResponse' }
+
+  # ============ reports ============
+  /reports/monthly:
+    get:
+      tags: [reports]
+      summary: 月度统计
+      parameters:
+        - name: ledger_id
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+        - name: month
+          in: query
+          required: true
+          description: YYYY-MM（按用户 timezone 计算区间）
+          schema: { type: string, pattern: '^\d{4}-\d{2}$' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MonthlyReport' }
+
+  # ============ notifications ============
+  /notifications/subscribe-template:
+    post:
+      tags: [notifications]
+      summary: 记录小程序订阅消息授权
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [template_id, scene]
+              properties:
+                template_id: { type: string }
+                scene:
+                  type: string
+                  enum: [budget_alert, family_activity, weekly_digest]
+      responses:
+        '204': { description: 成功 }
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    FamilyId:
+      name: family_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, format: uuid }
+      description: UUID v4；同 key 24h 内重复请求返回相同结果
+
+  responses:
+    BadRequest:
+      description: 参数错误
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: 未授权 / Token 失效
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: 无权限
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: 资源不存在
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: 乐观锁冲突（version 不匹配）
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ConflictError' }
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          example: INVALID_ARGUMENT
+        message:
+          type: string
+          example: 'field "amount" must be > 0'
+        trace_id:
+          type: string
+          description: 服务端追踪 ID（便于排障）
+        details:
+          type: object
+          additionalProperties: true
+
+    ConflictError:
+      allOf:
+        - $ref: '#/components/schemas/Error'
+        - type: object
+          properties:
+            server_version: { type: integer }
+            server_record:
+              type: object
+              description: 服务端当前版本（客户端据此决定合并策略）
+              additionalProperties: true
+
+    AuthTokenPair:
+      type: object
+      required: [access_token, refresh_token, expires_in, user]
+      properties:
+        access_token: { type: string }
+        refresh_token: { type: string }
+        expires_in:
+          type: integer
+          description: access_token 有效秒数
+          example: 7200
+        user: { $ref: '#/components/schemas/User' }
+
+    User:
+      type: object
+      required: [id, nickname, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        nickname: { type: string }
+        avatar_url: { type: string, format: uri, nullable: true }
+        timezone: { type: string, example: Asia/Shanghai }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    Family:
+      type: object
+      required: [id, name, owner_id, created_at, version]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        owner_id: { type: string, format: uuid }
+        member_count: { type: integer }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        version: { type: integer }
+
+    FamilyDetail:
+      allOf:
+        - $ref: '#/components/schemas/Family'
+        - type: object
+          properties:
+            members:
+              type: array
+              items: { $ref: '#/components/schemas/FamilyMember' }
+
+    FamilyMember:
+      type: object
+      required: [user_id, role, joined_at]
+      properties:
+        user_id: { type: string, format: uuid }
+        nickname: { type: string }
+        avatar_url: { type: string, format: uri, nullable: true }
+        role: { type: string, enum: [owner, member, viewer] }
+        joined_at: { type: string, format: date-time }
+
+    FamilyInvite:
+      type: object
+      required: [invite_token, expires_at, share_url]
+      properties:
+        invite_token: { type: string }
+        role: { type: string, enum: [member, viewer] }
+        expires_at: { type: string, format: date-time }
+        share_url:
+          type: string
+          description: 可在小程序内分享的短链（含 scene 参数）
+
+    Ledger:
+      type: object
+      required: [id, family_id, name, currency, created_at, version]
+      properties:
+        id: { type: string, format: uuid }
+        family_id: { type: string, format: uuid }
+        name: { type: string }
+        currency: { type: string, example: CNY }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        version: { type: integer }
+
+    Category:
+      type: object
+      required: [id, name, type, icon, sort_order]
+      properties:
+        id: { type: string, format: uuid }
+        family_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: null 表示系统预设
+        name: { type: string }
+        type: { type: string, enum: [income, expense] }
+        icon: { type: string, description: 图标 key（Design Token 映射） }
+        color: { type: string, description: 色值 key }
+        sort_order: { type: integer }
+        is_system: { type: boolean }
+
+    CategoryCreate:
+      type: object
+      required: [family_id, name, type, icon]
+      properties:
+        family_id: { type: string, format: uuid }
+        name: { type: string, maxLength: 16 }
+        type: { type: string, enum: [income, expense] }
+        icon: { type: string }
+        color: { type: string }
+
+    Entry:
+      type: object
+      required: [id, ledger_id, amount, currency, type, occurred_at, created_by, created_at, version]
+      properties:
+        id: { type: string, format: uuid }
+        ledger_id: { type: string, format: uuid }
+        amount:
+          type: integer
+          format: int64
+          description: 金额（单位：分；正整数，方向由 type 决定）
+          example: 12345
+        currency: { type: string, example: CNY }
+        type: { type: string, enum: [income, expense, transfer] }
+        category_id: { type: string, format: uuid, nullable: true }
+        note: { type: string, maxLength: 200, nullable: true }
+        occurred_at:
+          type: string
+          format: date-time
+          description: 发生时间（UTC）
+        created_by: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        deleted_at: { type: string, format: date-time, nullable: true }
+        version: { type: integer }
+        client_ref_id:
+          type: string
+          nullable: true
+          description: 客户端离线本地 id，用于 sync/push 去重
+
+    EntryCreate:
+      type: object
+      required: [ledger_id, amount, type, occurred_at]
+      properties:
+        ledger_id: { type: string, format: uuid }
+        amount: { type: integer, format: int64, minimum: 1 }
+        currency: { type: string, default: CNY }
+        type: { type: string, enum: [income, expense, transfer] }
+        category_id: { type: string, format: uuid }
+        note: { type: string, maxLength: 200 }
+        occurred_at: { type: string, format: date-time }
+        client_ref_id: { type: string }
+
+    EntryUpdate:
+      type: object
+      required: [version]
+      properties:
+        amount: { type: integer, format: int64, minimum: 1 }
+        category_id: { type: string, format: uuid }
+        note: { type: string, maxLength: 200 }
+        occurred_at: { type: string, format: date-time }
+        version: { type: integer, description: 当前服务端版本号 }
+
+    Budget:
+      type: object
+      required: [id, ledger_id, period, amount, currency, used, created_at, version]
+      properties:
+        id: { type: string, format: uuid }
+        ledger_id: { type: string, format: uuid }
+        category_id: { type: string, format: uuid, nullable: true, description: null 表示总预算 }
+        period: { type: string, enum: [monthly], description: MVP 仅支持月度 }
+        month: { type: string, pattern: '^\d{4}-\d{2}$' }
+        amount: { type: integer, format: int64 }
+        used: { type: integer, format: int64, description: 服务端聚合的已用金额（分） }
+        currency: { type: string, example: CNY }
+        alert_threshold:
+          type: integer
+          minimum: 50
+          maximum: 100
+          default: 80
+          description: 百分比，触达后推送订阅消息
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        version: { type: integer }
+
+    BudgetCreate:
+      type: object
+      required: [ledger_id, month, amount]
+      properties:
+        ledger_id: { type: string, format: uuid }
+        category_id: { type: string, format: uuid }
+        month: { type: string, pattern: '^\d{4}-\d{2}$' }
+        amount: { type: integer, format: int64, minimum: 1 }
+        alert_threshold: { type: integer, minimum: 50, maximum: 100 }
+
+    SyncPullResponse:
+      type: object
+      required: [watermark, changes]
+      properties:
+        watermark:
+          type: string
+          format: date-time
+          description: 本次返回数据的最大 updated_at，客户端下次作为 since
+        has_more: { type: boolean }
+        changes:
+          type: object
+          description: 分实体返回变更集（含软删）
+          properties:
+            entries:
+              type: array
+              items: { $ref: '#/components/schemas/Entry' }
+            categories:
+              type: array
+              items: { $ref: '#/components/schemas/Category' }
+            budgets:
+              type: array
+              items: { $ref: '#/components/schemas/Budget' }
+            ledgers:
+              type: array
+              items: { $ref: '#/components/schemas/Ledger' }
+
+    SyncPushRequest:
+      type: object
+      required: [ops]
+      properties:
+        ops:
+          type: array
+          maxItems: 200
+          items:
+            type: object
+            required: [op, entity, client_ref_id, payload]
+            properties:
+              op: { type: string, enum: [create, update, delete] }
+              entity: { type: string, enum: [entry, category, budget] }
+              client_ref_id: { type: string, description: 客户端本地 id }
+              base_version:
+                type: integer
+                nullable: true
+                description: update/delete 时必填；客户端最后知晓的服务端版本
+              payload:
+                type: object
+                additionalProperties: true
+
+    SyncPushResponse:
+      type: object
+      required: [results]
+      properties:
+        results:
+          type: array
+          items:
+            type: object
+            required: [client_ref_id, status]
+            properties:
+              client_ref_id: { type: string }
+              status: { type: string, enum: [ok, conflict, rejected] }
+              server_id: { type: string, format: uuid, nullable: true }
+              server_version: { type: integer, nullable: true }
+              error: { $ref: '#/components/schemas/Error' }
+
+    MonthlyReport:
+      type: object
+      required: [month, currency, total_income, total_expense, by_category]
+      properties:
+        month: { type: string, pattern: '^\d{4}-\d{2}$' }
+        currency: { type: string }
+        total_income: { type: integer, format: int64 }
+        total_expense: { type: integer, format: int64 }
+        by_category:
+          type: array
+          items:
+            type: object
+            properties:
+              category_id: { type: string, format: uuid, nullable: true }
+              category_name: { type: string }
+              type: { type: string, enum: [income, expense] }
+              amount: { type: integer, format: int64 }
+              ratio: { type: number, format: float, description: 0~1 }
+        daily_trend:
+          type: array
+          items:
+            type: object
+            properties:
+              date: { type: string, format: date }
+              income: { type: integer, format: int64 }
+              expense: { type: integer, format: int64 }
