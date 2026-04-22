@@ -1,0 +1,60 @@
+{
+  "pages": [
+    "pages/login/index",
+    "pages/home/index",
+    "pages/entry/index",
+    "pages/mine/index"
+  ],
+  "subpackages": [
+    {
+      "root": "pages-stat/",
+      "name": "stat",
+      "pages": [
+        "month/index"
+      ]
+    },
+    {
+      "root": "pages-family/",
+      "name": "family",
+      "pages": [
+        "home/index",
+        "settings/index",
+        "privacy/index"
+      ]
+    }
+  ],
+  "preloadRule": {
+    "pages/home/index": {
+      "network": "all",
+      "packages": ["stat"]
+    },
+    "pages/mine/index": {
+      "network": "all",
+      "packages": ["family"]
+    }
+  },
+  "window": {
+    "navigationBarTitleText": "Costra",
+    "navigationBarBackgroundColor": "#2F7A78",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#FAFAFA",
+    "enablePullDownRefresh": false
+  },
+  "tabBar": {
+    "color": "#9E9E9E",
+    "selectedColor": "#2F7A78",
+    "backgroundColor": "#FFFFFF",
+    "borderStyle": "black",
+    "list": [
+      { "pagePath": "pages/home/index",  "text": "首页" },
+      { "pagePath": "pages/entry/index", "text": "记一笔" },
+      { "pagePath": "pages/mine/index",  "text": "我的" }
+    ]
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json",
+  "requiredBackgroundModes": [],
+  "requiredPrivateInfos": [],
+  "permission": {},
+  "lazyCodeLoading": "requiredComponents"
+}

@@ -1,0 +1,22 @@
+.entry { padding: 32rpx; background: var(--color-bg); min-height: 100vh; }
+.tabs { display: flex; background: var(--color-surface); border-radius: var(--radius-md); overflow: hidden; margin-bottom: 32rpx; }
+.tabs__item { flex: 1; text-align: center; padding: 24rpx 0; color: var(--color-text-muted); }
+.tabs__item--active { background: var(--color-primary); color: #fff; font-weight: 600; }
+
+.amount { background: var(--color-surface); border-radius: var(--radius-lg); padding: 48rpx 32rpx; text-align: center; }
+.amount__display { font-size: 72rpx; font-weight: 700; color: var(--color-text); }
+.amount__input { margin-top: 16rpx; text-align: center; font-size: 28rpx; color: var(--color-text-muted); }
+
+.row { display: flex; align-items: center; background: var(--color-surface); border-radius: var(--radius-md); padding: 24rpx 32rpx; margin-top: 24rpx; }
+.row__label { width: 120rpx; color: var(--color-text-muted); font-size: 28rpx; }
+.row__value { flex: 1; color: var(--color-text); font-size: 28rpx; }
+.row__arrow { color: var(--color-text-muted); font-size: 36rpx; }
+.row__input { flex: 1; font-size: 28rpx; color: var(--color-text); }
+
+.btn--primary {
+  margin-top: 48rpx;
+  background: var(--color-primary);
+  color: #fff;
+  border-radius: var(--radius-lg);
+  font-weight: 600;
+}

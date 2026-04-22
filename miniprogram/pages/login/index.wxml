@@ -1,0 +1,24 @@
+<!-- 登录页 · 对齐 docs/design/flows/login.md -->
+<view class="login">
+  <view class="brand">
+    <view class="brand__logo">💰</view>
+    <view class="brand__name">Costra</view>
+    <view class="brand__tagline">家庭共享记账 · 轻松三秒一笔</view>
+  </view>
+
+  <view class="login__actions">
+    <button
+      class="btn btn--primary"
+      open-type="getUserInfo"
+      loading="{{loading}}"
+      disabled="{{loading}}"
+      bindtap="onTapLogin">
+      一键微信登录
+    </button>
+    <view wx:if="{{errMsg}}" class="login__err">{{errMsg}}</view>
+    <view class="login__policy">
+      登录即同意
+      <navigator url="/pages-family/privacy/index" open-type="navigate" class="login__policy-link">《隐私保护指引》</navigator>
+    </view>
+  </view>
+</view>

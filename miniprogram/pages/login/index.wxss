@@ -1,0 +1,24 @@
+/* 登录页 · Tokens via app.wxss + tokens/tokens.json */
+.login {
+  min-height: 100vh;
+  padding: 96rpx 48rpx 48rpx;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background: var(--color-bg);
+}
+.brand { margin-top: 160rpx; text-align: center; }
+.brand__logo { font-size: 128rpx; line-height: 1; }
+.brand__name { font-size: 56rpx; font-weight: 700; margin-top: 24rpx; color: var(--color-text); }
+.brand__tagline { font-size: 28rpx; color: var(--color-text-muted); margin-top: 16rpx; }
+
+.login__actions { margin-bottom: 64rpx; }
+.btn--primary {
+  background: var(--color-primary);
+  color: #fff;
+  border-radius: var(--radius-lg);
+  font-weight: 600;
+}
+.login__err { color: var(--color-danger); text-align: center; margin-top: 16rpx; font-size: 26rpx; }
+.login__policy { text-align: center; margin-top: 24rpx; font-size: 24rpx; color: var(--color-text-muted); }
+.login__policy-link { color: var(--color-primary); display: inline; }

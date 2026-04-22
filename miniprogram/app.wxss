@@ -1,0 +1,76 @@
+/* app.wxss · Costra 全局样式
+ * 卡号: COSTRA-030
+ * 通过 `tokens/index.ts` 导出的常量在页面内联写；这里只承担全局基线。
+ */
+
+page {
+  --color-brand-primary: #2F7A78;
+  --color-text-primary: #212121;
+  --color-text-secondary: #616161;
+  --color-bg-app: #FAFAFA;
+  --color-bg-surface: #FFFFFF;
+  --color-border-default: #E0E0E0;
+
+  --radius-md: 8rpx;
+  --radius-lg: 12rpx;
+
+  --spacing-2: 8rpx;
+  --spacing-4: 16rpx;
+  --spacing-6: 24rpx;
+
+  background-color: var(--color-bg-app);
+  color: var(--color-text-primary);
+  font-size: 28rpx;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 深色模式（系统），由 tokens.color.role.*.dark 承接 */
+@media (prefers-color-scheme: dark) {
+  page {
+    --color-bg-app: #0A0A0A;
+    --color-bg-surface: #121212;
+    --color-text-primary: #F5F5F5;
+    --color-text-secondary: #BDBDBD;
+    --color-border-default: #2A2A2A;
+  }
+}
+
+/* 数字等宽：金额强制 tnum */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* 通用原子 */
+.flex { display: flex; }
+.row { flex-direction: row; }
+.col { flex-direction: column; }
+.center { align-items: center; justify-content: center; }
+.between { justify-content: space-between; }
+
+.p-4 { padding: 16rpx; }
+.p-6 { padding: 24rpx; }
+.mt-4 { margin-top: 16rpx; }
+.mb-4 { margin-bottom: 16rpx; }
+
+.btn-primary {
+  background: var(--color-brand-primary);
+  color: #fff;
+  border-radius: var(--radius-md);
+  padding: 20rpx 32rpx;
+  text-align: center;
+  font-weight: 600;
+}
+
+.btn-primary[disabled] {
+  background: #BDBDBD;
+  color: #F5F5F5;
+}
+
+.card {
+  background: var(--color-bg-surface);
+  border-radius: var(--radius-lg);
+  padding: 24rpx;
+  box-shadow: 0 2rpx 4rpx rgba(0, 0, 0, 0.06);
+}

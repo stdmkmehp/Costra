@@ -1,0 +1,27 @@
+<view class="mine">
+  <view class="profile">
+    <image class="profile__avatar" src="{{avatarUrl}}" mode="aspectFill"></image>
+    <view class="profile__name">{{nickname}}</view>
+  </view>
+
+  <view class="menu">
+    <view class="menu__item" bindtap="onTapFamily">
+      <view class="menu__label">家庭共享</view>
+      <view class="menu__arrow">›</view>
+    </view>
+    <view class="menu__item" bindtap="onTapStat">
+      <view class="menu__label">统计报表</view>
+      <view class="menu__arrow">›</view>
+    </view>
+    <view class="menu__item" bindtap="onTapSettings">
+      <view class="menu__label">设置</view>
+      <view class="menu__arrow">›</view>
+    </view>
+  </view>
+
+  <view class="menu" style="margin-top: 32rpx;">
+    <view class="menu__item menu__item--danger" bindtap="onTapLogout">
+      <view class="menu__label">退出登录</view>
+    </view>
+  </view>
+</view>
