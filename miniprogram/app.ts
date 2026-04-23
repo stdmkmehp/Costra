@@ -40,7 +40,11 @@ App<{ globalData: AppGlobalData }>({
       const token = getToken();
       if (token && token.shouldRefresh()) {
         // services/auth 负责静默续签，失败时兜底跳 login
-        void (token as any).refresh?.();
+        // COSTRA-030 Round-2 修复：原为 (token as any).refresh?.()，方法名错误且永远 undefined
+        void token.refreshFn().catch((err) => {
+          console.warn('[Costra] token refresh failed, fallback to login', err);
+          wx.reLaunch({ url: '/pages/login/index' });
+        });
       }
     }
   },

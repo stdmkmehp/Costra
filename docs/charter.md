@@ -4,9 +4,16 @@
 >
 > **v2.0（2026-04-21）**：发布平台由 iOS 原生改为微信小程序，相关章节已同步（见 `ADR-0003`）。
 > **v2.1（2026-04-21 PM）**：Sprint-0 COSTRA-001 补齐团队编制、里程碑、外部资源待填项、依赖与签字栏。
+> **v2.3（2026-04-23 PM · Sprint-0 补审 Round-2）**：
+> - §3 新增"指标测量规划表"（P1-1）：指标 → 埋点事件 → 聚合来源 → 基线 → 采集起点
+> - §5 Won't-Have 追加 D-008 引入项（虚拟支付 / 企业认证接口 / 对公打款 SDK）（P1-2）
+> - §11 风险快照同步 R-017（开发服务器 3 个月到期）/ R-018（SSH 攻击面），并改为软链接 `.team/risks.md` 以降维护成本（P1-3）
+> - §1 脚注补 D-008 主体策略说明（P2-1）；§7 团队章节追加 Review-Agent-Tech / Review-Agent-Product（P2-3）
 
 ## 1. 项目名与寓意
 **Costra** = cost + track，面向家庭的云端共享记账 **微信小程序**。
+
+> **主体说明（v2.3 回灌 D-008）**：MVP 阶段以"个人主体先行"策略提交小程序，后续按需切换为企业主体（见 `.team/decisions/D-008-subject-individual-first-with-corporate-compat.md`）。对外名称 `Costra` 在任何主体状态下保持稳定；主体变更不影响 AppID / 首发通道。
 
 ## 2. 愿景
 让一个家庭在同一本账上安心协作记账：数据安全、实时同步、看得懂、用得爽、进入门槛低（微信内即开即用）。
@@ -16,6 +23,20 @@
 - 家庭激活率（3+ 成员） ≥ 15%
 - 月人均记账次数 ≥ 30
 - 小程序首屏可交互 ≤ 2s（P75）
+
+### 3.1 指标测量规划表（v2.3 P1-1 新增）
+
+| 指标 | 埋点事件 | 聚合来源 | 基线 / 目标 | 采集起点 |
+|---|---|---|---|---|
+| D1 留存 | `app_launch`（每次进入小程序触发，携带 uid + open_ts） | 服务端 `analytics_events` 表 + Redis 活跃位图；按"注册日 D0 → D+1 内回访"计算 | 基线：无（MVP 无历史） · 目标：**≥ 40%** | Sprint-4 上线首日 |
+| 家庭激活率（3+ 成员） | `family_member_added`（每次邀请接受触发） | DB `family_members` 表聚合：`COUNT(DISTINCT family_id WHERE member_count ≥ 3)` / `COUNT(family_id)` | 基线：同类产品 10~12% · 目标：**≥ 15%** | Sprint-4 上线首周 |
+| 月人均记账次数 | `entry_created`（`/entries POST` 成功 201 时服务端写埋点） | DB `ledger_entries` 表聚合：`COUNT(*) / COUNT(DISTINCT creator_user_id)` 按自然月 | 基线：约 20 次/月（市场对标） · 目标：**≥ 30 次/月** | Sprint-4 上线首月 |
+| 小程序首屏可交互（TTI P75） | `app_tti`（小程序 `onLaunch` → 首个 tabBar 页面 `onReady` 时上报毫秒数） | TAM 前端监控（独立 Epic-G）| 基线：首版 < 3.5s · 目标：**≤ 2s（P75）** | Sprint-4 灰度首日，每日聚合 |
+
+**实施依赖**：
+- 埋点 SDK 由 DevOps（COSTRA-040）集成前端监控 + 服务端日志双通道；
+- `analytics_events` 表结构 / TAM 方案由 Sprint-4 起步时补 ADR（当前 v0.1 DB schema 未落 `analytics_events`，见 `docs/db/schema.md §7 下一步`）；
+- 指标看板（Grafana/自建）归 Sprint-5 · Epic-F（报表模块）顺带产出。
 
 ## 4. MVP 范围（Must-Have）
 - [M] 账号体系（微信登录 `wx.login` + 可选手机号绑定）
@@ -32,6 +53,7 @@
 - 端到端加密账本
 - 第三方支付聚合 / 银行卡账单导入
 - 理财 / 借贷 / 投资分析（类目合规红线）
+- **（v2.3 回灌 D-008）虚拟支付（含微信虚拟支付 SDK）/ 企业认证接口（如企业微信 OA 对接）/ 对公打款 SDK** —— 主体策略 "个人先行" 决定这些能力统一延后到主体升级至企业后再评估
 
 ## 6. 成功标准
 - 微信小程序审核一次通过
@@ -40,18 +62,24 @@
 - 发布后首周家庭创建数 ≥ 1000
 - 主包体积 ≤ 2MB、分包总体积 ≤ 20MB
 
-## 7. 约束
+## 7. 团队与约束（v2.3 P2-3 补充）
+
+| 角色 | 身份 | 工作区 | 加入时间 |
+|---|---|---|---|
+| Orchestrator | 调度/闸门把关 | `.team/` | Sprint-0 起 |
+| PM-Agent | 项目管理/需求入口 | `docs/`、`.team/board.md`、`.team/backlog.json`、`.team/risks.md` | Sprint-0 起 |
+| Design-Agent | 交互/视觉/设计系统 | `design/` | Sprint-0 起 |
+| MiniApp-Agent | 微信小程序客户端 | `miniapp/` | Sprint-0 起 |
+| Backend-Agent | 服务端/API/DB | `server/`、`api/` | Sprint-0 起 |
+| DevOps-Agent | CI/CD/监控/发布 | `infra/`、`.github/workflows/` | Sprint-0 起 |
+| QA-Agent | 测试策略/自动化/审核自查 | `qa/` | Sprint-0 起 |
+| **Review-Agent-Tech** | 独立评审 Backend / MiniApp / DB / 脚本类产物 | `.team/reviews/` | **2026-04-23 引入（D-011 方案 B）** |
+| **Review-Agent-Product** | 独立评审 PM / Design / 产品需求类产物 | `.team/reviews/` | **2026-04-23 引入（D-011 方案 B）** |
+
+**人机比**：**9 个 Agent + 1 位 Human（you）**。
+
+### 7.1 其他约束
 - 预算：内部研发
-- 团队：**7 个 Agent + 1 位 Human（你）**
-  | 角色 | 身份 | 工作区 |
-  |---|---|---|
-  | Orchestrator | 调度/闸门把关 | `.team/` |
-  | PM-Agent | 项目管理/需求入口 | `docs/`、`.team/board.md`、`.team/backlog.json`、`.team/risks.md` |
-  | Design-Agent | 交互/视觉/设计系统 | `design/` |
-  | MiniApp-Agent | 微信小程序客户端 | `miniapp/` |
-  | Backend-Agent | 服务端/API/DB | `server/`、`api/` |
-  | DevOps-Agent | CI/CD/监控/发布 | `infra/`、`.github/workflows/` |
-  | QA-Agent | 测试策略/自动化/审核自查 | `qa/` |
 - 时长：目标 6~9 个月至正式上线（小程序周期可压缩至 4~6 个月，保守区间保留）
 - 平台：**仅微信小程序**；H5 分享页、小游戏轻量入口作为二期可选扩展
 
@@ -91,11 +119,14 @@
 
 ## 11. 风险快照（详见 `.team/risks.md`）
 
-本次章程对齐对风险做一轮刷新：
-- 🔴 R-002 同步冲突金额错乱 / R-008 密钥泄漏（均已指派 owner）。
-- 🟠 R-001 小程序审核驳回 / R-003 金额精度 / R-004 越权访问 / R-007 域名白名单。
-- 🟡 R-005 订阅消息模板 / R-006 主包体积超限。
-- 本 Sprint 新增：**R-009 Human 外部资源到位延迟**（见 §9）→ 设降级预案，已登记。
+> **v2.3（P1-3）**：本节不再穷举单条风险，改为"按严重度汇总 + 全量见 risks.md"的软链接模式。截止 2026-04-23 20:00，`.team/risks.md` 共计 **18 条**：
+
+- 🔴 R-002 同步冲突金额错乱 / R-008 密钥泄漏 / **R-018 开发服务器 SSH 攻击面（D-009 引入）** — 均已指派 owner、均有降级/处置预案
+- 🟠 R-001 小程序审核驳回 / R-003 金额精度 / R-004 越权访问 / R-007 域名白名单 / **R-017 开发服务器 3 个月到期（D-009 引入，到期前必须迁入正式云托管）**
+- 🟡 R-005 订阅消息模板 / R-006 主包体积超限
+- 运营类：**R-009 Human 外部资源到位延迟**（见 §9）→ 设降级预案，已登记
+
+**强制约定**：章程不再复制 risks 条目，避免双写漂移；PR 评审时 Reviewer 可直接跳到 `.team/risks.md` 复核。
 
 ## 12. Human 签字位
 - 项目负责人：steve

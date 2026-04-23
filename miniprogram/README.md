@@ -46,16 +46,50 @@ cp project.private.config.json.example project.private.config.json
 
 环境配置集中在 `miniprogram/services/env.ts`。默认 `dev`，构建脚本可通过替换 `CURRENT_ENV` 常量切换 `staging` / `prod`（CI 中通过 `scripts/mp-ci/build-check.mjs` 的变量注入）。
 
-| 环境 | API Base | Mock 登录 |
-|---|---|---|
-| dev | `http://127.0.0.1:3000/v1` | ✅ |
-| staging | `https://staging.costra.app/v1` | ❌ |
-| prod | `https://api.costra.app/v1` | ❌ |
+> ⚠️ **Sprint-0 骨架阶段**：`CURRENT_ENV` 为硬编码 `'dev'`。Sprint-1 COSTRA-108 CI 演练完成后，切换机制收敛为"CI 环境变量 → `__wxConfig.envVersion` 或编译期常量注入"。切换到 staging/prod 前必须手动改此常量或等 COSTRA-108 自动化。
+
+| 环境 | API Base | Mock 登录 | 备案状态 |
+|---|---|---|---|
+| dev | `http://127.0.0.1:3000/v1` | ✅ | 开发工具"不校验合法域名" |
+| staging | `https://api-staging.costra.cloud/v1` | ❌ | ICP 下证后可用（D-009） |
+| prod | `https://api.costra.cloud/v1` | ❌ | ICP 下证后配入微信白名单（D-009） |
+
+> 🔒 **D-009 锁定**：生产域名 `costra.cloud`，域名源引用见 `docs/devops/domains.md`。**严禁在任何代码中使用 `.costra.app` 等历史域名**；CI（COSTRA-115）会校验 `services/env.ts` 与 OpenAPI `servers` 一致性。
 
 Feature Flag 通过 `services/flags.ts` 读取，当前支持：
 - `family_sharing`：家庭共享开关
 - `subscribe_msg`：订阅消息开关
 - `share_card_variant`：分享卡片 AB 变体
+
+## 4.1 骨架覆盖 vs IA 目标（Sprint-0 锁时刻 → Sprint-X 落地路径）
+
+Sprint-0 骨架仅实现"最小可演示登录闭环"，主包与分包的**完整 IA 页面树**按以下计划逐步落地：
+
+| IA §3 要求页面 | 路由 | 骨架状态 | 落地 Sprint | 关联卡 |
+|---|---|---|---|---|
+| 启动页 / 授权引导 | `pages/launch/index` | 合并到 `pages/login/index` | Sprint-1 | COSTRA-102 |
+| 手机号绑定 | `pages/bind-phone/index` | ❌ 未创建 | Sprint-2 | COSTRA-102 (R2) |
+| 首页·流水 | `pages/home/index` | ✅ 占位 | Sprint-1 落业务 | COSTRA-102 |
+| 记一笔 | `pages/entry/index` | ✅ 占位 | Sprint-1 落业务 | COSTRA-102 |
+| 流水筛选 | `pages/entry-filter/index` | ❌ 未创建 | Sprint-2 | COSTRA-114 |
+| 账户管理 | `pages/accounts/index` | ❌ 未创建 | Sprint-2 | COSTRA-111 |
+| 账户编辑 | `pages/account-edit/index` | ❌ 未创建 | Sprint-2 | COSTRA-111 |
+| 分类管理 | `pages/categories/index` | ❌ 未创建 | Sprint-2 | COSTRA-112 |
+| 我的 | `pages/mine/index` | ✅ 占位 | Sprint-1 落业务 | COSTRA-401 |
+| 设置 | `pages/settings/index` | ❌ 未创建 | Sprint-2 | COSTRA-402 |
+| 关于 & 隐私 | `pages/about/index` | ❌ 未创建 | Sprint-2 | Epic-G |
+| 统计总览 | `pages-stat/overview/index` | ✅ 占位（tabBar 入口） | Sprint-3 | COSTRA-501 |
+| 月度统计 | `pages-stat/month/index` | ✅ 存在（命名与 IA 略差） | Sprint-3 合并 | COSTRA-501 |
+| 家庭面板 | `pages-family/dashboard/index` | ✅ 占位（tabBar 入口） | Sprint-3 | COSTRA-201 |
+| 家庭 home | `pages-family/home/index` | ✅ 存在（命名与 IA 略差） | Sprint-3 合并 | COSTRA-201 |
+| 设置 / 隐私 | `pages-family/settings/index`、`privacy/index` | ✅ 占位 | Sprint-2 | COSTRA-402 / Epic-G |
+
+**裁决**：
+- 骨架期只保留"最小登录闭环 + tabBar 入口 4 页"，其余 **IA 页面作为 Sprint-1~3 逐步落地的工作单**；
+- `pages-stat/month` vs `pages-stat/overview`、`pages-family/home` vs `pages-family/dashboard` 的命名差异由 Sprint-3 一次性统一（落 Epic-D/F 时）；
+- 本表每个 Sprint 末由 PM-Agent 勾选消除进度。
+
+
 
 ## 5. 登录闭环（Mock）
 

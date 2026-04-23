@@ -55,6 +55,8 @@
 
 **MVP 最小路径合计：41 点**（覆盖 PRD 113 点的 36%，已足够发 Alpha）。
 
+> 📌 **41 vs 44 差值说明**（Round-1 P1-1）：本节 41 点是"**Walking Skeleton 最窄闭环**"——仅覆盖用户从进入到记一笔并看到统计的单线。§3 表格中的 **R1 · 44 点** 额外包含 `COSTRA-103 token 自动续签`（3 点）：它是 Alpha 内测上线硬约束（token 过期 15min 不续签会频繁掉登录），但不属于最窄闭环。因此 **Walking Skeleton = 41 点，R1 交付范围 = 41 + 3 = 44 点**。
+
 ### 2.3 完整故事网格
 
 行 = Backbone 活动 · 列 = Release Slice · 单元格 = Story（括号内为估点 · Epic）

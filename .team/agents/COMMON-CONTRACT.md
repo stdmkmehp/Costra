@@ -13,6 +13,8 @@
   | Backend-Agent | `server/`、`api/` |
   | DevOps-Agent | `infra/`、各模块 `.github/workflows/` |
   | QA-Agent | `qa/` |
+  | Review-Agent-Tech | `.team/reviews/`（仅 `round-N-tech.md` 文件） |
+  | Review-Agent-Product | `.team/reviews/`（仅 `round-N-product.md` 文件） |
 - **禁止删除任何 `.team/` 下的历史文件**（审计需要）。
 - **禁止修改他人任务卡的 `assignee_agent` / `priority`**，只能 PM-Agent 改。
 - **生产环境所有操作**（部署 / 数据库变更 / 密钥 / 域名）必须 Human 审批。
@@ -76,6 +78,14 @@ result: dispatched_to:Backend-Agent
 ## 8. 代码/契约双签
 - 接口契约变更：Backend-Agent 发起 + MiniApp-Agent 确认 → G3
 - 合并 main：作者 Agent + 至少一个 review Agent + G4 签字
+
+## 8bis. Review 闭环（新增 · 2026-04-23）
+- Backend / MiniApp 产出进 Review 列前，**必须**先走 `Review-Agent-Tech` 预审
+- PM / Design 产出进 Review 列前，**必须**先走 `Review-Agent-Product` 预审
+- DevOps / QA / 决策类文档 **不走** Review-Agent（Human 直审）
+- 完整规则与迭代机制见 [`.team/SOP-REVIEW-LOOP.md`](../SOP-REVIEW-LOOP.md)
+- 最多 5 轮迭代；出 `ESCALATE` 或 round==5 强制停并冒泡给 Human
+- Review-Agent **不写代码/文档**，只出报告；被审 Agent 必须回 `round-N-{agent}-response.md`
 
 ## 9. 工程约束索引（2026-04-21 Human 追加）
 - **微信官方文档优先**：涉及 MINA / 登录 / 分包 / 订阅消息 / 隐私 / 审核等场景，**必须先查** <https://developers.weixin.qq.com/miniprogram/dev/framework/> 并在 PR/ADR/注释中引用锚点 URL。

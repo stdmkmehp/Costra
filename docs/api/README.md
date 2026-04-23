@@ -14,7 +14,7 @@
 | 客户端字段 | MiniApp 映射为 `camelCase`（`request.ts` 层适配） | ADR-0004 |
 | 金额 | `int64`，单位**分**，不使用浮点 | ADR-0004 §金额 |
 | 时间 | ISO-8601 UTC 字符串 | ADR-0004 §时区 |
-| UUID | v4 字符串 | 统一 |
+| UUID | 服务端实体主键 **v7**（时间有序）；`client_ref_id` / `Idempotency-Key` 为 **v4** | `id-strategy.md` |
 | 分页 | 游标分页（`cursor` + `next_cursor`） | 统一 |
 | 乐观锁 | 每个可变实体含 `version: int` | 见冲突策略 |
 | 幂等 | 所有写操作需 `Idempotency-Key: <uuid>` 请求头 | 全链路 |
@@ -44,7 +44,10 @@
 }
 ```
 
-### 标准错误码
+### 标准错误码（精简视图）
+
+> **完整字典（21 条）+ 重试策略 + QA 断言**见 [`error-codes.md`](./error-codes.md)。
+> 本节仅保留高频 HTTP 段落速查，**若两表冲突以 `error-codes.md` 为准**。
 
 | HTTP | code | 场景 |
 |---|---|---|
@@ -55,6 +58,7 @@
 | 403 | `PERMISSION_DENIED` | 有身份但无权限（如非 owner 改家庭） |
 | 404 | `NOT_FOUND` | 资源不存在或对当前用户不可见 |
 | 409 | `VERSION_CONFLICT` | 乐观锁冲突（详见冲突策略） |
+| 409 | `IDEMPOTENCY_KEY_MISMATCH` | 同 `Idempotency-Key` 但 body hash 不一致 |
 | 410 | `INVITE_EXPIRED` | 邀请口令过期或已使用 |
 | 422 | `BUSINESS_RULE_VIOLATION` | 业务规则（如分类名称家庭内重复） |
 | 429 | `RATE_LIMITED` | 命中限流 |
@@ -78,7 +82,7 @@
 
 - 所有 `POST` / 写入型 `PATCH` / `DELETE` **必须**带 `Idempotency-Key`
 - 值为 UUID v4，**24h 内**同 key + 同 endpoint + 同 body hash 返回首次结果
-- 不匹配时服务端返回 `409` + `code=IDEMPOTENCY_KEY_MISMATCH`
+- 不匹配时服务端返回 **409** + `code=IDEMPOTENCY_KEY_MISMATCH`（详见 [`id-strategy.md §3.3`](./id-strategy.md)）
 - 客户端实现：在 `request.ts` 拦截器里自动为写操作注入 UUID 并持久化到本地缓冲（用于重试）
 
 ---
@@ -99,6 +103,10 @@
 
 ## 8. 相关文档
 
+- [`error-codes.md`](./error-codes.md) · 错误码字典（21 条）+ 客户端重试矩阵 + QA 断言
+- [`ttl-policy.md`](./ttl-policy.md) · access/refresh/invite/幂等窗口等全链路 TTL
+- [`id-strategy.md`](./id-strategy.md) · 服务端 UUIDv7 · `client_ref_id` · `Idempotency-Key`
+- [`sync-protocol.md`](./sync-protocol.md) · `/sync/push` + `/sync/pull` 完整批协议
 - [`conflict-strategy.md`](./conflict-strategy.md) · 409 冲突场景与客户端处理
 - [`audit-log.md`](./audit-log.md) · 审计字段与留存
 - [`../db/schema.md`](../db/schema.md) · DB 结构映射

@@ -24,7 +24,8 @@ const ENV_MAP: Record<EnvName, EnvConfig> = {
   },
   staging: {
     name: 'staging',
-    apiBaseUrl: 'https://staging.costra.app/v1',
+    // D-009 锁定：生产域名 costra.cloud；预发 api-staging.costra.cloud
+    apiBaseUrl: 'https://api-staging.costra.cloud/v1',
     mockLogin: false,
     flags: {
       family_sharing: true,
@@ -34,7 +35,8 @@ const ENV_MAP: Record<EnvName, EnvConfig> = {
   },
   prod: {
     name: 'prod',
-    apiBaseUrl: 'https://api.costra.app/v1',
+    // D-009 锁定：生产 API 入口 api.costra.cloud（ICP 备案下证后生效，见 docs/devops/domains.md）
+    apiBaseUrl: 'https://api.costra.cloud/v1',
     mockLogin: false,
     flags: {
       family_sharing: true,

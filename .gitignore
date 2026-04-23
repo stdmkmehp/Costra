@@ -30,3 +30,5 @@ coverage/
 
 # Husky internals
 .husky/_
+
+key/

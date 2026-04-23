@@ -84,14 +84,30 @@ sequenceDiagram
 
     U->>MP: 在 pages/me 点「绑定手机」
     MP->>U: 展示 button open-type="getPhoneNumber"
-    U->>MP: 点击授权
-    MP->>MP: 获得 e.detail.code（2024 年新版）
-    MP->>BE: POST /v1/auth/bind-phone { code }
-    BE->>BE: 调微信 getPhoneNumber 接口解密 code
-    BE->>BE: users 表写入 phone + auditLog
-    BE-->>MP: 200 { user }
-    MP->>U: Toast：绑定成功
+    alt 用户点击「允许」
+        U->>MP: 点击授权
+        MP->>MP: 获得 e.detail.code（2024 年新版）
+        MP->>BE: POST /v1/auth/bind-phone { code }
+        BE->>BE: 调微信 getPhoneNumber 接口解密 code
+        BE->>BE: users 表写入 phone + auditLog
+        BE-->>MP: 200 { user }
+        MP->>U: Toast：绑定成功
+    else 用户点击「拒绝」或关闭弹窗
+        U-->>MP: e.detail.errMsg = "getPhoneNumber:fail user deny"
+        MP->>MP: 记 wx.storage.phoneBindDismissedAt = now
+        Note over MP: ❗**不** redirectTo 强制页面<br/>❗**不** 每次 onAppShow 弹窗<br/>当前页保留原路由
+        MP->>U: Toast："可稍后在"我的"里补充"（2s 自动关）
+    end
 ```
+
+**分支策略（对齐 IA §4.1 AuthPartial 与 §4.2 守卫）**：
+
+- **MVP / R1 默认："允许跳过、关键操作再拦截"**。用户拒绝绑定后，允许自由使用记账/统计；**仅当用户触发以下关键操作**时再次弹绑定提示：
+  - 创建家庭（COSTRA-201） — 邀请码短信/客服回访需手机
+  - 订阅消息授权（COSTRA-203） — 非强依赖但建议引导
+  - 账户申诉 / 数据导出（R3）
+- **冷却期**：一次拒绝后 **7 天内** 不再自动弹；超过 7 天在关键操作前再弹一次。
+- **不阻塞 AuthRequired 页面**：IA §4.2 守卫逻辑 **不** 把"未绑手机"视为未登录；只在"关键操作拦截"时 `wx.showModal` 引导到 `pages/bind-phone`。
 
 引用：[getPhoneNumber（新版）](https://developers.weixin.qq.com/miniprogram/dev/framework/open-ability/getPhoneNumber.html)。
 

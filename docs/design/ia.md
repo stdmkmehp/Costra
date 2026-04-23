@@ -26,6 +26,8 @@
 | 4 | 我的 | `icon-me` | `pages/me/index` | main | ✅ 必须 |
 
 > 📌 说明：Tab 2/3 指向分包页面，利用微信[分包预下载](https://developers.weixin.qq.com/miniprogram/dev/framework/subpackages/preload.html)在首屏完成后静默预拉，实测可做到点击切换 < 300ms。
+>
+> 📌 **tabBar custom 切换计划**（Round-1 P2-3 · 与 design-system `c-tab-bar` 对齐）：Sprint-0 骨架期 `custom: false`，走原生 tabBar 最稳；**Sprint-2 D1 配合 design-system `c-tab-bar` 深色模式/红点/Badge 能力**切换到 `custom: true` + `pages/custom-tab-bar/index`，切换动作由单独 PR 完成并跑全量回归。
 
 **`app.json` tabBar 草案**：
 ```json
@@ -81,11 +83,11 @@
 
 | 页面 | 路由 | 覆盖 Story | 依赖 API | 登录态 |
 |---|---|---|---|---|
-| 家庭面板 | `pages-family/dashboard/index` | COSTRA-201 | `GET /v1/families/:id` | ✅ |
+| 家庭面板 | `pages-family/dashboard/index` | COSTRA-201 | `GET /v1/families/{id}` | ✅ |
 | 创建家庭 | `pages-family/create/index` | COSTRA-201 | `POST /v1/families` | ✅ |
 | 加入家庭（输入邀请码） | `pages-family/join/index` | COSTRA-202 | `POST /v1/families/join` | ✅ |
-| 邀请分享卡片预览 | `pages-family/invite/index` | COSTRA-202 | `POST /v1/families/:id/invites` | ✅ |
-| 成员管理 | `pages-family/members/index` | COSTRA-204 | `GET/PATCH/DELETE /v1/families/:id/members` | ✅（owner/admin）|
+| 邀请分享卡片预览 | `pages-family/invite/index` | COSTRA-202 | `POST /v1/families/{id}/invites` | ✅ |
+| 成员管理 | `pages-family/members/index` | COSTRA-204 | `GET/PATCH/DELETE /v1/families/{id}/members` | ✅（owner/admin）|
 | 预算设置 | `pages-family/budget/index` | COSTRA-301 | `GET/PUT /v1/budgets` | ✅ |
 | 订阅消息授权 | `pages-family/subscribe/index` | COSTRA-203/302 | `POST /v1/subscribe-tokens` | ✅ |
 
@@ -100,6 +102,8 @@
 
 骨架期基线由 `scripts/mp-ci/size-check.mjs` 在每次 PR 跑一次（对接 DevOps COSTRA-040）。
 
+> 📌 **主包硬约束**（Round-1 P2-2）：主包预留 0.7MB 较为紧张。**任何向主包 `pages/` 目录新增页面或引入 >50KB 的依赖的 PR，必须先本地跑 `npm run size-check` 通过再提交**；CI 侧 `size-check.mjs` 对 `main` 分支包体阈值从 1.5MB 下调硬警戒线为 **1.3MB**（留 0.2MB 安全垫），超过即 block。如确需突破，走 ADR 决策流程。
+
 ---
 
 ## 4. 登录态与路由守卫
@@ -108,18 +112,28 @@
 
 - `AuthRequired`：所有 `pages/home`、`pages-stat/*`、`pages-family/*`、`pages/me/*`
 - `AuthOptional`：`pages/launch`、`pages/about`
-- `AuthPartial`（拿到 token 但未绑手机）：仅 `pages/bind-phone`
+- `AuthPartial`（拿到 token 但未绑手机）：仅 `pages/bind-phone`；**用户可自由浏览 AuthRequired 页面**（详见 §4.2 判定 3）
 
 ### 4.2 守卫策略（MiniApp 工程侧落地建议）
 
 ```
 onAppShow → 检查 wx.storage.accessToken
-  ├─ 无 → redirectTo pages/launch（除非当前已是 AuthOptional）
-  ├─ 过期 → silent refresh（POST /v1/auth/refresh），失败回 launch
-  └─ 需手机 → redirectTo pages/bind-phone
+  ├─ 判定 1：无 token → redirectTo pages/launch（除非当前已是 AuthOptional）
+  ├─ 判定 2：过期 → silent refresh（POST /v1/auth/refresh），失败回 launch
+  ├─ 判定 3：AuthPartial（有 token, 未绑手机）
+  │     ├─ 当前路由 ∈ AuthOptional/AuthRequired → **不拦截**，正常放行
+  │     └─ 仅当用户触发"关键操作"（创建家庭 / 订阅消息 / 数据导出）
+  │         时 wx.showModal 引导 redirectTo pages/bind-phone
+  │         （冷却期 7 天，对齐 flows/login.md §4 分支策略）
+  └─ 兜底：任何异常态 → 清 storage → redirectTo pages/launch
 ```
 
-详见 `docs/design/flows/login.md`。
+**判定 3 的设计考量**（Round-1 P1-2）：
+- MVP 不强拦：避免用户"刚进小程序就被要求绑手机"的高弃率场景；
+- 未绑手机不等于未登录：`accessToken` 已有效，`pages/home` 记账、`pages-stat` 浏览均可正常使用；
+- 关键操作再拦：创建家庭（需发短信/客服回访）、订阅消息（合规留痕）等触发时再引导绑定。
+
+详见 `docs/design/flows/login.md` §4。
 
 ---
 
@@ -133,6 +147,11 @@ onAppShow → 检查 wx.storage.accessToken
 | 1007/1008 | 单人/群聊会话 | `pages-family/join?code=xxx` | 微信分享卡片打开家庭邀请 |
 | 1037 | 小程序直接打开 | `pages/launch` | — |
 | 1047 | 扫描二维码 | `pages-family/join?code=xxx` | 海报引流 |
+
+> 📌 **失效 code 兜底**（Round-1 P2-1）：1007/1008/1047 携带的邀请 `code` 可能为空串、格式非法、或已过期/撤销。`pages-family/join` 入口必须做兜底判断：
+> - `code` 为空或长度异常 → 展示"邀请链接无效，请联系邀请人"+ 返回首页按钮；
+> - `code` 校验（`POST /v1/families/join` 返回 4xx `invitation_expired` / `invitation_revoked` / `invitation_exhausted`）→ 展示对应文案 + 返回首页按钮；
+> - 服务端 5xx → "稍后再试" toast，保留输入框允许重试。
 
 ### 5.2 关键跳转链路
 

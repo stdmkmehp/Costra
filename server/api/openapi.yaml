@@ -20,12 +20,14 @@ info:
   license:
     name: Internal
 servers:
-  - url: https://api.costra.local/v1
-    description: 本地开发（docker-compose 起）
-  - url: https://api-staging.costra.example.com/v1
-    description: 预发布
-  - url: https://api.costra.example.com/v1
-    description: 生产
+  - url: http://localhost:8080/v1
+    description: 本地开发（docker-compose 起；开发工具"不校验合法域名"模式）
+  - url: http://49.235.216.20:8080/v1
+    description: 开发服务器（D-009 锁定公网 IP；ICP 备案下证前临时开放）
+  - url: https://api-staging.costra.cloud/v1
+    description: 预发布（D-009 锁定域名；ICP 下证后启用）
+  - url: https://api.costra.cloud/v1
+    description: 生产（D-009 锁定域名；ICP 下证后配入微信"服务器域名"白名单）
 
 tags:
   - name: auth
@@ -34,6 +36,8 @@ tags:
     description: 用户画像
   - name: families
     description: 家庭 / 成员 / 邀请
+  - name: accounts
+    description: 资金账户（现金 / 银行卡 / 电子钱包等）
   - name: ledgers
     description: 账本
   - name: categories
@@ -219,6 +223,27 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Family' }
         '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [families]
+      summary: 解散家庭（仅 owner，软删，需带 version）
+      description: |
+        COSTRA-020 Round-2 新增（P1-3）：MVP 不提供 UI 入口，但契约层占位。
+        仅 owner 可操作，需 body 带 version 做乐观锁。所有家庭成员关联、账本、流水、预算均级联软删。
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version]
+              properties:
+                version: { type: integer }
+      responses:
+        '204': { description: 成功 }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
 
   /families/{family_id}/invites:
     parameters:
@@ -292,6 +317,90 @@ paths:
       responses:
         '204': { description: 成功 }
         '403': { $ref: '#/components/responses/Forbidden' }
+
+  # ============ accounts ============
+  # COSTRA-020 Round-2 新增（P0-1）：覆盖 DB schema §3.4 accounts 表的 API 入口
+  /accounts:
+    get:
+      tags: [accounts]
+      summary: 账户列表（私有账户 + 家庭账户）
+      parameters:
+        - name: family_id
+          in: query
+          description: 指定 family_id 则返回家庭账户，留空返回当前用户私有账户
+          schema: { type: string, format: uuid }
+        - name: include_archived
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Account' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [accounts]
+      summary: 创建账户
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AccountCreate' }
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Account' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /accounts/{account_id}:
+    parameters:
+      - name: account_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [accounts]
+      summary: 账户详情
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Account' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [accounts]
+      summary: 修改账户（需带 version）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AccountUpdate' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Account' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [accounts]
+      summary: 软删除账户（需账户下无未软删流水）
+      responses:
+        '204': { description: 成功 }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422':
+          description: 业务规则拒绝（如账户仍有流水）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   # ============ ledgers ============
   /ledgers:
@@ -572,6 +681,12 @@ paths:
     post:
       tags: [notifications]
       summary: 记录小程序订阅消息授权
+      description: |
+        客户端 `wx.requestSubscribeMessage()` 通过后调用，登记一次授权凭证（scene + template_id）。
+        COSTRA-020 Round-2 P1-3：服务端写入 `subscribe_message_jobs` 表作为"待发射令牌"，
+        有效窗口 7 天，期间最多 1 次被预算告警/家庭动态/周报消费。
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -585,7 +700,11 @@ paths:
                   type: string
                   enum: [budget_alert, family_activity, weekly_digest]
       responses:
-        '204': { description: 成功 }
+        '201':
+          description: 授权已登记
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SubscribeMessageJob' }
 
 components:
   securitySchemes:
@@ -605,7 +724,10 @@ components:
       in: header
       required: true
       schema: { type: string, format: uuid }
-      description: UUID v4；同 key 24h 内重复请求返回相同结果
+      description: |
+        UUID v4。同一 `Idempotency-Key` + 相同 `body_hash` 在 24h 去重窗口内返回首次结果（原 HTTP 状态码与响应体）；
+        同 key 但 body_hash 不一致时返回 **409 IDEMPOTENCY_KEY_MISMATCH**。
+        详见 `docs/api/id-strategy.md §3`。
 
   responses:
     BadRequest:
@@ -635,21 +757,53 @@ components:
           schema: { $ref: '#/components/schemas/ConflictError' }
 
   schemas:
+    ErrorCode:
+      type: string
+      description: |
+        所有 4xx/5xx 响应的统一错误码。事实源见 docs/api/error-codes.md；
+        TS 枚举镜像：server/src/errors/ErrorCode.ts。
+        客户端必须以 code 判分支（而非 HTTP status）。
+      enum:
+        - INVALID_ARGUMENT
+        - MALFORMED_JSON
+        - IDEMPOTENCY_KEY_REQUIRED
+        - IDEMPOTENCY_KEY_MISMATCH
+        - UNSUPPORTED_MEDIA_TYPE
+        - UNAUTHENTICATED
+        - TOKEN_EXPIRED
+        - REFRESH_TOKEN_INVALID
+        - WX_CODE_INVALID
+        - PERMISSION_DENIED
+        - FAMILY_NOT_MEMBER
+        - NOT_FOUND
+        - VERSION_CONFLICT
+        - DUPLICATE_RESOURCE
+        - INVITE_EXPIRED
+        - BUSINESS_RULE_VIOLATION
+        - RATE_LIMITED
+        - INTERNAL
+        - UNAVAILABLE
+        - TIMEOUT
+        - NOT_IMPLEMENTED
+
     Error:
       type: object
       required: [code, message]
       properties:
-        code:
-          type: string
-          example: INVALID_ARGUMENT
+        code: { $ref: '#/components/schemas/ErrorCode' }
         message:
           type: string
           example: 'field "amount" must be > 0'
         trace_id:
           type: string
-          description: 服务端追踪 ID（便于排障）
+          description: 服务端追踪 ID（便于排障；4xx/5xx 必返回）
         details:
           type: object
+          description: |
+            可选附加信息。特定 code 约定结构：
+            - INVALID_ARGUMENT: { field, value, constraint }
+            - BUSINESS_RULE_VIOLATION: { rule: 'family_member_limit' | ... }
+            - VERSION_CONFLICT: { entity, entity_id }
           additionalProperties: true
 
     ConflictError:
@@ -665,13 +819,22 @@ components:
 
     AuthTokenPair:
       type: object
-      required: [access_token, refresh_token, expires_in, user]
+      required: [access_token, refresh_token, access_token_ttl_sec, refresh_token_ttl_sec, user]
       properties:
         access_token: { type: string }
         refresh_token: { type: string }
+        access_token_ttl_sec:
+          type: integer
+          description: access_token 自签发起的有效秒数（见 docs/api/ttl-policy.md）
+          example: 7200
+        refresh_token_ttl_sec:
+          type: integer
+          description: refresh_token 自签发起的有效秒数
+          example: 2592000
         expires_in:
           type: integer
-          description: access_token 有效秒数
+          deprecated: true
+          description: '【已废弃】等价于 access_token_ttl_sec，保留至 v0.2 移除'
           example: 7200
         user: { $ref: '#/components/schemas/User' }
 
@@ -740,6 +903,90 @@ components:
         updated_at: { type: string, format: date-time }
         version: { type: integer }
 
+    # ---- accounts ----
+    # COSTRA-020 Round-2 P0-1：对齐 DB schema §3.4 accounts 表
+    Account:
+      type: object
+      required: [id, name, kind, currency, balance, is_archived, created_at, version]
+      properties:
+        id: { type: string, format: uuid }
+        user_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: 私有账户的归属用户；与 family_id 互斥（同一时刻只有一项非空）
+        family_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: 家庭账户的归属家庭；与 user_id 互斥
+        name: { type: string, maxLength: 32 }
+        kind:
+          type: string
+          enum: [cash, bank_card, credit_card, e_wallet, prepaid_card, other]
+          description: 账户类型（与 DB schema §3.4 对齐）
+        currency: { type: string, example: CNY }
+        balance:
+          type: integer
+          format: int64
+          description: 当前余额（单位：分；服务端基于流水聚合，客户端只读）
+        icon: { type: string, nullable: true, description: 图标 key（Design Token 映射） }
+        color: { type: string, nullable: true }
+        sort_order: { type: integer, default: 0 }
+        is_archived:
+          type: boolean
+          default: false
+          description: 归档后不出现在记账默认下拉，但历史流水仍保留
+        note: { type: string, maxLength: 200, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        deleted_at: { type: string, format: date-time, nullable: true }
+        version: { type: integer }
+
+    AccountCreate:
+      type: object
+      required: [name, kind, currency]
+      description: |
+        user_id 与 family_id 不在请求体中指定：
+        - 若未传 family_id query/context → 归属当前 user（私有）
+        - 若 path/query 指定 family_id → 归属该家庭（需成员权限）
+      properties:
+        family_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: 指定则创建家庭账户；不传则创建当前用户私有账户
+        name: { type: string, maxLength: 32 }
+        kind:
+          type: string
+          enum: [cash, bank_card, credit_card, e_wallet, prepaid_card, other]
+        currency: { type: string, default: CNY }
+        initial_balance:
+          type: integer
+          format: int64
+          default: 0
+          description: 建账初始余额（分）；内部写入一条 type=adjust 的系统流水
+        icon: { type: string }
+        color: { type: string }
+        sort_order: { type: integer }
+        note: { type: string, maxLength: 200 }
+
+    AccountUpdate:
+      type: object
+      required: [version]
+      description: |
+        可改字段：name / icon / color / sort_order / is_archived / note。
+        `kind` 和 `currency` 不可修改（与 DB schema §3.4 约束一致）；
+        `balance` 由流水聚合派生，永不可直接修改。
+      properties:
+        name: { type: string, maxLength: 32 }
+        icon: { type: string }
+        color: { type: string }
+        sort_order: { type: integer }
+        is_archived: { type: boolean }
+        note: { type: string, maxLength: 200 }
+        version: { type: integer, description: 当前服务端版本号 }
+
     Category:
       type: object
       required: [id, name, type, icon, sort_order]
@@ -781,6 +1028,20 @@ components:
         currency: { type: string, example: CNY }
         type: { type: string, enum: [income, expense, transfer] }
         category_id: { type: string, format: uuid, nullable: true }
+        account_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: |
+            关联账户（income/expense 时的资金账户；transfer 时的转出账户）。
+            COSTRA-020 Round-2 P0-1 新增，对齐 DB §3.4 accounts。
+        to_account_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: |
+            仅 type=transfer 使用：转入账户。
+            与 account_id 一起刻画跨账户转账，两边各派生一条聚合。
         note: { type: string, maxLength: 200, nullable: true }
         occurred_at:
           type: string
@@ -805,6 +1066,16 @@ components:
         currency: { type: string, default: CNY }
         type: { type: string, enum: [income, expense, transfer] }
         category_id: { type: string, format: uuid }
+        account_id:
+          type: string
+          format: uuid
+          description: |
+            income/expense 强烈建议提供（缺省走 ledger 默认账户）；
+            transfer 时为转出账户（必填）。
+        to_account_id:
+          type: string
+          format: uuid
+          description: 仅 transfer 必填：转入账户（不得与 account_id 相同）
         note: { type: string, maxLength: 200 }
         occurred_at: { type: string, format: date-time }
         client_ref_id: { type: string }
@@ -812,6 +1083,10 @@ components:
     EntryUpdate:
       type: object
       required: [version]
+      description: |
+        修改流水。注意：`type`（income/expense/transfer）**不可修改**，
+        若需改变 type 请先 delete 再 create。DB 层有相同约束。
+        COSTRA-020 Round-2 P1-4 明确此语义。
       properties:
         amount: { type: integer, format: int64, minimum: 1 }
         category_id: { type: string, format: uuid }
@@ -932,7 +1207,15 @@ components:
               category_name: { type: string }
               type: { type: string, enum: [income, expense] }
               amount: { type: integer, format: int64 }
-              ratio: { type: number, format: float, description: 0~1 }
+              ratio_bp:
+                type: integer
+                minimum: 0
+                maximum: 10000
+                description: |
+                  占比（万分比，basis points；0~10000 表示 0%~100%）。
+                  COSTRA-020 Round-2 P1-2：原 `ratio: float` 改为整数万分比，
+                  避免 JS 双精度 vs JVM float 跨端序列化差异。
+                  客户端展示时 = ratio_bp / 100（两位小数百分比）。
         daily_trend:
           type: array
           items:
@@ -941,3 +1224,38 @@ components:
               date: { type: string, format: date }
               income: { type: integer, format: int64 }
               expense: { type: integer, format: int64 }
+
+    # ---- notifications ----
+    # COSTRA-020 Round-2 P1-3：订阅消息 7 天时效 + 幂等刻画
+    SubscribeMessageJob:
+      type: object
+      required: [job_id, scene, template_id, created_at, expires_at, remaining_quota, status]
+      properties:
+        job_id:
+          type: string
+          format: uuid
+          description: 本次授权凭证 id；后续告警/动态/周报消费时通过 job_id 去重
+        scene:
+          type: string
+          enum: [budget_alert, family_activity, weekly_digest]
+        template_id: { type: string }
+        user_id: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        expires_at:
+          type: string
+          format: date-time
+          description: |
+            授权有效截止（created_at + 7 天，遵循微信订阅消息官方时效）。
+            超过后必须重新由用户触发授权，服务端发射时会校验并拒发。
+        remaining_quota:
+          type: integer
+          minimum: 0
+          description: 剩余可发射次数（当前 MVP 单次授权 = 1 条；保留字段以支持未来一次性多次）
+        status:
+          type: string
+          enum: [pending, sent, expired, revoked]
+          description: pending=可发；sent=已发；expired=超 7 天；revoked=用户撤回
+        last_sent_at:
+          type: string
+          format: date-time
+          nullable: true

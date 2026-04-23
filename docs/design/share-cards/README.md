@@ -11,11 +11,12 @@
 | 项 | 规则 |
 |---|---|
 | **画布** | 750 × 600 rpx（3:2.4，与微信聊天缩略图一致的 5:4 框内居中） |
-| **安全边距** | 上下 32rpx、左右 40rpx |
-| **字号** | 主标题 `h1`（28rpx）；辅文 `caption`（18rpx）；数字 `typography.amount` |
+| **安全边距** | **上/下 ≥ 64rpx、左/右 ≥ 32rpx**（避免被微信发送者条 / 小程序名片 / 朋友圈裁切遮挡；**关键文本/金额/CTA 必须落在安全区内**，详见 [`safe-zone.md`](./safe-zone.md)） |
+| **字号** | 主标题 `h1`（28rpx）；辅文 `caption`（18rpx）；数字 `typography.amount` 或 `typography.amount.compact` |
 | **圆角** | 卡外 `radius.lg`（12rpx）；内部模块 `radius.md`（8rpx） |
 | **阴影** | 外部禁用；内部头像/徽章 `shadow.sm` |
-| **品牌署名** | 右下角 "Costra · 家庭记账" + 小图标，`neutral.500`，`caption` |
+| **品牌署名** | 右下角 "Costra · 家庭记账" + 小图标，`neutral.500`，`caption`（必须在底部安全区内） |
+| **A11Y** | 所有文字对比度按 `docs/design/a11y/contrast-report.md` 执行；分享卡深色背景 × brand.primary 仅限 ≥ 44rpx 大字号 |
 | **禁止** | 二维码浮层（微信规范）、诱导分享话术、虚假数字对比 |
 
 ---
