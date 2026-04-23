@@ -16,9 +16,10 @@ Human 一个人盯所有 Agent 产出太吃力。引入两位 Review-Agent 做**
 **核心约束**：
 1. Review 与 Revise 的迭代**最多 5 轮**，超出必停
 2. 迭代过程中若出现**不可调和分歧**，立即停下交给 Human 决定
-3. Review-Agent 的结论**不替代**Human 终审，只是过滤器（通过了还得 Human 点头，没通过大概率 Human 也会打回）
+3. Review-Agent 的结论**不替代**Human 终审，只是过滤器（通过了还得 Human 点头，没通过大概率 Human 也会打回）——**🆕 例外见约束 6（D-013）**
 4. Review-Agent **不写代码/文档**，只给意见
 5. **🆕 默认启用自动循环**（D-011 / SOP-REVIEW-AUTOLOOP · 2026-04-23 生效）：Review 闭环内的 `Revise↔Review` 相互拉起无需 Human 逐轮触发，但前置条件 6 条 + 打断指令见 `SOP-REVIEW-AUTOLOOP.md §2/§4`
+6. **🆕 Review 场景分级**（D-013 · 2026-04-23 21:15 生效）：Review 按**准入 T1 / Gate 前 T2 / 追溯 T3 / 回归 T4** 分档。**T1/T2 仍需 Human 终审**（约束 3 原文适用）；**T3/T4 在 AI-Review PASS + 残余 P0/P1=0 + 无红线 + 无新阻塞 四条件同时满足时自动关闭**，不走 Human 终审，Human 保留 `reopen-review` 复议权。详见 `.team/decisions/D-013-review-scenario-tiering.md`
 
 ---
 
@@ -69,7 +70,10 @@ Human 一个人盯所有 Agent 产出太吃力。引入两位 Review-Agent 做**
 
 ### 4.1 正常通过
 - Review-Agent 给 `PASS` 或 `PASS-WITH-FOLLOWUP`
-- Orchestrator 把卡推到 Review 列，等 Human 终审（approve / reject）
+- Orchestrator **按 D-013 场景分级分流**：
+  - **T1 准入 / T2 Gate 前 Review** → 推入 Human-Review 列，等 Human 终审（`approve:*` / `reject:*`）
+  - **T3 追溯 / T4 回归 Review** → 检查 D-013 §3 四条件（AI-PASS + 0 残余 P0/P1 + 0 红线 + 0 新阻塞），全数命中则**自动关闭 SKIP-REVIEW-AUTOCLOSED**，写 `FINAL.md` + 聚合汇报 Human；任一不满足则回退到 T1 路径
+- 场景识别规则详见 `.team/decisions/D-013-review-scenario-tiering.md §4`
 
 ### 4.2 轮次上限
 - **round == 5** 时仍未 PASS → 无论当前 verdict 是啥（除非是 PASS-WITH-FOLLOWUP），**强制停**
@@ -223,6 +227,9 @@ Review 闭环不改变 SOP-HUMAN-TRIGGER 的铁律。Human 侧只关心 3 个时
 | `pause-review COSTRA-xxx` | 立即停止该卡的 Review 迭代，冒泡给 Human |
 | `skip-review COSTRA-xxx` | 跳过 Review 闭环直推 Human 终审（慎用，记 daily） |
 | `force-pass COSTRA-xxx` | Human 强制通过（覆盖 Review-Agent 的 REJECT） |
+| 🆕 `reopen-review COSTRA-xxx` | 对已自动关闭（D-013 T3/T4）的卡重新打开 Human-Review 终审窗口 |
+| 🆕 `reopen-batch <batch-name>` | 对整批（如 `sprint-0-review`）重新打开 Human 终审 |
+| 🆕 `require-human-review COSTRA-xxx` | 在 AI-Review 启动前就标记该卡走 T1 路径，强制 Human 终审 |
 
 ---
 
@@ -258,6 +265,7 @@ Review 闭环不改变 SOP-HUMAN-TRIGGER 的铁律。Human 侧只关心 3 个时
 |---|---|
 | `SOP-HUMAN-TRIGGER` | **局部豁免**（D-011 · 2026-04-23）。Review 闭环内的 Revise↔Review 相互拉起无需 Human 逐轮触发；其他场景铁律照旧（被审 Agent 首次产出、approve、跨卡编排仍需 Human 触发） |
 | `SOP-REVIEW-AUTOLOOP` | **本 SOP 的执行细则**。前置条件、断点、状态机、度量详见 `.team/SOP-REVIEW-AUTOLOOP.md` |
+| `D-013 Review 场景分级` | **本 SOP 约束 3 的粒度升级**（2026-04-23 21:15）。T1/T2 保留 Human 终审铁律；T3 追溯 / T4 回归 在 AI-Review PASS + 四条件满足时自动关闭。本 SOP §4.1 已按 D-013 改写分流 |
 | `SOP-OBSERVE-AND-INTERVENE` | 本 SOP 是前者的加强版 filter。观察干预仍然是 Human 最高权 |
 | `engineering-guidelines` | Review-Agent 的 checklist 直接引用此文件作为打分依据 |
 | `COMMON-CONTRACT` | 需要补丁：增加 Review-Agent-Tech / Review-Agent-Product 两条目录权限记录 |
@@ -270,5 +278,6 @@ Review 闭环不改变 SOP-HUMAN-TRIGGER 的铁律。Human 侧只关心 3 个时
 |---|---|---|
 | v1.0 | 2026-04-23 19:20 | Human 指令确立，Orchestrator 成文 |
 | v1.1 | 2026-04-23 19:45 | D-011 引入方案 B 自动循环，新增 §1 约束 5 + §11 关系表更新 |
+| v1.2 | 2026-04-23 21:15 | D-013 Review 场景分级：§1 新增约束 6 / §4.1 改写为分档分流 / §9 新增 `reopen-review` 等 3 条指令 / §11 关系表加 D-013 |
 
 **本 SOP 由 Human 于 2026-04-23 指令确立，Orchestrator 即刻生效，无需再次评审。**
