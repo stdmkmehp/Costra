@@ -87,7 +87,8 @@ result: dispatched_to:Backend-Agent
 - 最多 5 轮迭代；出 `ESCALATE` 或 round==5 强制停并冒泡给 Human
 - Review-Agent **不写代码/文档**，只出报告；被审 Agent 必须回 `round-N-{agent}-response.md`
 
-## 9. 工程约束索引（2026-04-21 Human 追加）
+## 9. 工程约束索引（2026-04-21 Human 追加 · 2026-04-23 强化）
 - **微信官方文档优先**：涉及 MINA / 登录 / 分包 / 订阅消息 / 隐私 / 审核等场景，**必须先查** <https://developers.weixin.qq.com/miniprogram/dev/framework/> 并在 PR/ADR/注释中引用锚点 URL。
+- **🔴 单卡交付即提交（D-012 · 铁律）**：每完成**一张**任务卡的产物，**立即** `git commit`；严禁把多卡产物攒到一起提交。commit message footer 必须含 `Refs: COSTRA-xxx`。Review Round-N revise 后的修改也必须独立 commit。唯一例外：Sprint/Gate 聚合收口可多卡同 commit，但必须在 body 列出所含卡号。完整细则与反例见 [`.team/engineering-guidelines.md §2.1`](../engineering-guidelines.md) 与 [`.team/decisions/D-012-per-card-commit-discipline.md`](../decisions/D-012-per-card-commit-discipline.md)。
 - **关键节点必须 Git 提交**：Story AC 通过、ADR 变更、契约冻结、骨架跑通、压测/审核/安全扫描通过、闸门流转后均需产生 commit，遵循 Conventional Commits（`<type>(<scope>): <subject>` + `Refs/Gate` footer）。
 - 完整细则与 checklist 见 [`.team/engineering-guidelines.md`](../engineering-guidelines.md)。

@@ -1,10 +1,11 @@
 # Costra · 全局状态快照
 
-- **更新时间**：2026-04-23 20:37
+- **更新时间**：2026-04-23 20:54
 - **Orchestrator 模式**：`idle-awaiting-human`（Sprint-0 AI-Review 补审完成 7/7 PASS · 等 Human 批量放行；Sprint-1 主线 2 卡等终审；7 卡待 `run` 指令）
 - **球在谁手上**：**在 Human 侧**（**9 张卡等触发/终审**：7 张 Sprint-0 补审 PASS 等 approve-batch + COSTRA-100/113 等 approve + 7 卡 Sprint-1 待 `run`）
 - **Human 是否需介入**：**🔴 需主动**（详见 §"Human 待处理清单"）
-- **铁律**：每次进度汇报必须列"待触发清单"（`.team/SOP-HUMAN-TRIGGER.md` P0）
+- **铁律 1**：每次进度汇报必须列"待触发清单"（`.team/SOP-HUMAN-TRIGGER.md` P0）
+- **铁律 2 🆕**：**单卡交付即提交**（D-012 · 2026-04-23）· 每完成一张卡立即 `git commit`，禁止攒批；例外仅 Sprint/Gate 聚合收口 · 详见 `.team/decisions/D-012-per-card-commit-discipline.md`
 - **Review 闭环**：双 Review-Agent 就位 + **方案 B 自动循环**（D-011 · 2026-04-23 19:45）· **两次实战验证通过**（COSTRA-100 · 2 轮 · 69 min / Sprint-0 补审 · 7 卡 × 2 轮 · 29 min）
 
 ## 最近里程碑
@@ -14,6 +15,7 @@
 - ✅ **D-008 主体策略**：个人先行 · 公司兼容（04-23 10:52）
 - ✅ **D-009 域名锁定**：`costra.cloud` + 开发服务器 `49.235.216.20`（04-23 13:00）
 - ✅ **D-011 方案 B 自动循环**：Review 闭环局部豁免铁律（04-23 19:45）· 两次实战验证
+- 🆕 **D-012 单卡交付即提交**（04-23 20:54）· 铁律 · 禁止攒批 · 覆盖全 Agent
 - 🆕 **Sprint-0 AI-Review 补审 7/7 PASS**（04-23 20:37 · 平均 29.57/30 · 4 张满分）
 - 🟢 **R-013 从 🟠 降为 🟢**（Mitigating，等备案下证关闭）
 
@@ -33,6 +35,7 @@
 7. `run miniapp COSTRA-112` — 小程序主体字样清扫（D-008）
 8. `run devops COSTRA-108` — miniprogram-ci 上传演练（D-007）
 9. `run pm COSTRA-109/110/111` — 文档并行
+10. `run devops COSTRA-117` — husky v10 兼容清理（低优 · 1 点 · 见 board.md）
 
 ## 进行中（共 9 卡，全部在 Agent 侧 · 等 Human 触发）
 - Backend-Agent → **COSTRA-100**（G3 补齐 5 项已交付 · Review PASS · 等 approve）

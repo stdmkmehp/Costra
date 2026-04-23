@@ -40,8 +40,18 @@
 
 ## 2. Git 提交与分支纪律
 
-### 2.1 关键节点必须提交（触发条件）
-以下任一事件发生后 **必须产生 Git commit**（无 commit 等同于未完成）：
+### 2.1 单卡交付即提交（Per-Card Commit · 铁律）
+
+> **🔴 P0 · 2026-04-23 D-012 强化**：每个 Agent 完成**单张任务卡**的产物后 **必须立即产生一次 Git commit**；**禁止攒批**（把多卡产物堆在一次 commit 里提交）。
+
+#### 2.1.1 MUST（强制）
+1. **一卡一 commit**：Agent 交付某张卡的 Done-of-Done 瞬间就必须 commit。即使是文档卡、配置卡、小改动卡也不能例外。
+2. **Commit message 必须含卡号**：footer 写 `Refs: COSTRA-xxx`，subject 也建议带卡号（便于 `git log --grep` 审计）。
+3. **Review 驱动的修改也算一次交付**：Review Round-N revise 后必须**独立 commit**（message 带 `Refs: COSTRA-xxx`、`Review: round-N-revise`），不得和后续卡混提。
+4. **多卡可合并 commit 的唯一例外**：Sprint 聚合收口（type=`sprint`）或 Gate 通过聚合（如 `sprint(team): G1-approved`），这类里程碑级提交必须在 body 中逐条列出所含卡号。
+
+#### 2.1.2 关键节点必须提交（在 2.1.1 之外的额外触发事件）
+以下任一事件发生后**同样必须产生 Git commit**（可独立 commit，也可作为单卡 commit 的附带产物，但不得漏提）：
 
 1. 单个 Story（如 `STORY-A1`）的验收条件 AC 全部通过；
 2. 单个 ADR 从 Proposed 变更为 Accepted，或新增 ADR；
@@ -50,6 +60,16 @@
 5. 一次压测 / 审核自查 / 安全扫描 / E2E 冒烟跑通并出报告；
 6. 闸门 G1~G5 通过或驳回；
 7. PRD / Charter / Backlog 的里程碑级更新（本次 G1 通过即属此例）。
+
+#### 2.1.3 反例（禁止）
+- ❌ `chore(repo): ship sprint-0 G1-G3 deliverables and sprint-1 W1 progress`（一次 commit 囊括多个 Sprint 的全部产物 → 不可审计、不可回滚、不可 cherry-pick 单卡）
+- ❌ Agent 连续交付 COSTRA-114、COSTRA-115 后统一"今晚一起 commit"
+- ❌ 看板/状态维护类小改（board.md / STATE）与主线代码混在一个 commit 里
+
+#### 2.1.4 看板/状态维护类改动的特殊约定
+`.team/board.md`、`.team/STATE`、`.team/messages/`、`.team/tool_calls/` 这类**元数据文件**的改动，允许以下两种模式之一：
+- **（A）随本次交付卡一起提交**：在同一次 `feat(<scope>): COSTRA-xxx ...` commit 中带上元数据更新，message body 注明"含看板同步"。
+- **（B）聚合到日终 housekeeping**：`chore(team): YYYY-MM-DD 看板与 STATE 日终同步`，**但不得与任何代码/文档主产物混提**。
 
 ### 2.2 提交格式（Conventional Commits 子集 · 强制）
 
@@ -129,4 +149,5 @@ Refs: STORY-MINIAPP-SKELETON, ADR-0004
 > **版本历史**
 >
 > - 2026-04-21 v1.0 · Orchestrator 固化，Human 在 G1 通过时下达。
+> - 2026-04-23 v1.1 · **§2.1 新增"单卡交付即提交"铁律**（D-012 · Human 指令）。关联决策：`.team/decisions/D-012-per-card-commit-discipline.md`。
 
