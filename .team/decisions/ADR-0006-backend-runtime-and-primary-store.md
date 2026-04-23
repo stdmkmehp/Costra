@@ -33,9 +33,24 @@
 - **语言**：TypeScript 5.x（严格模式 `strict: true`）
 - **运行时**：Node.js 20.x LTS（生产）/ 18.x 兼容（开发下限）
 - **包管理**：npm（工作区 `package.json` 已就位）
-- **HTTP 框架**：**待 COSTRA-101 落定**（候选：Fastify 5.x / Hono 4.x / Express 5.x），OpenAPI 为契约事实源，框架选型不得破坏 `server/api/openapi.yaml` 契约
+- **HTTP 框架**：**Fastify 5.x**（2026-04-23 · COSTRA-101 定案，见本 ADR §9 v1.1）。选型矩阵见下表；OpenAPI 仍为契约事实源，Fastify 选型不得破坏 `server/api/openapi.yaml` 契约
 - **进程内 gRPC**：**本 MVP 不引入**。跨服务调用以 REST over HTTPS 承担；若 Sprint-N 出现性能瓶颈再评估 gRPC-node
-- **热更新 / 测试**：tsx / vitest（测试框架跟随 MiniApp 侧 Jest 或独立定型，由 COSTRA-101 定案）
+- **热更新 / 测试**：**tsx 4.x**（dev watch）+ **vitest 2.x**（单测框架；COSTRA-101 定案，与 MiniApp 侧 Jest 解耦以保后端独立演进）
+
+#### 2.1.a HTTP 框架选型矩阵（COSTRA-101 定案依据）
+
+| 维度 | Fastify 5.x | Hono 4.x | Express 5.x |
+|---|---|---|---|
+| TypeScript 原生类型 | ✅ 一流（泛型 RequestGenericInterface） | ✅ 一流 | ❌ 需 `@types/express` 补丁 |
+| AJV JSON Schema 原生集成 | ✅ 内置 schema → 自动校验 + 生成响应序列化 | ⚠️ 需手写 `zValidator` 等扩展 | ❌ 需额外中间件 |
+| OpenAPI 生态 | ✅ `@fastify/swagger` / `fastify-openapi-glue` 成熟 | ⚠️ hono-openapi 仍在演进 | ⚠️ 需手拼 |
+| 错误处理统一 | ✅ `setErrorHandler` + `setNotFoundHandler` 双钩 | ✅ `app.onError` 单钩 | ⚠️ 需显式 next(err) 风格 |
+| 性能（登录场景） | ✅ 约 Express 的 2.5×~3× | ✅ Edge 优先，Node 场景与 Fastify 相当 | ⚠️ 基线 |
+| 冷启动 / 体积 | 中等（依赖链可控） | ✅ 极小（但 Node 生态成熟度偏弱） | ✅ 小 |
+| 生态兼容（@fastify/jwt / @fastify/cors / pino） | ✅ 官方插件链 | ⚠️ 需自选 | ✅ 成熟但零散 |
+| 结论 | **选** | 待 Sprint-N 边缘部署再评估 | 排除（校验/错误处理重复造轮子） |
+
+**定案**：选 Fastify 5.x。配套锁定：`@fastify/jwt ^9` / `@fastify/cors ^10` / `@fastify/sensible ^6` / `pino`（内置）。
 
 ### 2.2 主存储：**PostgreSQL 15**
 
@@ -123,3 +138,4 @@
 | 版本 | 日期 | 变更 |
 |---|---|---|
 | v1.0 | 2026-04-23 | 首版。由 COSTRA-100 Round-2 Backend-Fix 发起，闭环 Review-Tech Round-1 P0-3 |
+| v1.1 | 2026-04-23 | COSTRA-101 补丁：§2.1 HTTP 框架定案为 **Fastify 5.x**（含选型矩阵 §2.1.a）；测试框架定为 **vitest 2.x**；新增 `user_sessions` 表作为 refresh_token 真源（迁移 0003）——见 [`.team/dispatch/COSTRA-101-backend-auth-impl.md`](../dispatch/COSTRA-101-backend-auth-impl.md) |

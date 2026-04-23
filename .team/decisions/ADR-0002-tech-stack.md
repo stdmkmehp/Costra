@@ -22,7 +22,7 @@
 | 客户端工程化 | npm / TypeScript / ESLint / Prettier / miniprogram-ci | CLI 可打包上传，适合 CI |
 | 端侧测试 | Jest + `miniprogram-simulate` + `miniprogram-automator` | 单测 + 端到端 |
 | 后端语言 | TypeScript 5.x + Node.js 20 LTS（见 [ADR-0006](./ADR-0006-backend-runtime-and-primary-store.md)） | 与契约 / 工具链复用；MVP I/O bound 足够 |
-| 后端框架 | REST 优先；HTTP 框架由 COSTRA-101 定案（候选 Fastify / Hono / Express）；本 MVP 不引入 gRPC（见 ADR-0006） | OpenAPI 为契约事实源，框架可后补 |
+| 后端框架 | **Fastify 5.x**（COSTRA-101 定案 · 见 [ADR-0006 §2.1 / §2.1.a](./ADR-0006-backend-runtime-and-primary-store.md)）；MVP 不引入 gRPC | TS 类型 + AJV Schema + 统一错误钩子一流；OpenAPI 为契约事实源 |
 | 登录鉴权 | `wx.login → code2Session`（服务端保存 session_key）+ 业务 JWT | 小程序官方登录链路，`session_key` 禁止下发 |
 | 主存储 | PostgreSQL 15（`NUMERIC(18,4)` 存金额；`TIMESTAMPTZ`；UUID v7，见 [ADR-0006](./ADR-0006-backend-runtime-and-primary-store.md)） | 事务 + 与 `docs/db/schema.md` 事实一致 |
 | 缓存 | Redis 7 | 会话 / 同步游标 / 热点 |
@@ -73,5 +73,19 @@
 3. `主存储`：MySQL 8.0（DECIMAL(18,4)） → **PostgreSQL 15（NUMERIC(18,4) + TIMESTAMPTZ + UUID v7）**
 
 **完整背景 / 代价 / 影响面 / 验证路径**见 [`ADR-0006-backend-runtime-and-primary-store.md`](./ADR-0006-backend-runtime-and-primary-store.md)。
+
+---
+
+## 修订补丁（2026-04-23 · COSTRA-101）
+
+**触发**：COSTRA-101 Sprint-1 主线卡（微信登录服务端实装）落地，定案了 ADR-0006 §2.1 遗留的"HTTP 框架"变量。
+
+**修订行（已在 §决策表就地生效）**：
+
+1. `后端框架`：`REST 优先；HTTP 框架由 COSTRA-101 定案` → **Fastify 5.x（配套 @fastify/jwt 9 / @fastify/cors 10 / @fastify/sensible 6 + pino）**
+2. 新增依据：ADR-0006 §2.1.a 选型矩阵（Fastify / Hono / Express 三维度对比）
+3. 新增迁移：`server/db/migrations/0003_user_sessions.sql`（refresh_token 真源，DB + Redis 双写策略）
+
+**不变项**：后端语言（TS 5.x + Node.js 20 LTS）、主存储（PG 15）、UUID v7、OpenAPI 契约事实源——均按 ADR-0006 v1.1 继续生效。
 
 **不变项**：客户端栈、鉴权、缓存、消息、对象存储、CI/CD、监控、硬性约束（金额/小程序红线/安全/合规）、部署架构约束（docker-compose 双架构、无云厂商专有变量）均维持现状。

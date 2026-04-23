@@ -1,19 +1,45 @@
 {
   "name": "@costra/server",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "Costra Server - API/DB layer (v0.1 contract + dev env only)",
+  "description": "Costra Server · Fastify 5 · PostgreSQL 15 · Redis 7 (COSTRA-101 实装版)",
   "license": "UNLICENSED",
   "engines": {
     "node": ">=20.0.0"
   },
+  "main": "dist/server.js",
   "scripts": {
-    "lint": "echo \"[placeholder] lint OK (real ESLint wired in v0.2)\" && exit 0",
-    "typecheck": "echo \"[placeholder] typecheck OK (real tsc wired in v0.2)\" && exit 0",
-    "test": "echo \"[placeholder] test OK (real jest wired in v0.2)\" && exit 0",
-    "build": "echo \"[placeholder] build OK (real tsc wired in v0.2)\" && exit 0",
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "echo \"[COSTRA-117] ESLint wiring deferred to DevOps\" && exit 0",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down -v",
     "db:migrate": "echo \"Run: docker compose exec -T postgres psql -U costra -d costra < db/migrations/<file>.sql\""
+  },
+  "dependencies": {
+    "@fastify/cors": "^10.0.1",
+    "@fastify/jwt": "^9.0.1",
+    "@fastify/sensible": "^6.0.1",
+    "fastify": "^5.1.0",
+    "ioredis": "^5.4.1",
+    "pg": "^8.13.1",
+    "pino": "^9.5.0",
+    "uuidv7": "^1.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.6",
+    "@types/pg": "^8.11.10",
+    "@vitest/coverage-v8": "^2.1.5",
+    "ioredis-mock": "^8.9.0",
+    "pg-mem": "^3.0.3",
+    "pino-pretty": "^11.3.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.5"
   }
 }

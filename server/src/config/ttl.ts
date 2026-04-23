@@ -1,0 +1,77 @@
+/**
+ * Costra · Server · TTL 集中配置
+ *
+ * 卡号：COSTRA-101 · 事实源：docs/api/ttl-policy.md §4.1
+ *
+ * 职责：
+ *   - 唯一权威 TTL 读取点；业务层禁止在代码内硬编码秒/时/天。
+ *   - 启动期从 env 读取一次，冻结为只读对象；运行时不可变更。
+ *   - 所有键必须与 server/.env.example `TTL_*` 段一一对应。
+ *
+ * ttl-policy.md §7 的滑动刷新 / 短 TTL + 黑名单等方案属 Sprint-2+ 范围，本层不预留开关。
+ */
+
+export interface TTLConfig {
+  /** access_token 有效秒数（默认 7200 = 2h） */
+  accessTokenSec: number;
+  /** refresh_token 有效秒数（默认 2592000 = 30d） */
+  refreshTokenSec: number;
+  /** 家庭邀请默认时效（小时，默认 24） */
+  inviteDefaultHours: number;
+  /** 家庭邀请最大时效上限（小时，默认 168） */
+  inviteMaxHours: number;
+  /** Idempotency-Key 去重窗口（小时，默认 24） */
+  idempotencyHours: number;
+  /** 审计日志热数据保留期（天，默认 180） */
+  auditHotDays: number;
+  /** 游标 next_cursor 有效时间（小时，默认 72） */
+  cursorHours: number;
+  /** 限流桶窗口（秒，默认 60） */
+  rateWindowSec: number;
+  /** JWT 校验时钟偏移容错（秒，默认 60；ttl-policy.md §4.3） */
+  clockToleranceSec: number;
+}
+
+function parseIntOr(v: string | undefined, fallback: number, key: string): number {
+  if (v == null || v === '') return fallback;
+  const n = Number(v);
+  if (!Number.isInteger(n) || n <= 0) {
+    throw new Error(`[ttl] ${key} must be positive integer, got: ${v}`);
+  }
+  return n;
+}
+
+/** 从 env 加载 TTL 配置（测试可注入自定义 env）。 */
+export function loadTTL(env: NodeJS.ProcessEnv = process.env): Readonly<TTLConfig> {
+  const cfg: TTLConfig = {
+    accessTokenSec: parseIntOr(env.TTL_ACCESS_TOKEN_SEC, 7200, 'TTL_ACCESS_TOKEN_SEC'),
+    refreshTokenSec: parseIntOr(env.TTL_REFRESH_TOKEN_SEC, 2592000, 'TTL_REFRESH_TOKEN_SEC'),
+    inviteDefaultHours: parseIntOr(env.TTL_INVITE_DEFAULT_HOURS, 24, 'TTL_INVITE_DEFAULT_HOURS'),
+    inviteMaxHours: parseIntOr(env.TTL_INVITE_MAX_HOURS, 168, 'TTL_INVITE_MAX_HOURS'),
+    idempotencyHours: parseIntOr(env.TTL_IDEMPOTENCY_HOURS, 24, 'TTL_IDEMPOTENCY_HOURS'),
+    auditHotDays: parseIntOr(env.TTL_AUDIT_HOT_DAYS, 180, 'TTL_AUDIT_HOT_DAYS'),
+    cursorHours: parseIntOr(env.TTL_CURSOR_HOURS, 72, 'TTL_CURSOR_HOURS'),
+    rateWindowSec: parseIntOr(env.TTL_RATE_WINDOW_SEC, 60, 'TTL_RATE_WINDOW_SEC'),
+    clockToleranceSec: parseIntOr(env.TTL_CLOCK_TOLERANCE_SEC, 60, 'TTL_CLOCK_TOLERANCE_SEC'),
+  };
+
+  // 一致性校验：invite 默认值不得超过上限
+  if (cfg.inviteDefaultHours > cfg.inviteMaxHours) {
+    throw new Error(
+      `[ttl] TTL_INVITE_DEFAULT_HOURS (${cfg.inviteDefaultHours}) must not exceed ` +
+        `TTL_INVITE_MAX_HOURS (${cfg.inviteMaxHours})`,
+    );
+  }
+
+  return Object.freeze(cfg);
+}
+
+/** 默认单例：模块加载期即可消费。测试用 loadTTL(customEnv) 创建隔离实例。 */
+let _singleton: Readonly<TTLConfig> | null = null;
+export function ttl(): Readonly<TTLConfig> {
+  if (_singleton == null) _singleton = loadTTL();
+  return _singleton;
+}
+export function __resetTTLForTests(): void {
+  _singleton = null;
+}

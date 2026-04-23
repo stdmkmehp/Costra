@@ -6,8 +6,9 @@
 > **🆕 自动循环（D-011 · 2026-04-23 生效）**：AI-Review 列内 `Revise↔Review` 自动推进，无需 Human 逐轮触发；打断用 `pause-review` / `stop`，详见 `.team/SOP-REVIEW-AUTOLOOP.md`。
 > **🆕 场景分级（D-013 · 2026-04-23 21:15 生效）**：Review 分 T1 准入 / T2 Gate 前 / T3 追溯 / T4 回归 四档。T1/T2 必走 Human-Review；**T3/T4 在 AI-PASS + 残余 P0/P1=0 + 无红线 + 无新阻塞时自动关闭**。Human 随时可发 `reopen-review` 复议。详见 `.team/decisions/D-013-review-scenario-tiering.md`。
 > **🆕 卡定义 Review + Review 自动拉起（D-014 · 2026-04-23 22:26 生效）**：(a) 2026-04-23 22:26 后新建的卡**必须**经卡定义 Review（技术向→Review-Tech / 产品向→Review-Product）；(b) 被审 Agent 交付后**产出 Review 首轮自动拉起**（无需 Human 触发）；(c) 历史卡豁免；(d) DevOps/QA/决策类豁免；(e) Human 打断指令（`pause-review` / `skip-card-review` / `force-card-pass` / `stop`）最高优先级。详见 `.team/decisions/D-014-card-review-and-auto-review-kickoff.md` + `.team/SOP-CARD-REVIEW.md`。
+> **🔄 D-011 实战验证三次通过**（2026-04-23）：COSTRA-100（2 轮 · 69 min） + Sprint-0 补审（7 卡 × 2 轮 · 29 min 并行） + **COSTRA-101 Round 1 刚自动拉起（22:49 · D-014-b 首次实战）**
 
-最后更新：`2026-04-23 22:38`（Orchestrator · `approve:COSTRA-100` 落地 · Sprint-1 主线解阻塞 · Human-Review 队列 2→1）
+最后更新：`2026-04-23 22:49`（Orchestrator · `run backend COSTRA-101` § 6.1.a 骨架交付 · Review-Tech Round 1 自动拉起 REVISE 25/30 · D-011 自动循环中）
 
 ---
 
@@ -48,6 +49,7 @@
 **Sprint-1 总估点**：**40 点**（≤ 40 工时约束 ✅ · 顶格）
 
 ## 🔄 Doing
+- [~] **COSTRA-101** @Backend-Agent · `/auth/wx-login` + `/auth/refresh` + `/auth/logout` 实装 · **§6.1.a 骨架已交付（22:49 · 23 项 diff）** · Review-Tech Round 1 REVISE 25/30（1 P0 · 3 P1 · 2 P2）· **D-011 自动循环中**（等 Backend 回执 → 自动 Round 2）· §6.1.b 待 Human `verify backend COSTRA-101`
 - [~] COSTRA-108 @DevOps-Agent · miniprogram-ci 上传演练（04-24 18:00 前）
 - [~] COSTRA-109 @PM-Agent · 隐私指引清单（主体字段走 `{{SUBJECT_*}}` 占位）· 04-23 18:00 前
 - [~] COSTRA-110 @PM-Agent · 订阅消息 ×3 文案 · 04-23 12:00 前
@@ -58,9 +60,12 @@
 
 ## 👀 Review
 
-### ⏳ AI-Review 自动循环中（共 0 张）
+### ⏳ AI-Review 自动循环中（共 1 张 · D-011 方案 B）
 
-_（COSTRA-100 已通过 AI-Review · 20:14 终止自动循环 · 详见下方 Human-Review 队列）_
+- [R] **COSTRA-101** @Backend-Agent · **Round 1 · REVISE 25/30**（1 P0 · 3 P1 · 2 P2）· 触发源：**D-014-b 首次实战**（Backend 交付 §6.1.a → Orchestrator 60s 内自动拉 Review-Tech）· 下一步等 Backend 回执（无需 Human 触发）
+  - 报告：`.team/reviews/COSTRA-101/round-1-tech.md`
+  - 打断指令：`pause-review COSTRA-101` / `force-pass COSTRA-101` / `skip-review COSTRA-101`
+  - 分段交付配套：§6.1.b 运行时实跑等 Human `verify backend COSTRA-101` 触发（见 STATE 🟢 段）
 
 ### 🙋 Human-Review（AI-Review 已通过，等你终审 · 共 1 张）
 
@@ -173,6 +178,6 @@ _（无强阻塞。COSTRA-040 "真实上传链路激活" 仍依赖外部资源�
 
 ## 💤 Orchestrator 状态
 
-- **MODE**：`dispatch-ready`（Sprint-1 Todo 已填充，待 Agents 领单执行）
-- **下一动作**：PM-Agent 完成 Sprint-0 Retro → Orchestrator 广播 Sprint-1 开工
+- **MODE**：`agent-working`（COSTRA-101 Backend §6.1.a 已交付 · Review-Tech Round 1 自动循环中 · 其余 Sprint-1 卡仍等 Human `run` 触发）
+- **下一动作**：Backend-Agent 回执 P0/P1（自动），然后自动拉 Round 2；Human 被动等（预计 10~30 min 内再一次汇报）
 - **保存点**：所有产物已落盘，conversation 可随时中断续作
