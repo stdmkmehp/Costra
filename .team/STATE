@@ -1,13 +1,14 @@
 # Costra · 全局状态快照
 
-- **更新时间**：2026-04-23 21:15
-- **Orchestrator 模式**：`idle-awaiting-human`（Sprint-0 AI-Review 补审 **已 skip-review 自动关闭**；Sprint-1 主线 2 卡等 Human 终审；7 卡待 `run` 指令）
-- **球在谁手上**：**在 Human 侧**（**2 张 Sprint-1 卡等终审 + 7 张 Sprint-1 卡等 `run`**；Sprint-0 补审 7 张已 auto-closed，无需处理）
+- **更新时间**：2026-04-23 22:26
+- **Orchestrator 模式**：`idle-awaiting-human`（D-014 已立案；Sprint-0 AI-Review 补审已 skip-review 自动关闭；Sprint-1 主线 2 卡等 Human 终审；7 卡待 `run` 指令）
+- **球在谁手上**：**在 Human 侧**（**2 张 Sprint-1 卡等终审 + 7 张 Sprint-1 卡等 `run`**；Sprint-0 补审 7 张已 auto-closed）
 - **Human 是否需介入**：**🔴 需主动**（详见 §"Human 待处理清单"）
-- **铁律 1**：每次进度汇报必须列"待触发清单"（`.team/SOP-HUMAN-TRIGGER.md` P0）
+- **铁律 1**：每次进度汇报必须列"待触发清单"（`.team/SOP-HUMAN-TRIGGER.md` P0 · **三条例外**：D-011 环内 / D-014-a 卡定义首轮 / D-014-b 产出首轮）
 - **铁律 2**：**单卡交付即提交**（D-012 · 2026-04-23）· 每完成一张卡立即 `git commit`，禁止攒批；例外仅 Sprint/Gate 聚合收口 · 详见 `.team/decisions/D-012-per-card-commit-discipline.md`
-- **规约 3 🆕**：**Review 场景分级**（D-013 · 2026-04-23 21:15）· Review 分 T1/T2/T3/T4 四档；T1 准入 + T2 Gate 前仍需 Human 终审；**T3 追溯 + T4 回归** 在 AI-PASS + 残余 P0/P1=0 + 无红线 + 无新阻塞时**自动关闭**，不走 Human 终审。Human 保留 `reopen-review` 复议权 · 详见 `.team/decisions/D-013-review-scenario-tiering.md`
-- **Review 闭环**：双 Review-Agent 就位 + **方案 B 自动循环**（D-011 · 2026-04-23 19:45）· **两次实战验证通过**（COSTRA-100 · 2 轮 · 69 min / Sprint-0 补审 · 7 卡 × 2 轮 · 29 min）+ **D-013 T3 首次落地**（Sprint-0 补审 7 张自动关闭）
+- **规约 3**：**Review 场景分级**（D-013 · 2026-04-23 21:15）· Review 分 T1/T2/T3/T4 四档；T1 准入 + T2 Gate 前仍需 Human 终审；**T3 追溯 + T4 回归** 在 AI-PASS + 残余 P0/P1=0 + 无红线 + 无新阻塞时**自动关闭** · 详见 `.team/decisions/D-013-review-scenario-tiering.md`
+- **规约 4 🆕**：**卡定义 Review + Review 自动拉起**（D-014 · 2026-04-23 22:26）· (a) D-014 立案后新建的卡**必须**经卡定义 Review（技术向→Review-Tech / 产品向→Review-Product）；(b) 被审 Agent 交付后**产出 Review 首轮自动拉起**（无需 Human 触发）；(c) 历史卡豁免；(d) DevOps/QA/决策类豁免；(e) Human 打断指令最高优先级 · 详见 `.team/decisions/D-014-card-review-and-auto-review-kickoff.md` + `.team/SOP-CARD-REVIEW.md`
+- **Review 闭环**：双 Review-Agent 就位 + **方案 B 自动循环**（D-011 · 2026-04-23 19:45）· **两次实战验证通过**（COSTRA-100 · 2 轮 · 69 min / Sprint-0 补审 · 7 卡 × 2 轮 · 29 min）+ **D-013 T3 首次落地**（Sprint-0 补审 7 张自动关闭）+ **D-014 环首自动 + 卡定义 Review 新增**（等待首次实战验证）
 
 ## 最近里程碑
 - ✅ G1/G2/G3 全部通过
@@ -18,8 +19,9 @@
 - ✅ **D-011 方案 B 自动循环**：Review 闭环局部豁免铁律（04-23 19:45）· 两次实战验证
 - ✅ **D-012 单卡交付即提交**（04-23 20:54）· 铁律 · 禁止攒批 · 覆盖全 Agent
 - ✅ **Sprint-0 AI-Review 补审 7/7 PASS**（04-23 20:37 · 平均 29.57/30 · 4 张满分）
-- 🆕 **D-013 Review 场景分级**（04-23 21:15）· T3/T4 自动关闭 · SOP-REVIEW-LOOP v1.2
-- 🆕 **Sprint-0 补审 7 张全部 SKIP-REVIEW-AUTOCLOSED**（04-23 21:15 · D-013 首次落地 · Human 审批负担解除）
+- ✅ **D-013 Review 场景分级**（04-23 21:15）· T3/T4 自动关闭 · SOP-REVIEW-LOOP v1.2
+- ✅ **Sprint-0 补审 7 张全部 SKIP-REVIEW-AUTOCLOSED**（04-23 21:15 · D-013 首次落地 · Human 审批负担解除）
+- 🆕 **D-014 卡定义 Review + Review 自动拉起**（04-23 22:26）· SOP-REVIEW-LOOP v1.3 · SOP-CARD-REVIEW 新建 · 铁律例外从 1 条扩到 3 条（D-011 + D-014-a + D-014-b）
 - 🟢 **R-013 从 🟠 降为 🟢**（Mitigating，等备案下证关闭）
 
 ## Human 待处理清单（按优先级）
