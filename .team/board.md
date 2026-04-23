@@ -4,8 +4,9 @@
 > 约定流转：`Backlog → Todo → Doing → AI-Review → Human-Review → Done`，Blocked 为横向态。
 > **AI-Review 说明**：Backend/MiniApp 产出先走 `Review-Agent-Tech`；PM/Design 产出先走 `Review-Agent-Product`；DevOps/QA/决策类不走 AI-Review。详见 `.team/SOP-REVIEW-LOOP.md`。
 > **🆕 自动循环（D-011 · 2026-04-23 生效）**：AI-Review 列内 `Revise↔Review` 自动推进，无需 Human 逐轮触发；打断用 `pause-review` / `stop`，详见 `.team/SOP-REVIEW-AUTOLOOP.md`。
+> **🆕 场景分级（D-013 · 2026-04-23 21:15 生效）**：Review 分 T1 准入 / T2 Gate 前 / T3 追溯 / T4 回归 四档。T1/T2 必走 Human-Review；**T3/T4 在 AI-PASS + 残余 P0/P1=0 + 无红线 + 无新阻塞时自动关闭**。Human 随时可发 `reopen-review` 复议。详见 `.team/decisions/D-013-review-scenario-tiering.md`。
 
-最后更新：`2026-04-23 20:52`（Orchestrator · 新增 COSTRA-117 · husky v10 兼容清理 · Sprint-1 估点 39 → 40）
+最后更新：`2026-04-23 21:15`（Orchestrator · Sprint-0 补审 7 张 skip-review 自动关闭 · D-013 落地）
 
 ---
 
@@ -60,7 +61,7 @@
 
 _（COSTRA-100 已通过 AI-Review · 20:14 终止自动循环 · 详见下方 Human-Review 队列）_
 
-### 🙋 Human-Review（AI-Review 已通过，等你终审 · 共 9 张）
+### 🙋 Human-Review（AI-Review 已通过，等你终审 · 共 2 张）
 
 #### Sprint-1 主线（共 2 张）
 
@@ -70,27 +71,20 @@ _（COSTRA-100 已通过 AI-Review · 20:14 终止自动循环 · 详见下方 H
   - Round-2 Tech：`.team/reviews/COSTRA-100/round-2-tech.md`（PASS-WITH-FOLLOWUP · 29/30）
   - Round-2 Backend 就地修：`.team/reviews/COSTRA-100/round-2-backend-response.md`（升级为 PASS · 30/30）
   - 终结：`.team/reviews/COSTRA-100/FINAL.md`
+  - **档位**：D-013 **T1 准入 Review**（解除 COSTRA-101 阻塞）→ 仍需 Human 终审
   - **触发指令**：`approve:COSTRA-100` / `reject:COSTRA-100 <原因>`
 - [R] **COSTRA-113** @Backend-Agent · 2026-04-23 17:50 搭车完成 · `server/src/config/subject.ts` + `.env.production.example` SUBJECT 段
+  - **档位**：D-013 **T1 准入 Review**（搭车新产出）→ 仍需 Human 终审
 
-#### Sprint-0 AI-Review 补审（共 7 张 · 全部 PASS · 建议批量放行）
+#### 🔒 Sprint-0 AI-Review 补审（共 7 张 · D-013 **T3 追溯 · 全部 SKIP-REVIEW-AUTOCLOSED**）
 
-- [R] **COSTRA-001** @PM-Agent · Round-2 Product **PASS 29/30**（charter v2.3）
-- [R] **COSTRA-002** @PM-Agent · Round-2 Product **PASS 29/30**（PRD v0.2）
-- [R] **COSTRA-010** @Design-Agent · Round-2 Product **PASS 30/30 🏆**（ia.md + user-story-map + flows）
-- [R] **COSTRA-011** @Design-Agent · Round-2 Product **PASS 30/30 🏆**（design-system + tokens + share-cards + A11Y）
-- [R] **COSTRA-020** @Backend-Agent · Round-2 Tech **PASS 30/30 🏆**（openapi.yaml v0.1）
-- [R] **COSTRA-021** @Backend-Agent · Round-2 Tech **PASS 30/30 🏆**（schema.md v1.1 · 方案 B 反驳成立）
-- [R] **COSTRA-030** @MiniApp-Agent · Round-2 Tech **PASS 29/30**（miniapp 骨架）
-
-> 📌 **触发指令**（二选一）：
-> - `approve-batch sprint-0-review` — 批量放行 7 卡
-> - `approve:COSTRA-xxx` — 单卡独立放行
-> 📌 详见 `.team/reviews/SPRINT-0-SUMMARY.md`（含三端契约一致性校验、Follow-up 清单、自动循环实战数据）
+> **2026-04-23 21:15**：按 Human 指令 "方案 B+C 可以的 执行吧"，本批 7 张应用 D-013《Review 场景分级》T3 档位自动关闭。AI-Review PASS + 残余 P0/P1=0 + 无红线 + 无新阻塞 四条件全数命中，**不进 Human 终审**。已迁至下方 Done · Sprint-0 补审归档段。
+> **复议指令**：`reopen-batch sprint-0-review` 或 `reopen-review COSTRA-xxx`（D-013 §5）
+> **详见**：`.team/reviews/SPRINT-0-SKIP-REVIEW.md`（skip 归档） · `.team/reviews/SPRINT-0-SUMMARY.md`（Review 汇总） · `.team/decisions/D-013-review-scenario-tiering.md`（规约）
 
 > 📌 COSTRA-113 是 COSTRA-100 搭车产出，性质为配置加载器，Human 可独立审。
 > 📌 **D-011 方案 B 首次落地验证通过**：Review↔Revise 全自动推进，Human 零触发消耗 69 分钟完成 2 轮闭环（19:47 → 20:14）。
-> 📌 新卡从 2026-04-23 起走 AI-Review → Human-Review 两段式，默认启用自动循环。
+> 📌 新卡从 2026-04-23 起走 AI-Review → Human-Review 两段式，默认启用自动循环；**T3/T4 追溯/回归按 D-013 自动关闭**。
 
 ## 🚧 Blocked
 _（无强阻塞。COSTRA-040 "真实上传链路激活" 仍依赖外部资源，详见 docs/devops/secrets.md §激活清单；占位流水线不受影响。）_
@@ -108,6 +102,18 @@ _（无强阻塞。COSTRA-040 "真实上传链路激活" 仍依赖外部资源�
 - [D] COSTRA-030 小程序工程骨架 + 登录 Mock 闭环    @MiniApp-Agent  · 2026-04-22 G2/G3 同步通过
 - [D] COSTRA-040 CI/CD 占位流水线 + mp-ci 脚本    @DevOps-Agent   · 2026-04-22 G5 Preempt · 真实链路待外部资源
 - [D] COSTRA-050 测试策略 + 冒烟 + 微信审核自查    @QA-Agent       · 2026-04-22 G2/G3 同步通过
+
+### 🔒 Sprint-0 AI-Review 补审归档（2026-04-23 · D-013 T3 追溯 · 全部 SKIP-REVIEW-AUTOCLOSED）
+- [D] COSTRA-001-review  charter v2.1→v2.3   @PM-Agent     · Round-2 Product PASS 29/30 · `.team/reviews/COSTRA-001/FINAL.md`
+- [D] COSTRA-002-review  PRD v0.1→v0.2       @PM-Agent     · Round-2 Product PASS 29/30 · `.team/reviews/COSTRA-002/FINAL.md`
+- [D] COSTRA-010-review  IA/flows v0.1.1     @Design-Agent · Round-2 Product PASS 30/30 🏆 · `.team/reviews/COSTRA-010/FINAL.md`
+- [D] COSTRA-011-review  design-system 0.1.1 @Design-Agent · Round-2 Product PASS 30/30 🏆 · `.team/reviews/COSTRA-011/FINAL.md`
+- [D] COSTRA-020-review  openapi v0.1        @Backend-Agent· Round-2 Tech PASS 30/30 🏆 · `.team/reviews/COSTRA-020/FINAL.md`
+- [D] COSTRA-021-review  schema v1.1         @Backend-Agent· Round-2 Tech PASS 30/30 🏆（方案 B 反驳成立）· `.team/reviews/COSTRA-021/FINAL.md`
+- [D] COSTRA-030-review  miniapp 骨架补正    @MiniApp-Agent· Round-2 Tech PASS 29/30 · `.team/reviews/COSTRA-030/FINAL.md`
+
+> **关闭说明**：Human 2026-04-23 21:08 指令"方案 B+C 可以的 执行吧"→ 本批应用 D-013《Review 场景分级》T3 档位自动关闭。平均分 29.57/30 · 4 张满分 · 0 ESCALATE · 0 红线 · 0 残余 P0/P1。Follow-up 4 项已合入 Sprint-1 现有卡的验收项（不另立卡，详见 `.team/reviews/SPRINT-0-SKIP-REVIEW.md §5`）。
+> **复议**：`reopen-batch sprint-0-review` / `reopen-review COSTRA-xxx`
 
 ---
 

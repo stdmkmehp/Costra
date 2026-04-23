@@ -1,41 +1,46 @@
 # Costra · 全局状态快照
 
-- **更新时间**：2026-04-23 20:54
-- **Orchestrator 模式**：`idle-awaiting-human`（Sprint-0 AI-Review 补审完成 7/7 PASS · 等 Human 批量放行；Sprint-1 主线 2 卡等终审；7 卡待 `run` 指令）
-- **球在谁手上**：**在 Human 侧**（**9 张卡等触发/终审**：7 张 Sprint-0 补审 PASS 等 approve-batch + COSTRA-100/113 等 approve + 7 卡 Sprint-1 待 `run`）
+- **更新时间**：2026-04-23 21:15
+- **Orchestrator 模式**：`idle-awaiting-human`（Sprint-0 AI-Review 补审 **已 skip-review 自动关闭**；Sprint-1 主线 2 卡等 Human 终审；7 卡待 `run` 指令）
+- **球在谁手上**：**在 Human 侧**（**2 张 Sprint-1 卡等终审 + 7 张 Sprint-1 卡等 `run`**；Sprint-0 补审 7 张已 auto-closed，无需处理）
 - **Human 是否需介入**：**🔴 需主动**（详见 §"Human 待处理清单"）
 - **铁律 1**：每次进度汇报必须列"待触发清单"（`.team/SOP-HUMAN-TRIGGER.md` P0）
-- **铁律 2 🆕**：**单卡交付即提交**（D-012 · 2026-04-23）· 每完成一张卡立即 `git commit`，禁止攒批；例外仅 Sprint/Gate 聚合收口 · 详见 `.team/decisions/D-012-per-card-commit-discipline.md`
-- **Review 闭环**：双 Review-Agent 就位 + **方案 B 自动循环**（D-011 · 2026-04-23 19:45）· **两次实战验证通过**（COSTRA-100 · 2 轮 · 69 min / Sprint-0 补审 · 7 卡 × 2 轮 · 29 min）
+- **铁律 2**：**单卡交付即提交**（D-012 · 2026-04-23）· 每完成一张卡立即 `git commit`，禁止攒批；例外仅 Sprint/Gate 聚合收口 · 详见 `.team/decisions/D-012-per-card-commit-discipline.md`
+- **规约 3 🆕**：**Review 场景分级**（D-013 · 2026-04-23 21:15）· Review 分 T1/T2/T3/T4 四档；T1 准入 + T2 Gate 前仍需 Human 终审；**T3 追溯 + T4 回归** 在 AI-PASS + 残余 P0/P1=0 + 无红线 + 无新阻塞时**自动关闭**，不走 Human 终审。Human 保留 `reopen-review` 复议权 · 详见 `.team/decisions/D-013-review-scenario-tiering.md`
+- **Review 闭环**：双 Review-Agent 就位 + **方案 B 自动循环**（D-011 · 2026-04-23 19:45）· **两次实战验证通过**（COSTRA-100 · 2 轮 · 69 min / Sprint-0 补审 · 7 卡 × 2 轮 · 29 min）+ **D-013 T3 首次落地**（Sprint-0 补审 7 张自动关闭）
 
 ## 最近里程碑
 - ✅ G1/G2/G3 全部通过
-- ✅ Sprint-1 启动 · 39 点
+- ✅ Sprint-1 启动 · 40 点
 - ✅ **approve:COSTRA-100** 已放行（04-23 10:52）
 - ✅ **D-008 主体策略**：个人先行 · 公司兼容（04-23 10:52）
 - ✅ **D-009 域名锁定**：`costra.cloud` + 开发服务器 `49.235.216.20`（04-23 13:00）
 - ✅ **D-011 方案 B 自动循环**：Review 闭环局部豁免铁律（04-23 19:45）· 两次实战验证
-- 🆕 **D-012 单卡交付即提交**（04-23 20:54）· 铁律 · 禁止攒批 · 覆盖全 Agent
-- 🆕 **Sprint-0 AI-Review 补审 7/7 PASS**（04-23 20:37 · 平均 29.57/30 · 4 张满分）
+- ✅ **D-012 单卡交付即提交**（04-23 20:54）· 铁律 · 禁止攒批 · 覆盖全 Agent
+- ✅ **Sprint-0 AI-Review 补审 7/7 PASS**（04-23 20:37 · 平均 29.57/30 · 4 张满分）
+- 🆕 **D-013 Review 场景分级**（04-23 21:15）· T3/T4 自动关闭 · SOP-REVIEW-LOOP v1.2
+- 🆕 **Sprint-0 补审 7 张全部 SKIP-REVIEW-AUTOCLOSED**（04-23 21:15 · D-013 首次落地 · Human 审批负担解除）
 - 🟢 **R-013 从 🟠 降为 🟢**（Mitigating，等备案下证关闭）
 
 ## Human 待处理清单（按优先级）
 
 ### 🔴 高优先级（阻塞 Sprint-1 主线）
-1. `approve:COSTRA-100` — 放行 COSTRA-100（Review-Tech PASS，G3 5 项闭环）· 阻塞 COSTRA-101
+1. `approve:COSTRA-100` — 放行 COSTRA-100（Review-Tech PASS，G3 5 项闭环）· 阻塞 COSTRA-101 · **D-013 T1 准入 Review，必须 Human 终审**
 
 ### 🟠 中优先级（并行可选）
-2. `approve-batch sprint-0-review` — 批量放行 Sprint-0 补审 7 卡 Round-2 verdict（或按卡独立 approve:COSTRA-001/002/010/011/020/021/030）· 无阻断，可与 Sprint-1 推进并行
-3. `approve:COSTRA-113` — 放行 COSTRA-113 搭车产出（subject.ts 配置加载器）
-4. `run devops COSTRA-114` — 开发服务器 bootstrap（D-009 · 04-25 截止）
-5. `run devops COSTRA-115` — DNS 子记录 + 白名单 CI（D-009 · 04-25 截止）
+2. `approve:COSTRA-113` — 放行 COSTRA-113 搭车产出（subject.ts 配置加载器）· **D-013 T1 准入 Review，必须 Human 终审**
+3. `run devops COSTRA-114` — 开发服务器 bootstrap（D-009 · 04-25 截止）
+4. `run devops COSTRA-115` — DNS 子记录 + 白名单 CI（D-009 · 04-25 截止）
 
 ### 🟡 低优先级（依赖上游）
-6. `run backend COSTRA-101` — Sprint-1 主线启动（依赖 COSTRA-100 approve）
-7. `run miniapp COSTRA-112` — 小程序主体字样清扫（D-008）
-8. `run devops COSTRA-108` — miniprogram-ci 上传演练（D-007）
-9. `run pm COSTRA-109/110/111` — 文档并行
-10. `run devops COSTRA-117` — husky v10 兼容清理（低优 · 1 点 · 见 board.md）
+5. `run backend COSTRA-101` — Sprint-1 主线启动（依赖 COSTRA-100 approve）
+6. `run miniapp COSTRA-112` — 小程序主体字样清扫（D-008）
+7. `run devops COSTRA-108` — miniprogram-ci 上传演练（D-007）
+8. `run pm COSTRA-109/110/111` — 文档并行
+9. `run devops COSTRA-117` — husky v10 兼容清理（低优 · 1 点 · 见 board.md）
+
+### 🔒 已自动关闭（不再占位 Human 审批队列）
+- ~~`approve-batch sprint-0-review`~~ — **已 auto-closed**（D-013 T3 追溯 · 2026-04-23 21:15）· 复议走 `reopen-batch sprint-0-review`
 
 ## 进行中（共 9 卡，全部在 Agent 侧 · 等 Human 触发）
 - Backend-Agent → **COSTRA-100**（G3 补齐 5 项已交付 · Review PASS · 等 approve）
@@ -46,19 +51,20 @@
 - DevOps-Agent → **COSTRA-114**（开发服务器 bootstrap · 04-25 前 · 等 run）
 - DevOps-Agent → **COSTRA-115**（DNS 子记录 + 白名单 CI · 04-25 前 · 等 run）
 
-## 🌙 Sprint-0 AI-Review 补审结果（2026-04-23 20:37 完成）
+## 🔒 Sprint-0 AI-Review 补审 · Skip-Review 归档（2026-04-23 21:15）
 
-| 卡号 | Reviewer | Round-1 → Round-2 |
-|---|---|---|
-| COSTRA-001 | Product | REVISE 26/30 → **PASS 29/30** |
-| COSTRA-002 | Product | REVISE 25/30 → **PASS 29/30** |
-| COSTRA-010 | Product | REVISE 27/30 → **PASS 30/30** 🏆 |
-| COSTRA-011 | Product | REVISE 26/30 → **PASS 30/30** 🏆 |
-| COSTRA-020 | Tech | REVISE 25/30 → **PASS 30/30** 🏆 |
-| COSTRA-021 | Tech | REVISE 24/30 → **PASS 30/30** 🏆（方案 B 反驳成立）|
-| COSTRA-030 | Tech | REVISE 21/30 → **PASS 29/30** |
+| 卡号 | Round-2 | 档位 | 处置 |
+|---|---|---|---|
+| COSTRA-001 | PASS 29/30 | T3 追溯 | 🔒 auto-closed |
+| COSTRA-002 | PASS 29/30 | T3 追溯 | 🔒 auto-closed |
+| COSTRA-010 | PASS 30/30 🏆 | T3 追溯 | 🔒 auto-closed |
+| COSTRA-011 | PASS 30/30 🏆 | T3 追溯 | 🔒 auto-closed |
+| COSTRA-020 | PASS 30/30 🏆 | T3 追溯 | 🔒 auto-closed |
+| COSTRA-021 | PASS 30/30 🏆 | T3 追溯 | 🔒 auto-closed |
+| COSTRA-030 | PASS 29/30 | T3 追溯 | 🔒 auto-closed |
 
-**7/7 PASS · 平均 29.57/30 · 4 张满分 · 0 ESCALATE / 0 红线**。详见 `.team/reviews/SPRINT-0-SUMMARY.md`。
+**7 卡自动关闭依据**：AI-PASS + 残余 P0/P1=0 + 无红线 + 无新阻塞 四条件命中（D-013 §3）。Follow-up 4 项已合入 Sprint-1 现有卡（不另立卡）。详见 `.team/reviews/SPRINT-0-SKIP-REVIEW.md`。
+**复议**：`reopen-batch sprint-0-review` 或 `reopen-review COSTRA-xxx`
 
 ## 🌐 域名与服务器（D-009 锁定）
 - 生产域名：**`costra.cloud`**（已注册 · DNS → `49.235.216.20`）
@@ -71,8 +77,8 @@
 - **当前**：个人 · **兼容**：公司主体就绪 · **Won't-Have**：支付/商户/交易组件
 
 ## Human 下一次介入节点
-1. **立即（可选）**：`approve-batch sprint-0-review` 批量放行 Sprint-0 补审
-2. **立即（推荐）**：`approve:COSTRA-100` 解除 Sprint-1 主线阻塞
+1. **立即（推荐）**：`approve:COSTRA-100` 解除 Sprint-1 主线阻塞
+2. **立即（搭车）**：`approve:COSTRA-113`
 3. **被动等**：ICP 短信审核到达时 5 分钟内回验证码
 4. **Sprint-1 中点（2026-04-30）**：本地验证 COSTRA-102 真实登录端到端
 5. **Sprint-1 末（2026-05-06）**：G4 合并闸门决策
@@ -83,18 +89,20 @@
 - **Review 机制**：
   - `.team/agents/07-review-agent-tech.md`（技术审核官）
   - `.team/agents/08-review-agent-product.md`（产品审核官）
-  - `.team/SOP-REVIEW-LOOP.md`（5 轮迭代 / 分歧升级规则）
+  - `.team/SOP-REVIEW-LOOP.md` v1.2（5 轮迭代 / 分歧升级 / 场景分级 · D-013）
   - `.team/SOP-REVIEW-AUTOLOOP.md`（方案 B 自动循环 · D-011）
   - `.team/decisions/D-011-review-autoloop-plan-b.md`
+  - 🆕 `.team/decisions/D-013-review-scenario-tiering.md`
 - **Sprint-0 补审**：
   - `.team/reviews/SPRINT-0-INDEX.md`（批次索引）
   - `.team/reviews/SPRINT-0-EXEMPT.md`（B 档免审登记）
   - `.team/reviews/SPRINT-0-SUMMARY.md`（汇总报告 · 7/7 PASS）
-  - `.team/reviews/COSTRA-0{01,02,10,11,20,21,30}/round-{1,2}-*.md`（14 份报告 + 7 份回执）
+  - 🆕 `.team/reviews/SPRINT-0-SKIP-REVIEW.md`（D-013 T3 自动关闭归档）
+  - `.team/reviews/COSTRA-0{01,02,10,11,20,21,30}/round-{1,2}-*.md` + `FINAL.md`（每卡 2 份 Round 报告 + 1 份 Response + 1 份 FINAL）
 - D-009：`.team/decisions/D-009-domain-and-dev-server-locked.md`
 - D-008：`.team/decisions/D-008-subject-individual-first-with-corporate-compat.md`
 - D-007：`.team/decisions/D-007-external-resources-batch-1.md`
 - D-006：`.team/decisions/D-006-human-approvals-g2-g3.md`
 - Sprint 计划：`.team/sprints/sprint-01-plan.md`
-- 看板：`.team/board.md`（Sprint-1 39 点 · 新增 AI-Review 泳道）
+- 看板：`.team/board.md`（Sprint-1 40 点 · Sprint-0 补审归档段）
 - 风险册：`.team/risks.md`（R-013 缓解中 · R-017/R-018 新增）

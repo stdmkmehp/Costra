@@ -92,3 +92,17 @@ COSTRA-020 的 G3 遗留 5 项：error-codes / ErrorCode 枚举 / id-strategy / 
 ## 后置说明
 
 补审**不改变** Sprint-0 已完成的状态（仍然是 Done / G1-G3-G5 通过）。若 AI-Review 发现 P0，会按 Sprint-1 backlog 追加修复卡（不回滚 Sprint-0 闸门结论）。这与 COSTRA-100 "Sprint-1 卡片补齐 G3 遗留" 的模式一致。
+
+---
+
+## 🔒 收口（2026-04-23 21:15 · D-013 T3 自动关闭）
+
+本批 7 张卡已于 2026-04-23 21:15 应用 **D-013《Review 场景分级》T3 追溯档位自动关闭**：
+- 触发：Human "方案 B+C 可以的 执行吧"
+- 四条件命中：AI-PASS（7/7 · 平均 29.57）+ 残余 P0/P1=0 + 无红线 + 无新阻塞
+- 处置：7 张各写 `FINAL.md`（SKIP-REVIEW-AUTOCLOSED），**不进 Human 终审**
+- 归档：`.team/reviews/SPRINT-0-SKIP-REVIEW.md`
+- 复议：`reopen-batch sprint-0-review` / `reopen-review COSTRA-xxx`
+
+规约依据：`.team/decisions/D-013-review-scenario-tiering.md`
+SOP 变更：`SOP-REVIEW-LOOP.md` v1.1 → v1.2
