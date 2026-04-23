@@ -81,11 +81,21 @@ Costra 项目的"多 Agent 协作"**不是**后台常驻进程：
 | `pause-review COSTRA-xxx` | 立即停止该卡的 Review 迭代，冒泡给 Human |
 | `skip-review COSTRA-xxx` | 跳过 Review 闭环直推 Human 终审（慎用，记 daily） |
 | `force-pass COSTRA-xxx` | Human 强制通过（覆盖 Review-Agent 的 REJECT） |
+| 🆕 `review-card COSTRA-xxx` | （D-014）对某卡强制做一次**卡定义 Review**（历史卡补审用） |
+| 🆕 `skip-card-review COSTRA-xxx` | （D-014）跳过卡定义 Review，直接进 Todo（需原因，记 daily） |
+| 🆕 `force-card-pass COSTRA-xxx` | （D-014）Human 强制通过卡定义 Review（覆盖 Review-Agent） |
 
 > Review 闭环完整规则见 [`.team/SOP-REVIEW-LOOP.md`](./SOP-REVIEW-LOOP.md)（2026-04-23 登记）。
 > **🆕 Review 闭环自动循环规则见 [`.team/SOP-REVIEW-AUTOLOOP.md`](./SOP-REVIEW-AUTOLOOP.md)**（D-011 · 2026-04-23 生效）。
+> **🆕 卡定义 Review 完整规则见 [`.team/SOP-CARD-REVIEW.md`](./SOP-CARD-REVIEW.md)**（D-014 · 2026-04-23 22:26 生效）。
 >
-> **铁律局部豁免声明**：Review 闭环内的 `Revise↔Review` 相互拉起**无需 Human 逐轮触发**（详见 D-011 §1）。其他任何 Agent 触发点（被审 Agent 首次产出、Human-Review approve、跨卡编排、发布决策）**仍然需要 Human 触发，铁律不变**。
+> **铁律局部豁免声明**：
+> - **例外 1（D-011 · 2026-04-23 19:45）**：Review 闭环内的 `Revise↔Review` 相互拉起**无需 Human 逐轮触发**（详见 D-011 §1）。
+> - **🆕 例外 2（D-014-a · 2026-04-23 22:26）**：**新卡创建后的卡定义 Review 首轮启动**由 Orchestrator 自动拉起（技术向 → Review-Tech / 产品向 → Review-Product），**无需 Human 触发**。详见 `SOP-CARD-REVIEW.md`。
+> - **🆕 例外 3（D-014-b · 2026-04-23 22:26）**：**被审 Agent 交付后的产出 Review 首轮启动**由 Orchestrator 自动拉起，**无需 Human 触发**。
+>
+> 其他任何 Agent 触发点（**被审 Agent 首次开干**、Human-Review approve、跨卡编排、发布决策、红线处置）**仍然需要 Human 触发，铁律不变**。
+> Human 打断指令（`pause-review` / `skip-review` / `skip-card-review` / `force-pass` / `force-card-pass` / `stop`）**最高优先级**，可随时打断上述 3 条自动例外。
 
 ---
 
@@ -108,4 +118,6 @@ Costra 项目的"多 Agent 协作"**不是**后台常驻进程：
 
 **本 SOP 由 Human 于 2026-04-23 17:32 指令确立，Orchestrator 即刻生效。**
 
-**修订**：2026-04-23 19:45 · D-011 局部豁免 Review 闭环内的 Revise↔Review 自动推进（其他环节铁律不变）。
+**修订**：
+- 2026-04-23 19:45 · D-011 局部豁免 Review 闭环内的 Revise↔Review 自动推进（其他环节铁律不变）。
+- 2026-04-23 22:26 · **D-014 追加两条豁免**：(a) 新卡卡定义 Review 首轮自动拉起；(b) 被审 Agent 交付后产出 Review 首轮自动拉起。其他所有触发点铁律不变。Human 打断指令（`pause-review` / `skip-card-review` / `stop` 等）最高优先级。

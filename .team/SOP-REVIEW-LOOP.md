@@ -20,6 +20,7 @@ Human 一个人盯所有 Agent 产出太吃力。引入两位 Review-Agent 做**
 4. Review-Agent **不写代码/文档**，只给意见
 5. **🆕 默认启用自动循环**（D-011 / SOP-REVIEW-AUTOLOOP · 2026-04-23 生效）：Review 闭环内的 `Revise↔Review` 相互拉起无需 Human 逐轮触发，但前置条件 6 条 + 打断指令见 `SOP-REVIEW-AUTOLOOP.md §2/§4`
 6. **🆕 Review 场景分级**（D-013 · 2026-04-23 21:15 生效）：Review 按**准入 T1 / Gate 前 T2 / 追溯 T3 / 回归 T4** 分档。**T1/T2 仍需 Human 终审**（约束 3 原文适用）；**T3/T4 在 AI-Review PASS + 残余 P0/P1=0 + 无红线 + 无新阻塞 四条件同时满足时自动关闭**，不走 Human 终审，Human 保留 `reopen-review` 复议权。详见 `.team/decisions/D-013-review-scenario-tiering.md`
+7. **🆕 卡定义 Review + Review 环首自动拉起**（D-014 · 2026-04-23 22:26 生效）：(a) 所有 D-014 立案后新建的卡**必须**经过一次卡定义 Review（技术向 → Review-Tech / 产品向 → Review-Product），详见 `SOP-CARD-REVIEW.md`；(b) **被审 Agent 交付后的产出 Review 首轮自动拉起**，无需 Human 触发（但 Agent 首次开干仍需 Human 触发，铁律不变）；(c) Human 打断指令（`pause-review` / `skip-card-review` / `force-card-pass` / `stop`）最高优先级。详见 `.team/decisions/D-014-card-review-and-auto-review-kickoff.md`
 
 ---
 
@@ -42,10 +43,12 @@ Human 一个人盯所有 Agent 产出太吃力。引入两位 Review-Agent 做**
 
 ## 3. 完整流程（7 步）
 
+> 🆕 **环首自动拉起**（D-014 · 2026-04-23 22:26）：Step 2 "Orchestrator 识别归属 → 拉起对应 Review-Agent" 不再需要 Human 触发，被审 Agent 交付后 Orchestrator 自动拉起首轮 Review。Human 打断指令（`pause-review` / `skip-review` / `stop`）最高优先级。
+
 ```
 [Step 1] 被审 Agent 产出
    ↓
-[Step 2] Orchestrator 识别归属 → 拉起对应 Review-Agent
+[Step 2] Orchestrator 识别归属 → 拉起对应 Review-Agent（🆕 D-014 自动，60 秒内）
    ↓
 [Step 3] Review-Agent 按规约审 → 产出 round-N-{tech|product}.md
    ↓
@@ -158,16 +161,19 @@ Human 一个人盯所有 Agent 产出太吃力。引入两位 Review-Agent 做**
 
 ### 7.1 何时拉 Review-Agent（MUST）
 
-| 触发条件 | 动作 |
-|---|---|
-| 被审 Agent 发 `status_report` 且 `task_id` 进入 Review 列 | 识别归属 → 拉对应 Review-Agent |
-| 被审 Agent 发 `revision_completed` 消息（round >= 2） | 拉同一个 Review-Agent 做 Round N+1 |
+| 触发条件 | 动作 | 自动/手动 |
+|---|---|---|
+| 被审 Agent 发 `status_report` 且 `task_id` 进入 Review 列 | 识别归属 → 拉对应 Review-Agent | 🆕 **D-014 自动**（60 秒内） |
+| 被审 Agent 发 `revision_completed` 消息（round >= 2） | 拉同一个 Review-Agent 做 Round N+1 | D-011 自动 |
+| 🆕 新卡落盘到 `backlog.json` 或 `board.md` Todo | 按 Owner 分流 → 拉 Review-Agent 做**卡定义 Review** | 🆕 **D-014 自动**（60 秒内） · 详见 `SOP-CARD-REVIEW.md` |
+| Human 发 `review-card COSTRA-xxx` | 对某卡强制做一次卡定义 Review | 手动（历史卡补审） |
 
 ### 7.2 何时 **不**拉（MUST NOT）
 
-- 卡属于 DevOps / QA → 直接 Human 终审
+- 卡属于 DevOps / QA → 直接 Human 终审（卡定义 Review 也豁免 · 除非卡主标注 `no-card-review: false`）
 - 卡属于决策类（D-xxx / ADR-*）→ 直接 Human 决策
-- Human 显式说过 `skip-review COSTRA-XXX`（记 daily 里）
+- Human 显式说过 `skip-review COSTRA-XXX` / `skip-card-review COSTRA-XXX`（记 daily 里）
+- 🆕 历史卡（D-014 立案 2026-04-23 22:26 前创建）→ 卡定义 Review 豁免；需要时走 `review-card COSTRA-XXX` 手动触发
 
 ### 7.3 拉起时的 Context 注入模板
 
@@ -230,6 +236,9 @@ Review 闭环不改变 SOP-HUMAN-TRIGGER 的铁律。Human 侧只关心 3 个时
 | 🆕 `reopen-review COSTRA-xxx` | 对已自动关闭（D-013 T3/T4）的卡重新打开 Human-Review 终审窗口 |
 | 🆕 `reopen-batch <batch-name>` | 对整批（如 `sprint-0-review`）重新打开 Human 终审 |
 | 🆕 `require-human-review COSTRA-xxx` | 在 AI-Review 启动前就标记该卡走 T1 路径，强制 Human 终审 |
+| 🆕 `review-card COSTRA-xxx` | （D-014）对某卡强制做一次**卡定义 Review**（历史卡补审或已 skip 的卡） |
+| 🆕 `skip-card-review COSTRA-xxx` | （D-014）跳过卡定义 Review，直接进 Todo（需 Human 提供原因，记 daily） |
+| 🆕 `force-card-pass COSTRA-xxx` | （D-014）Human 强制通过卡定义 Review（覆盖 Review-Agent） |
 
 ---
 
@@ -263,9 +272,11 @@ Review 闭环不改变 SOP-HUMAN-TRIGGER 的铁律。Human 侧只关心 3 个时
 
 | SOP | 关系 |
 |---|---|
-| `SOP-HUMAN-TRIGGER` | **局部豁免**（D-011 · 2026-04-23）。Review 闭环内的 Revise↔Review 相互拉起无需 Human 逐轮触发；其他场景铁律照旧（被审 Agent 首次产出、approve、跨卡编排仍需 Human 触发） |
+| `SOP-HUMAN-TRIGGER` | **局部豁免**（D-011 · 2026-04-23；D-014 · 2026-04-23 追加）。Review 闭环内的 Revise↔Review 相互拉起无需 Human 逐轮触发（D-011）；**Review 首轮启动 + 卡定义 Review 首轮启动**无需 Human 触发（D-014）；其他场景铁律照旧（被审 Agent 首次产出、approve、跨卡编排仍需 Human 触发） |
+| `SOP-CARD-REVIEW` | **🆕 D-014 配套新建**。规定卡创建后的卡定义 Review 完整流程、checklist、产物模板、触发指令 |
 | `SOP-REVIEW-AUTOLOOP` | **本 SOP 的执行细则**。前置条件、断点、状态机、度量详见 `.team/SOP-REVIEW-AUTOLOOP.md` |
 | `D-013 Review 场景分级` | **本 SOP 约束 3 的粒度升级**（2026-04-23 21:15）。T1/T2 保留 Human 终审铁律；T3 追溯 / T4 回归 在 AI-Review PASS + 四条件满足时自动关闭。本 SOP §4.1 已按 D-013 改写分流 |
+| `D-014 卡定义 Review + 自动拉起` | **本 SOP §1 约束 7 / §3 流程 / §7 调度 / §9 触发指令 的直接依据**（2026-04-23 22:26）。v1.2 → v1.3 |
 | `SOP-OBSERVE-AND-INTERVENE` | 本 SOP 是前者的加强版 filter。观察干预仍然是 Human 最高权 |
 | `engineering-guidelines` | Review-Agent 的 checklist 直接引用此文件作为打分依据 |
 | `COMMON-CONTRACT` | 需要补丁：增加 Review-Agent-Tech / Review-Agent-Product 两条目录权限记录 |
@@ -279,5 +290,6 @@ Review 闭环不改变 SOP-HUMAN-TRIGGER 的铁律。Human 侧只关心 3 个时
 | v1.0 | 2026-04-23 19:20 | Human 指令确立，Orchestrator 成文 |
 | v1.1 | 2026-04-23 19:45 | D-011 引入方案 B 自动循环，新增 §1 约束 5 + §11 关系表更新 |
 | v1.2 | 2026-04-23 21:15 | D-013 Review 场景分级：§1 新增约束 6 / §4.1 改写为分档分流 / §9 新增 `reopen-review` 等 3 条指令 / §11 关系表加 D-013 |
+| v1.3 | 2026-04-23 22:26 | D-014 卡定义 Review + Review 环首自动拉起：§1 新增约束 7 / §3 流程引言 / §7.1 自动拉起 + 卡定义 Review 触发规则 / §7.2 补历史卡豁免 / §9 新增 `review-card` / `skip-card-review` / `force-card-pass` / §11 关系表新增 SOP-CARD-REVIEW + D-014 |
 
 **本 SOP 由 Human 于 2026-04-23 指令确立，Orchestrator 即刻生效，无需再次评审。**
