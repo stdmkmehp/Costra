@@ -5,7 +5,7 @@
 > **AI-Review 说明**：Backend/MiniApp 产出先走 `Review-Agent-Tech`；PM/Design 产出先走 `Review-Agent-Product`；DevOps/QA/决策类不走 AI-Review。详见 `.team/SOP-REVIEW-LOOP.md`。
 > **🆕 自动循环（D-011 · 2026-04-23 生效）**：AI-Review 列内 `Revise↔Review` 自动推进，无需 Human 逐轮触发；打断用 `pause-review` / `stop`，详见 `.team/SOP-REVIEW-AUTOLOOP.md`。
 
-最后更新：`2026-04-23 20:37`（Orchestrator · Sprint-0 AI-Review 补审 7/7 PASS 完成 · 等 Human 批量放行）
+最后更新：`2026-04-23 20:52`（Orchestrator · 新增 COSTRA-117 · husky v10 兼容清理 · Sprint-1 估点 39 → 40）
 
 ---
 
@@ -38,10 +38,12 @@
 | COSTRA-113 | `server/src/config/subject.ts` + `.env.production.example` 补 SUBJECT 段 | Backend-Agent | D-008/COSTRA-100 | 1 |
 | COSTRA-114 | 开发服务器 bootstrap（SSH 加固/防火墙/docker/nginx+自签 HTTPS） | DevOps-Agent | D-009 | 2 |
 | COSTRA-115 | `costra.cloud` DNS 子记录 + 白名单一致性 CI 校验 | DevOps-Agent | D-009 | 1 |
+| COSTRA-117 | husky v10 兼容：清理 `.husky/{pre-commit,commit-msg}` DEPRECATED header（删 shebang + `_/husky.sh` 引用两行） | DevOps-Agent | - | 1 |
 
 > 📌 COSTRA-106（Sprint-0 Retro）延至 Sprint-2 头部；COSTRA-116（ICP 进度追踪）并入 PM 常规不计点（D-009 §3）。
+> 📌 COSTRA-117 新增自 2026-04-23 20:52（commit 29d1849 时观测到 husky v10 DEPRECATED 警告；v10 升级后会 FAIL，现在清理属低成本预防）。**号段说明**：跳过 116（已占用 ICP 追踪），续号 117 属 11x 扩展与基建域 ✅。
 
-**Sprint-1 总估点**：**39 点**（≤ 40 工时约束 ✅）
+**Sprint-1 总估点**：**40 点**（≤ 40 工时约束 ✅ · 顶格）
 
 ## 🔄 Doing
 - [~] COSTRA-108 @DevOps-Agent · miniprogram-ci 上传演练（04-24 18:00 前）
@@ -126,7 +128,7 @@ _（无强阻塞。COSTRA-040 "真实上传链路激活" 仍依赖外部资源�
 | Sprint | 周期 | 卡数 | 估点 | 状态 | 备注 |
 |---|---|---|---|---|---|
 | Sprint-0 | 2026-04-21 ~ 2026-04-22 | 10 | 28 | ✅ 收官 | execute-now 模式，2 小时完成 7 张 Review 卡 |
-| Sprint-1 | 2026-04-23 ~ 2026-05-06 | 8 | 29 | 🟢 启动中 | 重点：单人记账端到端 + G3 补齐 |
+| Sprint-1 | 2026-04-23 ~ 2026-05-06 | 17 | 40 | 🟢 启动中 | 重点：单人记账端到端 + G3 补齐；COSTRA-117 补入（husky v10 兼容）|
 
 ---
 
