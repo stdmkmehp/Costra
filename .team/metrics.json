@@ -1,22 +1,30 @@
 {
-  "last_updated": "2026-04-20T19:54:00+08:00",
-  "sprint": {
-    "name": "Sprint-0 (Bootstrap)",
-    "start": "2026-04-21",
-    "end": "2026-05-04",
-    "planned_points": 0,
-    "completed_points": 0
-  },
-  "quality": {
-    "ios_unit_coverage": 0.0,
-    "backend_unit_coverage": 0.0,
-    "open_bugs": { "P0": 0, "P1": 0, "P2": 0, "P3": 0 },
-    "crash_free_rate": 1.0
-  },
-  "delivery": {
-    "cicd_avg_minutes": null,
-    "prod_availability": null,
-    "last_release_tag": null
-  },
-  "risks_open": 0
+  "_schema": "costra-metrics-v1",
+  "_description": "Per-card Review 度量记录，首个条目来自 COSTRA-100（D-011 方案 B 首次真实闭环）",
+  "_updated_at": "2026-04-23T22:38+08:00",
+  "cards": [
+    {
+      "card": "COSTRA-100",
+      "title": "G3-gaps-plus 补齐（error-codes / ErrorCode / TTL / id-strategy / sync-protocol）",
+      "owner": "Backend-Agent",
+      "review_type": "tech",
+      "review_tier": "T1",
+      "total_rounds": 2,
+      "terminal_verdict": "PASS",
+      "p0_caught_in_review": 3,
+      "p1_caught_in_review": 5,
+      "p0_escaped_to_human": 0,
+      "escalated": false,
+      "autoloop_triggered": true,
+      "autoloop_kickoff_source": "D-011",
+      "time_cost_minutes_review": 53,
+      "time_cost_minutes_revise": 16,
+      "score_r1": 26,
+      "score_r2": 30,
+      "human_final_decision": "approve",
+      "human_final_decision_at": "2026-04-23T22:38+08:00",
+      "final_report": ".team/reviews/COSTRA-100/FINAL.md",
+      "notes": "SOP-REVIEW-AUTOLOOP（D-011 方案 B）首次真实闭环；Round-2 verdict 为 PASS-WITH-FOLLOWUP，Backend 就地修 P1-1 后升级为 PASS 30/30；follow-up 5 项入 D-010 不阻断"
+    }
+  ]
 }

@@ -69,7 +69,8 @@
   "time_cost_minutes_revise": 16,
   "score_r1": 26,
   "score_r2": 30,
-  "human_final_decision": null
+  "human_final_decision": "approve",
+  "human_final_decision_at": "2026-04-23T22:38+08:00"
 }
 ```
 

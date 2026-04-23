@@ -7,7 +7,7 @@
 > **🆕 场景分级（D-013 · 2026-04-23 21:15 生效）**：Review 分 T1 准入 / T2 Gate 前 / T3 追溯 / T4 回归 四档。T1/T2 必走 Human-Review；**T3/T4 在 AI-PASS + 残余 P0/P1=0 + 无红线 + 无新阻塞时自动关闭**。Human 随时可发 `reopen-review` 复议。详见 `.team/decisions/D-013-review-scenario-tiering.md`。
 > **🆕 卡定义 Review + Review 自动拉起（D-014 · 2026-04-23 22:26 生效）**：(a) 2026-04-23 22:26 后新建的卡**必须**经卡定义 Review（技术向→Review-Tech / 产品向→Review-Product）；(b) 被审 Agent 交付后**产出 Review 首轮自动拉起**（无需 Human 触发）；(c) 历史卡豁免；(d) DevOps/QA/决策类豁免；(e) Human 打断指令（`pause-review` / `skip-card-review` / `force-card-pass` / `stop`）最高优先级。详见 `.team/decisions/D-014-card-review-and-auto-review-kickoff.md` + `.team/SOP-CARD-REVIEW.md`。
 
-最后更新：`2026-04-23 22:26`（Orchestrator · D-014 立案 · SOP-REVIEW-LOOP v1.3 · SOP-CARD-REVIEW 新建）
+最后更新：`2026-04-23 22:38`（Orchestrator · `approve:COSTRA-100` 落地 · Sprint-1 主线解阻塞 · Human-Review 队列 2→1）
 
 ---
 
@@ -62,18 +62,10 @@
 
 _（COSTRA-100 已通过 AI-Review · 20:14 终止自动循环 · 详见下方 Human-Review 队列）_
 
-### 🙋 Human-Review（AI-Review 已通过，等你终审 · 共 2 张）
+### 🙋 Human-Review（AI-Review 已通过，等你终审 · 共 1 张）
 
-#### Sprint-1 主线（共 2 张）
+#### Sprint-1 主线（共 1 张）
 
-- [R] **COSTRA-100** @Backend-Agent · 2026-04-23 20:14 · **AI-Review 终审 PASS**（2 轮 · 3 P0 + 5 P1 闭环 · 终评 30/30）
-  - Round-1 Tech：`.team/reviews/COSTRA-100/round-1-tech.md`（REVISE · 26/30）
-  - Round-1 Backend 回执：`.team/reviews/COSTRA-100/round-1-backend-response.md`
-  - Round-2 Tech：`.team/reviews/COSTRA-100/round-2-tech.md`（PASS-WITH-FOLLOWUP · 29/30）
-  - Round-2 Backend 就地修：`.team/reviews/COSTRA-100/round-2-backend-response.md`（升级为 PASS · 30/30）
-  - 终结：`.team/reviews/COSTRA-100/FINAL.md`
-  - **档位**：D-013 **T1 准入 Review**（解除 COSTRA-101 阻塞）→ 仍需 Human 终审
-  - **触发指令**：`approve:COSTRA-100` / `reject:COSTRA-100 <原因>`
 - [R] **COSTRA-113** @Backend-Agent · 2026-04-23 17:50 搭车完成 · `server/src/config/subject.ts` + `.env.production.example` SUBJECT 段
   - **档位**：D-013 **T1 准入 Review**（搭车新产出）→ 仍需 Human 终审
 
@@ -115,6 +107,11 @@ _（无强阻塞。COSTRA-040 "真实上传链路激活" 仍依赖外部资源�
 
 > **关闭说明**：Human 2026-04-23 21:08 指令"方案 B+C 可以的 执行吧"→ 本批应用 D-013《Review 场景分级》T3 档位自动关闭。平均分 29.57/30 · 4 张满分 · 0 ESCALATE · 0 红线 · 0 残余 P0/P1。Follow-up 4 项已合入 Sprint-1 现有卡的验收项（不另立卡，详见 `.team/reviews/SPRINT-0-SKIP-REVIEW.md §5`）。
 > **复议**：`reopen-batch sprint-0-review` / `reopen-review COSTRA-xxx`
+
+### Sprint-1
+- [D] **COSTRA-100** G3-gaps-plus 补齐    @Backend-Agent  · 2026-04-23 22:38 **Human approve** · AI-Review 2 轮 PASS 30/30 · 3 P0 + 5 P1 闭环 · Follow-up 5 项入 D-010（不阻断）· `.team/reviews/COSTRA-100/FINAL.md`
+  - **解除阻塞**：COSTRA-101 `run backend COSTRA-101` 依赖可触发
+  - **度量**：`.team/metrics.json` 首条记录（D-011 方案 B 首次真实闭环）
 
 ---
 
