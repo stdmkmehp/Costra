@@ -1,7 +1,7 @@
 {
   "_schema": "costra-metrics-v1",
-  "_description": "Per-card Review 度量记录；COSTRA-101 §6.1.b Human T1 APPROVED @ 2026-04-24 19:28 · 整卡收官",
-  "_updated_at": "2026-04-24T19:28+08:00",
+  "_description": "Per-card Review 度量记录；COSTRA-118 miniprogram 技术债专项普查 Round-1 REJECT @ 2026-04-24 19:35（D-016 第二次实战合规）",
+  "_updated_at": "2026-04-24T19:35+08:00",
   "cards": [
     {
       "card": "COSTRA-100",
@@ -124,6 +124,87 @@
       "human_final_decision_at": "2026-04-24T19:28+08:00",
       "final_report": ".team/reviews/COSTRA-101/FINAL.md",
       "notes": "Verify 段首次实战：R1 Verify 正确兜住 Round 2 交付的 3 项回归缺陷（分段独立 Gate 价值兑现）；R2 Revise 100% 采纳（PORT 默认值 + tsconfig 拆分 + access jti nonce 加固）· 三绿灯全亮；R3 Review 发现 1 条契约文档漂移（docs/api/ttl-policy.md §4.2 access payload 未同步 jti）；R4 Revise 100% 采纳 + 3 项超额交付（主动消除歧义）· R4 Review APPROVE 提前 1 轮收敛。I-005 记：17:59 声称 D-014-b 自动拉起 Review-Tech 60s 内启动，实际未执行；直至 Human 质疑后 18:55~19:02 在同一轮对话内补齐——触发 D-016 同轮兑现铁律立案。D-016 首次实战（R4 Revise+Review 19:07~19:10）合规 · 同轮兑现达成 · 规约自身初战可信。Human T1 终审 19:28 APPROVED · COSTRA-101 整卡收官 · Sprint-1 主线第二张核心卡完结 · 解锁 COSTRA-102 端到端依赖链。四条规约（D-011/014/015/016）本卡累计首次实战全数通过。"
+    },
+    {
+      "card": "COSTRA-118",
+      "title": "miniprogram 技术债专项普查",
+      "owner": "Review-Agent-Tech",
+      "card_type": "audit-special",
+      "review_type": "tech",
+      "review_tier": "T2",
+      "total_rounds": 1,
+      "terminal_verdict": "REJECT",
+      "p0_caught_in_review": 10,
+      "p1_caught_in_review": 5,
+      "p2_caught_in_review": 4,
+      "p0_escaped_to_human": 0,
+      "escalated": false,
+      "autoloop_triggered": false,
+      "autoloop_kickoff_source": "N/A-audit-card-single-round",
+      "d016_compliance": "pass",
+      "d016_note": "D-016 第二次实战合规 · Human 19:30 触发 → Orchestrator 同一 tool call 循环内完成：立卡 dispatch + 7 维全量审查 + 产出 ~600 行报告 + STATE/board/metrics/follow-ups/messages 五处同步 · 无跨轮异步承诺",
+      "review_scope": {
+        "ts_files": 19,
+        "wxml_files": 8,
+        "wxss_files": 9,
+        "json_files": 11,
+        "md_files": 1
+      },
+      "dimension_scores": {
+        "contract": 1,
+        "architecture": 3,
+        "data": 2,
+        "sync": 1,
+        "security": 2,
+        "testability": 2,
+        "discipline": 4
+      },
+      "score_total": 15,
+      "score_max": 35,
+      "verdict_trigger": "P0 数量 10 > 3 硬性触发 REJECT（Review-Tech §5）",
+      "p0_list": [
+        "P0-1 services/auth.ts:85 wx.login code 前 8 位日志泄漏（安全红线）",
+        "P0-2 services/auth.ts:9-14 TokenRaw 与 OpenAPI AuthTokenPair schema 全线错配",
+        "P0-3 services/auth.ts:125 refresh 字段名 vs 契约 refresh_token",
+        "P0-4 services/request.ts 写操作缺 Idempotency-Key 头注入",
+        "P0-5 services/request.ts:88-92 body.error.code 解析路径错（OpenAPI Error 顶层扁平）",
+        "P0-6 services/sync.ts:44-45 /sync/{entity}?sinceVersion= 端点不存在（契约幻觉）",
+        "P0-7 services/sync.ts:8 Entity 枚举 ledger_entries/accounts/... 与契约 entry/category/budget 完全不对齐",
+        "P0-8 utils/time.ts:11 toUtcIso 双减时区偏移 BUG",
+        "P0-9 CSS 变量全站不一致（tokens.json 定义但 app.wxss 未消费 · 整站样式降级）",
+        "P0-10 pages/login/index.wxml:12 open-type=getUserInfo 已废弃 + privacy 占位构成审核红线"
+      ],
+      "p1_list": [
+        "P1-1 utils/money.ts 手写 decimal 违反 ADR-0002 decimal.js 硬约束",
+        "P1-2 services/request.ts:68-71 自造 NETWORK_ERROR code 未在 error-codes.md 登记",
+        "P1-3 pages/entry/index.ts:47-53 outbox 载荷 camelCase + 缺 ledger_id + 缺 currency",
+        "P1-4 pages/home/index.ts:28 TODO 引用不存在的 /ledger/summary 端点",
+        "P1-5 services/env.ts:50 CURRENT_ENV 硬编码（README §4 已声明骨架期占位 · 降级接受）"
+      ],
+      "grey_area_items": [
+        "AppID 在 miniprogram/README.md:12, :42 出现 · Reviewer 主张务实派豁免（README 不打包 · 降为 FU-118-1 观察项）· 待 Human 二裁 engineering-guidelines §2.5 的'源码'定义"
+      ],
+      "followups_registered": [
+        "FU-118-1 AppID README 灰色区 · open-observation",
+        "FU-118-2 '未命名用户' 硬编码（合并 FU-001）· open",
+        "FU-118-3 tokens.json 未消费（Sprint-2 COSTRA-160 候选）· open",
+        "FU-118-4 占位页卡号幻觉 060/130/140/150（Retro 纠正）· open",
+        "FU-118-5 console.* 11 处（APM 合入）· open",
+        "FU-118-6 decimal.js 引入（COSTRA-102 顺手）· open"
+      ],
+      "recommended_human_path": "A · approve:COSTRA-118 + 发现项分流到 COSTRA-102/112 兜底",
+      "rationale": "10 个 P0 中 8 个是 COSTRA-102 '切真实后端'的必经之路（auth/request/sync 三大服务全改）· 天然修复；P0-1 code 日志 + P0-8 时区 bug + P0-9 CSS 变量 由 COSTRA-102 的 MiniApp-Agent 顺手修；P0-10 part A（getUserInfo）同 COSTRA-102 修；part B（隐私页）等 COSTRA-109 PM 草稿到手后由 MiniApp 同步。P1/P2 全入 Follow-up 6 项。",
+      "confidence": "medium",
+      "confidence_downgrade_reason": [
+        "charter §7/§13 未直读（通过 guidelines + COMMON-CONTRACT 间接覆盖 · 不影响 miniprogram 纯前端结论）",
+        "docs/db 未读（纯前端 Review 不强相关）",
+        "无真机 / 开发者工具跑通验证（Agent 无真机访问权 · COSTRA-114 v2 铁律）· 纯静态分析"
+      ],
+      "human_final_decision": "pending",
+      "human_final_decision_at": null,
+      "final_report": ".team/reviews/COSTRA-118/round-1-tech.md",
+      "dispatch": ".team/dispatch/COSTRA-118-miniprogram-tech-debt-audit.md",
+      "notes": "审计类专项卡特殊路径：Owner=Review-Tech 本身 · 单轮即报即结 · 无 Revise 方 · D-011 自动循环不适用 · D-016 同轮兑现适用并已合规兑现（Human 19:30 触发 → Orchestrator 同 tool call 循环 ~12 分钟完成 5 产物）。首次实战'审计类专项卡'形态，为 Sprint 末期技术债扫描建立范式。"
     }
   ]
 }

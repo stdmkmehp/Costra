@@ -8,7 +8,7 @@
 > **🆕 卡定义 Review + Review 自动拉起（D-014 · 2026-04-23 22:26 生效）**：(a) 2026-04-23 22:26 后新建的卡**必须**经卡定义 Review（技术向→Review-Tech / 产品向→Review-Product）；(b) 被审 Agent 交付后**产出 Review 首轮自动拉起**（无需 Human 触发）；(c) 历史卡豁免；(d) DevOps/QA/决策类豁免；(e) Human 打断指令（`pause-review` / `skip-card-review` / `force-card-pass` / `stop`）最高优先级。详见 `.team/decisions/D-014-card-review-and-auto-review-kickoff.md` + `.team/SOP-CARD-REVIEW.md`。
 > **🔄 D-011 实战验证三次通过**（2026-04-23）：COSTRA-100（2 轮 · 69 min） + Sprint-0 补审（7 卡 × 2 轮 · 29 min 并行） + **COSTRA-101 Round 1 刚自动拉起（22:49 · D-014-b 首次实战）**
 
-最后更新：`2026-04-24 19:28`（Orchestrator · **COSTRA-101 §6.1.b · Human T1 APPROVED · 整卡收官** · Sprint-1 主线第二张核心卡完结 · 解锁 COSTRA-102 依赖链）
+最后更新：`2026-04-24 19:35`（Orchestrator · **COSTRA-118 miniprogram 技术债专项普查 Round-1 REJECT 产出完毕 · 等 Human 终审** · D-016 第二次实战合规 · COSTRA-101 §6.1.b 整卡收官状态仍有效）
 
 ---
 
@@ -42,24 +42,28 @@
 | COSTRA-114 | 开发服务器 bootstrap（SSH 加固/防火墙/docker/nginx+自签 HTTPS） | DevOps-Agent | D-009 | 2 |
 | COSTRA-115 | `costra.cloud` DNS 子记录 + 白名单一致性 CI 校验 | DevOps-Agent | D-009 | 1 |
 | COSTRA-117 | husky v10 兼容：清理 `.husky/{pre-commit,commit-msg}` DEPRECATED header（删 shebang + `_/husky.sh` 引用两行） | DevOps-Agent | - | 1 |
+| 🆕 COSTRA-118 | miniprogram 技术债专项普查（审计类 · 单轮即报即结 · Owner=Review-Tech） | Review-Agent-Tech | COSTRA-030/100/101 | **0**（不计估点） |
 
 > 📌 COSTRA-106（Sprint-0 Retro）延至 Sprint-2 头部；COSTRA-116（ICP 进度追踪）并入 PM 常规不计点（D-009 §3）。
 > 📌 COSTRA-117 新增自 2026-04-23 20:52（commit 29d1849 时观测到 husky v10 DEPRECATED 警告；v10 升级后会 FAIL，现在清理属低成本预防）。**号段说明**：跳过 116（已占用 ICP 追踪），续号 117 属 11x 扩展与基建域 ✅。
+> 📌 **COSTRA-118 新增自 2026-04-24 19:30**（Human 触发 · 专项审计卡 · 不计估点 · 参照 COSTRA-106 "审计/Retro 性质" 先例 · D-014 审计类特殊路径 · Sprint-1 总估点保持 40）。
 
-**Sprint-1 总估点**：**40 点**（≤ 40 工时约束 ✅ · 顶格）
+**Sprint-1 总估点**：**40 点**（≤ 40 工时约束 ✅ · 顶格 · COSTRA-118 不计点）
 
 ## 🔄 Doing（清洗后仅列真正 in-flight · 其余为 Todo-等触发）
 - [~] **COSTRA-114** @DevOps-Agent · 开发服务器 bootstrap **手册**（D-009）· 04-25 18:00 前 · **🟠 卡定义已 approve 但实际未开工**（I-003 · 04-24 17:00 澄清 · `docs/ops/` 目录不存在）· 等 Human 真正触发 `run devops COSTRA-114`
+- [~] **COSTRA-118** @Review-Agent-Tech · miniprogram 技术债专项普查 · **Round-1 产出完毕 · verdict=REJECT（10 P0 + 5 P1 + 4 P2 · 15/35）** · 04-24 19:35 · 审计类专项卡（单轮即报即结）· D-016 第二次实战合规（Human 19:30 触发 → 同 tool call 循环内 5 产物交付）· 等 Human 终审三选一 · 报告 `.team/reviews/COSTRA-118/round-1-tech.md`
 
 ## 👀 Review
 
 ### ⏳ AI-Review 自动循环中（共 0 张）
 
 _（COSTRA-101 §6.1.b R4 · 04-24 19:10 D-011 环内收敛 APPROVE · 19:28 Human T1 终审放行 · 整卡收官）_
+_（COSTRA-118 是审计类专项卡 · 单轮模型 · 不适用 D-011 自动循环）_
 
-### 🙋 Human-Review（AI-Review 已通过，等你终审 · 共 0 张）
+### 🙋 Human-Review（AI-Review 已通过，等你终审 · 共 1 张）
 
-_（COSTRA-101 §6.1.b 已 19:28 Human T1 APPROVED · 队列空）_
+- [R] **COSTRA-118** · miniprogram 技术债专项普查 · Round-1 REJECT · 04-24 19:35 · **推荐路径 A**：`approve:COSTRA-118` + 发现项分流到 COSTRA-102/112 兜底（8/10 P0 本就是 COSTRA-102 切真实后端的必经之路 · 天然修复）· 备选：`approve:COSTRA-118 with-split:COSTRA-119`（拆紧急修复卡 1~2 点）· 详情 `.team/reviews/COSTRA-118/round-1-tech.md`
 
 #### 🔒 Sprint-0 AI-Review 补审（共 7 张 · D-013 **T3 追溯 · 全部 SKIP-REVIEW-AUTOCLOSED**）
 
@@ -137,7 +141,7 @@ _（无强阻塞。COSTRA-040 "真实上传链路激活" 仍依赖外部资源�
 | Sprint | 周期 | 卡数 | 估点 | 状态 | 备注 |
 |---|---|---|---|---|---|
 | Sprint-0 | 2026-04-21 ~ 2026-04-22 | 10 | 28 | ✅ 收官 | execute-now 模式，2 小时完成 7 张 Review 卡 |
-| Sprint-1 | 2026-04-23 ~ 2026-05-06 | 17 | 40 | 🟢 启动中 | 重点：单人记账端到端 + G3 补齐；COSTRA-117 补入（husky v10 兼容）|
+| Sprint-1 | 2026-04-23 ~ 2026-05-06 | 18 | 40 | 🟢 启动中 | 重点：单人记账端到端 + G3 补齐；COSTRA-117 补入（husky v10 兼容）；🆕 COSTRA-118 补入（miniprogram 技术债专项普查 · 不计点）|
 
 ---
 
@@ -178,7 +182,7 @@ _（无强阻塞。COSTRA-040 "真实上传链路激活" 仍依赖外部资源�
 
 ## 💤 Orchestrator 状态
 
-- **MODE**：`awaiting-human`（**COSTRA-101 整卡收官** @ 19:28 · 球回到 DevOps 待触发队列 · **🟠 压线**：`run devops COSTRA-115` DNS 白名单 CI · 04-25 截止剩约 23h）
-- **下一动作**：Human 选择触发 `run devops COSTRA-115`（压线）/ `run devops COSTRA-114`（开发服务器手册）/ `run miniapp COSTRA-102`（Sprint-1 主线第三卡 · 刚解锁）
-- **保存点**：COSTRA-101 整卡两段完结 · §6.1.a 17:18 APPROVED + §6.1.b 19:28 APPROVED · FINAL.md 双签字 / STATE 刷至 19:28 / metrics.json 第 3 条 human_final_decision=approve / 代码 5 处 + 文档 1 处变更已全部入工作区
-- **D-016 首次实战结果**：✅ 合规（R4 19:07~19:10 同轮兑现）· Human T1 19:28 终审 APPROVED 收官 · 规约自身初战可信 · 四条规约（D-011/014/015/016）本卡累计首次实战全数通过
+- **MODE**：`awaiting-human`（**COSTRA-118 Round-1 REJECT 产出完毕** @ 19:35 · 等 Human 终审三选一 · **COSTRA-101 §6.1.b Human T1 APPROVED** @ 19:28 状态仍有效 · 🟠 压线：`run devops COSTRA-115` DNS 白名单 CI · 04-25 截止剩约 22h）
+- **下一动作**：Human 选择：① `approve:COSTRA-118`（推荐路径 A · 发现项分流）/ ② `approve:COSTRA-118 with-split:COSTRA-119`（拆紧急修复卡）/ ③ `run devops COSTRA-115`（压线 DNS）/ ④ `run miniapp COSTRA-102`（主线第三卡 · 亦承接 COSTRA-118 P0）/ ⑤ `run devops COSTRA-114`（手册）
+- **保存点**：COSTRA-118 立案 dispatch + Round-1 Tech Review 报告（~600 行 · verdict=REJECT · 10 P0 + 5 P1 + 4 P2 · 15/35）+ STATE/board/metrics/follow-ups/messages 五处同步 @ 19:35
+- **D-016 第二次实战结果**：✅ 合规（Human 19:30 触发 → 19:35 同一 tool call 循环内交付 5 产物）· 反模式（"60 秒内自动拉起"）未复现 · 新建"审计类专项卡"形态范式（Owner=Review-Tech 本身 · 单轮即报即结 · 无 Revise 方 · D-011 不适用 · D-016 适用）
