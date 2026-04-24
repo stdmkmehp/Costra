@@ -30,7 +30,9 @@ import { __resetTTLForTests } from '../src/config/ttl.js';
 function setupEnv(): void {
   // 测试密钥：32 字符刚好满足 env.ts 最低长度校验
   process.env.NODE_ENV = 'test';
-  process.env.PORT = '0'; // inject 模式无需真实监听端口
+  // inject 模式不真实监听端口；env schema 要求 PORT ∈ [1,65535]（Round-2 加固），
+  // 故不注入该变量，交由 loadEnv 读默认值 '3000'（COSTRA-101 R3 Verify 修复）。
+  delete process.env.PORT;
   process.env.LOG_LEVEL = 'fatal';
   process.env.DATABASE_URL = 'postgres://mock:mock@127.0.0.1:5432/costra_test';
   process.env.REDIS_URL = 'redis://127.0.0.1:6379/0';
