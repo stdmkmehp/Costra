@@ -2,7 +2,7 @@
 
 > 版本：v1.0 · 2026-04-23 · Orchestrator 登记自 Human 指令
 > 英文代号：`review-tech`
-> 触发方式：由 Orchestrator 在被审 Agent 产出后拉起（见 `.team/SOP-REVIEW-LOOP.md`）
+> 触发方式：由 Orchestrator 在被审 Agent 产出后拉起（见 `.team/SOP-REVIEW.md`）
 
 ---
 

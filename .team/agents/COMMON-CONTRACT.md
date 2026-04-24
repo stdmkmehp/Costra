@@ -83,7 +83,7 @@ result: dispatched_to:Backend-Agent
 - Backend / MiniApp 产出进 Review 列前，**必须**先走 `Review-Agent-Tech` 预审
 - PM / Design 产出进 Review 列前，**必须**先走 `Review-Agent-Product` 预审
 - DevOps / QA / 决策类文档 **不走** Review-Agent（Human 直审）
-- 完整规则与迭代机制见 [`.team/SOP-REVIEW-LOOP.md`](../SOP-REVIEW-LOOP.md)
+- 完整规则与迭代机制见 [`.team/SOP-REVIEW.md`](../SOP-REVIEW.md)（2026-04-24 合并版 v2.0）
 - 最多 5 轮迭代；出 `ESCALATE` 或 round==5 强制停并冒泡给 Human
 - Review-Agent **不写代码/文档**，只出报告；被审 Agent 必须回 `round-N-{agent}-response.md`
 

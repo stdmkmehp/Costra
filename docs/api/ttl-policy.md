@@ -139,9 +139,11 @@ export const TTL = {
 
 ### 4.2 JWT 签发
 
-- `access_token` payload：`{ sub, iat, exp = iat + TTL.accessTokenSec, token_type: 'access' }`
+- `access_token` payload：`{ sub, jti, iat, exp = iat + TTL.accessTokenSec, token_type: 'access' }`
+  - 此处 `jti` 仅作 **nonce**（每次签发唯一 · `uuidv7`），**不写 DB、不参与吊销**、`verifyAccessToken` 不校验其存在性。作用：避免同一 `sub` 在同秒内重签时 token 文本完全一致（降低同秒重放可辨识度）。
+  - 区别于 `refresh_token.jti`（事实源 · 双写 `user_sessions` + Redis · 登出/吊销都依赖它）。
 - `refresh_token` payload：`{ sub, iat, exp = iat + TTL.refreshTokenSec, jti, token_type: 'refresh' }`
-- `jti` 入 Redis `refresh:{jti}`；登出时删；校验时查
+- `jti` 入 Redis `refresh:{jti}`；登出时删；校验时查（**仅 refresh 走此路径**；access 不入库）
 - 响应统一带 `access_token_ttl_sec` / `refresh_token_ttl_sec`
 
 ### 4.3 时钟偏移容错

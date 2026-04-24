@@ -246,3 +246,9 @@ AI-Review verdict = PASS / PASS-WITH-FOLLOWUP
 | 版本 | 日期 | 变更 |
 |---|---|---|
 | v1.0 | 2026-04-23 21:15 | Human 指令确认，Orchestrator 成文落盘 |
+
+---
+
+## 后续补丁
+
+- **2026-04-24 19:16 · 方案 A 合并 SOP**：本决议关联的 `SOP-REVIEW-LOOP.md` + `SOP-REVIEW-AUTOLOOP.md` 已合并为 `SOP-REVIEW.md` v2.0。本决议对应 §1 约束 6 / §4.1 场景分级分流 / §9 `reopen-review` 等条款位置不变，只是从"SOP-REVIEW-LOOP"更名为"SOP-REVIEW"。

@@ -210,6 +210,6 @@
 | `.team/decisions/D-006 ~ D-011` | Sprint-0/1 期间所有重大决议 |
 | `.team/agents/*.md` | 各 Agent 角色规范（SOP） |
 | `.team/SOP-HUMAN-TRIGGER.md` | Human 触发规则（铁律：不触发不执行） |
-| `.team/SOP-REVIEW-AUTOLOOP.md` | AI-Review 自动循环规则（D-011） |
+| `.team/SOP-REVIEW.md` | AI-Review 闭环 + 自动循环规则（D-011 + D-013 + D-014 + D-015 + D-016 · 2026-04-24 合并版 v2.0） |
 | `.team/STATE` | Orchestrator 当前模式快照 |
 

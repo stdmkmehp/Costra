@@ -353,3 +353,10 @@ Orchestrator 自动识别归属（SOP-REVIEW-LOOP §2 矩阵）
 | 版本 | 日期 | 变更 |
 |---|---|---|
 | v1.0 | 2026-04-23 22:26 | Human 指令确立 · Orchestrator 成文落盘 |
+
+---
+
+## 后续补丁
+
+- **2026-04-24 19:10 · D-016 立案**：D-014-b 的"60 秒内自动拉起"语义受 D-016 约束，修订为"同一 tool call 循环内兑现"，禁止跨轮异步承诺。详见 `.team/decisions/D-016-same-turn-review-autoloop.md`。
+- **2026-04-24 19:16 · 方案 A 合并 SOP**：本决议关联的 `SOP-REVIEW-LOOP.md` + `SOP-REVIEW-AUTOLOOP.md` 已合并为 `SOP-REVIEW.md` v2.0。本决议对应 §1 约束 7 / §3 流程 / §7 调度 / §9 触发指令条款位置不变，只是从"SOP-REVIEW-LOOP"更名为"SOP-REVIEW"（`SOP-REVIEW-AUTOLOOP` 不改项同样更名）。

@@ -244,6 +244,12 @@ Review-Agent 在 Round N+1 的 `round-N+1-{tech|product}.md` 中 **必须** 追�
 
 ---
 
+## 12. 后续补丁
+
+- **2026-04-24 19:16 · 方案 A 合并 SOP**：本决议涉及的 `SOP-REVIEW-LOOP.md` + `SOP-REVIEW-AUTOLOOP.md` 已合并为 `SOP-REVIEW.md` v2.0 单一文件。本决议 §4（回应格式模板）对应新文件 §6；§3（前置条件 4 修订）对应新文件 §10.3。原两份降为 stub 保留外链兼容。
+
+---
+
 ## 版本历史
 
 | 版本 | 日期 | 变更 |

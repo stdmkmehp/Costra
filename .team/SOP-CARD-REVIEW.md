@@ -3,7 +3,7 @@
 > 登记时间：2026-04-23 22:26
 > 登记人：Human（规约 A · D-014）
 > 适用范围：Orchestrator、Review-Agent-Tech、Review-Agent-Product、所有卡创建者（PM-Agent / Tech-Lead / Human）
-> 优先级：**P0 · 铁律** · 与 SOP-REVIEW-LOOP / SOP-HUMAN-TRIGGER 并列
+> 优先级：**P0 · 铁律** · 与 SOP-REVIEW / SOP-HUMAN-TRIGGER 并列
 > 依据：`.team/decisions/D-014-card-review-and-auto-review-kickoff.md`
 
 ---
@@ -21,13 +21,13 @@
 
 **与产出 Review 的分工**：
 
-| 维度 | 卡定义 Review（本 SOP） | 产出 Review（SOP-REVIEW-LOOP） |
+| 维度 | 卡定义 Review（本 SOP） | 产出 Review（SOP-REVIEW.md） |
 |---|---|---|
 | 审对象 | 卡本身（标题/描述/DoD/依赖） | Agent 产出（代码/文档/配置） |
 | 时机 | 卡创建后，进 Todo 之前 | Agent 交付后，进 Human-Review 之前 |
 | 产物命名空间 | `card-review-*` | `round-*`（既有不变） |
 | 轮次上限 | 3 轮（比产出 Review 紧） | 5 轮 |
-| Verdict 分级 | 同 SOP-REVIEW-LOOP | 同 SOP-REVIEW-LOOP |
+| Verdict 分级 | 同 SOP-REVIEW.md | 同 SOP-REVIEW.md |
 
 ---
 

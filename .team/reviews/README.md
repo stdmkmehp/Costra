@@ -15,7 +15,7 @@
 ├── round-2-tech.md              # ...第 2 轮
 ├── round-2-{agent}-response.md
 ├── ...
-├── round-5-...                  # 最多 5 轮（SOP-REVIEW-LOOP §4.2）
+├── round-5-...                  # 最多 5 轮（SOP-REVIEW.md §4.2）
 └── FINAL.md                     # 闭环最终结论（Orchestrator 写）
 ```
 
@@ -25,9 +25,9 @@
 |---|---|
 | Tech Review 如何打分 | `.team/agents/07-review-agent-tech.md` §3 |
 | Product Review 如何打分 | `.team/agents/08-review-agent-product.md` §3 |
-| 什么时候停迭代 | `.team/SOP-REVIEW-LOOP.md` §4 |
-| 触发指令有哪些 | `.team/SOP-HUMAN-TRIGGER.md` §3 或 `SOP-REVIEW-LOOP.md` §9 |
-| 哪些卡**不走** AI-Review | `.team/SOP-REVIEW-LOOP.md` §2 |
+| 什么时候停迭代 | `.team/SOP-REVIEW.md` §4 |
+| 触发指令有哪些 | `.team/SOP-HUMAN-TRIGGER.md` §3 或 `SOP-REVIEW.md` §9 |
+| 哪些卡**不走** AI-Review | `.team/SOP-REVIEW.md` §2 |
 
 ## Verdict 图例
 
@@ -49,4 +49,4 @@
 
 ## 度量
 
-每次闭环结束，Orchestrator 在 `.team/metrics.json` 追加记录（字段见 `SOP-REVIEW-LOOP.md` §10），每周五汇总到 `.team/weekly/review-metrics.md`。
+每次闭环结束，Orchestrator 在 `.team/metrics.json` 追加记录（字段见 `SOP-REVIEW.md` §11），每周五汇总到 `.team/weekly/review-metrics.md`。

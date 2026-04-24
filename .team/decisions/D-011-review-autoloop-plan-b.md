@@ -117,3 +117,19 @@ Memory 90067452（SOP-HUMAN-TRIGGER 铁律）被本决议**局部修订**：
 
 - Human：✅（2026-04-23 19:43 对话指令确认：选 B，对 COSTRA-100 试一次，且后续都按方案 B，其他流程不变）
 - Orchestrator：已落盘 · 即刻生效
+
+---
+
+## 10. 后续补丁
+
+### 10.1 · 2026-04-24 19:10 · D-016 立案（同轮兑现铁律）
+
+本决议的"自动推进"在**执行层**受 D-016 约束：任何"自动拉起 Review"声明必须同一 tool call 循环内兑现（连续切 Review-Agent 角色产出 Review 报告 + 合并汇报），**不得跨轮异步承诺**。若本轮因物理限制做不到，必须降级为"Review 需 Human 触发"，并把 STATE `MODE` 设为 `awaiting-human`。
+
+- 触发事件：I-005（2026-04-24 17:59 违规声称"60 秒内自动拉起"）
+- D-011 §2 前置（C1~C6）不变；D-016 是 §2 之上的**共同执行约束**
+- 详见 `.team/decisions/D-016-same-turn-review-autoloop.md`
+
+### 10.2 · 2026-04-24 19:16 · 方案 A 合并 SOP
+
+原 `SOP-REVIEW-LOOP.md` v1.4 + `SOP-REVIEW-AUTOLOOP.md` v1.2 合并为 `SOP-REVIEW.md` v2.0。本决议的执行细则（状态机 / 前置 / 动作清单 / 汇报格式）现落地在 `SOP-REVIEW.md §10`。原两份 SOP 降为 stub 保留外链兼容，不再维护。
