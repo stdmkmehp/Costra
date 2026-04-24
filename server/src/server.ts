@@ -10,6 +10,7 @@
  *   4. 顶层 unhandledRejection / uncaughtException 兜底
  */
 
+import 'dotenv/config';
 import { buildApp } from './app.js';
 import { appEnv } from './config/env.js';
 import { closePool } from './db/pool.js';
