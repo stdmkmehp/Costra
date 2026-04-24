@@ -8,7 +8,7 @@
 > **🆕 卡定义 Review + Review 自动拉起（D-014 · 2026-04-23 22:26 生效）**：(a) 2026-04-23 22:26 后新建的卡**必须**经卡定义 Review（技术向→Review-Tech / 产品向→Review-Product）；(b) 被审 Agent 交付后**产出 Review 首轮自动拉起**（无需 Human 触发）；(c) 历史卡豁免；(d) DevOps/QA/决策类豁免；(e) Human 打断指令（`pause-review` / `skip-card-review` / `force-card-pass` / `stop`）最高优先级。详见 `.team/decisions/D-014-card-review-and-auto-review-kickoff.md` + `.team/SOP-CARD-REVIEW.md`。
 > **🔄 D-011 实战验证三次通过**（2026-04-23）：COSTRA-100（2 轮 · 69 min） + Sprint-0 补审（7 卡 × 2 轮 · 29 min 并行） + **COSTRA-101 Round 1 刚自动拉起（22:49 · D-014-b 首次实战）**
 
-最后更新：`2026-04-23 22:49`（Orchestrator · `run backend COSTRA-101` § 6.1.a 骨架交付 · Review-Tech Round 1 自动拉起 REVISE 25/30 · D-011 自动循环中）
+最后更新：`2026-04-24 17:18`（Orchestrator · COSTRA-101 §6.1.a **Human T1 终审 APPROVED** · part-b Verify 待触发 · COSTRA-114 实际未开工澄清 I-003 · 能力边界铁律生效）
 
 ---
 
@@ -48,31 +48,19 @@
 
 **Sprint-1 总估点**：**40 点**（≤ 40 工时约束 ✅ · 顶格）
 
-## 🔄 Doing
-- [~] **COSTRA-101** @Backend-Agent · `/auth/wx-login` + `/auth/refresh` + `/auth/logout` 实装 · **§6.1.a 骨架已交付（22:49 · 23 项 diff）** · Review-Tech Round 1 REVISE 25/30（1 P0 · 3 P1 · 2 P2）· **D-011 自动循环中**（等 Backend 回执 → 自动 Round 2）· §6.1.b 待 Human `verify backend COSTRA-101`
-- [~] COSTRA-108 @DevOps-Agent · miniprogram-ci 上传演练（04-24 18:00 前）
-- [~] COSTRA-109 @PM-Agent · 隐私指引清单（主体字段走 `{{SUBJECT_*}}` 占位）· 04-23 18:00 前
-- [~] COSTRA-110 @PM-Agent · 订阅消息 ×3 文案 · 04-23 12:00 前
-- [~] COSTRA-111 @PM-Agent · subject-compat-matrix · 04-24 18:00 前
-- [~] COSTRA-112 @MiniApp-Agent · subject.ts + 硬编码清扫 · Sprint-1 D3 前
-- [~] **COSTRA-114** @DevOps-Agent · 开发服务器 bootstrap（D-009）· 04-25 18:00 前
-- [~] **COSTRA-115** @DevOps-Agent · DNS 子记录 + 白名单 CI 校验 · 04-25 18:00 前
+## 🔄 Doing（清洗后仅列真正 in-flight · 其余为 Todo-等触发）
+- [~] **COSTRA-101** @Backend-Agent · **§6.1.a 已 Human T1 approve**（17:18 · 见 `FINAL.md`）· **§6.1.b Verify 待 Human `verify backend COSTRA-101`**（`npm install` + `tsc --noEmit` + `vitest run` 三绿灯）· 非阻塞
+- [~] **COSTRA-114** @DevOps-Agent · 开发服务器 bootstrap **手册**（D-009）· 04-25 18:00 前 · **🟠 卡定义已 approve 但实际未开工**（I-003 · 04-24 17:00 澄清 · `docs/ops/` 目录不存在）· 等 Human 真正触发 `run devops COSTRA-114`
 
 ## 👀 Review
 
-### ⏳ AI-Review 自动循环中（共 1 张 · D-011 方案 B）
+### ⏳ AI-Review 自动循环中（共 0 张）
 
-- [R] **COSTRA-101** @Backend-Agent · **Round 1 · REVISE 25/30**（1 P0 · 3 P1 · 2 P2）· 触发源：**D-014-b 首次实战**（Backend 交付 §6.1.a → Orchestrator 60s 内自动拉 Review-Tech）· 下一步等 Backend 回执（无需 Human 触发）
-  - 报告：`.team/reviews/COSTRA-101/round-1-tech.md`
-  - 打断指令：`pause-review COSTRA-101` / `force-pass COSTRA-101` / `skip-review COSTRA-101`
-  - 分段交付配套：§6.1.b 运行时实跑等 Human `verify backend COSTRA-101` 触发（见 STATE 🟢 段）
+_（COSTRA-101 §6.1.a Round 2 PASS 29/30 · 04-24 17:00 收口 · 退出自动循环 · 已入 Human T1 终审队列 → 17:18 approve）_
 
-### 🙋 Human-Review（AI-Review 已通过，等你终审 · 共 1 张）
+### 🙋 Human-Review（AI-Review 已通过，等你终审 · 共 0 张）
 
-#### Sprint-1 主线（共 1 张）
-
-- [R] **COSTRA-113** @Backend-Agent · 2026-04-23 17:50 搭车完成 · `server/src/config/subject.ts` + `.env.production.example` SUBJECT 段
-  - **档位**：D-013 **T1 准入 Review**（搭车新产出）→ 仍需 Human 终审
+_（COSTRA-113 已 04-24 12:54 approve · COSTRA-101 §6.1.a 已 04-24 17:18 approve · 当前无待终审）_
 
 #### 🔒 Sprint-0 AI-Review 补审（共 7 张 · D-013 **T3 追溯 · 全部 SKIP-REVIEW-AUTOCLOSED**）
 
@@ -120,6 +108,10 @@ _（无强阻塞。COSTRA-040 "真实上传链路激活" 仍依赖外部资源�
 - [D] **COSTRA-113** `server/src/config/subject.ts` + `.env.production.example` SUBJECT 段    @Backend-Agent  · 2026-04-24 12:54 **Human approve** · 搭车 COSTRA-100 · D-013 T1 准入 Review 一次过 · 残余 0 · `.team/reviews/COSTRA-113/FINAL.md`
   - **D-008 对齐**：个人主体先行 + 公司主体兼容模板就位，切换剧本内联在 `.env.production.example` 注释
   - **下游解锁**：COSTRA-112（MiniApp 清扫）/ COSTRA-111（subject-compat-matrix）模板占位规约可对齐
+- [D] **COSTRA-101 §6.1.a** 微信登录骨架 + JWT + 错误处理    @Backend-Agent  · 2026-04-24 17:18 **Human T1 approve** · AI-Review 2 轮 PASS 29/30（R1 REVISE 25/30 → R2 PASS 29/30）· 1 P0 + 3 P1 + 2 P2 闭环 · Follow-up 1 项（FU-001 Sprint-2）· `.team/reviews/COSTRA-101/FINAL.md`
+  - **部分段**：仅 §6.1.a 骨架放行 · §6.1.b Verify 实跑仍 Doing（等 `verify backend COSTRA-101`）
+  - **三规约首次实战收口**：D-011 方案 B 第五次 · **D-014-b 首次**（Orchestrator 60s 内自动拉起 R1）· **D-015 首次**（Agent 6 条全采纳 · 零仲裁）
+  - **I-003 附带发现**：Round 2 实际由 Human 17:00 直触发后才发生（调度状态 ≠ 执行状态 · 见 STATE §Incident）
 
 ---
 
@@ -181,6 +173,6 @@ _（无强阻塞。COSTRA-040 "真实上传链路激活" 仍依赖外部资源�
 
 ## 💤 Orchestrator 状态
 
-- **MODE**：`agent-working`（COSTRA-101 Backend §6.1.a 已交付 · Review-Tech Round 1 自动循环中 · 其余 Sprint-1 卡仍等 Human `run` 触发）
-- **下一动作**：Backend-Agent 回执 P0/P1（自动），然后自动拉 Round 2；Human 被动等（预计 10~30 min 内再一次汇报）
-- **保存点**：所有产物已落盘，conversation 可随时中断续作
+- **MODE**：`awaiting-human`（COSTRA-101 §6.1.a 已 T1 approve · §6.1.b Verify 待 `verify backend COSTRA-101` · COSTRA-114 DevOps 实际未开工待 `run devops COSTRA-114` · COSTRA-115 DNS 压线待 `run devops COSTRA-115`）
+- **下一动作**：Human 选择下一触发（非阻塞 · 无自动循环在跑）
+- **保存点**：所有产物已落盘（FINAL.md / metrics.json / STATE 同步）· conversation 可随时中断续作

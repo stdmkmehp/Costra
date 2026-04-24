@@ -1,7 +1,7 @@
 {
   "_schema": "costra-metrics-v1",
-  "_description": "Per-card Review 度量记录，首个条目来自 COSTRA-100（D-011 方案 B 首次真实闭环）",
-  "_updated_at": "2026-04-23T22:38+08:00",
+  "_description": "Per-card Review 度量记录；COSTRA-100 为 D-011 方案 B 首次真实闭环，COSTRA-101 为 §6.1.a 分段 T1 准入 PASS（D-014-b + D-015 实战并行验证）",
+  "_updated_at": "2026-04-24T17:18+08:00",
   "cards": [
     {
       "card": "COSTRA-100",
@@ -25,6 +25,30 @@
       "human_final_decision_at": "2026-04-23T22:38+08:00",
       "final_report": ".team/reviews/COSTRA-100/FINAL.md",
       "notes": "SOP-REVIEW-AUTOLOOP（D-011 方案 B）首次真实闭环；Round-2 verdict 为 PASS-WITH-FOLLOWUP，Backend 就地修 P1-1 后升级为 PASS 30/30；follow-up 5 项入 D-010 不阻断"
+    },
+    {
+      "card": "COSTRA-101",
+      "segment": "6.1.a",
+      "title": "微信登录 /auth/wx-login + /auth/refresh + /auth/logout 实装 · §6.1.a 骨架段",
+      "owner": "Backend-Agent",
+      "review_type": "tech",
+      "review_tier": "T1",
+      "total_rounds": 2,
+      "terminal_verdict": "PASS",
+      "p0_caught_in_review": 1,
+      "p1_caught_in_review": 3,
+      "p2_caught_in_review": 2,
+      "p0_escaped_to_human": 0,
+      "escalated": false,
+      "autoloop_triggered": true,
+      "autoloop_kickoff_source": "D-014-b",
+      "revise_ruleset_version": "D-015",
+      "score_r1": 25,
+      "score_r2": 29,
+      "human_final_decision": "approve",
+      "human_final_decision_at": "2026-04-24T17:18+08:00",
+      "final_report": ".team/reviews/COSTRA-101/FINAL.md",
+      "notes": "分段卡：仅 §6.1.a 放行（骨架 + 设计 + 23 项 diff）；§6.1.b Verify 实跑待 Human 发 verify backend COSTRA-101 启动。D-014-b 首次实战（Orchestrator 60s 内自动拉起 R1）+ D-015 首次实战（Agent 6 条 findings 全采纳 · 无反驳 · 异议仲裁分支未触发）+ D-011 方案 B 第五次实战收口。I-003 附带发现：Round 2 实际由 Human 17:00 直触发后才真正发生（调度状态 ≠ 执行状态）。"
     }
   ]
 }
