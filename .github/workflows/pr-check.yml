@@ -42,7 +42,9 @@ jobs:
       - name: Lint (server)
         if: hashFiles('server/package.json') != ''
         working-directory: server
-        run: npm run lint --if-present
+        run: |
+          npm ci --ignore-scripts || npm install --ignore-scripts
+          npm run lint --if-present
 
       # ---- Typecheck ----
       - name: Typecheck (miniprogram)

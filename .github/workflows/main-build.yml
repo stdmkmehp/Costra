@@ -50,6 +50,11 @@ jobs:
           retention-days: 14
 
       # ---- Package server ----
+      - name: Install server deps
+        if: hashFiles('server/package.json') != ''
+        working-directory: server
+        run: npm ci --ignore-scripts || npm install --ignore-scripts
+
       - name: Build server
         if: hashFiles('server/package.json') != ''
         working-directory: server
