@@ -2,13 +2,13 @@
 
 > 由 PM-Agent 维护，所有 Agent 可读，状态流转必须经过 Orchestrator。
 > 约定流转：`Backlog → Todo → Doing → AI-Review → Human-Review → Done`，Blocked 为横向态。
-> **AI-Review 说明**：Backend/MiniApp 产出先走 `Review-Agent-Tech`；PM/Design 产出先走 `Review-Agent-Product`；DevOps/QA/决策类不走 AI-Review。详见 `.team/SOP-REVIEW-LOOP.md`。
-> **🆕 自动循环（D-011 · 2026-04-23 生效）**：AI-Review 列内 `Revise↔Review` 自动推进，无需 Human 逐轮触发；打断用 `pause-review` / `stop`，详见 `.team/SOP-REVIEW-AUTOLOOP.md`。
+> **AI-Review 说明**：Backend/MiniApp 产出先走 `Review-Agent-Tech`；PM/Design 产出先走 `Review-Agent-Product`；DevOps/QA/决策类不走 AI-Review。详见 `.team/SOP-REVIEW.md`（2026-04-24 合并版 · 原 SOP-REVIEW-LOOP + SOP-REVIEW-AUTOLOOP 已降为 stub）。
+> **🆕 自动循环（D-011 · 2026-04-23 生效 · D-016 同轮兑现 · 2026-04-24 19:10）**：AI-Review 列内 `Revise↔Review` 自动推进，无需 Human 逐轮触发；打断用 `pause-review` / `stop`，详见 `.team/SOP-REVIEW.md §10`。
 > **🆕 场景分级（D-013 · 2026-04-23 21:15 生效）**：Review 分 T1 准入 / T2 Gate 前 / T3 追溯 / T4 回归 四档。T1/T2 必走 Human-Review；**T3/T4 在 AI-PASS + 残余 P0/P1=0 + 无红线 + 无新阻塞时自动关闭**。Human 随时可发 `reopen-review` 复议。详见 `.team/decisions/D-013-review-scenario-tiering.md`。
 > **🆕 卡定义 Review + Review 自动拉起（D-014 · 2026-04-23 22:26 生效）**：(a) 2026-04-23 22:26 后新建的卡**必须**经卡定义 Review（技术向→Review-Tech / 产品向→Review-Product）；(b) 被审 Agent 交付后**产出 Review 首轮自动拉起**（无需 Human 触发）；(c) 历史卡豁免；(d) DevOps/QA/决策类豁免；(e) Human 打断指令（`pause-review` / `skip-card-review` / `force-card-pass` / `stop`）最高优先级。详见 `.team/decisions/D-014-card-review-and-auto-review-kickoff.md` + `.team/SOP-CARD-REVIEW.md`。
 > **🔄 D-011 实战验证三次通过**（2026-04-23）：COSTRA-100（2 轮 · 69 min） + Sprint-0 补审（7 卡 × 2 轮 · 29 min 并行） + **COSTRA-101 Round 1 刚自动拉起（22:49 · D-014-b 首次实战）**
 
-最后更新：`2026-04-24 17:18`（Orchestrator · COSTRA-101 §6.1.a **Human T1 终审 APPROVED** · part-b Verify 待触发 · COSTRA-114 实际未开工澄清 I-003 · 能力边界铁律生效）
+最后更新：`2026-04-24 19:10`（Orchestrator · **COSTRA-101 §6.1.b R4 Revise + Review-Tech 同轮兑现 · VERDICT=APPROVE** · D-016 首次实战合规 · 等 Human T1 终审 `approve:COSTRA-101-part-b`）
 
 ---
 
@@ -49,18 +49,18 @@
 **Sprint-1 总估点**：**40 点**（≤ 40 工时约束 ✅ · 顶格）
 
 ## 🔄 Doing（清洗后仅列真正 in-flight · 其余为 Todo-等触发）
-- [~] **COSTRA-101** @Backend-Agent · **§6.1.a 已 Human T1 approve**（17:18 · 见 `FINAL.md`）· **§6.1.b Verify 待 Human `verify backend COSTRA-101`**（`npm install` + `tsc --noEmit` + `vitest run` 三绿灯）· 非阻塞
+- [~] **COSTRA-101** @Backend-Agent · **§6.1.a 已 Human T1 approve**（17:18）· **§6.1.b R3 Revise 三绿灯**（17:59）· **§6.1.b R3 Review REVISE**（19:02 · I-005 补救）· **§6.1.b R4 Revise + Review-Tech 同轮兑现 · VERDICT=APPROVE**（19:10 · D-016 首次实战合规）· **等 Human T1 终审 `approve:COSTRA-101-part-b`** · 详见 `.team/reviews/COSTRA-101/round-4-tech.md`
 - [~] **COSTRA-114** @DevOps-Agent · 开发服务器 bootstrap **手册**（D-009）· 04-25 18:00 前 · **🟠 卡定义已 approve 但实际未开工**（I-003 · 04-24 17:00 澄清 · `docs/ops/` 目录不存在）· 等 Human 真正触发 `run devops COSTRA-114`
 
 ## 👀 Review
 
 ### ⏳ AI-Review 自动循环中（共 0 张）
 
-_（COSTRA-101 §6.1.a Round 2 PASS 29/30 · 04-24 17:00 收口 · 退出自动循环 · 已入 Human T1 终审队列 → 17:18 approve）_
+_（COSTRA-101 §6.1.b R4 · 04-24 19:10 D-011 环内收敛 APPROVE · 退出自动循环 · 已入 Human T1 终审队列）_
 
-### 🙋 Human-Review（AI-Review 已通过，等你终审 · 共 0 张）
+### 🙋 Human-Review（AI-Review 已通过，等你终审 · 共 1 张）
 
-_（COSTRA-113 已 04-24 12:54 approve · COSTRA-101 §6.1.a 已 04-24 17:18 approve · 当前无待终审）_
+- [~] **COSTRA-101 §6.1.b** @Backend-Agent · R4 Review-Tech APPROVE（4 轮收口 · D-016 首次实战合规 · P0/P1/P1-NEW 残余=0）· **触发 `approve:COSTRA-101-part-b`** 即整卡 Done · 报告 `.team/reviews/COSTRA-101/round-4-tech.md` + FINAL 脚注
 
 #### 🔒 Sprint-0 AI-Review 补审（共 7 张 · D-013 **T3 追溯 · 全部 SKIP-REVIEW-AUTOCLOSED**）
 
@@ -173,6 +173,7 @@ _（无强阻塞。COSTRA-040 "真实上传链路激活" 仍依赖外部资源�
 
 ## 💤 Orchestrator 状态
 
-- **MODE**：`awaiting-human`（COSTRA-101 §6.1.a 已 T1 approve · §6.1.b Verify 待 `verify backend COSTRA-101` · COSTRA-114 DevOps 实际未开工待 `run devops COSTRA-114` · COSTRA-115 DNS 压线待 `run devops COSTRA-115`）
-- **下一动作**：Human 选择下一触发（非阻塞 · 无自动循环在跑）
-- **保存点**：所有产物已落盘（FINAL.md / metrics.json / STATE 同步）· conversation 可随时中断续作
+- **MODE**：`awaiting-human`（**🔴 最高优先级**：`approve:COSTRA-101-part-b` T1 终审 · COSTRA-101 §6.1.b 整卡收官）
+- **下一动作**：Human 一句话收尾：`approve:COSTRA-101-part-b`（或 `human-review COSTRA-101 round-4` 走 T1 另行评估 · 或 `revise-round-5` 不认可 R4 Review 结论）
+- **保存点**：R4 Revise `revise-round-4.md` + R4 Review `round-4-tech.md`（verdict=APPROVE · 3 项超额交付 · 残余=0） / FINAL 追加 / metrics total_rounds=4 terminal_verdict=APPROVE d016_compliance_r4=pass / `docs/api/ttl-policy.md §4.2` 文档漂移闭合 / I-005 已闭环（D-016 首次实战合规）
+- **D-016 首次实战结果**：✅ 合规 · Human 19:07 "走 D-011" → 同一 tool call 循环内完成 Backend Revise + Review 产出 + FINAL 追加 + STATE/board/metrics 同步 · 无任何"下一轮自动"跨轮承诺 · I-005 反模式未复现 · 规约自身初战可信

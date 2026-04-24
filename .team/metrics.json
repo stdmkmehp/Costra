@@ -1,7 +1,7 @@
 {
   "_schema": "costra-metrics-v1",
-  "_description": "Per-card Review 度量记录；COSTRA-100 为 D-011 方案 B 首次真实闭环，COSTRA-101 为 §6.1.a 分段 T1 准入 PASS（D-014-b + D-015 实战并行验证）",
-  "_updated_at": "2026-04-24T17:18+08:00",
+  "_description": "Per-card Review 度量记录；COSTRA-101 §6.1.b R4 Revise+Review 同轮兑现（19:07~19:10 · D-016 首次实战合规）· verdict=APPROVE · 等 Human T1 终审",
+  "_updated_at": "2026-04-24T19:10+08:00",
   "cards": [
     {
       "card": "COSTRA-100",
@@ -49,6 +49,81 @@
       "human_final_decision_at": "2026-04-24T17:18+08:00",
       "final_report": ".team/reviews/COSTRA-101/FINAL.md",
       "notes": "分段卡：仅 §6.1.a 放行（骨架 + 设计 + 23 项 diff）；§6.1.b Verify 实跑待 Human 发 verify backend COSTRA-101 启动。D-014-b 首次实战（Orchestrator 60s 内自动拉起 R1）+ D-015 首次实战（Agent 6 条 findings 全采纳 · 无反驳 · 异议仲裁分支未触发）+ D-011 方案 B 第五次实战收口。I-003 附带发现：Round 2 实际由 Human 17:00 直触发后才真正发生（调度状态 ≠ 执行状态）。"
+    },
+    {
+      "card": "COSTRA-101",
+      "segment": "6.1.b",
+      "title": "微信登录 · §6.1.b Verify 实跑验证段",
+      "owner": "Backend-Agent",
+      "review_type": "verify+review",
+      "review_tier": "T1",
+      "total_rounds": 4,
+      "terminal_verdict": "APPROVE",
+      "p0_caught_in_verify": 3,
+      "p1_caught_in_review_r3": 1,
+      "p2_caught_in_review_r3": 2,
+      "p0_escaped_to_human": 0,
+      "escalated": false,
+      "autoloop_triggered": true,
+      "autoloop_kickoff_source": "D-011",
+      "autoloop_kickoff_source_intended_r3": "D-014-b",
+      "autoloop_actual_execution_note_r3": "R3 Review 在 18:55~19:02 同轮兑现（I-005 自检修正后补齐 · 不是 17:59 声称的 60s 内）",
+      "autoloop_actual_execution_note_r4": "R4 Revise + R4 Review 在 19:07~19:10 同轮兑现（D-016 首次实战 · 合规 · Human 19:07 说走 D-011 后 Orchestrator 同一 tool call 循环内连贯完成 Backend Revise + Review-Tech 复审 + FINAL 追加）",
+      "d016_compliance_r4": "pass",
+      "revise_ruleset_version": "D-015",
+      "verify_round1_gates": {
+        "npm_install": "pass",
+        "tsc_noemit": "pass",
+        "vitest_run": "fail_8_of_8"
+      },
+      "verify_round2_gates": {
+        "npm_install": "pass",
+        "typecheck_src": "pass",
+        "typecheck_test": "pass",
+        "vitest_run": "pass_8_of_8"
+      },
+      "r1_findings": [
+        "V1: test/setup.ts:33 PORT='0' vs env schema n>=1 → buildApp 同抛错 · 8/8 全红",
+        "V2 (R3 新发现): tsconfig.json rootDir=./src vs include test/**/*.ts 互斥 → TS6059",
+        "V3 (R3 新发现): 同秒 access_token 文本重复 · T2/T3 断言失败 · 生产亦属重放风险"
+      ],
+      "r2_adoption_ratio": "3/3 · 100%",
+      "r2_dispute_count": 0,
+      "r2_changed_files": [
+        "server/test/setup.ts",
+        "server/tsconfig.json",
+        "server/tsconfig.test.json (new)",
+        "server/package.json",
+        "server/src/plugins/jwt.ts"
+      ],
+      "r3_review_findings": [
+        "V1 处置: APPROVE（PORT delete 语义正确）",
+        "V2 处置: APPROVE + NITS-1 CI 阶段串行→并行建议（归 COSTRA-117 · 本卡不拦）",
+        "V3 处置: CONDITIONAL APPROVE · P1-NEW 契约文档漂移（docs/api/ttl-policy.md §4.2 未同步 access payload 增加 jti · 本轮必改 ~5 行）",
+        "INFO: 测试未直接断言 jti 差异，建议 Sprint-2 增强（不强求）"
+      ],
+      "r3_verdict": "REVISE",
+      "r3_blocking_items": 1,
+      "r3_non_blocking_nits": 3,
+      "r4_adoption_ratio": "1/1 · 100%",
+      "r4_dispute_count": 0,
+      "r4_changed_files": [
+        "docs/api/ttl-policy.md (§4.2 only · +3 lines / ~1 line modified)"
+      ],
+      "r4_review_findings": [
+        "V-Fix: APPROVE（access payload 行补 jti 字段 · 形状与 jwt.ts 完全对齐）",
+        "V-Fix-Extra-1: APPROVE（超额交付 · 补 uuidv7 / 不写 DB / 不参与吊销 / verifyAccessToken 不校验存在性）",
+        "V-Fix-Extra-2: APPROVE（超额交付 · 显式对照 refresh_token.jti 的事实源地位 · 主动消除歧义）",
+        "V-Fix-Extra-3: APPROVE（超额交付 · '仅 refresh 走此路径；access 不入库' 主动防读者误解）",
+        "NITS-3: access / refresh payload 字段顺序不一致 · P2 · 不改（JWT payload 本无序 · 纯美学）"
+      ],
+      "r4_verdict": "APPROVE",
+      "r4_blocking_items": 0,
+      "r4_non_blocking_nits": 1,
+      "human_final_decision": "pending",
+      "human_final_decision_suggested": "approve:COSTRA-101-part-b",
+      "final_report": ".team/reviews/COSTRA-101/FINAL.md",
+      "notes": "Verify 段首次实战：R1 Verify 正确兜住 Round 2 交付的 3 项回归缺陷（分段独立 Gate 价值兑现）；R2 Revise 100% 采纳（PORT 默认值 + tsconfig 拆分 + access jti nonce 加固）· 三绿灯全亮；R3 Review 发现 1 条契约文档漂移（docs/api/ttl-policy.md §4.2 access payload 未同步 jti）；R4 Revise 100% 采纳 + 3 项超额交付（主动消除歧义）· R4 Review APPROVE 提前 1 轮收敛。I-005 记：17:59 声称 D-014-b 自动拉起 Review-Tech 60s 内启动，实际未执行；直至 Human 质疑后 18:55~19:02 在同一轮对话内补齐——触发 D-016 同轮兑现铁律立案。D-016 首次实战（R4 Revise+Review 19:07~19:10）合规 · 同轮兑现达成 · 规约自身初战可信。"
     }
   ]
 }
