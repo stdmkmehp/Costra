@@ -1,9 +1,9 @@
 # Costra · 全局状态快照
 
-- **更新时间**：2026-04-24 19:10
-- **Orchestrator 模式**：`awaiting-human`（§6.1.b R4 Revise + Review-Tech 同轮兑现收敛 · verdict=**APPROVE** · 提前 1 轮收敛 · **D-016 首次实战合规** · 等 Human T1 终审 `approve:COSTRA-101-part-b`）
-- **球在谁手上**：**Human**（对 R4 Review 报告 `round-4-tech.md` 终审 → 发 `approve:COSTRA-101-part-b` 即收官 COSTRA-101 §6.1.b · Sprint-1 主线第二卡完结）
-- **Human 是否需介入**：**是**（T1 终审 · 另 🟠 COSTRA-115 DNS 04-25 截止剩 ~24h 压线）
+- **更新时间**：2026-04-24 19:28
+- **Orchestrator 模式**：`awaiting-human`（**COSTRA-101 §6.1.b Human T1 APPROVED** @ 19:28 · 整卡收官 · Sprint-1 主线第二张核心卡完结 · 球回到 DevOps 待触发队列）
+- **球在谁手上**：**Human**（下一步触发 `run devops COSTRA-115` DNS + 白名单 CI · 04-25 截止剩约 23h 压线 · 或 `run devops COSTRA-114` 开发服务器 bootstrap 手册）
+- **Human 是否需介入**：**是**（🟠 COSTRA-115 DNS 04-25 截止时间窗压线）
 - **铁律 1**：每次进度汇报必须列"待触发清单"（`.team/SOP-HUMAN-TRIGGER.md` P0 · **三条例外**：D-011 环内 / D-014-a 卡定义首轮 / D-014-b 产出首轮 · **D-016 执行层约束**：所有自动拉起必须同轮兑现）
 - **铁律 2**：**单卡交付即提交**（D-012 · 2026-04-23）· 每完成一张卡立即 `git commit`，禁止攒批；例外仅 Sprint/Gate 聚合收口 · 详见 `.team/decisions/D-012-per-card-commit-discipline.md`
 - **规约 3**：**Review 场景分级**（D-013 · 2026-04-23 21:15）· Review 分 T1/T2/T3/T4 四档；T1 准入 + T2 Gate 前仍需 Human 终审；**T3 追溯 + T4 回归** 在 AI-PASS + 残余 P0/P1=0 + 无红线 + 无新阻塞时**自动关闭** · 详见 `.team/decisions/D-013-review-scenario-tiering.md`
@@ -11,54 +11,45 @@
 - **规约 5**：**respond/revise 合并**（D-015 · 2026-04-24 09:24）· **最终以 Review-Agent 意见为主**（Human 铁律）· 详见 `.team/decisions/D-015-unify-respond-revise.md`
 - **规约 6**：**Orchestrator 自动拉起 Review 同轮兑现铁律**（D-016 · 2026-04-24 19:10 Human 批准立案 · **19:10 R4 首次实战合规**）· 所有"自动拉起"必须同一 tool call 循环内完成切角色产出 · **严禁跨轮承诺** · 详见 `.team/decisions/D-016-same-turn-review-autoloop.md` + `.team/SOP-REVIEW.md §10.5`（合并版 v2.0 · 2026-04-24 19:16）
 - **能力边界铁律**（COSTRA-114 v2 · 2026-04-24 13:14）：**Agent 无真机 / 真服务访问权**· 手册交付即完工
-- **Review 闭环**：五次主 Review 实战 PASS + **COSTRA-101 §6.1.b 首个四轮收口**（R1 Verify-FAIL → R2 Revise 三绿灯 → R3 Review REVISE 1 P1-NEW → **R4 Revise+Review 同轮兑现 APPROVE**）· I-005 触发 D-016 立案 + D-016 首轮实战兑现
+- **Review 闭环**：五次主 Review 实战 PASS + **COSTRA-101 §6.1.b 首个四轮收口 · Human T1 APPROVED**（2026-04-24 19:28）
 
 ---
 
-## 🟢 COSTRA-101 §6.1.b · Round 4 Revise + Review-Tech 同轮兑现收敛（2026-04-24 19:07 ~ 19:10 · D-016 首次实战合规）
+## 🟢 COSTRA-101 §6.1.b · Human T1 APPROVED · 整卡收官（2026-04-24 19:28）
 
-> **触发路径**：Human 19:07 "走 D-011" · D-016 铁律首次实战约束下 Orchestrator 在**同一 tool call 循环内**连贯完成三段：Backend R4 Revise → Review-Tech R4 二复审 → FINAL 终裁追加
+> **触发路径**：Human 19:28 发 `approve:COSTRA-101-part-b` · T1 终审放行 §6.1.b Verify 实跑段 · COSTRA-101 微信登录实装整卡两段完结
 
-### Backend R4 Revise（19:07~19:08 · 实动 <1min · 纯文档）
-- 采纳 R3 P1-NEW · 100% · 0 反驳
-- 修 `docs/api/ttl-policy.md §4.2`：
-  - access payload 行补 `jti` 字段（与 `server/src/plugins/jwt.ts` R3 实装完全对齐）
-  - 新增 2 行 sub-bullet：nonce 用途 · uuidv7 · 不写 DB · 不参与吊销 · `verifyAccessToken` 不校验存在性 · 降低同秒重放可辨识度
-  - 显式对照 `refresh_token.jti`（事实源 · 双写 user_sessions + Redis · 登出/吊销都依赖它）
-  - "jti 入 Redis" 行补 "仅 refresh 走此路径；access 不入库"（主动防读者误解 · R3 Review 未要求的自发动作）
-- 落 `.team/reviews/COSTRA-101/revise-round-4.md`（含无反驳声明 + 回归影响审视 + 教训总结）
+### 终审覆盖范围
+- R1 Verify FAIL（17:48）→ R3 Revise 三绿灯（17:59）→ R3 Review REVISE 1 P1-NEW（19:02）→ R4 Revise 文档补丁（19:08）→ R4 Review-Tech APPROVE（19:10）→ **Human T1 APPROVE（19:28）**
+- **代码变更 5 处**：`server/test/setup.ts` / `server/tsconfig.json` / `server/tsconfig.test.json`（新）/ `server/package.json` / `server/src/plugins/jwt.ts`
+- **文档变更 1 处**：`docs/api/ttl-policy.md §4.2`（access payload 加 jti + 3 项超额消歧义说明）
+- **三绿灯**：install + typecheck（src+test 双份）+ vitest 8/8 全绿
 
-### Review-Tech R4 产出（19:08~19:10 · 同轮兑现）
-- **VERDICT=APPROVE**（提前 1 轮收敛 · D-011 上限 5 · 余量 1）
-- V-Fix APPROVE + 3 项 Extra **超额交付**加分（Review 未要求但 Backend 主动消除歧义）
-- NITS-3：access/refresh payload 字段顺序不一致 · P2 · 不改（JWT payload 本无序 · 纯美学）
-- P0/P1/P1-NEW 残余 = 0 · 阻塞 = 0
-- 建议 Human 直接 `approve:COSTRA-101-part-b`
-- 报告：`.team/reviews/COSTRA-101/round-4-tech.md`
+### 收官度量
+- **§6.1.a**：2 轮收口 · PASS 29/30 · Human T1 approve @ 17:18
+- **§6.1.b**：4 轮收口 · APPROVE · Human T1 approve @ 19:28
+- **D-011 方案 B 第六次实战** · **D-014-b 首次实战** · **D-015 首次实战**（零仲裁） · **D-016 首次实战**（同轮兑现合规）
+- 四条规约在本卡累计首次实战 · 全数通过
 
-### D-016 首次实战自检（Review-Tech §5 条款逐项核验）
-| D-016 要求 | 本轮实绩 |
-|---|---|
-| 自动拉起声明 → 同一 tool call 循环内完成切角色产出 | ✅ Human 19:07 说"走 D-011" → 同一循环内 Backend 交付 + Review 产出 + FINAL 追加 |
-| 单轮末合并汇报 | ✅ 本报告 + Review 报告 + FINAL + STATE/board/metrics 同步完成 |
-| 不使用"下一轮自动执行 / 60 秒后台拉起" | ✅ 全轮零此类表述 |
-| 降级路径（做不到 → 明说 Human 触发）| 未启用 · 本轮全量兑现 |
+### 下游解锁
+- **COSTRA-102**（MiniApp 登录 → 首页 → 记一笔 端到端）依赖链打通 · 可进入 Todo-等触发态
+- Sprint-1 主线按 COSTRA-100 → 101 → 102/103 → 104 → 105 顺序推进
 
-**结论**：D-016 规约自身**立案即可兑现** · I-005 反模式未复现。
+---
 
-## 🟢 D-016 同轮兑现铁律立案（2026-04-24 19:10 · 并在 19:07~19:10 首次实战兑现）
+## 🟢 COSTRA-101 §6.1.b · Round 4 Revise + Review-Tech 同轮兑现收敛（2026-04-24 19:07 ~ 19:10 · D-016 首次实战合规 · 历史事件）
 
-> Human 原文复述 = 批准 · 规约层补丁落盘 · **19:10 R4 自动循环首次按 D-016 全程合规兑现**。
-> 核心：Orchestrator 声明"自动拉起 Review"后必须同一 tool call 循环内完成切角色产出 · 严禁跨轮承诺。
-> 作用对象：D-011 环内 Revise↔Review / D-014-a 卡定义首轮 / D-014-b 产出首轮 · 三条例外共同前置约束。
-> 违规即自动记 incident（metrics 字段 `auto_kickoff_claim=true && auto_kickoff_delivered=false`）。
-> 落盘：`.team/decisions/D-016-same-turn-review-autoloop.md` v1.0 · `SOP-REVIEW.md §10.5`（2026-04-24 合并版 v2.0 · 原 SOP-REVIEW-AUTOLOOP.md v1.2 内容已并入）· memory 90067452 扩写。
+> 4 轮收口 · APPROVE · 报告 `.team/reviews/COSTRA-101/round-4-tech.md` + `revise-round-4.md`
 
-## 🟢 COSTRA-101 §6.1.b · Round 3 Review-Tech 同轮兑现产出（2026-04-24 18:55~19:02 · I-005 补救）
+## 🟢 D-016 同轮兑现铁律立案（2026-04-24 19:10 · 并在 19:07~19:10 首次实战兑现 · 历史事件）
+
+> 立案即兑现 · I-005 反模式未复现 · 落盘：`.team/decisions/D-016-same-turn-review-autoloop.md` v1.0 · `SOP-REVIEW.md §10.5`
+
+## 🟢 COSTRA-101 §6.1.b · Round 3 Review-Tech 同轮兑现产出（2026-04-24 18:55~19:02 · I-005 补救 · 历史事件）
 
 > R3 Review verdict=REVISE · 1 条 P1-NEW · 已由 R4 完全闭合 · 报告 `.team/reviews/COSTRA-101/round-3-tech.md`
 
-## 🟢 COSTRA-101 §6.1.b · Round 3 Revise 三绿灯交付（2026-04-24 17:59）
+## 🟢 COSTRA-101 §6.1.b · Round 3 Revise 三绿灯交付（2026-04-24 17:59 · 历史事件）
 
 > 100% 采纳 3 条 Verify 反馈 · 三绿灯全亮 · 报告 `revise-round-3.md`
 
@@ -68,7 +59,7 @@
 
 ## ✅ COSTRA-101 §6.1.a · Human T1 APPROVED（2026-04-24 17:18 · 历史事件）
 
-> §6.1.a Review 闭环正式收官 · 不因 §6.1.b 任何后续波动回退 · FINAL `.team/reviews/COSTRA-101/FINAL.md`
+> §6.1.a Review 闭环正式收官 · FINAL `.team/reviews/COSTRA-101/FINAL.md`
 
 ## 🟡 COSTRA-114 DevOps 写手册 · **实际未开工**（I-003 持续）
 
@@ -76,24 +67,23 @@
 
 ## ⚠️ 需要 Human 触发的 Agent 任务清单（按优先级）
 
-### 🔴 最高优先级（业务层 · 本轮 Orchestrator 全部兑现完毕 · 等 Human 一句话收官）
-- **`approve:COSTRA-101-part-b`** → COSTRA-101 §6.1.b T1 终审 APPROVED · 整卡 Done · Sprint-1 第二卡收官
-  - **备选**：`human-review COSTRA-101 round-4` → 若 T1 终审需另行评估
-  - **备选**：`revise-round-5` → 若对 R4 Review 不满意（D-011 余量 1 轮）
-  - **备选**：`force-revise` → 若想对 NITS-3 字段顺序较真（不推荐）
-
-### 🟠 中优先级（无硬阻塞 · 可并行）
-1. **`run devops COSTRA-115`** — DNS 子记录 + 白名单 CI（D-009 · **04-25 截止 · 剩约 24h · 压线**）
+### 🟠 中优先级（无硬阻塞 · 压线）
+1. **`run devops COSTRA-115`** — DNS 子记录 + 白名单 CI（D-009 · **04-25 截止 · 剩约 23h · 压线**）
 2. **`run devops COSTRA-114`** — DevOps 真正开写开发服务器 bootstrap 手册（I-003 澄清后待真触发）
 
+### 🟢 COSTRA-101 下游解锁（可并行启动）
+3. **`run miniapp COSTRA-102`** — MiniApp 登录 → 首页 → 记一笔 端到端（**刚解锁**）· 依赖 101 已满足
+4. **`run miniapp COSTRA-103`** — 本地 SQLite/IndexedDB 持久化 + outbox_queue（依赖 100 已满足）
+5. **`run backend COSTRA-104`** — `/entries` CRUD + `/sync/push` 批量通道（依赖 100/103）
+
 ### 🟡 低优先级（依赖上游 / 可后排）
-3. `run miniapp COSTRA-112` — 小程序主体字样清扫
-4. `run devops COSTRA-108` — miniprogram-ci 演练
-5. `run pm COSTRA-109/110/111` — 文档三卡并行
-6. `run devops COSTRA-117` — husky v10 兼容清理（1 点）
+6. `run miniapp COSTRA-112` — 小程序主体字样清扫
+7. `run devops COSTRA-108` — miniprogram-ci 演练
+8. `run pm COSTRA-109/110/111` — 文档三卡并行
+9. `run devops COSTRA-117` — husky v10 兼容清理（1 点）
 
 ### 🔒 已自动关闭 / 已废弃（不再占位）
-- ~~`approve-batch sprint-0-review`~~ · ~~`approve:COSTRA-100`~~ · ~~`approve:COSTRA-113`~~ · ~~`approve:COSTRA-101-part-a`~~ · ~~`run backend COSTRA-101 respond-round-N`~~
+- ~~`approve-batch sprint-0-review`~~ · ~~`approve:COSTRA-100`~~ · ~~`approve:COSTRA-113`~~ · ~~`approve:COSTRA-101-part-a`~~ · ~~`approve:COSTRA-101-part-b`~~ · ~~`run backend COSTRA-101 respond-round-N`~~
 
 ### ✅ 本轮已完成触发项（近 8h）
 - ~~`run backend COSTRA-101 revise-round-1`~~ — 2026-04-24 11:50
@@ -106,6 +96,8 @@
 - ~~用户对 "Review-Tech R3 自动拉起" 的质疑~~ — 2026-04-24 18:55~19:02（同轮兑现产出 round-3-tech.md · I-005 登记）
 - ~~**D-014-b 同轮兑现铁律**~~ — 2026-04-24 19:10（**D-016 立案** · Human 原文复述批准）
 - ~~**走 D-011**~~（Human 19:07 触发 R4 自动循环）— **2026-04-24 19:10 完成**（R4 Revise + Review-Tech 同轮兑现 · APPROVE · D-016 首次实战合规）
+- ~~**方案 A SOP 合并**~~ — 2026-04-24 19:16（SOP-REVIEW-LOOP + AUTOLOOP 合并为 SOP-REVIEW.md v2.0 · 两份原文件降为 stub）
+- ~~**`approve:COSTRA-101-part-b`**~~ — **2026-04-24 19:28**（T1 终审 · §6.1.b APPROVED · 整卡收官）
 
 ## 最近里程碑
 - ✅ G1/G2/G3 全部通过
@@ -130,13 +122,14 @@
 - 🔴 **I-005 登记 · D-014-b 执行缺陷**（04-24 18:52 用户质疑 · 19:02 修正）
 - 🟢 **COSTRA-101 §6.1.b R3 Review-Tech 同轮兑现产出**（04-24 19:02）· verdict=REVISE 1 条 P1-NEW
 - 🆕 **D-016 同轮兑现铁律立案**（04-24 19:10）· Human 原文复述批准 · SOP-REVIEW.md §10.5（04-24 19:16 合并版）· memory 90067452 扩写
-- 🟢 **COSTRA-101 §6.1.b R4 Revise + Review-Tech 同轮兑现 · APPROVE**（04-24 19:10）· **D-016 首次实战合规** · 3 项超额交付 · 提前 1 轮收敛 · 等 Human T1 终审
+- 🟢 **COSTRA-101 §6.1.b R4 Revise + Review-Tech 同轮兑现 · APPROVE**（04-24 19:10）· **D-016 首次实战合规**
+- 🆕 **方案 A SOP 合并落地**（04-24 19:16）· SOP-REVIEW.md v2.0（原 LOOP + AUTOLOOP 合并单入口 · 两份原文件降 stub）
+- 🏆 **COSTRA-101 §6.1.b · Human T1 APPROVED · 整卡收官**（04-24 19:28）· Sprint-1 主线第二张核心卡完结 · 解锁 COSTRA-102 依赖链
 
-## 进行中（共 2 卡）
-- **COSTRA-101** @Backend-Agent · §6.1.a T1 approve（17:18）· §6.1.b R3 Revise 三绿灯（17:59）· R3 Review REVISE（19:02）· **R4 Revise+Review APPROVE**（19:10 · D-016 首次实战合规）· 等 Human T1 终审 `approve:COSTRA-101-part-b`
+## 进行中（共 1 卡）
 - **COSTRA-114** @DevOps-Agent · 卡定义已放行但实际未开工（I-003）· 等 Human 真触发
 
-（COSTRA-108/109/110/111/112/115/117 Todo-等触发）
+（COSTRA-102/103/104/108/109/110/111/112/115/117 Todo-等触发 · 其中 102/103/104 因 101 收官刚解锁）
 
 ## 🔒 Sprint-0 AI-Review 补审 · Skip-Review 归档（2026-04-23 21:15）
 
@@ -173,12 +166,12 @@
 
 ## 🧭 主体策略（D-008）
 - 当前：个人 · 兼容：公司主体就绪 · Won't-Have：支付/商户/交易组件
-- 实装：server 已上线（COSTRA-113）· MiniApp 待 COSTRA-112
+- 实装：server 已上线（COSTRA-113 + COSTRA-101 整卡收官）· MiniApp 待 COSTRA-112
 
 ## Human 下一次介入节点
-1. **🔴 立即**：`approve:COSTRA-101-part-b`（T1 终审 · COSTRA-101 §6.1.b 收官）
-2. **🟠 今晚或明早**：`run devops COSTRA-115`（04-25 截止 · 压线）
-3. **🟠 随时**：`run devops COSTRA-114`
+1. **🟠 压线**：`run devops COSTRA-115`（04-25 截止 · 剩 ~23h）
+2. **🟠 随时**：`run devops COSTRA-114`
+3. **🟢 可启动**：`run miniapp COSTRA-102`（刚解锁 · Sprint-1 主线第三卡）
 4. **被动等**：ICP 短信审核到达时 5 分钟内回验证码
 5. **Sprint-1 中点（2026-04-30）**：本地验证 COSTRA-102 真实登录端到端
 6. **Sprint-1 末（2026-05-06）**：G4 合并闸门决策
@@ -190,7 +183,7 @@
 - **I-002（2026-04-24 13:04）**：DevOps 卡定义 Review 归属 SOP 漂移。
 - **I-003（2026-04-24 16:58~17:18）**：Orchestrator 调度状态 vs 执行状态混淆。
 - **I-004（2026-04-24 17:48）**：R1 Verify 发现 Round 2 Backend 3 项潜藏回归。R3 Revise 100% 修复。Follow-up O-V-2。
-- **I-005（2026-04-24 17:59 声称 → 18:52 用户质疑 → 19:02 补救 → 19:10 D-016 立案 → 19:10 D-016 首次实战兑现 · **已闭环**）**：D-014-b "自动拉起 Review-Tech" 声称与执行不符。根因：把"同轮连续"错当"跨轮异步"。补救：同轮兑现产出 `round-3-tech.md`。预防：D-016 立案 · R4 自动循环按 D-016 全程合规兑现（Backend + Review + FINAL 同轮）· 规约自身站住脚。
+- **I-005（2026-04-24 17:59 声称 → 18:52 用户质疑 → 19:02 补救 → 19:10 D-016 立案 → 19:10 D-016 首次实战兑现 · **已闭环**）**：D-014-b "自动拉起 Review-Tech" 声称与执行不符。根因：把"同轮连续"错当"跨轮异步"。补救：同轮兑现产出 `round-3-tech.md`。预防：D-016 立案 · R4 自动循环按 D-016 全程合规兑现。
 
 ## 关键产物
 - **Review 机制**：agents/07-review-agent-tech · agents/08-review-agent-product · **SOP-REVIEW.md v2.0（2026-04-24 合并版 · 原 SOP-REVIEW-LOOP v1.4 + SOP-REVIEW-AUTOLOOP v1.2 已并入 · D-016 §10.5）** · SOP-CARD-REVIEW · SOP-HUMAN-TRIGGER · D-011/013/014/015/**016**
@@ -200,20 +193,20 @@
   - `.team/reviews/COSTRA-101/round-1-tech.md`（REVISE 25/30）
   - `.team/reviews/COSTRA-101/round-1-backend-response.md`
   - `.team/reviews/COSTRA-101/round-2-tech.md`（PASS 29/30）
-  - `.team/reviews/COSTRA-101/FINAL.md`（§6.1.a APPROVED · §6.1.b R4 APPROVED · 等 Human T1）
+  - `.team/reviews/COSTRA-101/FINAL.md`（§6.1.a APPROVED 17:18 · **§6.1.b APPROVED 19:28** · 整卡收官）
   - `.team/reviews/COSTRA-101/verify-part-b-fail.md`
   - `.team/reviews/COSTRA-101/revise-round-3.md`
   - `.team/reviews/COSTRA-101/round-3-tech.md`（§6.1.b Round 3 Review-Tech · I-005 补救 · verdict=REVISE · 1 条 P1-NEW）
-  - 🆕 `.team/reviews/COSTRA-101/revise-round-4.md`（R4 · 文档补丁 · 100% 采纳 · 0 反驳 · 3 项超额交付）
-  - 🆕 `.team/reviews/COSTRA-101/round-4-tech.md`（R4 Review-Tech · **verdict=APPROVE** · D-016 首次实战合规）
+  - `.team/reviews/COSTRA-101/revise-round-4.md`（R4 · 文档补丁 · 100% 采纳 · 0 反驳 · 3 项超额交付）
+  - `.team/reviews/COSTRA-101/round-4-tech.md`（R4 Review-Tech · **verdict=APPROVE** · D-016 首次实战合规）
   - `.team/reviews/COSTRA-113/FINAL.md`
   - `.team/decisions/ADR-0006-backend-runtime-and-primary-store.md` v1.1
   - `.team/reviews/COSTRA-100/FINAL.md`
   - `.team/decisions/D-016-same-turn-review-autoloop.md`（立案 · I-005 触发 · Human 批准 · **R4 首次实战合规**）
-  - `.team/metrics.json`（第 3 条 total_rounds=4 · terminal_verdict=APPROVE · r4_* 字段 + d016_compliance_r4=pass）
+  - `.team/metrics.json`（第 3 条 total_rounds=4 · terminal_verdict=APPROVE · **human_final_decision=approve @ 19:28** · r4_* 字段 + d016_compliance_r4=pass）
   - 实体源码：server/src/* 全部（COSTRA-101 §6.1.a）+ server/src/config/subject.ts（COSTRA-113）
   - R3 代码变更：server/test/setup.ts + server/tsconfig.json + server/tsconfig.test.json（新）+ server/package.json + server/src/plugins/jwt.ts
-  - 🆕 R4 文档变更：`docs/api/ttl-policy.md §4.2`（access payload 加 jti + 3 项超额说明）
+  - R4 文档变更：`docs/api/ttl-policy.md §4.2`（access payload 加 jti + 3 项超额说明）
   - 🔜 预计产出：`docs/ops/dev-server-bootstrap.md`（COSTRA-114 · 未开写）
 - **Follow-ups**：`.team/follow-ups/README.md`（FU-001 open · O-1/O-V-1/O-V-2/O-R3-1/O-R3-2/O-R4-1/O-R4-2）
 - D-009 / D-008 / D-007 / D-006 · Sprint 计划 · 看板 · 风险册：保持原索引

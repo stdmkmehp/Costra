@@ -1,7 +1,7 @@
 {
   "_schema": "costra-metrics-v1",
-  "_description": "Per-card Review 度量记录；COSTRA-101 §6.1.b R4 Revise+Review 同轮兑现（19:07~19:10 · D-016 首次实战合规）· verdict=APPROVE · 等 Human T1 终审",
-  "_updated_at": "2026-04-24T19:10+08:00",
+  "_description": "Per-card Review 度量记录；COSTRA-101 §6.1.b Human T1 APPROVED @ 2026-04-24 19:28 · 整卡收官",
+  "_updated_at": "2026-04-24T19:28+08:00",
   "cards": [
     {
       "card": "COSTRA-100",
@@ -120,10 +120,10 @@
       "r4_verdict": "APPROVE",
       "r4_blocking_items": 0,
       "r4_non_blocking_nits": 1,
-      "human_final_decision": "pending",
-      "human_final_decision_suggested": "approve:COSTRA-101-part-b",
+      "human_final_decision": "approve",
+      "human_final_decision_at": "2026-04-24T19:28+08:00",
       "final_report": ".team/reviews/COSTRA-101/FINAL.md",
-      "notes": "Verify 段首次实战：R1 Verify 正确兜住 Round 2 交付的 3 项回归缺陷（分段独立 Gate 价值兑现）；R2 Revise 100% 采纳（PORT 默认值 + tsconfig 拆分 + access jti nonce 加固）· 三绿灯全亮；R3 Review 发现 1 条契约文档漂移（docs/api/ttl-policy.md §4.2 access payload 未同步 jti）；R4 Revise 100% 采纳 + 3 项超额交付（主动消除歧义）· R4 Review APPROVE 提前 1 轮收敛。I-005 记：17:59 声称 D-014-b 自动拉起 Review-Tech 60s 内启动，实际未执行；直至 Human 质疑后 18:55~19:02 在同一轮对话内补齐——触发 D-016 同轮兑现铁律立案。D-016 首次实战（R4 Revise+Review 19:07~19:10）合规 · 同轮兑现达成 · 规约自身初战可信。"
+      "notes": "Verify 段首次实战：R1 Verify 正确兜住 Round 2 交付的 3 项回归缺陷（分段独立 Gate 价值兑现）；R2 Revise 100% 采纳（PORT 默认值 + tsconfig 拆分 + access jti nonce 加固）· 三绿灯全亮；R3 Review 发现 1 条契约文档漂移（docs/api/ttl-policy.md §4.2 access payload 未同步 jti）；R4 Revise 100% 采纳 + 3 项超额交付（主动消除歧义）· R4 Review APPROVE 提前 1 轮收敛。I-005 记：17:59 声称 D-014-b 自动拉起 Review-Tech 60s 内启动，实际未执行；直至 Human 质疑后 18:55~19:02 在同一轮对话内补齐——触发 D-016 同轮兑现铁律立案。D-016 首次实战（R4 Revise+Review 19:07~19:10）合规 · 同轮兑现达成 · 规约自身初战可信。Human T1 终审 19:28 APPROVED · COSTRA-101 整卡收官 · Sprint-1 主线第二张核心卡完结 · 解锁 COSTRA-102 端到端依赖链。四条规约（D-011/014/015/016）本卡累计首次实战全数通过。"
     }
   ]
 }

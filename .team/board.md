@@ -8,7 +8,7 @@
 > **🆕 卡定义 Review + Review 自动拉起（D-014 · 2026-04-23 22:26 生效）**：(a) 2026-04-23 22:26 后新建的卡**必须**经卡定义 Review（技术向→Review-Tech / 产品向→Review-Product）；(b) 被审 Agent 交付后**产出 Review 首轮自动拉起**（无需 Human 触发）；(c) 历史卡豁免；(d) DevOps/QA/决策类豁免；(e) Human 打断指令（`pause-review` / `skip-card-review` / `force-card-pass` / `stop`）最高优先级。详见 `.team/decisions/D-014-card-review-and-auto-review-kickoff.md` + `.team/SOP-CARD-REVIEW.md`。
 > **🔄 D-011 实战验证三次通过**（2026-04-23）：COSTRA-100（2 轮 · 69 min） + Sprint-0 补审（7 卡 × 2 轮 · 29 min 并行） + **COSTRA-101 Round 1 刚自动拉起（22:49 · D-014-b 首次实战）**
 
-最后更新：`2026-04-24 19:10`（Orchestrator · **COSTRA-101 §6.1.b R4 Revise + Review-Tech 同轮兑现 · VERDICT=APPROVE** · D-016 首次实战合规 · 等 Human T1 终审 `approve:COSTRA-101-part-b`）
+最后更新：`2026-04-24 19:28`（Orchestrator · **COSTRA-101 §6.1.b · Human T1 APPROVED · 整卡收官** · Sprint-1 主线第二张核心卡完结 · 解锁 COSTRA-102 依赖链）
 
 ---
 
@@ -49,18 +49,17 @@
 **Sprint-1 总估点**：**40 点**（≤ 40 工时约束 ✅ · 顶格）
 
 ## 🔄 Doing（清洗后仅列真正 in-flight · 其余为 Todo-等触发）
-- [~] **COSTRA-101** @Backend-Agent · **§6.1.a 已 Human T1 approve**（17:18）· **§6.1.b R3 Revise 三绿灯**（17:59）· **§6.1.b R3 Review REVISE**（19:02 · I-005 补救）· **§6.1.b R4 Revise + Review-Tech 同轮兑现 · VERDICT=APPROVE**（19:10 · D-016 首次实战合规）· **等 Human T1 终审 `approve:COSTRA-101-part-b`** · 详见 `.team/reviews/COSTRA-101/round-4-tech.md`
 - [~] **COSTRA-114** @DevOps-Agent · 开发服务器 bootstrap **手册**（D-009）· 04-25 18:00 前 · **🟠 卡定义已 approve 但实际未开工**（I-003 · 04-24 17:00 澄清 · `docs/ops/` 目录不存在）· 等 Human 真正触发 `run devops COSTRA-114`
 
 ## 👀 Review
 
 ### ⏳ AI-Review 自动循环中（共 0 张）
 
-_（COSTRA-101 §6.1.b R4 · 04-24 19:10 D-011 环内收敛 APPROVE · 退出自动循环 · 已入 Human T1 终审队列）_
+_（COSTRA-101 §6.1.b R4 · 04-24 19:10 D-011 环内收敛 APPROVE · 19:28 Human T1 终审放行 · 整卡收官）_
 
-### 🙋 Human-Review（AI-Review 已通过，等你终审 · 共 1 张）
+### 🙋 Human-Review（AI-Review 已通过，等你终审 · 共 0 张）
 
-- [~] **COSTRA-101 §6.1.b** @Backend-Agent · R4 Review-Tech APPROVE（4 轮收口 · D-016 首次实战合规 · P0/P1/P1-NEW 残余=0）· **触发 `approve:COSTRA-101-part-b`** 即整卡 Done · 报告 `.team/reviews/COSTRA-101/round-4-tech.md` + FINAL 脚注
+_（COSTRA-101 §6.1.b 已 19:28 Human T1 APPROVED · 队列空）_
 
 #### 🔒 Sprint-0 AI-Review 补审（共 7 张 · D-013 **T3 追溯 · 全部 SKIP-REVIEW-AUTOCLOSED**）
 
@@ -112,6 +111,12 @@ _（无强阻塞。COSTRA-040 "真实上传链路激活" 仍依赖外部资源�
   - **部分段**：仅 §6.1.a 骨架放行 · §6.1.b Verify 实跑仍 Doing（等 `verify backend COSTRA-101`）
   - **三规约首次实战收口**：D-011 方案 B 第五次 · **D-014-b 首次**（Orchestrator 60s 内自动拉起 R1）· **D-015 首次**（Agent 6 条全采纳 · 零仲裁）
   - **I-003 附带发现**：Round 2 实际由 Human 17:00 直触发后才发生（调度状态 ≠ 执行状态 · 见 STATE §Incident）
+- [D] **COSTRA-101 §6.1.b** 微信登录 Verify 实跑 + R3/R4 净化修复    @Backend-Agent  · 2026-04-24 19:28 **Human T1 approve** · 整卡收官 · AI-Review 4 轮（R1 Verify FAIL → R2/R3 Revise 三绿灯 → R3 Review REVISE 1 P1-NEW → R4 Revise 文档补丁 → R4 Review APPROVE）· `.team/reviews/COSTRA-101/FINAL.md`
+  - **代码变更 5 处**：`server/test/setup.ts` / `server/tsconfig.json` / `server/tsconfig.test.json`（新）/ `server/package.json` / `server/src/plugins/jwt.ts`（access jti nonce）
+  - **文档变更 1 处**：`docs/api/ttl-policy.md §4.2`（access payload 加 jti + 3 项超额消歧义说明）
+  - **三绿灯**：install + typecheck（src+test 双份）+ vitest 8/8 全绿
+  - **四规约首次实战累积收官**：D-011 方案 B 第六次 · **D-014-b 首次 + D-015 首次 + D-016 首次**（同轮兑现合规 · I-005 反模式未复现）
+  - **下游解锁**：COSTRA-102 端到端（MiniApp 登录 → 首页 → 记一笔）依赖链打通
 
 ---
 
@@ -173,7 +178,7 @@ _（无强阻塞。COSTRA-040 "真实上传链路激活" 仍依赖外部资源�
 
 ## 💤 Orchestrator 状态
 
-- **MODE**：`awaiting-human`（**🔴 最高优先级**：`approve:COSTRA-101-part-b` T1 终审 · COSTRA-101 §6.1.b 整卡收官）
-- **下一动作**：Human 一句话收尾：`approve:COSTRA-101-part-b`（或 `human-review COSTRA-101 round-4` 走 T1 另行评估 · 或 `revise-round-5` 不认可 R4 Review 结论）
-- **保存点**：R4 Revise `revise-round-4.md` + R4 Review `round-4-tech.md`（verdict=APPROVE · 3 项超额交付 · 残余=0） / FINAL 追加 / metrics total_rounds=4 terminal_verdict=APPROVE d016_compliance_r4=pass / `docs/api/ttl-policy.md §4.2` 文档漂移闭合 / I-005 已闭环（D-016 首次实战合规）
-- **D-016 首次实战结果**：✅ 合规 · Human 19:07 "走 D-011" → 同一 tool call 循环内完成 Backend Revise + Review 产出 + FINAL 追加 + STATE/board/metrics 同步 · 无任何"下一轮自动"跨轮承诺 · I-005 反模式未复现 · 规约自身初战可信
+- **MODE**：`awaiting-human`（**COSTRA-101 整卡收官** @ 19:28 · 球回到 DevOps 待触发队列 · **🟠 压线**：`run devops COSTRA-115` DNS 白名单 CI · 04-25 截止剩约 23h）
+- **下一动作**：Human 选择触发 `run devops COSTRA-115`（压线）/ `run devops COSTRA-114`（开发服务器手册）/ `run miniapp COSTRA-102`（Sprint-1 主线第三卡 · 刚解锁）
+- **保存点**：COSTRA-101 整卡两段完结 · §6.1.a 17:18 APPROVED + §6.1.b 19:28 APPROVED · FINAL.md 双签字 / STATE 刷至 19:28 / metrics.json 第 3 条 human_final_decision=approve / 代码 5 处 + 文档 1 处变更已全部入工作区
+- **D-016 首次实战结果**：✅ 合规（R4 19:07~19:10 同轮兑现）· Human T1 19:28 终审 APPROVED 收官 · 规约自身初战可信 · 四条规约（D-011/014/015/016）本卡累计首次实战全数通过
