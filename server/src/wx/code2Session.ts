@@ -12,6 +12,13 @@
  *       * 其他非 0            → UNAVAILABLE（上游暂不可用）
  *   - 网络异常（fetch 抛错 / 超时）→ UNAVAILABLE
  *
+ * 安全（P1-3 · D-015 round-1 revise）：
+ *   - 微信官方接口仅支持 GET，AppSecret 必须拼进 query string；无法从协议层面规避。
+ *   - 代码路径绝不 log 原始 URL；AppError.cause 只携带脱敏版本，避免：
+ *       * undici 抛 ENOTFOUND 时 cause.message / cause.hostname 带整串 url
+ *       * Fastify pino 默认 err 序列化把 cause.stack 全量索引
+ *   - 生产日志接云端后，AppSecret 不会沿任何路径泄露。
+ *
  * 测试策略：
  *   - 单测通过 `setWxFetchForTests(mockFetch)` 注入伪 fetch；
  *   - 不依赖真实网络；避免把 JWT_SECRET / AppSecret 泄露到 CI 日志。
@@ -49,6 +56,43 @@ export function setWxFetchForTests(f: FetchLike): void {
 /** 恢复默认 fetch（测试 afterEach 用）。 */
 export function __resetWxFetchForTests(): void {
   _fetch = globalThis.fetch;
+}
+
+/**
+ * URL 脱敏：把 secret=xxx 替换为 secret=***REDACTED***。
+ * 导出供单测覆盖（保证对各种 secret 形态鲁棒）。
+ *
+ * 规则：
+ *   - 大小写不敏感，匹配 secret= / Secret= / SECRET= 等
+ *   - 命中位置开始直到下一个 & 或字符串尾
+ *   - 返回全新字符串，不修改入参
+ */
+export function redactUrlSecret(url: string): string {
+  return url.replace(/([?&](?:secret|SECRET|Secret))=[^&]*/g, '$1=***REDACTED***');
+}
+
+/**
+ * 把 cause 里的 url / message 脱敏成可安全日志化的副本。
+ * 仅针对已知会带 AppSecret 的字段：message / url / input（undici 常用字段）。
+ */
+function redactCauseForLog(cause: unknown): unknown {
+  if (cause == null || typeof cause !== 'object') return cause;
+  const src = cause as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(src)) {
+    const v = src[key];
+    if (typeof v === 'string' && (key === 'message' || key === 'url' || key === 'input')) {
+      out[key] = redactUrlSecret(v);
+    } else if (key === 'stack') {
+      // stack 可能在顶部帧引用原 url；统一脱敏字符串形式
+      out[key] = typeof v === 'string' ? redactUrlSecret(v) : v;
+    } else {
+      out[key] = v;
+    }
+  }
+  // 保留原型链上的 name（Error 子类型识别）
+  if (src['name']) out['name'] = src['name'];
+  return out;
 }
 
 function mapWxErrorToAppError(errcode: number, errmsg: string | undefined): AppError {
@@ -110,11 +154,12 @@ export async function code2Session(code: string, timeoutMs = 5_000): Promise<Cod
     raw = (await resp.json()) as RawResponse;
   } catch (err) {
     if (err instanceof AppError) throw err;
-    // fetch 抛错（含 AbortError / TypeError）统一归类为 UNAVAILABLE
+    // fetch 抛错（含 AbortError / TypeError / undici ENOTFOUND）统一归类为 UNAVAILABLE
+    // 关键：cause 必须脱敏再带入，防止 AppSecret 经 pino 序列化泄露到日志索引。
     throw new AppError(ErrorCode.UNAVAILABLE, {
       message: 'wx upstream fetch failed',
       details: { upstream: 'wechat' },
-      cause: err,
+      cause: redactCauseForLog(err),
     });
   } finally {
     clearTimeout(timer);

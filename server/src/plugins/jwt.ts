@@ -71,20 +71,19 @@ export async function registerJwt(app: FastifyInstance): Promise<void> {
   app.decorate('signAccessToken', (sub: string) => {
     const iat = Math.floor(Date.now() / 1000);
     const exp = iat + tt.accessTokenSec;
-    const token = app.jwt.sign(
-      { sub, token_type: 'access' as const, iat, exp },
-      { noTimestamp: true }, // 我们自行写 iat，避免冲突
-    );
+    // 说明（P1-1 · D-015 round-1 revise）：
+    //   @fastify/jwt 9.x 不透传 jsonwebtoken 的 `noTimestamp` 选项（它自身用 expiresIn/notBefore 封装），
+    //   直接传入虽能过 TS 类型，但运行时被忽略且会产生"我自行控制时间戳"的假预期。
+    //   解决：保留手写 iat/exp（payload 合并时手写值优先；fastify-jwt 仍可能自动写一个 iat，
+    //   但会被 payload 第一参数覆盖），sign options 不再声明 noTimestamp。
+    const token = app.jwt.sign({ sub, token_type: 'access' as const, iat, exp });
     return { token, ttlSec: tt.accessTokenSec };
   });
 
   app.decorate('signRefreshToken', (sub: string, jti: string) => {
     const iat = Math.floor(Date.now() / 1000);
     const exp = iat + tt.refreshTokenSec;
-    const token = app.jwt.sign(
-      { sub, token_type: 'refresh' as const, jti, iat, exp },
-      { noTimestamp: true },
-    );
+    const token = app.jwt.sign({ sub, token_type: 'refresh' as const, jti, iat, exp });
     return { token, ttlSec: tt.refreshTokenSec };
   });
 

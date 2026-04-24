@@ -77,13 +77,17 @@ Costra 项目的"多 Agent 协作"**不是**后台常驻进程：
 | `reject:COSTRA-xxx 原因` | 打回 Doing，附修改意见 |
 | `run review-tech COSTRA-xxx` | 拉 Review-Agent-Tech 对该卡跑一轮预审 |
 | `run review-product COSTRA-xxx` | 拉 Review-Agent-Product 对该卡跑一轮预审 |
-| `run <agent>-fix COSTRA-xxx` | 拉被审 Agent 按最新 Review 报告做 revise（仅 Review 迭代中） |
+| `run <agent>-fix COSTRA-xxx` | ⚠️ 保留但不推荐；等价于 `revise-round-<当前 round>`（仅 Review 迭代中） |
+| 🆕 `run <agent> COSTRA-xxx revise-round-N` | （D-015 · 2026-04-24 09:24）拉被审 Agent 做**回执 + 修复**第 N 轮（可含异议；异议按 `SOP-REVIEW-LOOP.md §6.1` 仲裁链路处理） |
+| ~~`run <agent> COSTRA-xxx respond-round-N`~~ | ❌ **D-015 已废弃**（2026-04-24 09:24）· 收到时自动映射为 `revise-round-N` 并提示 Human |
 | `pause-review COSTRA-xxx` | 立即停止该卡的 Review 迭代，冒泡给 Human |
 | `skip-review COSTRA-xxx` | 跳过 Review 闭环直推 Human 终审（慎用，记 daily） |
 | `force-pass COSTRA-xxx` | Human 强制通过（覆盖 Review-Agent 的 REJECT） |
 | 🆕 `review-card COSTRA-xxx` | （D-014）对某卡强制做一次**卡定义 Review**（历史卡补审用） |
 | 🆕 `skip-card-review COSTRA-xxx` | （D-014）跳过卡定义 Review，直接进 Todo（需原因，记 daily） |
 | 🆕 `force-card-pass COSTRA-xxx` | （D-014）Human 强制通过卡定义 Review（覆盖 Review-Agent） |
+| 🆕 `verify <agent> COSTRA-xxx` | **分段交付配套触发词**（COSTRA-101 引入 · 2026-04-23 22:45）· 对分段交付（§a 设计 + §b 实跑）的 §b 段执行实跑验证：Orchestrator 以被审 Agent 身份执行 `npm install` / `tsc --noEmit` / `vitest run` / `curl /healthz` 等运行时断言，输出实跑日志。**使用前置**：§a 段 Review 链全绿 + Human 对设计满意 |
+| 🆕 `skip-verify COSTRA-xxx` | 跳过分段交付的 §b 段实跑验证，直接认可（不推荐，会留运行时盲点，需 Human 原因记 daily） |
 
 > Review 闭环完整规则见 [`.team/SOP-REVIEW-LOOP.md`](./SOP-REVIEW-LOOP.md)（2026-04-23 登记）。
 > **🆕 Review 闭环自动循环规则见 [`.team/SOP-REVIEW-AUTOLOOP.md`](./SOP-REVIEW-AUTOLOOP.md)**（D-011 · 2026-04-23 生效）。
@@ -121,3 +125,5 @@ Costra 项目的"多 Agent 协作"**不是**后台常驻进程：
 **修订**：
 - 2026-04-23 19:45 · D-011 局部豁免 Review 闭环内的 Revise↔Review 自动推进（其他环节铁律不变）。
 - 2026-04-23 22:26 · **D-014 追加两条豁免**：(a) 新卡卡定义 Review 首轮自动拉起；(b) 被审 Agent 交付后产出 Review 首轮自动拉起。其他所有触发点铁律不变。Human 打断指令（`pause-review` / `skip-card-review` / `stop` 等）最高优先级。
+- 2026-04-24 09:24 · **D-015 触发词词典简化**：`respond-round-N` 废弃；`revise-round-N` 统一承担"回执+修复+可表达异议"三合一语义；异议仲裁链路由 Review-Agent 在 Round N+1 二次裁决，驳回后 Agent MUST 修复不得二次反驳。详见 `SOP-REVIEW-LOOP.md §6.1` + `D-015`。
+- 2026-04-24 11:50 · **P2-2 补丁（COSTRA-101 Round 1 Revise）**：§3 词典新增 `verify <agent> COSTRA-xxx` / `skip-verify COSTRA-xxx` 分段交付配套触发词，并显式落盘 `revise-round-N` / 废弃 `respond-round-N`（D-015 原仅在 SOP-REVIEW-LOOP 登记，本 SOP 为主权入口需同步）。

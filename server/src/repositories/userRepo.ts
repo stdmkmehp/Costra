@@ -11,7 +11,6 @@
  *   - 不处理业务语义（如 "用户不存在要不要抛错"），由 service 层判定
  */
 
-import type { PoolClient } from 'pg';
 import { getPool } from '../db/pool.js';
 import { newId } from '../id/idGen.js';
 
@@ -56,17 +55,20 @@ function rowToEntity(r: UserRow): UserEntity {
   };
 }
 
-/** 执行器抽象：允许 repo 在 Pool 或 tx PoolClient 上运行。 */
-type Executor = Pick<PoolClient, 'query'> | { query: typeof getPool extends never ? never : ReturnType<typeof getPool>['query'] };
+/**
+ * 执行器抽象：允许 repo 在 Pool 或 tx PoolClient 上运行。
+ * 与 sessionRepo.ts 的 Runner 保持同构（仅 rows 元素类型不同）。
+ */
+type Runner = { query: (sql: string, params?: unknown[]) => Promise<{ rows: UserRow[]; rowCount?: number | null }> };
 
-function exec(): { query: (sql: string, params?: unknown[]) => Promise<{ rows: UserRow[] }> } {
+function exec(): Runner {
   // 默认用全局 Pool
-  return getPool() as unknown as { query: (sql: string, params?: unknown[]) => Promise<{ rows: UserRow[] }> };
+  return getPool() as unknown as Runner;
 }
 
 /** 按 openid 查询用户（未软删）。 */
-export async function findByOpenid(openid: string, client?: Executor): Promise<UserEntity | null> {
-  const runner = (client ?? exec()) as { query: (sql: string, params?: unknown[]) => Promise<{ rows: UserRow[] }> };
+export async function findByOpenid(openid: string, client?: Runner): Promise<UserEntity | null> {
+  const runner = client ?? exec();
   const res = await runner.query(
     `SELECT id, wx_openid, wx_unionid, nickname, avatar_url, timezone,
             created_at, updated_at, deleted_at, version
@@ -79,8 +81,8 @@ export async function findByOpenid(openid: string, client?: Executor): Promise<U
 }
 
 /** 按 id 查询（未软删）。 */
-export async function findById(id: string, client?: Executor): Promise<UserEntity | null> {
-  const runner = (client ?? exec()) as { query: (sql: string, params?: unknown[]) => Promise<{ rows: UserRow[] }> };
+export async function findById(id: string, client?: Runner): Promise<UserEntity | null> {
+  const runner = client ?? exec();
   const res = await runner.query(
     `SELECT id, wx_openid, wx_unionid, nickname, avatar_url, timezone,
             created_at, updated_at, deleted_at, version
@@ -104,9 +106,9 @@ export interface CreateUserInput {
  * 创建新用户。
  * 说明：id 由应用层（UUID v7）生成；nickname 默认写占位串（真实昵称由用户后续 PATCH /users/me 补齐）。
  */
-export async function create(input: CreateUserInput, client?: Executor): Promise<UserEntity> {
+export async function create(input: CreateUserInput, client?: Runner): Promise<UserEntity> {
   const id = newId();
-  const runner = (client ?? exec()) as { query: (sql: string, params?: unknown[]) => Promise<{ rows: UserRow[] }> };
+  const runner = client ?? exec();
   const res = await runner.query(
     `INSERT INTO users (id, wx_openid, wx_unionid, nickname, avatar_url, timezone)
           VALUES ($1, $2, $3, $4, $5, COALESCE($6, 'Asia/Shanghai'))
@@ -131,7 +133,7 @@ export async function create(input: CreateUserInput, client?: Executor): Promise
  * upsert by openid：若 openid 已存在则返回现有用户；否则创建。
  * 在 code2Session 登录链路里使用。
  */
-export async function upsertByOpenid(input: CreateUserInput, client?: Executor): Promise<UserEntity> {
+export async function upsertByOpenid(input: CreateUserInput, client?: Runner): Promise<UserEntity> {
   const existing = await findByOpenid(input.wxOpenid, client);
   if (existing) return existing;
   return create(input, client);

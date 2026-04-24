@@ -90,12 +90,22 @@ export async function registerErrorHandler(app: FastifyInstance): Promise<void> 
       return;
     }
 
-    // 分支 3：Fastify 内置 MALFORMED JSON（FST_ERR_CTP_INVALID_MEDIA_TYPE / body parse error）
+    // 分支 3：Fastify 内置 body parse 错误
+    //   3.1 不支持的 Content-Type
     if (err.code === 'FST_ERR_CTP_INVALID_MEDIA_TYPE') {
       serialize(new AppError(ErrorCode.UNSUPPORTED_MEDIA_TYPE, { message: err.message }), req, reply);
       return;
     }
-    if (err.code === 'FST_ERR_CTP_EMPTY_JSON_BODY' || err.message?.toLowerCase().includes('unexpected token')) {
+    //   3.2 JSON 解析失败 / 空 body（P1-2 · D-015 round-1 revise）
+    //     优先走 Fastify 5.x 稳定 code，其次兜底 JSON.parse 抛出的原生 SyntaxError。
+    //     不再依赖 message.includes('unexpected token')—— V8 错误措辞随 Node 版本变动（如 Node 21 改为
+    //     "Unexpected non-whitespace character"），字符串匹配不稳定。
+    if (
+      err.code === 'FST_ERR_CTP_EMPTY_JSON_BODY' ||
+      err.code === 'FST_ERR_CTP_INVALID_JSON_BODY' ||
+      err instanceof SyntaxError ||
+      (err as { cause?: unknown }).cause instanceof SyntaxError
+    ) {
       serialize(new AppError(ErrorCode.MALFORMED_JSON, { message: err.message }), req, reply);
       return;
     }
