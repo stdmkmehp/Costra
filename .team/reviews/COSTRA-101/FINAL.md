@@ -186,11 +186,69 @@
   - 详见 `.team/reviews/COSTRA-101/round-4-tech.md`
 - **D-016 首次实战合规**：同轮兑现达成 · 无"下一轮自动执行"跨轮承诺 · I-005 反模式未复现 · 规约自身站住脚
 
-## ⏳ 下一步
+## ✅ Human T1 终审签字（§6.1.b · 2026-04-24 19:28）
 
-- **🔴 等 Human 终审**：`approve:COSTRA-101-part-b`（T1 档 · D-013）→ §6.1.b 闭合 · COSTRA-101 整卡 Done
+- **终止时间**：2026-04-24 19:28+08:00
+- **终止原因**：`APPROVED`（Human T1 终审 · 针对分段 §6.1.b Verify 实跑段 · Round 4 Review-Tech APPROVE 后放行）
+- **Review 档位**：D-013 **T1 准入 Review**（生产路径代码 · 必走 Human 终审）
+- **触发指令**：`approve:COSTRA-101-part-b`（Human · 2026-04-24 19:28）
+- **覆盖范围**：§6.1.b Verify 实跑段（三绿灯 + R3 代码修复 + R4 文档漂移修复）+ 整卡 COSTRA-101 收官
+
+### Human 终审要点核对（§6.1.b 专项）
+
+#### ✅ 1. 三绿灯全亮（R3 Revise 交付）
+- `npm install` PASS（689ms）
+- `npm run typecheck` PASS（src + test 双份零错误）
+- `npx vitest run` PASS 8/8（1.14s · T1/T2/T3/T4/T6/T7 + 2 条 describe）
+
+#### ✅ 2. R3 代码修复 3 处全部 APPROVE
+- V1 `server/test/setup.ts` · PORT delete 走 env 默认 '3000' · R1 Verify FAIL 根因修复
+- V2 `server/tsconfig.json` + `tsconfig.test.json`（新）+ `package.json` typecheck 脚本拆分 · R3 自发现 P0
+- V3 `server/src/plugins/jwt.ts` · access_token payload 加 `jti` nonce（uuidv7 · 不入库）· R3 自发现 P0 语义级 + 生产期重放加固
+
+#### ✅ 3. R4 文档漂移闭合
+- `docs/api/ttl-policy.md §4.2` · access payload 行补 `jti` 字段 + 3 项超额消歧义说明（nonce 用途 / refresh jti 事实源对照 / access 不入库声明）
+- 文档与实装 `server/src/plugins/jwt.ts` 完全对齐
+
+#### ✅ 4. D-016 同轮兑现铁律首次实战合规
+- Human 19:07 "走 D-011" → 同一 tool call 循环内 Backend R4 Revise + Review-Tech R4 复审 + FINAL 追加 + STATE/board/metrics 同步一次完成
+- 无"下一轮自动 / 60 秒后台拉起"跨轮承诺
+- I-005 反模式未复现 · 规约自身初战可信
+
+#### ✅ 5. 残余项登记齐全
+- O-R3-1（测试未断言 jti 差异）· O-R3-2（typecheck && → 独立双 job · 归 COSTRA-117）
+- O-R4-1（字段顺序 NITS-3 · 不改）· O-R4-2（Revise"无 docs 变更"声明需自查表 · 归 Sprint-1 末 SOP 回顾）
+- O-V-1（vitest 2.1.9 弃用警告）· O-V-2（Backend 交付前双绿灯自检 · D-017 候选）
+- FU-001（默认昵称配置化 · Sprint-2）· O-1（errorHandler 通用 err 序列化 · Sprint-2）
+
+### §6.1.b 度量追加
+
+```json
+{
+  "card": "COSTRA-101",
+  "segment": "6.1.b",
+  "review_type": "verify+review",
+  "review_tier": "T1",
+  "total_rounds": 4,
+  "terminal_verdict": "APPROVE",
+  "human_final_decision": "approve",
+  "human_final_decision_at": "2026-04-24T19:28+08:00",
+  "d016_compliance_r4": "pass",
+  "autoloop_triggered": true,
+  "revise_ruleset_version": "D-015"
+}
+```
+
+### 整卡收官签字
+
+COSTRA-101（微信登录 `/auth/wx-login` + `/auth/refresh` + `/auth/logout` 实装）两段全部放行：
+- §6.1.a APPROVED @ 2026-04-24 17:18（骨架 + 设计 + 23 项 diff）
+- §6.1.b APPROVED @ 2026-04-24 19:28（三绿灯 + 5 处代码变更 + ttl-policy §4.2 文档同步）
+
+Sprint-1 主线第二张核心卡完结 · 解锁 COSTRA-102（MiniApp 登录端到端）依赖链。
 
 ---
 
 **FINAL · COSTRA-101 §6.1.a APPROVED · 2026-04-24 17:18 · Human terminal sign-off**
-**FINAL · COSTRA-101 §6.1.b Review-Tech APPROVED · 2026-04-24 19:10 · 等 Human T1 终审 approve:COSTRA-101-part-b**
+**FINAL · COSTRA-101 §6.1.b APPROVED · 2026-04-24 19:28 · Human terminal sign-off**
+**FINAL · COSTRA-101 整卡收官 · 2026-04-24 19:28**
