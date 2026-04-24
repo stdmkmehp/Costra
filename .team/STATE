@@ -1,14 +1,15 @@
 # Costra · 全局状态快照
 
-- **更新时间**：2026-04-23 22:49
-- **Orchestrator 模式**：`agent-working`（COSTRA-101 Backend §6.1.a 骨架交付 · Review-Tech Round 1 已自动拉起 · D-011 方案 B 自动循环中；Sprint-0 AI-Review 补审已 skip-review 自动关闭；Sprint-1 主线 1 张仍等 Human 终审；5 卡仍待 `run` 指令）
-- **球在谁手上**：**一半在 AI 侧**（COSTRA-101 Review-Tech Round 1 REVISE，等 Backend 回执 → 自动拉起 Round 2；**无需 Human 介入**）+ **一半在 Human 侧**（COSTRA-113 终审 + 5 张 Sprint-1 卡等 `run`）
-- **Human 是否需介入**：**🟠 被动等**（自动 Review 循环进行中；Human 打断指令 `pause-review COSTRA-101` / `force-pass COSTRA-101` / `skip-review COSTRA-101` 随时可用）
+- **更新时间**：2026-04-24 09:24
+- **Orchestrator 模式**：`agent-working`（COSTRA-101 Backend §6.1.a 骨架交付 · Review-Tech Round 1 REVISE · D-011 方案 B 自动循环中 · **D-015 合并 respond/revise 已落地 · 下一次 revise 即为统一触发词首次实战**；Sprint-0 AI-Review 补审已 skip-review 自动关闭；Sprint-1 主线 1 张仍等 Human 终审；5 卡仍待 `run` 指令）
+- **球在谁手上**：**一半在 AI 侧**（COSTRA-101 Review-Tech Round 1 REVISE，等 Backend 回执 → 自动拉起 Round 2）+ **一半在 Human 侧**（COSTRA-113 终审 + 5 张 Sprint-1 卡等 `run` + 🆕 **Backend Round 1 revise 需 Human 触发 `run backend COSTRA-101 revise-round-1`**）
+- **Human 是否需介入**：**🟠 被动等 + 🔴 可选主动**（自动 Review 循环等 Agent 自动推进；可主动发 `run backend COSTRA-101 revise-round-1` 立即推进 Round 2；Human 打断指令 `pause-review COSTRA-101` / `force-pass COSTRA-101` / `skip-review COSTRA-101` 随时可用）
 - **铁律 1**：每次进度汇报必须列"待触发清单"（`.team/SOP-HUMAN-TRIGGER.md` P0 · **三条例外**：D-011 环内 / D-014-a 卡定义首轮 / D-014-b 产出首轮）
 - **铁律 2**：**单卡交付即提交**（D-012 · 2026-04-23）· 每完成一张卡立即 `git commit`，禁止攒批；例外仅 Sprint/Gate 聚合收口 · 详见 `.team/decisions/D-012-per-card-commit-discipline.md`
 - **规约 3**：**Review 场景分级**（D-013 · 2026-04-23 21:15）· Review 分 T1/T2/T3/T4 四档；T1 准入 + T2 Gate 前仍需 Human 终审；**T3 追溯 + T4 回归** 在 AI-PASS + 残余 P0/P1=0 + 无红线 + 无新阻塞时**自动关闭** · 详见 `.team/decisions/D-013-review-scenario-tiering.md`
 - **规约 4**：**卡定义 Review + Review 自动拉起**（D-014 · 2026-04-23 22:26）· (a) D-014 立案后新建的卡**必须**经卡定义 Review（技术向→Review-Tech / 产品向→Review-Product）；(b) 被审 Agent 交付后**产出 Review 首轮自动拉起**（无需 Human 触发）；(c) 历史卡豁免；(d) DevOps/QA/决策类豁免；(e) Human 打断指令最高优先级 · 详见 `.team/decisions/D-014-card-review-and-auto-review-kickoff.md` + `.team/SOP-CARD-REVIEW.md`
-- **Review 闭环**：双 Review-Agent 就位 + **方案 B 自动循环**（D-011 · 2026-04-23 19:45）· **三次实战验证通过**（COSTRA-100 · 2 轮 · 69 min / Sprint-0 补审 · 7 卡 × 2 轮 · 29 min / **COSTRA-101 Round 1 刚自动拉起 · 22:49**）+ **D-013 T3 首次落地**（Sprint-0 补审 7 张自动关闭）+ **D-014 环首自动 + 卡定义 Review 新增**（D-014-b 首次实战：COSTRA-101）
+- **规约 5**：🆕 **respond/revise 合并**（D-015 · 2026-04-24 09:24）· `respond-round-N` **已废弃**，`revise-round-N` 统一承担"回执+修复+可表达异议"三合一语义；Agent 允许反驳但必须当轮同时落盘采纳项代码修复；异议由 Review-Agent 在 Round N+1 二次裁决，驳回后 Agent 必须修复，不得二次反驳（否则 ESCALATE）；**最终以 Review-Agent 意见为主**（Human 铁律） · 详见 `.team/decisions/D-015-unify-respond-revise.md` + `SOP-REVIEW-LOOP.md` v1.4 + `SOP-REVIEW-AUTOLOOP.md` v1.1
+- **Review 闭环**：双 Review-Agent 就位 + **方案 B 自动循环**（D-011 · 2026-04-23 19:45）· **三次实战验证通过**（COSTRA-100 · 2 轮 · 69 min / Sprint-0 补审 · 7 卡 × 2 轮 · 29 min / COSTRA-101 Round 1 已自动拉起）+ **D-013 T3 首次落地**（Sprint-0 补审 7 张自动关闭）+ **D-014 环首自动 + 卡定义 Review 新增**（D-014-b 首次实战：COSTRA-101）+ 🆕 **D-015 触发词词典简化**（待首次实战验证）
 
 ---
 
@@ -16,7 +17,7 @@
 
 > **COSTRA-101 Review-Tech Round 1 · REVISE（25/30 · 1 P0 · 3 P1 · 2 P2）**
 > - 触发源：D-014-b 自动拉起（Backend 交付 §6.1.a 骨架 → Orchestrator 60s 内拉起 Round 1）
-> - 下一步：等 Backend 产出 `round-1-backend-response.md` → **自动**拉起 Round 2（无需 Human 触发）
+> - 下一步：等 Human 触发 `run backend COSTRA-101 revise-round-1`（🆕 D-015 统一触发词） → Backend 回执 `round-1-backend-response.md`（可含异议） → **自动**拉起 Round 2
 > - 报告：`.team/reviews/COSTRA-101/round-1-tech.md`
 > - Human 打断指令（任一均立即生效）：
 >   - `pause-review COSTRA-101` — 暂停循环，等待 Human 指令
@@ -26,26 +27,29 @@
 ## ⚠️ 需要 Human 触发的 Agent 任务清单（按优先级）
 
 ### 🔴 高优先级（阻塞 Sprint-1 主线）
-_（无阻塞项。Sprint-1 主线 COSTRA-101 Backend 已在执行中。）_
+1. 🆕 **`run backend COSTRA-101 revise-round-1`** — D-015 统一触发词首次实战 · 推进 Round 2（Backend 回执 + 修复，允许异议，Review-Agent Round 2 二裁）
 
 ### 🟠 中优先级（并行可选）
-1. `approve:COSTRA-113` — 放行 COSTRA-113 搭车产出（subject.ts 配置加载器）· **D-013 T1 准入 Review，必须 Human 终审**
-2. `run devops COSTRA-114` — 开发服务器 bootstrap（D-009 · 04-25 截止）
-3. `run devops COSTRA-115` — DNS 子记录 + 白名单 CI（D-009 · 04-25 截止）
+2. `approve:COSTRA-113` — 放行 COSTRA-113 搭车产出（subject.ts 配置加载器）· **D-013 T1 准入 Review，必须 Human 终审**
+3. `run devops COSTRA-114` — 开发服务器 bootstrap（D-009 · 04-25 截止）
+4. `run devops COSTRA-115` — DNS 子记录 + 白名单 CI（D-009 · 04-25 截止）
 
 ### 🟡 低优先级（依赖上游）
-4. `run miniapp COSTRA-112` — 小程序主体字样清扫（D-008）
-5. `run devops COSTRA-108` — miniprogram-ci 上传演练（D-007）
-6. `run pm COSTRA-109/110/111` — 文档并行
-7. `run devops COSTRA-117` — husky v10 兼容清理（低优 · 1 点 · 见 board.md）
+5. `run miniapp COSTRA-112` — 小程序主体字样清扫（D-008）
+6. `run devops COSTRA-108` — miniprogram-ci 上传演练（D-007）
+7. `run pm COSTRA-109/110/111` — 文档并行
+8. `run devops COSTRA-117` — husky v10 兼容清理（低优 · 1 点 · 见 board.md）
 
 ### 🟢 分段交付配套触发词（COSTRA-101 专用）
-8. `verify backend COSTRA-101` — §6.1.b 回归入口：Orchestrator 将执行 `npm install` + `tsc --noEmit` + `vitest run`，输出实跑日志；**仅在 Review 链全绿、Human 对 §6.1.a 满意后使用**
+9. `verify backend COSTRA-101` — §6.1.b 回归入口：Orchestrator 将执行 `npm install` + `tsc --noEmit` + `vitest run`，输出实跑日志；**仅在 Review 链全绿、Human 对 §6.1.a 满意后使用**
    - 若希望跳过：`skip-verify COSTRA-101`（不推荐，会留运行时盲点）
 
 ### 🔒 已自动关闭（不再占位 Human 审批队列）
 - ~~`approve-batch sprint-0-review`~~ — **已 auto-closed**（D-013 T3 追溯 · 2026-04-23 21:15）· 复议走 `reopen-batch sprint-0-review`
 - ~~`approve:COSTRA-100`~~ — **Human 已 approve** 04-23 22:38（`430cd93` · Sprint-1 主线解阻塞）
+
+### ❌ 已废弃触发词（D-015 · 2026-04-24 09:24）
+- ~~`run backend COSTRA-101 respond-round-1`~~ — **已废弃** · Orchestrator 收到将自动映射为 `revise-round-1` 并提示
 
 ## 最近里程碑
 - ✅ G1/G2/G3 全部通过
@@ -59,12 +63,13 @@ _（无阻塞项。Sprint-1 主线 COSTRA-101 Backend 已在执行中。）_
 - ✅ **D-013 Review 场景分级**（04-23 21:15）· T3/T4 自动关闭 · SOP-REVIEW-LOOP v1.2
 - ✅ **Sprint-0 补审 7 张全部 SKIP-REVIEW-AUTOCLOSED**（04-23 21:15 · D-013 首次落地 · Human 审批负担解除）
 - ✅ **D-014 卡定义 Review + Review 自动拉起**（04-23 22:26）· SOP-REVIEW-LOOP v1.3 · SOP-CARD-REVIEW 新建 · 铁律例外从 1 条扩到 3 条（D-011 + D-014-a + D-014-b）
-- 🆕 **COSTRA-101 Backend §6.1.a 骨架交付**（04-23 22:49）· Fastify 5 定案（ADR-0006 v1.1）· user_sessions migration 新增 · 23 项 diff · **D-014-b 首次实战**
-- 🆕 **Review-Tech Round 1 · REVISE（25/30）**（04-23 22:49）· 1 P0 · 3 P1 · 2 P2 · D-011 自动循环中 · 无需 Human 触发
+- ✅ **COSTRA-101 Backend §6.1.a 骨架交付**（04-23 22:49）· Fastify 5 定案（ADR-0006 v1.1）· user_sessions migration 新增 · 23 项 diff · **D-014-b 首次实战**
+- ✅ **Review-Tech Round 1 · REVISE（25/30）**（04-23 22:49）· 1 P0 · 3 P1 · 2 P2 · D-011 自动循环中 · 无需 Human 触发
+- 🆕 **D-015 触发词词典简化**（04-24 09:24）· `respond-round-N` 废弃 · `revise-round-N` 统一 · 异议仲裁链路新增 · SOP-REVIEW-LOOP v1.4 · SOP-REVIEW-AUTOLOOP v1.1
 - 🟢 **R-013 从 🟠 降为 🟢**（Mitigating，等备案下证关闭）
 
 ## 进行中（共 8 卡）
-- **COSTRA-101** @Backend-Agent · **§6.1.a 骨架已交付**（22:49）· Review-Tech Round 1 REVISE（25/30）· 等 Backend 回执自动进 Round 2 · §6.1.b 待 Human `verify backend COSTRA-101`
+- **COSTRA-101** @Backend-Agent · **§6.1.a 骨架已交付**（22:49）· Review-Tech Round 1 REVISE（25/30）· 🆕 **等 `run backend COSTRA-101 revise-round-1`**（D-015 统一触发词）· §6.1.b 待 Human `verify backend COSTRA-101`
 - COSTRA-113 @Backend-Agent · subject config · 搭车 100 · 等 Human approve
 - COSTRA-109 / COSTRA-110 / COSTRA-111 @PM-Agent · 并行文档 · 等 run
 - COSTRA-112 @MiniApp-Agent · subject.ts + 清扫 · 等 run
@@ -98,13 +103,14 @@ _（无阻塞项。Sprint-1 主线 COSTRA-101 Backend 已在执行中。）_
 - **当前**：个人 · **兼容**：公司主体就绪 · **Won't-Have**：支付/商户/交易组件
 
 ## Human 下一次介入节点
-1. **被动等**（自动循环中，预计 10~30 min 内一次循环）：COSTRA-101 Review-Tech Round 2 出报告；若 PASS → 进 Human T1 终审；若仍 REVISE → 自动继续 Round 3（上限 5 轮）
-2. **立即（可选，并行）**：`approve:COSTRA-113`
-3. **立即（可选，并行）**：`run devops COSTRA-114` / `run devops COSTRA-115`（04-25 截止）
-4. **被动等**：ICP 短信审核到达时 5 分钟内回验证码
-5. **Sprint-1 中点（2026-04-30）**：本地验证 COSTRA-102 真实登录端到端
-6. **Sprint-1 末（2026-05-06）**：G4 合并闸门决策
-7. **2026-07-16**：开发服务器到期前 7 日决策（续费 vs 迁移云托管）
+1. **立即（推荐）**：`run backend COSTRA-101 revise-round-1` — 🆕 D-015 统一触发词首次实战，推进 Round 2
+2. **被动等**（Backend 触发后自动循环中，预计 10~30 min 内一次循环）：COSTRA-101 Review-Tech Round 2 出报告；若 PASS → 进 Human T1 终审；若仍 REVISE → 自动继续 Round 3（上限 5 轮）
+3. **立即（可选，并行）**：`approve:COSTRA-113`
+4. **立即（可选，并行）**：`run devops COSTRA-114` / `run devops COSTRA-115`（04-25 截止）
+5. **被动等**：ICP 短信审核到达时 5 分钟内回验证码
+6. **Sprint-1 中点（2026-04-30）**：本地验证 COSTRA-102 真实登录端到端
+7. **Sprint-1 末（2026-05-06）**：G4 合并闸门决策
+8. **2026-07-16**：开发服务器到期前 7 日决策（续费 vs 迁移云托管）
 
 ## 📌 Incident 登记（本轮主动复盘）
 
@@ -114,12 +120,13 @@ _（无阻塞项。Sprint-1 主线 COSTRA-101 Backend 已在执行中。）_
 - **Review 机制**：
   - `.team/agents/07-review-agent-tech.md`（技术审核官）
   - `.team/agents/08-review-agent-product.md`（产品审核官）
-  - `.team/SOP-REVIEW-LOOP.md` v1.3（5 轮迭代 / 分歧升级 / 场景分级 / 卡定义 Review + 自动拉起）
-  - `.team/SOP-REVIEW-AUTOLOOP.md`（方案 B 自动循环 · D-011）
+  - `.team/SOP-REVIEW-LOOP.md` v1.4（5 轮迭代 / 分歧升级 / 场景分级 / 卡定义 Review + 自动拉起 / 🆕 D-015 异议仲裁）
+  - `.team/SOP-REVIEW-AUTOLOOP.md` v1.1（方案 B 自动循环 · D-011 · 🆕 D-015 前置条件 4 改写）
   - `.team/SOP-CARD-REVIEW.md`（卡定义 Review · D-014-a）
   - `.team/decisions/D-011-review-autoloop-plan-b.md`
   - `.team/decisions/D-013-review-scenario-tiering.md`
   - `.team/decisions/D-014-card-review-and-auto-review-kickoff.md`
+  - 🆕 `.team/decisions/D-015-unify-respond-revise.md`（04-24 09:24）
 - **Sprint-0 补审**：
   - `.team/reviews/SPRINT-0-INDEX.md`（批次索引）
   - `.team/reviews/SPRINT-0-EXEMPT.md`（B 档免审登记）
@@ -127,9 +134,9 @@ _（无阻塞项。Sprint-1 主线 COSTRA-101 Backend 已在执行中。）_
   - `.team/reviews/SPRINT-0-SKIP-REVIEW.md`（D-013 T3 自动关闭归档）
   - `.team/reviews/COSTRA-0{01,02,10,11,20,21,30}/round-{1,2}-*.md` + `FINAL.md`（每卡 2 份 Round 报告 + 1 份 Response + 1 份 FINAL）
 - **Sprint-1 产出**：
-  - 🆕 `.team/dispatch/COSTRA-101-backend-auth-impl.md`（COSTRA-101 分段派工单）
-  - 🆕 `.team/reviews/COSTRA-101/round-1-tech.md`（Review-Tech Round 1 · REVISE）
-  - 🆕 `.team/decisions/ADR-0006-backend-runtime-and-primary-store.md` v1.1（Fastify 5 定案）
+  - `.team/dispatch/COSTRA-101-backend-auth-impl.md`（COSTRA-101 分段派工单）
+  - `.team/reviews/COSTRA-101/round-1-tech.md`（Review-Tech Round 1 · REVISE）
+  - `.team/decisions/ADR-0006-backend-runtime-and-primary-store.md` v1.1（Fastify 5 定案）
   - `.team/reviews/COSTRA-100/FINAL.md`（Human approve 落地 04-23 22:38）
   - `.team/metrics.json`（D-011 度量 · 首条 COSTRA-100）
 - D-009：`.team/decisions/D-009-domain-and-dev-server-locked.md`

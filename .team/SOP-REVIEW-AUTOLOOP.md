@@ -58,18 +58,28 @@
 
 ---
 
-## 4. 前置条件（D-011 §2 镜像）
+## 4. 前置条件（D-011 §2 镜像 · 🆕 D-015 修订条款 4）
 
 自动推进**必须**同时满足：
 
 1. 有至少一轮 Review 报告
 2. 最近 verdict == `REVISE`
 3. round < 5
-4. 被审 Agent 上一轮 response 没有对 P0 级意见反驳
+4. 🆕 **D-015**：被审 Agent 上一轮 response 中**若**对某 P0 意见反驳，则 **Review-Agent 必须在本轮中已明确驳回该反驳并要求 Agent 在本轮修复**（首次反驳**不中断**自动循环；Review-Agent 二次驳回 + Agent 本轮仍拒绝修复同一 P0 → 中断并 ESCALATE）
 5. Human 未下达 `pause-review` / `skip-review` / `force-pass`
 6. 未触发红线
 
 任一不满足 → 自动循环终止 → 冒泡给 Human。
+
+### 4.1 🆕 D-015 异议仲裁示例
+
+| 轮次 | Agent 动作 | Review-Agent 动作 | 自动循环状态 |
+|---|---|---|---|
+| Round 1 | ❌ 反驳 P0-X（首次） | 下轮将裁决 | ✅ 继续 |
+| Round 2 | 其余 P0/P1 已修 | ❌ 驳回反驳（overruled），要求 Round 2 response 中 Agent 修复 P0-X | ✅ 继续 |
+| Round 2 | 若 Agent 未修复 P0-X 并再次反驳 | 自动触发 ESCALATE | ❌ 中断，冒泡 Human |
+| Round 2 | 若 Agent 按裁决修复 P0-X | 正常审 | ✅ 继续 |
+
 
 ---
 
@@ -137,3 +147,4 @@
 | 版本 | 日期 | 变更 |
 |---|---|---|
 | v1.0 | 2026-04-23 | Human D-011 确认，Orchestrator 成文，即刻生效 |
+| v1.1 | 2026-04-24 09:24 | D-015：§4 前置条件 4 改写（首次反驳不中断，Review-Agent 二裁驳回后 Agent 仍反驳才 ESCALATE）+ §4.1 新增异议仲裁示例表 |

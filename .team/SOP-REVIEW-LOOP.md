@@ -21,6 +21,7 @@ Human 一个人盯所有 Agent 产出太吃力。引入两位 Review-Agent 做**
 5. **🆕 默认启用自动循环**（D-011 / SOP-REVIEW-AUTOLOOP · 2026-04-23 生效）：Review 闭环内的 `Revise↔Review` 相互拉起无需 Human 逐轮触发，但前置条件 6 条 + 打断指令见 `SOP-REVIEW-AUTOLOOP.md §2/§4`
 6. **🆕 Review 场景分级**（D-013 · 2026-04-23 21:15 生效）：Review 按**准入 T1 / Gate 前 T2 / 追溯 T3 / 回归 T4** 分档。**T1/T2 仍需 Human 终审**（约束 3 原文适用）；**T3/T4 在 AI-Review PASS + 残余 P0/P1=0 + 无红线 + 无新阻塞 四条件同时满足时自动关闭**，不走 Human 终审，Human 保留 `reopen-review` 复议权。详见 `.team/decisions/D-013-review-scenario-tiering.md`
 7. **🆕 卡定义 Review + Review 环首自动拉起**（D-014 · 2026-04-23 22:26 生效）：(a) 所有 D-014 立案后新建的卡**必须**经过一次卡定义 Review（技术向 → Review-Tech / 产品向 → Review-Product），详见 `SOP-CARD-REVIEW.md`；(b) **被审 Agent 交付后的产出 Review 首轮自动拉起**，无需 Human 触发（但 Agent 首次开干仍需 Human 触发，铁律不变）；(c) Human 打断指令（`pause-review` / `skip-card-review` / `force-card-pass` / `stop`）最高优先级。详见 `.team/decisions/D-014-card-review-and-auto-review-kickoff.md`
+8. **🆕 respond/revise 触发词合并**（D-015 · 2026-04-24 09:24 生效）：`respond-round-N` 已**废弃**，`revise-round-N` 统一承担"回执+修复+可表达异议"三合一语义。Agent 允许对 Review 意见反驳，但必须当轮同时落盘采纳项的代码修复；异议由 Review-Agent 在下一轮二次裁决，驳回后 Agent 必须修复，不得二次反驳（否则 ESCALATE）。详见 `.team/decisions/D-015-unify-respond-revise.md`
 
 ---
 
@@ -125,7 +126,9 @@ Human 一个人盯所有 Agent 产出太吃力。引入两位 Review-Agent 做**
 
 ---
 
-## 6. 被审 Agent 的回应格式
+## 6. 被审 Agent 的回应格式（🆕 D-015 · 2026-04-24 09:24 · v1.4）
+
+> **重要变更（D-015）**：`respond-round-N` 触发词已废弃，`revise-round-N` 统一承担"回执 + 修复 + 可表达异议"三合一语义。Agent 允许对 Review 意见反驳，但必须**当轮同时落盘采纳项的代码修复**；若异议被 Review-Agent 下一轮驳回，再下一轮必须修复（不得二次反驳，否则 ESCALATE）。详见 `.team/decisions/D-015-unify-respond-revise.md`。
 
 每轮 revise 完成后，被审 Agent 必须产出 `.team/reviews/COSTRA-XXX/round-N-{agent}-response.md`：
 
@@ -135,25 +138,53 @@ Human 一个人盯所有 Agent 产出太吃力。引入两位 Review-Agent 做**
 ## 对 Round-N Review 的回应
 
 ### P0-1 {Review 标题}
-- **采纳 / 反驳**：✅ 采纳 | ❌ 反驳 | ⏸ 部分采纳
-- **修改位置**：`server/src/auth/login.ts:45-52`（diff 见 commit `abc123`）
-- **修改说明**：移除 `console.log(session_key)`，替换为脱敏日志
+- **采纳 / 反驳 / 部分采纳**：✅ 采纳 | ❌ 反驳 | ⏸ 部分采纳
+- **修改位置**：`apps/api/src/xxx.ts:45-52`（diff 见 commit `abc123`）
+- **修改说明**：<简述改动>
 - （若反驳）**反驳依据**：引用文档/ADR/证据，不接受"我觉得"
-- （若部分采纳）**延后理由**：...
+- （若反驳）**请求 Review-Agent 在 Round N+1 裁决**
+- （若部分采纳）**本轮已改**：...；**延后到 Round N+M**：...
 
 ### P0-2 ...
-...
 
 ## 本轮新增产出
 - 文件 A / 文件 B ...
 
 ## 本轮自测
-- 单测 / 集成测试结果
-- 手工冒烟结果
+- 单测 / 集成测试 / 手工冒烟 结果
+
+## 本轮 commit
+- `<hash>` — <描述>（D-012 合规）
 
 ## 求再审
 请 Review-{Tech|Product} 进入 Round N+1。
+（若本轮有异议条目）请特别裁决以下异议：P0-X / P1-Y
 ```
+
+### 6.1 异议仲裁链路（D-015 §2.2）
+
+```
+Round N Agent 反驳 ─▶ Round N+1 Review-Agent 裁决
+                       │
+                       ├─ withdrawn（撤回）→ 该 issue 关闭
+                       └─ overruled（驳回）→ Agent 在 Round N+1 本轮 response 中 MUST 修复
+                                              │
+                                              ▼
+                                       若 Agent 仍反驳同一 P0 → ESCALATE（§4.3）
+```
+
+### 6.2 Review-Agent Round N+1 报告追加段（D-015 §5）
+
+```markdown
+## 对 Round N 异议的裁决
+
+### 对 P0-X 异议（Agent 反驳依据：...）
+- **裁决**：✅ 撤回 `withdrawn` | ❌ 驳回 `overruled`
+- **理由**：<理由>
+- （若驳回）**Agent 在 Round N+1 本轮 response 中 MUST 修复此项**
+```
+
+缺失此段 → Orchestrator 视为 Review-Agent 规约违规，记 `.team/incidents/`。
 
 ---
 
@@ -229,7 +260,9 @@ Review 闭环不改变 SOP-HUMAN-TRIGGER 的铁律。Human 侧只关心 3 个时
 |---|---|
 | `run review-tech COSTRA-xxx` | 强制拉 Review-Tech 对该卡跑一轮 |
 | `run review-product COSTRA-xxx` | 强制拉 Review-Product 对该卡跑一轮 |
-| `run {agent}-fix COSTRA-xxx` | 拉被审 Agent 按最新 Review 报告做 revise |
+| `run {agent} COSTRA-xxx revise-round-N` | 🆕 **D-015 统一触发词** · 拉被审 Agent 做回执+修复（可含异议，异议按 §6.1 仲裁） |
+| ~~`run {agent} COSTRA-xxx respond-round-N`~~ | ❌ **D-015 已废弃** · 收到时自动映射为 `revise-round-N` 并提示 Human |
+| ~~`run {agent}-fix COSTRA-xxx`~~ | ⚠️ 保留但不推荐，等价于 `revise-round-<当前 round>` |
 | `pause-review COSTRA-xxx` | 立即停止该卡的 Review 迭代，冒泡给 Human |
 | `skip-review COSTRA-xxx` | 跳过 Review 闭环直推 Human 终审（慎用，记 daily） |
 | `force-pass COSTRA-xxx` | Human 强制通过（覆盖 Review-Agent 的 REJECT） |
@@ -277,6 +310,7 @@ Review 闭环不改变 SOP-HUMAN-TRIGGER 的铁律。Human 侧只关心 3 个时
 | `SOP-REVIEW-AUTOLOOP` | **本 SOP 的执行细则**。前置条件、断点、状态机、度量详见 `.team/SOP-REVIEW-AUTOLOOP.md` |
 | `D-013 Review 场景分级` | **本 SOP 约束 3 的粒度升级**（2026-04-23 21:15）。T1/T2 保留 Human 终审铁律；T3 追溯 / T4 回归 在 AI-Review PASS + 四条件满足时自动关闭。本 SOP §4.1 已按 D-013 改写分流 |
 | `D-014 卡定义 Review + 自动拉起` | **本 SOP §1 约束 7 / §3 流程 / §7 调度 / §9 触发指令 的直接依据**（2026-04-23 22:26）。v1.2 → v1.3 |
+| `D-015 respond/revise 合并` | **本 SOP §6 回应格式 + §9 触发指令 的直接依据**（2026-04-24 09:24）。v1.3 → v1.4。取消 respond-only 模式，异议统一走"修复+反驳"并由 Review-Agent 二裁 |
 | `SOP-OBSERVE-AND-INTERVENE` | 本 SOP 是前者的加强版 filter。观察干预仍然是 Human 最高权 |
 | `engineering-guidelines` | Review-Agent 的 checklist 直接引用此文件作为打分依据 |
 | `COMMON-CONTRACT` | 需要补丁：增加 Review-Agent-Tech / Review-Agent-Product 两条目录权限记录 |
@@ -291,5 +325,6 @@ Review 闭环不改变 SOP-HUMAN-TRIGGER 的铁律。Human 侧只关心 3 个时
 | v1.1 | 2026-04-23 19:45 | D-011 引入方案 B 自动循环，新增 §1 约束 5 + §11 关系表更新 |
 | v1.2 | 2026-04-23 21:15 | D-013 Review 场景分级：§1 新增约束 6 / §4.1 改写为分档分流 / §9 新增 `reopen-review` 等 3 条指令 / §11 关系表加 D-013 |
 | v1.3 | 2026-04-23 22:26 | D-014 卡定义 Review + Review 环首自动拉起：§1 新增约束 7 / §3 流程引言 / §7.1 自动拉起 + 卡定义 Review 触发规则 / §7.2 补历史卡豁免 / §9 新增 `review-card` / `skip-card-review` / `force-card-pass` / §11 关系表新增 SOP-CARD-REVIEW + D-014 |
+| v1.4 | 2026-04-24 09:24 | D-015 合并 respond/revise：§6 回应格式升级为"采纳/反驳/部分采纳"三态+异议仲裁链路 + §6.1/§6.2 新增 · §9 废除 `respond-round-N` 并统一 `revise-round-N` 语义 · §11 关系表加 D-015 |
 
 **本 SOP 由 Human 于 2026-04-23 指令确立，Orchestrator 即刻生效，无需再次评审。**
