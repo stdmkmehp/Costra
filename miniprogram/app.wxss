@@ -1,9 +1,13 @@
 /* app.wxss · Costra 全局样式
- * 卡号: COSTRA-030
+ * 卡号: COSTRA-102（P0-9 方案 A 别名补齐）· 原骨架: COSTRA-030
  * 通过 `tokens/index.ts` 导出的常量在页面内联写；这里只承担全局基线。
+ *
+ * E.P0-9 修复：补齐使用方期望的变量名作为别名映射（方案 A · 低风险快修）。
+ * 彻底方案 B（tokens/index.ts → app.wxss 构建脚本）登记 FU-118-3 延到 Sprint-2 COSTRA-160。
  */
 
 page {
+  /* ---- 基线定义（COSTRA-030 原值 · 保留） ---- */
   --color-brand-primary: #2F7A78;
   --color-text-primary: #212121;
   --color-text-secondary: #616161;
@@ -17,6 +21,22 @@ page {
   --spacing-2: 8rpx;
   --spacing-4: 16rpx;
   --spacing-6: 24rpx;
+
+  /* ---- P0-9 别名层：对齐页面 wxss / 使用方期望的变量名 ----
+   * 映射原则：仅创建别名，不新增值；同名写法 = var(既有变量)。
+   * 使用方文档：docs/design/tokens.json 约定的 `--color-*` / `--shadow-*` 语义
+   */
+  --color-bg: var(--color-bg-app);
+  --color-surface: var(--color-bg-surface);
+  --color-text: var(--color-text-primary);
+  --color-text-muted: var(--color-text-secondary);
+  --color-divider: var(--color-border-default);
+  --color-primary: var(--color-brand-primary);
+  --color-danger: #D83A3A;   /* 与 tokens.color.semantic.danger 对齐 */
+  --color-success: #2E8B57;  /* 与 tokens.color.semantic.success 对齐 */
+
+  --shadow-sm: 0 2rpx 4rpx rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 6rpx 16rpx rgba(0, 0, 0, 0.12);
 
   background-color: var(--color-bg-app);
   color: var(--color-text-primary);
@@ -33,6 +53,9 @@ page {
     --color-text-primary: #F5F5F5;
     --color-text-secondary: #BDBDBD;
     --color-border-default: #2A2A2A;
+    /* 别名层不需要重写（var 引用自动跟随） */
+    --color-danger: #FF6B6B;
+    --color-success: #4CAF50;
   }
 }
 
@@ -55,7 +78,7 @@ page {
 .mb-4 { margin-bottom: 16rpx; }
 
 .btn-primary {
-  background: var(--color-brand-primary);
+  background: var(--color-primary);
   color: #fff;
   border-radius: var(--radius-md);
   padding: 20rpx 32rpx;
@@ -69,8 +92,8 @@ page {
 }
 
 .card {
-  background: var(--color-bg-surface);
+  background: var(--color-surface);
   border-radius: var(--radius-lg);
   padding: 24rpx;
-  box-shadow: 0 2rpx 4rpx rgba(0, 0, 0, 0.06);
+  box-shadow: var(--shadow-sm);
 }

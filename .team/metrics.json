@@ -1,7 +1,7 @@
 {
   "_schema": "costra-metrics-v1",
-  "_description": "Per-card Review 度量记录；COSTRA-102 卡定义首轮 Review 双签 APPROVE @ 2026-04-27 09:47（D-016 第四次实战合规 · 同派单 tool call 循环内兑现 Tech + Product 双签）· 等 Human approve-def 放行实装 · COSTRA-118 T2 approve 路径 A 已于 2026-04-27 09:39 收官（含本轮第 4 / 5 条）",
-  "_updated_at": "2026-04-27T09:47+08:00",
+  "_description": "Per-card Review 度量记录；COSTRA-102 R1 实装首轮 AI Review 双签 APPROVE @ 2026-04-27 10:14（D-016 第五次实战合规 · Human 10:00 `approve-def:COSTRA-102` 触发 → Orchestrator 同 tool call 循环内完成 MiniApp-Agent 实装 + typecheck + vitest 双闸 + Review-Tech + Review-Product + 7 处同步）· 等 Human 04-30 本地验证 + 终审 · 共 5 卡",
+  "_updated_at": "2026-04-27T10:14+08:00",
   "cards": [
     {
       "card": "COSTRA-100",
@@ -224,32 +224,14 @@
       "owner": "MiniApp-Agent",
       "points": 5,
       "review_tier": "T1",
-      "card_stage": "card-definition-review",
+      "card_stage": "implementation-r1-dual-sign-approve",
       "card_def_review_type": "dual-sign (tech + product)",
       "card_def_autoloop_kickoff_source": "D-014-a",
       "d016_compliance_card_def": "pass (4th实战 · Orchestrator 于 Human 2026-04-27 09:47 run miniapp COSTRA-102 触发同 tool call 循环内完成 dispatch + Tech Review + Product Review + STATE/board/metrics/messages 六处同步 · 无跨轮异步承诺)",
       "card_def_tech_verdict": "APPROVE",
       "card_def_tech_score": "33/35",
-      "card_def_tech_findings": {
-        "p0": 0,
-        "p1": 1,
-        "p2": 2,
-        "info": 3,
-        "p1_items": ["P1-NEW-1 D2.11 手册失败回报模板需明确落盘位置"],
-        "p2_items": ["P2-1 vitest 首装对齐风险可预演", "P2-2 Idempotency-Key 显式复用 key 语义不清"],
-        "info_items": ["INFO-1 agent 定义文件工作区漂移（miniapp/→miniprogram/） · 议 PM Sprint-1 末批次修订", "INFO-2 Human 本地验证手册范式议入 SOP-REVIEW v2.1 §11", "INFO-3 metrics explicit_out_of_scope 字段标准化候选"]
-      },
       "card_def_product_verdict": "APPROVE",
       "card_def_product_score": "28/30",
-      "card_def_product_findings": {
-        "p0": 0,
-        "p1": 1,
-        "p2": 1,
-        "info": 2,
-        "p1_items": ["P1-NEW-1 首次登录无昵称空窗期 UI 状态未定义 · Agent 实装按 Review 建议规则处理"],
-        "p2_items": ["P2-NEW-1 手册失败回报模板分软失败/硬失败", "P2-NEW-2 手册加代码质量扫描 ≥90 验证步骤"],
-        "info_items": ["INFO-1 首张纯前端客户端 T1 卡 · Retro 范式候选", "INFO-2 COSTRA-118 路径 A 分流承接效率 · Retro 正面案例"]
-      },
       "card_def_118_coverage_check": "16/16 全绿（11 必做 + 5 合规排除 · 零遗漏 · 零越权）",
       "dependency_closeout_refs": ["COSTRA-100", "COSTRA-101 §6.1.a", "COSTRA-101 §6.1.b", "COSTRA-113", "COSTRA-030", "COSTRA-118"],
       "dispatched_p0_count": 10,
@@ -259,14 +241,83 @@
       "dispatch": ".team/dispatch/COSTRA-102-miniapp-login-e2e.md",
       "card_def_tech_report": ".team/reviews/COSTRA-102/card-def-tech.md",
       "card_def_product_report": ".team/reviews/COSTRA-102/card-def-product.md",
-      "human_def_approval": "pending",
-      "human_def_approval_at": null,
-      "r1_verdict": null,
+      "human_def_approval": "approve",
+      "human_def_approval_at": "2026-04-27T10:00+08:00",
+      "r1_autoloop_kickoff_source": "D-014-b",
+      "d016_compliance_r1": "pass (5th实战 · Human 2026-04-27 10:00 approve-def:COSTRA-102 触发 → Orchestrator 同 tool call 循环内完成：MiniApp-Agent R1 实装 + typecheck + vitest 双闸 + Agent 响应报告 + Review-Tech R1 + Review-Product R1 + STATE/board/metrics/messages/follow-ups 同步 · 无跨轮异步承诺)",
+      "r1_implementation_files_modified": [
+        "miniprogram/services/auth.ts (rewrite · OpenAPI AuthTokenPair alignment)",
+        "miniprogram/services/request.ts (rewrite · Idempotency-Key + Error 顶层解析 + PATCH 降级)",
+        "miniprogram/services/sync.ts (rewrite · /sync/pull GET + query + Entity 契约对齐)",
+        "miniprogram/services/storage.ts (vitest node 环境 wx 守卫)",
+        "miniprogram/utils/money.ts (decimal.js 切换 · ADR-0002 合规)",
+        "miniprogram/utils/time.ts (P0-8 双减时区 BUG 修复)",
+        "miniprogram/app.wxss (P0-9 alias 层 10 变量)",
+        "miniprogram/pages/login/index.ts (getUserProfile 同步栈 + 错误分支)",
+        "miniprogram/pages/login/index.wxml (移除 getUserInfo open-type)",
+        "miniprogram/pages/home/index.ts (hydrateUser + TODO 端点修正)",
+        "miniprogram/pages/home/index.wxml (greeting 区 + avatar)",
+        "miniprogram/pages/home/index.wxss (greeting 样式)",
+        "miniprogram/pages/mine/index.ts (await logout)"
+      ],
+      "r1_implementation_files_new": [
+        "miniprogram/utils/error-mapper.ts (90 行 · error-codes.md §9 合规)",
+        "miniprogram/utils/money.spec.ts (6 tests · 0.1+0.2=0.30 精度断言)",
+        "miniprogram/utils/time.spec.ts (2 tests · UTC 路径)",
+        "miniprogram/services/auth.spec.ts (2 tests · TokenPair + shouldRefresh)",
+        "miniprogram/services/request.spec.ts (3 tests · Error 解析 + UUID)",
+        "vitest.config.ts (node 环境 + alias)",
+        "docs/qa/costra-102-human-verify.md (~200 行 · 5 步本地验证手册)"
+      ],
+      "typecheck_gate": "pass (tsc --noEmit · exit 0)",
+      "unit_test_gate": "pass (vitest run · 4 files · 13/13 tests · 161ms)",
+      "r1_tech_verdict": "APPROVE-WITH-FOLLOWUPS",
+      "r1_tech_score": "31/35",
+      "r1_tech_findings": {
+        "p0": 0,
+        "p1": 2,
+        "p2": 3,
+        "info": 3,
+        "p1_items": [
+          "P1-NEW-1 login 页 err.message 直出违反 error-codes.md §0.5 红线 · 必改走 error-mapper",
+          "P1-NEW-2 home greeting avatar binderror 绑定但 onAvatarError 未实现"
+        ]
+      },
+      "r1_product_verdict": "APPROVE",
+      "r1_product_score": "27/30",
+      "r1_product_findings": {
+        "p0": 0,
+        "p1": 1,
+        "p2": 2,
+        "info": 3,
+        "p1_items": [
+          "P1-NEW-1 err.message 直出违反终端用户可理解红线（与 Tech P1-NEW-1 为同一条 · 双签方共识）"
+        ]
+      },
+      "r1_dispatch_drift_findings": [
+        "INFO-B /sync/pull 方法：dispatch §D2.5 写 'POST /sync/pull body'；事实源（OpenAPI L614-637 + sync-protocol.md §3.1）为 GET + query · Agent 按事实源实装 · Reviewer 确认正确 · 议 Sprint-1 Retro（Orchestrator 派单推导需对账事实源）",
+        "INFO-C wx.request 不支持 PATCH · Agent 降级 POST + X-HTTP-Method-Override · 平台限制 · 登记为 FU-COMMON-MINIAPP-PATCH-LIMIT",
+        "INFO-D dispatch §6 artifacts 漏 miniprogram/utils/error-mapper.ts · error-codes.md §9 显式要求 COSTRA-102 内落地 · Agent 按事实源补齐 · Tech 扣 1 分 discipline 但接受结果"
+      ],
+      "followups_added_r1": [
+        "FU-102-PATH-A-RETRO(D-016 5th · path A 承接效率议 Sprint-1 Retro 正面案例)",
+        "FU-102-SYNC-PULL-DRIFT(dispatch 推导与事实源漂移 · Orchestrator 需加对账机制 · Sprint-1 Retro 议题)",
+        "FU-COMMON-MINIAPP-PATCH-LIMIT(wx.request 无 PATCH · 平台限制登记 · 跨卡复用)",
+        "FU-102-ERROR-MAPPER-INTEGRATION(login 页 err.message 红线修复 · 交下轮 R2 或随手修)",
+        "FU-102-PROFILE-REFUSE-UI(用户拒绝 getUserProfile 的空窗期 UI 状态 · 产品细节 P2)",
+        "FU-102-HUMAN-VERIFY-PARADIGM(首张纯前端 T1 卡 Human 本地验证手册范式议入 SOP-REVIEW v2.1 §11)"
+      ],
+      "r1_combined_verdict_handoff": "双签 APPROVE · 无 R2 需求 · 转 Human T1 终审（等 04-30 本地验证后 approve:COSTRA-102）",
+      "r1_miniapp_response_report": ".team/reviews/COSTRA-102/round-1-miniapp-response.md",
+      "r1_tech_report": ".team/reviews/COSTRA-102/round-1-tech.md",
+      "r1_product_report": ".team/reviews/COSTRA-102/round-1-product.md",
+      "r1_118_coverage_reconciliation": "16/16 全绿（11 必做 DoD 全数落地 · 5 合规排除零越权 · 响应 §14 详表对账）",
+      "r2_verdict": null,
       "terminal_verdict": null,
       "human_final_decision": "pending",
       "human_final_decision_at": null,
       "final_report": null,
-      "notes": "Sprint-1 主线第三卡（最后一张 backend 上游已闭 · 客户端端到端首立）。承接 COSTRA-118 路径 A 分流 11 条必修 + 5 条合规排除。首张纯前端 T1 卡 · 创造'Human 本地验证手册=T1 终审必要凭证'范式（INFO-2 议入 SOP-REVIEW v2.1）。本次派单同轮兑现达成六件事：dispatch + card-def-tech + card-def-product + metrics + STATE + board + messages · D-016 第四次实战合规（连续四次零跨轮异步反模式）。Human 下一步：发 approve-def:COSTRA-102 放行卡定义 → Agent 实装开工 → 04-28 18:00 前 R1 → 04-30 Sprint 中点 Human 本地验证。"
+      "notes": "Sprint-1 主线第三卡 · R1 实装首轮双签 APPROVE · 代码 + 单测 + 手册三件套齐全 · 双闸（typecheck + 13/13 vitest）全绿 · 能力边界合规（无真机访问声称 · Human 04-30 本地验证为 T1 终审必要凭证）· COSTRA-118 16/16 分流对账全绿 · D-016 连续第 5 次实战合规（五次零跨轮异步反模式）· 首张纯前端客户端 T1 R1 范式建立。Human 下一步：等 2026-04-30 Sprint 中点 20 分钟本地验证（按 docs/qa/costra-102-human-verify.md 执行）→ 发 approve:COSTRA-102 终审。P1 两条（err.message 直出 + avatar onAvatarError 未实现）非阻塞 · Reviewer 接受带 FU 放行 · 可交 Human 验证后随手修或入下一轮迭代。"
     }
   ]
 }

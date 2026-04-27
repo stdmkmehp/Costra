@@ -18,7 +18,7 @@
       "@utils/*": ["miniprogram/utils/*"],
       "@tokens/*": ["miniprogram/tokens/*"]
     },
-    "types": ["miniprogram-api-typings"]
+    "types": ["miniprogram-api-typings", "vitest/globals"]
   },
   "include": ["miniprogram/**/*.ts"],
   "exclude": ["node_modules", "dist"]

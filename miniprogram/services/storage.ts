@@ -12,6 +12,9 @@ interface Envelope<T> {
 }
 
 function ensureVersion(): void {
+  // 单测 / 非 wx 环境：wx 全局不存在 · 静默跳过
+  // 生产（小程序运行时）：wx 一定存在
+  if (typeof wx === 'undefined') return;
   try {
     const v = wx.getStorageSync(VERSION_KEY);
     if (v !== STORAGE_VERSION) {
@@ -26,6 +29,7 @@ function ensureVersion(): void {
 ensureVersion();
 
 export function setItem<T>(key: string, data: T, ttlMs?: number): void {
+  if (typeof wx === 'undefined') return;
   const env: Envelope<T> = { v: STORAGE_VERSION, t: Date.now(), ttl: ttlMs, d: data };
   try {
     wx.setStorageSync(key, env);
@@ -35,6 +39,7 @@ export function setItem<T>(key: string, data: T, ttlMs?: number): void {
 }
 
 export function getItem<T>(key: string): T | null {
+  if (typeof wx === 'undefined') return null;
   try {
     const env = wx.getStorageSync(key) as Envelope<T> | '';
     if (!env) return null;
@@ -50,5 +55,6 @@ export function getItem<T>(key: string): T | null {
 }
 
 export function removeItem(key: string): void {
+  if (typeof wx === 'undefined') return;
   try { wx.removeStorageSync(key); } catch { /* noop */ }
 }

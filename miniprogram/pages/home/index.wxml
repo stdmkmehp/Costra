@@ -1,5 +1,12 @@
 <!-- 首页 · 本月概览 + 最近记录 -->
+<!-- 卡号: COSTRA-102 · P1-4：新增用户画像区（来源 AuthTokenPair.user） -->
 <view class="home">
+  <view class="greeting">
+    <image wx:if="{{userAvatar}}" class="greeting__avatar" src="{{userAvatar}}" mode="aspectFill" binderror="onAvatarError"/>
+    <view wx:else class="greeting__avatar greeting__avatar--fallback">👤</view>
+    <view class="greeting__text">你好，{{userName}}</view>
+  </view>
+
   <view class="overview">
     <view class="overview__title">{{monthLabel}}</view>
     <view class="overview__row">

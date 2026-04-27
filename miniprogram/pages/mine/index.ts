@@ -33,8 +33,9 @@ Page({
   async onTapLogout() {
     const res = await wx.showModal({ title: '退出登录', content: '确定要退出吗？' });
     if (res.confirm) {
-      logout();
-      wx.reLaunch({ url: '/pages/login/index' });
+      // COSTRA-102 D2.2：logout 已改为 async（含真调 POST /auth/logout 204）
+      // 内部已自带 wx.reLaunch，此处无需再跳
+      await logout();
     }
   },
 });

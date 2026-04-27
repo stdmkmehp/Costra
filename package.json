@@ -8,10 +8,14 @@
     "lint:fix": "eslint \"miniprogram/**/*.{ts,js}\" --fix",
     "format": "prettier --write \"miniprogram/**/*.{ts,js,json,wxss,wxml}\"",
     "typecheck": "tsc --noEmit",
-    "test": "echo \"(COSTRA-030) 单测框架待 COSTRA-121 接入\" && exit 0",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "mp:build:check": "node ./scripts/mp-ci/build-check.mjs",
     "analyze": "node ./scripts/mp-ci/analyze.mjs",
     "prepare": "husky install"
+  },
+  "dependencies": {
+    "decimal.js": "^10.4.3"
   },
   "devDependencies": {
     "@commitlint/cli": "^19.0.0",
@@ -23,6 +27,7 @@
     "husky": "^9.0.0",
     "miniprogram-api-typings": "^3.12.2",
     "prettier": "^3.2.0",
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
   }
 }

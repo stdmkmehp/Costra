@@ -1,4 +1,6 @@
 <!-- 登录页 · 对齐 docs/design/flows/login.md -->
+<!-- 卡号: COSTRA-102 · E.P0-10-partA: 移除 open-type="getUserInfo"（微信 2022-04-14 基础库 2.21.2 起已失效） -->
+<!-- 替代方案：按钮只负责 bindtap，getUserProfile 由 TS 层在点击同步上下文中唤起 -->
 <view class="login">
   <view class="brand">
     <view class="brand__logo">💰</view>
@@ -9,7 +11,6 @@
   <view class="login__actions">
     <button
       class="btn btn--primary"
-      open-type="getUserInfo"
       loading="{{loading}}"
       disabled="{{loading}}"
       bindtap="onTapLogin">

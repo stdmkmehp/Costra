@@ -107,8 +107,87 @@
 - **建议**：引入 `decimal.js@^10.4.3`（约 32KB · 可接受 · 小程序包大小预算 2MB 主包内无压力）
 - **阻断级别**：P1（当前语义正确 · 非紧急 · 但属栈偏离应矫正）
 - **认领建议**：COSTRA-102 实装时顺手切换（涉及金额输入的 entry 页最先受益）
-- **状态**：`scoped`
-- **owner_card**：COSTRA-102（2026-04-27 Human T2 approve:COSTRA-118 路径 A 正式入 COSTRA-102 扩展 DoD · 见 `.team/reviews/COSTRA-118/FINAL.md §分流矩阵`）
+- **状态**：`closed` @ 2026-04-27 10:12
+- **owner_card**：COSTRA-102
+- **resolved_by**：COSTRA-102 R1 实装 · `miniprogram/utils/money.ts` 全量重写 · 引入 `decimal.js@^10.4.3` · 3 函数（toCents / toYuan / parseAmountInputToCents）全部走 Decimal · 单测断言 `toCents('0.1') + toCents('0.2') === 30`（浮点数学典型坑位正向兜住）· ADR-0002 硬约束恢复合规
+
+---
+
+### FU-102-ERROR-MAPPER-INTEGRATION · login 页错误分支直出 err.message 违反红线
+
+- **来源**：`.team/reviews/COSTRA-102/round-1-tech.md` P1-NEW-1 + `round-1-product.md` P1-NEW-1（双签方共识）
+- **登记时间**：2026-04-27 10:14
+- **范围**：`miniprogram/pages/login/index.ts` 错误分支 `wx.showToast({ title: err.message })` 违反 `docs/api/error-codes.md §0.5` 红线"客户端不得直接展示 message 给终端用户"
+- **建议**：改为 `import { mapError } from '../../utils/error-mapper'; const m = mapError(err); wx.showModal({ title: m.title, content: m.desc })`
+- **阻断级别**：P1（双签方均判非阻塞 · 放 FU 交 Human T1 终审前修或入下一轮）
+- **认领建议**：Human 04-30 本地验证前 Agent 随手修 · 或入 Sprint-1 末批次
+- **状态**：`open`
+- **owner_card**：COSTRA-102（本卡兜底）
+
+---
+
+### FU-102-AVATAR-ONERROR · home.wxml binderror 对应 handler 未实现
+
+- **来源**：`.team/reviews/COSTRA-102/round-1-tech.md` P1-NEW-2
+- **登记时间**：2026-04-27 10:14
+- **范围**：`miniprogram/pages/home/index.wxml` `<image binderror="onAvatarError">` · `index.ts` 无 `onAvatarError` 方法 · 头像 404 时无降级
+- **建议**：补 `onAvatarError(): void { this.setData({ 'user.avatarUrl': '' }) }` 走 CSS fallback
+- **阻断级别**：P1（功能非致命 · 头像 URL 不达可用默认）
+- **认领建议**：与 FU-102-ERROR-MAPPER-INTEGRATION 同批次修
+- **状态**：`open`
+- **owner_card**：COSTRA-102
+
+---
+
+### FU-102-PROFILE-REFUSE-UI · 用户拒绝 getUserProfile 的空窗期 UI 状态
+
+- **来源**：`.team/reviews/COSTRA-102/round-1-product.md` P2-NEW-1
+- **登记时间**：2026-04-27 10:14
+- **范围**：`miniprogram/pages/login/index.ts` 调 `wx.getUserProfile` 被用户取消授权时的 home 页空头像空昵称降级显示策略
+- **建议**：home 页显示占位头像 + "欢迎" 无名称版本 + 页面角标"完善资料"入口（Sprint-2 产品细节）
+- **阻断级别**：P2
+- **认领建议**：Sprint-2 Epic-F 用户资料卡
+- **状态**：`open`
+- **owner_card**：（待 Sprint-2 Planning 认领）
+
+---
+
+### FU-COMMON-MINIAPP-PATCH-LIMIT · wx.request 不支持 PATCH（平台限制登记）
+
+- **来源**：`.team/reviews/COSTRA-102/round-1-miniapp-response.md` INFO-C
+- **登记时间**：2026-04-27 10:14
+- **范围**：`miniprogram/services/request.ts` PATCH 方法在 wx.request type 中不存在 · Agent 已降级 `method === 'PATCH'` 时走 POST + `X-HTTP-Method-Override: PATCH` header
+- **建议**：登记为跨卡复用的平台限制 · server 侧约定处理该 header · 不可修
+- **阻断级别**：O-观察项（平台限制 · 已合规兜底）
+- **认领建议**：server 端任一接受 PATCH 的接口（如 `PATCH /users/me`）需文档化接受 `X-HTTP-Method-Override` header · 议入 `docs/api/common-contract.md`
+- **状态**：`open-observation`
+- **owner_card**：跨卡通用（可入 engineering-guidelines 或 common-contract）
+
+---
+
+### FU-102-SYNC-PULL-DRIFT · dispatch 派单推导与事实源漂移（Retro 高优先）
+
+- **来源**：`.team/reviews/COSTRA-102/round-1-miniapp-response.md` INFO-B + `round-1-tech.md` INFO
+- **登记时间**：2026-04-27 10:14
+- **范围**：`.team/dispatch/COSTRA-102-miniapp-login-e2e.md §D2.5` 写 "POST /sync/pull body"；事实源 `server/api/openapi.yaml L614-637` + `docs/api/sync-protocol.md §3.1` 明确为 GET + query string · Agent 按事实源实装 · Reviewer 确认正确
+- **建议**：Orchestrator 派单推导机制应增加"事实源对账自查表"步骤（类似 O-R4-2 Revise 主报告自查表）· 避免派单引入次生幻觉
+- **阻断级别**：INFO（本次未造成实装事故 · Agent 按事实源优先原则兜住）
+- **认领建议**：**Sprint-1 末 Retro 议题（高优先）** · 配合 O-R4-2 一并议
+- **状态**：`open`
+- **owner_card**：Sprint-1 Retro（COSTRA-106 头部）
+
+---
+
+### FU-102-HUMAN-VERIFY-PARADIGM · 首张纯前端 T1 卡范式
+
+- **来源**：`.team/reviews/COSTRA-102/round-1-product.md` INFO + card-def-product.md INFO-2
+- **登记时间**：2026-04-27 10:14
+- **范围**：COSTRA-102 作为首张纯前端 T1 卡 · 建立 "Agent 交付三件套（代码 + 单测 + 手册） + Human 20 分钟本地验证 = T1 终审必要凭证" 范式 · 破解 Agent 无真机访问权的能力边界约束
+- **建议**：议入 `SOP-REVIEW.md v2.1 §11`：纯前端客户端 T1 卡 R1 交付必含本地验证手册 `docs/qa/COSTRA-<xxx>-human-verify.md`（0 前置 + 步骤明确 + 失败报告模板）
+- **阻断级别**：INFO（范式议入 · 非缺陷）
+- **认领建议**：Sprint-1 末 SOP 批次维护
+- **状态**：`open`
+- **owner_card**：Sprint-1 末 SOP 批次
 
 ---
 
@@ -124,7 +203,22 @@ Human T2 `approve:COSTRA-118` 路径 A 收口 · 全部 FU-118-* 状态补齐 `o
 | FU-118-3 | `open` | Sprint-2 COSTRA-160（暂定）`miniapp-design-tokens-pipeline` |
 | FU-118-4 | `open` | Sprint-2 COSTRA-106 Retro 头部合并处理 |
 | FU-118-5 | `open` | Sprint-2 合入 COSTRA-903 APM 卡 |
-| FU-118-6 | `scoped` | **COSTRA-102**（MiniApp 端到端实装顺手切） |
+| FU-118-6 | **`closed`** | **COSTRA-102 R1 已落地（2026-04-27 10:12 · decimal.js ^10.4.3 引入）** |
+
+---
+
+## 📌 COSTRA-102 R1 实装双签后状态流转（2026-04-27 10:14）
+
+R1 Tech + Product 双签 APPROVE · 新增 6 条 FU-102-* 条目 · FU-118-6 关闭：
+
+| FU-ID | 状态 | owner_card |
+|---|---|---|
+| FU-102-ERROR-MAPPER-INTEGRATION | `open` | COSTRA-102（Human 终审前随手修） |
+| FU-102-AVATAR-ONERROR | `open` | COSTRA-102（同上） |
+| FU-102-PROFILE-REFUSE-UI | `open` | Sprint-2 Epic-F |
+| FU-COMMON-MINIAPP-PATCH-LIMIT | `open-observation` | 跨卡通用（engineering-guidelines / common-contract） |
+| FU-102-SYNC-PULL-DRIFT | `open` | **Sprint-1 末 Retro 高优先议题** |
+| FU-102-HUMAN-VERIFY-PARADIGM | `open` | Sprint-1 末 SOP-REVIEW v2.1 §11 |
 
 ---
 
