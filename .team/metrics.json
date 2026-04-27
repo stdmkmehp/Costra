@@ -1,7 +1,7 @@
 {
   "_schema": "costra-metrics-v1",
-  "_description": "Per-card Review 度量记录；COSTRA-118 miniprogram 技术债专项普查 Round-1 REJECT @ 2026-04-24 19:35（D-016 第二次实战合规）",
-  "_updated_at": "2026-04-24T19:35+08:00",
+  "_description": "Per-card Review 度量记录；COSTRA-102 卡定义首轮 Review 双签 APPROVE @ 2026-04-27 09:47（D-016 第四次实战合规 · 同派单 tool call 循环内兑现 Tech + Product 双签）· 等 Human approve-def 放行实装 · COSTRA-118 T2 approve 路径 A 已于 2026-04-27 09:39 收官（含本轮第 4 / 5 条）",
+  "_updated_at": "2026-04-27T09:47+08:00",
   "cards": [
     {
       "card": "COSTRA-100",
@@ -217,6 +217,56 @@
       "closeout_d016_compliance": "pass (3rd实战 · 本次 Human 2026-04-27 09:39 触发 approve → Orchestrator 同 tool call 循环内完成 FINAL + metrics + STATE + board + follow-ups + messages 六处同步)",
       "closeout_delay_observation": "Round-1 产出 2026-04-24 19:35 → Human 终审 2026-04-27 09:39 · 间隔 ~62h · 原因为用户 04-25~04-27 做 Mac 跨机迁移 · 不影响结论 · 登记为 Sprint-1 Retro 议题：为审计类卡设 72h 终审 SLA 软约束",
       "notes": "审计类专项卡首次完整闭环：Round-1（2026-04-24 D-016 第二次实战）+ FINAL（2026-04-27 D-016 第三次实战）· Owner=Review-Tech 本身 · 单轮即报即结 · 无 Revise 方 · D-011 自动循环不适用 · Human 路径 A 采纳 Reviewer 推荐 · 10 P0 零悬挂 · 全部分配到明确承接卡。为 Sprint 末期技术债扫描建立范式。"
+    },
+    {
+      "card": "COSTRA-102",
+      "title": "MiniApp 登录 → 首页 → 记一笔端到端（Sprint-1 主线第三卡 · 客户端首次真实立起）",
+      "owner": "MiniApp-Agent",
+      "points": 5,
+      "review_tier": "T1",
+      "card_stage": "card-definition-review",
+      "card_def_review_type": "dual-sign (tech + product)",
+      "card_def_autoloop_kickoff_source": "D-014-a",
+      "d016_compliance_card_def": "pass (4th实战 · Orchestrator 于 Human 2026-04-27 09:47 run miniapp COSTRA-102 触发同 tool call 循环内完成 dispatch + Tech Review + Product Review + STATE/board/metrics/messages 六处同步 · 无跨轮异步承诺)",
+      "card_def_tech_verdict": "APPROVE",
+      "card_def_tech_score": "33/35",
+      "card_def_tech_findings": {
+        "p0": 0,
+        "p1": 1,
+        "p2": 2,
+        "info": 3,
+        "p1_items": ["P1-NEW-1 D2.11 手册失败回报模板需明确落盘位置"],
+        "p2_items": ["P2-1 vitest 首装对齐风险可预演", "P2-2 Idempotency-Key 显式复用 key 语义不清"],
+        "info_items": ["INFO-1 agent 定义文件工作区漂移（miniapp/→miniprogram/） · 议 PM Sprint-1 末批次修订", "INFO-2 Human 本地验证手册范式议入 SOP-REVIEW v2.1 §11", "INFO-3 metrics explicit_out_of_scope 字段标准化候选"]
+      },
+      "card_def_product_verdict": "APPROVE",
+      "card_def_product_score": "28/30",
+      "card_def_product_findings": {
+        "p0": 0,
+        "p1": 1,
+        "p2": 1,
+        "info": 2,
+        "p1_items": ["P1-NEW-1 首次登录无昵称空窗期 UI 状态未定义 · Agent 实装按 Review 建议规则处理"],
+        "p2_items": ["P2-NEW-1 手册失败回报模板分软失败/硬失败", "P2-NEW-2 手册加代码质量扫描 ≥90 验证步骤"],
+        "info_items": ["INFO-1 首张纯前端客户端 T1 卡 · Retro 范式候选", "INFO-2 COSTRA-118 路径 A 分流承接效率 · Retro 正面案例"]
+      },
+      "card_def_118_coverage_check": "16/16 全绿（11 必做 + 5 合规排除 · 零遗漏 · 零越权）",
+      "dependency_closeout_refs": ["COSTRA-100", "COSTRA-101 §6.1.a", "COSTRA-101 §6.1.b", "COSTRA-113", "COSTRA-030", "COSTRA-118"],
+      "dispatched_p0_count": 10,
+      "dispatched_p1_count": 3,
+      "explicit_out_of_scope": ["P0-10-partB 隐私页（链 COSTRA-109）", "P1-3 outbox snake_case（归 COSTRA-103）", "P1-5 CURRENT_ENV 注入（归 COSTRA-108）", "P2-1/2/3/4 全部 Sprint-2 FU", "AppID-README 灰色区 · FU-118-1"],
+      "human_midpoint_verify_date": "2026-04-30",
+      "dispatch": ".team/dispatch/COSTRA-102-miniapp-login-e2e.md",
+      "card_def_tech_report": ".team/reviews/COSTRA-102/card-def-tech.md",
+      "card_def_product_report": ".team/reviews/COSTRA-102/card-def-product.md",
+      "human_def_approval": "pending",
+      "human_def_approval_at": null,
+      "r1_verdict": null,
+      "terminal_verdict": null,
+      "human_final_decision": "pending",
+      "human_final_decision_at": null,
+      "final_report": null,
+      "notes": "Sprint-1 主线第三卡（最后一张 backend 上游已闭 · 客户端端到端首立）。承接 COSTRA-118 路径 A 分流 11 条必修 + 5 条合规排除。首张纯前端 T1 卡 · 创造'Human 本地验证手册=T1 终审必要凭证'范式（INFO-2 议入 SOP-REVIEW v2.1）。本次派单同轮兑现达成六件事：dispatch + card-def-tech + card-def-product + metrics + STATE + board + messages · D-016 第四次实战合规（连续四次零跨轮异步反模式）。Human 下一步：发 approve-def:COSTRA-102 放行卡定义 → Agent 实装开工 → 04-28 18:00 前 R1 → 04-30 Sprint 中点 Human 本地验证。"
     }
   ]
 }

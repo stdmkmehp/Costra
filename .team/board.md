@@ -8,7 +8,7 @@
 > **🆕 卡定义 Review + Review 自动拉起（D-014 · 2026-04-23 22:26 生效）**：(a) 2026-04-23 22:26 后新建的卡**必须**经卡定义 Review（技术向→Review-Tech / 产品向→Review-Product）；(b) 被审 Agent 交付后**产出 Review 首轮自动拉起**（无需 Human 触发）；(c) 历史卡豁免；(d) DevOps/QA/决策类豁免；(e) Human 打断指令（`pause-review` / `skip-card-review` / `force-card-pass` / `stop`）最高优先级。详见 `.team/decisions/D-014-card-review-and-auto-review-kickoff.md` + `.team/SOP-CARD-REVIEW.md`。
 > **🔄 D-011 实战验证三次通过**（2026-04-23）：COSTRA-100（2 轮 · 69 min） + Sprint-0 补审（7 卡 × 2 轮 · 29 min 并行） + **COSTRA-101 Round 1 刚自动拉起（22:49 · D-014-b 首次实战）**
 
-最后更新：`2026-04-27 09:39`（Orchestrator · **COSTRA-118 Human T2 APPROVED 路径 A 整卡收官** · D-016 第三次实战合规 · 10 P0 零悬挂分流到 COSTRA-102/103/108/109 · 焦点切换至 `run miniapp COSTRA-102` 抢 04-30 Sprint 中点）
+最后更新：`2026-04-27 09:47`（Orchestrator · **COSTRA-102 卡定义首轮双签 APPROVE** · Tech 33/35 + Product 28/30 · COSTRA-118 16/16 分流对账全绿 · D-016 第四次实战合规 · 等 Human `approve-def:COSTRA-102` 放行实装段）
 
 ---
 
@@ -52,6 +52,7 @@
 
 ## 🔄 Doing（清洗后仅列真正 in-flight · 其余为 Todo-等触发）
 - [~] **COSTRA-114** @DevOps-Agent · 开发服务器 bootstrap **手册**（D-009）· **🟠 卡定义已 approve 但实际未开工**（I-003 · 04-24 17:00 澄清 · `docs/ops/` 目录不存在）· 等 Human 真正触发 `run devops COSTRA-114`
+- [~] **COSTRA-102** @MiniApp-Agent · MiniApp 登录→首页→记一笔端到端（Sprint-1 主线第三卡 · 5 点） · **2026-04-27 09:47 卡定义首轮双签 APPROVE**（Tech 33/35 · Product 28/30 · P0=0 · P1=2 非阻塞 · COSTRA-118 16/16 分流对账全绿 · D-016 第四次实战合规） · 等 Human `approve-def:COSTRA-102` · dispatch `.team/dispatch/COSTRA-102-miniapp-login-e2e.md`
 
 ## 👀 Review
 
@@ -59,10 +60,11 @@
 
 _（COSTRA-101 §6.1.b R4 · 04-24 19:10 D-011 环内收敛 APPROVE · 19:28 Human T1 终审放行 · 整卡收官）_
 _（COSTRA-118 审计类专项卡 · 单轮模型 · 2026-04-27 09:39 Human T2 APPROVED 路径 A · 整卡收官）_
+_（COSTRA-102 卡定义首轮已双签 APPROVE · 2026-04-27 09:47 · 未进入实装段 · 等 Human approve-def）_
 
-### 🙋 Human-Review（AI-Review 已通过，等你终审 · 共 0 张）
+### 🙋 Human-Review（AI-Review 已通过，等你终审 · 共 1 张 · 卡定义段）
 
-_（本列当前为空 · COSTRA-118 已 2026-04-27 09:39 收官 · 见 Done 段）_
+- [R-def] **COSTRA-102** · MiniApp 登录→首页→记一笔端到端（卡定义 Review） · 2026-04-27 09:47 · **Tech APPROVE 33/35 + Product APPROVE 28/30 · 双签通过** · 承接 COSTRA-118 路径 A 11 必修 + 5 排除全绿 · 推荐 Human 直发 `approve-def:COSTRA-102` 放行实装段 · 详情 `.team/reviews/COSTRA-102/card-def-tech.md` + `.team/reviews/COSTRA-102/card-def-product.md`
 
 #### 🔒 Sprint-0 AI-Review 补审（共 7 张 · D-013 **T3 追溯 · 全部 SKIP-REVIEW-AUTOCLOSED**）
 
@@ -186,8 +188,9 @@ _（无强阻塞。COSTRA-040 "真实上传链路激活" 仍依赖外部资源�
 
 ## 💤 Orchestrator 状态
 
-- **MODE**：`awaiting-human`（**COSTRA-118 Human T2 APPROVED 路径 A** @ 2026-04-27 09:39 · 整卡收官 · 10 P0 零悬挂分流 · 🟠 `run devops COSTRA-115` DNS 已逾期 2 天需紧急决策 · 🟢 建议优先触发 `run miniapp COSTRA-102` 抢 04-30 Sprint 中点）
-- **下一动作**：Human 选择（推荐顺序）：① **`run miniapp COSTRA-102`**（主线第三卡 · 承接 COSTRA-118 8 P0 + 3 P1 · 04-30 中点前必启动） / ② `run devops COSTRA-115`（DNS · 已逾期 · 建议同时发出或 `reschedule:COSTRA-115`） / ③ `run devops COSTRA-114`（手册 · 随时）
-- **保存点**：COSTRA-118 FINAL.md（Human T2 approve 签字 · §分流矩阵正式化）+ metrics 第 4 条更新 human_final_decision=approve + STATE/board/follow-ups/messages 六处同步 @ 2026-04-27 09:39
-- **D-016 第三次实战结果**：✅ 合规（Human 09:39 `approve:COSTRA-118` → Orchestrator 同一 tool call 循环内交付 6 产物）· 跨轮异步反模式连续三次未复现 · 规约自身可信
-- **审计类专项卡形态完整闭环**：Round-1（D-016 第二次）+ FINAL（D-016 第三次）· 单轮即报即结 · Owner=Reviewer 本身 · 无 Revise 方 · 模板化可复用
+- **MODE**：`awaiting-human`（**COSTRA-102 卡定义首轮双签 APPROVE** @ 2026-04-27 09:47 · Tech 33/35 + Product 28/30 · 承接 COSTRA-118 16/16 分流对账全绿 · D-016 第四次实战合规 · 等 Human `approve-def:COSTRA-102` · 🟠 `run devops COSTRA-115` DNS 已逾期 2 天仍待决策）
+- **下一动作**：Human 选择（推荐顺序）：① **`approve-def:COSTRA-102`**（放行本次产出的卡定义 · 5 分钟级 · Agent 进入实装段） / ② `run devops COSTRA-115`（DNS · 已逾期 · 建议并行发出或 `reschedule:COSTRA-115`） / ③ `run devops COSTRA-114`（手册 · 随时）
+- **保存点**：COSTRA-102 dispatch（~11KB · Sprint-1 主线第三卡 · COSTRA-118 分流矩阵并入） + card-def-tech 33/35 + card-def-product 28/30 + metrics 第 5 条新增 + STATE/board/messages 七处同步 @ 2026-04-27 09:47
+- **D-016 第四次实战结果**：✅ 合规（Human 09:47 `run miniapp COSTRA-102` → Orchestrator 同一 tool call 循环内交付 7 产物：dispatch + 2 份 Review + metrics + STATE + board + messages）· 跨轮异步反模式连续四次未复现 · 规约自身高度可信
+- **卡定义 Review 双签范式**（D-014-a 首次与纯前端卡搭配）：Tech + Product 同轮兑现 · 对 COSTRA-118 16 条分流项逐条对账（11 必做 + 5 合规排除 · 零遗漏零越权）· 模板化可复用
+- **隐性预案**：Human 发 `approve-def:COSTRA-102` 后 · Orchestrator 将在同 tool call 循环内拉起 MiniApp-Agent 实装开工（D-016 第五次实战目标）· 预计 04-28 18:00 前 Agent 交付 R1（代码 + 单测 + Human 本地验证手册） · 04-30 Sprint 中点 Human 本地验证 20 分钟
