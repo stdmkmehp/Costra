@@ -107,7 +107,24 @@
 - **建议**：引入 `decimal.js@^10.4.3`（约 32KB · 可接受 · 小程序包大小预算 2MB 主包内无压力）
 - **阻断级别**：P1（当前语义正确 · 非紧急 · 但属栈偏离应矫正）
 - **认领建议**：COSTRA-102 实装时顺手切换（涉及金额输入的 entry 页最先受益）
-- **状态**：`open`
+- **状态**：`scoped`
+- **owner_card**：COSTRA-102（2026-04-27 Human T2 approve:COSTRA-118 路径 A 正式入 COSTRA-102 扩展 DoD · 见 `.team/reviews/COSTRA-118/FINAL.md §分流矩阵`）
+
+---
+
+## 📌 COSTRA-118 终审后状态流转（2026-04-27 09:39）
+
+Human T2 `approve:COSTRA-118` 路径 A 收口 · 全部 FU-118-* 状态补齐 `owner_card`：
+
+| FU-ID | 状态 | owner_card |
+|---|---|---|
+| FU-001 | `open` | Sprint-2 用户资料卡（合并 FU-118-2 同时处理） |
+| FU-118-1 | `open-observation` | Sprint-1 末 engineering-guidelines §2.5 澄清（PM 维护批次） |
+| FU-118-2 | `scoped` | Sprint-2 合并 FU-001 同卡 |
+| FU-118-3 | `open` | Sprint-2 COSTRA-160（暂定）`miniapp-design-tokens-pipeline` |
+| FU-118-4 | `open` | Sprint-2 COSTRA-106 Retro 头部合并处理 |
+| FU-118-5 | `open` | Sprint-2 合入 COSTRA-903 APM 卡 |
+| FU-118-6 | `scoped` | **COSTRA-102**（MiniApp 端到端实装顺手切） |
 
 ---
 
