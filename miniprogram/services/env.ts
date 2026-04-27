@@ -14,7 +14,7 @@ interface EnvConfig {
 const ENV_MAP: Record<EnvName, EnvConfig> = {
   dev: {
     name: 'dev',
-    apiBaseUrl: 'http://127.0.0.1:3000/v1',
+    apiBaseUrl: 'http://localhost:8080/v1',
     mockLogin: true,
     flags: {
       family_sharing: true,

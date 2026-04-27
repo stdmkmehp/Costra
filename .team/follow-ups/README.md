@@ -222,14 +222,14 @@ R1 Tech + Product 双签 APPROVE · 新增 6 条 FU-102-* 条目 · FU-118-6 关
 
 ---
 
-## 📌 COSTRA-115 R1 T2 Tech APPROVE 后状态流转（2026-04-27 10:54）
+## 📌 COSTRA-115 R1 T2 Tech APPROVE 后状态流转（2026-04-27 10:54 · COSTRA-116 后更新 14:30）
 
-R1 DevOps 交付 · T2 Tech 单轨 APPROVE 28/30 · 新增 3 条 FU：
+R1 DevOps 交付 · T2 Tech 单轨 APPROVE 28/30 · 新增 3 条 FU · 经 COSTRA-116 处置后：
 
 | FU-ID | 状态 | owner_card |
 |---|---|---|
-| FU-COMMON-DEV-URL-DRIFT | `open` | **Sprint-1 末 Retro 高优先议题**（跨 Backend/MiniApp） |
-| FU-115-1 | `open` | Sprint-1 末 / Sprint-2 头（待 FU-COMMON-DEV-URL-DRIFT 关闭） |
+| FU-COMMON-DEV-URL-DRIFT | **`closed`** @ 2026-04-27 | **COSTRA-116 已落地**（三源对齐 `http://localhost:8080/v1`） |
+| FU-115-1 | **`closed`** @ 2026-04-27 | **COSTRA-116 已一并关闭**（豁免集合清空 · 规则 A/B 恢复全量强度） |
 | FU-115-2 | `open` | **Human 主动**（ICP 下证日触发 · R-013 关闭条件） |
 
 ---
@@ -244,18 +244,19 @@ R1 DevOps 交付 · T2 Tech 单轨 APPROVE 28/30 · 新增 3 条 FU：
   - `server/.env.example` · `PORT=8080`（部署权威）
   - `server/src/config/env.ts` · `parsePort(optional(env, 'PORT', '3000'))`（代码回退默认 3000）
 - **问题**：小程序 dev 调的地址（127.0.0.1:3000）与 server 真实启动地址（localhost:8080）**主机 + 端口两项均不一致**；server 内部 `.env.example` 与代码默认值也不一致。开发同事若直接克隆跑，连本地联调都拉不通。
-- **本卡处置**：
-  - 脚本加 `EXEMPTED_ENVS_FROM_RULES_AB = new Set(['dev'])` 豁免机制 + 显式注释指向本 FU
-  - 保证 COSTRA-115 commit 可过 pr-check；但每次 `npm run check:whitelist` 都会打出 `⚠️ [A · EXEMPTED]` + `⚠️ [B · EXEMPTED]` 两条 warning 持续提醒
-- **建议修复路径**（专项卡议题）：
-  1. **确定真相**：以 `server/.env.example PORT=8080` 为部署权威 · `server/src/config/env.ts` parsePort 默认值改 `'8080'`（对齐部署默认 · 避免代码默认值漂移）
-  2. **env.ts dev 对齐**：`dev.apiBaseUrl = 'http://localhost:8080/v1'`（Web 开发者工具 + 小程序本机模拟都用 localhost:8080）
-  3. 无需改 `server/api/openapi.yaml`（已是真相）
-  4. 收紧 whitelist-check.mjs：去掉 `dev` 的豁免，FU-115-1 同步关闭
+- **COSTRA-115 临时处置（已作废）**：
+  - 脚本加 `EXEMPTED_ENVS_FROM_RULES_AB = new Set(['dev'])` 豁免机制
+  - 保证 COSTRA-115 commit 可过 pr-check；但 warning 持续提醒
+- **COSTRA-116 正式修复**（2026-04-27）：
+  1. ✅ `server/src/config/env.ts` L93 · `parsePort(optional(env, 'PORT', '3000'))` → `'8080'`（对齐 `.env.example PORT=8080`）
+  2. ✅ `miniprogram/services/env.ts` L17 · `dev.apiBaseUrl = 'http://127.0.0.1:3000/v1'` → `'http://localhost:8080/v1'`（对齐 SSOT `infra/wechat/domains.md §1.1 local` 行）
+  3. ✅ `server/api/openapi.yaml` 保持不动（本就是真相）
+  4. ✅ `scripts/devops/whitelist-check.mjs` · 豁免集合清空为 `new Set()`（保留空锚点）+ 删 `EXEMPTION_REASON` 常量 · 规则 A/B 恢复全量强度
+  5. ✅ 文档镜像同步：`docs/qa/costra-102-human-verify.md` 方式 A + `miniprogram/README.md` env 表 + `server/test/setup.ts` 注释（'3000' → '8080'）
 - **阻断级别**：P1（不阻 COSTRA-115 · 但阻 COSTRA-102 真实联调 · Human 04-30 本地验证前建议 Backend-Agent 一张小卡修）
-- **认领建议**：Sprint-1 末 Retro 讨论 · 估点 **1 点** · Owner Backend-Agent（主改）+ MiniApp-Agent（配合改 env.ts）
-- **状态**：`open`
-- **阻 04-30 Human 验证？**：⚠️ **有可能** — 若 Human 按 `docs/qa/costra-102-human-verify.md` 执行时 server 真启 8080 但小程序 dev 仍指 3000，会连不上后端 → **建议 04-30 验证前提前处置**
+- **状态**：`closed` @ 2026-04-27
+- **owner_card**：**COSTRA-116**
+- **resolved_by**：COSTRA-116 R1 实装 · 5 文件改动 · `npm run check:whitelist` exit 0 零 warning · Human 04-30 本地验证链路联通前置条件达成
 
 ---
 
@@ -266,8 +267,9 @@ R1 DevOps 交付 · T2 Tech 单轨 APPROVE 28/30 · 新增 3 条 FU：
 - **范围**：豁免机制 `EXEMPTED_ENVS_FROM_RULES_AB = new Set(['dev'])`
 - **建议**：等 FU-COMMON-DEV-URL-DRIFT 关闭后，从豁免集合中移除 `'dev'` · 规则 A/B 对所有 env 一视同仁 · 恢复完整三方对账强度
 - **阻断级别**：P2（不阻 · 仅一条技术债自动清理项）
-- **认领建议**：FU-COMMON-DEV-URL-DRIFT 关闭的同一 commit / 下一张 Backend 卡随手改
-- **状态**：`open`
+- **状态**：`closed` @ 2026-04-27
+- **owner_card**：**COSTRA-116**
+- **resolved_by**：COSTRA-116 一并落地 · `EXEMPTED_ENVS_FROM_RULES_AB` 清空为 `new Set()` · 保留空锚点供未来临时豁免扩展（附注释要求同轮新 FU 登记）· `EXEMPTION_REASON` 常量已删 · warning 路径仍在（空 Set 下自然不触发）
 
 ---
 
@@ -282,6 +284,47 @@ R1 DevOps 交付 · T2 Tech 单轨 APPROVE 28/30 · 新增 3 条 FU：
 - **建议**：Orchestrator 在 `.team/STATE` 每周提醒 `R-013 mitigate` 状态 · ICP 下证日零延迟触发
 - **阻断级别**：O-观察（非 Agent 可执 · Human 主动 · 外部依赖触发）
 - **认领建议**：**Human · 外部触发**（估 2026-05 中下旬 ICP 下证日）
+- **状态**：`open`
+
+---
+
+## 📌 COSTRA-116 R1 T2 Tech APPROVE 后状态流转（2026-04-27 15:25）
+
+R1 Backend 交付 · T2 Tech 单轨 APPROVE 30/30 · 2 条 FU 关闭 · 新增 1 条 FU：
+
+| FU-ID | 状态 | owner_card |
+|---|---|---|
+| FU-COMMON-DEV-URL-DRIFT | **`closed`** @ 2026-04-27 | COSTRA-116（已关闭） |
+| FU-115-1 | **`closed`** @ 2026-04-27 | COSTRA-116（一并关闭） |
+| FU-116-1 | `open` | Sprint-1 末 DevOps 小卡（P3 观察项） |
+
+---
+
+### FU-116-1 · 根目录 .env.example 的 APP_PORT/APP_BASE_URL 与 SSOT 潜在语义冲突（边界外漂移）
+
+- **来源**：`.team/reviews/COSTRA-116/round-1-tech.md` INFO-1
+- **登记时间**：2026-04-27 15:25（COSTRA-116 R1 T2 Tech APPROVE）
+- **范围**：根目录 `.env.example` L8-11
+
+  ```
+  # ---- 应用 ----
+  NODE_ENV=development
+  APP_PORT=3000
+  APP_BASE_URL=http://localhost:3000
+  ```
+
+- **问题判断**：
+  - 变量名 `APP_PORT` / `APP_BASE_URL` **不是** `server/src/config/env.ts` 消费的 `PORT`
+  - 该文件登记于 `86fa7f7 chore(devops): 初始化工程基建与 Sprint-0 CI 骨架`
+  - 初判定：docker-compose / 根目录 orchestration 层模板 · 也可能只是历史遗留模板
+  - 语义上仍引导用户往 3000 想 · 和 SSOT（8080）冲突 · 但**不会直接 break 任何跑得起来的东西**（因为没代码在消费它）
+- **COSTRA-116 不处置理由**：Scope 铁律 · 文件不在 dispatch §2 范围 · 盲改可能 break 未可见的 shell 脚本 / CI job
+- **建议 Action**（Sprint-1 末或下一张 DevOps 小卡）：
+  1. `grep -r "APP_PORT\|APP_BASE_URL"` 找到所有消费方（若有）
+  2. 若真无消费方 → 删除该两行（或整个"应用"段）
+  3. 若有消费方 → 同步改为 `APP_PORT=8080` + `APP_BASE_URL=http://localhost:8080`
+- **阻断级别**：**P3（观察项）** · 不阻任何卡 · 不会挂任何链路（比 FU-COMMON-DEV-URL-DRIFT 更低优先级）
+- **认领建议**：Sprint-1 末 · DevOps-Agent / 0.5 点
 - **状态**：`open`
 
 ---

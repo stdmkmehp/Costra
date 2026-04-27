@@ -50,7 +50,7 @@ cp project.private.config.json.example project.private.config.json
 
 | 环境 | API Base | Mock 登录 | 备案状态 |
 |---|---|---|---|
-| dev | `http://127.0.0.1:3000/v1` | ✅ | 开发工具"不校验合法域名" |
+| dev | `http://localhost:8080/v1` | ✅ | 开发工具"不校验合法域名" |
 | staging | `https://api-staging.costra.cloud/v1` | ❌ | ICP 下证后可用（D-009） |
 | prod | `https://api.costra.cloud/v1` | ❌ | ICP 下证后配入微信白名单（D-009） |
 

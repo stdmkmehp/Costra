@@ -23,7 +23,7 @@
 
 | 方式 | 适用场景 | 操作 |
 |---|---|---|
-| **A · 本地 server（推荐）** | COSTRA-115 DNS 未就绪 / 想独立验证 MiniApp 侧 | `cd server && npm run dev` · MiniApp `services/env.ts` 确认 `dev.apiBaseUrl = 'http://127.0.0.1:3000/v1'` · 微信开发者工具打开"不校验合法域名"开关 |
+| **A · 本地 server（推荐）** | COSTRA-115 DNS 未就绪 / 想独立验证 MiniApp 侧 | `cd server && npm run dev` · MiniApp `services/env.ts` 确认 `dev.apiBaseUrl = 'http://localhost:8080/v1'`（COSTRA-116 已对齐 SSOT · server/.env.example PORT=8080）· 微信开发者工具打开"不校验合法域名"开关 |
 | **B · Mock 通路** | 仅想验证登录流 / 首页 / 记一笔本地入 outbox，不依赖后端 | 保持 `services/env.ts` 的 `dev.mockLogin: true`（骨架默认）· 此模式下 wx.login 的 code 直接在客户端侧造假 Token · 无需启 server |
 | **C · 真 staging（可选 · 仅 COSTRA-115 + COSTRA-116 就绪后）** | 贯通真实链路 | 手动改 `services/env.ts` 的 `CURRENT_ENV: EnvName = 'staging'`（本卡不动 P1-5 · 归 COSTRA-108） |
 

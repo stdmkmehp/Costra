@@ -32,18 +32,17 @@ const ENV_TS_PATH = path.join(repoRoot, 'miniprogram', 'services', 'env.ts');
 const DOMAINS_MD_PATH = path.join(repoRoot, 'infra', 'wechat', 'domains.md');
 
 /**
- * 豁免清单（文档化 · 需 FU 专项跟进后清零）
+ * 豁免清单（预留锚点 · 当前为空集）
  *
- * env.ts 某些 env 的 apiBaseUrl 暂不强求出现在 openapi.yaml servers / domains.md §1.1：
- * - dev: 本机开发默认值，各开发者机器可能不同（回环地址 / 端口），且与 server 代码 env.ts
- *   parsePort 默认值 '3000' 不一致（server .env.example 为 8080） → 这是 Backend 内部已有漂移
- *   需 FU-COMMON-DEV-URL-DRIFT 专项跨卡对齐后再收紧
+ * 历史：COSTRA-115 R1 首跑曾暂以 ['dev'] 豁免 dev env，因 server .env.example(8080)
+ * 与 miniprogram env.ts(127.0.0.1:3000) / server/src/config/env.ts parsePort 默认值(3000)
+ * 存在三源漂移。COSTRA-116（2026-04-27）已将上述三源全部对齐到 SSOT 的
+ * `http://localhost:8080/v1`（FU-COMMON-DEV-URL-DRIFT 关闭），豁免集合清零。
  *
- * 豁免仅对 [A]、[B] 规则；[C] 规则（名称相同 url 必须一致）不豁免。
+ * 保留空 Set 作为未来临时豁免的扩展锚点；任何再次向此集合注入元素的改动必须伴随
+ * 同一轮新 FU 登记 + 说明注释 + Review 双签，不得默默绕过规则 A/B。
  */
-const EXEMPTED_ENVS_FROM_RULES_AB = new Set(['dev']);
-const EXEMPTION_REASON =
-  'FU-COMMON-DEV-URL-DRIFT: 本机开发默认值随机器不同，且 server .env.example(8080) 与 server/src/config/env.ts parsePort 默认值(3000) 本身不一致，跨卡对齐前豁免';
+const EXEMPTED_ENVS_FROM_RULES_AB = new Set();
 
 /** @typedef {{ env: string, url: string, source: string }} UrlEntry */
 
@@ -158,12 +157,16 @@ function reconcile(openapiUrls, envTsEntries, domainsMdEntries) {
   const domainsMdUrls = new Set(domainsMdEntries.map((e) => e.url));
   const openapiUrlSet = new Set(openapiUrls);
 
-  // 规则 A: OpenAPI servers ⊇ env.ts apiBaseUrl （受豁免清单影响）
+  // 豁免兜底提示：若未来有元素被注入 EXEMPTED_ENVS_FROM_RULES_AB，必须在豁免 env 的
+  // 报文中给出 FU 标签，方便审阅者追溯。这里抽一个小工具函数，兜住"常量被删后仍需提示"。
+  const exemptedTag = (env) => `[EXEMPTED · env=${env} · 需同轮新 FU 说明原因]`;
+
+  // 规则 A: OpenAPI servers ⊇ env.ts apiBaseUrl （受豁免清单影响 · COSTRA-116 后集合应始终为空）
   for (const e of envTsEntries) {
     if (!openapiUrlSet.has(e.url)) {
       if (EXEMPTED_ENVS_FROM_RULES_AB.has(e.env)) {
         warnings.push(
-          `[A · EXEMPTED] env.ts env=${e.env} apiBaseUrl=${JSON.stringify(e.url)} 未出现在 openapi.yaml servers，但已豁免（${EXEMPTION_REASON}）`
+          `[A] env.ts env=${e.env} apiBaseUrl=${JSON.stringify(e.url)} 未出现在 openapi.yaml servers，但已豁免 ${exemptedTag(e.env)}`
         );
       } else {
         errors.push(
@@ -173,12 +176,12 @@ function reconcile(openapiUrls, envTsEntries, domainsMdEntries) {
     }
   }
 
-  // 规则 B: env.ts 每一条必须在 domains.md §1.1 中有对应行（url 级匹配）（受豁免清单影响）
+  // 规则 B: env.ts 每一条必须在 domains.md §1.1 中有对应行（url 级匹配）（受豁免清单影响 · COSTRA-116 后集合应始终为空）
   for (const e of envTsEntries) {
     if (!domainsMdUrls.has(e.url)) {
       if (EXEMPTED_ENVS_FROM_RULES_AB.has(e.env)) {
         warnings.push(
-          `[B · EXEMPTED] env.ts env=${e.env} apiBaseUrl=${JSON.stringify(e.url)} 未出现在 domains.md §1.1，但已豁免（${EXEMPTION_REASON}）`
+          `[B] env.ts env=${e.env} apiBaseUrl=${JSON.stringify(e.url)} 未出现在 domains.md §1.1，但已豁免 ${exemptedTag(e.env)}`
         );
       } else {
         errors.push(
@@ -236,7 +239,7 @@ function main() {
   const { errors, warnings } = reconcile(openapiUrls, envTsEntries, domainsMdEntries);
 
   if (warnings.length > 0) {
-    console.warn('⚠️  whitelist warnings (non-blocking · see FU-COMMON-DEV-URL-DRIFT):');
+    console.warn('⚠️  whitelist warnings (non-blocking · 当前豁免元素对应的 FU 见 .team/follow-ups/README.md):');
     for (const w of warnings) console.warn(`  · ${w}`);
     console.warn('');
   }

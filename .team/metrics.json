@@ -1,7 +1,7 @@
 {
   "_schema": "costra-metrics-v1",
-  "_description": "Per-card Review 度量记录；COSTRA-102 R1 实装首轮 AI Review 双签 APPROVE @ 2026-04-27 10:14（D-016 第五次实战合规 · Human 10:00 `approve-def:COSTRA-102` 触发 → Orchestrator 同 tool call 循环内完成 MiniApp-Agent 实装 + typecheck + vitest 双闸 + Review-Tech + Review-Product + 7 处同步）· 等 Human 04-30 本地验证 + 终审 · 共 5 卡",
-  "_updated_at": "2026-04-27T10:14+08:00",
+  "_description": "Per-card Review 度量记录；**COSTRA-116 R1 Backend T2 Tech APPROVE 30/30 @ 2026-04-27 15:25**（D-016 第七次实战合规 · Human 15:15 `run backend fix-dev-url-drift` 触发 → Orchestrator 同 tool call 循环内完成 Backend-Agent 7 文件修复 + 四闸 + Review-Tech 30/30 · 派单→R1→Review 10 分钟）· FU-COMMON-DEV-URL-DRIFT + FU-115-1 双闭环 · 预审批成本极低等 `approve:COSTRA-116` · 并行 🟡 COSTRA-102 等 04-30 本地验证 · 共 7 卡",
+  "_updated_at": "2026-04-27T15:25+08:00",
   "cards": [
     {
       "card": "COSTRA-100",
@@ -376,6 +376,58 @@
       "time_cost_minutes_r1_to_human": 199,
       "p0_escaped_to_human": 0,
       "notes": "Sprint-1 DevOps 基建第二卡 · 1 点小卡 · R1 首轮 T2 Tech APPROVE 28/30 · P0=0 P1=0 · 2 P2 + 2 INFO 均带 FU 或为登记项。首次落地 infra/ 目录 + CI 白名单三方对账脚本（openapi.yaml servers + env.ts apiBaseUrl + domains.md §1.1）· 脚本零依赖（纯 node 标准库 · 不引入 yaml 包）· **首跑即发现 server 侧潜伏漂移**（env.ts dev 127.0.0.1:3000 vs openapi.yaml dev localhost:8080 vs server .env.example PORT=8080 vs server/src/config/env.ts parsePort 默认 '3000'）· 豁免机制保本卡可 commit 同时将漂移升为 FU-COMMON-DEV-URL-DRIFT 专项卡 · 能力边界合规（无 DNS 后台操作声称 · Human 按 domains.md §4 配白名单为 R-013 关闭必要凭证）· D-016 连续第 6 次实战合规 · 六次零跨轮异步反模式 · 派单→R1→Review 全程 6 分钟 · **Human 2026-04-27 14:10 `approve:COSTRA-115` 整卡收官 CLOSED** · T2 单轨 Review 范式首次完整跑通（比 T1 双签省 ~40% 耗时）· R-013 mitigated 状态保持，等 ICP 下证日 Human 按 infra/wechat/domains.md §4 关闭（FU-115-2 跟踪）· Sprint-1 DevOps 基建第二卡收官，首卡 COSTRA-114 仍 Todo。"
+    },
+    {
+      "cardId": "COSTRA-116",
+      "title": "开发期三源 dev URL / 端口漂移收敛（FU-COMMON-DEV-URL-DRIFT 专项）",
+      "owner": "Backend-Agent",
+      "review_type": "tech",
+      "review_tier": "T2",
+      "review_tier_rationale": "基建类小卡 · 纯字面量 + 注释修复 · 无业务逻辑 · 无接口变更 · D-013 判定 T2 单轨",
+      "dispatch_doc": ".team/dispatch/COSTRA-116-backend-fix-dev-url-drift.md",
+      "dispatched_at": "2026-04-27T15:15+08:00",
+      "rounds": [
+        {
+          "round": 1,
+          "agent_delivery_reports": [
+            ".team/reviews/COSTRA-116/round-1-backend-response.md"
+          ],
+          "review_reports": [
+            ".team/reviews/COSTRA-116/round-1-tech.md"
+          ],
+          "tech_verdict": "APPROVE",
+          "tech_score": "30/30",
+          "p0": 0,
+          "p1": 0,
+          "p2": 0,
+          "info": 1,
+          "gates": {
+            "node_check": "ok",
+            "check_whitelist": "exit 0 · 零 warning（从 115 末 2 豁免 warning 收敛）",
+            "root_typecheck": "exit 0",
+            "server_typecheck": "exit 0",
+            "root_vitest": "4 files · 13 tests passed · 161ms",
+            "server_vitest": "1 file · 8 tests passed · 402ms"
+          }
+        }
+      ],
+      "r1_tech_report": ".team/reviews/COSTRA-116/round-1-tech.md",
+      "r1_backend_response_report": ".team/reviews/COSTRA-116/round-1-backend-response.md",
+      "r1_product_report": null,
+      "r1_tech_verdict": "APPROVE",
+      "r1_tech_score": "30/30",
+      "r1_product_verdict": null,
+      "r1_combined_verdict": "APPROVE",
+      "r1_combined_verdict_handoff": "T2 Tech 单轨 APPROVE 30/30 · 无 R2 需求 · 转 Human T2 终审（可即时 approve:COSTRA-116，审批成本极低）",
+      "r2_verdict": null,
+      "terminal_verdict": null,
+      "human_final_decision": "pending",
+      "human_final_decision_at": null,
+      "final_report": null,
+      "time_cost_minutes_dispatch_to_r1": 7,
+      "time_cost_minutes_r1_to_review": 3,
+      "p0_escaped_to_human": 0,
+      "notes": "FU-COMMON-DEV-URL-DRIFT + FU-115-1 正式修复专项卡 · 1 点小卡 · R1 首轮 T2 Tech APPROVE 30/30 · P0=0 P1=0 P2=0 INFO=1（根目录 .env.example APP_PORT/APP_BASE_URL 边界外漂移 · 登 FU-116-1 P3 观察项）· 7 文件改动（+41/-36）· **核心价值兑现**：`check:whitelist` 从 115 末'2 豁免 warning'收敛到'零 warning'（规则 A/B 恢复全量强度）· SSOT 三源对齐 `http://localhost:8080/v1`（server .env.example + parsePort 默认 + env.ts dev）· 直接文档镜像三处同步（Human 验证手册 D6 + miniprogram README D7 + server test setup 注释 D8）· **Scope 铁律严守**（openapi.yaml / .env.example 真相源零触碰）· **D-016 第七次实战合规**（Human 15:15 触发 → Orchestrator 同 tool call 循环内完成派单 + 7 文件实装 + 四闸 + Tech Review · 派单→R1 7 分钟 · R1→Review 3 分钟 · 全程 10 分钟）· 解锁 Human 04-30 COSTRA-102 本地验证前置条件 · 等 Human `approve:COSTRA-116`。"
     }
   ]
 }

@@ -8,7 +8,7 @@
 > **🆕 卡定义 Review + Review 自动拉起（D-014 · 2026-04-23 22:26 生效）**：(a) 2026-04-23 22:26 后新建的卡**必须**经卡定义 Review（技术向→Review-Tech / 产品向→Review-Product）；(b) 被审 Agent 交付后**产出 Review 首轮自动拉起**（无需 Human 触发）；(c) 历史卡豁免；(d) DevOps/QA/决策类豁免；(e) Human 打断指令（`pause-review` / `skip-card-review` / `force-card-pass` / `stop`）最高优先级。详见 `.team/decisions/D-014-card-review-and-auto-review-kickoff.md` + `.team/SOP-CARD-REVIEW.md`。
 > **🔄 D-011 实战验证三次通过**（2026-04-23）：COSTRA-100（2 轮 · 69 min） + Sprint-0 补审（7 卡 × 2 轮 · 29 min 并行） + **COSTRA-101 Round 1 刚自动拉起（22:49 · D-014-b 首次实战）**
 
-最后更新：`2026-04-27 14:10`（Orchestrator · **COSTRA-115 整卡 Human APPROVED CLOSED** · T2 Tech 28/30 · 0 P0 逃逸 · Sprint-1 DevOps 基建第二卡收官 · R-013 保持 Mitigated · D-016 第六次实战完整闭环 · 🟡 COSTRA-102 等 04-30 本地验证 · ⚠️ 建议 04-30 前修 FU-COMMON-DEV-URL-DRIFT）
+最后更新：`2026-04-27 15:25`（Orchestrator · **COSTRA-116 R1 T2 Tech APPROVE 30/30 等 Human 终审** · FU-COMMON-DEV-URL-DRIFT + FU-115-1 双闭环 · 新增 FU-116-1 P3 观察项 · D-016 第七次实战合规 · 7 文件 +41/-36 · 四闸全绿 · check:whitelist 从 2 warning 收敛到零 warning · 🟢 COSTRA-115 CLOSED · 🟡 COSTRA-102 等 04-30 本地验证 · R-013 保持 Mitigated）
 
 ---
 
@@ -63,8 +63,8 @@ _（COSTRA-102 R1 实装 · 2026-04-27 10:14 双签 APPROVE · 无 R2 需求 · 
 
 ### 🙋 Human-Review（AI-Review 已通过，等你终审 · 共 2 张 · R1 实装段）
 
-- [R1] **COSTRA-102** · MiniApp 登录→首页→记一笔端到端（R1 实装 Review） · 2026-04-27 10:14 · **Tech APPROVE-WITH-FOLLOWUPS 31/35 + Product APPROVE 27/30 · 双签通过** · 双闸全绿（tsc exit 0 · vitest 13/13 pass 161ms）· COSTRA-118 16/16 实测落地 · 2 条 P1 非阻塞 FU（err.message 红线 + avatar onerror handler）交 FU 放行 · **Human 下一步**：2026-04-30 Sprint 中点按 `docs/qa/costra-102-human-verify.md` 执行 20 分钟本地验证 → 发 `approve:COSTRA-102` · 详情 `.team/reviews/COSTRA-102/round-1-miniapp-response.md` + `.team/reviews/COSTRA-102/round-1-tech.md` + `.team/reviews/COSTRA-102/round-1-product.md`
-- [R1] **COSTRA-115** · `costra.cloud` DNS 子记录 + 白名单一致性 CI 校验（R1 交付 Review · 1 点卡） · 2026-04-27 10:51 · **Tech APPROVE 28/30 · T2 单轨** · P0=0 P1=0 P2=2 INFO=2 · 四闸全绿（node --check · `npm run check:whitelist` exit 0 · tsc exit 0 · vitest 13/13）· **首跑即暴露** server 侧 dev-url 漂移（env.ts `127.0.0.1:3000` vs openapi.yaml `localhost:8080` vs `.env.example PORT=8080` vs `server/src/config/env.ts parsePort` 默认 `3000`）→ 登记 `FU-COMMON-DEV-URL-DRIFT` 专项卡 · 豁免机制保本卡可 commit · **Human 下一步**：审批成本极低可即时 `approve:COSTRA-115` · 详情 `.team/reviews/COSTRA-115/round-1-devops-response.md` + `.team/reviews/COSTRA-115/round-1-tech.md`
+- [R1] **COSTRA-102** · MiniApp 登录→首页→记一笔端到端（R1 实装 Review） · 2026-04-27 10:14 · **Tech APPROVE-WITH-FOLLOWUPS 31/35 + Product APPROVE 27/30 · 双签通过** · 双闸全绿（tsc exit 0 · vitest 13/13 pass 161ms）· COSTRA-118 16/16 实测落地 · 2 条 P1 非阻塞 FU（err.message 红线 + avatar onerror handler）交 FU 放行 · **Human 下一步**：2026-04-30 Sprint 中点按 `docs/qa/costra-102-human-verify.md` 执行 20 分钟本地验证 → 发 `approve:COSTRA-102`（**前置条件已达成** · COSTRA-116 已将 dev URL 对齐到真实 server 地址）· 详情 `.team/reviews/COSTRA-102/round-1-miniapp-response.md` + `.team/reviews/COSTRA-102/round-1-tech.md` + `.team/reviews/COSTRA-102/round-1-product.md`
+- [R1] **COSTRA-116** · 开发期三源 dev URL / 端口漂移收敛（FU-COMMON-DEV-URL-DRIFT 专项 · 1 点卡） · 2026-04-27 15:25 · **Tech APPROVE 30/30 · T2 单轨** · P0=0 P1=0 P2=0 INFO=1（根目录 `.env.example APP_PORT/APP_BASE_URL` 边界外漂移登 FU-116-1 P3 观察）· 四闸全绿（node --check · `npm run check:whitelist` exit 0 **零 warning** · root+server tsc exit 0 · root vitest 13/13 · server vitest 8/8）· 7 文件 +41/-36 · **核心价值兑现**：`check:whitelist` 从 115 末 2 豁免 warning 收敛到零 warning · **FU-COMMON-DEV-URL-DRIFT + FU-115-1 双闭环** · **Human 下一步**：审批成本极低可即时 `approve:COSTRA-116` · 详情 `.team/reviews/COSTRA-116/round-1-backend-response.md` + `.team/reviews/COSTRA-116/round-1-tech.md`
 
 #### 🔒 Sprint-0 AI-Review 补审（共 7 张 · D-013 **T3 追溯 · 全部 SKIP-REVIEW-AUTOCLOSED**）
 
@@ -196,9 +196,9 @@ _（无强阻塞。COSTRA-040 "真实上传链路激活" 仍依赖外部资源�
 
 ## 💤 Orchestrator 状态
 
-- **MODE**：`awaiting-human`（**COSTRA-115 R1 T2 Tech APPROVE** @ 2026-04-27 10:51 · 28/30 · 四闸全绿 · CI 首跑暴露 server 侧 dev-url 漂移 → FU-COMMON-DEV-URL-DRIFT 登记 · D-016 第六次实战合规 · 🟡 COSTRA-102 并行等 04-30 本地验证）
-- **下一动作**：Human 选择（推荐顺序）：① **`approve:COSTRA-115`**（1 点卡终审 · 审批成本极低） · ② 2026-04-30 本地验证 COSTRA-102 → `approve:COSTRA-102` · ③ `run miniapp COSTRA-103`（本地持久化 · 可并行） · ④ `run devops COSTRA-114`（手册 · 随时）
-- **保存点**：COSTRA-115 dispatch（`.team/dispatch/COSTRA-115-devops-dns-whitelist-ci.md`）+ infra/README.md + infra/wechat/domains.md（SSOT）+ scripts/devops/whitelist-check.mjs（~7KB · 零依赖）+ package.json `check:whitelist` + pr-check.yml Whitelist Consistency Check step + risks.md R-013 CI 注记 + devops-response + tech-review 28/30 + metrics 第 6 条 + STATE/board/messages/FU 同步 @ 2026-04-27 10:54
-- **D-016 第六次实战结果**：✅ 合规（Human 10:45 `run devops COSTRA-115` → Orchestrator 同一 tool call 循环内交付 10 产物：dispatch + 3 新 + 3 改 + devops-response + tech-review + 收口）· 跨轮异步反模式连续六次未复现 · 规约自身高度可信 · **派单→R1→Review 全程 6 分钟**
-- **关键发现**：CI 首跑即真实暴露 server 侧潜伏漂移（多 SSOT 不一致）· 正是本卡价值场景 · 豁免机制（EXEMPTED_ENVS_FROM_RULES_AB={dev}）让本卡 commit 可通过 pr-check 同时不越 Scope 擅改 env.ts / openapi.yaml · 升 FU-COMMON-DEV-URL-DRIFT 专项卡 Sprint-1 Retro 议题
-- **隐性预案**：Human 发 `approve:COSTRA-115` 后整卡直接收官 · Sprint-1 DevOps 基建第二卡（115）收官、第一卡（114）仍 Todo · 下证日 Human 按 `infra/wechat/domains.md §4` 执行（R-013 关闭条件 · FU-115-2 跟踪）
+- **MODE**：`awaiting-human`（**COSTRA-116 R1 T2 Tech APPROVE** @ 2026-04-27 15:25 · 30/30 · 四闸全绿 · `check:whitelist` 从 115 末 2 warning 收敛到零 warning · FU-COMMON-DEV-URL-DRIFT + FU-115-1 双闭环 · 新增 FU-116-1 P3 观察 · D-016 第七次实战合规 · 🟢 COSTRA-115 CLOSED · 🟡 COSTRA-102 并行等 04-30 本地验证）
+- **下一动作**：Human 选择（推荐顺序）：① **`approve:COSTRA-116`**（1 点卡终审 · 审批成本极低 · T2 单轨 30/30 无 P0/P1/P2） · ② 2026-04-30 本地验证 COSTRA-102 → `approve:COSTRA-102`（**前置已达成** · dev URL 已对齐真实 server localhost:8080） · ③ `run miniapp COSTRA-103`（本地持久化 · 可并行） · ④ `run devops COSTRA-114`（手册 · 随时）
+- **保存点**：COSTRA-116 dispatch（`.team/dispatch/COSTRA-116-backend-fix-dev-url-drift.md`）+ 7 文件改动（server/src/config/env.ts parsePort 默认 '8080' · miniprogram/services/env.ts dev `http://localhost:8080/v1` · scripts/devops/whitelist-check.mjs 豁免清空 + EXEMPTION_REASON 删 · docs/qa/costra-102-human-verify.md 方式 A · miniprogram/README.md env 表 · server/test/setup.ts 注释 · .team/follow-ups/README.md FU 状态表）+ backend-response + tech-review 30/30 + metrics 第 7 条 + STATE/board/messages 同步 @ 2026-04-27 15:25
+- **D-016 第七次实战结果**：✅ 合规（Human 15:15 `run backend fix-dev-url-drift` → Orchestrator 同一 tool call 循环内交付 dispatch + 7 文件修改 + 四闸 + backend-response + tech-review + 收口）· 跨轮异步反模式连续七次未复现 · 规约自身高度可信 · **派单→R1 7 分钟 · R1→Review 3 分钟 · 全程 10 分钟**
+- **关键发现**：FU 专项卡范式首次完整跑通（Dispatch 4 步 D1~D4 + Agent 在 Scope 边界判断基础上自主增补 D5~D8 三处文档镜像 + 1 处单测注释 + Scope 外灰色区登 FU-116-1 P3 观察）· 三源 SSOT 对齐一次到位 · 主干 CI 门自此恢复零 warning 全量强度
+- **隐性预案**：Human 发 `approve:COSTRA-116` 后整卡直接收官 · Sprint-1 DevOps/Backend 串联第三卡收官（114 仍 Todo · 115 已 CLOSED · 116 待终审）· 后续建议 Retro 讨论是否将\"FU 专项卡\"纳入正式卡类别 · R-013 保持 Mitigated 等 ICP 下证日 Human 按 `infra/wechat/domains.md §4` 执行（FU-115-2 跟踪）

@@ -90,7 +90,7 @@ export function loadEnv(env: NodeJS.ProcessEnv = process.env): Readonly<AppEnv> 
 
   const cfg: AppEnv = {
     nodeEnv: parseNodeEnv(optional(env, 'NODE_ENV', 'development')),
-    port: parsePort(optional(env, 'PORT', '3000')),
+    port: parsePort(optional(env, 'PORT', '8080')),
     logLevel: parseLogLevel(optional(env, 'LOG_LEVEL', 'info')),
 
     databaseUrl: required(env, 'DATABASE_URL'),
