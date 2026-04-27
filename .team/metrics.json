@@ -368,11 +368,14 @@
       ],
       "r1_combined_verdict_handoff": "T2 Tech 单轨 APPROVE · 无 R2 需求 · 转 Human T2 终审（可即时 approve:COSTRA-115，审批成本极低）",
       "r2_verdict": null,
-      "terminal_verdict": null,
-      "human_final_decision": "pending",
-      "human_final_decision_at": null,
-      "final_report": null,
-      "notes": "Sprint-1 DevOps 基建第二卡 · 1 点小卡 · R1 首轮 T2 Tech APPROVE 28/30 · P0=0 P1=0 · 2 P2 + 2 INFO 均带 FU 或为登记项。首次落地 infra/ 目录 + CI 白名单三方对账脚本（openapi.yaml servers + env.ts apiBaseUrl + domains.md §1.1）· 脚本零依赖（纯 node 标准库 · 不引入 yaml 包）· **首跑即发现 server 侧潜伏漂移**（env.ts dev 127.0.0.1:3000 vs openapi.yaml dev localhost:8080 vs server .env.example PORT=8080 vs server/src/config/env.ts parsePort 默认 '3000'）· 豁免机制保本卡可 commit 同时将漂移升为 FU-COMMON-DEV-URL-DRIFT 专项卡 · 能力边界合规（无 DNS 后台操作声称 · Human 按 domains.md §4 配白名单为 R-013 关闭必要凭证）· D-016 连续第 6 次实战合规 · 六次零跨轮异步反模式 · 派单→R1→Review 全程 6 分钟。"
+      "terminal_verdict": "APPROVED",
+      "human_final_decision": "approve",
+      "human_final_decision_at": "2026-04-27T14:10+08:00",
+      "final_report": ".team/reviews/COSTRA-115/final.md",
+      "time_cost_minutes_dispatch_to_r1": 6,
+      "time_cost_minutes_r1_to_human": 199,
+      "p0_escaped_to_human": 0,
+      "notes": "Sprint-1 DevOps 基建第二卡 · 1 点小卡 · R1 首轮 T2 Tech APPROVE 28/30 · P0=0 P1=0 · 2 P2 + 2 INFO 均带 FU 或为登记项。首次落地 infra/ 目录 + CI 白名单三方对账脚本（openapi.yaml servers + env.ts apiBaseUrl + domains.md §1.1）· 脚本零依赖（纯 node 标准库 · 不引入 yaml 包）· **首跑即发现 server 侧潜伏漂移**（env.ts dev 127.0.0.1:3000 vs openapi.yaml dev localhost:8080 vs server .env.example PORT=8080 vs server/src/config/env.ts parsePort 默认 '3000'）· 豁免机制保本卡可 commit 同时将漂移升为 FU-COMMON-DEV-URL-DRIFT 专项卡 · 能力边界合规（无 DNS 后台操作声称 · Human 按 domains.md §4 配白名单为 R-013 关闭必要凭证）· D-016 连续第 6 次实战合规 · 六次零跨轮异步反模式 · 派单→R1→Review 全程 6 分钟 · **Human 2026-04-27 14:10 `approve:COSTRA-115` 整卡收官 CLOSED** · T2 单轨 Review 范式首次完整跑通（比 T1 双签省 ~40% 耗时）· R-013 mitigated 状态保持，等 ICP 下证日 Human 按 infra/wechat/domains.md §4 关闭（FU-115-2 跟踪）· Sprint-1 DevOps 基建第二卡收官，首卡 COSTRA-114 仍 Todo。"
     }
   ]
 }

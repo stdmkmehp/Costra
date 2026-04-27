@@ -1,23 +1,23 @@
 # Costra · 全局状态快照
 
-- **更新时间**：2026-04-27 10:54
-- **Orchestrator 模式**：`awaiting-human`（**COSTRA-115 R1 交付 APPROVE** @ 10:51 · Tech 28/30 · `check:whitelist` + typecheck + vitest 三闸全绿 · **D-016 第六次实战合规** · 等 Human `approve:COSTRA-115` 终审 · 并行 🟡 COSTRA-102 等 04-30 本地验证）
-- **球在谁手上**：**Human**（下一步：① `approve:COSTRA-115` 1 点小卡终审 ② 2026-04-30 本地验证 COSTRA-102 → `approve:COSTRA-102` ③ 并行可发 `run devops COSTRA-114` / `run miniapp COSTRA-103`）
-- **Human 是否需介入**：**是**（🟢 COSTRA-115 1 点小卡 · 审批成本极低 · 🟡 COSTRA-102 硬节点在 04-30）
+- **更新时间**：2026-04-27 14:10
+- **Orchestrator 模式**：`awaiting-human`（**COSTRA-115 整卡 CLOSED** @ 14:10 · Human T2 approve · Tech 28/30 · 0 P0 逃逸 · final 报告归档 · Sprint-1 DevOps 基建第二卡收官 · 🟡 COSTRA-102 并行等 04-30 本地验证 · ⚠️ 强建议 04-30 前先修 FU-COMMON-DEV-URL-DRIFT）
+- **球在谁手上**：**Human**（下一步建议顺序：① `run backend fix-dev-url-drift` 1 点 · 修 FU-COMMON-DEV-URL-DRIFT · 阻 04-30 验证 / ② 2026-04-30 本地验证 COSTRA-102 → `approve:COSTRA-102` / ③ `run miniapp COSTRA-103` 本地持久化 / ④ `run devops COSTRA-114` 手册）
+- **Human 是否需介入**：**是**（⚠️ **FU-COMMON-DEV-URL-DRIFT 阻 04-30 Human 本地验证** · 强建议立即触发修复 · 🟡 COSTRA-102 硬节点 04-30）
 - **铁律 1**：每次进度汇报必须列"待触发清单"（`.team/SOP-HUMAN-TRIGGER.md` P0 · **三条例外**：D-011 环内 / D-014-a 卡定义首轮 / D-014-b 产出首轮 · **D-016 执行层约束**：所有自动拉起必须同轮兑现）
 - **铁律 2**：**单卡交付即提交**（D-012 · 2026-04-23）· 每完成一张卡立即 `git commit`，禁止攒批；例外仅 Sprint/Gate 聚合收口 · 详见 `.team/decisions/D-012-per-card-commit-discipline.md`
 - **规约 3**：**Review 场景分级**（D-013 · 2026-04-23 21:15）· Review 分 T1/T2/T3/T4 四档；T1 准入 + T2 Gate 前仍需 Human 终审
 - **规约 4**：**卡定义 Review + Review 自动拉起**（D-014 · 2026-04-23 22:26）· D-014-a 卡定义首轮 / D-014-b 产出首轮
 - **规约 5**：**respond/revise 合并**（D-015 · 2026-04-24 09:24）· **最终以 Review-Agent 意见为主**（Human 铁律）
-- **规约 6**：**Orchestrator 自动拉起 Review 同轮兑现铁律**（D-016 · 2026-04-24 19:10 Human 批准 · **六次实战全部合规**：R4 19:10 / 118-R1 19:35 / 118-FINAL 2026-04-27 09:39 / 102-CardDef 2026-04-27 09:47 / 102-R1 2026-04-27 10:14 / **115-R1 2026-04-27 10:51**）
-- **能力边界铁律**（COSTRA-114 v2 · 2026-04-24 13:14）：**Agent 无真机 / 真服务访问权**· 手册交付 + Human 本地验证即完工范式（**COSTRA-115 亦遵守 · 无 DNS 后台 / 无微信公众平台后台操作**）
-- **Review 闭环**：七次主 Review 实战 PASS + COSTRA-101 四轮收口 + COSTRA-118 两段完结 + COSTRA-102 双双双签通过 + **COSTRA-115 T2 Tech 单轨 APPROVE**
+- **规约 6**：**Orchestrator 自动拉起 Review 同轮兑现铁律**（D-016 · 2026-04-24 19:10 Human 批准 · **六次实战全部合规**：R4 19:10 / 118-R1 19:35 / 118-FINAL 2026-04-27 09:39 / 102-CardDef 2026-04-27 09:47 / 102-R1 2026-04-27 10:14 / 115-R1 2026-04-27 10:51）· 建议 Sprint-1 末 Retro 升"定稿规约"
+- **能力边界铁律**（COSTRA-114 v2 · 2026-04-24 13:14）：**Agent 无真机 / 真服务访问权**· 手册交付 + Human 本地验证即完工范式（**COSTRA-115 亦遵守 · 无 DNS 后台 / 无微信公众平台后台操作 · 已 CLOSED**）
+- **Review 闭环**：七次主 Review 实战 PASS + COSTRA-101 四轮收口 + COSTRA-118 两段完结 + COSTRA-102 双双双签通过 + **COSTRA-115 T2 Tech 单轨 APPROVE 整卡 Human CLOSED**
 
 ---
 
-## 🟢 COSTRA-115 · DNS 子记录规划 + 白名单一致性 CI 校验 · R1 交付 APPROVE · 等 Human 终审（2026-04-27 10:51）
+## 🟢 COSTRA-115 · DNS 子记录规划 + 白名单一致性 CI 校验 · 整卡 CLOSED（2026-04-27 14:10）
 
-> **触发路径**：Human 2026-04-27 10:45 `run devops COSTRA-115` → Orchestrator 同 tool call 循环内完成：dispatch 派单 + DevOps-Agent R1 实装（3 新 + 3 改）+ `check:whitelist` + typecheck + vitest 三闸 + Agent 响应 + Review-Tech + STATE/board/metrics/messages/FU 同步 · **D-016 第六次实战合规**
+> **全流程**：Human 04-27 10:45 `run devops COSTRA-115` → Agent R1 10:51（6 分钟完工）→ AI Review Tech 10:51 APPROVE 28/30 → Human 14:10 `approve:COSTRA-115` 终审收官 · **D-016 第六次实战完整闭环** · 单卡总耗时 3h25m（Agent 6 分钟 + Human 审批排队 3h19m）· final 报告 `.team/reviews/COSTRA-115/final.md`
 
 ### Sprint-1 DevOps 基建第二卡 · R1 段位
 - **Owner**：DevOps-Agent（工作区 `infra/` + `scripts/devops/` + `.github/workflows/`）
