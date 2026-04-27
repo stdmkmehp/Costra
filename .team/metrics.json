@@ -1,7 +1,7 @@
 {
   "_schema": "costra-metrics-v1",
-  "_description": "Per-card Review 度量记录；**COSTRA-116 R1 Backend T2 Tech APPROVE 30/30 @ 2026-04-27 15:25**（D-016 第七次实战合规 · Human 15:15 `run backend fix-dev-url-drift` 触发 → Orchestrator 同 tool call 循环内完成 Backend-Agent 7 文件修复 + 四闸 + Review-Tech 30/30 · 派单→R1→Review 10 分钟）· FU-COMMON-DEV-URL-DRIFT + FU-115-1 双闭环 · 预审批成本极低等 `approve:COSTRA-116` · 并行 🟡 COSTRA-102 等 04-30 本地验证 · 共 7 卡",
-  "_updated_at": "2026-04-27T15:25+08:00",
+  "_description": "Per-card Review 度量记录；**COSTRA-116 整卡 Human APPROVED CLOSED @ 2026-04-27 15:57**（T2 Tech 单轨 30/30 · 0 P0 逃逸 · 7 文件 +41/-36 · 四闸全绿 · FU-COMMON-DEV-URL-DRIFT + FU-115-1 双闭环 · 新增 FU-116-1 P3 观察 · check:whitelist 从 2 warning 收敛到零 warning · D-016 第七次实战合规 · 派单→R1→Review→终审 42 分钟 · commit bddbd4a + FINAL 报告归档）· 🟢 COSTRA-115 + 116 串联 DevOps/Backend 第 2~3 卡收官 · 🟡 COSTRA-102 并行等 04-30 本地验证（前置已解锁）· 共 7 卡",
+  "_updated_at": "2026-04-27T15:57+08:00",
   "cards": [
     {
       "card": "COSTRA-100",
@@ -420,14 +420,17 @@
       "r1_combined_verdict": "APPROVE",
       "r1_combined_verdict_handoff": "T2 Tech 单轨 APPROVE 30/30 · 无 R2 需求 · 转 Human T2 终审（可即时 approve:COSTRA-116，审批成本极低）",
       "r2_verdict": null,
-      "terminal_verdict": null,
-      "human_final_decision": "pending",
-      "human_final_decision_at": null,
-      "final_report": null,
+      "terminal_verdict": "APPROVED",
+      "human_final_decision": "approve",
+      "human_final_decision_at": "2026-04-27T15:57+08:00",
+      "final_report": ".team/reviews/COSTRA-116/final.md",
       "time_cost_minutes_dispatch_to_r1": 7,
       "time_cost_minutes_r1_to_review": 3,
+      "time_cost_minutes_review_to_human": 32,
+      "time_cost_minutes_dispatch_to_close": 42,
       "p0_escaped_to_human": 0,
-      "notes": "FU-COMMON-DEV-URL-DRIFT + FU-115-1 正式修复专项卡 · 1 点小卡 · R1 首轮 T2 Tech APPROVE 30/30 · P0=0 P1=0 P2=0 INFO=1（根目录 .env.example APP_PORT/APP_BASE_URL 边界外漂移 · 登 FU-116-1 P3 观察项）· 7 文件改动（+41/-36）· **核心价值兑现**：`check:whitelist` 从 115 末'2 豁免 warning'收敛到'零 warning'（规则 A/B 恢复全量强度）· SSOT 三源对齐 `http://localhost:8080/v1`（server .env.example + parsePort 默认 + env.ts dev）· 直接文档镜像三处同步（Human 验证手册 D6 + miniprogram README D7 + server test setup 注释 D8）· **Scope 铁律严守**（openapi.yaml / .env.example 真相源零触碰）· **D-016 第七次实战合规**（Human 15:15 触发 → Orchestrator 同 tool call 循环内完成派单 + 7 文件实装 + 四闸 + Tech Review · 派单→R1 7 分钟 · R1→Review 3 分钟 · 全程 10 分钟）· 解锁 Human 04-30 COSTRA-102 本地验证前置条件 · 等 Human `approve:COSTRA-116`。"
+      "commit_hash": "bddbd4a",
+      "notes": "FU-COMMON-DEV-URL-DRIFT + FU-115-1 正式修复专项卡 · 1 点小卡 · R1 首轮 T2 Tech APPROVE 30/30 · P0=0 P1=0 P2=0 INFO=1（根目录 .env.example APP_PORT/APP_BASE_URL 边界外漂移 · 登 FU-116-1 P3 观察项）· 7 文件改动（+41/-36 · commit bddbd4a · 14 files 含 dispatch + 2 reviews +805/-51）· **核心价值兑现**：`check:whitelist` 从 115 末'2 豁免 warning'收敛到'零 warning'（规则 A/B 恢复全量强度）· SSOT 三源对齐 `http://localhost:8080/v1`（server .env.example + parsePort 默认 + env.ts dev）· 直接文档镜像三处同步（Human 验证手册 D6 + miniprogram README D7 + server test setup 注释 D8）· **Scope 铁律严守**（openapi.yaml / .env.example 真相源零触碰）· **D-016 第七次实战合规**（Human 15:15 触发 → Orchestrator 同 tool call 循环内完成派单 + 7 文件实装 + 四闸 + Tech Review · 派单→R1 7 分钟 · R1→Review 3 分钟 · 全程 10 分钟）· **Human 2026-04-27 15:57 `approve:COSTRA-116` 整卡收官 CLOSED**（审批排队 32 分钟 · 全程 42 分钟）· 解锁 Human 04-30 COSTRA-102 本地验证前置条件（小程序 dev 地址 = server 真实启动地址）· FU 专项卡范式首次完整闭环（Dispatch D1~D4 + Agent 自主增补 D5~D8 + Scope 外灰色区登 FU-116-1 P3 观察）· 建议 Sprint-1 末 Retro 议题：FU 专项卡是否纳入正式卡类别 + D-016 升定稿 + T2 档位描述补'FU 专项 / SSOT 对齐'典型触发场景。"
     }
   ]
 }
