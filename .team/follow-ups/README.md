@@ -222,4 +222,68 @@ R1 Tech + Product 双签 APPROVE · 新增 6 条 FU-102-* 条目 · FU-118-6 关
 
 ---
 
+## 📌 COSTRA-115 R1 T2 Tech APPROVE 后状态流转（2026-04-27 10:54）
+
+R1 DevOps 交付 · T2 Tech 单轨 APPROVE 28/30 · 新增 3 条 FU：
+
+| FU-ID | 状态 | owner_card |
+|---|---|---|
+| FU-COMMON-DEV-URL-DRIFT | `open` | **Sprint-1 末 Retro 高优先议题**（跨 Backend/MiniApp） |
+| FU-115-1 | `open` | Sprint-1 末 / Sprint-2 头（待 FU-COMMON-DEV-URL-DRIFT 关闭） |
+| FU-115-2 | `open` | **Human 主动**（ICP 下证日触发 · R-013 关闭条件） |
+
+---
+
+### FU-COMMON-DEV-URL-DRIFT · 开发期三源 dev URL / 端口不一致
+
+- **来源**：`scripts/devops/whitelist-check.mjs` 首跑（2026-04-27 10:48）+ `.team/reviews/COSTRA-115/round-1-tech.md` INFO-A
+- **登记时间**：2026-04-27 10:54（COSTRA-115 R1 T2 Tech APPROVE）
+- **范围（四处 SSOT 冲突）**：
+  - `miniprogram/services/env.ts` · `dev.apiBaseUrl = 'http://127.0.0.1:3000/v1'`（主机 127.0.0.1 · 端口 3000）
+  - `server/api/openapi.yaml servers[1]` · `http://localhost:8080/v1`（主机 localhost · 端口 8080）
+  - `server/.env.example` · `PORT=8080`（部署权威）
+  - `server/src/config/env.ts` · `parsePort(optional(env, 'PORT', '3000'))`（代码回退默认 3000）
+- **问题**：小程序 dev 调的地址（127.0.0.1:3000）与 server 真实启动地址（localhost:8080）**主机 + 端口两项均不一致**；server 内部 `.env.example` 与代码默认值也不一致。开发同事若直接克隆跑，连本地联调都拉不通。
+- **本卡处置**：
+  - 脚本加 `EXEMPTED_ENVS_FROM_RULES_AB = new Set(['dev'])` 豁免机制 + 显式注释指向本 FU
+  - 保证 COSTRA-115 commit 可过 pr-check；但每次 `npm run check:whitelist` 都会打出 `⚠️ [A · EXEMPTED]` + `⚠️ [B · EXEMPTED]` 两条 warning 持续提醒
+- **建议修复路径**（专项卡议题）：
+  1. **确定真相**：以 `server/.env.example PORT=8080` 为部署权威 · `server/src/config/env.ts` parsePort 默认值改 `'8080'`（对齐部署默认 · 避免代码默认值漂移）
+  2. **env.ts dev 对齐**：`dev.apiBaseUrl = 'http://localhost:8080/v1'`（Web 开发者工具 + 小程序本机模拟都用 localhost:8080）
+  3. 无需改 `server/api/openapi.yaml`（已是真相）
+  4. 收紧 whitelist-check.mjs：去掉 `dev` 的豁免，FU-115-1 同步关闭
+- **阻断级别**：P1（不阻 COSTRA-115 · 但阻 COSTRA-102 真实联调 · Human 04-30 本地验证前建议 Backend-Agent 一张小卡修）
+- **认领建议**：Sprint-1 末 Retro 讨论 · 估点 **1 点** · Owner Backend-Agent（主改）+ MiniApp-Agent（配合改 env.ts）
+- **状态**：`open`
+- **阻 04-30 Human 验证？**：⚠️ **有可能** — 若 Human 按 `docs/qa/costra-102-human-verify.md` 执行时 server 真启 8080 但小程序 dev 仍指 3000，会连不上后端 → **建议 04-30 验证前提前处置**
+
+---
+
+### FU-115-1 · whitelist-check.mjs 规则 B 对 dev env 的豁免待收紧
+
+- **来源**：`scripts/devops/whitelist-check.mjs` L13-L23 + `.team/reviews/COSTRA-115/round-1-tech.md` P2-1
+- **登记时间**：2026-04-27 10:54
+- **范围**：豁免机制 `EXEMPTED_ENVS_FROM_RULES_AB = new Set(['dev'])`
+- **建议**：等 FU-COMMON-DEV-URL-DRIFT 关闭后，从豁免集合中移除 `'dev'` · 规则 A/B 对所有 env 一视同仁 · 恢复完整三方对账强度
+- **阻断级别**：P2（不阻 · 仅一条技术债自动清理项）
+- **认领建议**：FU-COMMON-DEV-URL-DRIFT 关闭的同一 commit / 下一张 Backend 卡随手改
+- **状态**：`open`
+
+---
+
+### FU-115-2 · ICP 下证后配 api.costra.cloud 至微信服务器域名白名单（Human 主动）
+
+- **来源**：`infra/wechat/domains.md §4` Human 操作手册 + `.team/risks.md` R-013 关闭条件
+- **登记时间**：2026-04-27 10:54
+- **范围**：ICP 备案下证后，Human 按 `infra/wechat/domains.md §4` 三步执行：
+  1. 阿里云 DNS 添加 A 记录 `api.costra.cloud → 49.235.216.20`
+  2. 微信公众平台后台 → 开发管理 → 开发设置 → 服务器域名 → request 合法域名添加 `https://api.costra.cloud`
+  3. 发 `close:R-013`
+- **建议**：Orchestrator 在 `.team/STATE` 每周提醒 `R-013 mitigate` 状态 · ICP 下证日零延迟触发
+- **阻断级别**：O-观察（非 Agent 可执 · Human 主动 · 外部依赖触发）
+- **认领建议**：**Human · 外部触发**（估 2026-05 中下旬 ICP 下证日）
+- **状态**：`open`
+
+---
+
 _本文件由 Orchestrator 按需追加；不直接编辑，仅在 Agent Revision Response 产出时同步新增条目。_

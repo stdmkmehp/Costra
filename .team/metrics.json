@@ -318,6 +318,61 @@
       "human_final_decision_at": null,
       "final_report": null,
       "notes": "Sprint-1 主线第三卡 · R1 实装首轮双签 APPROVE · 代码 + 单测 + 手册三件套齐全 · 双闸（typecheck + 13/13 vitest）全绿 · 能力边界合规（无真机访问声称 · Human 04-30 本地验证为 T1 终审必要凭证）· COSTRA-118 16/16 分流对账全绿 · D-016 连续第 5 次实战合规（五次零跨轮异步反模式）· 首张纯前端客户端 T1 R1 范式建立。Human 下一步：等 2026-04-30 Sprint 中点 20 分钟本地验证（按 docs/qa/costra-102-human-verify.md 执行）→ 发 approve:COSTRA-102 终审。P1 两条（err.message 直出 + avatar onAvatarError 未实现）非阻塞 · Reviewer 接受带 FU 放行 · 可交 Human 验证后随手修或入下一轮迭代。"
+    },
+    {
+      "cardId": "COSTRA-115",
+      "title": "costra.cloud DNS 子记录 + 白名单一致性 CI 校验",
+      "owner": "DevOps-Agent",
+      "tier": "T2",
+      "story_points": 1,
+      "dispatch_at": "2026-04-27T10:45+08:00",
+      "dispatch_doc": ".team/dispatch/COSTRA-115-devops-dns-whitelist-ci.md",
+      "r1_delivered_at": "2026-04-27T10:51+08:00",
+      "r1_elapsed_minutes": 6,
+      "r1_artifacts": {
+        "created": [
+          "infra/README.md",
+          "infra/wechat/domains.md",
+          "scripts/devops/whitelist-check.mjs",
+          ".team/reviews/COSTRA-115/round-1-devops-response.md",
+          ".team/reviews/COSTRA-115/round-1-tech.md"
+        ],
+        "modified": [
+          "package.json (+ scripts.check:whitelist)",
+          ".github/workflows/pr-check.yml (+ Whitelist Consistency Check step)",
+          ".team/risks.md (R-013 mitigation 补 CI 落地注记)"
+        ]
+      },
+      "r1_gates_passed": {
+        "node_syntax_check": "exit 0 (SYNTAX_OK)",
+        "check_whitelist": "exit 0 (2 warnings exempted · FU-COMMON-DEV-URL-DRIFT)",
+        "typecheck": "exit 0 (miniprogram)",
+        "vitest": "4 files · 13/13 pass · 156ms",
+        "workflow_yaml": "94 lines · no tab violations"
+      },
+      "r1_tech_verdict": "APPROVE",
+      "r1_tech_score": "28/30",
+      "r1_tech_findings": {
+        "P0": 0,
+        "P1": 0,
+        "P2": 2,
+        "INFO": 2
+      },
+      "r1_tech_report": ".team/reviews/COSTRA-115/round-1-tech.md",
+      "r1_devops_response_report": ".team/reviews/COSTRA-115/round-1-devops-response.md",
+      "r1_key_insight": "CI 脚本真实发现：env.ts dev (127.0.0.1:3000) 与 openapi.yaml dev (localhost:8080) 港口/主机漂移 · server .env.example(8080) 与 server/src/config/env.ts parsePort 默认(3000) 亦不一致 · 登记为 FU-COMMON-DEV-URL-DRIFT 专项跨卡修复 · 豁免机制（EXEMPTED_ENVS_FROM_RULES_AB={dev}）保持本卡 commit 可通过 pr-check · 即暴露又不越权",
+      "followups_added_r1": [
+        "FU-COMMON-DEV-URL-DRIFT(env.ts dev vs openapi.yaml dev vs server .env.example vs server config/env.ts parsePort · 跨 Backend/MiniApp · 需专项卡对齐 · Sprint-1 Retro 议题)",
+        "FU-115-1(future: 规则 B 对 dev env 的豁免待 FU-COMMON-DEV-URL-DRIFT 关闭后收紧)",
+        "FU-115-2(Human: ICP 下证后按 infra/wechat/domains.md §4 配 api.costra.cloud 进微信服务器域名白名单 · R-013 关闭条件)"
+      ],
+      "r1_combined_verdict_handoff": "T2 Tech 单轨 APPROVE · 无 R2 需求 · 转 Human T2 终审（可即时 approve:COSTRA-115，审批成本极低）",
+      "r2_verdict": null,
+      "terminal_verdict": null,
+      "human_final_decision": "pending",
+      "human_final_decision_at": null,
+      "final_report": null,
+      "notes": "Sprint-1 DevOps 基建第二卡 · 1 点小卡 · R1 首轮 T2 Tech APPROVE 28/30 · P0=0 P1=0 · 2 P2 + 2 INFO 均带 FU 或为登记项。首次落地 infra/ 目录 + CI 白名单三方对账脚本（openapi.yaml servers + env.ts apiBaseUrl + domains.md §1.1）· 脚本零依赖（纯 node 标准库 · 不引入 yaml 包）· **首跑即发现 server 侧潜伏漂移**（env.ts dev 127.0.0.1:3000 vs openapi.yaml dev localhost:8080 vs server .env.example PORT=8080 vs server/src/config/env.ts parsePort 默认 '3000'）· 豁免机制保本卡可 commit 同时将漂移升为 FU-COMMON-DEV-URL-DRIFT 专项卡 · 能力边界合规（无 DNS 后台操作声称 · Human 按 domains.md §4 配白名单为 R-013 关闭必要凭证）· D-016 连续第 6 次实战合规 · 六次零跨轮异步反模式 · 派单→R1→Review 全程 6 分钟。"
     }
   ]
 }

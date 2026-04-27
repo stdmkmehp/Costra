@@ -14,7 +14,7 @@
 | R-010 | PRD v0.1 范围蔓延（Won't-Have 项被带入 MVP） | 中 | 中 | 🟡 | PM | 每 Sprint 评审 Won't-Have 边界；变更走 ADR | Open |
 | R-011 | 微信平台政策变更（API 能力收紧 / 订阅消息规则调整 / 类目细则） | 中 | 低 | 🟡 | DevOps / PM | DevOps 每月扫描"小程序最新公告"一次，产出平台变更监听周报 | Open |
 | R-012 | 体验号与生产号长期共用同一 AppID（wxf8b0d3e3a83f9941），导致真机调试冲撞审核/正式版，或 robot 上传污染生产 | 中 | 中 | 🟡 | PM / DevOps | ① 小程序首次进入审核前必须拆号 ② CI 上传演练仅走"体验版"通道不走"提审" ③ robot id 预留 ≥2，切号时零改动 | Open（D-007 登记） |
-| R-013 | 生产域名迟迟未定，ICP 表单无法填写具体 hostname，导致备案延期 | 高 | 中 | 🟢 | PM / Human | **已缓解**：2026-04-23 `costra.cloud` 注册 + DNS 解析到 `49.235.216.20` + 个人主体 ICP 已提交。**保持 Open 直到下证**，下证后关闭并将 `api.costra.cloud` 配进微信服务器域名白名单 | Mitigating（D-009） |
+| R-013 | 生产域名迟迟未定，ICP 表单无法填写具体 hostname，导致备案延期 | 高 | 中 | 🟢 | PM / Human | **已缓解**：2026-04-23 `costra.cloud` 注册 + DNS 解析到 `49.235.216.20` + 个人主体 ICP 已提交。**保持 Open 直到下证**，下证后关闭并将 `api.costra.cloud` 配进微信服务器域名白名单。**2026-04-27 COSTRA-115 落地** · CI 白名单一致性校验（`scripts/devops/whitelist-check.mjs`）接入 `pr-check` · 下证后 Human 按 `infra/wechat/domains.md §4` 执行 · 代码侧漂移即 block | Mitigating（D-009 · CI 已就位） |
 | R-014 | 主体切换债务累积：硬编码主体字样散落在代码/文案/合规文档，未来个人→公司迁移工作量失控 | 高 | 中 | 🟠 | PM / MiniApp / Backend | ① 强制走 `config/subject.ts` 集中配置 ② 每 Sprint 末按 `docs/ops/subject-compat-matrix.md` 自查 ③ CI 加 grep 规则拦截硬编码 | Open（D-008 登记） |
 | R-015 | 个人主体小程序提审被拒概率高于企业主体（文案边界敏感） | 中 | 中 | 🟡 | PM / QA | COSTRA-050 自查清单新增"个人主体文案禁区"条目；避免"财务咨询/投资建议/商业经营"字样 | Open（D-008 登记） |
 | R-016 | 个人主体无法开通微信支付商户号，若 Sprint-3+ 不慎纳入付费能力将导致返工 | 高 | 低 | 🟠 | PM | D-008 明列付费/商户/交易组件为 Won't-Have；需求评审必过此闸 | Open（D-008 登记） |

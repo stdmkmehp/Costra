@@ -55,6 +55,12 @@ jobs:
         working-directory: server
         run: npm run typecheck --if-present
 
+      # ---- Whitelist Consistency Check (COSTRA-115) ----
+      # Cross-checks openapi.yaml servers + miniprogram/services/env.ts + infra/wechat/domains.md
+      # Fails the PR when the three sources drift (except documented exemptions).
+      - name: Whitelist Consistency Check
+        run: npm run check:whitelist
+
       # ---- Test ----
       - name: Test (miniprogram)
         run: npm test --if-present
