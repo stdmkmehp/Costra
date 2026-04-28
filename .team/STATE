@@ -27,7 +27,8 @@
 - **Scope 铁律 100% 严守**：业务代码 zero touch（tokens/index.ts · tsconfig.json · app.ts · app.json）· 根 project.config.json 内容红线守住（仅恢复未编辑 · git status 输出空）
 
 ### 本轮 commit（D-012 单卡即提交）
-- 待 commit 文件：9 项（根 project.config.json 恢复 + scripts/devops/miniapp-tooling-check.mjs 新建 + .gitignore + package.json + README.md + .team/STATE + .team/board.md + .team/follow-ups/README.md + .team/reviews/COSTRA-119/round-1-tech.md + .team/dispatch/COSTRA-121-*.md + .team/reviews/COSTRA-121/*）
+- **commit**：`8a9c947` · 11 files · +1451/-156 · pre-commit + commit-msg hooks 全过
+- 变更清单：根 project.config.json 恢复 + scripts/devops/miniapp-tooling-check.mjs 新建 + .gitignore + package.json + README.md + .team/STATE + .team/board.md + .team/follow-ups/README.md + .team/reviews/COSTRA-119/round-1-tech.md + .team/dispatch/COSTRA-121-*.md + .team/reviews/COSTRA-121/{round-1-miniapp-response,round-1-tech}.md
 
 ### 治理价值沉淀（Sprint-1 末 Retro 第 10 条议题一次性锁定）
 1. **D-011 SSOT 规约工具链层首次实战 · 五位一体兜底范式建立**（物理 D1+D2 / 追踪 D3 / 机制 D4+D5 / 认知 D6 / 治理 D7+D8）· 可复用模板
