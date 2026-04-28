@@ -78,9 +78,9 @@ Sprint-0 骨架仅实现"最小可演示登录闭环"，主包与分包的**完�
 | 我的 | `pages/mine/index` | ✅ 占位 | Sprint-1 落业务 | COSTRA-401 |
 | 设置 | `pages/settings/index` | ❌ 未创建 | Sprint-2 | COSTRA-402 |
 | 关于 & 隐私 | `pages/about/index` | ❌ 未创建 | Sprint-2 | Epic-G |
-| 统计总览 | `pages-stat/overview/index` | ✅ 占位（tabBar 入口） | Sprint-3 | COSTRA-501 |
-| 月度统计 | `pages-stat/month/index` | ✅ 存在（命名与 IA 略差） | Sprint-3 合并 | COSTRA-501 |
-| 家庭面板 | `pages-family/dashboard/index` | ✅ 占位（tabBar 入口） | Sprint-3 | COSTRA-201 |
+| 统计总览 | `pages-stat/overview/index` | ✅ 占位四件套已补齐（COSTRA-119） · 业务逻辑 Sprint-3 落地 | Sprint-3 | COSTRA-401 |
+| 月度统计 | `pages-stat/month/index` | ✅ 存在（命名与 IA 略差） | Sprint-3 合并 | COSTRA-401 |
+| 家庭面板 | `pages-family/dashboard/index` | ✅ 占位四件套已补齐（COSTRA-119） · 业务逻辑 Sprint-3 落地 | Sprint-3 | COSTRA-201 |
 | 家庭 home | `pages-family/home/index` | ✅ 存在（命名与 IA 略差） | Sprint-3 合并 | COSTRA-201 |
 | 设置 / 隐私 | `pages-family/settings/index`、`privacy/index` | ✅ 占位 | Sprint-2 | COSTRA-402 / Epic-G |
 

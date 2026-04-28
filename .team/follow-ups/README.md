@@ -329,4 +329,40 @@ R1 Backend 交付 · T2 Tech 单轨 APPROVE 30/30 · 2 条 FU 关闭 · 新增 1
 
 ---
 
+## 📌 COSTRA-119 R1 T2 Tech APPROVE 后状态流转（2026-04-27 20:xx）
+
+R1 MiniApp 交付 · T2 Tech 单轨 APPROVE · 新增 1 条 FU 并同轮关闭：
+
+| FU-ID | 状态 | owner_card |
+|---|---|---|
+| FU-COMMON-APP-JSON-DRIFT | **`closed`** @ 2026-04-27 | COSTRA-119（已关闭） |
+
+---
+
+### FU-COMMON-APP-JSON-DRIFT · app.json 分包声明与文件系统不一致（Human 现场撞坑）
+
+- **来源**：Human 2026-04-27 20:24 微信开发者工具模拟器启动失败 + COSTRA-119 dispatch §0 根因链
+- **登记时间**：2026-04-27 20:28
+- **范围（Sprint-0 至今潜伏约 6 天 · 两处文件系统缺失 + 一处文档断言漂移 + 一处 CI 盲区）**：
+  - `miniprogram/app.json subpackages[0].pages[1] = overview/index` 但 `pages-stat/overview/` 目录不存在（L1 表面）
+  - `miniprogram/app.json subpackages[1].pages[1] = dashboard/index` 但 `pages-family/dashboard/` 目录不存在（L1 表面）
+  - `miniprogram/README.md §4.1` 表格将两页标为"✅ 占位（tabBar 入口）" · 与现实不符（L2 文档-代码断层）
+  - COSTRA-030 骨架期产出回链未列该两页但 tabBar 已指向（L3 骨架卡 DoD 不完备 · 本卡不回溯）
+  - `scripts/devops/whitelist-check.mjs` 只查域名方向 · 无 app.json↔文件系统对账（L4 CI 盲区）
+- **问题**：Agent 无真微信开发者工具（COSTRA-114 v2 能力边界铁律）· 该错误只能在 Human 第一次真跑时暴露 · 恰好撞上 COSTRA-102 04-30 本地验证 · Human 04-27 20:24 即撞坑（比预期早 3 天）
+- **COSTRA-119 正式修复**（2026-04-27）：
+  1. ✅ 新建 `miniprogram/pages-stat/overview/{index.wxml,wxss,ts,json}` 占位四件套（tabBar 入口）
+  2. ✅ 新建 `miniprogram/pages-family/dashboard/{index.wxml,wxss,ts,json}` 占位四件套（tabBar 入口）
+  3. ✅ 新增 `scripts/devops/appjson-pages-check.mjs`（零依赖 · ~160 行 · 参考 whitelist-check.mjs 风格）· 契约 exit 0/1/2
+  4. ✅ `package.json` 新增 `check:appjson` script · 紧随 `check:whitelist` 成对账族
+  5. ✅ `.github/workflows/pr-check.yml` 新增 `AppJson Pages Consistency Check` step · 带 `if: success() || failure()`（吸取 FU-115-WHITELIST-STEP-ALWAYS 教训直接到位）
+  6. ✅ `miniprogram/README.md §4.1` 两行表格文案从"✅ 占位（tabBar 入口）"改为"✅ 占位四件套已补齐（COSTRA-119）· 业务逻辑 Sprint-3 落地" · 同轮顺手把两行的"关联卡"从幻觉 `COSTRA-501` 修正为 backlog.json 真实存在的 `COSTRA-401`（Epic-F 月度饼图/趋势折线）
+- **阻断级别**：P0（阻 Human 当场打开项目 · 比 FU-COMMON-DEV-URL-DRIFT 更硬 · 零秒撞坑）
+- **状态**：`closed` @ 2026-04-27
+- **owner_card**：**COSTRA-119**
+- **resolved_by**：COSTRA-119 R1 实装 · 11 新文件 + 4 改 · `npm run check:appjson` exit 0 首跑零告警 · Human 20:xx 重开微信开发者工具可立即启动模拟器
+- **与白名单对账脚本族的同构价值**：CI 对账范式本卡第二个实例（第一例 COSTRA-115 whitelist-check） · 双脚本共担"Agent 无真环境访问权的能力边界盲区" · 未来再有类似单源真相被误用场景 · 复用同模板
+
+---
+
 _本文件由 Orchestrator 按需追加；不直接编辑，仅在 Agent Revision Response 产出时同步新增条目。_

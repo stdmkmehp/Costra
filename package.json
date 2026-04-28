@@ -13,6 +13,7 @@
     "mp:build:check": "node ./scripts/mp-ci/build-check.mjs",
     "analyze": "node ./scripts/mp-ci/analyze.mjs",
     "check:whitelist": "node ./scripts/devops/whitelist-check.mjs",
+    "check:appjson": "node ./scripts/devops/appjson-pages-check.mjs",
     "prepare": "husky install"
   },
   "dependencies": {

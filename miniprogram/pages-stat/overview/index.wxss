@@ -1,0 +1,1 @@
+.placeholder { padding: 64rpx 32rpx; color: var(--color-text-muted); font-size: 28rpx; text-align: center; }

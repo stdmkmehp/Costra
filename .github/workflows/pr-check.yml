@@ -61,6 +61,13 @@ jobs:
       - name: Whitelist Consistency Check
         run: npm run check:whitelist
 
+      # ---- AppJson Pages Consistency Check (COSTRA-119) ----
+      # Cross-checks miniprogram/app.json pages & subpackages declarations with filesystem.
+      # Fails the PR when any declared page is missing its required files (.wxml/.json/.ts).
+      - name: AppJson Pages Consistency Check
+        if: success() || failure()
+        run: npm run check:appjson
+
       # ---- Test ----
       - name: Test (miniprogram)
         run: npm test --if-present
