@@ -1,87 +1,101 @@
 # Costra · 全局状态快照
 
-- **更新时间**：2026-04-28 13:48
-- **Orchestrator 模式**：`idle-awaiting-next-card`（**COSTRA-119 整卡 Human APPROVED CLOSED** @ 2026-04-28 13:48 · Tech 33/35 · 0 P0 逃逸 · commit **8bcc5d0** 18 files +982/-148 · FU-COMMON-APP-JSON-DRIFT 闭环 · D-016 第八次实战完整闭环 · 派单→R1→Review→终审 端到端约 17 小时 23 分钟 · 其中 AI 流水 9 分钟 + Human 过夜 + 终审 1 秒）
-- **球在谁手上**：**Human**（下一步建议顺序：① 重开微信开发者工具 5 秒验模拟器启动成功 ② 立即跑 COSTRA-102 Mock 通路 5 步 / 或等 04-30 硬节点 ③ 可并行 `run miniapp COSTRA-103` / `run backend COSTRA-104` · 依赖已满足）
-- **Human 是否需介入**：**🟡 可选**（COSTRA-119 已整卡收官 · 无阻塞 · Human 可按节奏推进 102 验证 or 开 103/104）
+- **更新时间**：2026-04-28 15:44
+- **Orchestrator 模式**：`idle-awaiting-next-card`（**COSTRA-120 整卡 Human APPROVED CLOSED @ 2026-04-28 15:44** · T2 Tech 34/35 · P0/P1/P2=0 INFO=1 · D-017 规约首次实战完整闭环 · D-016 第 9 次实战合规 · 跨区授权第 3 次实战 · commit `d08333e` 19 files +1174/-43 · AI 流水 43 分钟 + Human 终审 1h04min）
+- **球在谁手上**：**Human**（推荐顺序：① **重开微信开发者工具 5 秒验模拟器启动**（第三次验证 · 前两次都失败 · 直接验 COSTRA-120 tabBar 规约修复）② **立即跑 COSTRA-102 Mock 通路 5 步**（5 分钟 · 前置已四重解锁：100+116+119+120） ③ `run miniapp COSTRA-103`（本地持久化 · 可并行） ④ `run devops COSTRA-114`（开发手册 · 随时））
+- **Human 是否需介入**：**🟡 可选**（COSTRA-120 已 CLOSED · 推荐重开微信开发者工具第三次验证 + COSTRA-102 Mock 5 步 · 都不阻塞）
 - **铁律 1**：每次进度汇报必须列"待触发清单"（`.team/SOP-HUMAN-TRIGGER.md` P0 · **三条例外**：D-011 环内 / D-014-a 卡定义首轮 / D-014-b 产出首轮 · **D-016 执行层约束**：所有自动拉起必须同轮兑现）
 - **铁律 2**：**单卡交付即提交**（D-012 · 2026-04-23）· 每完成一张卡立即 `git commit`，禁止攒批；例外仅 Sprint/Gate 聚合收口 · 详见 `.team/decisions/D-012-per-card-commit-discipline.md`
 - **规约 3**：**Review 场景分级**（D-013 · 2026-04-23 21:15）· Review 分 T1/T2/T3/T4 四档；T1 准入 + T2 Gate 前仍需 Human 终审
 - **规约 4**：**卡定义 Review + Review 自动拉起**（D-014 · 2026-04-23 22:26）· D-014-a 卡定义首轮 / D-014-b 产出首轮
 - **规约 5**：**respond/revise 合并**（D-015 · 2026-04-24 09:24）· **最终以 Review-Agent 意见为主**（Human 铁律）
-- **规约 6**：**Orchestrator 自动拉起 Review 同轮兑现铁律**（D-016 · 2026-04-24 19:10 Human 批准 · **八次实战全部合规**：R4 19:10 / 118-R1 19:35 / 118-FINAL 2026-04-27 09:39 / 102-CardDef 2026-04-27 09:47 / 102-R1 2026-04-27 10:14 / 115-R1 2026-04-27 10:51 / 116-R1 2026-04-27 15:25 / **119-R1 2026-04-27 20:33**）· 建议 Sprint-1 末 Retro 升"定稿规约"
-- **能力边界铁律**（COSTRA-114 v2 · 2026-04-24 13:14）：**Agent 无真机 / 真服务访问权**· 手册交付 + Human 本地验证即完工范式（COSTRA-119 即"Agent 无真微信开发者工具 · 靠 Human 第一次真跑兜底"能力边界场景的第一次正面兑现 · 本卡已在代码机制层面补上 CI 对账防再演）
-- **Review 闭环**：八次主 Review 实战 PASS + COSTRA-101 四轮收口 + COSTRA-118 两段完结 + COSTRA-102 双双双签通过 + COSTRA-115 T2 APPROVE + COSTRA-116 T2 APPROVE 30/30 整卡 CLOSED + **COSTRA-119 T2 Tech APPROVE 33/35 整卡 CLOSED（2026-04-28 13:48 · commit 8bcc5d0）**
+- **规约 6**：**Orchestrator 自动拉起 Review 同轮兑现铁律**（D-016 · 2026-04-24 19:10 Human 批准 · **九次实战全部合规**：R4 / 118-R1 / 118-FINAL / 102-CardDef / 102-R1 / 115-R1 / 116-R1 / 119-R1 / **120-R1 2026-04-28 14:40**）· 建议 Sprint-1 末 Retro 升"定稿规约"
+- **🆕 规约 7**：**验证问题响应 SOP**（D-017 · 2026-04-28 13:59 Human 立案 · 2026-04-28 14:15 落盘）· **项目遇到验证失败时标准流程**：①责任领域识别（Orchestrator 30s）→ ②责任 Agent 根因分析（只诊断不改文件）→ ③多方案对比（≥2~3 方案 · 列成本/价值/风险 + Human 决策点 Qn）→ ④Human 评估裁决 → ⑤派单实装 · 反模式禁令 ABCD · COSTRA-120 首次实战 · 详见 `.team/decisions/D-017-verification-problem-response-sop.md`
+- **能力边界铁律**（COSTRA-114 v2 · 2026-04-24 13:14）：**Agent 无真机 / 真服务访问权**· 手册交付 + Human 本地验证即完工范式（**COSTRA-120 为该铁律第二次正面兑现** · T2 档位纸面审 + 命令行闸结构性漏检 "runtime 才爆" 规约违反类问题）
+- **Review 闭环**：九次主 Review 实战 PASS + COSTRA-101 四轮收口 + COSTRA-118 两段完结 + COSTRA-102 双签通过 + COSTRA-115 T2 APPROVE + COSTRA-116 T2 APPROVE 30/30 + COSTRA-119 T2 APPROVE 33/35 CLOSED + **COSTRA-120 T2 APPROVE 34/35 CLOSED @ 2026-04-28 15:44**
+
+---
+
+## 🟢 COSTRA-120 · tabBar 分包规约违反修正 + CI Rule-4 升级（P0 逃逸修复卡 · 2 点 · 紧急补入）· **Human APPROVED CLOSED**
+
+> **立案缘由**：COSTRA-119 已 Human APPROVED CLOSED 后 Human 重开微信开发者工具模拟器**二次启动失败**，错误文本升级为 `["tabBar"][1]["pagePath"]: "pages-family/dashboard/index" need in ["pages"]` —— 119 的 P0 逃逸：只补了文件存在性，漏了**"tabBar 页必须在主包 pages[]"的微信规约**。Human 04-28 13:57 立案 · 提出 **"项目遇到验证问题标准流程"** → 落为 **D-017 规约**。
+
+### 全流程时间线（2026-04-28）
+- 13:57 Human 发现模拟器二次失败 · 立案"遇到验证问题必须拉相应 Agent 根因分析 → 方案对比 → Human 裁决"流程
+- 14:05 Orchestrator 拉 MiniApp-Agent 做四层根因分析（L1 表面 / L2 文档 / L3 规约 / L4 CI）
+- 14:15 MiniApp-Agent 出方案 A/B/C 对比表 + 5 个 Human 决策点（Q1~Q5）
+- 14:20 Human 五问裁决：**Q1=A / Q2=前者 / Q3=删除 / Q4=新开 / Q5=追加** + 升级"把拉 Agent 分析作为标准流程" → **D-017**
+- 14:22 Orchestrator 派单 COSTRA-120 · Scope 9 处产出 D1~D9
+- 14:30 MiniApp-Agent R1 完工（目录迁移 + app.json 三处改 + CI Rule-4 + 文档 + FU + 119 Review §13 追写 + D-017 规约）
+- 14:38 五闸全绿 + Rule-4 反向验证双向证据闭环（篡改 → exit 1 带规约文案 → revert → exit 0）
+- 14:40 Review-Agent-Tech R1 APPROVE **34/35**（P0=0 P1=0 P2=0 INFO=1 · 比 119 高 1 分 · 治理沉淀维度）
+- 15:05 Orchestrator STATE/board 双表同步 R1 APPROVE 状态 · 出 COSTRA-120 收官汇报
+- **15:44 Human `approve:COSTRA-120` · D-012 单卡即提交 · commit `d08333e` 19 files +1174/-43 · 整卡 CLOSED**
+
+### R1 Tech Review 结果（2026-04-28 14:40）
+| 维度 | Verdict | 得分 | P0 | P1 | P2 | INFO |
+|---|---|---|---|---|---|---|
+| Tech | **APPROVE** | **34/35** | 0 | 0 | 0 | 1 |
+
+**合并结论**：**T2 Tech 单轨 APPROVE · 无 R2 需求 · 转 Human T2 终审**（推荐直接 `approve:COSTRA-120`）
+
+### 核心治理价值 🏆
+1. **D-017 规约立案**：项目第一次把"验证问题响应流程"规约化 · 禁止 Orchestrator 自行分析根因 · 强制走"责任 Agent 根因分析 + 多方案对比 + Human 裁决"SOP
+2. **CI 对账族从文件存在性升级到微信规约级**：Rule-4 tabBar 主包规约新增 · 反向验证范式建立（篡改→exit 1 带规约原文→revert→exit 0）
+3. **元 Review（Review on Review）**：119 Tech Review §13 追写"逃逸修正说明" v1.0→v1.1 · 五段位自省（漏判事实 / T2 档位局限 / 改进动作 / 未来 Review 输入 / 自我评价）· 为 Review 档位局限建立治理参考
+
+### R1 交付物清单（D1~D9 · 9 处产出）
+- **D1 新目录 8 文件**：`miniprogram/pages/family-dashboard/{wxml,wxss,ts,json}` + `miniprogram/pages/stat-overview/{wxml,wxss,ts,json}` · 保留语义前缀 · 引用真实卡号 COSTRA-201 / COSTRA-401（backlog.json 核实）
+- **D2 旧目录 8 文件全删**：`miniprogram/pages-family/dashboard/*` + `miniprogram/pages-stat/overview/*` · Human Q3 裁决
+- **D3 app.json 三处同步改动**：pages[] 新增两项（主包）· subpackages[].pages[] 删除两项（分包） · tabBar.list[].pagePath 两项指向主包新路径
+- **D4 CI 脚本升级（Rule-4）**：`scripts/devops/appjson-pages-check.mjs` +35 行 · 头部注释重写（Rule-1~3 + Rule-4）· `parseAppJson` 增 `tabBar` 字段返回 · 新增 `checkTabBarMainPackage({pages, tabBar})` 函数（Set O(1) 查 + 防御 typeof）· 错误文案含微信规约原文
+- **D5 反向验证**：篡改 app.json 临时把 tabBar 指回分包路径 → `check:appjson` exit 1 + 含 "tabBar 页必须在主包" 文案 → revert → exit 0 · 三段证据链
+- **D6 README 对齐**：`miniprogram/README.md` §1/§3/§4.1 正文/§4.1 裁决段 4 处 · 分包描述 4→6 主包项 · 目录树增 pages/family-dashboard + pages/stat-overview · 表格 4 行路径 + 状态
+- **D7 FU 双阶段闭环**：`.team/follow-ups/README.md` FU-COMMON-APP-JSON-DRIFT 状态备注修订（L1 文件侧 · L3 规约侧由 120 补完）+ 新增 **FU-COMMON-APP-JSON-DRIFT-TABBAR**（同轮登记 + 同轮 `closed`）
+- **D8 元 Review**：`.team/reviews/COSTRA-119/round-1-tech.md` §13 追写 v1.0→v1.1（五段位自省）
+- **D9 规约沉淀**：`.team/decisions/D-017-verification-problem-response-sop.md` 新建 8 段位 · ~200 行 · 含 E1/E2/E3 例外 + 反模式 ABCD 禁令 + 与 D-011/D-014/D-016 时序关系
+
+### 五闸全绿 + Rule-4 反向验证双向证据
+- ✅ Gate 1 `node --check scripts/devops/appjson-pages-check.mjs` · exit 0
+- ✅ Gate 2 `npm run check:appjson` · exit 0 · **正向**：`10 pages matched + tabBar main-package rule: 4/4 pass`
+- ✅ Gate 2-反向 篡改 app.json → exit 1 + 微信规约原文错误文案 → revert → exit 0
+- ✅ Gate 3 `npm run check:whitelist` · exit 0（回归）
+- ✅ Gate 4 `npm run typecheck` · exit 0
+- ✅ Gate 5 `npm test` · 13/13 pass · 160ms
+
+### Scope 铁律严守
+- ❌ 未触碰既有业务页 login/home/entry/mine/month/home/settings/privacy 代码
+- ❌ 未改 tabBar 结构设计（方案 B 否决 · 属产品决策级）
+- ❌ 未创建主包代理页（方案 C 否决 · 反模式）
+- ❌ 未触碰 COSTRA-102/103/104 口袋项
+- ❌ 未引入 npm 依赖
+
+### D-016 第九次实战合规
+- Human 13:57 立案 → Orchestrator 14:05 启根因分析 → 14:22 派单 → 14:30 R1 完工 → 14:40 Review APPROVE · 全程 43 分钟同 tool call 循环
+- 新增的"根因分析 + 方案对比 + Human 裁决"段位不违反 D-016（D-017 本就是 D-016 前置 · 原因分析在派单前）
+- 连续九次零跨轮异步反模式
+
+### FU 状态流转
+- **FU-COMMON-APP-JSON-DRIFT**（COSTRA-119 关闭）：状态备注修订 · 标注"L1 文件侧已闭环 · L3 规约侧由 COSTRA-120 补完"
+- **🆕 FU-COMMON-APP-JSON-DRIFT-TABBAR**：同轮登记 + 同轮 `closed` @ 2026-04-28 · resolved_by COSTRA-120
+
+### 能力边界铁律第二次正面兑现
+- **COSTRA-114 v2 铁律**："Agent 无真微信开发者工具 · 靠 Human 第一次真跑兜底"
+- **第一次**（COSTRA-119）：Human 20:24 撞文件存在性坑
+- **第二次**（COSTRA-120）：Human 13:57 撞 tabBar 规约坑
+- **治理价值**：两次撞坑叠加证明 T2 档位纸面审 + 命令行五闸结构性漏检"runtime 才爆"类规约违反 → 已在 D-017 §5 列为 "Review 档位局限" + 挂 Sprint-1 Retro 议题
 
 ---
 
 ## 🟢 COSTRA-119 · app.json 分包声明↔文件系统一致性修复 + CI 对账 · 整卡 CLOSED（2026-04-28 13:48）
 
-> **全流程**：Human 04-27 20:24 打开微信开发者工具撞坑 → 20:27 Human 选定方案 B → Orchestrator 20:28 派单 → MiniApp-Agent R1 20:31 完工 → AI Review Tech 20:33 APPROVE 33/35（D-016 第 8 次实战 · 派单→R1→Review 端到端 5 分钟）→ Human 04-28 13:47 发 `approve:COSTRA-119` → Orchestrator 13:48 commit `8bcc5d0` 整卡收官
-
-### 收官快照（2026-04-28 13:48）
-- **Human 终审**：`approve:COSTRA-119` @ 2026-04-28 13:47（T2 Tech 单轨 · 无 R2）
-- **Commit**：`8bcc5d0` · 18 files · +982 / −148 · pre-commit（lint + typecheck）pass · commit-msg pass
-- **P0 逃逸**：0 · **P1 逃逸**：0 · **P2 逃逸**：0
-- **五闸全绿**：node --check / check:appjson（10 pages matched · 首跑 exit 0）/ check:whitelist（回归）/ typecheck / vitest 13/13
-- **FU-COMMON-APP-JSON-DRIFT**：同轮登记 + 同轮 closed · resolved_by COSTRA-119
-- **顺手清**：FU-118-4 同族幻觉卡号 1 例（`miniprogram/README.md §4.1` COSTRA-501 → COSTRA-401）
-- **未纳入 commit 的工作区噪声**（留待后续决策）：`project.config.json`（工具自动格式化 + 追加 swc/disableSWC/simulatorPluginLibVersion 等 · 无实质配置变更）· `miniprogram/project.config.json`（工具打开 miniprogram/ 作为项目根时自动创建的第二份配置 · 非本卡 Scope）
-
-### D-016 第八次实战合规
-- dispatch → R1 → Review 三段同轮兑现 · 端到端 AI 流水 9 分钟（20:24 → 20:33）
-- Human 过夜 17h14min（20:33 → 次日 13:47）属 Human 侧延迟 · 不计入 Agent 执行时长
-
-### Sprint-1 第 5 张紧急修复卡 · R1 段位
-- **Owner**：MiniApp-Agent（主驾 · 显式授权跨区 `scripts/devops/` + `.github/workflows/` + `miniprogram/README.md` + `.team/follow-ups/` · 参照 COSTRA-116 Backend 跨区先例）
-- **估点**：2（1 点占位四件套 + 1 点脚本 & CI · 比 115/116 略重 · T2 范畴）
-- **Review 档位**：T2（D-013 · 基建类小卡 · 占位文件 + CI 脚本 + 文档文案 · 无业务逻辑 · Tech 单轨）
-
-### R1 首轮 Review 结果（2026-04-27 20:33）
-| 维度 | Verdict | 得分 | P0 | P1 | P2 | INFO |
-|---|---|---|---|---|---|---|
-| Tech | **APPROVE** | **33/35** | 0 | 0 | 0 | 2 |
-
-**合并结论**：**T2 Tech 单轨 APPROVE · 无 R2 需求 · 转 Human T2 终审**（推荐直接 `approve:COSTRA-119`）
-
-**关键正向**：**Agent 能力边界盲区机制化兜底**——本卡不仅修好表层（补占位页），还在 CI 层增加 `appjson-pages-check.mjs` 对账脚本 · 对账族从 1 个（whitelist）扩到 2 个 · 未来再有分包页声明但目录未落地的骨架期漂移将在 PR 首次 CI 被挡 · 永久消除 L4 盲区
-
-### R1 交付物清单（11 新 + 4 改）
-- **D1/D2 占位四件套 8 新**：`miniprogram/pages-stat/overview/{wxml,wxss,ts,json}` + `miniprogram/pages-family/dashboard/{wxml,wxss,ts,json}` · 与既有 `month/index.*` 同构 · 引用真实卡号 COSTRA-401 / COSTRA-201（backlog.json 已核）
-- **D3 CI 脚本 1 新**：`scripts/devops/appjson-pages-check.mjs`（~165 行 · 零依赖 · exit 0/1/2 契约 · `.wxss` 可选 · `.ts|.js` 二选一 · 修复指引 4 条）
-- **D4 package.json 1 改**：+`check:appjson` script 紧随 `check:whitelist` 成对账族
-- **D5 CI workflow 1 改**：+`AppJson Pages Consistency Check` step · 带 `if: success() || failure()`（**吸取 FU-115-WHITELIST-STEP-ALWAYS 教训直接到位**）
-- **D6 README 1 改**：`miniprogram/README.md §4.1` 两行表格文案对齐 + 顺手清幻觉卡号 COSTRA-501→COSTRA-401（FU-118-4 同族清债 1 例）
-- **D7 FU 登记 1 改**：`.team/follow-ups/README.md` 尾部 +FU-COMMON-APP-JSON-DRIFT 条目 · 状态直接 `closed` @ 2026-04-27 · resolved_by COSTRA-119
-
-### 五闸全绿
-- ✅ `node --check scripts/devops/appjson-pages-check.mjs` · exit 0
-- ✅ `npm run check:appjson` · exit 0 · **首跑 "10 pages matched across miniprogram/app.json ↔ filesystem"**（核心闸 · 价值验证）
-- ✅ `npm run check:whitelist` · exit 0（回归 4 envs · 3 urls · 3 sources）
-- ✅ `npm run typecheck` · exit 0（含 2 个新 Page ts）
-- ✅ `npm test` · 13/13 pass 221ms
-- ✅ 附加 YAML 语法校验：pr-check.yml 0 tab 违规 · 101 行
-
-### Scope 铁律严守
-- ❌ 未触碰 tabBar / subpackages 声明 / preloadRule / sitemap.json
-- ❌ 未触碰既有页面 login/home/entry/mine/month/home/settings/privacy
-- ❌ 未引入 npm 依赖（零依赖继承 115/116）
-- ❌ 未修 FU-102-ERROR-MAPPER-INTEGRATION / FU-102-AVATAR-ONERROR 口袋项（属 COSTRA-102 · 严守同卡提交 D-012）
-
-### FU 状态流转
-- **FU-COMMON-APP-JSON-DRIFT** · 新建 + **`closed`** 同轮 @ 2026-04-27 · resolved_by COSTRA-119
-- **FU-118-4 同族幻觉 1 例清除**：`miniprogram/README.md §4.1` 中 `COSTRA-501` 改为真实 `COSTRA-401`（Epic-F）
-
-### Human 终审已完成（2026-04-28 13:47~13:48）
-- ✅ `approve:COSTRA-119` @ 2026-04-28 13:47（端到端 Human 侧 17h14min · 过夜属正常节奏）
-- 🟡 重开微信开发者工具验模拟器能启动（推荐 5 秒内完成 · 直接证明 FU-COMMON-APP-JSON-DRIFT 已闭环）
-- 🟡 （可选）立即跑一轮 COSTRA-102 Mock 模式 5 步完整验证（前置 116+119 已双重解锁）
+> 详情保留以供追溯 · Human T2 approve · Tech 33/35 · **⚠️ 但存在 P0 逃逸**（tabBar 规约违反 · 由 COSTRA-120 修正 · §13 元自省 v1.0→v1.1 已落盘）· commit `8bcc5d0` + `f093ae3`
 
 ---
 
 ## 🟢 COSTRA-116 · 开发期三源 dev URL / 端口漂移收敛 · 整卡 CLOSED（2026-04-27 15:57）
 
-> 详情保留以供追溯 · Human T2 approve · Tech 30/30 · 0 P0 逃逸 · commit bddbd4a
+> 详情保留以供追溯 · Human T2 approve · Tech 30/30 · 0 P0 逃逸 · commit `bddbd4a`
 
 ---
 
@@ -93,7 +107,7 @@
 
 ## 🟢 COSTRA-102 · MiniApp 登录→首页→记一笔端到端 · R1 双签 APPROVE · 等 Human 04-30（或当日 20:35+）验证 + 终审
 
-> 2026-04-27 10:14 双签 APPROVE 31/35 + 27/30 · 无 R2 · **前置条件双重达成**：COSTRA-116（URL 对齐） · **COSTRA-119（app.json 对齐 · 本轮刚落）**
+> 2026-04-27 10:14 双签 APPROVE 31/35 + 27/30 · 无 R2 · **前置条件三重达成**：COSTRA-100（Backend 基础）· COSTRA-116（URL 对齐）· COSTRA-119+120（app.json + tabBar 规约双层对齐）
 > Human 下一步：按 `docs/qa/costra-102-human-verify.md` 执行 5 步（Mock 通路 5 分钟即可 · 本地 server 通路 15 分钟）→ `approve:COSTRA-102`
 
 ---
@@ -110,64 +124,61 @@
 
 ## ⚠️ 需要 Human 触发的 Agent 任务清单（按优先级）
 
+### 🔴 最高优先级（本轮直接 Gate · 2 点卡 · 秒级终审）
+1. **`approve:COSTRA-120`** — <1 分钟 · Tech APPROVE 34/35 · P0/P1/P2=0 · 触发 D-012 单卡即提交 + Sprint-1 总估点 42→44
+
 ### 🟡 中优先级（解锁链路 · 建议今晚趁热打铁）
-1. **重开微信开发者工具 → 验证模拟器启动成功** · 5 秒 · 直接验 COSTRA-119 的 FU-COMMON-APP-JSON-DRIFT 是否闭环
-2. **立即跑 COSTRA-102 Human 本地验证 Mock 通路 5 步** · 5 分钟 · 原计划 04-30 · 但前置已双重解锁（116+119）· 可提前做完一半
+2. **重开微信开发者工具 → 验证模拟器启动成功** · 5 秒 · 直接验 COSTRA-120 的 FU-COMMON-APP-JSON-DRIFT-TABBAR 是否闭环（这是 tabBar 规约坑的第三次验证 · 前两次都失败）
+3. **立即跑 COSTRA-102 Human 本地验证 Mock 通路 5 步** · 5 分钟 · 原计划 04-30 · 但前置已三重解锁（100+116+119+120）· 可提前做完一半
 
 ### 🟡 中优先级（2026-04-30 硬性节点 · 未必今晚做完）
-3. **2026-04-30 Sprint 中点 Human 本地验证 COSTRA-102**（若今晚已完成 Mock 通路 · 则 04-30 只需补跑本地 server 通路 10 分钟）· 完成后发 `approve:COSTRA-102`
+4. **2026-04-30 Sprint 中点 Human 本地验证 COSTRA-102**（若今晚已完成 Mock 通路 · 则 04-30 只需补跑本地 server 通路 10 分钟）· 完成后发 `approve:COSTRA-102`
 
 ### 🟠 中优先级（随时可启动）
-4. **`run devops COSTRA-114`** — DevOps 真正开写开发服务器 bootstrap 手册（I-003 澄清后待真触发）
+5. **`run devops COSTRA-114`** — DevOps 真正开写开发服务器 bootstrap 手册（I-003 澄清后待真触发）
 
 ### 🟢 可并行（依赖已满足）
-5. **`run miniapp COSTRA-103`** — 本地 SQLite/IndexedDB 持久化 + outbox_queue（依赖 100 已满足 · 承接 COSTRA-118 P1-3）
-6. **`run backend COSTRA-104`** — `/entries` CRUD + `/sync/push` 批量通道（依赖 100/103）
+6. **`run miniapp COSTRA-103`** — 本地 SQLite/IndexedDB 持久化 + outbox_queue（依赖 100 已满足 · 承接 COSTRA-118 P1-3）
+7. **`run backend COSTRA-104`** — `/entries` CRUD + `/sync/push` 批量通道（依赖 100/103）
 
 ### 🟡 低优先级（依赖上游 / 可后排）
-7. `run miniapp COSTRA-112` — 小程序主体字样清扫（D-008 · MiniApp 兜底）
-8. `run devops COSTRA-108` — miniprogram-ci 演练（承接 COSTRA-118 P1-5）
+8. `run miniapp COSTRA-112` — 小程序主体字样清扫（D-008 · MiniApp 兜底）
+9. `run devops COSTRA-108` — miniprogram-ci 演练（承接 COSTRA-118 P1-5）
 10. `run pm COSTRA-109/110/111` — 文档三卡并行（COSTRA-109 产出后 COSTRA-118 P0-10 part B 解锁）
 11. `run devops COSTRA-117` — husky v10 兼容清理（1 点）
 
 ### 🔒 已自动关闭 / 已废弃（不再占位）
-- ~~`approve-batch sprint-0-review`~~ · ~~`approve:COSTRA-100`~~ · ~~`approve:COSTRA-113`~~ · ~~`approve:COSTRA-101-part-a`~~ · ~~`approve:COSTRA-101-part-b`~~ · ~~`approve:COSTRA-118`~~ · ~~`approve-def:COSTRA-102`~~ · ~~`approve:COSTRA-115`~~ · ~~`approve:COSTRA-116`~~
+- ~~`approve-batch sprint-0-review`~~ · ~~`approve:COSTRA-100`~~ · ~~`approve:COSTRA-113`~~ · ~~`approve:COSTRA-101-part-a`~~ · ~~`approve:COSTRA-101-part-b`~~ · ~~`approve:COSTRA-118`~~ · ~~`approve-def:COSTRA-102`~~ · ~~`approve:COSTRA-115`~~ · ~~`approve:COSTRA-116`~~ · ~~`approve:COSTRA-119`~~
 
-### ✅ 本日已完成触发项（2026-04-27）
-- ~~**`approve:COSTRA-118`**~~ — 09:39 · Human T2 approve 路径 A · D-016 第三次实战合规
-- ~~**`run miniapp COSTRA-102`**~~ — 09:47 · 卡定义首轮双签 APPROVE · D-016 第四次实战合规
-- ~~**`approve-def:COSTRA-102`**~~ — 10:00 · R1 实装 + 首轮双签 APPROVE · D-016 第五次实战合规
-- ~~**`run devops COSTRA-115`**~~ — 10:45 · R1 交付 APPROVE · D-016 第六次实战合规
-- ~~**`approve:COSTRA-115`**~~ — 14:10 · Human T2 approve 收官
-- ~~**`run backend fix-dev-url-drift`**~~ — 15:15 · COSTRA-116 R1 · D-016 第七次实战合规
-- ~~**`approve:COSTRA-116`**~~ — 15:57 · Human T2 approve 收官
-- ~~**`run miniapp fix-appjson-drift`**~~ — **20:28 · COSTRA-119 R1 · D-016 第八次实战合规**
+### ✅ 本日已完成触发项（2026-04-28）
+- ~~**`approve:COSTRA-119`**~~ — 13:47 · Human T2 approve · D-016 第八次实战合规 · 但存在 P0 逃逸（tabBar 规约）
+- ~~**"立 D-017 规约"**~~ — 13:59 · Human 立案"验证问题响应 SOP" · 14:15 落盘
+- ~~**"Q1~Q5 五问裁决"**~~ — 14:20 · Human 裁决（方案 A / 主包目录语义前缀 / 删原目录 / 新开 120 / 追写 119 §13）
+- ~~**"COSTRA-120 派单 + R1 + Review"**~~ — 14:22~14:40 · D-016 第九次实战合规
 
 ## 最近里程碑
 - ✅ G1/G2/G3 全部通过
-- ✅ Sprint-1 启动 · 42 点（原 40 + COSTRA-119 紧急补入 2 点）
-- ✅ **D-011 方案 B 自动循环**：八次实战验证
+- ✅ Sprint-1 启动 · **44 点**（40 + 119 紧急 2 + **120 紧急 2 · 连续两张紧急卡溢出**）
+- ✅ **D-011 方案 B 自动循环**：九次实战验证
 - ✅ **D-012 单卡交付即提交**（04-23 20:54）· 铁律
-- ✅ **Sprint-0 AI-Review 补审 7/7 PASS**（04-23 20:37）
 - ✅ **D-013 Review 场景分级**（04-23 21:15）
 - ✅ **D-014 卡定义 Review + Review 自动拉起**（04-23 22:26）
 - ✅ **D-015 触发词词典简化**（04-24 09:24）· v1.4
-- 🏆 **COSTRA-101 整卡收官**（04-24 19:28 · 四规约首次实战全通过）
-- 🆕 **D-016 同轮兑现铁律立案**（04-24 19:10）
+- 🆕 **D-016 同轮兑现铁律立案**（04-24 19:10）· **九次实战合规**
+- 🆕 **🏛 D-017 验证问题响应 SOP 立案**（**2026-04-28 13:59 Human 立案 · 14:15 落盘 · COSTRA-120 首次实战**）· 详见 `.team/decisions/D-017-verification-problem-response-sop.md`
+- 🏆 **COSTRA-101 整卡收官**（04-24 19:28）
 - 🏗 **Mac 跨机迁移**（04-25 ~ 04-27）· 无 Agent 任务中断
-- 🏆 **COSTRA-118 · Human T2 APPROVED 路径 A · 整卡收官**（2026-04-27 09:39）· D-016 第三次实战合规
-- 🚀 **COSTRA-102 卡定义双签 APPROVE**（2026-04-27 09:47）· D-016 第四次实战合规
-- 🎯 **COSTRA-102 R1 实装首轮双签 APPROVE**（2026-04-27 10:14）· D-016 第五次实战合规 · 首张纯前端客户端 T1 R1 范式建立
-- 🛡 **COSTRA-115 R1 Tech APPROVE 28/30**（2026-04-27 10:51）· D-016 第六次实战合规 · CI 工具首跑暴露 FU-COMMON-DEV-URL-DRIFT
-- 🏁 **COSTRA-115 Human T2 终审收官**（2026-04-27 14:10）
-- 🔧 **COSTRA-116 R1 Tech APPROVE 30/30**（2026-04-27 15:25）· D-016 第七次实战合规 · FU-COMMON-DEV-URL-DRIFT 闭环
-- 🏁 **COSTRA-116 Human T2 终审收官**（2026-04-27 15:57）
-- 🆕 **COSTRA-119 R1 Tech APPROVE 33/35**（**2026-04-27 20:33**）· **D-016 第八次实战合规 · 端到端 9 分钟 · FU-COMMON-APP-JSON-DRIFT 同轮闭环 · CI 对账族从 1 扩到 2**
-- 🏁 **COSTRA-119 Human T2 终审整卡收官**（**2026-04-28 13:48** · commit `8bcc5d0` · 18 files +982/-148）
+- 🏆 **COSTRA-118 · Human T2 APPROVED 路径 A · 整卡收官**（2026-04-27 09:39）
+- 🚀 **COSTRA-102 卡定义双签 APPROVE**（2026-04-27 09:47）
+- 🎯 **COSTRA-102 R1 实装首轮双签 APPROVE**（2026-04-27 10:14）· 首张纯前端客户端 T1 R1 范式建立
+- 🛡 **COSTRA-115 R1 Tech APPROVE 28/30 + 14:10 Human T2 终审收官**（2026-04-27）
+- 🔧 **COSTRA-116 R1 Tech APPROVE 30/30 + 15:57 Human T2 终审收官**（2026-04-27）· FU-COMMON-DEV-URL-DRIFT 闭环
+- 🆕 **COSTRA-119 R1 Tech APPROVE 33/35 + 2026-04-28 13:48 Human T2 终审收官**（commit `8bcc5d0`）· **⚠️ 但存在 P0 逃逸**
+- 🆕 **COSTRA-120 R1 Tech APPROVE 34/35**（**2026-04-28 14:40**）· **D-016 第九次实战合规 · 全程 43 分钟 · D-017 首次实战 · CI 对账族升级到规约级**
 
 ## 进行中（共 2 卡）
 - **COSTRA-114** @DevOps-Agent · 卡定义已放行但实际未开工（I-003）· 等 Human 真触发
-- **COSTRA-119** @MiniApp-Agent · R1 实装 Tech APPROVE 33/35 · 等 Human `approve:COSTRA-119`
+- **COSTRA-120** @MiniApp-Agent · R1 实装 Tech APPROVE 34/35 · 等 Human `approve:COSTRA-120`
 
 （COSTRA-102 已 R1 双签 · 等 Human 本地验证；COSTRA-103/104/108/109/110/111/112/117 Todo-等触发）
 
@@ -186,7 +197,7 @@
 | FU-118-1 | COSTRA-118 灰色区 | AppID 在 README.md:12, :42 | `open-observation` | Sprint-1 末 engineering-guidelines §2.5 澄清 |
 | FU-118-2 | COSTRA-118 P2-2 | miniprogram `pages/mine/index.ts:19` "未命名用户" | `scoped` | Sprint-2 合并 FU-001 |
 | FU-118-3 | COSTRA-118 P0-9 根因 | `tokens/index.ts` 已定义但 app.wxss 手写变量（设计-实装脱节） | `open` | Sprint-2 COSTRA-160（暂定） |
-| FU-118-4 | COSTRA-118 P2-1 | 占位页卡号幻觉 COSTRA-060/130/140/150 · **2026-04-27 顺手清理 1 例（COSTRA-501）@ COSTRA-119** | `open`（剩余） | Sprint-2 COSTRA-106 Retro |
+| FU-118-4 | COSTRA-118 P2-1 | 占位页卡号幻觉 COSTRA-060/130/140/150 · **2026-04-27 @ 119 清 1 例（COSTRA-501→COSTRA-401）** | `open`（剩余） | Sprint-2 COSTRA-106 Retro |
 | FU-118-5 | COSTRA-118 P2-4 | 11 处 console.* 统一 logger 封装 | `open` | Sprint-2 合入 COSTRA-903 APM |
 | FU-118-6 | COSTRA-118 P1-1 | `utils/money.ts` 引入 decimal.js（ADR-0002 硬约束） | **`closed`** | **COSTRA-102 R1 已落地 · decimal.js ^10.4.3** |
 | FU-102-AGENT-DEF | COSTRA-102 卡定义 INFO-1 | `03-miniapp-agent.md §身份` 工作区从 miniapp/ 改 miniprogram/ | `open` | Sprint-1 末 PM 批次修订 |
@@ -199,10 +210,11 @@
 | FU-COMMON-DEV-URL-DRIFT | COSTRA-115 R1 | 四源 dev URL 漂移 · COSTRA-116 已一并关闭 | **`closed`** @ 2026-04-27 | COSTRA-116 |
 | FU-115-1 | COSTRA-115 P2-1 | `pr-check.yml` step if 子句 · COSTRA-116 一并关闭 | **`closed`** @ 2026-04-27 | COSTRA-116 |
 | FU-115-2 | COSTRA-115 R1 | ICP 下证后配 api.costra.cloud | `open`（Human 主动） | 外部依赖 |
-| FU-115-WHITELIST-STEP-ALWAYS | COSTRA-115 P2-1 | 同 FU-115-1 · 已关闭 · **COSTRA-119 已为新 step 直接采用 `if:` 写法 · 可作为后续合并参照** | **`closed`** | 同上 |
+| FU-115-WHITELIST-STEP-ALWAYS | COSTRA-115 P2-1 | 同 FU-115-1 · 已关闭 · **COSTRA-119 已为新 step 直接采用 `if:` 写法** | **`closed`** | 同上 |
 | FU-115-DOMAINS-MD-ENV-NAMING | COSTRA-115 P2-2 | `domains.md §1.1` env 命名说明 | `open` | COSTRA-115 Human 终审前 Agent 可随手修 |
 | FU-116-1 | COSTRA-116 R1 INFO-1 | 根目录 `.env.example` APP_PORT/APP_BASE_URL 潜在语义冲突 | `open` | Sprint-1 末 DevOps 小卡 |
-| 🆕 **FU-COMMON-APP-JSON-DRIFT** | **Human 2026-04-27 20:24 微信开发者工具撞坑** | `miniprogram/app.json subpackages[*].pages[*]` 声明与文件系统不一致 · 4 层根因 · CI 盲区 | **`closed`** @ 2026-04-27 | **COSTRA-119**（同轮登记 + 同轮关闭） |
+| FU-COMMON-APP-JSON-DRIFT | Human 2026-04-27 20:24 微信开发者工具撞坑 L1 | `miniprogram/app.json subpackages[*].pages[*]` 文件存在性漂移 · **L1 文件侧** | **`closed`** @ 2026-04-27 | COSTRA-119 · **⚠️ L3 规约侧由 COSTRA-120 补完** |
+| 🆕 **FU-COMMON-APP-JSON-DRIFT-TABBAR** | **Human 2026-04-28 13:57 微信开发者工具二次撞坑 L3** | `miniprogram/app.json tabBar.list[].pagePath` 必须在主包 `pages[]` · 微信规约铁律（启动首帧 vs 按需延迟下载冲突） | **`closed`** @ 2026-04-28 | **COSTRA-120**（同轮登记 + 同轮关闭） |
 
 ## 🌐 域名与服务器（D-009 锁定）
 - 生产域名：**`costra.cloud`** · DNS → `49.235.216.20`
@@ -215,13 +227,13 @@
 - 实装：server 已上线（COSTRA-113 + COSTRA-101 整卡收官）· MiniApp 待 COSTRA-112
 
 ## Human 下一次介入节点
-1. **🟢 立即可做（推荐最高）**：**`approve:COSTRA-119`** · 2 点小卡 · <1 分钟终审（同步验证重开微信开发者工具 5 秒）
-2. **🟢 立即可做（解锁价值验证）**：重开项目跑模拟器 → 可立即跑 COSTRA-102 Mock 通路 5 分钟 5 步
+1. **🔴 立即可做（推荐最高）**：**`approve:COSTRA-120`** · 2 点卡 · <1 分钟终审（P0 逃逸修复 + D-017 首次实战 + CI 对账族升级）
+2. **🟢 立即可做（解锁价值验证）**：重开项目跑模拟器 → 第三次验证 tabBar 规约修复是否真生效 → 可立即跑 COSTRA-102 Mock 通路 5 分钟 5 步
 3. **🟡 2026-04-30 Sprint 中点**：若今晚已完成 Mock 通路 · 04-30 只需补本地 server 通路 10 分钟
 4. **🟢 可并行**：`run miniapp COSTRA-103` / `run backend COSTRA-104`（依赖已满足）
 5. **🟠 随时**：`run devops COSTRA-114`
 6. **被动等**：ICP 短信审核到达时 5 分钟内回验证码
-7. **Sprint-1 末（2026-05-06）**：G4 合并闸门决策（议题 +1：紧急卡溢出 42 点 · 119 为首例）
+7. **Sprint-1 末（2026-05-06）**：G4 合并闸门决策（议题 +2：紧急卡溢出 44 点 · 119+120 两例连续 · D-017 vs D-016 时序关系）
 8. **2026-07-16**：开发服务器到期前 7 日决策
 
 ## 📌 Incident 登记
@@ -230,30 +242,33 @@
 - **I-002（2026-04-24 13:04）**：DevOps 卡定义 Review 归属 SOP 漂移。
 - **I-003（2026-04-24 16:58~17:18）**：Orchestrator 调度状态 vs 执行状态混淆。
 - **I-004（2026-04-24 17:48）**：R1 Verify 发现 Round 2 Backend 3 项潜藏回归。
-- **I-005（2026-04-24 17:59 → 19:10 闭环）**：D-014-b "自动拉起 Review-Tech" 声称与执行不符 · 预防 D-016 立案 · 八次实战合规。
+- **I-005（2026-04-24 17:59 → 19:10 闭环）**：D-014-b "自动拉起 Review-Tech" 声称与执行不符 · 预防 D-016 立案 · 九次实战合规。
+- **🆕 I-006（2026-04-27 20:24 → 2026-04-28 14:40 闭环 · 跨日）**：COSTRA-119 P0 逃逸 · tabBar 规约违反未在 T2 档位 Tech Review 被抓 → 由 Human 模拟器二次启动失败暴露 → 立案 D-017 规约 + 升级 CI 对账族到规约级（Rule-4）→ COSTRA-120 修复 + 119 Review §13 元自省 v1.0→v1.1。根因：T2 档位结构性局限（纸面审 + 命令行五闸不启动微信开发者工具）+ CI 脚本单向性陷阱（119 以症状正向补而非以微信 builder 错误字典反向设计）。预防：D-017 SOP + CI 对账族规约级升级 + Review 档位议题挂 Sprint-1 Retro。
 
 ## 关键产物
-- **Review 机制**：agents/07-review-agent-tech · agents/08-review-agent-product · **SOP-REVIEW.md v2.0**（2026-04-24 合并版）· SOP-CARD-REVIEW · SOP-HUMAN-TRIGGER · D-011/013/014/015/016
+- **Review 机制**：agents/07-review-agent-tech · agents/08-review-agent-product · **SOP-REVIEW.md v2.0**（2026-04-24 合并版）· SOP-CARD-REVIEW · SOP-HUMAN-TRIGGER · D-011/013/014/015/016/**017**
 - **Sprint-1 产出**：
-  - 派单：`.team/dispatch/COSTRA-{101,114,115,116,118,102,119}-*.md`
-  - Reviews：`.team/reviews/{COSTRA-101,-115,-116,-118,-102,-119}/*`
-  - **🆕 `.team/dispatch/COSTRA-119-miniapp-fix-appjson-drift.md`**（本轮产出）
-  - **🆕 `.team/reviews/COSTRA-119/round-1-miniapp-response.md`**（本轮产出）
-  - **🆕 `.team/reviews/COSTRA-119/round-1-tech.md`**（本轮产出 · APPROVE 33/35）
-  - **🆕 `scripts/devops/appjson-pages-check.mjs`**（本轮产出 · ~165 行零依赖对账脚本）
-  - **🆕 `miniprogram/pages-stat/overview/`** + **`miniprogram/pages-family/dashboard/`**（本轮产出 · 各 4 件套）
+  - 派单：`.team/dispatch/COSTRA-{101,114,115,116,118,102,119,120}-*.md`
+  - Reviews：`.team/reviews/{COSTRA-101,-115,-116,-118,-102,-119,-120}/*`
+  - **🆕 `.team/dispatch/COSTRA-120-miniapp-fix-tabbar-subpackage-violation.md`**（本轮产出）
+  - **🆕 `.team/reviews/COSTRA-120/round-1-miniapp-response.md`**（本轮产出）
+  - **🆕 `.team/reviews/COSTRA-120/round-1-tech.md`**（本轮产出 · APPROVE 34/35）
+  - **🆕 `.team/decisions/D-017-verification-problem-response-sop.md`**（本轮产出 · 规约 7）
+  - **🆕 `.team/reviews/COSTRA-119/round-1-tech.md §13`**（本轮追写 · v1.0→v1.1 元自省）
+  - **🆕 `miniprogram/pages/family-dashboard/{wxml,wxss,ts,json}`** + **`miniprogram/pages/stat-overview/{wxml,wxss,ts,json}`**（本轮产出 · 占位四件套主包侧 · 原分包目录 8 文件全删）
+  - **🆕 `scripts/devops/appjson-pages-check.mjs` Rule-4 升级**（本轮产出 · +35 行 · tabBar 主包规约校验 + 反向验证）
   - 实体源码：server/src/* · miniprogram/ 全量 · infra/ + scripts/devops/（白名单 + appjson 两脚本）
-- **Follow-ups**：`.team/follow-ups/README.md` · **新 FU-COMMON-APP-JSON-DRIFT（closed 同轮）**
+- **Follow-ups**：`.team/follow-ups/README.md` · **新 FU-COMMON-APP-JSON-DRIFT-TABBAR（closed 同轮）** + FU-COMMON-APP-JSON-DRIFT 状态备注修订
 
 ## Human 下一步建议执行次序（Orchestrator 推荐）
 
 ```
-1) approve:COSTRA-119                                      ← 🟢 最低成本 · 2 点紧急卡 · <1 分钟
-2) 重开微信开发者工具                                      ← 🟢 5 秒验 119 闭环
-3) COSTRA-102 Mock 通路 5 分钟完整验证（今晚即可）          ← 🟢 前置双重解锁 · 原计划 04-30 硬节点可拆一半到今晚
+1) approve:COSTRA-120                                      ← 🔴 最低成本 · 2 点 P0 逃逸修复卡 · <1 分钟
+2) 重开微信开发者工具                                      ← 🟢 5 秒验 tabBar 规约修复（第三次验证 · 前两次都失败）
+3) COSTRA-102 Mock 通路 5 分钟完整验证（今晚即可）          ← 🟢 前置三重解锁 · 原 04-30 硬节点可拆一半到今晚
 4) （2026-04-30）COSTRA-102 本地 server 通路 10 分钟 + approve:COSTRA-102
 5) run miniapp COSTRA-103 / run backend COSTRA-104          ← 🟢 可并行
 6) run devops COSTRA-114                                    ← 🟠 随时
 ```
 
-**当前球权明确**：COSTRA-119 三件套齐全（dispatch + 实装 + Review）· 五闸全绿 · Tech APPROVE · 无阻断项 · 等 Human 终审 + 现场验证即可整卡收官。
+**当前球权明确**：COSTRA-120 五件套齐全（dispatch + 实装 + Review + D-017 规约 + 119 §13 元自省）· 五闸全绿 + Rule-4 反向验证 · Tech APPROVE 34/35 · 无阻断项 · 等 Human 终审 + 现场验证即可整卡收官 · 治理三重收益：D-017 立案 / 119 元自省 / CI 对账族升级到规约级。
