@@ -8,7 +8,7 @@
 > **🆕 卡定义 Review + Review 自动拉起（D-014 · 2026-04-23 22:26 生效）**：(a) 2026-04-23 22:26 后新建的卡**必须**经卡定义 Review（技术向→Review-Tech / 产品向→Review-Product）；(b) 被审 Agent 交付后**产出 Review 首轮自动拉起**（无需 Human 触发）；(c) 历史卡豁免；(d) DevOps/QA/决策类豁免；(e) Human 打断指令（`pause-review` / `skip-card-review` / `force-card-pass` / `stop`）最高优先级。详见 `.team/decisions/D-014-card-review-and-auto-review-kickoff.md` + `.team/SOP-CARD-REVIEW.md`。
 > **🔄 D-011 实战验证三次通过**（2026-04-23）：COSTRA-100（2 轮 · 69 min） + Sprint-0 补审（7 卡 × 2 轮 · 29 min 并行） + **COSTRA-101 Round 1 刚自动拉起（22:49 · D-014-b 首次实战）**
 
-最后更新：`2026-04-27 15:57`（Orchestrator · **COSTRA-116 整卡 Human APPROVED CLOSED** · T2 Tech 30/30 · 0 P0 逃逸 · FU-COMMON-DEV-URL-DRIFT + FU-115-1 双闭环达成 · 新增 FU-116-1 P3 观察 · D-016 第七次实战完整闭环 · 派单→R1→Review→终审 42 分钟 · commit bddbd4a 14 files +805/-51 · final 报告归档 · 🟢 COSTRA-115+116 Sprint-1 Backend/DevOps 串联第 2~3 卡收官 · 🟡 COSTRA-102 等 04-30 本地验证（前置已解锁）· R-013 保持 Mitigated）
+最后更新：`2026-04-28 13:48`（Orchestrator · **COSTRA-119 整卡 Human APPROVED CLOSED** · T2 Tech 33/35 · 0 P0 逃逸 · FU-COMMON-APP-JSON-DRIFT 同轮闭环 · 顺手清 FU-118-4 同族幻觉 1 例 · D-016 第八次实战完整闭环 · AI 流水 9 分钟 + Human 过夜 17h14min + 终审秒回 · commit `8bcc5d0` 18 files +982/-148 · 🟢 COSTRA-115+116+119 Sprint-1 Backend/DevOps/MiniApp 串联第 2~4 卡全部收官 · 🟡 COSTRA-102 前置已三重解锁等 04-30 或即时验证 · 两处工具噪声 `project.config.json` 暂留工作区待后续决策）
 
 ---
 
@@ -43,7 +43,7 @@
 | COSTRA-115 | `costra.cloud` DNS 子记录 + 白名单一致性 CI 校验 | DevOps-Agent | D-009 | 1 |
 | COSTRA-117 | husky v10 兼容：清理 `.husky/{pre-commit,commit-msg}` DEPRECATED header（删 shebang + `_/husky.sh` 引用两行） | DevOps-Agent | - | 1 |
 | 🆕 COSTRA-118 | miniprogram 技术债专项普查（审计类 · 单轮即报即结 · Owner=Review-Tech） | Review-Agent-Tech | COSTRA-030/100/101 | **0**（不计估点） |
-| 🆕 COSTRA-119 | app.json 分包声明↔文件系统一致性修复 + CI 对账（FU-COMMON-APP-JSON-DRIFT 专项） | MiniApp-Agent | COSTRA-115/116 | 2 |
+| ~~COSTRA-119~~ | ~~app.json 分包声明↔文件系统一致性修复 + CI 对账（FU-COMMON-APP-JSON-DRIFT 专项）~~ | ~~MiniApp-Agent~~ | ~~COSTRA-115/116~~ | ~~2~~ **（2026-04-28 13:48 · 整卡 CLOSED · 移至 Done）** |
 
 > 📌 COSTRA-106（Sprint-0 Retro）延至 Sprint-2 头部；COSTRA-116（ICP 进度追踪）并入 PM 常规不计点（D-009 §3）。
 > 📌 COSTRA-117 新增自 2026-04-23 20:52（commit 29d1849 时观测到 husky v10 DEPRECATED 警告；v10 升级后会 FAIL，现在清理属低成本预防）。**号段说明**：跳过 116（已占用 ICP 追踪），续号 117 属 11x 扩展与基建域 ✅。
@@ -144,6 +144,15 @@ _（无强阻塞。COSTRA-040 "真实上传链路激活" 仍依赖外部资源�
   - **D-016 第七次实战合规**：Human 15:15 `run backend fix-dev-url-drift` → 同 tool call 循环内完成派单 + 7 文件实装 + 四闸 + Tech Review（派单→R1→Review 10 分钟 · Human 终审排队 32 分钟 · **全程 42 分钟**）· 连续七次零跨轮异步反模式
   - **FU 变更**：FU-COMMON-DEV-URL-DRIFT `open`→🟢`closed` · FU-115-1 `open`→🟢`closed` · 新增 FU-116-1 P3 观察（根目录 `.env.example APP_PORT/APP_BASE_URL` 边界外漂移 · Sprint-1 末 DevOps 0.5 点小卡认领）
   - **commit**：`bddbd4a` · 14 files · +805/-51
+- [D] **COSTRA-119** app.json 分包声明↔文件系统一致性修复 + CI 对账（FU-COMMON-APP-JSON-DRIFT 专项 · 2 点卡 · Backend/DevOps/MiniApp 串联第 4 卡）    @MiniApp-Agent  · 2026-04-28 13:48 **Human T2 approve** · 整卡收官 · 单轮 R1 Tech APPROVE 33/35（P0=0 P1=0 P2=0 INFO=2）· `.team/reviews/COSTRA-119/round-1-tech.md`
+  - **交付**：`miniprogram/pages-stat/overview/` 四件套 + `miniprogram/pages-family/dashboard/` 四件套（文案统一"功能建设中 · Sprint-3 落地"）· 新增 `scripts/devops/appjson-pages-check.mjs` 零依赖 CI 脚本 · `package.json` 挂 `check:appjson` · `pr-check.yml` 新 step 带 `if: success() || failure()` · `miniprogram/README.md §4.1` 顺手清 FU-118-4 同族幻觉卡号（COSTRA-501→COSTRA-401）
+  - **五闸全绿**：node --check / **`check:appjson` 首跑 exit 0 · 10 pages matched**（核心闸价值验证）/ `check:whitelist` 回归 exit 0 / typecheck exit 0 / vitest 13/13 pass
+  - **价值兑现** 🏆：① **CI 对账族从 1 扩到 2**（whitelist + appjson）永久闸死 L4 盲区 ② 修复 Human 本地验证首步即撞坑的 app.json↔FS 漂移 ③ 吸取 FU-115-WHITELIST-STEP-ALWAYS 教训 CI step `if: success() || failure()` 直接到位 ④ **FU-COMMON-APP-JSON-DRIFT 同轮登记 + 同轮 closed** ⑤ 顺手清 FU-118-4 同族幻觉卡号 1 例（为 Sprint-2 COSTRA-106 Retro 减工作量）
+  - **跨区授权范式第二次兑现**：MiniApp 主驾跨区写 `scripts/devops/` + `.github/workflows/` · 参照 COSTRA-116 Backend 跨区先例 · 主产出属性归 MiniApp · 跨区授权 + 回归兜底范式稳固
+  - **D-016 第八次实战合规**：Human 20:24 打开微信开发者工具撞坑 → 20:27 选定方案 B → Orchestrator 20:28 派单 → R1 20:31（3 分钟完工）→ Tech Review 20:33 APPROVE（端到端 AI 流水 9 分钟）→ Human 04-28 13:47 过夜终审 `approve:COSTRA-119`（Human 侧 17h14min 属正常节奏）· 连续八次零跨轮异步反模式 · **建议 Sprint-1 末 Retro 将 D-016 从"观察期"升级为"定稿规约"**
+  - **FU 变更**：FU-COMMON-APP-JSON-DRIFT `open`→🟢`closed`（同轮）· FU-118-4 同族清 1 例
+  - **commit**：`8bcc5d0` · 18 files · +982/-148 · pre-commit+commit-msg hooks pass
+  - **未纳入 commit 的工作区噪声**：`project.config.json`（工具自动格式化 + 追加 swc/disableSWC 等无实质字段）· `miniprogram/project.config.json`（工具打开 miniprogram/ 作为项目根时自建的第二份配置）· 均非本卡 Scope · 按 D-012 单卡即提交铁律剥离 · 留待后续独立 chore 卡或 .gitignore 决策
 
 ---
 
@@ -205,9 +214,9 @@ _（无强阻塞。COSTRA-040 "真实上传链路激活" 仍依赖外部资源�
 
 ## 💤 Orchestrator 状态
 
-- **MODE**：`awaiting-human`（**COSTRA-116 整卡 Human APPROVED CLOSED** @ 2026-04-27 15:57 · T2 Tech 30/30 · 0 P0 逃逸 · FU-COMMON-DEV-URL-DRIFT + FU-115-1 双闭环 · 新增 FU-116-1 P3 观察 · D-016 第七次实战完整闭环 · Sprint-1 Backend/DevOps 串联第 3 卡收官 · 🟡 COSTRA-102 并行等 04-30 本地验证（前置已解锁））
-- **下一动作**：Human 选择（推荐顺序）：① **2026-04-30 本地验证 COSTRA-102 → `approve:COSTRA-102`**（硬节点 · 前置条件已达成 · dev URL 已对齐真实 server `localhost:8080`）· ② `run miniapp COSTRA-103`（本地持久化 · 可并行）· ③ `run devops COSTRA-114`（开发手册 · 随时）· ④ Sprint-1 末：DevOps 0.5 点小卡认领 FU-116-1 P3 观察
-- **保存点**：COSTRA-116 FINAL 报告（`.team/reviews/COSTRA-116/final.md` 9 节完整归档）+ commit `bddbd4a`（14 files · +805/-51）+ metrics.json 第 7 条 human_final_decision=approve @ 15:57 + FU 表 FU-COMMON-DEV-URL-DRIFT/FU-115-1 closed · FU-116-1 新建 + STATE/board/messages 全部同步 @ 2026-04-27 15:57
-- **D-016 第七次实战结果**：✅ 合规 · 从 Human 触发 `run backend fix-dev-url-drift` 到 AI Review APPROVE 同一 tool call 循环内连贯兑现（派单→R1 7 分钟 · R1→Review 3 分钟 · Review→终审 32 分钟 · 全程 42 分钟）· 连续七次零跨轮异步反模式 · **建议 Sprint-1 末 Retro 将 D-016 从"观察期"升级为"定稿规约"**
-- **Sprint-1 串联态**：🟢 COSTRA-115 CLOSED @ 14:10 · 🟢 COSTRA-116 CLOSED @ 15:57（本轮）· 🟡 COSTRA-102 Human-Review 等 04-30 · ⏳ COSTRA-114 Todo · Backend/DevOps 基建线连续 2 张 1 点卡单日交付 · **本次核心价值**：主干 CI 闸门从"豁免 warning"恢复到"零 warning 全量强度" + 解锁 COSTRA-102 本地验证前置
-- **范式沉淀议题**（议 Sprint-1 末 Retro）：① FU 专项卡是否纳入正式卡类别 ② T2 档位描述补"FU 专项 / SSOT 对齐"典型触发场景 ③ D-016 升定稿规约 ④ Orchestrator dispatch 推导需加事实源对账（FU-102-SYNC-PULL-DRIFT 议题） ⑤ R-013 保持 Mitigated 等 ICP 下证日 Human 按 `infra/wechat/domains.md §4` 关闭（FU-115-2 跟踪）
+- **MODE**：`idle-awaiting-next-card`（**COSTRA-119 整卡 Human APPROVED CLOSED** @ 2026-04-28 13:48 · T2 Tech 33/35 · 0 P0 逃逸 · FU-COMMON-APP-JSON-DRIFT 同轮闭环 · 顺手清 FU-118-4 同族幻觉 1 例 · D-016 第八次实战完整闭环 · Sprint-1 Backend/DevOps/MiniApp 串联第 4 卡收官 · 🟡 COSTRA-102 前置三重解锁等 04-30 或即时验证）
+- **下一动作**：Human 选择（推荐顺序）：① **重开微信开发者工具 5 秒验模拟器启动**（直接验 COSTRA-119 FU-COMMON-APP-JSON-DRIFT 闭环） ② **立即跑 COSTRA-102 Mock 通路 5 步**（5 分钟 · 前置已三重解锁：100+116+119 · 可提前完成 04-30 验证一半） ③ `run miniapp COSTRA-103`（本地持久化 · 可并行） ④ `run devops COSTRA-114`（开发手册 · 随时） ⑤ Sprint-1 末：DevOps 0.5 点小卡认领 FU-116-1 P3 观察
+- **保存点**：COSTRA-119 Tech Review 报告（`.team/reviews/COSTRA-119/round-1-tech.md` · APPROVE 33/35 · 7 维打分 · 分文件精审）+ commit `8bcc5d0`（18 files · +982/-148）+ FU 表 FU-COMMON-APP-JSON-DRIFT closed + STATE/board 全部同步 @ 2026-04-28 13:48
+- **D-016 第八次实战结果**：✅ 合规 · dispatch→R1→Review 同一 tool call 循环内连贯兑现（派单→R1 3 分钟 · R1→Review 2 分钟 · **AI 流水端到端 9 分钟**）· Human 过夜终审 17h14min 属正常节奏（非 Agent 跨轮）· 连续八次零跨轮异步反模式 · **Sprint-1 末 Retro 建议 D-016 升"定稿规约"（实战证据累积到 8 次）**
+- **Sprint-1 串联态**：🟢 COSTRA-115 CLOSED @ 04-27 14:10 · 🟢 COSTRA-116 CLOSED @ 04-27 15:57 · 🟢 **COSTRA-119 CLOSED @ 04-28 13:48（本轮）** · 🟡 COSTRA-102 Human-Review 等 04-30 或即时 · ⏳ COSTRA-114 Todo · **Backend/DevOps/MiniApp 基建线连续 4 张小卡全数收官** · **本次核心价值**：CI 对账族从 1 扩到 2（whitelist + appjson）· L4 盲区永久机制化兜死
+- **范式沉淀议题**（议 Sprint-1 末 Retro）：① FU 专项卡纳入正式卡类别 ② T2 档位补"FU 专项 / SSOT 对齐 / 能力边界兜底"典型触发场景（115/116/119 三次实战证据） ③ **D-016 升定稿规约（8 次实战证据充足）** ④ Orchestrator dispatch 推导需加事实源对账（FU-102-SYNC-PULL-DRIFT 议题） ⑤ R-013 保持 Mitigated 等 ICP 下证日 Human 按 `infra/wechat/domains.md §4` 关闭（FU-115-2 跟踪） ⑥ **跨区授权范式定型**（COSTRA-116 Backend → COSTRA-119 MiniApp 两次跨区实战 · 主产出归属 + 显式授权 + 回归兜底三位一体）

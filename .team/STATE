@@ -1,9 +1,9 @@
 # Costra · 全局状态快照
 
-- **更新时间**：2026-04-27 20:33
-- **Orchestrator 模式**：`awaiting-human`（**COSTRA-119 R1 Tech APPROVE 33/35** @ 20:33 · Human 20:24 打开微信开发者工具撞坑 → 20:27 选定方案 B → 20:28 派单 → 20:31 R1 完工（3 分钟）→ 20:33 Review APPROVE · **D-016 第八次实战完整闭环 · 端到端 9 分钟**· FU-COMMON-APP-JSON-DRIFT 同轮登记 + 关闭 · 顺手清 FU-118-4 同族幻觉卡号 1 例）
-- **球在谁手上**：**Human**（下一步建议顺序：① 重开微信开发者工具 5 秒验模拟器启动成功 → `approve:COSTRA-119`（<1 分钟）② 可立即回到 COSTRA-102 验证链路（前置已双重解锁：116 URL 对齐 + 119 app.json 对齐）③ 或改日 04-30 硬节点按原计划）
-- **Human 是否需介入**：**🟢 是**（T2 终审 `approve:COSTRA-119` 建议立即做 · 1 分钟搞定 · 同步解锁 102 现场验证）
+- **更新时间**：2026-04-28 13:48
+- **Orchestrator 模式**：`idle-awaiting-next-card`（**COSTRA-119 整卡 Human APPROVED CLOSED** @ 2026-04-28 13:48 · Tech 33/35 · 0 P0 逃逸 · commit **8bcc5d0** 18 files +982/-148 · FU-COMMON-APP-JSON-DRIFT 闭环 · D-016 第八次实战完整闭环 · 派单→R1→Review→终审 端到端约 17 小时 23 分钟 · 其中 AI 流水 9 分钟 + Human 过夜 + 终审 1 秒）
+- **球在谁手上**：**Human**（下一步建议顺序：① 重开微信开发者工具 5 秒验模拟器启动成功 ② 立即跑 COSTRA-102 Mock 通路 5 步 / 或等 04-30 硬节点 ③ 可并行 `run miniapp COSTRA-103` / `run backend COSTRA-104` · 依赖已满足）
+- **Human 是否需介入**：**🟡 可选**（COSTRA-119 已整卡收官 · 无阻塞 · Human 可按节奏推进 102 验证 or 开 103/104）
 - **铁律 1**：每次进度汇报必须列"待触发清单"（`.team/SOP-HUMAN-TRIGGER.md` P0 · **三条例外**：D-011 环内 / D-014-a 卡定义首轮 / D-014-b 产出首轮 · **D-016 执行层约束**：所有自动拉起必须同轮兑现）
 - **铁律 2**：**单卡交付即提交**（D-012 · 2026-04-23）· 每完成一张卡立即 `git commit`，禁止攒批；例外仅 Sprint/Gate 聚合收口 · 详见 `.team/decisions/D-012-per-card-commit-discipline.md`
 - **规约 3**：**Review 场景分级**（D-013 · 2026-04-23 21:15）· Review 分 T1/T2/T3/T4 四档；T1 准入 + T2 Gate 前仍需 Human 终审
@@ -11,13 +11,26 @@
 - **规约 5**：**respond/revise 合并**（D-015 · 2026-04-24 09:24）· **最终以 Review-Agent 意见为主**（Human 铁律）
 - **规约 6**：**Orchestrator 自动拉起 Review 同轮兑现铁律**（D-016 · 2026-04-24 19:10 Human 批准 · **八次实战全部合规**：R4 19:10 / 118-R1 19:35 / 118-FINAL 2026-04-27 09:39 / 102-CardDef 2026-04-27 09:47 / 102-R1 2026-04-27 10:14 / 115-R1 2026-04-27 10:51 / 116-R1 2026-04-27 15:25 / **119-R1 2026-04-27 20:33**）· 建议 Sprint-1 末 Retro 升"定稿规约"
 - **能力边界铁律**（COSTRA-114 v2 · 2026-04-24 13:14）：**Agent 无真机 / 真服务访问权**· 手册交付 + Human 本地验证即完工范式（COSTRA-119 即"Agent 无真微信开发者工具 · 靠 Human 第一次真跑兜底"能力边界场景的第一次正面兑现 · 本卡已在代码机制层面补上 CI 对账防再演）
-- **Review 闭环**：八次主 Review 实战 PASS + COSTRA-101 四轮收口 + COSTRA-118 两段完结 + COSTRA-102 双双双签通过 + COSTRA-115 T2 APPROVE + COSTRA-116 T2 APPROVE 30/30 整卡 CLOSED + **COSTRA-119 T2 Tech APPROVE 33/35 等 Human 终审**
+- **Review 闭环**：八次主 Review 实战 PASS + COSTRA-101 四轮收口 + COSTRA-118 两段完结 + COSTRA-102 双双双签通过 + COSTRA-115 T2 APPROVE + COSTRA-116 T2 APPROVE 30/30 整卡 CLOSED + **COSTRA-119 T2 Tech APPROVE 33/35 整卡 CLOSED（2026-04-28 13:48 · commit 8bcc5d0）**
 
 ---
 
-## 🟢 COSTRA-119 · app.json 分包声明↔文件系统一致性修复 + CI 对账 · R1 Tech APPROVE · 等 Human 终审（2026-04-27 20:33）
+## 🟢 COSTRA-119 · app.json 分包声明↔文件系统一致性修复 + CI 对账 · 整卡 CLOSED（2026-04-28 13:48）
 
-> **全流程**：Human 04-27 20:24 打开微信开发者工具撞坑（模拟器启动失败 · overview/index.wxml 未找到）→ 20:27 Human 选定方案 B → Orchestrator 20:28 派单 COSTRA-119 → MiniApp-Agent R1 20:31（3 分钟完工）→ AI Review Tech 20:33 APPROVE 33/35 · **D-016 第八次实战完整闭环** · 派单→R1→Review 端到端 5 分钟 · FU-COMMON-APP-JSON-DRIFT 同轮登记 + 关闭
+> **全流程**：Human 04-27 20:24 打开微信开发者工具撞坑 → 20:27 Human 选定方案 B → Orchestrator 20:28 派单 → MiniApp-Agent R1 20:31 完工 → AI Review Tech 20:33 APPROVE 33/35（D-016 第 8 次实战 · 派单→R1→Review 端到端 5 分钟）→ Human 04-28 13:47 发 `approve:COSTRA-119` → Orchestrator 13:48 commit `8bcc5d0` 整卡收官
+
+### 收官快照（2026-04-28 13:48）
+- **Human 终审**：`approve:COSTRA-119` @ 2026-04-28 13:47（T2 Tech 单轨 · 无 R2）
+- **Commit**：`8bcc5d0` · 18 files · +982 / −148 · pre-commit（lint + typecheck）pass · commit-msg pass
+- **P0 逃逸**：0 · **P1 逃逸**：0 · **P2 逃逸**：0
+- **五闸全绿**：node --check / check:appjson（10 pages matched · 首跑 exit 0）/ check:whitelist（回归）/ typecheck / vitest 13/13
+- **FU-COMMON-APP-JSON-DRIFT**：同轮登记 + 同轮 closed · resolved_by COSTRA-119
+- **顺手清**：FU-118-4 同族幻觉卡号 1 例（`miniprogram/README.md §4.1` COSTRA-501 → COSTRA-401）
+- **未纳入 commit 的工作区噪声**（留待后续决策）：`project.config.json`（工具自动格式化 + 追加 swc/disableSWC/simulatorPluginLibVersion 等 · 无实质配置变更）· `miniprogram/project.config.json`（工具打开 miniprogram/ 作为项目根时自动创建的第二份配置 · 非本卡 Scope）
+
+### D-016 第八次实战合规
+- dispatch → R1 → Review 三段同轮兑现 · 端到端 AI 流水 9 分钟（20:24 → 20:33）
+- Human 过夜 17h14min（20:33 → 次日 13:47）属 Human 侧延迟 · 不计入 Agent 执行时长
 
 ### Sprint-1 第 5 张紧急修复卡 · R1 段位
 - **Owner**：MiniApp-Agent（主驾 · 显式授权跨区 `scripts/devops/` + `.github/workflows/` + `miniprogram/README.md` + `.team/follow-ups/` · 参照 COSTRA-116 Backend 跨区先例）
@@ -59,10 +72,10 @@
 - **FU-COMMON-APP-JSON-DRIFT** · 新建 + **`closed`** 同轮 @ 2026-04-27 · resolved_by COSTRA-119
 - **FU-118-4 同族幻觉 1 例清除**：`miniprogram/README.md §4.1` 中 `COSTRA-501` 改为真实 `COSTRA-401`（Epic-F）
 
-### Human 终审待做（2026-04-27 20:34~）
-- 🟢 `approve:COSTRA-119` · 1 分钟 · T2 Tech APPROVE 无 P0/P1/P2
-- 🟢 重开微信开发者工具验模拟器能启动（5 秒 · 直接证明 FU-COMMON-APP-JSON-DRIFT 已闭环）
-- （可选）立即跑一轮 COSTRA-102 Mock 模式 5 步完整验证（此前 20:24 被第 1 步拦下 · 现可继续）
+### Human 终审已完成（2026-04-28 13:47~13:48）
+- ✅ `approve:COSTRA-119` @ 2026-04-28 13:47（端到端 Human 侧 17h14min · 过夜属正常节奏）
+- 🟡 重开微信开发者工具验模拟器能启动（推荐 5 秒内完成 · 直接证明 FU-COMMON-APP-JSON-DRIFT 已闭环）
+- 🟡 （可选）立即跑一轮 COSTRA-102 Mock 模式 5 步完整验证（前置 116+119 已双重解锁）
 
 ---
 
@@ -97,26 +110,23 @@
 
 ## ⚠️ 需要 Human 触发的 Agent 任务清单（按优先级）
 
-### 🟢 低成本终审（可立即做 · 推荐最高优先）
-1. **`approve:COSTRA-119`** — 2 点小卡 · Tech APPROVE 33/35 · 0 P0 · 0 P1 · 0 P2 · 2 INFO（不登记 FU）· 审批成本 <1 分钟 · 同步解锁 COSTRA-102 现场验证
-
 ### 🟡 中优先级（解锁链路 · 建议今晚趁热打铁）
-2. **重开微信开发者工具 → 验证模拟器启动成功** · 5 秒 · 直接验 COSTRA-119 的 FU-COMMON-APP-JSON-DRIFT 是否闭环
-3. **立即跑 COSTRA-102 Human 本地验证 Mock 通路 5 步** · 5 分钟 · 原计划 04-30 · 但前置已双重解锁 · 今晚即可跑完一半
+1. **重开微信开发者工具 → 验证模拟器启动成功** · 5 秒 · 直接验 COSTRA-119 的 FU-COMMON-APP-JSON-DRIFT 是否闭环
+2. **立即跑 COSTRA-102 Human 本地验证 Mock 通路 5 步** · 5 分钟 · 原计划 04-30 · 但前置已双重解锁（116+119）· 可提前做完一半
 
 ### 🟡 中优先级（2026-04-30 硬性节点 · 未必今晚做完）
-4. **2026-04-30 Sprint 中点 Human 本地验证 COSTRA-102**（若今晚已完成 Mock 通路 · 则 04-30 只需补跑本地 server 通路 10 分钟）· 完成后发 `approve:COSTRA-102`
+3. **2026-04-30 Sprint 中点 Human 本地验证 COSTRA-102**（若今晚已完成 Mock 通路 · 则 04-30 只需补跑本地 server 通路 10 分钟）· 完成后发 `approve:COSTRA-102`
 
 ### 🟠 中优先级（随时可启动）
-5. **`run devops COSTRA-114`** — DevOps 真正开写开发服务器 bootstrap 手册（I-003 澄清后待真触发）
+4. **`run devops COSTRA-114`** — DevOps 真正开写开发服务器 bootstrap 手册（I-003 澄清后待真触发）
 
 ### 🟢 可并行（依赖已满足）
-6. **`run miniapp COSTRA-103`** — 本地 SQLite/IndexedDB 持久化 + outbox_queue（依赖 100 已满足 · 承接 COSTRA-118 P1-3）
-7. **`run backend COSTRA-104`** — `/entries` CRUD + `/sync/push` 批量通道（依赖 100/103）
+5. **`run miniapp COSTRA-103`** — 本地 SQLite/IndexedDB 持久化 + outbox_queue（依赖 100 已满足 · 承接 COSTRA-118 P1-3）
+6. **`run backend COSTRA-104`** — `/entries` CRUD + `/sync/push` 批量通道（依赖 100/103）
 
 ### 🟡 低优先级（依赖上游 / 可后排）
-8. `run miniapp COSTRA-112` — 小程序主体字样清扫（D-008 · MiniApp 兜底）
-9. `run devops COSTRA-108` — miniprogram-ci 演练（承接 COSTRA-118 P1-5）
+7. `run miniapp COSTRA-112` — 小程序主体字样清扫（D-008 · MiniApp 兜底）
+8. `run devops COSTRA-108` — miniprogram-ci 演练（承接 COSTRA-118 P1-5）
 10. `run pm COSTRA-109/110/111` — 文档三卡并行（COSTRA-109 产出后 COSTRA-118 P0-10 part B 解锁）
 11. `run devops COSTRA-117` — husky v10 兼容清理（1 点）
 
@@ -153,6 +163,7 @@
 - 🔧 **COSTRA-116 R1 Tech APPROVE 30/30**（2026-04-27 15:25）· D-016 第七次实战合规 · FU-COMMON-DEV-URL-DRIFT 闭环
 - 🏁 **COSTRA-116 Human T2 终审收官**（2026-04-27 15:57）
 - 🆕 **COSTRA-119 R1 Tech APPROVE 33/35**（**2026-04-27 20:33**）· **D-016 第八次实战合规 · 端到端 9 分钟 · FU-COMMON-APP-JSON-DRIFT 同轮闭环 · CI 对账族从 1 扩到 2**
+- 🏁 **COSTRA-119 Human T2 终审整卡收官**（**2026-04-28 13:48** · commit `8bcc5d0` · 18 files +982/-148）
 
 ## 进行中（共 2 卡）
 - **COSTRA-114** @DevOps-Agent · 卡定义已放行但实际未开工（I-003）· 等 Human 真触发
