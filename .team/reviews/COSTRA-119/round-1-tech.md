@@ -235,3 +235,55 @@ dispatch §2 ❌ 清单 8 项逐条核对：
 ---
 
 **Review-Agent-Tech · R1 审核完毕 · Verdict APPROVE 33/35 · 转 Human T2 终审。**
+
+---
+
+## 13. 逃逸修正说明（2026-04-28 14:xx 追写 · Human Q5 裁决）
+
+> **触发事件**：2026-04-28 13:53 · Human 按 COSTRA-119 收官汇报重开微信开发者工具 · 模拟器**二次启动失败** · 错误文本升级为：
+> ```
+> miniprogram/app.json: ["tabBar"][1]["pagePath"]: "pages-family/dashboard/index" need in ["pages"]
+>                       ["tabBar"][2]["pagePath"]: "pages-stat/overview/index" need in ["pages"]
+> ```
+
+### 13.1 本次 Review 漏判事实
+
+本 Review（2026-04-27 20:33 · APPROVE 33/35）**未能识别出 COSTRA-119 的根因识别偏差**：
+
+| 维度 | 本 Review 判定 | 实际真相（2026-04-28 暴露） |
+|---|---|---|
+| 根因层 | L1 表面（文件不存在）+ L4 CI 盲区 | 还有 L3 规约层 —— tabBar.list[].pagePath 指向分包违反微信规约 |
+| 方案正确性 | "补文件 + 建 CI" 是对的 | **方向偏差** —— 补文件只解决了错误消息的字面症状 · 未解决规约违反本身 · 文件补齐后微信 builder 仍会因规约校验抛出 `need in ['pages']` |
+| CI 脚本覆盖面 | "app.json ↔ 文件系统" 对账足够 | 缺"tabBar ↔ 主包 pages"的规约级对账 · 漏第 Rule-4 |
+
+### 13.2 为什么 T2 Review 没抓到
+
+1. **T2 档位结构性局限**：Tech Review 走纸面审 + 命令行五闸 · **不启动微信开发者工具** · 所以"微信 runtime 才爆的规约违反"这类问题在 T2 档位结构性漏检
+2. **CI 脚本单向性陷阱**：`appjson-pages-check.mjs` 以 Human 当下症状"missing file"为蓝本**正向补** · 而不是以**微信 builder 错误字典**（包含 `need in pages` / 其他规约错误）**反向设计** · 单向性陷阱
+3. **Review-Tech 未做微信官方规约查证**：面对 `app.json subpackages` 结构 · 未主动查证微信官方"tabBar 页能否在分包"这一规约 · 审查广度不足
+
+### 13.3 后续改进动作
+
+- **代码修复**：COSTRA-120（2026-04-28）· MiniApp-Agent 方案 A 上提主包 + CI Rule-4 规约校验（同 tool call 循环 R1 完成 · 首跑 `tabBar main-package rule: 4/4 pass` · 反向验证 `exit 1` 带规约文案 · 双向证据闭环）
+- **规约沉淀**：D-017 · 验证问题响应 SOP（Human 立案 · 拉责任 Agent 根因分析 + 多方案 + Human 裁决 + 派单 5 步 · 本次 COSTRA-120 即 D-017 首次实战）
+- **Sprint-1 末 Retro 议题**：
+  - 议题 A · T2 档位是否应增加"模拟器冒烟步"能力（或该类规约违反类问题升 T3）
+  - 议题 B · CI 脚本覆盖面应以"微信 builder 错误字典"为蓝本反向设计（如 entryPagePath 必须主包 / preloadRule 必须分包 / fallbackRule 合法等规约）
+  - 议题 C · Review-Tech 审查清单是否应加入"微信官方规约查证"强制项
+
+### 13.4 对未来 Review 的直接输入
+
+任何涉及 `app.json` 结构的 Review 必须：
+1. 打开 `scripts/devops/appjson-pages-check.mjs` 查是否覆盖所有相关规约（当前覆盖 4 条 · 缺口预留给未来扩展）
+2. 主动查证微信官方文档对当前改动是否有规约约束（如分包约束 / tabBar 约束 / preloadRule 约束）
+3. 不得只因命令行五闸全绿就 APPROVE · 必须问"微信运行时是否会报错"
+
+### 13.5 自我评价
+
+- **本 Review 质量**：仍为 APPROVE 33/35（dispatch §2 Scope 内的产出正确 · 五闸全绿 · 代码质量高）
+- **本 Review 缺陷**：**审查广度盲区** —— 停留在 dispatch §2 Scope 内审 · 未对 dispatch §0 根因识别本身做独立质疑 · 这是 T2 档位 Review 对 dispatch 准确性的隐性依赖
+- **改进承诺**：未来 Review 涉及 app.json / wxml / tabBar / 微信规约类内容时 · 强制增一步"跳出 dispatch · 独立做微信规约核对"
+
+**追写人**：Review-Agent-Tech · 2026-04-28 14:xx · 随 COSTRA-120 同 tool call 循环完成
+**授权**：Human 2026-04-28 13:59 Q5 裁决"追加 119 Review 逃逸说明"
+**版本**：v1.1（v1.0 为 2026-04-27 20:33 原版 · v1.1 追加 §13 逃逸修正说明 · 原 §1~12 内容不动）

@@ -2,6 +2,8 @@
   "pages": [
     "pages/login/index",
     "pages/home/index",
+    "pages/family-dashboard/index",
+    "pages/stat-overview/index",
     "pages/entry/index",
     "pages/mine/index"
   ],
@@ -10,8 +12,7 @@
       "root": "pages-stat/",
       "name": "stat",
       "pages": [
-        "month/index",
-        "overview/index"
+        "month/index"
       ]
     },
     {
@@ -19,7 +20,6 @@
       "name": "family",
       "pages": [
         "home/index",
-        "dashboard/index",
         "settings/index",
         "privacy/index"
       ]
@@ -44,10 +44,10 @@
     "backgroundColor": "#FFFFFF",
     "borderStyle": "black",
     "list": [
-      { "pagePath": "pages/home/index",            "text": "记账" },
-      { "pagePath": "pages-family/dashboard/index", "text": "家庭" },
-      { "pagePath": "pages-stat/overview/index",    "text": "统计" },
-      { "pagePath": "pages/mine/index",            "text": "我的" }
+      { "pagePath": "pages/home/index",             "text": "记账" },
+      { "pagePath": "pages/family-dashboard/index", "text": "家庭" },
+      { "pagePath": "pages/stat-overview/index",    "text": "统计" },
+      { "pagePath": "pages/mine/index",             "text": "我的" }
     ]
   },
   "style": "v2",

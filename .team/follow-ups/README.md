@@ -358,10 +358,53 @@ R1 MiniApp 交付 · T2 Tech 单轨 APPROVE · 新增 1 条 FU 并同轮关闭�
   5. ✅ `.github/workflows/pr-check.yml` 新增 `AppJson Pages Consistency Check` step · 带 `if: success() || failure()`（吸取 FU-115-WHITELIST-STEP-ALWAYS 教训直接到位）
   6. ✅ `miniprogram/README.md §4.1` 两行表格文案从"✅ 占位（tabBar 入口）"改为"✅ 占位四件套已补齐（COSTRA-119）· 业务逻辑 Sprint-3 落地" · 同轮顺手把两行的"关联卡"从幻觉 `COSTRA-501` 修正为 backlog.json 真实存在的 `COSTRA-401`（Epic-F 月度饼图/趋势折线）
 - **阻断级别**：P0（阻 Human 当场打开项目 · 比 FU-COMMON-DEV-URL-DRIFT 更硬 · 零秒撞坑）
-- **状态**：`closed` @ 2026-04-27
+- **状态**：`closed` @ 2026-04-27（**L1 文件侧** · L3 tabBar 规约侧由 COSTRA-120 补完 · 见本文件下方 FU-COMMON-APP-JSON-DRIFT-TABBAR）
 - **owner_card**：**COSTRA-119**
-- **resolved_by**：COSTRA-119 R1 实装 · 11 新文件 + 4 改 · `npm run check:appjson` exit 0 首跑零告警 · Human 20:xx 重开微信开发者工具可立即启动模拟器
+- **resolved_by**：COSTRA-119 R1 实装 · 11 新文件 + 4 改 · `npm run check:appjson` exit 0 首跑零告警 · **注**：119 只解决了文件存在性问题 · 但未识别到 tabBar 指向分包违反微信规约 · 2026-04-28 13:53 Human 重开微信开发者工具再次启动失败 · 由 **COSTRA-120 衍生 FU-COMMON-APP-JSON-DRIFT-TABBAR 专项** 补完完整闭环（tabBar 入口上提主包 + CI Rule-4 规约级校验）
 - **与白名单对账脚本族的同构价值**：CI 对账范式本卡第二个实例（第一例 COSTRA-115 whitelist-check） · 双脚本共担"Agent 无真环境访问权的能力边界盲区" · 未来再有类似单源真相被误用场景 · 复用同模板
+
+---
+
+## 📌 COSTRA-120 R1 T2 Tech APPROVE 后状态流转（2026-04-28 14:xx）
+
+R1 MiniApp 交付 · T2 Tech 单轨 APPROVE · 新增 1 条 FU 并同轮关闭 · 修订 1 条既有 FU：
+
+| FU-ID | 状态 | owner_card |
+|---|---|---|
+| FU-COMMON-APP-JSON-DRIFT | `closed`（修订备注） | COSTRA-119 + COSTRA-120 协同闭环 |
+| FU-COMMON-APP-JSON-DRIFT-TABBAR | **`closed`** @ 2026-04-28 | COSTRA-120（同轮登记 + 同轮关闭） |
+
+---
+
+### FU-COMMON-APP-JSON-DRIFT-TABBAR · tabBar.list 指向分包违反微信规约（COSTRA-119 P0 逃逸）
+
+- **来源**：Human 2026-04-28 13:53 按 COSTRA-119 收官汇报重开微信开发者工具 · 模拟器二次启动失败 · 错误文本 `["tabBar"][N]["pagePath"]: "xxx" need in ["pages"]`
+- **登记时间**：2026-04-28 14:00（COSTRA-120 dispatch 派单）
+- **范围（COSTRA-119 未识别的第 L3 根因层）**：
+  - `miniprogram/app.json tabBar.list[1].pagePath = "pages-family/dashboard/index"` 指向分包（违反微信规约）
+  - `miniprogram/app.json tabBar.list[2].pagePath = "pages-stat/overview/index"` 指向分包（违反微信规约）
+  - 微信规约：tabBar 页属"启动首帧必加载" · 必须在主包 `pages[]` · 禁止在 `subpackages[].pages[]`（分包是"按需延迟下载" · 两者语义冲突）
+- **问题（COSTRA-119 逃逸根因 · 治理反思）**：
+  - **根因识别偏差**：119 时 Orchestrator 直接把错误"未找到 overview/index.wxml"解读为"文件不存在 → 补文件" · 未做专业的文本精读 + 微信规约查证 · 派单方向偏差（方案 B 只解表面症状）
+  - **T2 档位结构性局限**：Review-Agent-Tech 纸面审 + 命令行五闸 · 不跑微信开发者工具 · 所以"runtime 才爆"的规约违反类问题结构性漏检 · 119 T2 APPROVE 33/35 未能抓到
+  - **CI 脚本单向性陷阱**：119 新增的 `appjson-pages-check.mjs` 只查"声明→文件"单向 · 未查"tabBar→主包 pages 规约" · 以 Human 当下症状正向补而非以"微信 builder 错误字典"反向设计 · 漏掉了 `need in ['pages']` 这条同样高频的规约错误
+- **COSTRA-120 正式修复**（2026-04-28）：
+  1. ✅ 迁移 `miniprogram/pages-family/dashboard/` → `miniprogram/pages/family-dashboard/`（四件套原样保留 · ts 注释增补位置变更说明 + COSTRA-120 Refs）
+  2. ✅ 迁移 `miniprogram/pages-stat/overview/` → `miniprogram/pages/stat-overview/`（同上）
+  3. ✅ 删除 `miniprogram/pages-family/dashboard/` + `miniprogram/pages-stat/overview/` 空目录（Human Q3 彻底删除裁决）
+  4. ✅ `miniprogram/app.json` 三处同步：`pages[]` +2 主包路径 · `subpackages[*].pages[]` -2 原分包条目 · `tabBar.list[1/2].pagePath` 改指主包新路径
+  5. ✅ `scripts/devops/appjson-pages-check.mjs` 扩展 · 新增 **Rule-4 tabBar 主包规约校验**（~35 行增 · 零依赖）· 错误消息含微信规约文案"tabBar 页必须在主包 pages[] · 禁止在 subpackages[].pages[]（启动首帧冲突）"
+  6. ✅ `miniprogram/README.md` §1 描述 / §3 目录树 / §4.1 表格 4 行 + 裁决段同步
+  7. ✅ 新增 `.team/decisions/D-017-verification-problem-response-sop.md` 规约（Human 2026-04-28 13:59 立案 · 验证问题拉责任 Agent 做根因分析 + 提方案流程）
+  8. ✅ `.team/reviews/COSTRA-119/round-1-tech.md` 文末追加"逃逸修正说明"段（Human Q5 裁决）
+- **阻断级别**：P0（阻 Human 重复打开项目 · 与 FU-COMMON-APP-JSON-DRIFT 同级）
+- **状态**：`closed` @ 2026-04-28
+- **owner_card**：**COSTRA-120**
+- **resolved_by**：COSTRA-120 R1 实装 · 8 新文件（4+4 迁移）+ 1 新规约 + 5 改 - 8 删除 · `npm run check:appjson` 正向 exit 0（`tabBar main-package rule: 4/4 pass`）+ 反向验证 exit 1（篡改 tabBar 指向分包）+ revert 后再 exit 0 · 三段证据闭环 · Human 重开微信开发者工具可立即启动模拟器
+- **治理价值（超越当卡）**：
+  - **D-017 立案首次实战**：Human 反馈验证问题 → Orchestrator 拉 MiniApp-Agent 做根因分析 + 多方案对比 → Human 裁决 → 派单 · 5 步 SOP 正式沉淀
+  - **CI 脚本族从"表象检查"升级到"规约检查"**：Rule-1/2/3 查文件存在性 · Rule-4 查微信规约合规 · 未来可继续扩展（如 entryPagePath 必须主包 · preloadRule 必须指向分包等）
+  - **T2 档位已知局限显性化**：COSTRA-119 逃逸暴露了 T2 不跑 runtime 的结构性漏洞 · Sprint-1 末 Retro 建议讨论是否给 Tech Review 增加"模拟器冒烟"能力或该类问题升 T3
 
 ---
 

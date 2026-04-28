@@ -6,7 +6,7 @@
 ## 1. 技术栈
 
 - 微信原生 MINA + TypeScript（`miniprogram-api-typings`）
-- 分包：主包（登录 / 首页 / 记一笔 / 我的）+ `pages-stat/`（统计）+ `pages-family/`（家庭 · 设置 · 隐私）
+- 分包：主包（登录 / 首页 / 家庭面板 / 统计总览 / 记一笔 / 我的）+ `pages-stat/`（月度统计 · 分包）+ `pages-family/`（家庭 home · 设置 · 隐私 · 分包）
 - Lint：ESLint + Prettier + Husky（pre-commit）+ commitlint（Conventional Commits）
 - 最低基础库：**2.32.3**（对齐 PRD NFR）
 - 生产 AppID：`wxf8b0d3e3a83f9941`
@@ -16,11 +16,11 @@
 ```
 miniprogram/
   app.ts / app.json / app.wxss / sitemap.json
-  pages/           主包 · tabBar 页面 + 登录
-    login/  home/  entry/  mine/
-  pages-stat/      分包 · 统计（月度）
+  pages/           主包 · tabBar 页面 + 登录 + 记一笔
+    login/  home/  family-dashboard/  stat-overview/  entry/  mine/
+  pages-stat/      分包 · 月度统计
     month/
-  pages-family/    分包 · 家庭 / 设置 / 隐私
+  pages-family/    分包 · 家庭 home / 设置 / 隐私
     home/  settings/  privacy/
   services/        env · request · auth · storage · sync · flags
   utils/           money · time
@@ -78,15 +78,15 @@ Sprint-0 骨架仅实现"最小可演示登录闭环"，主包与分包的**完�
 | 我的 | `pages/mine/index` | ✅ 占位 | Sprint-1 落业务 | COSTRA-401 |
 | 设置 | `pages/settings/index` | ❌ 未创建 | Sprint-2 | COSTRA-402 |
 | 关于 & 隐私 | `pages/about/index` | ❌ 未创建 | Sprint-2 | Epic-G |
-| 统计总览 | `pages-stat/overview/index` | ✅ 占位四件套已补齐（COSTRA-119） · 业务逻辑 Sprint-3 落地 | Sprint-3 | COSTRA-401 |
-| 月度统计 | `pages-stat/month/index` | ✅ 存在（命名与 IA 略差） | Sprint-3 合并 | COSTRA-401 |
-| 家庭面板 | `pages-family/dashboard/index` | ✅ 占位四件套已补齐（COSTRA-119） · 业务逻辑 Sprint-3 落地 | Sprint-3 | COSTRA-201 |
-| 家庭 home | `pages-family/home/index` | ✅ 存在（命名与 IA 略差） | Sprint-3 合并 | COSTRA-201 |
+| 统计总览 | `pages/stat-overview/index` | ✅ 占位四件套已迁主包（COSTRA-120 · tabBar 规约修正 · 原路径 `pages-stat/overview/index` 已删） · 业务逻辑 Sprint-3 落地 | Sprint-3 | COSTRA-401 |
+| 月度统计 | `pages-stat/month/index` | ✅ 存在（命名与 IA 略差 · 留分包 · 非 tabBar） | Sprint-3 合并 | COSTRA-401 |
+| 家庭面板 | `pages/family-dashboard/index` | ✅ 占位四件套已迁主包（COSTRA-120 · tabBar 规约修正 · 原路径 `pages-family/dashboard/index` 已删） · 业务逻辑 Sprint-3 落地 | Sprint-3 | COSTRA-201 |
+| 家庭 home | `pages-family/home/index` | ✅ 存在（命名与 IA 略差 · 留分包 · 非 tabBar） | Sprint-3 合并 | COSTRA-201 |
 | 设置 / 隐私 | `pages-family/settings/index`、`privacy/index` | ✅ 占位 | Sprint-2 | COSTRA-402 / Epic-G |
 
 **裁决**：
 - 骨架期只保留"最小登录闭环 + tabBar 入口 4 页"，其余 **IA 页面作为 Sprint-1~3 逐步落地的工作单**；
-- `pages-stat/month` vs `pages-stat/overview`、`pages-family/home` vs `pages-family/dashboard` 的命名差异由 Sprint-3 一次性统一（落 Epic-D/F 时）；
+- `pages-stat/month` vs `pages/stat-overview`（已迁主包）、`pages-family/home` vs `pages/family-dashboard`（已迁主包）的命名差异 · tabBar 侧已由 COSTRA-120 处理 · 分包侧 month/home 命名统一留 Sprint-3 一次性（落 Epic-D/F 时）；
 - 本表每个 Sprint 末由 PM-Agent 勾选消除进度。
 
 
