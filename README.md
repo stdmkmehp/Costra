@@ -47,6 +47,16 @@ Costra/
 3. 启动多 Agent 团队（见蓝图文档 §9 "启动与日常节奏"）。
 4. 日常 30 分钟工作流见蓝图文档 §9.2。
 
+## 本地开发 · 微信开发者工具
+
+**务必以 `Costra/` 项目根打开微信开发者工具**（不要打开 `miniprogram/` 子目录）。理由：
+
+- **微信官方范式**：项目根 `project.config.json`（SSOT · 含 `miniprogramRoot: "miniprogram/"` + `useCompilerPlugins: ["typescript"]`）作为工具链单源 · 指向 `miniprogram/` 为源码根
+- **TypeScript JSON import 运行期依赖**：只有从项目根打开 · 工具才读到含 `typescript` 编译插件的根 config · `import tokens from './tokens.json'` 这类 TS 语法才能在小程序 runtime 被正确转译（否则会报 `module 'x.json.js' is not defined` · 见 COSTRA-121 背景）
+- **多柱协同**：项目含 `api/` / `server/` / `docs/` / `miniprogram/` 四柱 · 打开项目根才能获得完整跳转/搜索/依赖链上下文
+
+**若微信工具 GUI 意外在 `miniprogram/` 下自动生成副本 `miniprogram/project.config.json`**：本地 `rm miniprogram/project.config.json` 即可。该文件已由 `.gitignore` 兜底防入库 · `npm run check:tooling` 会在 CI 层硬拦截（参见 [`scripts/devops/miniapp-tooling-check.mjs`](./scripts/devops/miniapp-tooling-check.mjs) · COSTRA-121 Rule-5a/5b/5c 三子规约）。
+
 ## 许可
 
 内部项目，未经授权禁止分发。

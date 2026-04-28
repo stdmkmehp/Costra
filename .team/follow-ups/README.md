@@ -405,6 +405,55 @@ R1 MiniApp 交付 · T2 Tech 单轨 APPROVE · 新增 1 条 FU 并同轮关闭 �
   - **D-017 立案首次实战**：Human 反馈验证问题 → Orchestrator 拉 MiniApp-Agent 做根因分析 + 多方案对比 → Human 裁决 → 派单 · 5 步 SOP 正式沉淀
   - **CI 脚本族从"表象检查"升级到"规约检查"**：Rule-1/2/3 查文件存在性 · Rule-4 查微信规约合规 · 未来可继续扩展（如 entryPagePath 必须主包 · preloadRule 必须指向分包等）
   - **T2 档位已知局限显性化**：COSTRA-119 逃逸暴露了 T2 不跑 runtime 的结构性漏洞 · Sprint-1 末 Retro 建议讨论是否给 Tech Review 增加"模拟器冒烟"能力或该类问题升 T3
+- **同族规约盲区追溯**：本条为"Sprint-0 骨架期遗留微信规约债务"同族第 **2 次**暴露（第 1 次 = FU-COMMON-APP-JSON-DRIFT 文件侧 · 第 2 次 = 本条 tabBar 规约侧 · 第 3 次 = **FU-COMMON-PROJECT-CONFIG-DRIFT 工具链单源 @ COSTRA-121** · 见本文件下方）
+
+---
+
+## 📌 COSTRA-121 R1 T2 Tech APPROVE 后状态流转（2026-04-28 17:xx）
+
+R1 MiniApp 交付 · T2 Tech 单轨 APPROVE · 新增 1 条 FU 并同轮关闭 · 修订前两条 FU 追加同族备注：
+
+| FU-ID | 状态 | owner_card |
+|---|---|---|
+| FU-COMMON-APP-JSON-DRIFT | `closed`（同族备注修订 · 三连第 1 次） | COSTRA-119 |
+| FU-COMMON-APP-JSON-DRIFT-TABBAR | `closed`（同族备注修订 · 三连第 2 次） | COSTRA-120 |
+| FU-COMMON-PROJECT-CONFIG-DRIFT | **`closed`** @ 2026-04-28（同族三连第 3 次 · 工具链层） | COSTRA-121（同轮登记 + 同轮关闭） |
+
+---
+
+### FU-COMMON-PROJECT-CONFIG-DRIFT · 微信工具链配置单源漂移（COSTRA-119/120 同族规约盲区第 3 次）
+
+- **来源**：Human 2026-04-28 15:58 按 COSTRA-120 收官汇报重开微信开发者工具 · 模拟器**第三次启动**推进到 app.ts 执行期但报 `module 'tokens/tokens.json.js' is not defined · require args is './tokens.json' · at app.ts:6` · 根因两层：
+  - **第 1 层 · 根 `project.config.json` 工作区缺失**（HEAD 仍有 · git status 显 `deleted:` · 可 `git restore` 恢复）
+  - **第 2 层 · `miniprogram/project.config.json` GUI 自建副本**（从未被 git 追踪 · 微信工具打开 miniprogram/ 子目录时自动生成 · `useCompilerPlugins: false` · 未启用 TS 编译插件 → TS JSON import 无法转译）
+- **登记时间**：2026-04-28 17:xx（COSTRA-121 dispatch R1 同轮）
+- **范围**：
+  - `project.config.json`（根 · SSOT · `miniprogramRoot: "miniprogram/"` + `useCompilerPlugins: ["typescript"]`）· 工作区缺失 → 工具无法打开项目
+  - `miniprogram/project.config.json`（GUI 自建副本 · 与根 config 漂移 · 违反 D-011 SSOT 规约）
+  - Human 习惯："打开 `miniprogram/` 子目录作为项目根"是反范式 · 正确姿势 = 打开 `Costra/` 项目根（Human 2026-04-28 16:52 确认：**"根目录 json 缺失时微信工具无法打开工程，miniprogram 目录下的 json 似乎可以不需要存在"**）
+- **问题（治理反思 · 三次核查才定稿）**：
+  - **Orchestrator 事实源核查链二次逆转**：第 1 次核查误判为"源码 require JSON 需改造" · 第 2 次核查误判为"双 config 漂移 · 子覆盖根" · 第 3 次 `git ls-files` + `git log` 才定稿"根 config 工作区缺失 + 子 config GUI 噪声"双破坏 · 印证 D-017 第 2 步"事实源三证齐全"的价值 + 对 `git ls-files/log/show HEAD:` 事实源工具链的依赖
+  - **先前"工具噪声暂留"建议的误判**：COSTRA-119 收官时 Orchestrator 建议"miniprogram/project.config.json 作为工具噪声暂留 · 等 Human 后续决策" · 120 继承该建议又暂留一轮 · 本卡 121 纠偏 · 并已在 119 Review §13 v1.2 补遗中致歉
+  - **T2 档位结构性局限第 3 次兑现**：五闸全部走"编译期 + 文件系统"视角 · 无人以"微信工具 runtime 视角"对账工具链配置 · 与 119/120 同族 · Sprint-1 末 Retro 议题第 10 条
+- **COSTRA-121 正式修复**（2026-04-28）：
+  1. ✅ 恢复根 `project.config.json`（`git restore` · HEAD 里完整 58 行 · 含 `miniprogramRoot` + `useCompilerPlugins: ["typescript"]`）
+  2. ✅ 删除 `miniprogram/project.config.json`（untracked · `rm`）
+  3. ✅ `.gitignore` 追加 `miniprogram/project.config.json` 精确路径规则 + 说明注释 · 兜底防再生后误入 git
+  4. ✅ 新建 `scripts/devops/miniapp-tooling-check.mjs`（零依赖 · ~140 行 · 参照 appjson-pages-check 范式）· **三子规约硬拦截**：Rule-5a 根 config 存在 · Rule-5b useCompilerPlugins 含 typescript · Rule-5c 子 config 禁出现
+  5. ✅ `package.json` scripts 段新增 `check:tooling` · 紧随 `check:appjson` 成对账族第 3 脚本
+  6. ✅ `README.md` 新增"本地开发 · 微信开发者工具"段 · 明确"必须打开 `Costra/` 项目根" + TS JSON import 运行期依赖解释 + GUI 副本清理指引
+  7. ✅ `.team/reviews/COSTRA-119/round-1-tech.md` §13 v1.1→v1.2 追加"COSTRA-121 同族第 3 次"补遗（Orchestrator 核查链二次逆转致歉 + 同族规约盲区三连总结）
+  8. ✅ 本 FU 同轮登记 + 同轮关闭 + 修订前两条 FU 追加同族备注
+- **阻断级别**：P0（阻 Human 本地验证 · 与前两条 FU 同级）
+- **状态**：`closed` @ 2026-04-28
+- **owner_card**：**COSTRA-121**
+- **resolved_by**：COSTRA-121 R1 实装 · 1 新脚本 + 5 文件改 + 1 文件恢复 + 1 文件删 · `npm run check:tooling` 正向 exit 0（3/3 rules pass）+ **三向反向验证**（Rule-5a/5b/5c 分别临时篡改 → exit 1 带规约文案 → revert → exit 0）· 五+回归闸全绿 · Human 以打开 `Costra/` 项目根方式重开微信工具可立即启动模拟器（第四次验证）
+- **治理价值（超越当卡）**：
+  - **D-011 SSOT 规约工具链层首次实战**：D1~D6 五位一体兜底（恢复 + 删除 + gitignore + CI + 操作指引 + 规约沉淀）· 从代码机制 + 操作姿势双层永久消除漂移
+  - **CI 对账族从文件/规约层扩到工具链层**：Rule-1~3 文件存在性（119）→ Rule-4 微信规约（120）→ **Rule-5a/5b/5c 工具链单源（121）** · 三代积累
+  - **D-017 规约事实源工具链扩展**：核查链二次逆转教训 → 事实源工具必须包含 `git ls-files` / `git log` / `git show HEAD:` 三工具组合 · 仅 `ls` + `cat` 不够 · 议入 Sprint-1 末 D-017 v1→v2 升级
+  - **能力边界铁律第 3 次兑现**：Agent 无真微信开发者工具 · CI + README 双层兜底替代
+- **同族规约盲区追溯**：本条为"Sprint-0 骨架期遗留微信规约债务"同族第 **3 次**暴露（第 1 次 = FU-COMMON-APP-JSON-DRIFT · 第 2 次 = FU-COMMON-APP-JSON-DRIFT-TABBAR · 第 3 次 = 本条）· Sprint-1 末 Retro 议题：是否一次性系统化盘点微信规约债务（当前是被动剥洋葱式遭遇）
 
 ---
 

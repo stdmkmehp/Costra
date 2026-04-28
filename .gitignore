@@ -24,6 +24,12 @@ project.private.config.json
 !project.private.config.json.example
 miniprogram_npm/
 
+# WeChat DevTools · sub-directory project.config.json GUI drift (COSTRA-121)
+# 微信工具被打开在 miniprogram/ 子目录作为项目根时会自动生成此副本 ·
+# 与根目录 project.config.json（SSOT）漂移 · `useCompilerPlugins` 默认 false 导致 TS JSON import 运行期报错
+# Human 应始终打开 Costra/ 项目根启动微信工具 · 参见 README.md §本地开发
+miniprogram/project.config.json
+
 # Build outputs
 coverage/
 *.tsbuildinfo

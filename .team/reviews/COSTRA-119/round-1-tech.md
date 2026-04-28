@@ -287,3 +287,53 @@ dispatch §2 ❌ 清单 8 项逐条核对：
 **追写人**：Review-Agent-Tech · 2026-04-28 14:xx · 随 COSTRA-120 同 tool call 循环完成
 **授权**：Human 2026-04-28 13:59 Q5 裁决"追加 119 Review 逃逸说明"
 **版本**：v1.1（v1.0 为 2026-04-27 20:33 原版 · v1.1 追加 §13 逃逸修正说明 · 原 §1~12 内容不动）
+
+---
+
+### 13.6 v1.2 补遗 · COSTRA-121 同族规约盲区第 3 次暴露（2026-04-28 17:xx 追写）
+
+> **触发事件**：2026-04-28 15:58 · Human 按 COSTRA-120 收官汇报重开微信开发者工具 · 模拟器**第三次启动**推进到 app.ts 执行期但报 `module 'tokens/tokens.json.js' is not defined · require args is './tokens.json' · at app.ts:6` · 根因定稿为"根 `project.config.json` 工作区缺失 + `miniprogram/project.config.json` GUI 副本未启用 TS 编译插件"双破坏（COSTRA-121 修复）
+
+#### v1.2-A · 事实源核查链二次逆转的教训
+
+Orchestrator 为 COSTRA-121 派单前做了三次事实源核查（罕见的核查链反转 · 值得沉淀）：
+
+| 核查 | 判断 | 实际 | 依据 |
+|---|---|---|---|
+| 第 1 次 | "源码 `require('./tokens.json')` · 需改造业务代码" | ❌ 错 | 误读截图错误文本 `require args is './tokens.json'` 为"源码里写着 require" · 实际是微信运行时对 ES import 的内部转译结果 |
+| 第 2 次 | "双 `project.config.json` 漂移 · 子目录覆盖根目录" | ❌ 半错 | `cat` 看了子 config · `list_dir` 看了根目录列表 · 但**没做 `git ls-files` / `git log` 核查文件 git 追踪态** |
+| 第 3 次 | "根 config 工作区缺失 + 子 config GUI 噪声 · 双破坏" | ✅ 定稿 | `git ls-files project.config.json` = 被追踪 + `git show HEAD:project.config.json` = 完整 58 行 + `git status` = `deleted:` + `git log -- miniprogram/project.config.json` = **空** |
+
+**对 D-017 规约的直接输入**：**"事实源三证齐全"必须包含 git 追踪态核查**（git ls-files / git log / git show HEAD:）· 不能只靠 `ls` + `cat` · 否则判断不了"文件当前存在但属于 untracked" vs "文件当前缺失但 HEAD 里有"这两种截然不同的状态。议入 Sprint-1 末 D-017 v1→v2 升级。
+
+#### v1.2-B · 先前"工具噪声暂留"建议的致歉
+
+COSTRA-119 收官汇报（2026-04-27 20:33）· Orchestrator 曾建议 "`miniprogram/project.config.json` 作为工具噪声暂留 · 等 Human 后续决策"。本建议属**误判**：
+- 正确判断应为："子 config 从未被 git 追踪 · 是微信工具 GUI 打开子目录时的自建副本 · 与根 config（SSOT）漂移违反 D-011 · 应立即处理而非暂留"
+- 120 继承该建议又暂留一轮 · 121 纠偏 · 新建 `miniapp-tooling-check.mjs` Rule-5a/5b/5c 三子规约硬拦截 + `.gitignore` 兜底 + README "打开项目根"指引 · 三层防护永久消除漂移
+- **归因**：Orchestrator 当时核查深度不足 · 未走 git 追踪态 · 仅凭"untracked"就判为"工具噪声"（而实际上 untracked 也有两种：配置级噪声 vs 规约级漂移 · 本例属后者）
+
+#### v1.2-C · 同族规约盲区三连完整追溯
+
+| 第 | FU-ID | 层 | 卡 | 解决脚本 |
+|---|---|---|---|---|
+| 1 | FU-COMMON-APP-JSON-DRIFT | L1 文件存在性 | COSTRA-119 | appjson-pages-check Rule-1/2/3 |
+| 2 | FU-COMMON-APP-JSON-DRIFT-TABBAR | L3 微信规约（tabBar 主包铁律） | COSTRA-120 | appjson-pages-check Rule-4 |
+| 3 | **FU-COMMON-PROJECT-CONFIG-DRIFT** | **L2 工具链 SSOT 单源** | **COSTRA-121** | **miniapp-tooling-check Rule-5a/5b/5c** |
+
+**T2 档位结构性局限第 3 次兑现**：五闸全走"编译期 + 文件系统"视角 · 无人以"微信工具 runtime 视角"对账工具链配置 · 与 119/120 根本同族 · 本次由 Human 第三次撞坑暴露。
+
+#### v1.2-D · 对未来 Review / Orchestrator / D-017 的三点输入
+
+1. **对 Review**：涉及 `app.json` / wxml / tabBar / project.config.json / tsconfig.json 任一文件的审卡 · 强制增一步"跳出 dispatch · 独立做微信规约 + 工具链 SSOT 核对"（13.4 基础上新增工具链 SSOT 维度）
+2. **对 Orchestrator**：事实源核查必须包含 git 追踪态工具链（ls-files / log / show HEAD:）· 否则易误判 untracked 文件性质
+3. **对 D-017**：v1→v2 升级议题：在第 2 步"事实源三证齐全"加入"git 追踪态核查"作为硬性子步骤 · 议入 Sprint-1 末 Retro
+
+#### v1.2-E · 自我评价
+
+- **本 Review 质量**：仍为 APPROVE 33/35（不变）· 原 §1~12 对 COSTRA-119 代码质量评价正确
+- **本 Review 缺陷延伸**：v1.1 §13.5 指出"审查广度盲区停留在 dispatch §2 Scope 内" · v1.2 进一步确认该盲区在**工具链 SSOT**层同样适用 · 119 R1 时 `miniprogram/project.config.json` 作为 untracked 已在工作区 · 若 Review-Tech 当时独立做工具链对账 · 理论上可以提前抓到该漂移 · 但考虑到 T2 档位定位（基建小卡 · 单轨审 · 无 runtime 验证能力）· 该要求超出 T2 合理边界 · 应由 CI 脚本族硬兜（即本卡 121 的 Rule-5 补位）
+
+**追写人**：Review-Agent-Tech · 2026-04-28 17:xx · 随 COSTRA-121 同 tool call 循环完成
+**授权**：Human 2026-04-28 16:03 方向 A 裁决 + 16:52 "打开项目根"事实确认
+**版本**：v1.2（v1.1 基础上追加 §13.6 v1.2 补遗 · 原 §1~13.5 内容不动）

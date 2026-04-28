@@ -14,6 +14,7 @@
     "analyze": "node ./scripts/mp-ci/analyze.mjs",
     "check:whitelist": "node ./scripts/devops/whitelist-check.mjs",
     "check:appjson": "node ./scripts/devops/appjson-pages-check.mjs",
+    "check:tooling": "node ./scripts/devops/miniapp-tooling-check.mjs",
     "prepare": "husky install"
   },
   "dependencies": {
