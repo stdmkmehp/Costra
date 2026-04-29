@@ -417,7 +417,9 @@ R1 MiniApp 交付 · T2 Tech 单轨 APPROVE · 新增 1 条 FU 并同轮关闭 �
 |---|---|---|
 | FU-COMMON-APP-JSON-DRIFT | `closed`（同族备注修订 · 三连第 1 次） | COSTRA-119 |
 | FU-COMMON-APP-JSON-DRIFT-TABBAR | `closed`（同族备注修订 · 三连第 2 次） | COSTRA-120 |
-| FU-COMMON-PROJECT-CONFIG-DRIFT | **`closed`** @ 2026-04-28（同族三连第 3 次 · 工具链层） | COSTRA-121（同轮登记 + 同轮关闭） |
+| FU-COMMON-PROJECT-CONFIG-DRIFT | **`closed`** @ 2026-04-29 10:48（121 物理修复 + 122 runtime 层两卡累加 · 完整闭环） | COSTRA-121（物理）+ COSTRA-122（runtime 补位 · 已收官）|
+| FU-TOKENS-JSON-RUNTIME-IMPORT | **`closed`** @ 2026-04-29 10:48（同族规约盲区第 4 次 · Human 第五次模拟器启动验证通过 · 登录页正常渲染） | COSTRA-122（R1 APPROVE 35/35 · Human T2 APPROVED） |
+| 🆕 FU-LAUNCH-FIRST-RENDER-RACE | **`open`** @ 2026-04-29 10:48（首渲染时序警告 `Expected updated data but get first rendering data` · 微信基础库 2.32.3 启动期 · 非 122 引入 · UI 正常无功能影响） | Sprint-1 · P2 观察项（等 Human 决策是否立独立卡）|
 
 ---
 
@@ -454,6 +456,88 @@ R1 MiniApp 交付 · T2 Tech 单轨 APPROVE · 新增 1 条 FU 并同轮关闭 �
   - **D-017 规约事实源工具链扩展**：核查链二次逆转教训 → 事实源工具必须包含 `git ls-files` / `git log` / `git show HEAD:` 三工具组合 · 仅 `ls` + `cat` 不够 · 议入 Sprint-1 末 D-017 v1→v2 升级
   - **能力边界铁律第 3 次兑现**：Agent 无真微信开发者工具 · CI + README 双层兜底替代
 - **同族规约盲区追溯**：本条为"Sprint-0 骨架期遗留微信规约债务"同族第 **3 次**暴露（第 1 次 = FU-COMMON-APP-JSON-DRIFT · 第 2 次 = FU-COMMON-APP-JSON-DRIFT-TABBAR · 第 3 次 = 本条）· Sprint-1 末 Retro 议题：是否一次性系统化盘点微信规约债务（当前是被动剥洋葱式遭遇）
+
+### 📌 收官后复盘 · 核心假设证伪（2026-04-28 19:57 · COSTRA-122 第四次模拟器启动实测后）
+
+- **假设证伪**：COSTRA-121 dispatch `§事件时序还原⑦` 的核心假设**"`useCompilerPlugins: ["typescript"]` 启用后 TS JSON import 会被微信 runtime 正确转译"**被实测证伪
+- **证伪证据**：Human 2026-04-28 19:5x 以"打开 `Costra/` 项目根"正确姿势第四次重开微信开发者工具 · 五证齐全（HEAD = `c9826c4` 收官 commit · 根 config 完整 · `useCompilerPlugins: ["typescript"]` 启用 · 子副本不存在 · `check:tooling` 3/3 pass）但**报同一错误** `module 'tokens/tokens.json.js' is not defined at index.ts:5 at app.ts:6`
+- **真根因定稿**：`useCompilerPlugins: ["typescript"]` 只负责 `.ts → .js` 转译 · **不改变 JSON 模块 runtime 解析语义**。微信小程序 runtime CommonJS `require` loader **不识别 `.json` 扩展名作为可加载模块**——这是 **runtime 契约层盲区**，与工具链配置无关
+- **COSTRA-121 物理修复的实际价值**：D1 根 config 恢复 + D2 子副本删除 + D3 `.gitignore` 兜底 + D4 CI Rule-5a/5b/5c + D5 `package.json` + D6 README § 本地开发 + D7 FU + D8 119 §13.6 v1.2 → **全部必要且正确**（工具链 SSOT 本就该这样修 · 满足微信官方范式 · 消除潜在双 config 漂移 · Sprint-1 末 Retro D-011 工具链层范式仍成立）· 但**不足以解决 runtime 层** · 由 **COSTRA-122 补位**（1 点极小卡 · 单文件 `tokens/index.ts` 改写为内联 TS 常量）
+- **Orchestrator 事实源核查链第四次逆转教训**（D-017 v2 升级强证据）：
+  - 第 1 次（COSTRA-118 P0-9 · 2026-04-27 09:37）：tokens.json→wxss 桥接未闭合 → 聚焦 wxss 快修 · **漏查 runtime 可加载性**
+  - 第 2 次（121 事前 · 2026-04-28 16:00）：误判 app.ts:6 源码 require JSON 需改造
+  - 第 3 次（121 事前 · 16:30）：误判双 config 漂移 · 子覆盖根
+  - 第 4 次（121 dispatch §7 定稿 · 16:55）：假设"插件启用后 runtime 能转译" · **第四次模拟器启动实测证伪**（19:5x）
+  - → **D-017 v2 必加项**：**"runtime 实测必须作为 runtime 规约类 T2 卡的终审证据"** · 纯文档推理 + 命令行五闸不够 · 微信工具是最终裁决者
+- **Sprint-1 末 Retro 新增议题 ⑪⑫**：① Review 35/35 也可能基于错误假设（121 无评审瑕疵但核心因果链错误） · 需"**Human 实测闸**"作为 runtime 规约类 T2 卡的终审绝对证据 · ② 同族规约盲区**第 4 次暴露**紧迫性远超之前评估 · Sprint-0 骨架期微信规约债务系统化盘点必须列入 Sprint-1 末 Retro 最高议题
+
+---
+
+### FU-TOKENS-JSON-RUNTIME-IMPORT · tokens/index.ts JSON import runtime 兼容性（COSTRA-121 假设证伪的 runtime 层补位 · 同族规约盲区第 4 次）
+
+- **来源**：Human 2026-04-28 19:5x 按 COSTRA-121 收官（19:26）后约 30 分钟以"打开 `Costra/` 项目根"正确姿势第四次重开微信开发者工具 · 模拟器启动推进到 app.ts:6 但**报同一错误** `module 'tokens/tokens.json.js' is not defined at index.ts:5` → 121 核心假设被实测证伪 · 真根因定稿：**微信 runtime CommonJS loader 不识别 `.json` 扩展名加载**（runtime 契约层盲区 · 与工具链配置无关）
+- **登记时间**：2026-04-28 19:57（COSTRA-122 dispatch 同轮）
+- **范围**：
+  - `miniprogram/tokens/index.ts:5` `import tokensJson from './tokens.json'`（标准 TS JSON import · 编译期 `resolveJsonModule: true` 绿 · runtime 被微信 CommonJS loader 转成 `require('./tokens.json')` → 自动补 `.js` → `tokens/tokens.json.js` not defined）
+  - `miniprogram/tokens/tokens.json`（设计 SSOT 来源 · 不受本 FU 影响 · 保留）
+  - `app.ts:6` `import { tokens } from './tokens/index'` 为启动链首行消费方 · 受 index.ts 影响但本 FU 不改
+- **问题（治理反思 · 三个维度）**：
+  - **假设证伪链**：COSTRA-118 预警 → 121 假设 runtime 能转译 → 第四次实测证伪 · D-017 v2 升级强证据就位
+  - **T2 档位结构性局限第 4 次兑现**：五闸 + CI 规约族（whitelist + appjson + tooling）全绿仍然漏 · 无人以"微信工具 runtime loader 视角"对账源码层 JSON import 写法 · 与 119/120/121 同族第 4 次
+  - **CI 规约族当前无法覆盖**：check:appjson 只查 app.json · check:tooling 只查工具链配置 · **源码层 JSON import 尚无硬拦截**（本 FU 不扩展 CI · 由后续卡立案同族第 5 次 · 避免 scope 扩散）
+- **COSTRA-122 正式修复计划**（2026-04-28 19:57 派单 · 等 Human 选路径 A/B）：
+  1. 🟡 D1 · `tokens/index.ts` 把 `import tokensJson from './tokens.json'` 改写为内联 TS 常量 `const tokensData = { ... } as const; export const tokens = tokensData;` · 导出签名完全不变
+  2. 🟡 D2 · `tokens.json` 保留不动（Sprint-2 FU-118-3 构建脚本根治 · 手工 1:1 对齐作为过渡）
+  3. 🟡 D3 · 顶部注释硬约束：`// ⚠️ 不要改为 "import x from './tokens.json'"——微信 runtime 不支持 .json loader（COSTRA-122 实证）`
+  4. 🟡 五闸 + 静态对账（`grep -r "from '.*\.json'" miniprogram/` 应为空 + tokens.json vs 内联字段 1:1）+ 反向验证 3 次
+  5. 🟡 Human 第五次模拟器启动验证 · app.ts:6 不再报错 · 启动链推进到 `wx.reLaunch({ url: '/pages/login/index' })`
+- **阻断级别**：P0（阻 Human 本地验证 · 与 119/120/121 同级 · 启动链运行期首行）
+- **状态**：**`closed`** @ 2026-04-29 10:48（Human 第五次模拟器启动验证通过 · 登录页完整渲染 · app.ts:6 `module 'tokens/tokens.json.js' is not defined` 彻底消失）
+- **owner_card**：**COSTRA-122**
+- **resolved_by**：COSTRA-122 R1 实装 · 单文件 `miniprogram/tokens/index.ts` · +50/-2 · 六闸 + 静态对账 + 字段 1:1 严格对齐全绿 · R1 Tech APPROVE 35/35 · Human T2 APPROVED @ 2026-04-29 10:41 · 第五次模拟器启动贯通至 `wx.reLaunch('/pages/login/index')` · Console 无 122 相关报错（残留为微信基础库 2.32.3 启动期内部 Bug + 首渲染时序警告 · 与 122 无因果关系 · 已分流到 FU-LAUNCH-FIRST-RENDER-RACE）
+- **治理价值（Sprint-1 末 Retro 最高议题候选）**：
+  - **D-017 v2 升级的最强证据**："runtime 实测作为 runtime 规约类 T2 卡的终审证据"议题从"推导中"升级为"必选项"· 121 的纯推理收官判断证伪就是活教训
+  - **同族规约盲区系统化盘点的紧迫性**：119 + 120 + 121 + 122 已连续四张紧急卡 · Sprint-0 骨架期遗留微信规约债务被动剥洋葱式遭遇 · 必须在 Sprint-1 末启动主动盘点（Epic F 或独立专项）
+  - **Review 机制增强议题**：Review-Tech 显式增加"运行期契约对账"表（覆盖 JSON import / CSS var / API 扩展名 / module resolution 等 runtime-only 检查项） · 与 CI 规约族互补
+  - **COSTRA-011 / COSTRA-030 的倒查议题**：tokens/index.ts 在 COSTRA-030 R1 Review 时未被标注"runtime 可加载性待验证" · 骨架期 Review 档位对"代码是否能 runtime 运行"的覆盖度不足
+- **同族规约盲区追溯**：本条为"Sprint-0 骨架期遗留微信规约债务"同族第 **4 次**暴露（第 1 次 = FU-COMMON-APP-JSON-DRIFT · 第 2 次 = FU-COMMON-APP-JSON-DRIFT-TABBAR · 第 3 次 = FU-COMMON-PROJECT-CONFIG-DRIFT · **第 4 次 = 本条**）· **Sprint-1 末 Retro 议题最高优先级**：系统化盘点必须做（当前被动剥洋葱式已到第 4 层 · 本次收官后虽第 5 次未实测暴露，但 Human 第五次模拟器启动 Console 显示 1 条类 B 警告 `Expected updated data but get first rendering data` 已单立 FU-LAUNCH-FIRST-RENDER-RACE 追踪 · **当前无法确定是否 Sprint-0 还有其他层**）
+
+---
+
+## 📌 COSTRA-122 R1 T2 Tech APPROVE + Human T2 APPROVED 后状态流转（2026-04-29 10:41）
+
+R1 MiniApp 交付 · T2 Tech 单轨 APPROVE 35/35 · Human 第五次模拟器启动实测验证通过 · 同轮关闭 2 条 FU · 新立 1 条 FU：
+
+| FU-ID | 状态 | owner_card |
+|---|---|---|
+| FU-COMMON-PROJECT-CONFIG-DRIFT | **`closed`** @ 2026-04-29（两卡累加完整闭环 · 121 物理 + 122 runtime） | COSTRA-121 + COSTRA-122 |
+| FU-TOKENS-JSON-RUNTIME-IMPORT | **`closed`** @ 2026-04-29 | COSTRA-122（已关闭） |
+| FU-LAUNCH-FIRST-RENDER-RACE | **`open`** @ 2026-04-29（新立 · P2 观察 · 非 122 引入） | Sprint-1 候选 |
+
+---
+
+### FU-LAUNCH-FIRST-RENDER-RACE · 启动期首渲染时序警告（非 122 引入 · 观察项）
+
+- **来源**：Human 2026-04-29 10:41 第五次模拟器启动 Console 输出
+- **登记时间**：2026-04-29 10:48（COSTRA-122 收官同轮登记）
+- **范围**：
+  - Console 警告 `[渲染层错误] Expected updated data but get first rendering data`
+  - `[渲染层错误] SystemError (webviewScriptError) Expected updated data but get first rendering data`
+  - 出现时点：`No. of subpackages: 2` / `LazyCodeLoading: true` 之后 · `onLaunch` 之前
+  - 微信基础库：2.32.3 · 开发者工具：2.01.2510290 · macOS
+- **判定**：
+  - **非 COSTRA-122 引入**（122 改的是 tokens 常量加载路径 · 不影响 setData 时序）
+  - **非业务代码致命**（UI 完整渲染 · onLaunch 正常 · `wx.reLaunch` 到登录页 · Launch Time 3547 ms 正常）
+  - **可能触发源（4 候选）**：
+    1. 登录页 `pages/login/index.ts` 在 `onLoad` / `attached` 前同步 `setData`
+    2. 分包懒加载（`LazyCodeLoading: true`）导致启动期 data 投递竞态
+    3. `globalData` 初始化时机（含 `tokens` / `env` 即时计算）
+    4. 自动热重载在页面未就绪时重投 data
+  - 另有一组 `[jsbridge] invoke getGlobalStorage/setGlobalStorage/removeGlobalStorage/traceEvent fail: too eayly` 报错 · 调用栈全在 `http://127.0.0.1:28677/__pageframe__/__dev__/WAWebview.js` · 微信 SDK 内部 · 拼写 `eayly`（官方拼错 early）为 SDK 内置字符串 · 我方 `services/storage.ts` 仅用 `wx.getStorageSync/setStorageSync`（同步 API）从未调用 `getGlobalStorage` 等 · **定性为微信开发者工具 2.01.2510290 + 基础库 2.32.3 启动时序内部 Bug**（非业务）· 合并到本 FU 追踪（同属"启动期内部时序"族）
+- **阻断级别**：P2（观察项 · 不阻任何链路 · UI 正常 · 功能正常）
+- **认领建议**：Sprint-1 候选小卡（若 `setData` 可定位到具体页面触发点则立 COSTRA-123 延伸 · 若确认全在微信 SDK 内部则不修仅文档化）
+- **状态**：`open`
+- **owner_card**：待 Sprint-1 末 Planning 决策
 
 ---
 

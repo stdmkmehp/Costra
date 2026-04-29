@@ -9,7 +9,7 @@
 > **🆕 验证问题响应 SOP（D-017 · 2026-04-28 13:59 Human 立案 · 14:15 落盘）**：项目遇到验证失败时标准流程 —— ① 责任领域识别（Orchestrator 30s） → ② 责任 Agent 根因分析（只诊断不改文件） → ③ 多方案对比（≥2~3 方案 · 列成本/价值/风险 + Human 决策点 Qn） → ④ Human 评估裁决 → ⑤ 派单实装。**禁止 Orchestrator 自行分析根因**（反模式 A） · E1/E2/E3 例外 · 反模式 ABCD 禁令 · COSTRA-120 首次实战。详见 `.team/decisions/D-017-verification-problem-response-sop.md`。
 > **🔄 D-011 实战验证三次通过**（2026-04-23）：COSTRA-100（2 轮 · 69 min） + Sprint-0 补审（7 卡 × 2 轮 · 29 min 并行） + **COSTRA-101 Round 1 刚自动拉起（22:49 · D-014-b 首次实战）**
 
-最后更新：`2026-04-28 19:26`（Orchestrator · **🏆 COSTRA-121 Human T2 APPROVED CLOSED · 整卡收官** · Tech 35/35 · P0/P1/P2=0 · OPTIONAL=2 非阻断 · **D-011 SSOT 规约工具链层首次实战完整闭环** · **CI 对账族第 3 次扩展（Rule-5a/5b/5c 工具链单源）** · **D-017 第 2 次实战完整闭环 · 三次事实源核查逆转教训沉淀** · 119 Review §13.6 v1.1→v1.2 跨卡治理反哺 · **D-016 第 10 次实战合规** · 跨区授权第 4 次实战 · AI 全流程 17 分钟 + Human 终审 ~2h14min · 🏆 **同族规约盲区三连完整收官**（119 文件 + 120 tabBar + 121 工具链）· **五位一体兜底范式建立** · Sprint-1 Backend/DevOps/MiniApp 基建线 6 张小卡全数收官 · Sprint-1 总估点 **46 · 连续三张紧急卡溢出**）
+最后更新：`2026-04-29 10:48`（Orchestrator · 🏆 **COSTRA-122 Human T2 APPROVED CLOSED @ 2026-04-29 10:41** · 第五次模拟器启动实测贯通 · 登录页完整渲染 · app.ts:6 `module 'tokens/tokens.json.js' is not defined` 彻底消失 · onLaunch `env= dev` 正常 · `wx.reLaunch('/pages/login/index')` 成功 · Launch Time 3547ms · Console 残留全部非 122 引入（类 A 微信 SDK 启动时序 Bug + 类 B 首渲染时序警告 FU-LAUNCH-FIRST-RENDER-RACE + 类 C INFO）· **同族规约盲区第 4 次完整闭环** · 两卡累加范式（121 工具链 + 122 runtime）· D-011 SSOT 工具链层 + runtime 契约层累加治理范式沉淀 · D-017 v2 升级双重强证据就位（121 二次逆转 + 122 假设证伪） · D-016 第 11 次实战合规 · Sprint-1 基建线 6 卡（115/116/119/120/121/122）全数 CLOSED · Sprint-1 总估点 46→47）
 
 ---
 
@@ -46,7 +46,8 @@
 | 🆕 COSTRA-118 | miniprogram 技术债专项普查（审计类 · 单轮即报即结 · Owner=Review-Tech） | Review-Agent-Tech | COSTRA-030/100/101 | **0**（不计估点） |
 | ~~COSTRA-119~~ | ~~app.json 分包声明↔文件系统一致性修复 + CI 对账（FU-COMMON-APP-JSON-DRIFT 专项）~~ | ~~MiniApp-Agent~~ | ~~COSTRA-115/116~~ | ~~2~~ **（2026-04-28 13:48 · 整卡 CLOSED · 移至 Done · ⚠️ P0 逃逸 ×2 由 120/121 修复）** |
 | ~~COSTRA-120~~ | ~~tabBar 分包规约违反修正 + CI Rule-4 规约级升级（FU-COMMON-APP-JSON-DRIFT-TABBAR 专项 · P0 逃逸修复卡）~~ | ~~MiniApp-Agent~~ | ~~COSTRA-119~~ | ~~2~~ **（2026-04-28 15:44 · 整卡 CLOSED · 移至 Done · ⚠️ 同族盲区第 3 次由 121 修复）** |
-| ~~COSTRA-121~~ | ~~**project.config.json 工作区恢复 + miniprogram 子副本删除 + CI Rule-5 工具链单源兜底**（FU-COMMON-PROJECT-CONFIG-DRIFT 专项 · 同族规约盲区第 3 次 · D-011 SSOT 工具链层首次实战）~~ | ~~MiniApp-Agent（跨区第 4 次）~~ | ~~COSTRA-119/120~~ | ~~2~~ **（2026-04-28 19:26 · 整卡 CLOSED · 移至 Done）** |
+| ~~COSTRA-121~~ | ~~**project.config.json 工作区恢复 + miniprogram 子副本删除 + CI Rule-5 工具链单源兜底**（FU-COMMON-PROJECT-CONFIG-DRIFT 专项 · 同族规约盲区第 3 次 · D-011 SSOT 工具链层首次实战）~~ | ~~MiniApp-Agent（跨区第 4 次）~~ | ~~COSTRA-119/120~~ | ~~2~~ **（2026-04-28 19:26 · 整卡 CLOSED · 移至 Done · ⚠️ 核心假设被 122 实测证伪 · 物理修复仍必要）** |
+| ~~COSTRA-122~~ | ~~**tokens/index.ts JSON import runtime 兼容性修复**（FU-TOKENS-JSON-RUNTIME-IMPORT 专项 · 同族规约盲区第 4 次 · 121 假设证伪的 runtime 层补位 · 单文件内联常量）~~ | ~~MiniApp-Agent~~ | ~~COSTRA-121（物理前置）· COSTRA-011（tokens SSOT）~~ | ~~1~~ **（2026-04-29 10:41 · 整卡 CLOSED · 移至 Done · 🏆 D-017 v2 升级双重强证据收官）** |
 
 > 📌 COSTRA-106（Sprint-0 Retro）延至 Sprint-2 头部；COSTRA-116（ICP 进度追踪）并入 PM 常规不计点（D-009 §3）。
 > 📌 COSTRA-117 新增自 2026-04-23 20:52（commit 29d1849 时观测到 husky v10 DEPRECATED 警告；v10 升级后会 FAIL，现在清理属低成本预防）。**号段说明**：跳过 116（已占用 ICP 追踪），续号 117 属 11x 扩展与基建域 ✅。
@@ -171,6 +172,18 @@ _（无强阻塞。COSTRA-040 "真实上传链路激活" 仍依赖外部资源�
   - **Orchestrator "工具噪声暂留"判断纠偏**：COSTRA-119 收官建议属误判 · 120 继承该错误一轮 · 121 三层防护（`.gitignore` + Rule-5c CI + README §本地开发）永久消除
   - **FU 变更**：新 FU-COMMON-PROJECT-CONFIG-DRIFT `closed` 同轮（resolved_by COSTRA-121）· 前两 FU（119/120）追加同族备注 · **三连 FU 完整追溯链**
   - **commit**：`8a9c947` · 11 files · +1451/-156 · pre-commit + commit-msg hooks 全过
+- [D] **🏆 COSTRA-122** tokens/index.ts JSON import runtime 兼容性修复（FU-TOKENS-JSON-RUNTIME-IMPORT 专项 · 1 点极小卡 · 同族规约盲区第 4 次 · 121 假设证伪的 runtime 层补位 · 单文件内联常量）    @MiniApp-Agent  · 2026-04-29 10:41 **Human T2 approve** · 整卡收官 · 单轮 R1 Tech APPROVE **35/35**（P0=0 P1=0 P2=0 OPTIONAL=1 非阻断）· `.team/reviews/COSTRA-122/round-1-tech.md`
+  - **交付 1 文件**：`miniprogram/tokens/index.ts` +50/-2 · 从 `import tokensJson from './tokens.json'` 改写为 `const tokensData = {...} as const` 内联 TS 常量 · 导出签名（tokens/Tokens/color/spacing/radius）100% 保持 · 顶部 4 行硬约束注释（禁止回退 JSON import + 真因解释 + 正确做法）· tokens.json 零改动（仍作 SSOT · Sprint-2 FU-118-3 构建脚本根治）
+  - **六闸全绿 + 静态对账双重 + 反向验证三向**：tsc/lint/vitest 13-13/check:appjson/check:tooling/check:whitelist 全 exit 0 · grep 源码无 `.json` import 遗留（唯一命中是注释警告字符串 · 反面教材）· tokens.json vs 内联字段递归排序严格字节对齐 ✅ YES · Reverse-1（改回 JSON import 触发静态对账告警）+ Reverse-2（丢字段触发 diff-tokens.mjs DIFF）+ Reverse-3（去 `as const` 当前非硬拦截 · 记 OPTIONAL · Sprint-2 FU-118-3 机制化根治）
+  - **价值兑现** 🏆：① **121 核心假设证伪事实定稿**：`useCompilerPlugins:["typescript"]` 只管 `.ts→.js` 转译 · **不改变 JSON 模块 runtime 解析语义** · 微信 CommonJS require loader **不识别 `.json` 扩展名** · 真根因在 runtime 契约层 ② **121 物理修复价值完整保留**：D1~D8 全部必要且正确 · D-011 SSOT 工具链层 + 五位一体兜底范式结论不受证伪影响 · 只有"121 单卡即解决"狭义假设被证伪 ③ **两卡累加范式建立**：121 工具链 SSOT + 122 runtime 契约层 · 首次实战揭示"规约盲区可能有多个语义层次"· 未来类似问题必须运行期 + 工具链 + 物理 + 规约多层核查 ④ **D-017 v2 升级双重强证据就位**（121 二次逆转 + 122 假设证伪）⑤ **Orchestrator 跨卡治理反哺闭环首次验证**：121 §13.6 v1.2 教训在 122 立案时第一次被正确应用（git 三工具齐跑不再漏）· §13.6 v1.2 → §13.7 v1.3 追写模式议入 SOP-REVIEW v2.1 §12
+  - **Scope 铁律 100% 严守**：1 文件改动（`tokens/index.ts`）· tokens.json 零改动 · 无 CI 扩展 · 无 .gitignore 变更 · 无跨区（与 121 跨区第 4 次形成对比 · 122 回归单点精修模式）
+  - **D-016 第十一次实战合规**：Human 2026-04-28 20:14 触发 `run miniapp COSTRA-122` → Orchestrator 同 tool call 循环 R1 实装 + 五闸 + 静态对账 + Tech Review 拉起 · **AI 全流程 ~6 分钟**（20:14→20:20）+ Human 终审 ~14h（含夜间休息 · 04-29 10:41）· 连续十一次零跨轮异步反模式 · **Sprint-1 末 Retro 强推 D-016 升定稿规约（11 次实战证据超充足）**
+  - **D-017 第 3 次实战完整闭环**：Human 2026-04-28 19:5x 第四次模拟器启动失败立案 → Orchestrator 事实源三证齐全核查（git ls-files/log/show HEAD: 全做 · 121 教训沉淀后**第一次正确前置**）→ 定稿 121 假设证伪 · 真根因 runtime 契约层 → 派单 → R1 → Review → Human 终审 · **D-017 v1→v2 升级两条必加项铁证**：① 事实源工具链必须含 git 追踪态核查为强制前置 ② runtime 实测必须作为 runtime 规约类 T2 卡终审绝对证据（Review 35/35 ≠ 假设正确）
+  - **§13.7 v1.3 跨卡治理反哺追写**（~80 行 · 承接 121 §13.6 v1.2）：A 证伪定稿对照表 · B 121 物理修复价值复盘（D1~D8 全部必要且正确）· C 122 补位事实总结 · D 事实源核查链四次逆转完整教训归档 · E Sprint-1 末 Retro 议题 13 条（新增第 13 条 Review 机制增强 · 运行期契约对账表）· F 对未来 Review 的三点显式输入
+  - **FU 变更**：FU-TOKENS-JSON-RUNTIME-IMPORT 同轮 closed · FU-COMMON-PROJECT-CONFIG-DRIFT 升级为 closed（两卡累加完整闭环 · 121 物理 + 122 runtime）· 新立 FU-LAUNCH-FIRST-RENDER-RACE（P2 观察 · Sprint-1 候选 · 非 122 引入 · 含类 A 微信 SDK 启动时序 Bug 族 + 类 B 首渲染时序警告）
+  - **Human 第五次模拟器启动验证证据**：登录页完整渲染（钱袋 emoji + Costra 品牌 + 一键微信登录按钮）· app.ts:6 `module 'tokens/tokens.json.js' is not defined` **彻底消失** · onLaunch `env= dev` 正常 · `wx.reLaunch('/pages/login/index')` 成功 · Launch Time 3547ms · Console 残留全部与 122 无因果关系（类 A/B/C 三类分流完毕 · 截图已递交）
+  - **同族规约盲区四连完整闭环** 🎯：119 文件（L1）+ 120 tabBar（L3）+ 121 工具链 SSOT（L2）+ 122 runtime 契约（L0）· Sprint-1 末 Retro 第 10 条议题升级为最高紧迫性（系统化盘点必须启动 · 当前被动剥洋葱式已到第 4 层 · 不排除第 5 层存在可能性）
+  - **commit**：待 Orchestrator 同轮提交
 
 ---
 
@@ -191,7 +204,7 @@ _（无强阻塞。COSTRA-040 "真实上传链路激活" 仍依赖外部资源�
 | Sprint | 周期 | 卡数 | 估点 | 状态 | 备注 |
 |---|---|---|---|---|---|
 | Sprint-0 | 2026-04-21 ~ 2026-04-22 | 10 | 28 | ✅ 收官 | execute-now 模式，2 小时完成 7 张 Review 卡 |
-| Sprint-1 | 2026-04-23 ~ 2026-05-06 | 20 | 46 | 🟢 启动中 | 重点：单人记账端到端 + G3 补齐；COSTRA-117 补入（husky v10 兼容）；🆕 COSTRA-118 补入（miniprogram 技术债专项普查 · 不计点）；🆕 COSTRA-119 紧急补入（app.json 文件侧漂移 · 已收官 · 但 P0 逃逸×2）；🆕 COSTRA-120 紧急补入（tabBar 规约违反 · 119 P0 逃逸修复 · 已收官 · 留同族第 3 次）；🆕 **COSTRA-121 紧急补入**（工具链 SSOT 单源 · D-011 工具链层首次实战 · 已收官 @ 2026-04-28 19:26 · 同族规约盲区三连完整闭环）|
+| Sprint-1 | 2026-04-23 ~ 2026-05-06 | 21 | 47 | 🟢 启动中 | 重点：单人记账端到端 + G3 补齐；COSTRA-117 补入（husky v10 兼容）；🆕 COSTRA-118 补入（miniprogram 技术债专项普查 · 不计点）；🆕 COSTRA-119 紧急补入（app.json 文件侧漂移 · 已收官 · 但 P0 逃逸×2）；🆕 COSTRA-120 紧急补入（tabBar 规约违反 · 119 P0 逃逸修复 · 已收官 · 留同族第 3 次）；🆕 COSTRA-121 紧急补入（工具链 SSOT 单源 · D-011 工具链层首次实战 · 已收官但核心假设被 122 实测证伪）；🆕 **COSTRA-122 紧急补入**（runtime JSON loader 兼容性 · 121 假设证伪的 runtime 层补位 · 同族第 4 次 · 1 点极小卡）|
 
 ---
 
@@ -218,25 +231,25 @@ _（无强阻塞。COSTRA-040 "真实上传链路激活" 仍依赖外部资源�
 
 ## 🧭 Human 下一次介入节点
 
-1. **🟢 被动等**：ICP 备案短信审核到达时 5 分钟内回验证码（通常 3~5 日首审）
-2. **🟢 被动等**：订阅消息文案 v0.1 今午前到手后 → 扫一眼 → 去微信后台申请 3 条模板
-3. **🟢 被动等**：隐私指引辅助清单今晚到手后 → 对照微信后台填写（主体栏填**个人身份证**）
-4. **🟢 推荐立即（秒级）**：**以打开 `Costra/` 项目根方式**重开微信开发者工具 5 秒验模拟器启动（第四次验证 · 工具链 SSOT 修复 · 前三次均失败 · 119/120/121 三重修复叠加后应贯通）
-5. **🟢 推荐立即（5 分钟）**：COSTRA-102 Mock 通路 5 步 · 前置已**五重解锁**（100+116+119+120+**121**）· 可提前完成 04-30 验证一半
-6. **Sprint-1 中点（2026-04-30）**：本地验证 COSTRA-102 真实登录端到端（开发者工具"不校验合法域名"模式 · 前置五重解锁）
-7. **Sprint-1 末（2026-05-06）**：G4 合并闸门决策（议题 +3：紧急卡**三连**溢出 46 点 · 119+120+121 同族规约盲区三连 · D-017 v1→v2 升级 · D-016 升定稿规约 · T2 档位结构性局限 · Sprint-0 骨架期遗留微信规约债务系统性预防）
-8. **ICP 下证日（估 05 月中下旬）**：把 `api.costra.cloud` 配进微信后台"服务器域名"白名单，发 `close:R-013`
-9. **2026-07-16**：开发服务器到期前 7 日决策（续费 vs 迁移云托管）
+1. **🟢 立即可做（推荐 · 无阻塞）**：按 `docs/qa/costra-102-human-verify.md §1.2 方式 A Mock` 跑 **COSTRA-102 Mock 5 步**（~5 分钟 · 登录页已贯通 · 同族规约盲区四连全闭环 · 首个端到端 UI 流可验证）
+2. **🟢 被动等**：ICP 备案短信审核到达时 5 分钟内回验证码（通常 3~5 日首审）
+3. **🟢 被动等**：订阅消息文案 v0.1 今午前到手后 → 扫一眼 → 去微信后台申请 3 条模板
+4. **🟢 被动等**：隐私指引辅助清单今晚到手后 → 对照微信后台填写（主体栏填**个人身份证**）
+5. **Sprint-1 中点（2026-04-30）**：本地验证 COSTRA-102 真实登录端到端（前置六重解锁：100+116+119+120+121+122 全数 CLOSED）
+6. **Sprint-1 末（2026-05-06）**：G4 合并闸门决策（Retro 13 条议题 · 见 `.team/reviews/COSTRA-121/round-1-tech.md §13.7 v1.3 §E` 最终定稿 · 含紧急卡**四连**溢出 47 点 · 同族规约盲区四连 · D-017 v1→v2 升级（121 二次逆转 + 122 假设证伪双重强证据）· D-016 升定稿规约 · T2 档位结构性局限 · Sprint-0 骨架期遗留微信规约债务系统性预防 · Review 机制增强）
+7. **ICP 下证日（估 05 月中下旬）**：把 `api.costra.cloud` 配进微信后台"服务器域名"白名单，发 `close:R-013`
+8. **2026-07-16**：开发服务器到期前 7 日决策（续费 vs 迁移云托管）
 
-> **现阶段 Human 无阻塞动作**，COSTRA-121 已整卡 CLOSED @ 2026-04-28 19:26 · 建议以打开 `Costra/` 项目根方式重开微信开发者工具做第四次验证 + COSTRA-102 Mock 5 步（都是可选推荐 · 不阻塞任何事）。Orchestrator 将在每个关键节点主动冒泡。
+> **现阶段无阻塞决策**：COSTRA-122 已整卡 CLOSED · Human 第五次模拟器启动验证贯通 · 同族规约盲区四连（119+120+121+122）全部闭环 · Sprint-1 基建线 6 卡（115/116/119/120/121/122）全数 CLOSED · 启动链向 runtime 的最后一层已兜死。接下来是 COSTRA-102 端到端流的自由验证窗口。Orchestrator 将在每个关键节点主动冒泡。
 
 ---
 
 ## 💤 Orchestrator 状态
 
-- **MODE**：`idle-awaiting-next-card`（**🏆 COSTRA-121 整卡 Human APPROVED CLOSED @ 2026-04-28 19:26** · T2 Tech 35/35 · P0/P1/P2=0 OPTIONAL=2 非阻断 · 三向反向验证双向证据闭环（Rule-5a/5b/5c）· **D-011 SSOT 规约工具链层首次实战 · 五位一体兜底范式建立** · **CI 对账族第 3 次扩展（从 2 扩到 3：whitelist + appjson Rule-1~4 + tooling Rule-5a/5b/5c）** · **D-017 第 2 次实战完整闭环 · 三次事实源核查逆转教训沉淀** · 119 Review §13.6 v1.1→v1.2 跨卡治理反哺 · D-016 第 10 次实战合规 · 跨区授权第 4 次实战 · AI 全流程 17 分钟 + Human 终审 ~2h14min · 🏆 **同族规约盲区三连完整收官**（119 文件 + 120 tabBar + 121 工具链）· Sprint-1 Backend/DevOps/MiniApp 基建线 6 张小卡全数收官 · Sprint-1 总估点 46 · **commit `8a9c947` 11 files +1451/-156**）
-- **下一动作**：Human 选择（推荐顺序）：① **以打开 `Costra/` 项目根方式**重开微信开发者工具 5 秒验模拟器启动（第四次验证 · 工具链 SSOT 修复 · 前三次均失败） ② **立即跑 COSTRA-102 Mock 通路 5 步**（5 分钟 · 前置已五重解锁：100+116+119+120+121 · 可提前完成 04-30 验证一半） ③ `run miniapp COSTRA-103`（本地持久化 · 可并行） ④ `run devops COSTRA-114`（开发手册 · 随时） ⑤ Sprint-1 末：DevOps 0.5 点小卡认领 FU-116-1 P3 观察
-- **保存点**：COSTRA-121 commit **`8a9c947`**（11 files · +1451/-156 · D-012 单卡即提交）+ Tech Review 报告（`.team/reviews/COSTRA-121/round-1-tech.md` · APPROVE 35/35）+ MiniApp R1 Response（`.team/reviews/COSTRA-121/round-1-miniapp-response.md`）+ 新 CI 脚本（`scripts/devops/miniapp-tooling-check.mjs`）+ 119 Review §13.6 v1.2 补遗 + FU-COMMON-PROJECT-CONFIG-DRIFT closed（三连 FU 完整）+ STATE/board 全部同步 @ 2026-04-28 19:26
-- **D-016 第十次实战结果**：✅ 合规 · Human 15:58 立案 → Orchestrator 事实源核查三轮（二次逆转定稿）→ 方向 A 裁决（16:03）→ 打开姿势确认（16:52）→ 派单（16:55）→ R1 完工（17:10）→ Review APPROVE（17:12）· 全程 AI 流水 **17 分钟**同 tool call 循环 · Human 终审 ~2h14min（17:12 → 19:26）属正常节奏（非 Agent 跨轮）· 连续十次零跨轮异步反模式 · **Sprint-1 末 Retro 建议 D-016 升"定稿规约"（10 次实战证据充足 + D-017 时序关系形式化）**
-- **Sprint-1 串联态**：🟢 COSTRA-115 CLOSED @ 04-27 14:10 · 🟢 COSTRA-116 CLOSED @ 04-27 15:57 · 🟢 COSTRA-119 CLOSED @ 04-28 13:48（⚠️ P0 逃逸已由 120 修复）· 🟢 COSTRA-120 CLOSED @ 04-28 15:44（⚠️ 同族第 3 次已由 121 修复）· 🟢 **COSTRA-121 CLOSED @ 04-28 19:26（本轮）** · 🟡 COSTRA-102 Human-Review 等 04-30 或即时 · ⏳ COSTRA-114 Todo · **Backend/DevOps/MiniApp 基建线 6 张小卡全数收官** · **本次核心价值**：CI 对账族从微信规约级（Rule-4）升级到 SSOT 层（Rule-5a/5b/5c）· L2 工具链层盲区永久机制化兜死 · D-011 工具链层首次实战 + 五位一体兜底范式建立
-- **范式沉淀议题**（议 Sprint-1 末 Retro）：① FU 专项卡纳入正式卡类别 ② T2 档位补"FU 专项 / SSOT 对齐 / 能力边界兜底 / 规约级 CI / 工具链 SSOT"典型触发场景（115/116/119/120/121 五次实战证据） ③ **D-016 升定稿规约（10 次实战证据充足）** ④ **D-017 v1→v2 升级规约**（事实源工具链必须含 git 追踪态核查 ls-files/log/show HEAD: 写成强制前置步骤 · 121 二次逆转提供直接证据） ⑤ Orchestrator dispatch 推导需加事实源对账（FU-102-SYNC-PULL-DRIFT 议题） ⑥ R-013 保持 Mitigated 等 ICP 下证日 Human 按 `infra/wechat/domains.md §4` 关闭（FU-115-2 跟踪） ⑦ **跨区授权范式定型**（COSTRA-116 Backend → COSTRA-119/120/121 MiniApp 四次跨区实战 · 主产出归属 + 显式授权 + 回归兜底三位一体） ⑧ **T2 档位结构性局限议题**（119/121 两次 P0 逃逸暴露 · 纸面审 + 命令行五闸结构性漏检 "runtime 才爆" 类规约违反 · 改进方向：Review-Tech 显式枚举微信规约对账表 + CI 规约级 Rule 族持续扩展到 SSOT 层） ⑨ **紧急卡连续三连溢出议题**（119+120+121 三张紧急卡 · Sprint-1 从 40 溢到 46 · Sprint-0 骨架期遗留微信规约债务系统性预防 · D-011 SSOT 工具链层兜底范式沉淀可复用模板） ⑩ **Orchestrator "工具噪声暂留"判断纠偏教训**（119 收官误判 · 120 继承一轮 · 121 纠偏 · 未来此类"暂留"建议需二次核查事实源）
+- **MODE**：`idle-between-cards`（🏆 **COSTRA-122 整卡 CLOSED @ 2026-04-29 10:41** · Human T2 APPROVED · 第五次模拟器启动实测贯通 · 登录页完整渲染 · `module 'tokens/tokens.json.js' is not defined` 彻底消失 · 同族规约盲区四连（119 文件 L1 + 120 tabBar L3 + 121 工具链 L2 + 122 runtime L0）**完整闭环** · 两卡累加范式建立（121 物理工具链 SSOT + 122 runtime 契约层）· D-011 SSOT 规约沉淀为"工具链层 + runtime 契约层"双层累加治理范式 · D-017 v1→v2 升级双重强证据就位 · D-016 第 11 次实战合规 · Sprint-1 总估点 46→47 定稿）
+- **下一动作**：等 Human 自主触发 · 推荐立即跑 COSTRA-102 Mock 5 步（`docs/qa/costra-102-human-verify.md §1.2 方式 A`）· 无阻塞决策
+- **保存点**：COSTRA-122 commit 待本轮同步提交（按 R1 §8 提交策略）· 改动清单：`miniprogram/tokens/index.ts`（+50/-2 R1 核心）+ `.team/dispatch/COSTRA-122-*.md`（新）+ `.team/reviews/COSTRA-122/round-1-{miniapp-response,tech}.md`（新）+ `.team/reviews/COSTRA-121/round-1-tech.md`（§13.7 v1.3 追写 · ~80 行）+ `.team/follow-ups/README.md`（FU 三处变更：FU-TOKENS-JSON-RUNTIME-IMPORT closed + FU-COMMON-PROJECT-CONFIG-DRIFT 升级 closed + 新立 FU-LAUNCH-FIRST-RENDER-RACE）+ `.team/STATE` + `.team/board.md`
+- **D-017 第 3 次实战完整闭环**：Human 2026-04-28 19:5x 立案 → Orchestrator 事实源三证齐全核查（git ls-files/log/show HEAD: 全做 · 121 教训沉淀后**第一次正确前置**）→ 定稿 121 假设证伪 · 真根因 runtime 契约层 → 19:57 派单 → 20:20 R1 完工 + Tech Review APPROVE → 04-29 10:41 Human T2 APPROVED · **AI 全流程 ~6 分钟** + Human 终审 ~14h（含夜间休息）· **D-017 v2 升级铁证**：① 事实源工具链必须含 git 追踪态核查为强制前置 ② runtime 实测必须作为 runtime 规约类 T2 卡终审绝对证据（Review 35/35 ≠ 假设正确）
+- **Sprint-1 串联态**：🟢 **基建线 6 卡全数 CLOSED**（115/116/119/120/121/122）· 🟡 COSTRA-102 Human-Review 已解锁（前置六重达成）· ⏳ COSTRA-114 Todo · **本次核心价值**：发现 runtime 契约层与工具链/规约层的**语义层次差**（工具链配置无法覆盖 runtime loader 契约）· D-011 SSOT 规约范式的边界首次被实战暴露并通过两卡累加范式（121 物理 + 122 runtime）治理闭环
+- **跨卡治理反哺范式首次验证**：121 §13.6 v1.2 教训在 122 立案时第一次被正确应用（git 三工具齐跑不再漏）· §13.6 v1.2 → §13.7 v1.3 追写模式拟议入 SOP-REVIEW v2.1 §12（Sprint-1 末 Retro 第 13 条议题）
+- **范式沉淀议题 13 条最终定稿**（见 `.team/reviews/COSTRA-121/round-1-tech.md §13.7 v1.3 §E`）：① 紧急卡四连溢出 ② 同族规约盲区四连 ③ D-017 v1→v2 升级 ④ D-016 升定稿规约 ⑤ T2 档位结构性局限 ⑥ Sprint-0 骨架期遗留微信规约债务系统性预防 ⑦ 能力边界铁律 ⑧ Orchestrator 工具噪声暂留判断纠偏 ⑨ 收官判断证伪机制 ⑩ 规约盲区语义层次分层（L0 runtime / L1 文件 / L2 工具链 / L3 规约）⑪ 跨卡治理反哺追写范式（§13.6→§13.7）⑫ FU 语义升级（closed / closed-but-insufficient / closed-累加）⑬ Review 机制增强（运行期契约对账表 · T2 runtime 规约类卡 Human 实测闸）

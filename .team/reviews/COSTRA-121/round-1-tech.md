@@ -274,3 +274,77 @@ v1.2 五段位（v1.2-A~E）覆盖：事实源核查链二次逆转教训 + "工
 ---
 
 **Review-Agent-Tech · T2 单轨审查完成 · APPROVE · 交回 Orchestrator 做状态同步与 Human 终审引导。**
+
+---
+
+## §13.7 v1.3 · 收官后复盘补遗（2026-04-29 10:48 · COSTRA-122 Human T2 APPROVED CLOSED 后追写）
+
+> 本段由 Orchestrator 在 COSTRA-122 收官时追写 · 承接 121 §13.6 v1.2 的跨卡治理反哺 · 对**121 核心假设证伪**这一事实做最终定稿 · 为 Sprint-1 末 Retro 提供完整证据链。本段 v1.3 是对 §13.6 v1.2 的**时间线延伸**（119 收官 v1.1 → 121 收官 v1.2 → **122 收官 v1.3**），不修改 v1.1/v1.2 历史评价。
+
+### §13.7-A · 121 核心假设证伪的事实定稿（最终版）
+
+| 项 | 121 假设（dispatch §事件时序⑦） | 122 实测证据 | 定稿 |
+|---|---|---|---|
+| 因果链 | `useCompilerPlugins:["typescript"]` 启用后 TS `import json from './x.json'` 会被微信 runtime 正确转译 | Human 2026-04-28 19:5x 第四次模拟器启动 · 五证齐全（HEAD=c9826c4 · 根 config 完整 · 插件启用 · 子副本不存在 · `check:tooling` 3/3 pass）**仍报同一错误** `module 'tokens/tokens.json.js' is not defined at index.ts:5` | ❌ **证伪** |
+| 真根因 | （错判）工具链配置漂移 | `useCompilerPlugins:["typescript"]` 只管 `.ts→.js` 转译 · **不改变 JSON 模块 runtime 解析语义** · 微信 CommonJS require loader 不识别 `.json` 扩展名 · 自动补 `.js` → module not defined | ✅ **runtime 契约层盲区**（与工具链配置无关） |
+| 修复层次 | （单一维度）工具链 SSOT | 工具链 SSOT（121 物理层 · **全部必要且正确**）+ runtime 契约层（122 源码内联 · 单文件 +50/-2） | ✅ **两卡累加才是完整修复** |
+
+### §13.7-B · 121 物理修复的价值复盘（澄清 ≠ 贬值）
+
+> 以下结论即使在 122 证伪 121 核心假设后**仍然成立**，不应因证伪而削弱 121 的治理价值：
+
+| 121 D 项 | 必要性 | 解释 |
+|---|---|---|
+| D1 根 config 工作区恢复 | ✅ 必要 | 打开微信工具的物理前提 · 无可替代 |
+| D2 子 config 删除 | ✅ 必要 | 消除双 config 漂移 · D-011 SSOT 规约合规 |
+| D3 .gitignore 子副本兜底 | ✅ 必要 | 机制化防再生 · 永久闸门 |
+| D4 CI Rule-5a/5b/5c | ✅ 必要 | 工具链层 L2 规约级 CI · **CI 对账族第 3 代落地** |
+| D5 package.json check:tooling | ✅ 必要 | D4 联动 |
+| D6 README §本地开发 | ✅ 必要 | Human 打开姿势永久文档化（Human 2026-04-28 16:52 明确表态依赖） |
+| D7 FU 同轮闭环 | ✅ 必要 | 三连 FU 追溯链 |
+| D8 119 Review §13.6 v1.2 | ✅ 必要 | 跨卡治理反哺 |
+
+→ 121 的**物理修复 + CI + 文档 + 治理反哺全栈价值**完整保留 · **D-011 SSOT 规约工具链层首次实战 · 五位一体兜底范式**结论不受证伪影响。只有"用 121 就能独立解决 runtime 问题"这一**狭义因果链假设**被证伪。
+
+### §13.7-C · 122 补位的事实总结
+
+- **派单**：2026-04-28 19:57（121 Human APPROVE 后约 30 分钟 · Human 第四次模拟器启动失败立即暴露）
+- **R1 完工**：2026-04-28 20:18（MiniApp-Agent · 4 分钟）
+- **R1 Tech APPROVE**：2026-04-28 20:20 · **35/35** · P0/P1/P2=0 · OPTIONAL=1 非阻断
+- **AI 全流程**：~6 分钟（同 tool call 循环 · D-016 第 11 次实战合规 · 远快于 30 分钟预算）
+- **Human 终审**：2026-04-29 10:41 · 第五次模拟器启动 · 登录页完整渲染（钱袋 emoji + Costra 品牌 + 一键微信登录按钮）· `app.ts:6` 错误**完全消失** · onLaunch `env= dev` · `wx.reLaunch('/pages/login/index')` 成功 · Launch Time 3547ms
+- **Console 残留**：全部与 122 无因果关系
+  - 类 A：`[jsbridge] invoke getGlobalStorage/setGlobalStorage/removeGlobalStorage/traceEvent fail: too eayly` · 调用栈全在 `WAWebview.js` 微信 SDK 内部 · 拼写 `eayly` 是 SDK 内置字符串 · 我方 `storage.ts` 从未调用这些 API → **微信开发者工具 2.01.2510290 + 基础库 2.32.3 启动时序内部 Bug**
+  - 类 B：`Expected updated data but get first rendering data` · setData 时机早于首渲染 · 与分包 + 懒加载时序相关 · UI 最终完整显示 · 已单立 **FU-LAUNCH-FIRST-RENDER-RACE**（P2 观察 · Sprint-1 候选）
+  - 类 C：INFO 日志（自动热重载 / SharedArrayBuffer deprecation / WeChatLib 版本 / 分包数 / 懒加载标志 / `[Costra] onLaunch env= dev` / Launch Time）
+
+### §13.7-D · 事实源核查链四次逆转完整教训归档
+
+| 次序 | 时点 | 假设 | 是否正确 | 教训 |
+|---|---|---|---|---|
+| 第 1 次 | 2026-04-27 09:37（COSTRA-118 P0-9） | tokens.json → wxss 桥接未闭合 | 部分对 · **漏查 runtime 可加载性** | Review 档位对"代码是否能 runtime 运行"覆盖度不足 |
+| 第 2 次 | 2026-04-28 16:00（121 事前） | app.ts:6 源码 require JSON 需改造 | ❌ 误判 | 未核查 git 追踪态 |
+| 第 3 次 | 2026-04-28 16:30（121 事前） | 双 config 漂移 · 子覆盖根 | ❌ 误判 | 未看 HEAD 文件 |
+| 第 4 次 | 2026-04-28 16:55（121 dispatch §7 定稿） | 工具链 SSOT 修复后 runtime 自然通过 | ❌ 证伪 · 第五次模拟器启动仍报错 | **纯推理 + 命令行五闸不够 · 微信工具是最终裁决者** |
+| 第 5 次 | 2026-04-28 19:57（122 dispatch §0） | runtime CommonJS loader 不识别 `.json` · 源码必须内联 | ✅ 证实 · 第五次模拟器启动通过 | D-017 v2 升级强证据：**runtime 实测必须作为 runtime 规约类 T2 卡的终审证据** |
+
+### §13.7-E · Sprint-1 末 Retro 议题（v1.3 最终定稿 · 13 条）
+
+基于 §13.6 v1.2 九条议题 + v1.3 补入四条：
+
+| # | 议题（v1.3 新增/加固 · 含 v1.2 既有）|
+|---|---|
+| 10 | **Sprint-0 骨架期微信规约债务系统化盘点**（被动剥洋葱式已到第 4 次 · 必须主动盘点 · 可能有第 5/第 6 层） · **v1.3 加固紧迫性**：122 收官第五次模拟器未再暴露新规约违反，但类 B 首渲染时序警告值得观察（FU-LAUNCH-FIRST-RENDER-RACE） |
+| 11 | **D-017 v1→v2 升级为定稿规约**（含"事实源工具链必须含 git 追踪态核查 ls-files/log/show HEAD: 为强制前置"+ **"runtime 实测必须作为 runtime 规约类 T2 卡的终审证据"**· v1.3 加固：122 是第二条强证据 · 本次证伪收官判断证伪机制必须机制化） |
+| 12 | **D-016 同轮兑现铁律升定稿规约**（10 次实战合规 → 11 次实战合规 · 证据超充足） |
+| 13 | **Review 机制增强 · 运行期契约对账表**（v1.3 新增 · 承接 §13.7-D 教训）：Review-Tech 显式增加"运行期契约"表（覆盖 JSON import / CSS var / API 扩展名 / module resolution 等 runtime-only 检查项） · 与 CI 规约族互补 · 防止下一次"T2 35/35 也可能基于错误假设"的结构性漏检 |
+
+### §13.7-F · 对未来 Review 的三点显式输入（v1.3 新增）
+
+1. **假设识别**：Review-Tech 对"因果链类假设"（如"启用 X 会导致 Y"）必须显式在评分表列出 · 并追加"Human 实测闸 / runtime 实测闸"作为假设的**终审绝对证据**
+2. **证伪接受度**：Review APPROVE 35/35 ≠ 假设正确 · 评分维度的高分只证明"评分维度内审查严密" · 跨维度的因果链假设需另立闸门（Human 实测闸）兜底
+3. **跨卡治理反哺的价值验证**：121 §13.6 v1.2 的"三次核查二次逆转教训"在 122 立案时**第一次被正确应用**（Orchestrator 19:5x 立案时主动 git ls-files/log/show HEAD 三工具齐跑 · 不再漏）→ **跨卡反哺闭环有效** · §13.6 v1.2 → §13.7 v1.3 的追写模式值得沉淀为 SOP-REVIEW v2.1 §12
+
+---
+
+_**v1.3 补遗完整性声明**：本段由 Orchestrator 在 COSTRA-122 收官同轮追写 · 所有事实源均已在 §13.7-C "122 补位的事实总结" 中列出 · 未来若再有同族第 5 次盲区暴露 · 将追写 v1.4 段落（保持历史定稿不改）。_
