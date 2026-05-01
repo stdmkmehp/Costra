@@ -9,7 +9,7 @@
 > **🆕 验证问题响应 SOP（D-017 · 2026-04-28 13:59 Human 立案 · 14:15 落盘）**：项目遇到验证失败时标准流程 —— ① 责任领域识别（Orchestrator 30s） → ② 责任 Agent 根因分析（只诊断不改文件） → ③ 多方案对比（≥2~3 方案 · 列成本/价值/风险 + Human 决策点 Qn） → ④ Human 评估裁决 → ⑤ 派单实装。**禁止 Orchestrator 自行分析根因**（反模式 A） · E1/E2/E3 例外 · 反模式 ABCD 禁令 · COSTRA-120 首次实战。详见 `.team/decisions/D-017-verification-problem-response-sop.md`。
 > **🔄 D-011 实战验证三次通过**（2026-04-23）：COSTRA-100（2 轮 · 69 min） + Sprint-0 补审（7 卡 × 2 轮 · 29 min 并行） + **COSTRA-101 Round 1 刚自动拉起（22:49 · D-014-b 首次实战）**
 
-最后更新：`2026-04-29 10:48`（Orchestrator · 🏆 **COSTRA-122 Human T2 APPROVED CLOSED @ 2026-04-29 10:41** · 第五次模拟器启动实测贯通 · 登录页完整渲染 · app.ts:6 `module 'tokens/tokens.json.js' is not defined` 彻底消失 · onLaunch `env= dev` 正常 · `wx.reLaunch('/pages/login/index')` 成功 · Launch Time 3547ms · Console 残留全部非 122 引入（类 A 微信 SDK 启动时序 Bug + 类 B 首渲染时序警告 FU-LAUNCH-FIRST-RENDER-RACE + 类 C INFO）· **同族规约盲区第 4 次完整闭环** · 两卡累加范式（121 工具链 + 122 runtime）· D-011 SSOT 工具链层 + runtime 契约层累加治理范式沉淀 · D-017 v2 升级双重强证据就位（121 二次逆转 + 122 假设证伪） · D-016 第 11 次实战合规 · Sprint-1 基建线 6 卡（115/116/119/120/121/122）全数 CLOSED · Sprint-1 总估点 46→47）
+最后更新：`2026-05-01 21:28`（Orchestrator · 🏆 **COSTRA-123 Human T2 APPROVED CLOSED @ 2026-05-01 21:28** · 第 6 次模拟器启动实测贯通 · `auth.ts:157 [auth] wx.login ok {codeLen: 32}` · decimal.js 运行时错误彻底消失 · Launch Time 865 ms · **同族规约盲区第 5 次完整闭环**（119 文件 + 120 tabBar + 121 工具链 + 122 .json loader + 123 npm 包 loader）· D-017 第 3 次实战**完整闭环 · 首次完整走完 Step 1~5 含 Review-Agent-Tech 过程复盘独立产出** · D-016 第 12 次实战合规 · AI 全流程 11 分钟 · Human 终审 15 分钟 · Sprint-1 基建线 7 卡全数 CLOSED · Sprint-1 总估点 47→48）
 
 ---
 
@@ -48,6 +48,9 @@
 | ~~COSTRA-120~~ | ~~tabBar 分包规约违反修正 + CI Rule-4 规约级升级（FU-COMMON-APP-JSON-DRIFT-TABBAR 专项 · P0 逃逸修复卡）~~ | ~~MiniApp-Agent~~ | ~~COSTRA-119~~ | ~~2~~ **（2026-04-28 15:44 · 整卡 CLOSED · 移至 Done · ⚠️ 同族盲区第 3 次由 121 修复）** |
 | ~~COSTRA-121~~ | ~~**project.config.json 工作区恢复 + miniprogram 子副本删除 + CI Rule-5 工具链单源兜底**（FU-COMMON-PROJECT-CONFIG-DRIFT 专项 · 同族规约盲区第 3 次 · D-011 SSOT 工具链层首次实战）~~ | ~~MiniApp-Agent（跨区第 4 次）~~ | ~~COSTRA-119/120~~ | ~~2~~ **（2026-04-28 19:26 · 整卡 CLOSED · 移至 Done · ⚠️ 核心假设被 122 实测证伪 · 物理修复仍必要）** |
 | ~~COSTRA-122~~ | ~~**tokens/index.ts JSON import runtime 兼容性修复**（FU-TOKENS-JSON-RUNTIME-IMPORT 专项 · 同族规约盲区第 4 次 · 121 假设证伪的 runtime 层补位 · 单文件内联常量）~~ | ~~MiniApp-Agent~~ | ~~COSTRA-121（物理前置）· COSTRA-011（tokens SSOT）~~ | ~~1~~ **（2026-04-29 10:41 · 整卡 CLOSED · 移至 Done · 🏆 D-017 v2 升级双重强证据收官）** |
+| ~~COSTRA-123~~ | ~~**MiniApp npm 构建桥接 + 验证手册补丁**（FU-MINIAPP-NPM-BRIDGE 专项 · 同族规约盲区第 5 次 · `packNpmRelationList` 桥接根 `package.json` → `./miniprogram/` + 手册 §0.3.1）~~ | ~~MiniApp-Agent~~ | ~~COSTRA-102 R1 · COSTRA-121（工具链前置）· COSTRA-122（runtime 先例）~~ | ~~1~~ **（2026-05-01 21:28 · 整卡 CLOSED · 移至 Done · 🏆 D-017 第 3 次实战首次完整走完五步 · Tech 34/35）** |
+
+> 📌 **🆕 COSTRA-123 新增自 2026-05-01 21:02**（Human 触发 · 方案 A · **同族规约盲区第 5 次紧急修复** · Human 按 `costra-102-human-verify.md §1.1` 验证时 `import Decimal from 'decimal.js'` 撞 `module 'utils/decimal.js' is not defined` · D-017 第 3 次实战 · 首次完整走完 Step 1~5 含 Review-Agent-Tech 过程复盘独立产出 · 号段续 11x~12x 域 ✅）。
 
 > 📌 COSTRA-106（Sprint-0 Retro）延至 Sprint-2 头部；COSTRA-116（ICP 进度追踪）并入 PM 常规不计点（D-009 §3）。
 > 📌 COSTRA-117 新增自 2026-04-23 20:52（commit 29d1849 时观测到 husky v10 DEPRECATED 警告；v10 升级后会 FAIL，现在清理属低成本预防）。**号段说明**：跳过 116（已占用 ICP 追踪），续号 117 属 11x 扩展与基建域 ✅。
@@ -56,7 +59,7 @@
 > 📌 **🆕 COSTRA-120 新增自 2026-04-28 14:22**（Human 触发 · 方案 A · **COSTRA-119 P0 逃逸紧急修复** · Human 模拟器二次启动失败暴露 tabBar 规约违反 · D-017 首次实战 · 跨区交付由 MiniApp 主驾 · 号段说明：续号 120 属 11x~12x 扩展与基建域 ✅）。
 > 📌 **🆕 COSTRA-121 新增自 2026-04-28 16:55**（Human 触发 · 方向 A · **119/120 同族规约盲区第 3 次紧急修复** · Human 模拟器**第三次启动失败**暴露工具链 SSOT 双向破坏 · D-017 第 2 次实战 · D-011 SSOT 规约**工具链层首次实战** · 跨区交付由 MiniApp 主驾第 4 次 · 号段续 11x~12x 域 ✅）。
 
-**Sprint-1 总估点**：**46 点**（40 + 2 [119] + 2 [120] + 2 [121] · **连续三张紧急卡溢出 40 工时顶格约束** · 已与 Human 确认 · Sprint-1 末 Retro 议 "紧急卡三连溢出 + D-017 v1→v2 升级 + D-016 升定稿规约 + T2 档位结构性局限 + Sprint-0 骨架期遗留微信规约债务系统性预防" 五议题）
+**Sprint-1 总估点**：**48 点**（40 + 2 [119] + 2 [120] + 2 [121] + 1 [122] + 1 [123] · **连续五张紧急卡溢出 40 工时顶格约束** · Sprint-0 骨架期遗留微信规约债务同族**五连** · Sprint-1 末 Retro 议题升级：紧急卡五连溢出 / D-017 v1→v2 升级（四次实战完整证据 · 候选新增 E4 代职边界例外）/ D-016 升定稿规约（12 次实战）/ T2 档位结构性局限 / Review-Tech 评分表增"runtime 加载性"维度（议题 13 升 P0）/ CI 引入 miniprogram-ci 真实编译冒烟（议题 15 新增）/ 同族盲区系统性预防 Epic-F 立案（议题 10 升 P0））
 
 ## 🔄 Doing（清洗后仅列真正 in-flight · 其余为 Todo-等触发）
 - [~] **COSTRA-114** @DevOps-Agent · 开发服务器 bootstrap **手册**（D-009）· **🟠 卡定义已 approve 但实际未开工**（I-003 · 04-24 17:00 澄清 · `docs/ops/` 目录不存在）· 等 Human 真正触发 `run devops COSTRA-114`

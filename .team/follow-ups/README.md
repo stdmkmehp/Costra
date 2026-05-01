@@ -535,9 +535,81 @@ R1 MiniApp 交付 · T2 Tech 单轨 APPROVE 35/35 · Human 第五次模拟器启
     4. 自动热重载在页面未就绪时重投 data
   - 另有一组 `[jsbridge] invoke getGlobalStorage/setGlobalStorage/removeGlobalStorage/traceEvent fail: too eayly` 报错 · 调用栈全在 `http://127.0.0.1:28677/__pageframe__/__dev__/WAWebview.js` · 微信 SDK 内部 · 拼写 `eayly`（官方拼错 early）为 SDK 内置字符串 · 我方 `services/storage.ts` 仅用 `wx.getStorageSync/setStorageSync`（同步 API）从未调用 `getGlobalStorage` 等 · **定性为微信开发者工具 2.01.2510290 + 基础库 2.32.3 启动时序内部 Bug**（非业务）· 合并到本 FU 追踪（同属"启动期内部时序"族）
 - **阻断级别**：P2（观察项 · 不阻任何链路 · UI 正常 · 功能正常）
-- **认领建议**：Sprint-1 候选小卡（若 `setData` 可定位到具体页面触发点则立 COSTRA-123 延伸 · 若确认全在微信 SDK 内部则不修仅文档化）
+- **认领建议**：Sprint-1 候选小卡（若 `setData` 可定位到具体页面触发点则立延伸卡 · 若确认全在微信 SDK 内部则不修仅文档化）
 - **状态**：`open`
 - **owner_card**：待 Sprint-1 末 Planning 决策
+- **🆕 第 2 次观察**（2026-05-01 21:18 · COSTRA-123 Human 第 6 次模拟器启动）：
+  - 现象重现：`[渲染层错误] invoke getGlobalStorage fail: too eayly` + `setGlobalStorage fail` + `removeGlobalStorage fail` 各 1 次 · 含 `SystemError (webviewSDKScriptError) Failed get/delete storage group metadata/data` 包装
+  - 时序锚点：`[system] WeChatLib: 2.32.3` → `No. of subpackages: 2` → `LazyCodeLoading: true` → `app.ts:23 [Costra] onLaunch env= dev` → **本 3 条报错** → `[system] Launch Time: 865 ms`
+  - 定性保持："微信开发者工具 2.01.2510290 + 基础库 2.32.3 启动时序内部 Bug" · Launch Time 从 122 收官的 3547 ms 降至 865 ms（COSTRA-123 npm 桥接生效 · 无 JSON loader fallback 延迟）· 功能侧完全贯通至 `auth.ts:157 [auth] wx.login ok {codeLen: 32}`
+  - **二级事实登记**（MiniApp-Agent D-017 Step 2 新发现 · 未坐实因果）：`miniprogram/services/storage.ts:29` 存在模块顶层副作用 `ensureVersion()` · 调用链 `app.ts:4 import './services/auth'` → `services/auth.ts:7 import './storage'` → top-level 同步执行 `wx.getStorageSync(VERSION_KEY) / 可能 wx.clearStorageSync / wx.setStorageSync` · 发生在 `App()` 注册之前 · 与 `too eayly` 时序**吻合但未坐实因果**（业务侧同步 API vs SDK 侧渲染层 `createOrGetStorageGroup/_prepare` · 两者可能只是并发发生 · grep 业务代码 `getGlobalStorage/setGlobalStorage/removeGlobalStorage` 零命中）
+  - **再次确认不阻任何链路**：登录按钮可点 · `wx.login` 成功 · Launch Time 865 ms · 后续业务 storage 读写正常
+- **同族观察次数**：首次 2026-04-29 10:41（COSTRA-122 收官）· **第 2 次 2026-05-01 21:18（COSTRA-123 收官）** · 未来第 3 次若仍现则需决策是否升 Sprint-1 末独立卡处理
+
+---
+
+### FU-MINIAPP-NPM-BRIDGE · MiniApp npm 构建桥接（decimal.js runtime 加载）
+
+- **来源**：Human 2026-05-01 20:33 按 `docs/qa/costra-102-human-verify.md §1.1` 点击"一键微信登录" · 模拟器报 `module 'utils/decimal.js' is not defined, require args is 'decimal.js' at money.ts:6`（同族规约盲区**第 5 次**复发）
+- **登记时间**：2026-05-01 21:02（COSTRA-123 dispatch 同轮）
+- **范围**：
+  - `project.config.json:42-48` · `packNpmManually:true` + `packNpmRelationList` 桥接根 `package.json` 到 `./miniprogram/`（微信工具在此目录下自动创建 `miniprogram_npm/` 子目录）
+  - `docs/qa/costra-102-human-verify.md §0.3.1` · 新增 5 步"微信开发者工具首次准备（构建 npm）"
+  - `miniprogram/README.md §3` · 末尾追加"构建 npm"首次必做提示
+- **问题（治理反思 · 三个维度）**：
+  - **盲区链第 5 次**：119 文件 → 120 tabBar → 121 工具链 → 122 .json loader → **123 npm 包 loader** · 共同结构"编译期工具链 ≠ runtime 加载契约"
+  - **七环链共同漏检**：ADR-0002 硬约束 / 118 技术债 Review / 118 FINAL 分流 / 102 实装响应 / 102 卡定义 Review / 102 R1 Tech Review / 102 Human 验证手册 · 七个环节无一提及"小程序 npm 桥接"（Review-Agent-Tech 在 20:35~20:55 的过程复盘报告 R1 独立证实）
+  - **CI 规约族当前无法覆盖**：`check:appjson` + `check:tooling` + `check:whitelist` 全绿 · 命令行 `tsc --noEmit` 能解析根 `node_modules/decimal.js` · 但微信 runtime 要求 `<miniprogramRoot>/miniprogram_npm/decimal.js/` 构建产物才能加载
+- **修复方案**（Human 2026-05-01 21:00 裁决 · 选 A）：
+  - 方案 A（采纳）：配置桥接根 `node_modules` · 无代码改动 · 与 `docs/ops/migration-to-mac.md:274-275` 既有约定自洽
+  - 方案 B（否决）：新建 `miniprogram/package.json` · 双 package.json 版本漂移风险
+  - 方案 C（否决）：vendor copy `decimal.min.js` · 违反 npm 语义 · 每次加 dep 都要手工
+- **阻断级别**：P0（阻 Human COSTRA-102 §1.1 本地验证 · 同族第 5 次）
+- **状态**：**`closed`** @ 2026-05-01 21:28（Human 第 6 次模拟器启动验证通过 · `auth.ts:157 [auth] wx.login ok {codeLen: 32}` · decimal.js 运行时错误彻底消失 · Launch Time 865 ms）
+- **owner_card**：**COSTRA-123**
+- **resolved_by**：COSTRA-123 R1 实装 · 3 文件 · `project.config.json` +5/-1 + 两份 markdown 共 +16 行 · 九闸全绿 + 反向验证 3 次 + Scope 严守 · 卡定义 Tech APPROVE 34/35 + R1 Tech APPROVE 34/35 · Human T2 APPROVED @ 2026-05-01 21:28 · D-016 第 12 次实战合规 · D-017 第 3 次实战完整闭环
+- **治理价值**：
+  - **D-017 第 3 次实战**（120 首次 · 121/122 第 2/3 次 · 123 第 3 次）· 首次完整走完 Step 1~5 全流程（含 Review-Agent-Tech 过程复盘独立产出）· 议题 D-017 v1→v2 升级证据第 3 组就位
+  - **同族盲区第 5 次复发实证**：122 Retro 议题 3（"同族盲区紧迫性"）精准预言第 5 次 · 升级为 **Sprint-2 头部 Epic-F 或独立专项 P0 强制立案**
+  - **Orchestrator 代职边界议题成立**：D-017 反模式 A 弱合规自报 · Sprint-1 末 Retro 新增第 14 条议题（D-017 §2.3 新增 E4 例外候选：Human 默示/明示接受代职分析合规化）
+  - **CI 升级候选立案**：FU-CI-MP-BUILD-NPM-ENFORCE（Sprint-2 候选 COSTRA-124）把 miniprogram-ci 真实编译引入 CI · 结构性消除"命令行五闸全绿 vs 微信 runtime 红"落差
+  - **Review-Tech 评分表增维候选**：FU-REVIEW-TECH-RUNTIME-DIM · 35 分制新增"runtime 加载性"维度 · Sprint-1 末 Retro 必议题第 13 条升级为 P0
+- **同族规约盲区追溯**：本条为"Sprint-0 骨架期遗留微信规约债务"同族第 **5 次**暴露（第 1 次 = FU-COMMON-APP-JSON-DRIFT · 第 2 次 = -TABBAR · 第 3 次 = -PROJECT-CONFIG-DRIFT · 第 4 次 = -TOKENS-JSON-RUNTIME-IMPORT · **第 5 次 = 本条**）· Sprint-1 末 Retro 议题 10 紧迫性升级为 P0 强制
+
+---
+
+### FU-COMMON-MINIAPP-PATCH-LIMIT · 首次实触发观察（COSTRA-102 R1 预言精准验证）
+
+- **现有 FU**：见下方索引 / COSTRA-102 R1 Review INFO-C 登记（2026-04-27 10:13）· 状态 `open-observation`
+- **🆕 首次实触发观察**（2026-05-01 21:18 · COSTRA-123 Human 第 6 次模拟器启动）：
+  - 现象原文：
+    ```
+    request.ts:88 POST http://localhost:8080/v1/users/me 404 (Not Found)
+    index.ts:68 [login] PATCH /users/me soft-fail Error: route not found: POST /v1/users/me
+    ```
+  - 链路精准命中 R1 Review §P1-2 预言（`.team/reviews/COSTRA-102/round-1-tech.md:74-81`）：`wx.request` 不支持 PATCH → `request.ts` 降级为 `POST + X-HTTP-Method-Override:PATCH` → server/Fastify 不识别该头 → 请求落到 POST 路由 → OpenAPI `/users/me` 只有 GET + PATCH 无 POST → **404 · 用户不可见的静默失败**
+  - 兜底有效：`pages/login/index.ts:68` `catch (e) { console.warn }` 打印 `soft-fail` · 登录流程继续推进至后续动作
+  - **不阻 COSTRA-123 · 不阻 COSTRA-102 §1.1 Pass**（R1 Review 已判 P1 非阻塞）
+- **FU 状态**：保持 `open-observation` · 归 **Sprint-2 基础能力改造**（非单卡）
+- **备选三方案**（R1 Review §P1-2 预议 · 保留）：
+  - (a) server/Fastify 加统一 `methodOverride` 中间件
+  - (b) MiniApp-Agent 自己切到 DELETE+重建语义
+  - (c) OpenAPI 改 PATCH → PUT（无破坏 · 语义等价）
+- **治理价值**：R1 Review 在撞坑前 4 天（2026-04-27 10:13）精准预言此 P1 失败 · 证明 T2 档位 Tech Review 的"预言性 FU 登记"机制有效 · 减少未来同类问题的响应时长
+
+---
+
+## 📌 COSTRA-123 R1 T2 Tech APPROVE + Human T2 APPROVED 后状态流转（2026-05-01 21:28）
+
+R1 MiniApp 交付 · T2 Tech 单轨 APPROVE 34/35 · Human 第 6 次模拟器启动实测验证通过（`auth.ts:157 [auth] wx.login ok {codeLen: 32}` · Launch Time 865 ms） · 同轮新立 1 条 FU + 追加 2 条 FU 观察证据：
+
+| FU-ID | 状态 | owner_card |
+|---|---|---|
+| 🆕 FU-MINIAPP-NPM-BRIDGE | **`closed`** @ 2026-05-01（同族第 5 次完整闭环 · 本卡解决） | COSTRA-123 |
+| FU-LAUNCH-FIRST-RENDER-RACE | **`open`**（第 2 次观察 · 2026-05-01 21:18 · 二级事实 `ensureVersion()` top-level 副作用登记但未坐实因果） | Sprint-1 候选 |
+| FU-COMMON-MINIAPP-PATCH-LIMIT | **`open-observation`**（首次实触发 · R1 Review 预言精准兑现 · Sprint-2 三方案预议保留） | Sprint-2 基础能力 |
+| 🆕 FU-CI-MP-BUILD-NPM-ENFORCE | **`open`**（本卡新立候选 · CI 层引入 miniprogram-ci 真实编译冒烟 · 结构性消除命令行五闸 vs 微信 runtime 落差） | Sprint-2 候选 COSTRA-124 |
+| 🆕 FU-REVIEW-TECH-RUNTIME-DIM | **`open`**（本卡新立 · Review-Tech 35 分评分表新增"runtime 加载性"维度 · Sprint-1 末 Retro 必议题第 13 条升级 P0） | Sprint-1 末 Retro |
 
 ---
 

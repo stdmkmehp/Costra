@@ -37,6 +37,15 @@ npm run typecheck              # 期望：无错误退出（exit 0）
 npm test                       # 期望：11 条单测全绿（含 money P0-1 防浮点 · time P0-8 防双减）
 ```
 
+### 0.3.1 微信开发者工具首次准备（首次 / 依赖变更后必做 · COSTRA-123）
+
+1. 以 `/Users/weizhao/Desktop/Costra` **项目根**打开微信开发者工具（**不要**打开 `miniprogram/` 子目录 · 见根 `README.md` §本地开发 · COSTRA-121 规约）
+2. 顶部菜单 **工具 → 构建 npm**
+   > 若菜单"构建 npm"灰色或找不到 · 检查右上角 **详情 → 本地设置 → 使用 npm 模块** 是否勾选（对应根 `project.config.json setting.nodeModules:true` · 默认已开）
+3. 等待完成 · 观察左下角提示 "构建完成" · 工具会生成 `miniprogram/miniprogram_npm/decimal.js/`（本地目录 · `.gitignore:25` 已忽略不入库）
+4. 若未做此步 · §1.1 登录后会报 `module 'utils/decimal.js' is not defined, require args is 'decimal.js'`（COSTRA-123 同族盲区第 5 次兑现 · 历史 119→120→121→122→123）
+5. 后续 `package.json` `dependencies` 任一变更后 · 重跑本步
+
 ---
 
 ## 1. 步骤 A · 登录（E.P0-10-partA · E.P0-1/2/3 现场验证）

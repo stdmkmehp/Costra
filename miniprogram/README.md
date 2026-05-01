@@ -40,6 +40,11 @@ cp project.private.config.json.example project.private.config.json
 # 打开微信开发者工具 → 导入项目
 # 项目目录：本仓库根目录
 # AppID：wxf8b0d3e3a83f9941（或你的体验版 AppID）
+
+# 打开后首次必做：顶部菜单 工具 → 构建 npm
+# （会在 miniprogram/miniprogram_npm/ 生成 npm 包的小程序构建产物 ·
+#  包括 decimal.js · 本目录已 .gitignore 忽略不入库 ·
+#  后续 package.json dependencies 变更后需重跑 · COSTRA-123）
 ```
 
 ## 4. 环境切换
