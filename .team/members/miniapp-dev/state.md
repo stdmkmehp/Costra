@@ -41,9 +41,15 @@
   - **新定性**（Human 2026-05-02 20:15 新线索触发 · 本次根因分析坐实）："我方 `miniprogram/services/storage.ts:29` 模块顶层副作用 `ensureVersion()` 在 `App()` 注册之前同步调 `wx.getStorageSync/clearStorageSync/setStorageSync` · 与高版本基础库（2.32.3+）对 storage 调用时机的新约束冲突 · **业务触发 · 非 SDK Bug**"
   - **因果链**：`app.ts:4 import './services/auth'` → `services/auth.ts:7 import './storage'` → `storage.ts:29 ensureVersion()` top-level 同步执行 → 此时 SDK 内部 `createOrGetStorageGroup/_prepare` 未就绪 → 抛出 `too eayly`
   - **SDK 侧错误名错配**（getGlobalStorage）仍可能是 SDK 包装层产物 · 但触发源在我方业务
-  - **下一步待 Human 裁决**：方案 A/B/C（见本次 history）· 推荐 A（移除模块顶层副作用 · 迁入 onLaunch）
+  - **已拍板**：Human 2026-05-02 20:31 Q1-Q6 全"按推荐" · 立 COSTRA-124（Sprint-1 末小卡）· 方案 A（迁入 onLaunch）
+
+- **COSTRA-124 Card-Review Round-1 Follow-up**（2026-05-02 21:05 · PASS-WITH-FOLLOWUP 26/30 · 3 P2 非强制建议 · R1 实装时自主决定是否合并）
+  - **FU-124-P2-1**（估点实事求是）：dispatch §8 时间预算"30 min 两份文档"建议改为"45-60 min" · 或 Sprint-1 末 Retro 议题"紧急卡估点偏乐观"增列第 5 条证据
+  - **FU-124-P2-2**（实测断言语义）：dispatch §3 DoD (e) 4 条验证断言补一行"4 条全 PASS 为硬门槛；Launch Time 900-935 ms 视为 AMBER · 走 Human 个案裁决不自动 REVISE"
+  - **FU-124-P2-3**（FU 闭合定性翻转追写）：DoD (f) 可扩展为 f.1 + f.2 两小段 · f.2 明文记"前 3 次定性误判（SDK 内部 Bug）→ 第 4 次新线索（Human）→ 装扮 subagent 独立核查坐实 storage.ts:29 → COSTRA-124 修复 → FU closed"完整翻转链 + 下游议题（Sprint-1 末 Retro 第 15 条"独立复核可翻转历史定性"范式）
 
 ## §7 最近更新时间戳
 
 - 2026-05-02T19:24:00+08:00 · 初始化骨架（by Orchestrator）
 - 2026-05-02T20:25:00+08:00 · SBAI v1.1 P2' 冒烟首次自主落盘（by costra-miniapp-dev · D-017 Step 2 重做根因分析 · FU-LAUNCH 定性升级）
+- 2026-05-02T21:07:00+08:00 · COSTRA-124 立卡 + Card-Review Round-1 PASS-WITH-FOLLOWUP 26/30 · 3 P2 记入 §6 follow-up（by Orchestrator · 调度层元数据维护）
