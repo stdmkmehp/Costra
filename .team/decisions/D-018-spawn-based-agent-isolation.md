@@ -262,7 +262,7 @@ description: |                       # 必填 · 2-4 个 <example> 块（Q-D 标
   Use this agent when the Costra Orchestrator explicitly invokes it ...
   <example>...</example>
   <example>...</example>
-tools: ["Read", "Write", ...]        # 按角色 · 被审 vs 审查 · 参考 §3.2 表
+tools: Read, Write, Edit, ...        # 按角色 · 被审 vs 审查 · 参考 §3.2 表 · ⚠️ 必须逗号分隔字符串 · JSON 数组格式 CodeBuddy 解析失败（详见 `.team/members/README.md §7 踩坑记录`）
 model: inherit                       # 继承 parent 模型
 color: blue                          # UI 标识色（随意）
 permissionMode: acceptEdits          # Q-C 决策 · 文件编辑自动批 · Bash 仍要 Human 批（审查角色此字段无意义但为格式统一保留填 default）

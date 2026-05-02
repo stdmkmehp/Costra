@@ -121,8 +121,24 @@ spawn 时 · prompt §C 段 inline 该角色的 `state.md` 全文 · §D 段 inl
 
 ---
 
-## 7. 版本
+## 7. Subagent frontmatter 踩坑（P2' 实证）
+
+创建 `.codebuddy/agents/costra-*.md` 时 · frontmatter 必须严格遵守：
+
+- **`tools` 字段用逗号分隔字符串** · **不可用 JSON/YAML 数组**
+  - ✅ 正确：`tools: Read, Write, Edit, MultiEdit, Bash, Grep, Glob, LS, TodoWrite, WebFetch`
+  - ❌ 错误：`tools: ["Read", "Write", "Edit"]`（CodeBuddy 解析失败 · subagent 拿到空工具集 · 只能输出文本描述 · 无法实际调用）
+- **`permissionMode`** 被审角色用 `acceptEdits` · 审查角色用 `default`（审查物理无写工具 · 该字段无实际效果 · 为格式统一保留）
+- **`model`** 用 `inherit`（继承 parent 模型 · 避免写死）
+- **路径约定**：`.codebuddy/agents/` 子路径需配 `.codebuddy-plugin/plugin.json` 显式声明 `"agents": ["./.codebuddy/agents"]`（实证有效 · Q11 通过）
+
+实证来源：2026-05-02 20:16 第 1 次 spawn 因用 JSON 数组格式失败 · 20:20 改逗号分隔后 18 次工具调用全成功。
+
+---
+
+## 8. 版本
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
 | v1.0 | 2026-05-02 | 立案随 D-018 v1.0 |
+| v1.1 | 2026-05-02 | 随 D-018 v1.1 · 新增 §7 frontmatter 踩坑记录（P2' 实证 · tools 字段必须逗号分隔 · 非 JSON 数组）|
