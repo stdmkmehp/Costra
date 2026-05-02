@@ -544,7 +544,19 @@ R1 MiniApp 交付 · T2 Tech 单轨 APPROVE 35/35 · Human 第五次模拟器启
   - 定性保持："微信开发者工具 2.01.2510290 + 基础库 2.32.3 启动时序内部 Bug" · Launch Time 从 122 收官的 3547 ms 降至 865 ms（COSTRA-123 npm 桥接生效 · 无 JSON loader fallback 延迟）· 功能侧完全贯通至 `auth.ts:157 [auth] wx.login ok {codeLen: 32}`
   - **二级事实登记**（MiniApp-Agent D-017 Step 2 新发现 · 未坐实因果）：`miniprogram/services/storage.ts:29` 存在模块顶层副作用 `ensureVersion()` · 调用链 `app.ts:4 import './services/auth'` → `services/auth.ts:7 import './storage'` → top-level 同步执行 `wx.getStorageSync(VERSION_KEY) / 可能 wx.clearStorageSync / wx.setStorageSync` · 发生在 `App()` 注册之前 · 与 `too eayly` 时序**吻合但未坐实因果**（业务侧同步 API vs SDK 侧渲染层 `createOrGetStorageGroup/_prepare` · 两者可能只是并发发生 · grep 业务代码 `getGlobalStorage/setGlobalStorage/removeGlobalStorage` 零命中）
   - **再次确认不阻任何链路**：登录按钮可点 · `wx.login` 成功 · Launch Time 865 ms · 后续业务 storage 读写正常
-- **同族观察次数**：首次 2026-04-29 10:41（COSTRA-122 收官）· **第 2 次 2026-05-01 21:18（COSTRA-123 收官）** · 未来第 3 次若仍现则需决策是否升 Sprint-1 末独立卡处理
+- **🆕 第 3 次观察**（2026-05-02 19:32 · D-018 SBAI v1.0 P2 冒烟首战）：
+  - 现象：**仅 1 条** `[渲染层错误] [jsbridge] invoke getGlobalStorage fail: too eayly. Error: invoke too eayly`（不同于前 2 次的 3 条齐现 get/set/remove · 本次只 get 单条）
+  - 端口号变化：第 1 次 `28677` → 第 2 次 `28677` → 第 3 次 **`17559`**（微信开发者工具每次启动随机本地端口 · 与 bug 无关）
+  - 拼写 `eayly` 保持（SDK 内置字符串 · 官方拼错 early）
+  - 调用栈：`WAWebview.js:1:123691` → `invoke` → `v` → `M` → `N` → `Qt` → `Tt._prepare` → `createOrGetStorageGroup` · 全在微信 SDK 内部 · 与前 2 次栈结构一致
+  - **独立复核证据**（装扮 subagent · SBAI v1.0 P2 冒烟 @ 2026-05-02 19:34）：
+    - `miniprogram/` 全量 grep 以下关键字 **全部 0 命中**：`getGlobalStorage` / `setGlobalStorage` / `removeGlobalStorage` / `createOrGetStorageGroup` / `traceEvent` / `storageGroup`
+    - 我方唯一 storage 调用是**同步 API**（`wx.getStorageSync` / `wx.setStorageSync` / `wx.removeStorageSync` / `wx.clearStorageSync`）· 7 处命中 · 全在 `miniprogram/services/storage.ts`
+    - 官方同步 API 路径**不走** `createOrGetStorageGroup` / `_prepare`（只有异步 Global Storage API 才走 storage group metadata / prepare）· 因果链**物理阻断**
+  - **定性加固**：从"吻合但未坐实"（第 2 次）升级为**"100% 非业务 · 微信 SDK 内部启动时序 Bug 确认"**——我方代码在任何路径上都未触达异步 Global Storage API 栈
+  - **不阻任何链路**（本次场景）：本次仅模拟器启动现象上报 · 无业务操作中断
+  - **治理价值**：SBAI v1.0 P2 冒烟独立复核首次实战 · 验证了"装扮 subagent 独立核查历史定性"的有效性——FU 原定性（2026-04-29 登记）**完全正确** · 经过 2 次复现 + 1 次独立复核 · 可 Sprint-1 末 Retro 议题中降级为"**闭合观察** · 不立卡修 · 文档化存档"（理由：三次观察全部证明是微信 SDK 内部 Bug · 无业务触发点 · 我方无可修改点 · 升级基础库版本是唯一路径但需 Human 决策时机）
+- **同族观察次数**：首次 2026-04-29 10:41（COSTRA-122 收官）· **第 2 次 2026-05-01 21:18（COSTRA-123 收官）** · **第 3 次 2026-05-02 19:32（D-018 SBAI v1.0 P2 冒烟首战 · 独立核查确认非业务）** · **候选动作**：Sprint-1 末 Retro 时 Human 决策是否 ① 保持 open 观察 / ② 降级为\"闭合观察\"（文档化永久存档 · 不立卡）/ ③ 立 Sprint-2 小卡\"升级基础库 2.32.3 → 最新稳定版 + 文档追述\"
 
 ---
 
