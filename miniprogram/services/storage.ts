@@ -1,5 +1,7 @@
 // services/storage.ts · wx.storage 封装（带版本号 + 过期）
 // 卡号: COSTRA-030 · 占位版；COSTRA-121 后续落细 LRU
+// COSTRA-124: 移除模块顶层副作用 · ensureVersion() 改为 export · 由 app.ts onLaunch 首行调用
+// Refs: COSTRA-124 · FU-LAUNCH-FIRST-RENDER-RACE · .team/dispatch/COSTRA-124-miniapp-fix-startup-storage-timing.md §3 (a)
 
 const STORAGE_VERSION = 1;
 const VERSION_KEY = '__costra_storage_version';
@@ -11,7 +13,17 @@ interface Envelope<T> {
   d: T;
 }
 
-function ensureVersion(): void {
+/**
+ * 启动期 storage 版本校验（COSTRA-124）
+ *
+ * 严禁在模块顶层裸调——必须由 app.ts onLaunch 首行显式调用。
+ * 原因：微信基础库 2.32.3+ 对启动期 storage 调用有隐式时序约束，
+ * 若在 App() 注册前触发 wx.getStorageSync 会命中 SDK 内部
+ * createOrGetStorageGroup._prepare 未就绪，抛出 `too eayly`（SDK 错拼 early）。
+ *
+ * 参考：`.team/members/miniapp-dev/history/2026-05-02-getglobalstorage-v2-diagnose.md` L1-L4 根因链
+ */
+export function ensureVersion(): void {
   // 单测 / 非 wx 环境：wx 全局不存在 · 静默跳过
   // 生产（小程序运行时）：wx 一定存在
   if (typeof wx === 'undefined') return;
@@ -25,8 +37,6 @@ function ensureVersion(): void {
     console.warn('[storage] ensureVersion failed', e);
   }
 }
-
-ensureVersion();
 
 export function setItem<T>(key: string, data: T, ttlMs?: number): void {
   if (typeof wx === 'undefined') return;
