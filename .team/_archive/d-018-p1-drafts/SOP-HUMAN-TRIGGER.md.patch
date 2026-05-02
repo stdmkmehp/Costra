@@ -1,0 +1,247 @@
+# SOP-HUMAN-TRIGGER.md · SBAI 补丁（D-018 · v3.0 草稿）
+
+> 草稿时间：2026-05-01 21:45
+> 草稿人：Orchestrator
+> 审批人：Human（**待审 · P1 阶段**）
+> 适用范围：本补丁为 `.team/SOP-HUMAN-TRIGGER.md` 的增量 diff，过稿后合入主文件
+> 依据：`.team/decisions/D-018-spawn-based-agent-isolation.md`
+
+---
+
+## 补丁说明
+
+D-018 SBAI 升级后，触发指令的**语义**完全保留（铁律不变），但**执行层**需要对齐 SBAI：
+
+1. §1 背景澄清需新增一条"执行体三分法"说明
+2. §3 触发指令词典中涉及"Agent"措辞的条目需细化（team member / oneshot）
+3. §3 后的豁免声明需新增"D-018 执行层对齐"说明
+4. 新增 §3-Bis "Shutdown 与打断窗口"（SBAI 特有）
+
+**本补丁不改变任何铁律语义**——"被审 Agent 首次产出需 Human 触发" / "Human 打断指令最高优先级" 等所有铁律条款原文保留。
+
+---
+
+## 变更 1 · §1 背景澄清（新增第 5 条）
+
+**原文结尾**：
+
+```
+- 截止时间（deadline）是**目标**，不是**已排进队列的定时任务**
+```
+
+**新增**：
+
+```
+- 截止时间（deadline）是**目标**，不是**已排进队列的定时任务**
+- **🆕 执行体三分法**（D-018 · 2026-05-01）：
+  - **Orchestrator**（主对话上下文）：纯编排，不写业务代码、不生成 Review 意见
+  - **持久 team member**（`backend-dev` / `miniapp-dev` / `pm-writer` / `design-maker` / `devops-ops` / `qa-planner`）：业务产出体；一个 Sprint 起一个实例
+  - **一次性 oneshot 实例**（`review-tech-{card}-r{N}` / `review-product-{card}-r{N}` / `card-reviewer-*`）：Review；每轮新 spawn、审完 shutdown、无历史记忆
+  - 所有 Human 触发指令最终由 Orchestrator 接收并分发到对应 team member 或 spawn 对应 oneshot
+```
+
+---
+
+## 变更 2 · §3 触发指令词典（条目语义细化）
+
+**保留所有现有条目**。以下是具体行的变更：
+
+### 2.1 修订行
+
+```
+| 用户说 | Orchestrator 行为 |
+|---|---|
+| `开干 COSTRA-xxx` / `run COSTRA-xxx` | **send_message 给对应 Owner team member（如 `backend-dev`）**，执行该卡交付（原文"切换到对应 Owner Agent 执行"的心智模型改为"派单给 team member"） |
+| `开干 <Agent 名>` / `run backend` | **send_message 给对应 team member（如 `backend-dev`）**，执行其 Doing 列所有卡 |
+| `全跑` / `run all` | 按依赖拓扑顺序依次 send_message 给各 team member 执行 |
+| `stop` / `停` | 立刻停当前动作；**若本轮有活跃 oneshot 实例，同轮 shutdown_request**（D-018 §10.8） |
+| `run review-tech COSTRA-xxx` | **task spawn `review-tech-costra-xxx-r{当前+1}` oneshot**（prompt 按 D-018 §3.3-Bis Context Injection Contract 生成） |
+| `run review-product COSTRA-xxx` | 同上 spawn review-product oneshot |
+| `run <agent> COSTRA-xxx revise-round-N` | **send_message 给对应 team member**（原文已隐含此语义，补丁仅显式化） |
+| `pause-review COSTRA-xxx` | 立即停该卡 Review · **若有活跃 oneshot 实例，同轮 shutdown_request** |
+| `review-card COSTRA-xxx` | **spawn `card-reviewer-{tech|product}-costra-xxx-r{N}` oneshot** |
+```
+
+### 2.2 新增行（SBAI 运维指令）
+
+```
+| 用户说 | Orchestrator 行为 |
+|---|---|
+| 🆕 `list-oneshot` | 列出当前所有活跃的 oneshot 实例（理论上应为 0 · 若非 0 说明上一轮忘了 shutdown，立即清理） |
+| 🆕 `shutdown-oneshot <name>` | 强制 shutdown 某个 oneshot 实例（紧急清理用） |
+| 🆕 `list-members` | 列出团队所有持久 team member 状态 |
+| 🆕 `restart-member <name>` | 重启某个 team member（清空历史，重新注入角色文件） |
+```
+
+---
+
+## 变更 3 · §3 后的豁免声明（新增第 4 条）
+
+**原文结尾**：
+
+```
+> Human 打断指令（`pause-review` / `skip-review` / `skip-card-review` / `force-pass` / `force-card-pass` / `stop`）**最高优先级**，可随时打断上述 3 条自动例外。
+```
+
+**新增**：
+
+```
+> **🆕 豁免 4 · 执行层对齐**（D-018 · 2026-05-01）：
+> - 上述 3 条豁免的**执行层**全部改为 "spawn oneshot / send_message 给 team member"，废弃"Orchestrator 切角色扮演"
+> - `D-016 同轮兑现铁律 v1.2`（2026-04-24）升级为 `D-018 §3.4 同轮兑现铁律 v2`（2026-05-01），语义：自动拉起 Review 必须同轮完成 "task spawn → 接收 final message → 原样落盘 → shutdown_request" 四步
+> - Context Injection Contract（D-018 §3.3-Bis）：每次 spawn review-oneshot，prompt 必须含 BCE 三段（Background / Content / Expected Approach）+ 强制阅读清单，缺段 = incident
+> - 详见 `.team/SOP-REVIEW.md §7 §10`、`.team/decisions/D-018-spawn-based-agent-isolation.md`
+```
+
+---
+
+## 变更 4 · §3-Bis Shutdown 与打断窗口（新增章节）
+
+**新增在 §3 之后**：
+
+```markdown
+## 3-Bis. Shutdown 与打断窗口（SBAI 特有 · D-018）
+
+SBAI 架构下，Human 打断时 Orchestrator 的额外责任：
+
+### 3-Bis.1 Review 打断（pause-review / stop / skip-review / force-pass）
+
+收到 Human 打断指令后，Orchestrator 本轮必须：
+
+1. **立即停止**当前对话轮的自动循环
+2. **列出活跃的 review-oneshot 实例**（若本轮 spawn 的 oneshot 尚未 shutdown）
+3. **同轮发 `send_message(type="shutdown_request", recipient="...")`** 给所有活跃 oneshot
+4. **更新 STATE `MODE=paused-by-human`**
+5. **board 标注**该卡 Review 状态为 `paused`
+6. **汇报 Human**：确认 shutdown 已发出 · 列出已销毁的 oneshot 实例名
+
+**禁止**：
+- 留"僵尸 oneshot"在团队目录（下次 `list-oneshot` 会看到，记 incident）
+- 只停"自动循环"声明但不 shutdown oneshot 实例
+
+### 3-Bis.2 team member 打断（stop / 某 team member 的紧急状况）
+
+team member 不因打断而销毁（持久化）。打断只让它"下一次 send_message 才动"——类似人把工作放下，而不是解雇。
+
+若要真正"解雇" team member（例如该 member 被污染或失控），Human 需显式发 `restart-member <name>`，Orchestrator 才执行销毁 + 重建 + 重注入角色文件。
+
+### 3-Bis.3 Human 介入窗口的延续性
+
+Human 在任何对话轮中发打断指令 → Orchestrator **本轮立即响应**。即使正在执行自动循环的某个中间步骤（比如 spawn 了 oneshot 但还没收到 final message），也必须：
+1. 等这一次 task 调用返回（不可强中断进行中的 tool call）
+2. 一旦返回，立即 shutdown_request 该实例
+3. 然后响应 Human 指令
+
+这是 SBAI 物理约束——tool call 无法中途取消，但 oneshot 的生命周期可控。
+```
+
+---
+
+## 变更 5 · 修订记录（追加一条）
+
+**在文件末尾追加**：
+
+```
+- 2026-05-01 21:45 · **D-018 SBAI 补丁**：§1 新增执行体三分法；§3 词典条目语义对齐 SBAI（"切角色" → "spawn oneshot / send_message team member"）；§3 新增 `list-oneshot` / `shutdown-oneshot` / `list-members` / `restart-member` 四条运维指令；§3 新增豁免 4（执行层对齐 D-018，D-016 升级为 D-018 §3.4）；新增 §3-Bis Shutdown 与打断窗口。所有铁律语义不变，仅执行层对齐。
+```
+
+---
+
+---
+
+## 变更 6 · β-3 软化（v1.6 增量 · 2026-05-02 · D-018 v0.4）
+
+> **触发**：Human 2026-05-02 12:18 探讨"同轮兑现铁律的合理性与必要性"后选择 **β-3（会话自动）+ 混合模式**。同轮兑现降级为加速路径，新铁律为 β-3 混合自动消费模式（承诺必落盘 + 每轮必扫必消费 + 打断必识别）。
+
+### 6.1 §2.2 新增行（在变更 2 新增指令后追加）
+
+```
+| 用户说 | Orchestrator 行为 |
+|---|---|
+| 🆕 `pause-autorun` | 全局暂停 pending 自动消费；pending yaml 保留原地；STATE MODE=paused-autorun |
+| 🆕 `resume-autorun` | 恢复 pending 自动消费；下一次 Human 非打断消息即触发消费 |
+| 🆕 `list-pending` | 列出当前 `.team/pending/` 队列（不消费，只查询） |
+| 🆕 `run pending` | 手动立即消费所有活跃 pending（绕过软上限） |
+| 🆕 `cancel pending <id>` | 单项取消；将对应 yaml 移到 `.team/pending/_cancelled/YYYY-MM-DD/` |
+| 🆕 `cancel pending all` | 全部取消 |
+| 🆕 `pause-review all` | 所有卡 Review 相关 pending 全部移 _cancelled/；等价 pause-autorun + 批量取消 |
+```
+
+### 6.2 §3 豁免声明补充（在变更 3 豁免 4 后追加）
+
+```
+> **🆕 豁免 5 · β-3 自动消费**（D-018 v0.4 · 2026-05-02 替代 D-018 v0.2 §3.4 同轮兑现硬约束）：
+> - 同轮兑现**降级为加速路径**（非铁律）；跨轮消费也合法，前提是对应 pending yaml 已落盘 `.team/pending/`
+> - **Human 每次非打断消息** = 一次广义 `continue` 触发（即使内容是"进度如何"或闲聊）
+> - 新铁律三条：承诺必落盘 / 每轮必扫必消费 / 打断必识别
+> - 详见 `.team/decisions/D-018-spawn-based-agent-isolation.md §3.5`、`.team/SOP-REVIEW.md §10.5-Bis`、`.team/pending/README.md`
+```
+
+### 6.3 §3-Bis 增补"β-3 打断信号识别"小节
+
+**在现有 §3-Bis.3 之后追加**：
+
+```markdown
+### 3-Bis.4 β-3 打断信号识别（D-018 v0.4 · 2026-05-02）
+
+β-3 混合模式下，Orchestrator 对 Human 消息的处理分两阶段：
+
+**阶段 1 · 打断信号识别**（在任何业务响应之前）：
+
+1. **显式打断指令**（精确匹配 §3 词典新增条目）→ 按指令执行，不消费 pending
+2. **隐式打断关键词**（模式匹配）：
+   - 否定动词：`别` / `不要` / `先别` / `暂停` / `停下` / `等一下` / `hold on` / `wait`
+   - 目标关键词：`review` / `自动` / `pending` / `跑` / `拉起` / `autorun` / `oneshot`
+   - 共现判定：否定动词 + 目标关键词同一消息内共现 → **询问 Human 确认 A/B/C**（见下方模板）
+3. **均不命中** → 消息视为广义 `continue` → 进入阶段 2
+
+**询问模板**（隐式打断命中时）：
+
+> "检测到可能的打断信号（匹配：`<动词>` + `<目标>`）。当前 pending 队列有 N 项（列表）。
+> (A) 先跑完 pending 再响应你 / (B) 先暂停本轮消费、响应你 / (C) 永久 pause-autorun。
+> 请选 A/B/C；若直接回答实质问题视为 A。"
+
+**阶段 2 · 消费 pending**（非打断消息时 MUST）：
+
+1. `ls .team/pending/*.yaml`
+2. 按 priority → revise 优先 → FIFO 排序
+3. 逐项复核 preconditions，任一 false 移 _cancelled/
+4. 执行（spawn oneshot / send_message team member）
+5. 单轮软上限 ≤ 3 卡 × 1 round；超出留下轮
+6. 消费完后再响应 Human 原始诉求
+7. 汇报段按 `SOP-REVIEW.md §10.5-Bis.3` 格式输出
+
+**打断识别误判 = incident**：
+- 把 `Review 写得不错` 误判为打断 → `I-intent-misread-false-positive`（少消费一轮 pending）
+- 把 `先别跑 Review` 误判为非打断直接消费 → `I-intent-misread-false-negative`（违反 Human 意图）
+
+Human 事后质疑时，Orchestrator 必须能给出"匹配的关键词 + 判定逻辑"证据链。
+```
+
+### 6.4 §3 背景澄清补充（在变更 1 执行体三分法后追加）
+
+```
+- **🆕 跨轮异步 = 落盘承诺**（D-018 v0.4 · 2026-05-02）：
+  Costra 依然没有常驻进程——但通过 `.team/pending/*.yaml` 把"跨轮承诺"从幻觉变成磁盘可查的合约。Orchestrator 每轮开工第一动作即扫 pending 逐条消费。这样既避免 I-005 类假承诺，又不再强制"本轮必须兑现"。
+- **🆕 Human 消息 = 广义触发**：
+  Human 任何非打断性消息都构成一次 `continue` 触发，可能让 pending 被消费。如果不想触发消费，使用 `pause-autorun` 或隐式打断关键词（如"先别跑 review"）。
+```
+
+### 6.5 §5 修订记录追加（变更 5 后再加一条）
+
+```
+- 2026-05-02 12:30 · **β-3 混合模式软化同轮兑现**（D-018 v0.4 §3.5）：§2.2 新增 7 条 pending 相关指令（pause-autorun / resume-autorun / list-pending / run pending / cancel pending [id|all] / pause-review all）；§3 新增豁免 5（β-3 自动消费 + 跨轮合法）；§3-Bis 新增 3-Bis.4 打断信号识别；§1 补充"Human 消息 = 广义触发"与"跨轮承诺 = 落盘 pending yaml"两条背景。所有铁律语义：从"本轮必兑现"改为"承诺必落盘 + 每轮必扫必消费 + 打断必识别"三位一体。
+```
+
+---
+
+## 版本记录（更新）
+
+| 版本 | 日期 | 变更 |
+|---|---|---|
+| v1.0 | 2026-04-23 | Human 指令确立 |
+| v1.1~v1.4 | 2026-04-23~2026-04-24 | D-011 / D-014 / D-015 / 方案 A 合并 |
+| **v1.5（待合入）** | **2026-05-01（草稿）** | **SBAI 补丁**（变更 1~5） |
+| **v1.6（待合入）** | **2026-05-02（草稿）** | **β-3 软化补丁**（变更 6）：新增 7 条 pending 指令；新增豁免 5；新增 §3-Bis.4 打断识别 |
+
+**本补丁待 Human 过稿后合入主文件。**

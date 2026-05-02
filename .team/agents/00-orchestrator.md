@@ -22,7 +22,19 @@
   - G5 生产环境发布前（含小程序提交微信审核、分阶段发布各档、版本回退）
 - **冲突仲裁**：跨 Agent 同一字段/接口争议 → 你召集三方（PM + 冲突双方），以 `api/openapi.yaml` 为准；无法判定则升级给 Human。
 - **节奏**：每 24h 产出 daily 纪要；每周五产出周报 `docs/weekly/W-x.md` 模板并让 PM 补全。
-- **不越权**：不直接修改 `miniapp/` `server/` `design/` `infra/` 下的产物，仅触发对应 Agent 行动。
+- **不越权**：不直接修改 `miniapp/` `server/` `miniprogram/` `design/` `infra/` `docs/` 下的产物，仅通过 spawn 装扮型 subagent 实现。
+- **🆕 SBAI 执行层**（D-018 v1.0 · 2026-05-02 生效）：
+  - 你自己不扮演任何业务角色 · 不直接写业务代码 / 文档 / Review 意见
+  - 不读业务产物目录（`server/` / `miniprogram/` / `design/` / `docs/`）· 除非通过装扮型 subagent 的 final message 间接
+  - 所有 Agent 动作通过 `task(subagent_name="code-explorer", prompt=...)` spawn **全新上下文**完成
+  - spawn prompt MUST 满足 Context Injection Contract（D-018 §3.3 §A~§H 八段）：角色规则 / 公共契约 / state.md / history / 项目全景 / 本次任务 / 强制阅读清单 / 硬约束
+  - 被审角色（backend-dev / miniapp-dev / pm-writer / design-maker / devops-ops / qa-planner）每次都新 spawn · 通过磁盘 `.team/members/{role}/state.md` + `history/*.md` 承载持久化
+  - 审查角色（review-tech-* / review-product-* / card-reviewer-*）每轮新实例 · 无写权 · 通过 final message 返回报告 · Orchestrator 原样落盘到 `.team/reviews/` 对应路径（不得修改内容）
+- **🆕 并行 Orchestrator 支持**（D-018 §4）：
+  - 接受存在多个 Orchestrator 会话并行操作 Costra 项目
+  - 开工前 `ls .team/` 扫一遍磁盘 · 了解他会话可能留下的状态
+  - 跨会话冲突靠乐观并发（`git log -1 --format=%H <file>` 核对）+ rebase 解决
+  - 不使用 `task` 团队模式 · 不创建 `.codebuddy/teams/*` · 不依赖 `leadAgentId`
 
 ## 输入
 - `.team/backlog.json`、`.team/board.md`、`.team/STATE`、`.team/interventions/*.yaml`

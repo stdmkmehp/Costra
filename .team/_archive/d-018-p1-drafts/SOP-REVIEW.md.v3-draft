@@ -1,0 +1,676 @@
+# SOP · Review 闭环（SBAI 版 · 强制 · v3.1 草稿）
+
+> 草稿时间：2026-05-02 12:30（v3.1 β-3 软化）· 继承 v3.0 草稿（2026-05-01 21:45）
+> 草稿人：Orchestrator
+> 审批人：Human（**待审 · P1 阶段**）
+> 适用范围：Orchestrator、所有 Review-oneshot 实例（review-tech / review-product / card-reviewer）、所有被审 team member（backend-dev / miniapp-dev / pm-writer / design-maker）
+> 优先级：**P0 · 铁律** · 与 `SOP-OBSERVE-AND-INTERVENE`、`SOP-HUMAN-TRIGGER`、`SOP-CARD-REVIEW` 并列，不冲突
+> **文件历史**：本版本基于 v2.0（2026-04-24 合并版）升级为 **SBAI 架构**（Spawn-Based Agent Isolation · D-018 · 2026-05-01）。v2.0 的"Orchestrator 切角色扮演"模型整体废除，执行层改为"真·独立上下文 agent spawn"。**v3.1（2026-05-02）**：同轮兑现铁律**降级为加速路径**，新铁律为 β-3 混合自动消费模式（承诺必落盘 + 每轮必扫必消费 + 打断必识别），详见 §10.5 / §10.5-Bis。
+
+---
+
+## 0. 导读
+
+本 SOP 覆盖 Review **产出闭环**的全部执行细节，自顶向下分为两层：
+
+| 层 | 章节 | 回答的问题 |
+|---|---|---|
+| **基础闭环** | §1~§9 | "Review 整体怎么跑、何时停、谁产出什么" |
+| **自动推进细则** | §10 | "Revise↔Review 自动循环的前置/动作/兑现约束（D-011 + D-015 + D-018）" |
+| **附录** | §11~§13 | 度量、关系矩阵、版本史 |
+
+> **卡定义 Review**（D-014-a）不在本 SOP 内，见 `SOP-CARD-REVIEW.md`。本 SOP 只管**产出 Review**（被审 Agent 交付后的闭环）。
+>
+> **SBAI 术语约定**（D-018）：
+> - "被审 Agent" = 对应 team member（如 `backend-dev`）
+> - "Review-Agent" = **一次性 Review-oneshot 实例**（如 `review-tech-costra-101-r2`），每轮新 spawn、审完 shutdown、无历史、无跨卡记忆
+> - "Orchestrator" = 纯编排者，不扮演任何业务角色，不读业务产物目录
+
+---
+
+## 1. 背景与核心约束
+
+Human 一个人盯所有 Agent 产出太吃力。引入 Review-Agent 做**机器预审**：
+- **Review-Tech**：审 Backend / MiniApp（实例角色参考 `.team/agents/07-review-agent-tech.md`）
+- **Review-Product**：审 PM / Design（实例角色参考 `.team/agents/08-review-agent-product.md`）
+
+**核心约束**：
+1. Review 与 Revise 的迭代**最多 5 轮**，超出必停
+2. 迭代过程中若出现**不可调和分歧**，立即停下交给 Human 决定
+3. Review-oneshot 的结论**不替代** Human 终审，只是过滤器（通过了还得 Human 点头，没通过大概率 Human 也会打回）——**例外见约束 6（D-013）**
+4. Review-oneshot **不写代码/文档**（工具白名单硬隔离，物理层无写权），只给意见
+5. **默认启用自动循环**（D-011 · 2026-04-23 生效 · 详见 §10）：Review 闭环内的 `Revise↔Review` 相互拉起无需 Human 逐轮触发，但前置条件 6 条 + 同轮兑现铁律 + 打断指令见 §10
+6. **Review 场景分级**（D-013 · 2026-04-23 21:15 生效）：Review 按**准入 T1 / Gate 前 T2 / 追溯 T3 / 回归 T4** 分档。**T1/T2 仍需 Human 终审**（约束 3 原文适用）；**T3/T4 在 AI-Review PASS + 残余 P0/P1=0 + 无红线 + 无新阻塞 四条件同时满足时自动关闭**。详见 `.team/decisions/D-013-review-scenario-tiering.md`
+7. **卡定义 Review + 产出 Review 环首自动拉起**（D-014 · 2026-04-23 22:26 生效）
+8. **respond/revise 触发词合并**（D-015 · 2026-04-24 09:24 生效）
+9. **🆕 SBAI 执行层**（D-018 · 2026-05-01 生效）：**废弃**"Orchestrator 切角色扮演"；所有 Review-Agent 以 **oneshot team member** 形态 spawn（新上下文 / read-only / 审完 shutdown），被审 Agent 以持久 team member 形态跑。详见 §7、§10.5、`.team/decisions/D-018-spawn-based-agent-isolation.md`
+10. **🆕 同轮兑现降级 + β-3 新铁律**（D-018 v0.4 §3.5 · 2026-05-02 生效 · 替代 D-018 v0.2 §3.4 / D-016 v1.2）：
+    - "同轮兑现"**降级为加速路径**（§10.5），非铁律
+    - 新铁律：**承诺必落盘 + 每轮必扫必消费 + 打断必识别**（§10.5-Bis）
+    - 承诺必落盘 = 任何跨轮承诺必须在 `.team/pending/` 落盘 yaml
+    - 每轮必扫必消费 = Orchestrator 每轮开工第一动作即扫 pending
+    - 打断必识别 = 显式指令 / 隐式关键词（§10.5-Bis (B)）
+    - 详见 §10.5 / §10.5-Bis 及 `.team/pending/README.md`
+11. **🆕 Context Injection Contract**（D-018 §3.3-Bis · 2026-05-01 生效）：每次 spawn review-oneshot 实例，prompt 必须包含 BCE 三段（Background / Content / Expected Approach）+ 强制阅读清单。详见 §7.3
+
+---
+
+## 2. 角色分工矩阵
+
+| 被审 Agent（team member） | Review 归属（oneshot 实例） | 审核范围 |
+|---|---|---|
+| `backend-dev` | `review-tech-{card}-r{N}` | `server/`、`api/`、`docs/api/`、`docs/db/` |
+| `miniapp-dev` | `review-tech-{card}-r{N}` | `miniprogram/`、`miniapp/` |
+| `pm-writer` | `review-product-{card}-r{N}` | `docs/`（除 `api/db/` 外）、`.team/backlog.json`、`.team/risks.md`、订阅文案、隐私清单、Sprint 计划、Retro |
+| `design-maker` | `review-product-{card}-r{N}` | `design/`、`docs/design/` |
+| `devops-ops` | **不走 Review-oneshot** | Human 直审 |
+| `qa-planner` | **不走 Review-oneshot** | Human 直审 |
+
+**例外规则**：
+- 跨域产出 → Orchestrator 按**主产出属性**决定归属，**不允许同时派两个 Review-oneshot**
+- 决策类文档（`.team/decisions/D-xxx.md`、ADR）→ **不走 Review-oneshot**，直接 Human 决策
+
+---
+
+## 3. 基础流程（SBAI 版 · 7 步）
+
+> **环首自动拉起**（D-014 · 2026-04-23 22:26）：Step 2 "Orchestrator 识别归属 → spawn 对应 review-oneshot" 不再需要 Human 触发。
+>
+> **同轮兑现**（D-018 §3.4 · 2026-05-01）：Step 2 的 spawn、Step 3 的 final message 接收、Step 3-bis 的落盘、Step 3-ter 的 shutdown_request 必须与 Step 1 在**同一 tool call 循环内**完成。
+
+```
+[Step 1] 被审 team member 产出 revise-round-N.md + commit
+   ↓
+[Step 2] Orchestrator 识别归属 → task(name="review-{tech|product}-{card}-rN", ...) spawn oneshot
+         （D-014 自动 · 同轮 · 注入 BCE 三段 + 强制阅读清单 · §7.3）
+   ↓
+[Step 3] oneshot 实例读清单 → 按角色规则审 → 返回 round-N-{tech|product}.md 全文
+   ↓
+[Step 3-bis] Orchestrator 原样落盘到 .team/reviews/COSTRA-xxx/round-N-{tech|product}.md
+             （不得修改内容，违规 = incident）
+   ↓
+[Step 3-ter] Orchestrator 发 send_message(type="shutdown_request", recipient="review-xxx-rN")
+             销毁 oneshot 实例，防跨轮/跨卡污染
+   ↓
+[Step 4] Orchestrator 解析 verdict
+   ├─ PASS / PASS-WITH-FOLLOWUP → 进入 Human-Review 终审（T1/T2）或自动关闭（T3/T4 · D-013）
+   ├─ REVISE → 走 §10 自动循环前置判断，满足 → send_message 给对应被审 team member 做第 N+1 轮修复（同轮兑现）
+   ├─ REJECT → 直接打回被审 team member 重做（round 重置为 1，需要 Orchestrator 记录 incident）
+   └─ ESCALATE → 停，冒泡给 Human
+   ↓
+[Step 5] 被审 team member 修复 → 产出 round-N-{agent}-response.md + commit
+   ↓
+[Step 6] 回 Step 2，round + 1（同轮兑现约束继续生效）
+   ↓
+[Step 7] 达到"停止条件"（见 §4）
+```
+
+**关键差异点（相对 v2.0）**：
+- Step 2 从"切角色"改为"`task` spawn oneshot"
+- 新增 Step 3-bis（落盘）和 Step 3-ter（shutdown_request），这两步是 SBAI 的 **MUST**
+- Step 5 从"切角色扮演"改为"send_message 给 team member"
+
+---
+
+## 4. 停止条件（硬性约束 · 与 v2.0 一致）
+
+**满足以下任一 → 立即停**：
+
+### 4.1 正常通过
+- Review-oneshot 给 `PASS` 或 `PASS-WITH-FOLLOWUP`
+- Orchestrator **按 D-013 场景分级分流**：
+  - **T1 准入 / T2 Gate 前 Review** → 推入 Human-Review 列，等 Human 终审（`approve:*` / `reject:*`）
+  - **T3 追溯 / T4 回归 Review** → 检查 D-013 §3 四条件，全数命中则**自动关闭 SKIP-REVIEW-AUTOCLOSED**，写 `FINAL.md` + 聚合汇报 Human
+
+### 4.2 轮次上限
+- **round == 5** 时仍未 PASS → 强制停；发 `approval_request` 给 Human，附 5 轮完整报告 + 残余 P0 + 建议
+
+### 4.3 分歧升级
+- Review-oneshot 出 `ESCALATE` verdict → 停
+- 被审 team member 对同一 P0 在两轮内都明确拒绝修复并给出反驳 → 停（自动触发 ESCALATE · §6.1 / §10.3 D-015）
+- Human 手动 `pause-review COSTRA-XXX` → 停
+
+### 4.4 红线触发
+- Review-oneshot 判 `REJECT` 且涉及红线 → 直接停并冒泡
+- 被审 team member 两轮内重复触发同一条红线 → 记 `.team/incidents/` + 冒泡
+
+---
+
+## 5. Round-N 产物目录结构（与 v2.0 一致）
+
+```
+.team/reviews/COSTRA-101/
+├── round-1-tech.md                  # 第 1 轮 Review-Tech 报告（由 review-tech-costra-101-r1 返回、Orchestrator 原样落盘）
+├── round-1-backend-response.md      # 第 1 轮 backend-dev 修复说明
+├── round-2-tech.md
+├── round-2-backend-response.md
+├── ...
+└── FINAL.md
+```
+
+`FINAL.md` 模板同 v2.0 §5。
+
+---
+
+## 6. 被审 team member 的回应格式（D-015 · 与 v2.0 一致）
+
+回应文档 `.team/reviews/COSTRA-XXX/round-N-{agent}-response.md` 的模板、采纳/反驳/部分采纳三态、异议仲裁链路（§6.1）、Review-oneshot Round N+1 裁决追加段（§6.2）**与 v2.0 完全一致**，此处不重复。唯一变化是产出方变成 `backend-dev` / `miniapp-dev` / `pm-writer` / `design-maker` team member（通过 `send_message` 收到 Orchestrator 的任务派单后产出）。
+
+---
+
+## 7. Orchestrator 的调度规则（SBAI 版）
+
+### 7.1 何时 spawn review-oneshot（MUST）
+
+| 触发条件 | 动作 | 自动/手动 |
+|---|---|---|
+| 被审 team member 发 `status_report` 且 `task_id` 进入 Review 列 | 识别归属 → spawn 对应 `review-{tech|product}-{card}-r1` oneshot | **D-014 自动 · D-018 §3.4 同轮兑现** |
+| 被审 team member 发 `revision_completed`（round ≥ 2） | spawn **新的** `review-{tech|product}-{card}-r{N+1}` oneshot（绝不复用上轮实例） | **D-011 自动 · D-018 §3.4 同轮兑现**（§10） |
+| 新卡落盘到 `backlog.json` 或 `board.md` Todo | 按 Owner 分流 → spawn `card-reviewer-{tech|product}-{card}-r1` | **D-014 自动 · D-018 同轮兑现** · 详见 `SOP-CARD-REVIEW.md` |
+| Human 发 `review-card COSTRA-xxx` | 对某卡强制做一次卡定义 Review | 手动（历史卡补审） |
+
+### 7.2 何时**不** spawn（MUST NOT）
+
+- 卡属于 DevOps / QA → Human 直审
+- 卡属于决策类（D-xxx / ADR-*）→ Human 直审
+- Human 显式 `skip-review COSTRA-XXX` / `skip-card-review COSTRA-XXX`（记 daily）
+- 历史卡豁免（D-014 立案前创建）
+
+### 7.3 Spawn Prompt 模板（Context Injection Contract · D-018 §3.3-Bis · MUST）
+
+**每次 spawn review-oneshot 实例，prompt 必须包含 §A~§G 共 7 段**，缺一即违规（incident）。
+
+```
+你是 {Review-Tech | Review-Product | Card-Reviewer} · 一次性审核员。
+实例标识：review-{tech|product}-costra-xxx-rN
+本实例仅审这一轮 · 审完将被 shutdown · 无历史记忆 · 无跨卡信息
+
+# §A 角色规则（完整 inline）
+[.team/agents/07-review-agent-tech.md 全文 · 或 08/card-reviewer 对应文件]
+
+# §B Background · 背景（200-800 字建议体量）
+- 卡号：COSTRA-xxx
+- 标题：...
+- Sprint：Sprint-N
+- 类型：feature | fix | refactor | infra
+- 业务目标（一句话）：<对谁在什么场景解决了什么问题>
+- 卡定义 Review 结论：.team/reviews/COSTRA-xxx/card-review-FINAL.md（若有）
+- 相关历史决策（只列与本卡相关的，逐条附一句 why-relevant）：
+  - D-xxx · <why-relevant>
+  - ADR-xxxx · <why-relevant>
+- 关联卡：COSTRA-yyy（状态） / COSTRA-zzz（状态）——用于判断 API/契约上下游
+- 架构定位：docs/charter.md §7 第 x 行（本卡属于 {server|miniprogram|docs|design} 工作区）
+
+# §C Content · 本轮产出（本体 inline · 超过 8k 行 diff 必须拆分）
+- 被审 team member：{backend-dev | miniapp-dev | pm-writer | design-maker}
+- 本轮是第 N / 5 轮
+- 产出文件清单：
+  - path/to/file.ts (+xx -yy)
+  - ...
+- 关键改动摘要（从 commit message / response.md 提取 · 禁止 Orchestrator 自己编）：<...>
+- 被审 team member 的本轮回执（仅 N≥2 时必须 inline 全文）：
+  [round-N-{agent}-response.md 全文]
+- git diff（相对 {last-pass-sha | main}）：
+  [diff 片段 inline]
+
+# §D Expected Approach · 原方案 / 约束 / 验收
+- 原方案引用（具体文件路径 + 锚点 / 行号）：
+  - api/openapi.yaml 第 xx-yy 行（接口契约）
+  - docs/db/schema.md#table-xxx（数据结构）
+  - docs/design/flows/login.md#step-3（关键流程）
+- 工程约束：
+  - .team/engineering-guidelines.md §x.y
+  - .team/agents/COMMON-CONTRACT.md §0 目录权限矩阵
+- 硬编码红线：D-008 主体字样 / AppID 泄漏 / secret / console.log(session_key)
+- DoD / 验收标准：<从 backlog.json 或 card-review-FINAL.md 摘取>
+- 上一轮 P0/P1（若 N≥2，MUST 全量 inline 不得摘要）：
+  [round-(N-1)-tech.md 的 P0/P1 段全文]
+
+# §E 强制阅读清单（给出 verdict 前 MUST 逐份读完 · 只列路径不 inline）
+[Review-Tech 11 条 / Review-Product 8 条 / Card-Reviewer 按 SOP-CARD-REVIEW]
+见 D-018 §3.3-Bis (B)
+
+# §F 产出要求
+- 产出路径：.team/reviews/COSTRA-xxx/round-N-{tech|product}.md
+- 格式：严格按 .team/agents/07-review-agent-tech.md §4（或 08 §4）模板
+- 产出方式：**返回完整 markdown 文本作为 final message**（你无 write 工具），由 Orchestrator 原样落盘
+- Verdict 判定：按角色规则 §5 硬性规则
+- 完成后：此实例将被 shutdown；不得保留任何状态
+
+# §G 独立性硬约束
+- 你没看过本卡的任何早期实现讨论
+- 你不是写这段代码的人，也不是 Orchestrator
+- 若 §B §C §D 信息不足以判断某维度 → 在报告"自我反思"段明说"信息不足：xxx"，判该维度置信度"低"，不得瞎猜打高分
+- 禁止：引用你"记忆中"的任何东西 · 你只有本 prompt + 强制阅读清单磁盘内容
+```
+
+### 7.4 Orchestrator 的**禁止事项**（SBAI 强化版）
+
+- ❌ **禁止在 Orchestrator 上下文做任何业务产出**（读业务目录 / 写代码 / 写 Review 意见 / 写 PRD）——一切业务动作必须由 team member 或 oneshot 做
+- ❌ 禁止跳过 Review-oneshot 直接推到 Human（除非 §7.2 例外）
+- ❌ **禁止复用 oneshot 实例跨轮或跨卡**（`review-tech-costra-101-r2` 审完 r2 必须 shutdown；不得继续审 r3 或审 COSTRA-102）
+- ❌ 禁止在 round=5 还没停
+- ❌ 禁止合并两个 Review-oneshot 的报告（保持独立）
+- ❌ 禁止修改 Review-oneshot 返回的 markdown 内容（原样落盘；改了 = 证据裁剪 = incident）
+- ❌ 禁止跨轮异步承诺（D-018 §3.4 铁律 · §10.5）
+- ❌ 禁止在 spawn prompt 里附带"上轮你说过..."之类的自证提示（独立性硬要求）
+- ❌ 禁止 Review-oneshot 的 spawn prompt 缺 §B/§C/§D 任一段（Context Injection Contract 违规）
+
+---
+
+## 8. Human 介入窗口（与 v2.0 一致）
+
+| 时机 | Human 要做什么 |
+|---|---|
+| Review-oneshot 给 PASS/PASS-WITH-FOLLOWUP（T1/T2） | 走原有 `approve:COSTRA-XXX` 或 `reject:...` 流程 |
+| Review-oneshot 给 PASS/PASS-WITH-FOLLOWUP（T3/T4 且四条件满足） | 自动关闭 · Human 只需事后聚合汇报查验；异常走 `reopen-review` |
+| ESCALATE / ROUND-LIMIT / RED-LINE | 冒泡到 Human，看 `FINAL.md` 做决策 |
+| Human 主动暂停 | 发 `pause-review COSTRA-XXX`；Orchestrator 本轮立即给**所有活跃** review-oneshot 实例发 `shutdown_request`（若有） |
+
+**Orchestrator 必须在进度汇报中醒目标注**（同 v2.0 §8，术语更新为 "review-oneshot 实例已 shutdown / 活跃中"）。
+
+---
+
+## 9. 触发指令（合入 SOP-HUMAN-TRIGGER §3）
+
+| 用户说 | Orchestrator 行为 |
+|---|---|
+| `run review-tech COSTRA-xxx` | spawn `review-tech-costra-xxx-r{当前+1}` oneshot |
+| `run review-product COSTRA-xxx` | spawn `review-product-costra-xxx-r{当前+1}` oneshot |
+| `run {agent} COSTRA-xxx revise-round-N` | **D-015 统一触发词** · send_message 给对应 team member 做回执+修复（可含异议） |
+| ~~`run {agent} COSTRA-xxx respond-round-N`~~ | ❌ **D-015 已废弃** |
+| `pause-review COSTRA-xxx` | 立即停该卡 Review · 若有活跃 oneshot 实例，同轮 shutdown_request |
+| `skip-review COSTRA-xxx` | 跳过 Review 闭环直推 Human 终审 |
+| `force-pass COSTRA-xxx` | Human 强制通过 |
+| `reopen-review COSTRA-xxx` | 对 D-013 T3/T4 已自动关闭的卡重开 Human 终审窗口 |
+| `reopen-batch <batch-name>` | 批量重开 |
+| `require-human-review COSTRA-xxx` | AI-Review 启动前强标 T1，强制 Human 终审 |
+| `review-card COSTRA-xxx` | 见 `SOP-CARD-REVIEW.md` |
+| `skip-card-review COSTRA-xxx` | 见 `SOP-CARD-REVIEW.md` |
+| `force-card-pass COSTRA-xxx` | 见 `SOP-CARD-REVIEW.md` |
+
+---
+
+## 10. Revise↔Review 自动循环细则（D-011 + D-015 + D-018）
+
+> 本章在 v2.0 基础上，把所有"切 Review-Agent 角色"语义替换为"spawn review-oneshot 实例"，其他逻辑不变。
+
+### 10.1 一句话规则
+
+**Review-oneshot 给出 `REVISE` 后，Orchestrator 直接 send_message 给对应被审 team member 改；被审 team member 交完修复说明后，Orchestrator 直接 spawn 新的 review-oneshot 复审——无需 Human 逐轮触发，直到 PASS / 轮次到顶 / 分歧 / 红线 / Human 叫停。所有 spawn / 落盘 / shutdown 必须同一 tool call 循环内兑现（§10.5）。**
+
+### 10.2 启动条件（何时进入自动循环）
+
+下列之一即进入：
+
+- Human 首次发 `run review-tech COSTRA-xxx` 或 `run review-product COSTRA-xxx`
+- 被审 team member 首次产出后，Orchestrator 按 §3 Step 2 自动 spawn review-oneshot（仍然**是 Human 触发 team member 产出**这一步进来的）
+
+**⚠️ 不会**仅仅因为卡进了 Doing 就自动启动。**被审 team member 的首次产出永远需要 Human 触发 `开干 COSTRA-xxx`。**
+
+### 10.3 前置条件（D-011 §2 镜像 · D-015 修订条款 4 · 与 v2.0 一致）
+
+自动推进**必须**同时满足：
+
+1. 有至少一轮 Review 报告
+2. 最近 verdict == `REVISE`
+3. round < 5
+4. **D-015**：被审 team member 上一轮 response 中**若**对某 P0 反驳，则 Review-oneshot 必须在本轮中已明确驳回该反驳并要求 Agent 在本轮修复（首次反驳**不中断**自动循环；Review-oneshot 二次驳回 + Agent 本轮仍拒绝修复同一 P0 → 中断并 ESCALATE）
+5. Human 未下达 `pause-review` / `skip-review` / `force-pass`
+6. 未触发红线
+
+任一不满足 → 自动循环终止 → 冒泡给 Human。
+
+### 10.4 状态机
+
+（与 v2.0 §10.4 图示一致，语义替换："切 Review-Agent 角色" → "spawn review-oneshot 实例"）
+
+### 10.5 同轮兑现（加速路径 · v3.1 已降级 · 不再是铁律）
+
+> **版本说明**：v3.0 草稿（2026-05-01）本节名为"🔒 同轮兑现铁律 v2（D-018 §3.4）"，作为替代 D-016 v1.2 的新铁律。
+> **v3.1 软化**（2026-05-02 · D-018 v0.4 §3.4）：**β-3 混合模式生效后同轮兑现降级为加速路径**，不再是违规判定的触发条件。新铁律由 §10.5-Bis 承接（承诺必落盘 + 每轮必扫必消费 + 打断必识别）。
+
+#### 10.5.1 加速路径条文（推荐姿态）
+
+> Orchestrator 在任何 team member 产出后，若本轮仍有 context / tool call 预算，**应尽量**在**同一轮 tool call 循环内**完成：
+>
+> 1. `task(name="review-xxx-rN", ...)` spawn review-oneshot 实例
+> 2. 接收该实例的 final message（含完整 `round-N-{tech|product}.md` 文本）
+> 3. **原样**落盘到 `.team/reviews/COSTRA-xxx/round-N-{tech|product}.md`（禁止修改内容）
+> 4. `send_message(type="shutdown_request", recipient="review-xxx-rN")` 销毁实例
+>
+> 并在同轮末给出**合并汇报**（Agent 交付段 + Review 审查段）。好处：用户等待时间短、Review 结果即时可见。
+>
+> **若本轮预算不足**（context 长度 / tool call 次数 / team member spawn 排队等），**合法姿态**为走 §10.5-Bis β-3 跨轮消费：
+> 1. 本轮完成 team member 产出后 **立即落盘 pending yaml** 到 `.team/pending/COSTRA-xxx-review-r{N+1}.yaml`（Schema 见 `.team/schemas/pending.schema.json`）
+> 2. 汇报里**显式**列出新落盘的 pending 项
+> 3. 下一轮 Human 任何非打断消息即触发自动消费（§10.5-Bis）
+
+#### 10.5.2 正确执行姿态（加速路径示范 · 同 v3.0 原 10.5.2 · 新增 Step 0 扫 pending + Step 9 派生 pending）
+
+```
+[用户发] run backend COSTRA-101 revise-round-3
+↓
+[同一 tool call 循环内 · 预算充足]
+  Step 0: ls .team/pending/*.yaml（β-3 开工第一动作 · §10.5-Bis）
+  Step 1: send_message → backend-dev："按 round-2-tech.md P0 清单修复"
+  Step 2: 等 backend-dev 回 revision_completed
+  Step 3: 读 .team/reviews/COSTRA-101/round-3-backend-response.md 确认落盘
+  Step 4: 不收尾 · 继续 →
+  Step 5: task(name="review-tech-costra-101-r3", team_name="costra-dev",
+               mode="default",
+               prompt=§A§B§C§D§E§F§G 全套 · Context Injection Contract)
+  Step 6: 接收 final message
+  Step 7: 原样落盘到 .team/reviews/COSTRA-101/round-3-tech.md
+  Step 8: send_message(type="shutdown_request", recipient="review-tech-costra-101-r3")
+  Step 9: 若 verdict=REVISE 且 §10.3 满足 → 落盘 pending/COSTRA-101-revise-r4.yaml（等下轮消费）
+  Step 10: 同步 STATE / board / metrics / FINAL
+  Step 11: 收尾 · 合并汇报（Revise 交付段 + R3 Review 审查段 + pending 派生段）
+[对话轮结束]
+```
+
+#### 10.5.3 合法降级姿态（v3.1 新增 · β-3 跨轮消费 · 替代原 v3.0 "错误执行姿态"的部分场景）
+
+```
+[用户发] run backend COSTRA-101 revise-round-3
+↓
+[同一 tool call 循环内 · 预算吃紧]
+  Step 0: ls .team/pending/*.yaml
+  Step 1-3: Backend 修复完成，落盘 round-3-backend-response.md
+  Step 4: 预估剩余预算不够跑 Review（比如 diff 1.5 万行、上轮 P0/P1 需 inline）→
+          落盘 .team/pending/COSTRA-101-review-r3.yaml
+          · target_executor.kind=oneshot
+          · target_executor.name=review-tech-costra-101-r3
+          · prompt_prefill_path=.team/pending/_prompts/COSTRA-101-review-r3.prompt.md
+          · preconditions=[round-lt-5=true, no-red-line=true, no-human-pause=null]
+  Step 5: 汇报明说："本轮完成 Revise；下轮任何非打断消息将自动消费 COSTRA-101-review-r3。"
+          STATE MODE=awaiting-next-turn；board 标注 "pending: COSTRA-101-review-r3"
+[对话轮结束]
+
+[下一轮 Human 发任何非打断消息]
+↓
+Orchestrator 本轮开工第一动作：
+  Step 0: ls .team/pending/*.yaml → 命中 COSTRA-101-review-r3.yaml
+  Step 1: 复核 preconditions（no-human-pause 现场实查）→ 全 true
+  Step 2: 按 prompt_prefill_path 读 prompt → task spawn
+  Step 3-5: 接收 final message → 原样落盘 → shutdown
+  Step 6: 移 yaml 到 _done/
+  Step 7: 按 verdict 派生下一条 pending（REVISE→落 revise-r4；PASS→结束）
+  Step 8: 汇报 β-3 消费情况 + 响应本轮用户原始诉求
+```
+
+#### 10.5.4 禁止姿态（违规登记 · v3.1 重写自原 10.5.3 + 10.5.4）
+
+无论加速路径还是 β-3 跨轮，以下姿态**始终**是 incident：
+
+- ❌ 声称"下轮自动拉起"但**未**落盘对应 pending yaml → `I-pending-no-record`（v3.1 新增，接管原 I-005 类假承诺）
+- ❌ Step 5 spawn 了但未等 final message 就收尾 → `I-oneshot-orphan`
+- ❌ Step 7 落盘时**修改**了 oneshot 返回的内容 → `I-evidence-tampered`
+- ❌ 跳过 Step 8，让 oneshot 实例残留 > 1 对话轮 → `I-oneshot-leak`
+- ❌ spawn prompt 缺 §B/§C/§D 任一段 → `I-context-injection-violation`
+- ❌ 同一卡同轮 spawn 多次不同 prompt 的 oneshot → `I-double-blind-evasion`（升级 ESCALATE）
+- ❌ 本轮开工 pending 非空且 Human 消息非打断，但未扫未消费 → `I-pending-skipped`（v3.1 新增）
+- ❌ 同一 `card+type+round` 磁盘上有多份 yaml → `I-pending-duplicate`（v3.1 新增）
+
+#### 10.5.5 处置流程
+
+1. Orchestrator 自检或 Human 质疑 → 立即当轮补救
+2. 补救优先级：先处理当前声称的动作（重 spawn / 落盘 / shutdown / 补 pending yaml）
+3. 校正 STATE / board / metrics 假陈述
+4. 登记 Incident
+5. 若 D-018 v0.4 生效后再犯 → 升级 ESCALATE · Human 介入审查
+
+#### 10.5.6 完整条文
+
+详见 `.team/decisions/D-018-spawn-based-agent-isolation.md §3.3-Bis + §3.4 + §3.5`。
+
+---
+
+### 10.5-Bis 🔒 β-3 混合自动消费铁律（D-018 v0.4 §3.5 · 2026-05-02 生效 · v3.1 新增）
+
+> **铁律三条**：
+> 1. **承诺必落盘**：任何跨轮承诺必须在 `.team/pending/` 落盘 yaml（符合 `.team/schemas/pending.schema.json`）
+> 2. **每轮必扫必消费**：Orchestrator 每轮开工**第一动作** = `ls .team/pending/*.yaml` → 按优先级消费（除非 Human 消息构成打断）
+> 3. **打断必识别**：Human 消息包含打断信号时必须先按 §10.5-Bis.2 识别并处置；误判消费 = incident
+
+#### 10.5-Bis.1 扫描与消费流程
+
+详见 `.team/pending/README.md §3`。核心点：
+
+- **触发信号**：Human 发送的**任何非打断性**消息即构成一次广义 `continue`
+- **排序**：priority 降序 → 同 card 同 round 下 revise 优先于 review → created_at FIFO
+- **软上限**：单轮 ≤ 3 卡 × 1 round（估计 ≤ 15 分钟）；超出留下轮
+- **消费 = §10.5 加速路径**（spawn → 接收 → 原样落盘 → shutdown）
+- **派生**：消费完成后按 verdict 派生下一条 pending
+
+#### 10.5-Bis.2 打断信号清单
+
+**显式打断指令**（精确匹配 · 见 §9 触发指令表）：
+- `pause-autorun` / `resume-autorun`
+- `pause-review <card>` / `pause-review all`
+- `stop` / `停`
+- `skip-review <card>` / `skip-card-review <card>`
+- `cancel pending <id>` / `cancel pending all`
+
+**隐式打断关键词**（模式匹配 · 触发时**必须询问 Human 确认**）：
+- **否定动词**：`别` / `不要` / `先别` / `暂停` / `停下` / `等一下` / `hold on` / `wait`
+- **目标关键词**：`review` / `自动` / `pending` / `跑` / `拉起` / `autorun` / `oneshot`
+- **判定**：否定动词 + 目标关键词同一消息内共现 → 隐式打断 → 询问 A/B/C
+
+**询问模板**：
+
+> "检测到可能的打断信号（匹配：`<动词>` + `<目标>`）。当前 pending 队列有 N 项（列表）。
+> (A) 先跑完 pending 再响应你 / (B) 先暂停本轮消费、响应你 / (C) 永久 pause-autorun。
+> 请选 A/B/C；若直接回答实质问题视为 A。"
+
+**示例**：
+
+| Human 说 | 判定 | Orchestrator 动作 |
+|---|---|---|
+| `继续` / `下一步` / `go` | 显式 continue | 消费 pending |
+| `pause-autorun` | 显式 pause | 停消费直到 `resume-autorun`；pending 文件保留 |
+| `先别跑 Review，看一下 COSTRA-100 代码` | 隐式打断 | 询问 ABC |
+| `我先看一下代码` | 不命中 | 消费 pending |
+| `进度如何` | 不命中 | 消费 pending |
+| `Review 写得不错` | 不命中 | 消费 pending |
+| `暂停 autorun` | 显式 pause | 停消费 |
+| `等一下，pending 是什么？` | 隐式打断 | 询问 ABC |
+
+#### 10.5-Bis.3 本轮汇报格式（MUST · 当 pending 非空时）
+
+```markdown
+## 📦 本轮 pending 消费情况
+
+### 开工前 pending 清单（N 项）
+| ID | card | type | round | priority | 预估耗时 |
+
+### 本轮已消费（M 项）
+| ID | 执行结果 | 产物 |
+
+### 本轮新落盘 pending（K 项 · 由本轮消费或 team member 产出派生）
+| ID | 触发源 |
+
+### 下轮将消费（剩余 L 项）
+| ID | card | type | round | priority |
+
+### Human 打断指令
+`pause-autorun`（全局）/ `pause-review COSTRA-xxx`（单卡）/ `cancel pending <id>`（单项）
+```
+
+缺此段（pending 非空时）= `I-pending-report-miss`。
+
+#### 10.5-Bis.4 与现行 SOP 的关系
+
+- **替代**：原 v3.0 §10.5"同轮兑现铁律"在 v3.1 里降级为加速路径（见 §10.5）
+- **继承**：§10.5 加速路径的 1~4 步操作仍然是合法姿态；只是"必须本轮完成"这一硬约束不再生效
+- **增强**：Context Injection Contract（§7.3）**始终有效**，无论加速还是跨轮路径都必须满足 BCE 三段
+- **完整条文**：详见 `.team/decisions/D-018-spawn-based-agent-isolation.md §3.5` 与 `.team/pending/README.md`
+
+### 10.6 Orchestrator 的自动推进动作清单（SBAI 版 · v3.1 对齐 β-3）
+
+每次 verdict=REVISE 时（前置 §10.3 满足），Orchestrator 必须依次做：
+
+0. **扫 pending**（β-3 开工第一动作 · §10.5-Bis 铁律 2）：`ls .team/pending/*.yaml`，按 §10.5-Bis.1 排序决定本轮消费顺序
+1. **读** 最新 `round-N-{tech|product}.md`，提取 P0/P1/P2
+2. **判** 前置 §10.3，任一不满足 → 停并冒泡，**不**执行 3-11
+3. **更新看板**：`AI-Review 迭代中` 行从 `round N/5` 改为 `round N+1/5 · 自动推进中`
+4. **写消息** 到 `.team/messages/YYYY-MM-DD.jsonl`：`agent_dispatch` 事件
+5. **send_message** 给对应 team member，附 Review 报告路径 + 逐条 P0 清单
+6. **等待**该 team member 回 `revision_completed` 消息并产出 `round-{N+1}-{agent}-response.md`
+7. **判预算**：
+   - 若预算充足 → 继续 Step 8（加速路径）
+   - 若预算不足 → 落盘 `.team/pending/COSTRA-xxx-review-r{N+1}.yaml`（β-3 跨轮路径 · §10.5.3）→ 跳至 Step 11
+8. **task** spawn `review-{tech|product}-costra-xxx-r{N+1}` oneshot，prompt 按 §7.3 Context Injection Contract 生成
+9. **接收 final message + 原样落盘 + shutdown_request**（§10.5.1 四步 · 加速路径）
+10. **若 verdict=REVISE 且 §10.3 仍满足** → 落盘 `.team/pending/COSTRA-xxx-revise-r{N+2}.yaml`（下轮派生 · β-3）
+11. **汇报**：§10.5-Bis.3 pending 消费情况段 + §10.7 Review 进度段
+
+**关键约束**：
+- 每一步都**必须留痕**
+- Orchestrator 不得跳过 response.md 直接跑下一轮 Review
+- Orchestrator 不得合并两个 round 的报告
+- Step 8-9（加速路径）**可以跨轮**（v3.1 软化），前提是 Step 7 已落盘 pending yaml
+
+### 10.7 自动循环中的汇报格式（MUST · v3.1 补 β-3 汇报段）
+
+每轮汇报 MUST 包含两段：
+
+**段 1 · Review 迭代状态**（同 v3.0）：
+
+```
+## ⏳ Review 迭代中（共 N 张）
+
+| 卡号 | 当前 round | 上一 verdict | 本轮动作 | pending 队列 | 可立即打断指令 |
+|---|---|---|---|---|---|
+| COSTRA-100 | 2/5 | Round-1 REVISE（3 P0） | 本轮已消费 pending/COSTRA-100-review-r2.yaml · verdict=PASS · 新落 pending/COSTRA-100-(空 · 已终止) | — | `pause-review COSTRA-100` |
+| COSTRA-101 | 3/5 | Round-2 REVISE（1 P0） | 本轮加速路径完成 R3 · verdict=REVISE · 新落 pending/COSTRA-101-revise-r4.yaml | revise-r4 待下轮消费 | `pause-review COSTRA-101` |
+```
+
+"本轮动作"字段**必须**写本轮实际已兑现的动作（加速路径）或新落盘的 pending 项（β-3 跨轮路径）。**不得**写"60 秒后自动跑"。
+
+**段 2 · β-3 pending 消费情况**（§10.5-Bis.3 · pending 非空时 MUST）：
+
+见 §10.5-Bis.3 模板。缺此段 = `I-pending-report-miss`。
+
+### 10.8 Human 打断窗口
+
+- Human 在任何对话轮发 §9 打断指令 → Orchestrator **本轮立即停**；**且**对所有活跃 oneshot 实例发 `shutdown_request`（若有）
+- 即使 Orchestrator 当前轮"计划"自动推进，只要 Human 在**同一对话回合**里表达异议 → **立即暂停**
+- **v3.1 新增**：隐式打断关键词命中（§10.5-Bis.2）→ Orchestrator 必须询问 A/B/C 后再决定是否消费 pending；不得自行判定
+
+### 10.9 优先级
+
+| 冲突场景 | 胜出 |
+|---|---|
+| Human 的 `pause-review` / `pause-autorun` vs 自动推进 | Human 胜 |
+| 红线触发 vs 自动推进 | 红线胜 |
+| §4.2 5 轮上限 vs 自动推进 | 5 轮上限胜 |
+| §10.5 同轮兑现（加速路径）vs §10.5-Bis β-3 跨轮 | 本轮预算决定 · 两者皆合法 |
+| §10.5-Bis 三铁律 vs 任何其他规约 | **三铁律胜**（新铁律接管原 I-005 防线） |
+| `SOP-HUMAN-TRIGGER` 铁律 vs 自动推进 | **在 Review 闭环内 β-3 消费胜**（D-011 豁免 · 每次 Human 非打断消息视为广义触发） |
+| Context Injection Contract（§7.3）vs spawn 体积焦虑 | **Contract 胜**（宁可 prompt 长 · 宁可走 β-3 跨轮 · 不可缺 BCE 段） |
+| 隐式打断关键词命中 vs Orchestrator 判断"用户只是好奇" | **询问 Human 胜**（不得自行判定，§10.5-Bis.2） |
+
+---
+
+## 11. 度量
+
+### 11.1 每张卡的 Review 度量（与 v2.0 一致）
+
+```json
+{
+  "card": "COSTRA-101",
+  "review_type": "tech",
+  "total_rounds": 2,
+  "terminal_verdict": "PASS",
+  "p0_caught_in_review": 5,
+  "p0_escaped_to_human": 0,
+  "escalated": false,
+  "time_cost_minutes": 45,
+  "human_final_decision": "approve",
+
+  "autoloop_enabled": true,
+  "autoloop_rounds_run": 3,
+  "autoloop_interrupted_by_human": false,
+  "autoloop_interrupt_reason": null,
+
+  "sbai_enabled": true,
+  "sbai_oneshot_instances_spawned": 3,
+  "sbai_oneshot_instances_shutdown": 3,
+  "sbai_d018_compliant": true
+}
+```
+
+### 11.2 每次自动拉起的 D-018 合规度量
+
+```json
+{
+  "card": "COSTRA-xxx",
+  "round": N,
+  "auto_kickoff_claim": true,
+  "auto_kickoff_delivered": true,
+  "auto_kickoff_type": "D-011|D-014-a|D-014-b",
+  "spawn_prompt_has_section_B": true,
+  "spawn_prompt_has_section_C": true,
+  "spawn_prompt_has_section_D": true,
+  "spawn_prompt_has_section_E": true,
+  "oneshot_shutdown_same_turn": true,
+  "落盘_content_matches_final_message": true,
+  "d018_compliant": true
+}
+```
+
+任一 `has_section_*` 或 `oneshot_shutdown_same_turn` 或 `落盘_content_matches_final_message` 为 false → 自动登记 I-xxx incident。
+
+### 11.3 每周聚合（`.team/weekly/review-metrics.md`）
+
+原有字段保留；新增：
+- **SBAI 合规率**（应恒为 100%）
+- **oneshot 实例平均 spawn 耗时**（判断异步排队是否影响同轮兑现）
+- **Context Injection Contract 违规次数**（应恒为 0）
+
+### 11.4 回退信号
+
+- Human 同一张卡连续 2 轮使用 `pause-review` / `stop` / `force-pass`
+- Review-oneshot 连续 3 张卡 ROUND-LIMIT 未收敛
+- SBAI 合规率 < 100%（说明流程还没稳定）
+- D-018 §3.4 违规事件 ≥ 1 次/周（说明 Orchestrator 未对齐新规约）
+
+---
+
+## 12. 与现有 SOP / 决议的关系
+
+| SOP / Decision | 关系 |
+|---|---|
+| `SOP-HUMAN-TRIGGER` | **局部豁免**（D-011 · D-014）+ **执行层对齐**（D-018）。被审 team member 首次开干仍需 Human 触发；Review 闭环内 Revise↔Review 相互拉起执行层从"切角色"改为"spawn oneshot" |
+| `SOP-CARD-REVIEW` | **D-014 配套** + **SBAI 对齐**：首轮卡定义 Review 改为 spawn `card-reviewer-oneshot` |
+| `SOP-OBSERVE-AND-INTERVENE` | 本 SOP 是前者的加强版 filter |
+| `engineering-guidelines` | Review-oneshot 的 checklist 直接引用此文件作为打分依据 |
+| `COMMON-CONTRACT` | **需补丁**（D-018 P1）：新增 team member 与 oneshot 的目录/工具权限矩阵 |
+| `D-011 方案 B` | §10.1~§10.4 / §10.6~§10.9 的依据；**执行层替代**（D-018） |
+| `D-013 Review 场景分级` | §1 约束 6 / §4.1 的依据（保留） |
+| `D-014 卡定义 Review + 自动拉起` | §1 约束 7 / §3 / §7 / §9 的依据；**执行层替代**（D-018） |
+| `D-015 respond/revise 合并` | §6 回应格式 / §9 触发指令 / §10.3 前置 4 的依据（保留） |
+| ~~`D-016 同轮兑现铁律 v1.2`~~ | **已被 D-018 §3.4 替代**（2026-05-01） |
+| 🆕 `D-018 SBAI` | §1 约束 9-11 / §3 流程 / §7 调度 / §7.3 Spawn Prompt 模板 / §10.5 同轮兑现 v2 的**直接依据**（2026-05-01） |
+
+---
+
+## 13. 版本与变更
+
+| 版本 | 日期 | 变更 |
+|---|---|---|
+| v1.0~v1.4 | 2026-04-23~2026-04-24 | 原 SOP-REVIEW-LOOP 版本线（已归档） |
+| v2.0 | 2026-04-24 19:16 | 方案 A 合并版（SOP-REVIEW-LOOP + SOP-REVIEW-AUTOLOOP） |
+| **v3.0** | **2026-05-01 21:45（草稿）** | **SBAI 升级**（D-018）：执行层从"切角色"改为"spawn oneshot"；§3 流程新增 Step 3-bis/3-ter；§7.3 Context 注入模板升级为 Context Injection Contract（§A~§G 七段）；§10.5 同轮兑现铁律 v2（替代 D-016 v1.2）；§7.4 禁止事项新增 5 条；§11 度量新增 SBAI 合规字段 |
+| **v3.1** | **2026-05-02 12:30（草稿）** | **β-3 软化**（D-018 v0.4）：§10.5 同轮兑现**降级为加速路径**不再是铁律；新增 §10.5-Bis β-3 混合自动消费铁律（承诺必落盘 + 每轮必扫必消费 + 打断必识别）；§10.6 新增 Step 0 扫 pending 与 Step 7 预算判别 + Step 10 派生 pending；§10.7 汇报格式新增 β-3 消费情况段；§10.9 优先级表调整；§1 约束 10/11 对齐新铁律 |
+
+---
+
+## 13-Bis. 与 `.team/pending/` 的关系
+
+`.team/pending/README.md` 是本 SOP §10.5-Bis 的配套详细实施手册，规定 yaml 结构、消费顺序、打断识别等全部操作细节。Schema 落盘在 `.team/schemas/pending.schema.json`。两者内容与本 SOP 必须保持一致，若发现冲突以本 SOP 为准（本 SOP 是主规约，pending/README 是辅助手册）。
+
+---
+
+**本 SOP v3.1 草稿待 Human 过稿后生效；过稿前 v2.0 仍为现行规约。**

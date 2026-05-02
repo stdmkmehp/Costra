@@ -32,58 +32,59 @@ Human 一个人盯所有 Agent 产出太吃力。引入两位 Review-Agent 做**
 1. Review 与 Revise 的迭代**最多 5 轮**，超出必停
 2. 迭代过程中若出现**不可调和分歧**，立即停下交给 Human 决定
 3. Review-Agent 的结论**不替代** Human 终审，只是过滤器（通过了还得 Human 点头，没通过大概率 Human 也会打回）——**例外见约束 6（D-013）**
-4. Review-Agent **不写代码/文档**，只给意见
-5. **默认启用自动循环**（D-011 · 2026-04-23 生效 · 详见 §10）：Review 闭环内的 `Revise↔Review` 相互拉起无需 Human 逐轮触发，但前置条件 6 条 + 同轮兑现铁律 + 打断指令见 §10
+4. **审查 subagent 无写权** · 只给意见（v2.1 · D-018 · 通过 prompt §H 硬性声明 + Orchestrator 事后比对 final message 与磁盘产物是否一致 保证 · 详见 `.team/agents/COMMON-CONTRACT.md §0-Bis`）
+5. **🆕 执行层 SBAI 化**（D-018 · 2026-05-02 生效 · 替代"Orchestrator 切角色扮演"模型）：所有 Review / Revise 动作通过 `task(subagent_name="code-explorer", prompt=...)` spawn **全新上下文**完成。被审角色 + 审查角色统一走同步 subagent 路径。详见 `.team/decisions/D-018-spawn-based-agent-isolation.md §3`
 6. **Review 场景分级**（D-013 · 2026-04-23 21:15 生效）：Review 按**准入 T1 / Gate 前 T2 / 追溯 T3 / 回归 T4** 分档。**T1/T2 仍需 Human 终审**（约束 3 原文适用）；**T3/T4 在 AI-Review PASS + 残余 P0/P1=0 + 无红线 + 无新阻塞 四条件同时满足时自动关闭**，不走 Human 终审，Human 保留 `reopen-review` 复议权。详见 `.team/decisions/D-013-review-scenario-tiering.md`
-7. **卡定义 Review + 产出 Review 环首自动拉起**（D-014 · 2026-04-23 22:26 生效）：
-   - (a) 所有 D-014 立案后新建的卡**必须**经过一次卡定义 Review（技术向 → Review-Tech / 产品向 → Review-Product），详见 `SOP-CARD-REVIEW.md`
-   - (b) **被审 Agent 交付后的产出 Review 首轮自动拉起**，无需 Human 触发（但 Agent 首次开干仍需 Human 触发，铁律不变）
+7. **卡定义 Review + 产出 Review 首轮自动拉起**（D-014 · 保留 · 执行层改 SBAI · 2026-05-02）：
+   - (a) 所有 D-014 立案后新建的卡**必须**经过一次卡定义 Review（技术向 → card-reviewer-tech / 产品向 → card-reviewer-product），详见 `SOP-CARD-REVIEW.md`
+   - (b) 被审装扮 subagent 交付后，Orchestrator 在**同一对话轮内** spawn 对应 review 审查 subagent（若本轮预算不足则明说"下轮需你触发 `run review-{tech|product} COSTRA-xxx round-N`"）
    - (c) Human 打断指令（`pause-review` / `skip-card-review` / `force-card-pass` / `stop`）最高优先级
    - 详见 `.team/decisions/D-014-card-review-and-auto-review-kickoff.md`
-8. **respond/revise 触发词合并**（D-015 · 2026-04-24 09:24 生效）：`respond-round-N` 已**废弃**，`revise-round-N` 统一承担"回执+修复+可表达异议"三合一语义。Agent 允许对 Review 意见反驳，但必须当轮同时落盘采纳项的代码修复；异议由 Review-Agent 在下一轮二次裁决，驳回后 Agent 必须修复，不得二次反驳（否则 ESCALATE）。详见 `.team/decisions/D-015-unify-respond-revise.md`
-9. **同轮兑现铁律**（D-016 · 2026-04-24 19:10 生效）：Orchestrator 在声明"自动拉起 Review"后必须在**同一 tool call 循环内**连续切 Review-Agent 角色产出 Review 报告，严禁跨轮异步承诺。详见 §10.5 与 `.team/decisions/D-016-same-turn-review-autoloop.md`
+8. **respond/revise 触发词合并**（D-015 · 2026-04-24 09:24 生效 · 保留不变）：`respond-round-N` 已**废弃**，`revise-round-N` 统一承担"回执+修复+可表达异议"三合一语义。Agent 允许对 Review 意见反驳，但必须当轮同时落盘采纳项的代码修复；异议由 review 审查 subagent 在下一轮二次裁决，驳回后 Agent 必须修复，不得二次反驳（否则 ESCALATE）。详见 `.team/decisions/D-015-unify-respond-revise.md`
+9. **🆕 Human 每轮显式触发**（D-018 §7 铁律回归原教旨）：除 D-011 Review 闭环内 `Revise↔Review` 相互拉起可在 Orchestrator **同一对话轮内**连续 spawn 外，**跨轮**任何 Agent 动作都需 Human 显式触发（废除"下一轮自动"类承诺）。同轮连续 spawn 不违反此铁律（本质是一次 Human 触发里的多步兑现）
+10. **🆕 并行 Orchestrator 支持**（D-018 §4）：多个 CodeBuddy 会话可同时作为 Orchestrator 操作 Costra · 不使用 `task` 团队模式 · 冲突处理见 `.team/decisions/D-018-spawn-based-agent-isolation.md §4.2`
 
 ---
 
 ## 2. 角色分工矩阵
 
-| 被审 Agent | Review 归属 | 审核范围 |
+| 被审装扮 subagent | 审查 subagent 类型 | 审核范围 |
 |---|---|---|
-| Backend-Agent | **Review-Tech** | `server/`、`api/`、`docs/api/`、`docs/db/` |
-| MiniApp-Agent | **Review-Tech** | `miniprogram/`、`miniapp/` |
-| PM-Agent | **Review-Product** | `docs/`（除 `api/db/` 外）、`.team/backlog.json`、`.team/risks.md`、订阅文案、隐私清单、Sprint 计划、Retro |
-| Design-Agent | **Review-Product** | `design/`、`docs/design/` |
-| DevOps-Agent | **不走 Review-Agent** | Human 直审（涉及生产/密钥/域名，风险太高） |
-| QA-Agent | **不走 Review-Agent** | Human 直审（测试策略本身就是质量标准，不能由另一个 AI 批） |
+| backend-dev（旧 Backend-Agent） | **review-tech-{card}-r{N}** | `server/`、`api/`、`docs/api/`、`docs/db/` |
+| miniapp-dev（旧 MiniApp-Agent） | **review-tech-{card}-r{N}** | `miniprogram/` |
+| pm-writer（旧 PM-Agent） | **review-product-{card}-r{N}** | `docs/`（除 `api/db/` 外）、`.team/backlog.json`、`.team/risks.md`、`.team/cards/`、订阅文案、隐私清单、Sprint 计划、Retro |
+| design-maker（旧 Design-Agent） | **review-product-{card}-r{N}** | `design/`、`docs/design/` |
+| devops-ops（旧 DevOps-Agent） | **不走审查 subagent** | Human 直审（涉及生产/密钥/域名，风险太高） |
+| qa-planner（旧 QA-Agent） | **不走审查 subagent** | Human 直审（测试策略本身就是质量标准，不能由另一个 AI 批） |
 
 **例外规则**：
-- 跨域产出（例如 PM 写了技术味很重的 `id-strategy.md`，或 Backend 写了产品味很重的发布公告）→ Orchestrator 按**主产出属性**决定归属，**不允许同时派两个 Review-Agent**
-- 决策类文档（`.team/decisions/D-xxx.md`、ADR）→ **不走 Review-Agent**，直接 Human 决策
+- 跨域产出（例如 PM 写了技术味很重的 `id-strategy.md`，或 Backend 写了产品味很重的发布公告）→ Orchestrator 按**主产出属性**决定归属，**不允许同时 spawn 两个审查 subagent**
+- 决策类文档（`.team/decisions/D-xxx.md`、ADR）→ **不走审查 subagent**，直接 Human 决策
 
 ---
 
 ## 3. 基础流程（7 步）
 
-> **环首自动拉起**（D-014 · 2026-04-23 22:26）：Step 2 "Orchestrator 识别归属 → 拉起对应 Review-Agent" 不再需要 Human 触发，被审 Agent 交付后 Orchestrator 自动拉起首轮 Review。Human 打断指令（`pause-review` / `skip-review` / `stop`）最高优先级。
->
-> **同轮兑现**（D-016 · 2026-04-24 19:10）：Step 2 的"自动拉起"必须与 Step 1 在**同一 tool call 循环内**完成（见 §10.5）。
+> **环首自动拉起**（D-014 · 2026-04-23 22:26 · 执行层 SBAI 化 2026-05-02）：Step 2 不再需要 Human 逐轮触发 · 被审装扮 subagent 交付后 Orchestrator 在**同一对话轮内** spawn 对应 review 审查 subagent。Human 打断指令（`pause-review` / `skip-review` / `stop`）最高优先级。
 
 ```
-[Step 1] 被审 Agent 产出
+[Step 1] 被审装扮 subagent 产出
    ↓
-[Step 2] Orchestrator 识别归属 → 拉起对应 Review-Agent（D-014 自动，同轮兑现）
+[Step 2] Orchestrator 识别归属 → spawn 对应 review-{tech|product}-{card}-r{N} 审查 subagent（同一对话轮内 · D-018 §3.1）
    ↓
-[Step 3] Review-Agent 按规约审 → 产出 round-N-{tech|product}.md
+[Step 3] 审查 subagent 读 Context Injection Contract（§7.3）约束内的全部材料后审 → final message 返回完整 round-N-{tech|product}.md 全文
+   ↓
+[Step 3-bis] Orchestrator 原样落盘审查 subagent 的 final message 到 `.team/reviews/COSTRA-xxx/round-N-{tech|product}.md`（不得裁剪/改写 · 违反即 `I-evidence-tampered`）
    ↓
 [Step 4] Orchestrator 解析 verdict
    ├─ PASS / PASS-WITH-FOLLOWUP → 进入 Human-Review 终审（T1/T2）或自动关闭（T3/T4 · D-013）
-   ├─ REVISE → 走 §10 自动循环前置判断，满足 → 拉被审 Agent 做第 N+1 轮修复（同轮兑现）
-   ├─ REJECT → 直接打回被审 Agent 重做（round 重置为 1，需要 Orchestrator 记录 incident）
+   ├─ REVISE → 走 §10 自动循环前置判断，满足 → 同一对话轮内 spawn 被审装扮 subagent 做第 N+1 轮修复
+   ├─ REJECT → 直接打回被审装扮 subagent 重做（round 重置为 1，需要 Orchestrator 记录 incident）
    └─ ESCALATE → 停，冒泡给 Human
    ↓
-[Step 5] 被审 Agent 修复 → 产出 `round-N-{agent}-response.md`（即 revise-round-N.md · 说明改了啥）
+[Step 5] 被审装扮 subagent 修复 → 产出 `round-N-{role}-response.md`（即 revise-round-N.md · 说明改了啥）
    ↓
-[Step 6] 回 Step 2，round + 1（同轮兑现约束继续生效）
+[Step 6] 回 Step 2，round + 1（同一对话轮内继续 · 或跨轮等 Human 触发）
    ↓
 [Step 7] 达到"停止条件"（见 §4）
 ```
@@ -228,30 +229,49 @@ Round N Agent 反驳 ─▶ Round N+1 Review-Agent 裁决
 - Human 显式说过 `skip-review COSTRA-XXX` / `skip-card-review COSTRA-XXX`（记 daily 里）
 - 历史卡（D-014 立案 2026-04-23 22:26 前创建）→ 卡定义 Review 豁免；需要时走 `review-card COSTRA-XXX` 手动触发
 
-### 7.3 拉起时的 Context 注入模板
+### 7.3 拉起时的 Context 注入模板（SBAI Context Injection Contract · D-018 §3.3 · 2026-05-02）
 
-```
-## Review Task
-- card: COSTRA-101
-- target_agent: backend
-- round: 2/5
-- files_changed:
-  - server/src/auth/login.ts  (+52 -8)
-  - api/openapi.yaml  (+12 -0)
-- last_commit: abc123
-- last_review: .team/reviews/COSTRA-101/round-1-tech.md
-- last_revision_note: .team/reviews/COSTRA-101/round-1-backend-response.md
-- 强制阅读清单: [charter.md, api/openapi.yaml, docs/api/*, engineering-guidelines.md]
-```
+每次 spawn 审查 subagent · prompt **必须**包含以下 §A~§H 八段（完整模板见 `.team/decisions/D-018-spawn-based-agent-isolation.md §3.3 (C)`）：
+
+- **§A 角色规则**：inline `.team/agents/07-review-agent-tech.md` 或 `08-review-agent-product.md` 全文
+- **§B 公共契约**：inline `.team/agents/COMMON-CONTRACT.md` §0 / §4 / §8bis / §8ter 关键段
+- **§C 卡主 state.md**：审查场景可略（审查角色本身无 state.md · 但若审 revise 则 inline 被审角色的 `.team/members/{role}/state.md`）
+- **§D 最近相关 history**：同上（Orchestrator 筛选 1-3 份相关的 history/*.md inline）
+- **§E 项目全景**：Sprint 当前状态 / STATE MODE / 最近决策摘要 / 关联卡状态
+- **§F 本次任务**：
+  - 卡号 + 卡类型 + 本轮是第 N/5 轮
+  - 被审 diff 片段（相对上一 PASS commit 或 main）
+  - 被审回应 `round-N-{role}-response.md` 全文 inline（若 N≥2）
+  - 上一轮 `round-(N-1)-{tech|product}.md` 的 **P0/P1 原文全量**（若 N≥2 · MUST 不得摘要）
+- **§G 强制阅读清单**（按卡类型）：
+  - 技术向：`docs/charter.md §7` / `engineering-guidelines.md` / `api/openapi.yaml`（若涉及 API）/ `docs/db/schema.md`（若涉及 DB）/ 本 SOP §4 停止条件 / 相关 ADR / 被审角色的 `.team/agents/{0x-role}.md` 职责
+  - 产品向：`docs/charter.md` 全文 / `engineering-guidelines.md` / 对应 PRD / `design/flows/` 相关 / `backlog.json` / `risks.md` / 相关 ADR
+- **§H 硬约束**：
+  - 你无写权（禁止调用 write_to_file / replace_in_file / execute_command / delete_file · 防御层 1 · COMMON-CONTRACT §0-Bis）
+  - 产出通过 final message 返回完整 markdown · 由 Orchestrator 原样落盘
+  - 信息不足自首：判某 checklist 项证据不足时，在"自我反思"段明说"信息不足：xxx"并判置信度"低" · 不得瞎猜打高分
+  - 禁止引用"记忆中"的东西 · 只有本 prompt + 磁盘内容
+  - 审完 Orchestrator 会视需要 shutdown · 不得保留状态 · 不建立跨卡记忆
+
+### 7.3.1 违规判定
+
+- Spawn prompt 缺 §A/§B/§F/§G 任一段 → `I-context-injection-violation`
+- §F 审查场景用 Orchestrator 转述替代 diff 原文 → `I-evidence-tampered`
+- N≥2 时未 inline 上轮 P0/P1 原文 → `I-context-broken-chain`
+- 审查 subagent 本轮绕过 §H 硬约束直接写盘 → Orchestrator 发现后记 `I-oneshot-write-violation` + **不采信**本轮产物 · 要求 Human 裁决（重审 or 接受）
+- 同一卡同轮多次 spawn 不同 prompt 的审查 subagent（双盲逃避）→ 升级 **ESCALATE** · 记 `I-double-blind-evasion`
 
 ### 7.4 Orchestrator 的**禁止事项**
 
-- ❌ 禁止自己扮演 Review-Agent（角色隔离，否则退化为自审）
-- ❌ 禁止跳过 Review-Agent 直接推到 Human（除非 §6.2 例外）
-- ❌ 禁止在拉 Review 之前自己先写 review 意见（会污染独立性）
+- ❌ **禁止自己产出审查意见**（必须 spawn 独立 subagent · 核心 SBAI 约束 · D-018 §3.1）
+- ❌ 禁止跳过审查 subagent 直接推到 Human（除非 §6.2 例外）
+- ❌ 禁止在 spawn 审查 subagent 之前自己先写 review 意见（会污染独立性）
 - ❌ 禁止在 round=5 还没停（硬性卡死）
-- ❌ 禁止合并两个 Review-Agent 的报告（保持独立）
-- ❌ **禁止跨轮异步承诺**（"下一轮自动拉起 / 60 秒后台拉起"等表述 · D-016 铁律 · 见 §10.5）
+- ❌ 禁止合并两个审查 subagent 的报告（保持独立）
+- ❌ 禁止将被审角色的 prompt 和审查角色的 prompt 放在同一 spawn 中
+- ❌ 禁止 spawn 审查 subagent 后修改它的 final message 再落盘
+- ❌ 禁止跨轮承诺（"下一轮自动拉起"类表述）· 同一对话轮 spawn 不算跨轮
+- ❌ 禁止同一卡同轮 spawn 多个不同 prompt 的审查 subagent（双盲逃避 · 升级 ESCALATE）
 
 ---
 
@@ -301,14 +321,15 @@ Review 闭环不改变 SOP-HUMAN-TRIGGER 的铁律。Human 侧只关心 3 个时
 
 ---
 
-## 10. Revise↔Review 自动循环细则（D-011 + D-015 + D-016）
+## 10. Revise↔Review 自动循环细则（D-011 + D-015 · 执行层 SBAI · D-018）
 
 > **本章来源**：原 `SOP-REVIEW-AUTOLOOP.md` v1.2 完整内容，合并入本 SOP。
-> **本章范围**：只管 Review 闭环内 **Revise↔Review 相互拉起**的自动推进；卡定义 Review 首轮自动拉起由 `SOP-CARD-REVIEW.md` 定义（执行层同受 §10.5 D-016 约束）。
+> **本章范围**：只管 Review 闭环内 **Revise↔Review 相互拉起**的自动推进；卡定义 Review 首轮自动拉起由 `SOP-CARD-REVIEW.md` 定义（执行层同受 D-018 §3.1 同步 subagent 约束）。
+> **v2.1 变更**（2026-05-02）：删除原 §10.5"D-016 同轮兑现铁律"整块 · SBAI v1.0 下同步 subagent 天然同对话轮兑现 · 无需单独立铁律。
 
 ### 10.1 一句话规则
 
-**Review-Agent 给出 `REVISE` 后，Orchestrator 直接拉起被审 Agent 改；被审 Agent 交完修复说明后，Orchestrator 直接拉起 Review-Agent 复审——无需 Human 逐轮触发，直到 PASS / 轮次到顶 / 分歧 / 红线 / Human 叫停。所有切换必须同一 tool call 循环内兑现（§10.5）。**
+**审查 subagent 给出 `REVISE` 后，Orchestrator 在同一对话轮内 spawn 被审装扮 subagent 做 revise-round-{N+1}；被审装扮 subagent 交完修复说明后，Orchestrator 同一对话轮内 spawn 新一轮审查 subagent 复审——无需 Human 逐轮触发，直到 PASS / 轮次到顶 / 分歧 / 红线 / Human 叫停。SBAI 同步 subagent 天然在同对话轮兑现（D-018 §3.1）；本轮预算不足则明说下轮需 Human 触发，不得做"跨轮自动"承诺。**
 
 ### 10.2 启动条件（何时进入自动循环）
 
@@ -368,101 +389,31 @@ Review 闭环不改变 SOP-HUMAN-TRIGGER 的铁律。Human 侧只关心 3 个时
                                    （同轮兑现 §10.5）
                                          │
                                          ▼
-                                 被审 Agent 产 response.md
+                                 被审装扮 subagent 产 response.md
                                          │
                                          ▼
-                                 同轮拉起 Review-Agent 跑 round N+1（§10.5）
+                                 同一对话轮内 spawn review 审查 subagent 跑 round N+1（D-018 §3.1）
 ```
 
-### 10.5 🔒 同轮兑现铁律（D-016 · v1.2 · 2026-04-24 19:10）
-
-#### 10.5.1 条文
-
-> Orchestrator 在任何 Agent 产出（Revise / 首次交付 / 卡定义）后，**若声明**要自动拉起 Review（依据 D-011 环内 / D-014-a 卡定义首轮 / D-014-b 产出首轮三条例外之一），**必须**在**同一轮 tool call 循环内**连续切换到 Review-Agent 角色产出 Review 报告，并在同轮末给出**合并汇报**（Agent 交付段 + Review 审查段）。
->
-> **严禁**本轮收尾后声称"下一轮自动执行 / 60 秒内自动拉起 / 后台自动推进"等跨轮异步表述。跨轮 = Human 必须重新触发 = 违反 `SOP-HUMAN-TRIGGER` Agent 触发铁律。
->
-> 若本轮因时间 / tool 调用次数上限 / 上下文长度等客观限制**无法**完成 Review 同轮产出，**必须**：
-> 1. 明说"本轮只完成 {Agent} 产出，Review 需你触发 `run review-{tech|product} COSTRA-xxx round-N`"
-> 2. STATE `MODE` 设 `awaiting-human`（不得设 `auto-loop-in-progress` 等假陈述）
-> 3. board "AI-Review 自动循环中" 段不得写"⏳ 自动拉起中" · 必须写"等 Human 触发 Review"
-> 4. 不得承诺"跨轮自动"
-
-#### 10.5.2 正确执行姿态（示范）
-
-```
-[用户发] run backend COSTRA-101 revise-round-3
-↓
-[同一 tool call 循环内]
-  Step 1: Backend 改代码 + 跑三绿灯
-  Step 2: 落盘 revise-round-3.md
-  Step 3: 🚫 不收尾 · 直接继续 →
-  Step 4: 切 Review-Tech 角色 · 读 revise-round-3.md + 代码改动
-  Step 5: 落盘 round-3-tech.md（verdict=PASS/REVISE/REJECT/ESCALATE）
-  Step 6: 同步 STATE / board / metrics / FINAL
-  Step 7: 再收尾 · 给用户 **合并汇报**（Revise 交付段 + R3 Review 审查段）
-[对话轮结束]
-```
-
-#### 10.5.3 错误执行姿态（禁止）
-
-```
-[用户发] run backend COSTRA-101 revise-round-3
-↓
-[同一 tool call 循环内]
-  Step 1~3: Backend 改代码 + 落盘 revise-round-3.md
-  Step 4: ❌ 给用户总结 + 声称"60 秒内自动拉起 Review-Tech"
-  Step 5: ❌ STATE MODE=auto-loop-in-progress（假陈述）
-  Step 6: ❌ board 写"⏳ 自动拉起中"（假陈述）
-  [对话轮结束]
-↓
-[Orchestrator 下班 · 无守护进程 · 账面与磁盘漂移]
-↓
-[Human 下轮质疑] "真的自动拉起来了吗？"
-↓
-[I-005 登记]
-```
-
-#### 10.5.4 违规判定与处置
-
-出现以下任一情况即判违规（记 incident）：
-
-- 汇报中出现"自动拉起中 / 60 秒内拉起 / 后台推进中"字样但磁盘无对应 Review 报告
-- STATE `MODE=auto-loop-in-progress` 但 tool call 循环已收尾
-- board "⏳ 自动循环中"段存续但相关 Review 报告不存在
-- 任何"Orchestrator 下一轮自动 xxx"的跨轮既定事实表述
-
-处置流程：
-
-1. Orchestrator 自检发现 or Human 质疑发现 → 立即在当轮补救
-2. 补救优先级最高：**同轮兑现声称的动作**（如 I-005 补救产出 round-3-tech.md）
-3. 同步校正 STATE / board / metrics 假陈述
-4. 登记 Incident（I-xxx 编号）
-5. 若是 D-016 立案后再犯 → 升级为 **ESCALATE** · Human 介入审查 Orchestrator 是否需要规约再强化
-
-#### 10.5.5 完整条文
-
-详见 `.team/decisions/D-016-same-turn-review-autoloop.md`（立案 2026-04-24 19:10 · I-005 触发）。
-
-### 10.6 Orchestrator 的自动推进动作清单
+### 10.5 Orchestrator 的自动推进动作清单
 
 每次 verdict=REVISE 时（前置 §10.3 满足），Orchestrator 必须依次做：
 
 1. **读** 最新 `round-N-{tech|product}.md`，提取 P0/P1/P2
 2. **判** 前置 §10.3，任一不满足 → 停并冒泡，**不**执行 3-7
 3. **更新看板**：`AI-Review 迭代中` 行从 `round N/5` 改为 `round N+1/5 · 自动推进中`
-4. **写消息** 到 `.team/messages/YYYY-MM-DD.jsonl`：`agent_handoff` 事件，注明"自动拉起 backend-fix"
-5. **切角色** 执行 Backend-Fix / MiniApp-Fix / PM-Fix / Design-Fix，按 Review 报告逐条改
-6. **产出** `round-N-{agent}-response.md`（必须说明每条 P0 采纳 or 反驳）
-7. **同轮切 Review-Agent** 跑 round N+1（§10.5 · 不得跨轮 · 回到 §10.4 状态机顶部）
+4. **写消息** 到 `.team/messages/YYYY-MM-DD.jsonl`：`agent_handoff` 事件，注明"同对话轮内 spawn {role}-dev 装扮 subagent 做 revise-round-{N+1}"
+5. **spawn 装扮 subagent** 执行 backend-dev / miniapp-dev / pm-writer / design-maker 做 revise-round-{N+1}（按 Review 报告逐条改 · Context Injection Contract §A~§H · 装扮 subagent 产出 response.md + 更新 state.md + 新增 history/*.md）
+6. **产出** `round-{N+1}-{role}-response.md`（必须说明每条 P0 采纳 or 反驳）
+7. **同一对话轮内 spawn review 审查 subagent** 跑 round {N+1}（D-018 §3.1 · 本质是一次 Human 触发里的多步兑现 · 跨轮则需 Human 再触发）
 
 **关键约束**：
 - 每一个以上步骤都**必须留痕**（看板 / 消息 / 文件），Human 回看能完整重放
 - Orchestrator 不得跳过 response.md 直接跑下一轮 Review
 - Orchestrator 不得合并两个 round 的报告
-- 第 7 步**不得**跨轮承诺 · 若本轮物理限制无法同轮完成 → 改走 §10.5 条文第 2 段降级路径
+- 第 7 步**同一对话轮内兑现**（SBAI 同步 subagent 天然如此）· 若本轮预算不足 → 明说"下轮需你触发 `run review-{tech|product} COSTRA-xxx round-{N+1}`"· 不得做"跨轮自动"承诺
 
-### 10.7 自动循环中的汇报格式（MUST）
+### 10.6 自动循环中的汇报格式（MUST）
 
 每次 Orchestrator 在自动循环内完成任何一步动作后，进度汇报必须包含：
 
@@ -471,28 +422,27 @@ Review 闭环不改变 SOP-HUMAN-TRIGGER 的铁律。Human 侧只关心 3 个时
 
 | 卡号 | 当前 round | 上一 verdict | 下一步 | 可立即打断指令 |
 |---|---|---|---|---|
-| COSTRA-100 | 2/5 · 自动推进中 | Round-1 REVISE（3 P0） | 本轮 Review-Tech 同轮已产出 Round-2 verdict=PASS（见 §10.5） | `pause-review COSTRA-100` / `stop` |
+| COSTRA-100 | 2/5 · 自动推进中 | Round-1 REVISE（3 P0） | 本轮 review-tech 审查 subagent 同对话轮已产出 Round-2 verdict=PASS（见 §10.5） | `pause-review COSTRA-100` / `stop` |
 ```
 
-"下一步"字段**必须**写同轮已兑现的结果 or 明说"Review 需你触发"（D-016 §10.5），**不得**写"60 秒后自动跑"。
+"下一步"字段**必须**写同一对话轮已兑现的结果 or 明说"Review 需你触发"（D-018 §3.1），**不得**写"60 秒后自动跑"。
 
-缺失此段 = 违规，等同破铁律，记 incident。
+缺失此段 = 违规，记 incident。
 
-### 10.8 Human 打断窗口
+### 10.7 Human 打断窗口
 
 - Human 在任何对话轮中发送 §9 列出的打断指令 → Orchestrator **本轮立即停**
 - 即使 Orchestrator 当前轮"计划"自动推进，只要 Human 在**同一对话回合**里表达了异议（对某 P0 反对、问某 P0 凭据、要求先做别的卡）→ **立即暂停，先响应 Human**
 
-### 10.9 优先级
+### 10.8 优先级
 
 | 冲突场景 | 胜出 |
 |---|---|
 | Human 的 `pause-review` vs 自动推进 | Human 胜 |
 | 红线触发 vs 自动推进 | 红线胜（立即停） |
 | §4.2 5 轮上限 vs 自动推进 | 5 轮上限胜 |
-| D-016 同轮兑现 vs D-011 自动推进声明 | **D-016 胜**（不能同轮兑现 → 不得声称自动拉起 → 改走 Human 触发） |
-| `SOP-HUMAN-TRIGGER` 铁律 vs 自动推进 | **在 Review 闭环内自动推进胜**（D-011 豁免 · 但仍受 D-016 约束）；**其他场景铁律胜** |
-| 时间 / tool 上限物理约束 vs D-016 同轮兑现 | 物理约束胜 · 必须走 §10.5 条文第 2 段降级路径 |
+| `SOP-HUMAN-TRIGGER` 铁律 vs 自动推进 | **在 Review 闭环内自动推进胜**（D-011 豁免 · 执行层受 D-018 §3.1 约束 · 同对话轮内连续 spawn 即兑现）；**其他场景铁律胜** |
+| Context Injection Contract（§7.3）vs spawn 体积焦虑 | **Contract 胜**（宁可 prompt 长 · 宁可跨轮让 Human 再触发 · 不可缺 §A~§G 任一段） |
 
 ---
 
@@ -563,16 +513,16 @@ Review 闭环不改变 SOP-HUMAN-TRIGGER 的铁律。Human 侧只关心 3 个时
 
 | SOP / Decision | 关系 |
 |---|---|
-| `SOP-HUMAN-TRIGGER` | **局部豁免**（D-011 · D-014）。Review 闭环内 Revise↔Review 相互拉起（D-011）、Review 首轮启动 + 卡定义 Review 首轮启动（D-014）无需 Human 逐轮触发，其他场景铁律照旧 |
-| `SOP-CARD-REVIEW` | **D-014 配套**。规定卡创建后的卡定义 Review 完整流程、checklist、产物模板、触发指令。其执行层同受本 SOP §10.5（D-016）约束 |
+| `SOP-HUMAN-TRIGGER` | **局部豁免**（D-011 · D-014）。Review 闭环内 Revise↔Review 相互拉起（D-011）、Review 首轮启动 + 卡定义 Review 首轮启动（D-014）无需 Human 逐轮触发（本质是一次 Human 触发里的多步同对话轮兑现 · D-018 §3.1） · 其他场景铁律照旧 |
+| `SOP-CARD-REVIEW` | **D-014 配套**。规定卡创建后的卡定义 Review 完整流程、checklist、产物模板、触发指令。其执行层受 D-018 §3.1 同步 subagent 约束 |
 | `SOP-OBSERVE-AND-INTERVENE` | 本 SOP 是前者的加强版 filter。观察干预仍然是 Human 最高权 |
-| `engineering-guidelines` | Review-Agent 的 checklist 直接引用此文件作为打分依据 |
-| `COMMON-CONTRACT` | 需要补丁：增加 Review-Agent-Tech / Review-Agent-Product 两条目录权限记录 |
-| `D-011 方案 B` | **本 SOP §10.1~§10.4 / §10.6~§10.9 的直接依据**（2026-04-23 19:45） |
+| `engineering-guidelines` | 审查 subagent 的 checklist 直接引用此文件作为打分依据 |
+| `COMMON-CONTRACT` | v1.2 已对齐 SBAI：§0 权限矩阵改执行体二分法 / §0-Bis 工具白名单 / §8ter SBAI 执行层约定 |
+| `D-011 方案 B` | **本 SOP §10 Review 闭环自动推进的概念依据 · 执行层由 D-018 §3.1 同步 subagent 替代**（2026-04-23 19:45 · 2026-05-02 执行层升级） |
 | `D-013 Review 场景分级` | **本 SOP §1 约束 6 / §4.1 / §9 的直接依据**（2026-04-23 21:15） |
-| `D-014 卡定义 Review + 自动拉起` | **本 SOP §1 约束 7 / §3 流程 / §7 调度 / §9 触发指令的直接依据**（2026-04-23 22:26） |
+| `D-014 卡定义 Review + 自动拉起` | **本 SOP §1 约束 7 / §3 流程 / §7 调度 / §9 触发指令的直接依据**（2026-04-23 22:26 · 执行层 2026-05-02 升级为 SBAI） |
 | `D-015 respond/revise 合并` | **本 SOP §6 回应格式 / §9 触发指令 / §10.3 前置 4 的直接依据**（2026-04-24 09:24） |
-| `D-016 同轮兑现铁律` | **本 SOP §10.5 的直接依据**（2026-04-24 19:10 · I-005 触发立案） |
+| `D-018 Spawn-Based Agent Isolation` | **本 SOP §1 约束 5/9/10 · §3 流程 · §7.3 Context Injection Contract · §7.4 禁止事项 · §10 执行层的直接依据**（2026-05-02 生效 · v1.0） |
 
 ---
 
@@ -583,6 +533,7 @@ Review 闭环不改变 SOP-HUMAN-TRIGGER 的铁律。Human 侧只关心 3 个时
 | 版本 | 日期 | 变更 |
 |---|---|---|
 | v2.0 | 2026-04-24 19:16 | **合并原 `SOP-REVIEW-LOOP.md` v1.4 + `SOP-REVIEW-AUTOLOOP.md` v1.2 为单一 SOP**（方案 A · Human 批准）。内容对齐 D-011/D-013/D-014/D-015/D-016 全部现行条款。原两份 SOP 降级为 stub 保留外链兼容 |
+| **v2.1** | **2026-05-02** | **SBAI v1.0 对齐**（D-018 · Human approve）：§1 约束 5/9/10 重写为 SBAI 执行层 · §2 分工矩阵术语对齐（Backend-Agent → backend-dev 装扮 subagent 等）· §3 流程 Step 2/3 SBAI 化 + 新增 Step 3-bis 原样落盘 · §7.3 Context 注入模板升级为 D-018 §A~§H 八段 Context Injection Contract · §7.4 禁止事项扩展至 9 条（含"禁自己产出审查意见"核心约束）· §10.5 整块删除（D-016 同轮兑现已废弃 · SBAI 同步 subagent 天然同对话轮兑现）· §10.5~§10.8 重编号 · §10.8 优先级表删除 D-016 相关行 · §12 关系矩阵更新（删 D-016 条 · 加 D-018 条）· §13 加 v2.1 条目 |
 
 ### 13.2 合并前版本线（原 SOP-REVIEW-LOOP.md · 已归档）
 

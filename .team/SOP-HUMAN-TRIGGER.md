@@ -12,9 +12,15 @@
 Costra 项目的"多 Agent 协作"**不是**后台常驻进程：
 
 - 没有任何 Agent 在用户未对话时自动执行
-- 所有"Agent 交付"本质上是 Orchestrator 在收到用户消息后、以对应角色身份执行一轮产出
+- 所有"Agent 交付"本质上是 Orchestrator 在收到用户消息后 spawn 装扮型 subagent 产出（D-018 v1.0 · 2026-05-02）
 - 看板上的 `Doing` 状态只代表"已分配 + 随时可执行"，**不代表"正在跑"**
 - 截止时间（deadline）是**目标**，不是**已排进队列的定时任务**
+
+> **🆕 执行体二分法**（D-018 v1.0 · 2026-05-02 生效）：Costra 项目共两类执行体——
+> - **Orchestrator**（主对话上下文 · Human 所在会话）：纯编排 · **可多实例**（并行 Orchestrator 支持）
+> - **装扮型 subagent**（`task(subagent_name="code-explorer", prompt=...)`）：装扮成具体角色（backend-dev / miniapp-dev / pm-writer / design-maker / devops-ops / qa-planner / review-tech-* / review-product-* / card-reviewer-*）执行任务 · 一次性 · 每次全新上下文
+>
+> Human 触发的本质：通过 Orchestrator 调用 `task` spawn 装扮型 subagent。SOP-HUMAN-TRIGGER 铁律对 Orchestrator 的"派单"动作本身不构成触发违规（是派单的"决定"需 Human 触发 · 执行层 spawn 由 Orchestrator 代劳）。
 
 ---
 
@@ -118,6 +124,36 @@ Costra 项目的"多 Agent 协作"**不是**后台常驻进程：
 1. 直接指出并要求立刻重发合规汇报
 2. 记入 `.team/incidents/` 作为流程缺陷追踪
 
+**🆕 SBAI 相关 incident 类型**（D-018 v1.0 · 2026-05-02）：
+- `I-context-injection-violation` · spawn prompt 缺 §A/§B/§F/§G 任一段（D-018 §3.3）
+- `I-evidence-tampered` · Orchestrator 落盘时修改了审查 subagent 的 final message（SOP-REVIEW §7.3.1）
+- `I-oneshot-write-violation` · 审查 subagent 绕过 §H 硬约束自己写盘（不可物理阻止 · Orchestrator 事后比对 final message 与磁盘产物发现 · 不采信本轮产物 · Human 裁决）
+- `I-double-blind-evasion` · 同一卡同轮多次 spawn 不同 prompt 的审查 subagent（升级 ESCALATE）
+
+---
+
+## 6. 并行 Orchestrator 支持（D-018 §4 · 2026-05-02）
+
+### 6.1 概念
+
+Costra 支持多个 CodeBuddy 会话同时作为 Orchestrator · 每个会话独立上下文 / 独立 spawn subagent / 独立与 Human 对话。共享面仅磁盘（`.team/`）。
+
+### 6.2 Human 分派
+
+不强制业务域划分 · 建议 Human 明确每个会话的职责范围（如会话 A 跟 COSTRA-126 · 会话 B 跟 D-017 bug）· 避免重复劳动。
+
+### 6.3 冲突处置
+
+- 两个 Orchestrator 同时写同一文件（如 state.md / backlog.json）：后手 **MUST rebase**（`git log -1 --format=%H <file>` 核对）
+- 两个 Orchestrator 同时立新卡：Human 通过指令明确分派 · 另一会话等
+- 两个 Orchestrator 视角不一致：以 backlog.json 为 SSOT
+
+### 6.4 推荐工作流
+
+- 每个会话开工时 `ls .team/` 扫一遍 · 了解最新磁盘状态
+- 大改动前 `git status` 看看是否有他会话未提交的修改
+- 产出 MUST 落盘 + commit · 避免"只在我脑子里"的状态
+
 ---
 
 **本 SOP 由 Human 于 2026-04-23 17:32 指令确立，Orchestrator 即刻生效。**
@@ -128,3 +164,4 @@ Costra 项目的"多 Agent 协作"**不是**后台常驻进程：
 - 2026-04-24 09:24 · **D-015 触发词词典简化**：`respond-round-N` 废弃；`revise-round-N` 统一承担"回执+修复+可表达异议"三合一语义；异议仲裁链路由 Review-Agent 在 Round N+1 二次裁决，驳回后 Agent MUST 修复不得二次反驳。详见 `SOP-REVIEW.md §6.1` + `D-015`。
 - 2026-04-24 11:50 · **P2-2 补丁（COSTRA-101 Round 1 Revise）**：§3 词典新增 `verify <agent> COSTRA-xxx` / `skip-verify COSTRA-xxx` 分段交付配套触发词，并显式落盘 `revise-round-N` / 废弃 `respond-round-N`（D-015 原仅在 SOP-REVIEW 登记，本 SOP 为主权入口需同步）。
 - 2026-04-24 19:16 · **方案 A 合并 SOP**：`SOP-REVIEW-LOOP.md` + `SOP-REVIEW-AUTOLOOP.md` 合并为 `SOP-REVIEW.md` v2.0（单点 Review 规约入口）。本文件所有对旧两份的引用均改为指向 `SOP-REVIEW.md`，旧两份降为 stub 保留外链兼容。
+- **2026-05-02 · D-018 SBAI v1.0 对齐**（v1.5）：§1 加执行体二分法（Orchestrator 可多实例 + 装扮型 subagent）· §5 补 4 类 SBAI incident 类型 · 新增 §6 并行 Orchestrator 支持（概念 / Human 分派 / 冲突处置 / 推荐工作流）· 所有其他段落语义不变，"Agent"术语沿用原文（读者在 SBAI 上下文里自然理解为装扮型 subagent）。

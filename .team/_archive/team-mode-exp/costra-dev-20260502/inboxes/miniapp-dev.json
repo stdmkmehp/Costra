@@ -1,0 +1,38 @@
+[
+  {
+    "id": "msg-1777703627208-bmjjj5",
+    "from": "team-lead",
+    "to": "miniapp-dev",
+    "type": "message",
+    "content": "\n# D-017 Step 2 + Step 3 任务派发 · 启动期 storage \"too early\" 错误\n\n## 背景（Human 反馈 @ 2026-05-02 14:32）\n\nHuman 在微信开发者工具启动 Costra 小程序时，**渲染层第一条错误**：\n\n```\n[渲染层错误] [jsbridge] invoke getGlobalStorage fail: too early. Error: invoke too eayly\n    at WAWebview.js ...\n    at Object.invoke (...)\n    at v / M / N / Qt\n    at Tt._prepare (...)\n    at Object.createOrGetStorageGroup (...)\n    at mi (...)\n(env: macOS,mp,2.01.2510290; lib: 2.32.3)\n```\n\n现象：每次启动小程序就出现。\n\n## Step 1 已完成（Orchestrator）\n\n责任领域：MiniApp-Agent（关键字 `jsbridge` / `WAWebview.js` / `getGlobalStorage` / wx.storage 运行时）· 单域归属。\n\n## 你的任务（严格遵循 D-017）\n\n### Step 2 · 四层根因分析（L1/L2/L3/L4）\n\n- L1 表面：错误文本精读 + 调用栈含义（`createOrGetStorageGroup` / `_prepare` 说明了什么）\n- L2 文档：wx.storage / App 生命周期 / 基础库 2.32.3 相关规约\n- L3 设计：项目里 storage.ts / app.ts / 模块 import 图 的设计层面缺陷\n- L4 机制：为什么\"Sync API\"也会 too early · 微信 jsbridge 启动竞态机制\n\n**禁止修改任何文件**，只读 `read_file` / `search_content` / `codebase_search`。\n\n### Step 3 · 至少 2~3 方案对比\n\n方案 A/B/C 格式，每方案列：做法 / 成本 / 价值 / 风险。\n\n提示（供参考，但你独立判断）：\n- 方案 A：移除 storage.ts 顶层 `ensureVersion()` 副作用，挪到 App.onLaunch\n- 方案 B：A + 内部幂等 / getItem setItem 前置 lazy ensure（defense-in-depth）\n- 方案 C：保留顶层执行 + try/catch 吞错（回避型 · 可能伏有脏数据）\n\n给出你的技术推荐意见，并列明需要 Human 拍板的决策点（Q1~Qn，如是否新开 FU 卡 / 是否一并检修 sync.ts auth.ts 启动期副作用 / 是否需要加冒烟步骤防回归）。\n\n## 交付\n\n- 产物：Markdown 根因报告 + 方案对比表，直接回传给我（send_message）\n- 不必落盘到文件\n- 我会把你的报告原样转给 Human 评估裁决（Step 4）\n\n## 约束\n\n- 不要写代码补丁，只分析\n- 引用证据必须带**文件:行号**\n- 现场相关文件至少包含：`miniprogram/app.ts` / `miniprogram/services/storage.ts` / `miniprogram/services/auth.ts` / `miniprogram/services/sync.ts` / `miniprogram/services/env.ts` / `miniprogram/tokens/index.ts`\n- 若发现其他顶层副作用链路一并列出\n",
+    "timestamp": "2026-05-02T06:33:47.208Z",
+    "read": true
+  },
+  {
+    "id": "msg-1777703819062-ewpgfd",
+    "from": "team-lead",
+    "to": "miniapp-dev",
+    "type": "message",
+    "content": "Human 在问进度。请回一句当前状态即可（不用提前交付完整报告）：\n- 现在在 L1/L2/L3/L4 哪一层\n- 预计还需多少分钟交付完整根因 + 方案对比\n- 有没有遇到需要我协调的阻塞（文件不存在 / 权限 / 歧义）",
+    "timestamp": "2026-05-02T06:36:59.062Z",
+    "read": true
+  },
+  {
+    "id": "msg-1777704038268-sum3qx",
+    "from": "team-lead",
+    "to": "miniapp-dev",
+    "type": "message",
+    "content": "第二次催询（Human 在等）。请立即回一句话：\n- 当前在哪一步\n- 还需几分钟\n- 是否有阻塞\n\n如已完成大部分分析，可以先把 L1+L2 现成结论发来，L3/L4 和方案对比随后补。",
+    "timestamp": "2026-05-02T06:40:38.268Z",
+    "read": true
+  },
+  {
+    "id": "shutdown-1777706359975",
+    "from": "team-lead",
+    "to": "miniapp-dev",
+    "type": "shutdown_request",
+    "content": "{\"type\":\"shutdown_request\",\"request_id\":\"shutdown-1777706359975\",\"reason\":\"Human 2026-05-02 15:19 决策回滚 team agent 方案。另外：你 inbox 里收到的 D-017 \\\"storage too early\\\" 任务是另一个会话的 Orchestrator 发的，不是我这个会话 · 并行 Orchestrator 事故。请立即放弃该任务，不必产出报告。D-018 v2.0 改走纯 SBAI，你的角色迁移至 `.team/members/miniapp-dev/state.md`。请 approve shutdown。\",\"from\":\"team-lead\",\"timestamp\":\"2026-05-02T07:19:19.975Z\"}",
+    "timestamp": "2026-05-02T07:19:19.975Z",
+    "read": true
+  }
+]

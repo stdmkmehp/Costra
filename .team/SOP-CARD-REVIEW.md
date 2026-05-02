@@ -10,7 +10,9 @@
 
 ## 1. 目标
 
-在卡**进入执行（Todo → Doing）之前**，由 Review-Agent 对卡定义本身做一次质量把关，确保：
+> **SBAI v1.0 对齐**（2026-05-02 · D-018）：术语 "Review-Agent" → "card-reviewer-{tech|product}-{card}-r{N} 审查 subagent"（一次性装扮 · 每轮新实例 · 无写权 · Context Injection Contract 约束 · 详见 `.team/decisions/D-018-spawn-based-agent-isolation.md §3`）。流程与 checklist 本体不变。
+
+在卡**进入执行（Todo → Doing）之前**，由 card-reviewer 审查 subagent 对卡定义本身做一次质量把关，确保：
 
 - 卡描述清晰、可执行
 - DoD 可度量、可验收
