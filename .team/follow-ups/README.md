@@ -556,7 +556,83 @@ R1 MiniApp 交付 · T2 Tech 单轨 APPROVE 35/35 · Human 第五次模拟器启
   - **定性加固**：从"吻合但未坐实"（第 2 次）升级为**"100% 非业务 · 微信 SDK 内部启动时序 Bug 确认"**——我方代码在任何路径上都未触达异步 Global Storage API 栈
   - **不阻任何链路**（本次场景）：本次仅模拟器启动现象上报 · 无业务操作中断
   - **治理价值**：SBAI v1.0 P2 冒烟独立复核首次实战 · 验证了"装扮 subagent 独立核查历史定性"的有效性——FU 原定性（2026-04-29 登记）**完全正确** · 经过 2 次复现 + 1 次独立复核 · 可 Sprint-1 末 Retro 议题中降级为"**闭合观察** · 不立卡修 · 文档化存档"（理由：三次观察全部证明是微信 SDK 内部 Bug · 无业务触发点 · 我方无可修改点 · 升级基础库版本是唯一路径但需 Human 决策时机）
-- **同族观察次数**：首次 2026-04-29 10:41（COSTRA-122 收官）· **第 2 次 2026-05-01 21:18（COSTRA-123 收官）** · **第 3 次 2026-05-02 19:32（D-018 SBAI v1.0 P2 冒烟首战 · 独立核查确认非业务）** · **候选动作**：Sprint-1 末 Retro 时 Human 决策是否 ① 保持 open 观察 / ② 降级为\"闭合观察\"（文档化永久存档 · 不立卡）/ ③ 立 Sprint-2 小卡\"升级基础库 2.32.3 → 最新稳定版 + 文档追述\"
+- **同族观察次数**：首次 2026-04-29 10:41（COSTRA-122 收官）· **第 2 次 2026-05-01 21:18（COSTRA-123 收官）** · **第 3 次 2026-05-02 19:32（D-018 SBAI v1.0 P2 冒烟首战 · 独立核查确认非业务）** · **第 4 次 2026-05-02 20:15-20:25（Human 新线索 + 装扮 subagent D-017 Step 2 根因重做 · 定性翻转）** · **第 5 次 2026-05-02 21:xx 预计（COSTRA-124 R1 修复后 Human 模拟器实测 · 待触发）**
+
+---
+
+#### 🆕 f.1 · 第 4 次观察（定性翻转）+ 第 5 次观察（修复验证 · 待 Human 实测）· COSTRA-124 R1 追写
+
+**追写时间**：2026-05-02 21:xx（COSTRA-124 R1 实装交付时 · 由装扮 subagent `costra-miniapp-dev` 落盘）
+
+**追写依据**：dispatch §3 DoD (f) 修订版（采纳 card-review-1-tech P2-3 建议 · 扩展为 f.1 + f.2 两段）
+
+##### f.1.A · 第 4 次观察（2026-05-02 20:15-20:25 · 定性翻转事件）
+
+- **触发**：Human 2026-05-02 20:15 给出新线索 "不是微信基础库的 bug · 而是高版本库对时序有要求" · 直接挑战前 3 次（2026-04-29 / 2026-05-01 / 2026-05-02 19:32）"100% SDK 内部 Bug · 非业务"的定性
+- **响应**：Orchestrator 派单 · 装扮 subagent `costra-miniapp-dev`（SBAI v1.1 P2' 冒烟）按 D-017 Step 2 **只诊断不修复** 重做四层根因
+- **产出**：`.team/members/miniapp-dev/history/2026-05-02-getglobalstorage-v2-diagnose.md`（L1-L4 根因 + 方案 A/B/C + Q1-Q6 决策点）
+- **根因定位**：`miniprogram/services/storage.ts:29` 模块顶层裸调 `ensureVersion()` · 通过 `app.ts → auth.ts → storage.ts` 三级 import 链 · 在 `App()` 注册**之前**触发 `wx.getStorageSync(VERSION_KEY)` · 命中基础库 2.32.3+ 的 `createOrGetStorageGroup._prepare` 未就绪 · 抛 `too eayly`
+- **定性**：**翻转** · 从"100% SDK 内部 Bug · 非业务"（前 3 次定性）改为"**业务代码触发 · 非 SDK Bug**"（第 4 次定性）
+- **Human 拍板**：2026-05-02 20:31 · Q1-Q6 全"按推荐" · 方案 A（迁入 onLaunch · 零风险）· 立 COSTRA-124（Sprint-1 末小卡）
+
+##### f.1.B · 第 5 次观察（2026-05-02 21:xx 预计 · 修复验证 · **待 Human 模拟器实测**）
+
+- **触发预期**：COSTRA-124 R1 修复落盘后 · Human 第 7 次模拟器启动（按 dispatch §9 附录 5 条检查清单）
+- **修复内容**：
+  - `miniprogram/services/storage.ts`：删除 line 29 顶层 `ensureVersion()` 裸调 · 函数改 `export`
+  - `miniprogram/app.ts`：`onLaunch()` 首行加 `ensureVersion()` 调用 + 对应 import
+  - 顺扫确认 `miniprogram/**/*.ts` 无其他模块顶层 `wx.*` 副作用（0 命中 · 见 `docs/devops/startup-api-call-audit.md`）
+  - 新建 `docs/devops/libversion-upgrade.md`（基础库升级影响评估方法论）
+- **验证断言**（dispatch §3 DoD (e) · Human 实测 · AND 语义 + Launch Time AMBER 容差）：
+  - ☐ 1. `getGlobalStorage fail: too eayly` 0 次上报
+  - ☐ 2. `Expected updated data but get first rendering data` 0 次上报
+  - ☐ 3. Launch Time ≤ 900 ms（基线 865 ms ± 35 · 900-935 ms 为 AMBER · 走 Human 个案裁决）
+  - ☐ 4. `wx.login` 成功（`auth.ts:157 [auth] wx.login ok`）
+  - ☐ 5. 首页 → 记一笔可进入
+- **实测结果**：**（待 Human 实测 @ 2026-05-02 21:xx · pending）** · 通过后由 Orchestrator 或下次 spawn 补写实测结果 + 闭合依据 commit sha
+- **FU 状态**：**保持 `open` · 待 Human 实测第 7 次通过后由 Orchestrator 改 `closed` 并补闭合依据**（严格遵守"Human 实测未通过前 FU 不真 closed"硬约束）
+
+##### f.2 · 定性翻转追写段（治理价值沉淀）· 本 FU 独有范式
+
+**翻转链完整复述**：
+
+```
+[观察 1 · 2026-04-29 · COSTRA-122 收官 · Human 第 5 次启动]
+  定性：SDK 内部 Bug（误判 · 依据：拼写 eayly 是 SDK 内置字符串 · 我方 grep 0 命中 getGlobalStorage）
+         ↓
+[观察 2 · 2026-05-01 · COSTRA-123 收官 · Human 第 6 次启动]
+  定性：SDK 内部 Bug 保持（误判加固）
+  二级事实：storage.ts:29 顶层副作用"吻合但未坐实因果"（首次登记嫌疑点 · 未追查）
+         ↓
+[观察 3 · 2026-05-02 19:32 · D-018 SBAI v1.0 P2 冒烟首战]
+  定性：加固为"100% 非业务 · SDK 内部 Bug 确认"（误判最强化版）
+  理由："同步 API 不走 storage group metadata"（错误假设 · 后被 L2 SDK 机制推翻）
+         ↓
+[观察 4 · 2026-05-02 20:15-20:25 · 定性翻转]
+  驱动：Human 20:15 新线索 "高版本库对时序有要求"
+  响应：Orchestrator 派单装扮 subagent costra-miniapp-dev（SBAI v1.1 P2' 冒烟）独立核查
+  动作：D-017 Step 2 只诊断不修复 · L1-L4 根因重做 · WebFetch 微信官方文档取证
+  发现：L2 层证明"同步 API 在 native 层仍走 storage group prepare 基础设施"
+        旧定性的核心假设被物理推翻 · storage.ts:29 坐实为唯一业务触发点
+  翻转：SDK Bug → 业务触发 · 装扮 subagent 独立核查首次翻转 3 次历史定性
+         ↓
+[观察 5 · 2026-05-02 21:xx 预计 · COSTRA-124 R1 修复验证]
+  状态：待 Human 实测（本 f.1.B 段）
+  预期：5 条断言全过 → FU closed
+```
+
+**下游议题（Sprint-1 末 Retro · 2026-05-06 前）**：
+
+- **议题 15**（新增 · 本 FU 直接驱动）："独立复核可翻转历史定性"范式 · 明文化为 SBAI v1.1 工作流程的一部分——**任何 FU 当出现 Human 新线索或第三方观察时 · Orchestrator 应主动派装扮 subagent 独立核查 · 不得以"已观察 N 次都是同定性"拒绝重审**
+- **议题 16**（card-reviewer-tech 冒烟副产物）："SBAI v1.1 审查档 tools 白名单差异化设计验证通过 · 可沉淀为 D-018 §3.5 附录"（实装档 {Read+Grep+Glob+Write+Edit+WebFetch+Bash} / 审查档 {Read+Grep+Glob+LS+WebFetch}）
+
+**方法论沉淀文档**：`docs/devops/libversion-upgrade.md`（COSTRA-124 同批产出 · DoD (d) · 未来每次微信基础库 minor 版本跃迁时走一遍 §2 四步评估）
+
+**自我反思**：
+
+- 前 3 次定性的共同漏洞：**用"grep 业务代码 0 命中异步 API"论证"因果链物理阻断"** · 忽略了 SDK 内部同步 API 的 native 层仍可能走异步 storage group 基础设施（JS 层语义 ≠ native 层桥接路径）
+- 触发修正的关键：**Human 带来外部信息"高版本库对时序有要求"** · 装扮 subagent 原本受限于既有定性 · 若无外部挑战 · 误判可能持续数月
+- 治理启示：Orchestrator / Human / 装扮 subagent 三方协同时 · Human 的直觉性假设（即便无 grep 证据）不应被"我方证据链自洽"压制 · 必须设置**独立复核通道**（本 FU 即是 D-017 Step 2 的激活实例）
 
 ---
 

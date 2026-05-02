@@ -18,10 +18,12 @@
 
 - COSTRA-102 · 登录→首页→记一笔端到端（等 Human 人验）· 5~10 分钟
 - Todo: COSTRA-103（本地持久化 + outbox）/ COSTRA-112（主体字样清扫）
+- **COSTRA-124 · 启动期 storage 时序修复 + FU-LAUNCH 闭合 · R1 已交付 · 等 Human 模拟器实测（DoD (e)）+ `costra-review-tech` Round-1 审查（DoD (g)）**
 
 ## §3 交付历史索引
 
 - 2026-05-02 · `history/2026-05-02-getglobalstorage-v2-diagnose.md` · FU-LAUNCH 第 3 次观察 **重定性**（D-017 Step 2 · SBAI v1.1 P2' 冒烟 · 证据坐实"storage.ts:29 模块顶层副作用 vs 高版本库时序约束"）
+- 2026-05-02 · `history/2026-05-02-costra-124-r1-implement.md` · COSTRA-124 R1 实装（SBAI v1.1 P2' 实战第 2 回 · DoD (a)(b)(c 路径 ①)(d)(f 预闭合)(g) 已交付 · (e) 待 Human 实测 · 2 文件代码修复 + 2 份新文档 + FU f.1+f.2 追写）
 
 ## §4 最近决策影响
 
@@ -53,3 +55,4 @@
 - 2026-05-02T19:24:00+08:00 · 初始化骨架（by Orchestrator）
 - 2026-05-02T20:25:00+08:00 · SBAI v1.1 P2' 冒烟首次自主落盘（by costra-miniapp-dev · D-017 Step 2 重做根因分析 · FU-LAUNCH 定性升级）
 - 2026-05-02T21:07:00+08:00 · COSTRA-124 立卡 + Card-Review Round-1 PASS-WITH-FOLLOWUP 26/30 · 3 P2 记入 §6 follow-up（by Orchestrator · 调度层元数据维护）
+- 2026-05-02T21:30:00+08:00 · COSTRA-124 R1 实装交付（by costra-miniapp-dev · SBAI v1.1 P2' 实战第 2 回 · storage.ts:29 顶层副作用消除 + app.ts onLaunch 首行挂载 + 2 份新文档 + FU f.1+f.2 预闭合 · 等 Human 实测 + review-tech Round-1）
