@@ -21,7 +21,7 @@
 
 ## §3 交付历史索引
 
-- （无 · 新旧制度切换前历史不纳入此索引 · 从下一次装扮开始记录）
+- 2026-05-02 · `history/2026-05-02-getglobalstorage-v2-diagnose.md` · FU-LAUNCH 第 3 次观察 **重定性**（D-017 Step 2 · SBAI v1.1 P2' 冒烟 · 证据坐实"storage.ts:29 模块顶层副作用 vs 高版本库时序约束"）
 
 ## §4 最近决策影响
 
@@ -36,8 +36,14 @@
 
 ## §6 遗留问题 / FU / 债务
 
-- 启动期 `getGlobalStorage fail: too early` 错误（FU-LAUNCH-FIRST-RENDER-RACE 已 close · 若复现重立卡）
+- FU-LAUNCH-FIRST-RENDER-RACE · `getGlobalStorage fail: too eayly` 错误 · **定性已升级**（2026-05-02 20:25）
+  - **原定性**（2026-04-29～2026-05-02 19:32 · 三次观察）："100% 微信 SDK 内部启动时序 Bug · 非业务"
+  - **新定性**（Human 2026-05-02 20:15 新线索触发 · 本次根因分析坐实）："我方 `miniprogram/services/storage.ts:29` 模块顶层副作用 `ensureVersion()` 在 `App()` 注册之前同步调 `wx.getStorageSync/clearStorageSync/setStorageSync` · 与高版本基础库（2.32.3+）对 storage 调用时机的新约束冲突 · **业务触发 · 非 SDK Bug**"
+  - **因果链**：`app.ts:4 import './services/auth'` → `services/auth.ts:7 import './storage'` → `storage.ts:29 ensureVersion()` top-level 同步执行 → 此时 SDK 内部 `createOrGetStorageGroup/_prepare` 未就绪 → 抛出 `too eayly`
+  - **SDK 侧错误名错配**（getGlobalStorage）仍可能是 SDK 包装层产物 · 但触发源在我方业务
+  - **下一步待 Human 裁决**：方案 A/B/C（见本次 history）· 推荐 A（移除模块顶层副作用 · 迁入 onLaunch）
 
 ## §7 最近更新时间戳
 
 - 2026-05-02T19:24:00+08:00 · 初始化骨架（by Orchestrator）
+- 2026-05-02T20:25:00+08:00 · SBAI v1.1 P2' 冒烟首次自主落盘（by costra-miniapp-dev · D-017 Step 2 重做根因分析 · FU-LAUNCH 定性升级）
