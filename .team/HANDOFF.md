@@ -13,7 +13,7 @@
 
 ## §0 一句话断点（HEAD 之前 = 已兑现 · 之后 = 待做）
 
-> **2026-05-03 12:41 当前断点**：COSTRA-124 R1 两份 Review 全绿（card-review 26/30 · review-tech 33/35 · 均 PASS-WITH-FOLLOWUP · 0 P0）· **等 Human 第 7 次模拟器实测 5 条断言** · 结果出来按三路径走（全 PASS 直走 T2 approve + FU 真 closed · 部分问题走 DoD (c) 路径 ② / ③ · 全挂走 REVISE Round-2）。Sprint-1 收官期 · 最后 1 张 fix · 通过则基建线 8 卡全数 CLOSED。
+> **2026-05-03 20:32 当前断点**：Human 第 7 次模拟器实测（20:09）**证伪 COSTRA-124 R1 假设**（`too eayly` 复现 ×7 + Launch Time 1864 ms）· R2 诊断定性翻转 v3（SDK 2.32.3+ 渲染层 storage group `_prepare` 就绪晚于 App.onLaunch · SDK+业务共责）· Human 20:32 D1/D2/D3 **全按推荐** · **COSTRA-125 立卡**（2 点 · P1 · 方案 B'+E' 合并版）· **COSTRA-124 部分闭合**（顶层副作用分支 close · commit `a296be0` 保留不撤回）· **FU-LAUNCH 分裂为 A/B/C 三子 FU**（A closed · B/C open 交棒 125）· **libversion-upgrade.md §3 反模式 #4 已追写** · 当前待**同轮 commit 落盘 → D-014 spawn `costra-card-reviewer-tech` 对 COSTRA-125 做卡审 → PASS 后 spawn `costra-miniapp-dev` 实装 → R1 审 → Human 第 8 次实测**。Sprint-1 收官期剩 3 天 · 若 125 实装顺利可在 Sprint-1 末收官。
 
 ---
 
@@ -21,39 +21,36 @@
 
 ### §1.1 当前时间戳
 
-- **更新时间**：2026-05-03 12:41
-- **更新者**：本会话 Orchestrator（HEAD = `20b0e48`）
+- **更新时间**：2026-05-03 20:32
+- **更新者**：本会话 Orchestrator（HEAD 待 commit 后回填 · 预计格式 `docs(repo): costra-125 立卡 + fu split + libversion-upgrade anti-pattern #4`）
 - **Sprint**：Sprint-1（2026-04-23 ~ 2026-05-06 · **收官期 · 剩 3 天**）
 
 ### §1.2 当前在办卡
 
 | 卡号 | Owner | Type | Points | 阶段 | 下一步 |
 |---|---|---|---|---|---|
-| **COSTRA-124** | miniapp-dev | fix | 1 | **R1 Review 全绿 · 等 Human 实测** | Human E2 触发模拟器第 7 次启动 |
+| **COSTRA-125** | miniapp-dev | fix | 2 | **dispatch 已立 · 等卡审** | spawn `costra-card-reviewer-tech` · 产出卡审报告 |
+| COSTRA-124 | miniapp-dev | fix | 1 | **部分闭合**（顶层副作用分支 close · architecture 保留）| 待 COSTRA-125 收官后 · FU-LAUNCH-A 真 close + 124 整卡 Done |
 | COSTRA-102 | miniapp-dev | feature | - | 等 Human 人验（长期挂起） | Human 本地验证 |
 | COSTRA-117 | devops-ops | fix | - | Todo（未动） | Sprint-2 或 Sprint-1 末扫一下 husky v10 |
 
 ### §1.3 Human 下一步动作（**预期**）
 
-Human 方便时（不急）：微信开发者工具 → 清缓存 → 编译 → **首次冷启动** · 对照 `.team/dispatch/COSTRA-124-miniapp-fix-startup-storage-timing.md §9` **5 条检查清单** 逐条贴结果。
+**本轮无须 Human 动作** · 等 Orchestrator 执行：
 
-5 条断言：
+1. 同轮 commit 本轮产出（dispatch + board + backlog + FU + libversion-upgrade + state + HANDOFF）
+2. Spawn `costra-card-reviewer-tech` 对 COSTRA-125 dispatch 做卡审（D-014 规则）
+3. 若卡审 PASS → 同轮 spawn `costra-miniapp-dev` 做 R1 实装
+4. R1 交付后 spawn `costra-review-tech` 做 R1 审查
+5. R1 审查 PASS 后回给 Human **第 8 次模拟器实测**（5 条断言 · 见 `.team/dispatch/COSTRA-125-miniapp-storage-async-migration.md §9`）
 
-| # | 验证项 | 通过标准 |
-|---|---|---|
-| 1 | `getGlobalStorage fail: too eayly` | 0 次上报 |
-| 2 | `Expected updated data but get first rendering data` | 0 次上报 |
-| 3 | Launch Time | ≤ 900 ms（基线 865 ± 35 · 900-935 ms AMBER · Human 个案裁决） |
-| 4 | `wx.login` 成功 | Console 出现 `auth.ts:157 [auth] wx.login ok` |
-| 5 | 业务链路 | 首页 → 记一笔可进入 |
-
-### §1.4 Orchestrator 接收 Human 实测结果后的三路径响应契约
+### §1.4 Orchestrator 接收 Human 第 8 次实测结果后的三路径响应契约
 
 | 路径 | 触发条件 | 响应动作 |
 |---|---|---|
-| **α · 全 PASS** | 5 条全绿（含 Launch Time ≤ 900 ms 硬门槛或 AMBER Human approve） | (1) 回填 `docs/devops/libversion-upgrade.md §1.4` commit sha 完整（P2-1 修复）· (2) 改 `.team/follow-ups/README.md` FU-LAUNCH-FIRST-RENDER-RACE `status: open → closed` + 补闭合依据 commit sha + 追写 f.1.B 实测结果 · (3) 更新 `.team/board.md` COSTRA-124 状态到 Done + 划删除线 · (4) 请 Human 走 T2 `approve:COSTRA-124` · CLOSED · Sprint-1 基建线 8 卡全收官 |
-| **β · storage PASS 但 "Expected updated data" 复现** | 断言 1+3+4+5 PASS · **断言 2 FAIL** | 走 dispatch DoD (c) 路径 ② · **不在 COSTRA-124 内硬修** · 立 COSTRA-125（新卡）走 D-017 Step 2-4 二次派单诊断不修复 · COSTRA-124 只闭合 storage.ts:29 部分 · FU-LAUNCH 部分 close（仅关 too eayly 分支）· 另一半另起 FU-LAUNCH-FIRST-RENDER-RACE-B |
-| **γ · storage 那条复现** | 断言 1 FAIL（仍有 `too eayly`） | R1 修复未达到预期 · spawn `costra-miniapp-dev` 做 `revise-round-2`（D-015）· 按新观察重做根因 · 可能不是 storage.ts:29 唯一触发点 · 或方案 A 未覆盖全部时序路径 |
+| **α · 全 PASS** | 5 条全绿（Launch Time ≤ 900 ms 硬门槛或 AMBER Human approve） | (1) 改 FU-LAUNCH-B `open → closed` + 补闭合 commit sha · (2) 判定 FU-LAUNCH-C（如 `Expected updated data` 未复现则同 close · 否则保持 open 观察）· (3) 父 FU `FU-LAUNCH-FIRST-RENDER-RACE` 整体 close · (4) 改 board COSTRA-125 到 Done · COSTRA-124 同步 Done（顶层副作用分支已 close）· (5) Human T2 `approve:COSTRA-125` · CLOSED · Sprint-1 基建线 **9 卡全数收官**（100+101+119-125） |
+| **β · 部分 PASS** | 断言 1 PASS（too eayly 0 次）· 其他有一条 FAIL | 走 dispatch DoD (c/e) 分析链 · 针对具体 FAIL 断言立 COSTRA-126（如 Launch Time 仍超 AMBER · 或登录链路断）· COSTRA-125 部分闭合 |
+| **γ · 断言 1 FAIL** | `too eayly` 仍有复现 | 说明方案 B' 的"异步 API 内部等 `_prepare` 就绪"假设再被证伪 · spawn `costra-miniapp-dev` 做 revise-round-2 · 候选方案：降到 C'（基础库降版）或 E'（bootstrap Promise 更强门控）· 可能需要 COSTRA-125 整卡 REVISE |
 
 ---
 
@@ -64,11 +61,11 @@ Human 方便时（不急）：微信开发者工具 → 清缓存 → 编译 →
 ### §2.1 必读（**每次新会话启动都读**）
 
 1. **`.team/HANDOFF.md`** — 本文件 · 锚点入口
-2. **`.team/board.md`** — 最后更新行 + COSTRA-124 📌 段（看上轮 Orchestrator 留的节点备注）
-3. **`.team/dispatch/COSTRA-124-miniapp-fix-startup-storage-timing.md`** — 当前在办卡完整 dispatch（含 §0 card-review 响应 + §3 修订后 DoD 7 条 + §9 Human 实测清单）
-4. **`.team/reviews/COSTRA-124/`** — 两份 Review 全文（`card-review-1-tech.md` 26/30 + `round-1-tech.md` 33/35）· 理解"为什么放行进 Human 终审队列"
-5. **`.team/follow-ups/README.md`** — 搜 `FU-LAUNCH-FIRST-RENDER-RACE` 跳到 §519-636（主 FU · 含 f.1.A/f.1.B/f.2 全部预闭合内容）
-6. **`.team/members/miniapp-dev/state.md`** — 装扮 subagent 当前状态（§2 active tasks · §6 遗留 · §7 最新时间戳 21:30 / 21:07）
+2. **`.team/board.md`** — 最后更新行 + COSTRA-125 📌 段（当前在办卡）
+3. **`.team/dispatch/COSTRA-125-miniapp-storage-async-migration.md`** — 当前在办卡完整 dispatch（含 §2 方案 B'+E' + §3 DoD 8 条 + §9 Human 第 8 次实测清单）
+4. **`.team/members/miniapp-dev/history/2026-05-03-costra-124-r2-diagnose.md`** — R2 根因重做报告（500 行 · L1-L4 新根因 + 6 方案 + 8 Q 全推荐）· **理解为何立 125 而非 124 内 revise**
+5. **`.team/follow-ups/README.md`** — 搜 `FU-LAUNCH-FIRST-RENDER-RACE` 跳到 §519-xxx · 特别看 f.3 段（第 7 次观察 + 定性翻转 v3 + FU 分裂 A/B/C）
+6. **`.team/members/miniapp-dev/state.md`** — 装扮 subagent 当前状态（§2 active tasks 更新到 COSTRA-125 · §6 遗留 v3 定性 · §7 时间戳 20:32）
 
 ### §2.2 按需（**遇到对应场景才读**）
 
@@ -167,7 +164,7 @@ e11a58f docs(repo): sbai v1.0 p1 merge · align sop family with sync subagent
 
 | FU-ID | 状态 | owner_card |
 |---|---|---|
-| FU-LAUNCH-FIRST-RENDER-RACE | **`open`** · 预闭合 f.1/f.2 齐备 · **等 Human 第 7 次实测** | COSTRA-124（本卡即闭合）|
+| FU-LAUNCH-FIRST-RENDER-RACE | **分裂为 A/B/C** · **A closed** @ COSTRA-124（commit `a296be0` · 顶层副作用分支）· **B open** · 等 COSTRA-125 修复 · **C open** · 等实测判定 | COSTRA-124 / 125 |
 | FU-124-P2-1/2/3 | `open` · R1 实装时未合并（属 dispatch 元数据层） | Sprint-1 末 Retro 或 Sprint-2 |
 | FU-CI-MP-BUILD-NPM-ENFORCE | `open` | Sprint-2 候选 |
 | FU-REVIEW-TECH-RUNTIME-DIM | `open` · P0 议题 | Sprint-1 末 Retro |
@@ -206,6 +203,7 @@ reviews + FU-LAUNCH + miniapp-dev state.md · 当前断点：COSTRA-124 R1 两�
 | 版本 | 日期 | 维护者 | 变更 |
 |---|---|---|---|
 | v1.0 | 2026-05-03 12:41 | 本会话 Orchestrator | 立案 · 随 COSTRA-124 R1 Review 末端节点 · 会话 10 commits 末端（HEAD = 20b0e48） |
+| **v1.1** | **2026-05-03 20:32** | 本会话 Orchestrator | **R1 假设 Human 第 7 次实测证伪 → R2 诊断定性翻转 v3 → Human 全按推荐 → COSTRA-125 立卡 + COSTRA-124 部分闭合 + FU-LAUNCH 分裂 A/B/C + libversion-upgrade §3 反模式 #4 追写** · §0/§1/§2.1/§6 全面刷新 |
 
 ---
 

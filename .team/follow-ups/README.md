@@ -556,7 +556,79 @@ R1 MiniApp 交付 · T2 Tech 单轨 APPROVE 35/35 · Human 第五次模拟器启
   - **定性加固**：从"吻合但未坐实"（第 2 次）升级为**"100% 非业务 · 微信 SDK 内部启动时序 Bug 确认"**——我方代码在任何路径上都未触达异步 Global Storage API 栈
   - **不阻任何链路**（本次场景）：本次仅模拟器启动现象上报 · 无业务操作中断
   - **治理价值**：SBAI v1.0 P2 冒烟独立复核首次实战 · 验证了"装扮 subagent 独立核查历史定性"的有效性——FU 原定性（2026-04-29 登记）**完全正确** · 经过 2 次复现 + 1 次独立复核 · 可 Sprint-1 末 Retro 议题中降级为"**闭合观察** · 不立卡修 · 文档化存档"（理由：三次观察全部证明是微信 SDK 内部 Bug · 无业务触发点 · 我方无可修改点 · 升级基础库版本是唯一路径但需 Human 决策时机）
-- **同族观察次数**：首次 2026-04-29 10:41（COSTRA-122 收官）· **第 2 次 2026-05-01 21:18（COSTRA-123 收官）** · **第 3 次 2026-05-02 19:32（D-018 SBAI v1.0 P2 冒烟首战 · 独立核查确认非业务）** · **第 4 次 2026-05-02 20:15-20:25（Human 新线索 + 装扮 subagent D-017 Step 2 根因重做 · 定性翻转）** · **第 5 次 2026-05-02 21:xx 预计（COSTRA-124 R1 修复后 Human 模拟器实测 · 待触发）**
+- **同族观察次数**：首次 2026-04-29 10:41（COSTRA-122 收官）· **第 2 次 2026-05-01 21:18（COSTRA-123 收官）** · **第 3 次 2026-05-02 19:32（D-018 SBAI v1.0 P2 冒烟首战 · 独立核查确认非业务）** · **第 4 次 2026-05-02 20:15-20:25（Human 新线索 + 装扮 subagent D-017 Step 2 根因重做 · 定性翻转 v2）** · **第 5 次 2026-05-02 21:xx（COSTRA-124 R1 修复完成 + Review 33/35）** · **第 6 次 2026-05-03 12:41（HANDOFF.md 立案）** · **第 7 次 2026-05-03 20:09（Human 第 7 次模拟器实测 · R1 假设证伪 · 定性翻转 v3 · 详见 f.3）**
+
+---
+
+#### 🆕 f.3 · 第 7 次观察（R1 假设证伪 · 定性翻转 v3）+ FU 分裂为 A/B/C 三子 FU · COSTRA-125 接力卡
+
+**追写时间**：2026-05-03 20:32（by Orchestrator · Human 2026-05-03 20:32 D1/D2/D3 全按推荐后同轮）
+
+**追写依据**：COSTRA-124 R2 诊断（`.team/members/miniapp-dev/history/2026-05-03-costra-124-r2-diagnose.md`）+ 本 FU 文档纪律"Human 实测未通过前 FU 不真 closed"（f.1.B 预闭合变成实测失败 · 按承诺不做假 close）
+
+##### f.3.A · 第 7 次观察（2026-05-03 20:09 · Human 模拟器实测 · R1 失败）
+
+- **触发**：Human 2026-05-03 20:09 按 HANDOFF.md §1.3 指引做第 7 次冷启动（已清缓存 + 重新编译 · R1 `a296be0` + `221b074` 在 HEAD `42494f1` 前已落）
+- **Console 实证**（完整保留）：
+  - `app.ts:31 [Costra] onLaunch env= dev` 打印在前（R1 已生效 · onLaunch 进入）
+  - **随后爆出 7+ 次 × 4 种 API**：`getGlobalStorage fail: too eayly` ×2 + `setGlobalStorage fail: too eayly` ×1 + `removeGlobalStorage fail: too eayly` ×1 + `SystemError` 包装 ×3
+  - 错误栈均含 `Tt._prepare` / `Tt._setMetadata` / `Tt.get` / `Tt.delete` / `createOrGetStorageGroup`
+  - 错误归属 **`[渲染层错误]`**（不是 AppService 逻辑层）
+  - **Launch Time: 1864 ms**（基线 865 · ×2.16 重度劣化 · 与错误反复抛出吻合）
+- **Human 关键补充**："wx.login 没跑到是因为还没点登录 · 这个问题只要一打开小程序就会出现 · 点登录后 wx.login 正常"
+- **意义**：证明错误与用户交互无关 · 纯 App 生命周期早期问题 · **R1 方案 A 的核心假设"onLaunch 够晚"被实测证伪**
+
+##### f.3.B · R2 根因重做（装扮 subagent D-017 Step 5 派单 · SBAI v1.1 P2' 冒烟第 3 回）
+
+- **Spawn**：2026-05-03 20:12（by Orchestrator · 传 16 文件强制阅读清单 + 实测证据 + 硬约束"只诊断不改"）
+- **事实源三证**：`git ls-files` 60 文件 / `git log` 确认 `a296be0` R1 已落 / `git show HEAD` 确认 app.ts:28 + storage.ts 架构正确
+- **L3 调用点普查发现**（关键新证据）：
+  - 冷启动期同步 storage 调用 **仅 2 处 · 共 4 次**（数学对账闭合）
+  - ① `app.ts:28 ensureVersion()` → storage.ts:31/33/34（get/clear/set）
+  - ② **`app.ts:35 initAuth()` → auth.ts:70 `getItem(TOKEN_KEY)`** ← **R1 漏网点**（`async function` 体内 await 之前同步执行）
+- **L2 WebFetch 证据**（3 次微信官方文档取证）：
+  - 官方承诺"onLaunch 内 wx.getStorageSync 可用" · 但实测打脸 · 说明 2.32.3+ 实现细节与文档脱节
+  - 错误归属 `[渲染层错误]` · 证明 SDK 把 storage 委托给渲染层 storage group · 而 `_prepare` 就绪**晚于** AppService 的 onLaunch
+- **定性升级 v2→v3**：
+  - **v3（新 · 2026-05-03）**：**"SDK 2.32.3+ 启动期 · 渲染层 storage group `_prepare` 就绪时刻晚于 App.onLaunch 触发 · 任何从逻辑层同步发起的 `wx.*StorageSync` 调用都会经 jsbridge 委托到渲染层并报 `too eayly` · SDK + 业务共同责任"**
+  - 相对 v2 的修正：v2 归因单点（storage.ts:29 顶层）· v3 扩展为"整个 onLaunch 同步 storage 调用族都会撞 `_prepare` 未就绪"
+- **产出**：`.team/members/miniapp-dev/history/2026-05-03-costra-124-r2-diagnose.md`（500 行 · L1-L4 + 6 方案对比 + 8 Q 决策点 + 工具冒烟）
+- **冒烟合规**：miniprogram/ 0 写入 · git commit 0 次 · 严格 D-017 Step 2 纪律
+
+##### f.3.C · Human 2026-05-03 20:32 决策
+
+- **D1 方案**：**B' + E' 合并版**（异步 API 全量替换 + bootstrap Promise 统一门控）
+- **D2 卡边界**：**COSTRA-124 部分闭合 · 立 COSTRA-125 接力卡**（保持 1 点估点纪律 + commit 历史清晰）
+- **D3 范围**：**`sync.ts` / `auth.ts` 其他写入点一并改 async**（不留半拉子技术债）
+- R1 commit `a296be0` + `221b074` **保留不撤回**（作为 COSTRA-125 的必要前置 · 架构上更合理）
+
+##### f.3.D · FU 分裂为 A/B/C 三子 FU（本 FU 结束顶层单态 · 转为族管理）
+
+| 子 FU | 定义 | 状态 | owner_card |
+|---|---|---|---|
+| **FU-LAUNCH-A** · 顶层副作用分支 | `storage.ts` 模块顶层 `ensureVersion()` 裸调（前 3 次观察误判的旧归因 · v2 定性范围）| **closed** @ COSTRA-124 R1（commit `a296be0`）· 观察 4 驱动修复 · 架构上消除了公认反模式 | COSTRA-124（整卡状态=**部分闭合** · 此子目标完成）|
+| **FU-LAUNCH-B** · 渲染层 storage group `_prepare` 时序 | onLaunch 内任何同步 storage 调用都会撞渲染层 `_prepare` 未就绪（v3 定性范围）· 真实根因 | **open** · 等 COSTRA-125 方案 B'+E' 修复 + Human 第 8 次实测 | **COSTRA-125**（本 FU 主力接力卡）|
+| **FU-LAUNCH-C** · 首渲染数据投递错位 | `Expected updated data but get first rendering data`（观察 1 独立报告 · 观察 2-7 未复现 · 可能与 B 同源也可能独立）| **open** · 等 COSTRA-125 实测后判定（若随 B 修复自然消失 → close · 否则保持观察）| COSTRA-125 或 Sprint-2 |
+
+**顶层 FU-LAUNCH-FIRST-RENDER-RACE 状态处理**：保留 `open` 作为父 FU · 状态 = "已分裂为 A/B/C · 见 §f.3.D" · 待 A/B/C 全部 close 后父 FU 同步 close。
+
+##### f.3.E · 下游议题（Sprint-1 末 Retro · 2026-05-06 前 · 累增至 3 条）
+
+- **议题 15**（继承 f.2 · 加固）："独立复核可翻转历史定性"范式——本次 v2→v3 是第 **2 次翻转** · 范式已被证实"翻转不是一次性事件 · 是过程产物"
+- **议题 16**（继承 f.2 · 不变）：审查档 tools 白名单差异化
+- **议题 17**（新增 · 本次驱动）：**"Review-Tech 纸面审不能拦住运行时假设漏洞"** · Review-Tech Round-1 给 R1 打 33/35 过审 · 但因为无模拟器访问 · 无法验"onLaunch 时 storage group 是否就绪"这种 runtime 假设 · **建议**：
+  - 规约类 T2 卡的 Review 必须要求"Human 模拟器实测作为 Round-N+1 前置"（或 Review-Tech 获得 mini-ci 等 mock 模拟器工具）
+  - 与议题 11"Review 35/35 可能基于错误假设"并链升级为 **P0 必议**
+  - 与议题 13"Review-Tech 评分表加 runtime 加载性维度"合并
+
+##### f.3.F · 反模式 #4 追写（`docs/devops/libversion-upgrade.md §3`）
+
+本次 f.3 同轮追写方法论文档新反模式：
+
+- **反模式 #4 · "过度信赖 onLaunch 作为 storage 就绪时刻"**
+- **坏例**：R1 方案 A（把 `wx.*StorageSync` 从模块顶层挪到 onLaunch 首行 · 假设 onLaunch 够晚）
+- **好例**：异步 API 全量替换（`wx.getStorage({key})` Promise 形态）· SDK 内部在 `_prepare` 就绪后 resolve · 业务无需猜测时刻
+- **原因**：**文档承诺 ≠ 运行时实现** · 特别是 SDK 内部状态机（如 storage group `_prepare`）属黑盒 · 业务不应把"生命周期 hook 名称"当作"底层设施就绪"的代理信号 · 异步 API 是 SDK 把"等就绪"的责任收回去的正确机制
 
 ---
 

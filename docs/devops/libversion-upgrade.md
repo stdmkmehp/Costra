@@ -242,6 +242,58 @@ Error: invoke too eayly
   - 若分包模块顶层有 `wx.*` 副作用 · 与分包 loader 的 storage group 还原时序会冲突 · 再现 `too eayly` 的**子分包变种**
   - **识别线索**（从本次 COSTRA-124 追查过程自识别）：顺扫应覆盖 `miniprogram/pages-*/` 分包目录 · 不能只扫主包 · Sprint-2 `startup-top-level-call-check.mjs`（`docs/devops/startup-api-call-audit.md` §5 候选脚本）应显式纳入这一层
 
+### §3.4 反模式 4 · 过度信赖 onLaunch 作为 storage 就绪时刻（COSTRA-124 R1 假设证伪 · 2026-05-03 追写）
+
+- **坏例**（COSTRA-124 R1 方案 A · commit `a296be0`）：
+  ```typescript
+  // app.ts
+  App({
+    onLaunch() {
+      ensureVersion();   // 同步 wx.getStorageSync · 假设 onLaunch 内 storage group 已就绪
+      initAuth().then(...);  // async function 体内 getItem(TOKEN_KEY) 在 await 前同步执行 · 同假设
+    }
+  });
+  ```
+  实测（Human 2026-05-03 20:09 第 7 次模拟器启动）：Console 报 `too eayly` ×7+ · 4 种 API（get/set/remove/metadata）· Launch Time 1864 ms（基线 865 · ×2.16 劣化）· 证伪"onLaunch 够晚"假设。
+
+- **好例**（COSTRA-125 方案 B'+E' · 异步 API 全量 + bootstrap Promise）：
+  ```typescript
+  // storage.ts
+  export async function ensureVersion(): Promise<void> {
+    try {
+      const res = await wx.getStorage({ key: VERSION_KEY });  // Promise 形态 · SDK 内部等 _prepare
+      if ((res as any).data !== STORAGE_VERSION) {
+        await wx.clearStorage();
+        await wx.setStorage({ key: VERSION_KEY, data: STORAGE_VERSION });
+      }
+    } catch (e: any) { /* data not found / 其他 · 统一降级 */ }
+  }
+
+  // app.ts
+  App({
+    bootstrapPromise: Promise.resolve(),
+    onLaunch() {
+      this.bootstrapPromise = (async () => {
+        await ensureVersion();
+        await initAuth();
+        // ...
+      })();
+    }
+  });
+  ```
+
+- **原因**：
+  - 文档承诺"onLaunch 内 wx 可用"≠ 运行时"storage group `_prepare` 已就绪"
+  - SDK 2.32.3+ 把 storage 委托给**渲染层** storage group · 而渲染层 `_prepare` 就绪时刻晚于 AppService 层 onLaunch 触发（SDK 内部实现细节 · 黑盒）
+  - 同步 API（`wx.*StorageSync`）无法表达"等就绪"语义 · 一调必立刻走 jsbridge · 撞 `_prepare` 未就绪就抛 `too eayly`
+  - 异步 API（`wx.getStorage({key})` Promise 形态 · 基础库 2.21.0+ 支持）把"等就绪"的责任交回 SDK · 业务只需 await · 不需猜时刻
+  - **本质教训**：**不要把生命周期 hook 名称当作底层设施就绪的代理信号** · 特别是 SDK 内部状态机属黑盒 · 需通过异步 API 让 SDK 内部自己表达就绪时机
+
+- **识别线索**：
+  - 若错误栈含 `_prepare` / `createOrGetStorageGroup` / `_setMetadata` · 基本可判定为"就绪时序"类问题 · 而非"调用时机"类问题
+  - 若同一个 API 族（storage / media / location 等）有同步 + 异步两套 · 启动期优先走异步版本
+  - 异步 API 在 AMBER 区间（Launch Time 900-935 ms）可能仍劣化 · 但不会抛 Error 级告警
+
 ---
 
 ## §4 FU-LAUNCH 族关系表
@@ -254,13 +306,17 @@ Error: invoke too eayly
 | **观察 2** | 2026-05-01 21:18 | COSTRA-123 收官 · Human 第 6 次模拟器启动 | 同观察 1 的 3 条（`too eayly`） · Launch Time 降至 865 ms | **SDK 内部 Bug 保持（误判加固）** · 二级事实登记"storage.ts:29 吻合但未坐实" | COSTRA-123 收官 · `.team/follow-ups/README.md` §541-546 |
 | **观察 3** | 2026-05-02 19:32 | D-018 SBAI v1.0 P2 冒烟首战 | 仅 1 条 `getGlobalStorage fail: too eayly` | **加固为"100% 非业务"（误判最强化版）** · 装扮 subagent 独立核查前 3 次定性 | D-018 SBAI v1.0 · `.team/follow-ups/README.md` §547-558 |
 | **观察 4（翻转点）** | 2026-05-02 20:15-20:25 | Human 给新线索 "不是微信 bug · 高版本库对时序有要求" + 装扮 subagent D-017 Step 2 重做根因 | 现象未新增 · **定性翻转**（SDK Bug → 业务触发 · storage.ts:29 顶层副作用坐实） | **定性翻转**：业务触发 · 非 SDK Bug | D-017 Step 2 + `.team/members/miniapp-dev/history/2026-05-02-getglobalstorage-v2-diagnose.md` |
-| **观察 5（闭合）** | 2026-05-02 21:xx | COSTRA-124 R1 修复 · Human 第 7 次模拟器启动（DoD (e) 待 Human 触发） | 预期：`getGlobalStorage fail: too eayly` 0 条 + `Expected updated data` 0 条 + Launch Time ≤ 900 ms | **FU 闭合（待 Human 实测坐实）** | **COSTRA-124**（本卡） |
+| **观察 5（R1 假设预期验证 · 2026-05-02 文档占位）** | 2026-05-02 21:xx（预期）| COSTRA-124 R1 修复 · Human 第 7 次模拟器启动（DoD (e)）· **文档写作时占位** | 预期：`too eayly` 0 条 + Launch Time ≤ 900 ms | **（待实测坐实）** | COSTRA-124 R1 |
+| **观察 6（HANDOFF 立案）** | 2026-05-03 12:41 | 本会话 Orchestrator 建 `.team/HANDOFF.md` · 预热第 7 次实测 | （无新 Console 事件） | （无变化） | `.team/HANDOFF.md` v1.0 |
+| **观察 7（R1 证伪 · 定性 v3 翻转）** | 2026-05-03 20:09 | Human 第 7 次模拟器实测（已清缓存 + 重新编译）| `too eayly` ×7+ × 4 种 API + Launch Time 1864 ms（基线 ×2.16 劣化）· **R1 假设证伪** | **定性翻转 v3**：SDK 2.32.3+ 渲染层 storage group `_prepare` 就绪时刻晚于 App.onLaunch · 任何 onLaunch 内同步 storage 调用必撞 `too eayly` · SDK + 业务**共同责任** | `.team/members/miniapp-dev/history/2026-05-03-costra-124-r2-diagnose.md` |
+| **观察 8（预期闭合）** | 2026-05-0x（待 COSTRA-125 实装 + Human 第 8 次实测）| COSTRA-125 方案 B'+E'（异步 API 全量 + bootstrap Promise）落盘后 Human 实测 | 预期：`too eayly` 0 条 + Launch Time ≤ 900 ms + 登录链路通 | **FU-LAUNCH-B close · 父 FU close**（待实测坐实）| **COSTRA-125**（接力卡） |
 
 ### §4.1 定性翻转的治理意义
 
-- **范式价值**：前 3 次定性**一致误判** · 第 4 次经"Human 新线索 + 装扮 subagent 独立核查"翻转 · 证明 SBAI v1.1 "装扮 subagent 独立核查可翻转历史定性" 的设计有效（Sprint-1 末 Retro 议题 15）
-- **监督意义**：历史 FU 的定性不是绝对的 · 当出现新线索（特别是来自 Human 的、可反驳当前定性的线索）时 · 必须**主动重审** · 不能用"已经观察 N 次都是这个定性"作为拒绝重审的理由
-- **工程沉淀**：本 `libversion-upgrade.md` 即是翻转事件的知识沉淀 · 未来每次基础库升级都走 §2 四步 · 避免同族误判再犯
+- **范式价值**：前 3 次定性**一致误判** · 第 4 次经"Human 新线索 + 装扮 subagent 独立核查"翻转为 v2 · **第 7 次经 Human 模拟器实测再次翻转为 v3** —— 证明 SBAI v1.1 "装扮 subagent 独立核查可翻转历史定性" 的设计有效且具持续性（Sprint-1 末 Retro 议题 15 加固）
+- **监督意义**：历史 FU 的定性不是绝对的 · 当出现新线索（特别是来自 Human 的、可反驳当前定性的线索）或**实测失败**时 · 必须**主动重审** · 不能用"已经观察 N 次都是这个定性"作为拒绝重审的理由
+- **证伪意义**（新 · 议题 17）：R1 纸面 Review 33/35 过审 · 但 runtime 实测打脸 —— 证明 Review-Tech 仅靠纸面审 + Grep 自证无法拦住 runtime 假设漏洞 · **规约类 T2 卡需把"Human 模拟器实测"作为 Round-N+1 前置硬门槛**（或 Review-Tech 获得 mini-ci 工具）
+- **工程沉淀**：本 `libversion-upgrade.md` 即是两次翻转事件的知识沉淀 · §3.4 反模式 #4 是 v3 定性的治理产物 · 未来每次基础库升级都走 §2 四步 · 避免同族误判再犯
 
 ---
 

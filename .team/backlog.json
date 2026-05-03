@@ -1,9 +1,9 @@
 {
   "project": "Costra",
-  "version": "0.2.1",
-  "last_updated": "2026-05-02T20:58:00+08:00",
+  "version": "0.2.2",
+  "last_updated": "2026-05-03T20:32:00+08:00",
   "platform": "wechat-miniprogram",
-  "notes": "v0.2.1: 新增 COSTRA-124 Epic-C 补丁（启动期 storage 时序修复 + FU-LAUNCH 闭合 · 1 点 · SBAI v1.1 P2' 冒烟驱动 · D-018 v1.1）。v0.2.0: 发布平台由 iOS 改为微信小程序（见 ADR-0003），Epic-A/D/G 的 Story 名称与范围已同步。",
+  "notes": "v0.2.2: COSTRA-124 R1 假设被 Human 第 7 次实测证伪（2026-05-03 20:09 · too eayly 复现 ×7 · Launch Time 1864 ms）· 定性翻转 v3（SDK 2.32.3+ 渲染层 storage group _prepare 就绪晚于 App.onLaunch · SDK + 业务共责）· 立 COSTRA-125（2 点 · P1 · 方案 B'+E' 合并版：异步 API 全量 + bootstrap Promise）· COSTRA-124 部分闭合（顶层副作用分支 close · commit a296be0 保留）· FU-LAUNCH 分裂 A/B/C 三子 FU · D-017 第 5 次实战 · SBAI v1.1 P2' 冒烟第 3 回。v0.2.1: 新增 COSTRA-124 Epic-C 补丁（启动期 storage 时序修复 + FU-LAUNCH 闭合 · 1 点 · SBAI v1.1 P2' 冒烟驱动 · D-018 v1.1）。v0.2.0: 发布平台由 iOS 改为微信小程序（见 ADR-0003），Epic-A/D/G 的 Story 名称与范围已同步。",
   "epics": [
     {
       "id": "Epic-A",
