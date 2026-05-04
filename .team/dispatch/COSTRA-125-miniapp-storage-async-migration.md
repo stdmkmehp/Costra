@@ -8,11 +8,37 @@
 - Points: **2**
 - 依赖: COSTRA-124（已**部分闭合** · 顶层副作用分支 · commit `a296be0` + `221b074`）
 - 创建: 2026-05-03 20:32（by Orchestrator · R2 诊断翻转后接力卡）
+- **Card-Review R1**: **PASS 31/35**（2026-05-04 08:30 · `costra-card-reviewer-tech` · 0 P0 · 0 P1 · 4 P2 记 follow-up · 见 §0 + `.team/reviews/COSTRA-125/card-review-1-tech.md`）
 - Driver:
   - COSTRA-124 R2 诊断：`.team/members/miniapp-dev/history/2026-05-03-costra-124-r2-diagnose.md`
   - FU-LAUNCH-FIRST-RENDER-RACE 第 7 次实测证伪 R1 假设（2026-05-03 20:09 Human 实测 Console 证据）
   - D-017 第 5 次实战 · SBAI v1.1 P2' 冒烟第 3 回产物
   - 定性 v3：SDK 2.32.3+ 启动期 · 渲染层 storage group `_prepare` 就绪时刻晚于 App.onLaunch 触发 · 任何 onLaunch 内同步 storage 调用均撞 `too eayly`（SDK + 业务共同责任）
+
+---
+
+## §0 Card-Review 响应（Round-1 · 2026-05-04 08:30 PASS 31/35）
+
+**审查人**：`costra-card-reviewer-tech` 装扮 subagent（SBAI v1.1 P2'' 冒烟第 2 次 · 全程只读工具物理隔离验证通过）
+
+**审查结论**：**PASS 31/35**（临界 · 紧贴阈值）· 0 P0 · 0 P1 · 4 P2 记 follow-up · C1-C8 红线全过 · 不触发 Round-2
+
+**4 条 P2 follow-up**（R1 实装时 `costra-miniapp-dev` 自主决定是否就地合并 · 审查建议至少合 P2-1 + P2-3）：
+
+- **P2-1（commit 原子性）**：§6 加一行"commit 1 落盘前必须 `npm run typecheck && npm run test` 双 PASS · commit 2 落盘前所有文档互链自检一致"
+- **P2-2（估点顺扫修复偏乐观）**：§10 "顺扫修复" 从 10 min 调整为 20-30 min · 或接受 "若 typecheck 抓出 > 10 处调用链适配 · 本卡升 3 点 + Sprint-1 末 Retro 第 6 条证据"
+- **P2-3（B' 假设再证伪降级路径）**：§8 验收末尾加"若 DoD (g) 断言 1-2 仍失败 · 本卡立即 BLOCKED + 冒泡 Human · 默认降级路径 = ① C' 回退 `libVersion` 2.30.x 应急 + ② Sprint-2 COSTRA-12x 走 E' 完整 bootstrap 重构"
+- **P2-4（跨卡文档追写治理依据）**：§4 "可写" 组加注"追写 COSTRA-124 新建文档属接力卡治理反哺范式（D-017 §13.6/13.7 先例）· 非越权"
+
+**P2'' 冒烟副产物**：card-reviewer-tech 本次实际工具集合 `{Read, Grep, Glob(0), LS(0), WebFetch(0)}` · 全程 0 写类工具 · SBAI v1.1 §3.5 审查档物理隔离第 2 次实战证实。
+
+**回执路径确认**：
+1. ✅ 本 §0 段补充（含 PASS Verdict + 4 条 P2 登记）
+2. ✅ 报告原件落盘 `.team/reviews/COSTRA-125/card-review-1-tech.md`
+3. ✅ 4 条 P2 同步登记 `.team/members/miniapp-dev/state.md §6` 遗留段
+4. 不触发 Round-2（符合 SOP-CARD-REVIEW §4 PASS 路径）
+5. dispatch §1-§11 主体保持不变（最小变更纪律 · 仅 §0 新增 + 顶部元数据加 Card-Review 行）
+6. 下一步：Orchestrator spawn `costra-miniapp-dev` 派 R1 实装
 
 ---
 

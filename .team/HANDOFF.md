@@ -13,7 +13,7 @@
 
 ## §0 一句话断点（HEAD 之前 = 已兑现 · 之后 = 待做）
 
-> **2026-05-03 20:32 当前断点**：Human 第 7 次模拟器实测（20:09）**证伪 COSTRA-124 R1 假设**（`too eayly` 复现 ×7 + Launch Time 1864 ms）· R2 诊断定性翻转 v3（SDK 2.32.3+ 渲染层 storage group `_prepare` 就绪晚于 App.onLaunch · SDK+业务共责）· Human 20:32 D1/D2/D3 **全按推荐** · **COSTRA-125 立卡**（2 点 · P1 · 方案 B'+E' 合并版）· **COSTRA-124 部分闭合**（顶层副作用分支 close · commit `a296be0` 保留不撤回）· **FU-LAUNCH 分裂为 A/B/C 三子 FU**（A closed · B/C open 交棒 125）· **libversion-upgrade.md §3 反模式 #4 已追写** · 当前待**同轮 commit 落盘 → D-014 spawn `costra-card-reviewer-tech` 对 COSTRA-125 做卡审 → PASS 后 spawn `costra-miniapp-dev` 实装 → R1 审 → Human 第 8 次实测**。Sprint-1 收官期剩 3 天 · 若 125 实装顺利可在 Sprint-1 末收官。
+> **2026-05-04 08:30 当前断点**：**COSTRA-125 Card-Review R1 PASS 31/35**（by `costra-card-reviewer-tech` · 临界 PASS · 0 P0 · 0 P1 · 4 P2 记 state.md §6 遗留 · 不触发 Round-2）· dispatch §0 补 Card-Review 响应段 · **下一步 = spawn `costra-miniapp-dev` 派 COSTRA-125 R1 实装**（方案 B'+E' 合并版 · 8 条 DoD · ~2-2.5 h AI 侧）· R1 交付后 spawn `costra-review-tech` R1 审查 · PASS 后 Human 第 8 次模拟器实测 5 条断言 · 全 PASS → FU-LAUNCH-B close + COSTRA-125 Done + COSTRA-124 整卡 Done + Sprint-1 基建线 9 卡全数收官。Sprint-1 倒计剩 2 天。
 
 ---
 
@@ -21,15 +21,15 @@
 
 ### §1.1 当前时间戳
 
-- **更新时间**：2026-05-03 20:32
-- **更新者**：本会话 Orchestrator（HEAD 待 commit 后回填 · 预计格式 `docs(repo): costra-125 立卡 + fu split + libversion-upgrade anti-pattern #4`）
-- **Sprint**：Sprint-1（2026-04-23 ~ 2026-05-06 · **收官期 · 剩 3 天**）
+- **更新时间**：2026-05-04 08:30
+- **更新者**：本会话 Orchestrator（HEAD = `6d1a6c2` · 本轮 Card-Review 落盘 + dispatch §0 补响应 + state.md/board.md/HANDOFF.md 追写 · 待合进下一 commit）
+- **Sprint**：Sprint-1（2026-04-23 ~ 2026-05-06 · **收官期 · 剩 2 天**）
 
 ### §1.2 当前在办卡
 
 | 卡号 | Owner | Type | Points | 阶段 | 下一步 |
 |---|---|---|---|---|---|
-| **COSTRA-125** | miniapp-dev | fix | 2 | **dispatch 已立 · 等卡审** | spawn `costra-card-reviewer-tech` · 产出卡审报告 |
+| **COSTRA-125** | miniapp-dev | fix | 2 | **Card-Review R1 PASS 31/35 · 待 R1 实装** | spawn `costra-miniapp-dev` 派 R1 实装（方案 B'+E'） |
 | COSTRA-124 | miniapp-dev | fix | 1 | **部分闭合**（顶层副作用分支 close · architecture 保留）| 待 COSTRA-125 收官后 · FU-LAUNCH-A 真 close + 124 整卡 Done |
 | COSTRA-102 | miniapp-dev | feature | - | 等 Human 人验（长期挂起） | Human 本地验证 |
 | COSTRA-117 | devops-ops | fix | - | Todo（未动） | Sprint-2 或 Sprint-1 末扫一下 husky v10 |
@@ -203,7 +203,8 @@ reviews + FU-LAUNCH + miniapp-dev state.md · 当前断点：COSTRA-124 R1 两�
 | 版本 | 日期 | 维护者 | 变更 |
 |---|---|---|---|
 | v1.0 | 2026-05-03 12:41 | 本会话 Orchestrator | 立案 · 随 COSTRA-124 R1 Review 末端节点 · 会话 10 commits 末端（HEAD = 20b0e48） |
-| **v1.1** | **2026-05-03 20:32** | 本会话 Orchestrator | **R1 假设 Human 第 7 次实测证伪 → R2 诊断定性翻转 v3 → Human 全按推荐 → COSTRA-125 立卡 + COSTRA-124 部分闭合 + FU-LAUNCH 分裂 A/B/C + libversion-upgrade §3 反模式 #4 追写** · §0/§1/§2.1/§6 全面刷新 |
+| v1.1 | 2026-05-03 20:32 | 本会话 Orchestrator | R1 假设 Human 第 7 次实测证伪 → R2 诊断定性翻转 v3 → Human 全按推荐 → COSTRA-125 立卡 + COSTRA-124 部分闭合 + FU-LAUNCH 分裂 A/B/C + libversion-upgrade §3 反模式 #4 追写 · §0/§1/§2.1/§6 全面刷新 |
+| **v1.2** | **2026-05-04 08:30** | 本会话 Orchestrator | **COSTRA-125 Card-Review R1 PASS 31/35**（第 3 次 spawn 成功 · 前 2 次 Idle timeout 后 Human 选 P1 再试）· dispatch §0 补响应段 + 4 P2 记 state.md §6 · §0/§1.1/§1.2 刷新 · 下一步 spawn miniapp-dev R1 实装 |
 
 ---
 

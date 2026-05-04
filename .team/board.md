@@ -9,7 +9,9 @@
 > **🆕 验证问题响应 SOP（D-017 · 2026-04-28 13:59 Human 立案 · 14:15 落盘）**：项目遇到验证失败时标准流程 —— ① 责任领域识别（Orchestrator 30s） → ② 责任 Agent 根因分析（只诊断不改文件） → ③ 多方案对比（≥2~3 方案 · 列成本/价值/风险 + Human 决策点 Qn） → ④ Human 评估裁决 → ⑤ 派单实装。**禁止 Orchestrator 自行分析根因**（反模式 A） · E1/E2/E3 例外 · 反模式 ABCD 禁令 · COSTRA-120 首次实战。详见 `.team/decisions/D-017-verification-problem-response-sop.md`。
 > **🔄 D-011 实战验证三次通过**（2026-04-23）：COSTRA-100（2 轮 · 69 min） + Sprint-0 补审（7 卡 × 2 轮 · 29 min 并行） + **COSTRA-101 Round 1 刚自动拉起（22:49 · D-014-b 首次实战）**
 
-最后更新：`2026-05-03 20:32`（Orchestrator · 🆕 **COSTRA-125 立卡**：启动期 storage 异步化 · onLaunch 内同步调用根因解决 · 2 点 · P1 · 方案 B'+E' 合并版（异步 API 全量 + bootstrap Promise）· **COSTRA-124 R1 假设 Human 第 7 次模拟器实测证伪** · R2 诊断翻转为定性 v3（SDK + 业务共责 · 渲染层 storage group `_prepare` 就绪晚于 App.onLaunch）· **COSTRA-124 部分闭合**（顶层副作用子目标 close · commit `a296be0` 架构正确保留）· FU-LAUNCH 分裂为 A/B/C 三子 FU · A close · B/C open 交棒 COSTRA-125 · D-017 第 5 次实战 · SBAI v1.1 P2' 冒烟第 3 回产物）
+最后更新：`2026-05-04 08:30`（Orchestrator · ✅ **COSTRA-125 Card-Review R1 PASS 31/35**（by `costra-card-reviewer-tech` · SBAI v1.1 P2'' 冒烟第 2 次 · 审查档物理只读验证通过 · 0 P0 · 0 P1 · 4 P2 记 state.md §6 遗留 · 不触发 Round-2）· dispatch §0 补 Card-Review 响应段 · 下一步 spawn `costra-miniapp-dev` R1 实装 · Sprint-1 末收官期 · 倒计剩 2 天）
+>
+> （上一条归档）`2026-05-03 20:32`（Orchestrator · 🆕 **COSTRA-125 立卡**：启动期 storage 异步化 · onLaunch 内同步调用根因解决 · 2 点 · P1 · 方案 B'+E' 合并版（异步 API 全量 + bootstrap Promise）· **COSTRA-124 R1 假设 Human 第 7 次模拟器实测证伪** · R2 诊断翻转为定性 v3（SDK + 业务共责 · 渲染层 storage group `_prepare` 就绪晚于 App.onLaunch）· **COSTRA-124 部分闭合**（顶层副作用子目标 close · commit `a296be0` 架构正确保留）· FU-LAUNCH 分裂为 A/B/C 三子 FU · A close · B/C open 交棒 COSTRA-125 · D-017 第 5 次实战 · SBAI v1.1 P2' 冒烟第 3 回产物）
 >
 > （上一条归档）`2026-05-02 20:58`（Orchestrator · 🆕 **COSTRA-124 立卡**：启动期 storage 时序修复 + FU-LAUNCH 闭合 · 1 点 · P1 · SBAI v1.1 P2' 冒烟产物驱动 · D-017 第 4 次实战 · 装扮 subagent `costra-miniapp-dev` 独立核查推翻前 3 次 FU 定性 · 坐实 `storage.ts:29` 顶层副作用 · 本卡 Sprint-1 收官最后一张 fix · 走 `costra-card-reviewer-tech` 预审 + `costra-miniapp-dev` 实装 + `costra-review-tech` R1 审查 · Human E1 路径末端实测）
 >
