@@ -242,7 +242,7 @@ Error: invoke too eayly
   - 若分包模块顶层有 `wx.*` 副作用 · 与分包 loader 的 storage group 还原时序会冲突 · 再现 `too eayly` 的**子分包变种**
   - **识别线索**（从本次 COSTRA-124 追查过程自识别）：顺扫应覆盖 `miniprogram/pages-*/` 分包目录 · 不能只扫主包 · Sprint-2 `startup-top-level-call-check.mjs`（`docs/devops/startup-api-call-audit.md` §5 候选脚本）应显式纳入这一层
 
-### §3.4 反模式 4 · 过度信赖 onLaunch 作为 storage 就绪时刻（COSTRA-124 R1 假设证伪 · 2026-05-03 追写）
+### §3.4 反模式 4 · 过度信赖 onLaunch 作为 storage 就绪时刻
 
 - **坏例**（COSTRA-124 R1 方案 A · commit `a296be0`）：
   ```typescript
@@ -294,21 +294,16 @@ Error: invoke too eayly
   - 若同一个 API 族（storage / media / location 等）有同步 + 异步两套 · 启动期优先走异步版本
   - 异步 API 在 AMBER 区间（Launch Time 900-935 ms）可能仍劣化 · 但不会抛 Error 级告警
 
-- **⚠️ 2026-05-08 措辞收紧到 v4（COSTRA-126）**：
+**v5 定稿（COSTRA-127）**：`Expected updated data` 双因 = lib 2.32~2.33 SDK race（lib 3.8+ 修复）+ 业务 onShow setData 时序竞速（COSTRA-127 修复）。
 
-  > 微信开发者工具在**冷启动 webview**（重新打开项目）场景下，**lib 2.32.x ~ 2.33.x** 的渲染层 `Tt._prepare()` 自身 jsbridge 调用存在内部时序循环 · 抛 `too eayly` 系列错误（getGlobalStorage / setGlobalStorage / removeGlobalStorage / traceEvent / Failed get/delete storage group）· **lib 3.8+ 已基本修复**（实测 0 too eayly）· 这是 dev 工具冷启动现象 · 真机不复现 · 业务无责。本反模式由 COSTRA-124 R2 误判 + COSTRA-125 跨 lib 实测纠正。**业务侧治理**：所有 wx.*StorageSync 同步 API 一律改 wx.getStorage Promise 形态（基础库 2.21.0+ 支持 · COSTRA-125 已实装）· 这是充分必要条件——无论 SDK 内部 race 是否被官方修复，业务都要用 Promise 形态。
+| 版本 | 定性 | 卡号 |
+|---|---|---|
+| v1~v2 | 误判 · 见 history | 124 |
+| v3 | SDK + 业务共责（onLaunch 同步 storage） | 125 |
+| v4 | SDK race · 业务无责 | 126 |
+| **v5（定稿）** | 双因（SDK race · lib 3.8+ 修 + 业务 onShow 时序） | **127** |
 
-- **⚠️ 2026-05-08 措辞更新到 v5（COSTRA-127 · FU-LAUNCH-C 修复）**：
-
-  > `Expected updated data but get first rendering data` 在 lib 3.8.12 重新打开项目冷启动后仍 1 次残留 · **双因**：
-  > 1. **SDK 兼容 race**（lib 2.32~2.33 已 lib 3.8 修复 · 业务无责）
-  > 2. **业务时序问题**（home/mine onShow 同步 setData 无 bootstrap gate · 与 onLoad 的 .then gate 形成竞速）
-  >
-  > COSTRA-127 方案 B 实装：`login.ts switchTab→reLaunch` + `home/mine onShow 加 bootstrapPromise.then gate` · 实测 0 次残留 · FU-LAUNCH-C `closed @ COSTRA-127`。
-
-  - **v3/v4 定性遗留价值**：v3/v4 把根因定位到"SDK 内部 race" · 推动了 COSTRA-125 全 async 化重构 + COSTRA-127 业务时序 gate 修复 · 治理产出作为充分必要条件**永久保留**
-  - **v5 新增根因**：业务侧 onShow 无 bootstrap gate 导致 setData 与渲染层首渲染数据竞速 · 业务有责
-  - **跨 lib 实测对照证据**：详见 §4 章节
+- v3/v4 治理产出作为充分必要条件**永久保留**（全 async 化 + bootstrap gate）
 
 ### §3.5 反模式 5 · 使用 `development` 基础库验证业务（COSTRA-126 新增 · 2026-05-08）
 

@@ -45,18 +45,7 @@
 
 ## §6 遗留问题 / FU / 债务
 
-- FU-LAUNCH-FIRST-RENDER-RACE · `getGlobalStorage fail: too eayly` 错误 · **定性已升级到 v3**（2026-05-03）
-  - **v1**（2026-04-29 ~ 2026-05-02 19:32 · 三次观察）："100% 微信 SDK 内部启动时序 Bug · 非业务"
-  - **v2**（2026-05-02 20:25 · 装扮 subagent 根因 v1）："我方 `miniprogram/services/storage.ts:29` 模块顶层副作用 `ensureVersion()` 在 `App()` 注册之前同步调 `wx.getStorageSync/clearStorageSync/setStorageSync` · 业务触发 · 非 SDK Bug"
-  - **v3（本次 2026-05-03 · R2 诊断再翻转）**："SDK 2.32.3+ 启动期 storage group `_prepare` 尚未就绪 + 业务在 `App.onLaunch` 内任何同步 storage 调用 = 必然冲突 · **SDK + 业务共同责任** · R1 假设（迁入 onLaunch 即安全）证伪 · onLaunch 内仍有第二触发点 `auth.ts:70 initAuth → getItem(TOKEN_KEY)`（async function 体内第一行 · 在 await 之前同步执行）"
-  - **证据**：Human 2026-05-03 20:09 第 7 次实测 · Console `[Costra] onLaunch env= dev` 先出 · 之后仍报 7+ 次 `[渲染层错误] too eayly` · Launch Time 1864 ms（基线 865 · ×2.16 劣化）
-  - **因果链（新）**：基础库 2.32.3 在 onLaunch 触发时渲染层 storage group `_prepare` 未就绪 → AppService 逻辑层任何同步 `wx.*StorageSync` 调用经 jsbridge 委托到渲染层 storage group → prepare 未就绪抛 too eayly（4 种 API · get/set/remove/metadata）· SDK 内部 try 吞 · 业务看不到错但 Console 留痕 · Launch Time 劣化
-  - **分裂为子 FU**（Q8 推荐）：
-    - FU-LAUNCH-FIRST-RENDER-RACE-**A**（storage.ts 顶层副作用 · COSTRA-124 已闭合 · 可 close）
-    - FU-LAUNCH-FIRST-RENDER-RACE-**B**（onLaunch 内同步 storage 调用族冲突 `_prepare` 未就绪 · COSTRA-125 候选认领 · 保持 `open`）
-    - FU-LAUNCH-FIRST-RENDER-RACE-**C**（`Expected updated data but get first rendering data` · R1 路径 ① 假设自然消失的判定因 storage 问题未修无法落实 · 保持 `open` · 等 COSTRA-125 实测）
-  - **推荐方案**（R2 诊断）：B'（异步 API 全量替换 · 2 点 · 中高置信）主推 · C'（降基础库到 2.30.x）兜底 · E'（bootstrap Promise + lazy init）Sprint-2 演进
-  - **Q1-Q8 决策点** 见 `history/2026-05-03-costra-124-r2-diagnose.md §7`
+- **FU-LAUNCH-FIRST-RENDER-RACE 族（A/B/C 子 FU）**：`closed @ COSTRA-127`（2026-05-08 17:55 · Human 实测兑现）· 完整治理叙事见 `history/2026-05-02` + `2026-05-03` + `2026-05-04` + `2026-05-08-costra-126` + `2026-05-08-costra-127` + `dispatch/COSTRA-124~127`
 
 - **COSTRA-124 Card-Review Round-1 Follow-up**（2026-05-02 21:05 · PASS-WITH-FOLLOWUP 26/30 · 3 P2 非强制建议 · R1 实装时自主决定是否合并）
   - **FU-124-P2-1**（估点实事求是）：dispatch §8 时间预算"30 min 两份文档"建议改为"45-60 min" · 或 Sprint-1 末 Retro 议题"紧急卡估点偏乐观"增列第 5 条证据
@@ -85,3 +74,4 @@
 - **2026-05-04T16:05:00+08:00 · COSTRA-125 R1 实装交付**（SBAI v1.1 接力卡实战第 4 回 · 六闸全绿 · 等 Human 第 8 次模拟器实测 + Orchestrator spawn review-tech Round-1）
 - **2026-05-08T18:30:00+08:00 · COSTRA-127 R1 实装交付**（SBAI v1.1 实战第 5 回 · 方案 B 实装（login reLaunch + home/mine onShow bootstrap gate）+ libversion v5 + 反模式 #6 + FU §f.6 + state.md §2/§3/§7 收尾 · 六闸全绿 · 2 commit 落盘 · 等 Human 实测 0 次 Expected updated data + Orchestrator spawn review-tech R1）
 - **2026-05-08T17:55:00+08:00 · COSTRA-127 Human 实测 5 条断言全 PASS · 整卡 CLOSED**（FU-LAUNCH-C `closed @ COSTRA-127` · 父 FU-LAUNCH-FIRST-RENDER-RACE `closed` · FU-LAUNCH 族 4 卡治理叙事完整收官 · D-017 Step 2 跨版本对照范式 + 业务时序根因诊断范式建立 · Sprint-1 末同卡簇 4 卡【124/125/126/127】全数收官）
+- **2026-05-08T18:45:00+08:00 · COSTRA-128 收尾清洗交付**（A~F 全完成 · 6 项注释/文档清洗 · 0 行为变更 · diff -x ≥ +x · 等 review-tech 形式 R1 + Human 终审）
