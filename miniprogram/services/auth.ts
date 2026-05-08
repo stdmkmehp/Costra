@@ -6,6 +6,7 @@
 // 承接 COSTRA-118 路径 A: E.P0-1（code 日志脱敏）/ E.P0-2（TokenRaw 字段对齐）/ E.P0-3（refresh body 字段名）
 import { getEnv } from './env';
 import { setItem, getItem, removeItem } from './storage';
+import { request } from './request';
 
 const TOKEN_KEY = '__costra_token_v1';
 const REFRESH_WINDOW_MS = 5 * 60 * 1000; // 距过期 < 5 分钟触发续签
@@ -128,10 +129,10 @@ export async function logout(): Promise<void> {
 
   if (had && !env.mockLogin) {
     try {
-      const { request } = await import('./request');
       await request<void>({
         method: 'POST',
         path: '/auth/logout',
+        body: { refresh_token: current!.raw.refresh_token },
         auth: true,
         timeout: 5_000
       });
@@ -169,7 +170,6 @@ export async function doWxLogin(): Promise<Token> {
   }
 
   // 真实链路（Backend OpenAPI: POST /v1/auth/wx-login）
-  const { request } = await import('./request');
   const resp = await request<TokenRaw>({
     method: 'POST',
     path: '/auth/wx-login',
@@ -201,7 +201,6 @@ export async function refreshToken(): Promise<void> {
     await setItem(TOKEN_KEY, stored);  // COSTRA-125: async
     return;
   }
-  const { request } = await import('./request');
   const resp = await request<TokenRaw>({
     method: 'POST',
     path: '/auth/refresh',
