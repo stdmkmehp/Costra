@@ -19,13 +19,14 @@
 - COSTRA-102 · 登录→首页→记一笔端到端（等 Human 人验）· 5~10 分钟
 - Todo: COSTRA-103（本地持久化 + outbox）/ COSTRA-112（主体字样清扫）
 - **COSTRA-124 · 部分闭合**（顶层副作用子目标 close · commit `a296be0` · FU-LAUNCH-A closed · 架构价值保留 · R1 假设证伪部分由 COSTRA-125 接力）
-- **🆕 COSTRA-125 · 启动期 storage 异步化 · onLaunch 内同步调用根因解决 · 2 点 · P1 · 方案 B'+E' 合并版 · 等 Orchestrator spawn 实装（卡审 + R1 + review-tech + Human 第 8 次实测）**
+- **🆕 COSTRA-125 · R1 实装已交付**（2026-05-04 · 方案 B'+E' 落盘 · storage/auth/sync 全 async + app bootstrapPromise + 3 Page onLoad gate + storage.spec.ts 新建 8 测 + FU §f.4 + startup-audit §7 R2 普查 + state §6 P2 4 条 · typecheck/test/lint/check:appjson/check:tooling/check:whitelist 六闸全绿 · 等 Human 第 8 次模拟器实测 + Orchestrator spawn review-tech Round-1）
 
 ## §3 交付历史索引
 
 - 2026-05-02 · `history/2026-05-02-getglobalstorage-v2-diagnose.md` · FU-LAUNCH 第 3 次观察 **重定性 v2**（D-017 Step 2 · SBAI v1.1 P2' 冒烟 · 证据坐实"storage.ts:29 模块顶层副作用 vs 高版本库时序约束"）
 - 2026-05-02 · `history/2026-05-02-costra-124-r1-implement.md` · COSTRA-124 R1 实装（SBAI v1.1 P2' 实战第 2 回 · DoD (a)(b)(c 路径 ①)(d)(f 预闭合)(g) 已交付 · (e) 待 Human 实测 · 2 文件代码修复 + 2 份新文档 + FU f.1+f.2 追写）
-- **2026-05-03** · `history/2026-05-03-costra-124-r2-diagnose.md` · COSTRA-124 **Revise-Round-2 根因重做**（SBAI v1.1 P2' 冒烟第 3 回 · D-017 Step 2 只诊断不修复 · 基于 Human 第 7 次实测证伪 R1 假设 · L1-L4 四层根因重做 · 6 方案对比 · 8 Q 决策点 · 0 次 miniprogram/ 写入 · 0 次 git commit）
+- 2026-05-03 · `history/2026-05-03-costra-124-r2-diagnose.md` · COSTRA-124 **Revise-Round-2 根因重做**（SBAI v1.1 P2' 冒烟第 3 回 · D-017 Step 2 只诊断不修复 · 基于 Human 第 7 次实测证伪 R1 假设 · L1-L4 四层根因重做 · 6 方案对比 · 8 Q 决策点 · 0 次 miniprogram/ 写入 · 0 次 git commit）
+- **2026-05-04** · `history/2026-05-04-costra-125-r1-implement.md` · COSTRA-125 **R1 实装交付**（SBAI v1.1 接力卡实战第 4 回 · 接续 R1 部分实装的 3 文件未提交 diff · 补齐 DoD (a)~(h) 全 8 条 · 8 文件代码改动 + 1 单测新建 + 3 文档追写 + state §2/§3/§7 收尾 · 六闸全绿 · 等 Human 第 8 次实测）
 
 ## §4 最近决策影响
 
@@ -76,4 +77,5 @@
 - 2026-05-02T21:30:00+08:00 · COSTRA-124 R1 实装交付（by costra-miniapp-dev · SBAI v1.1 P2' 实战第 2 回 · storage.ts:29 顶层副作用消除 + app.ts onLaunch 首行挂载 + 2 份新文档 + FU f.1+f.2 预闭合 · 等 Human 实测 + review-tech Round-1）
 - 2026-05-03T12:55:00+08:00 · COSTRA-124 Revise-Round-2 根因重做完成（by costra-miniapp-dev · SBAI v1.1 P2' 冒烟第 3 回 · **只诊断不改代码** · 基于 Human 第 7 次实测证伪 R1 假设 · L1-L4 四层根因重做 · 定性升级到 v3（SDK+业务共同责任）· 6 方案对比 · 8 Q 决策点 · **0 次 miniprogram/ 写入 · 0 次 git commit** · 等 Orchestrator 收 final message 回给 Human 裁决）
 - 2026-05-03T20:32:00+08:00 · COSTRA-125 立卡（by Orchestrator · Human D1/D2/D3 全按推荐 · 方案 B'+E' 合并版 · COSTRA-124 部分闭合 · FU-LAUNCH 分裂 A/B/C 三子 FU · A closed · B/C open · libversion-upgrade.md §3 追反模式 #4 · 本 state.md §2 active 调整 · 等 Orchestrator 后续 spawn card-reviewer-tech 卡审 + 实装 spawn）
-- **2026-05-04T08:30:00+08:00 · COSTRA-125 Card-Review Round-1 PASS 31/35**（by costra-card-reviewer-tech · SBAI v1.1 P2'' 冒烟第 2 次 · 审查档物理只读验证通过 · 0 P0 · 0 P1 · 4 P2 记本 §6 FU-125-P2-1~4 · 不触发 Round-2 · dispatch §0 补 Card-Review 响应段 · 下一步 Orchestrator spawn `costra-miniapp-dev` R1 实装）
+- 2026-05-04T08:30:00+08:00 · COSTRA-125 Card-Review Round-1 PASS 31/35（by costra-card-reviewer-tech · SBAI v1.1 P2'' 冒烟第 2 次 · 审查档物理只读验证通过 · 0 P0 · 0 P1 · 4 P2 记本 §6 FU-125-P2-1~4 · 不触发 Round-2 · dispatch §0 补 Card-Review 响应段 · 下一步 Orchestrator spawn `costra-miniapp-dev` R1 实装）
+- **2026-05-04T16:05:00+08:00 · COSTRA-125 R1 实装交付**（by costra-miniapp-dev · SBAI v1.1 接力卡实战第 4 回 · 接续 spawn 前已落 3 文件 R1 部分 diff · 补齐 DoD (a)~(h) 全 8 条 · 8 文件代码改动（storage/auth/sync/app/request + 3 Page）+ storage.spec.ts 新建 8 测 + FU §f.4 + startup-audit §7 R2 普查 + state.md §2/§3/§7 收尾 · 六闸全绿（typecheck/test 21 pass/lint/check:appjson/check:tooling/check:whitelist exit 0）· 2 commit 待落盘 · 等 Human 第 8 次模拟器实测 + Orchestrator spawn review-tech Round-1）

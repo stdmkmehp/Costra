@@ -112,3 +112,80 @@ rg -nE '^(const|let|var).*wx\.' miniprogram --glob '*.ts'
 ---
 
 **报告结束。本报告为 COSTRA-124 DoD (b) 交付物 · R1 交付后由 `costra-review-tech` Round-1 审查。**
+
+---
+
+## §7 R2 普查追写（COSTRA-125 实装 · 2026-05-04）
+
+### §7.1 触发与目的
+
+COSTRA-124 R1 假设证伪后（Human 2026-05-03 20:09 第 7 次模拟器实测 · `too eayly` ×7+ 仍报 · 详见 `.team/members/miniapp-dev/history/2026-05-03-costra-124-r2-diagnose.md`）· COSTRA-125 接力卡需在 `storage.ts → 全量 async` 重构基础上 · 重新普查"onLaunch 栈内同步 storage 调用"并对账闭合。
+
+普查范围扩大：从"模块顶层副作用"扩展到 **"App.onLaunch 栈内（含 `async function` 体内 await 之前的同步部分）所有 `wx.*StorageSync` 调用点"**。
+
+### §7.2 R2 调用点普查（COSTRA-124 R2 诊断证据 · 数学对账闭合）
+
+冷启动期同步 storage 调用 **共 4 次 · 仅 2 个源**（COSTRA-125 修复前）：
+
+| # | 文件:行号 | API | 调用链（onLaunch 起） | 时刻（相对 onLaunch 进入） |
+|---|---|---|---|---|
+| 1 | `app.ts:28` → `storage.ts:31` | `wx.getStorageSync(VERSION_KEY)` | `ensureVersion()` 第 1 行 | onLaunch 进入瞬间 |
+| 2 | `storage.ts:33` | `wx.clearStorageSync()` | `ensureVersion()` 内（version 不匹配分支） | ≈ 同上 |
+| 3 | `storage.ts:34` | `wx.setStorageSync(VERSION_KEY, 1)` | `ensureVersion()` 内（version 不匹配分支） | ≈ 同上 |
+| 4 | `app.ts:35` → `auth.ts:70` → `storage.ts:54` | `wx.getStorageSync(TOKEN_KEY)` | `initAuth()` async function 体内**第 1 行**（在 await 之前同步执行）· **R1 漏网点** | onLaunch 进入 + ~1 µs |
+
+**关键点**：调用 4 全部在 onLaunch 栈内同步发生 · 即使 `initAuth` 是 async function · JavaScript 语义保证函数体内**第一个 await 之前的代码仍在调用栈同步执行** · 所以 `getItem(TOKEN_KEY)` 在 onLaunch 同 tick 内被触发 · 命中渲染层 storage group `_prepare` 未就绪 · 抛 `too eayly`。
+
+### §7.3 COSTRA-125 修复后顺扫结果
+
+修复后 `miniprogram/` 顺扫（2026-05-04 R1 实装时）：
+
+```bash
+# 同步 API 残留扫描
+rg -n 'wx\.(get|set|remove|clear)StorageSync' miniprogram --glob '*.ts'
+```
+
+**结果**：
+
+| # | pattern | 命中数 | 说明 |
+|---|---|---|---|
+| 1 | `wx\.getStorageSync` 等 4 同步 API | **0** | 全部消灭 · storage.ts 已切换到 `wx.getStorage({key})` Promise 形态 |
+| 2 | 注释中的 `*Sync` 字样 | 2 | 均在文档/警示注释中（`storage.ts §不变量 #1` + `app.ts` 历史注释）· 非代码调用 · 合规 |
+| 3 | `^wx\.`（顶层裸调） | 0 | 继承 COSTRA-124 R1 状态 |
+| 4 | `^(const\|let\|var).*wx\.`（顶层赋值） | 0 | 同上 |
+
+**结论**：`miniprogram/**/*.ts` 在 COSTRA-125 修复后 · 启动期所有 storage 调用均走 **async API**（Promise 形态）· SDK 内部负责等待 `_prepare` 就绪后再 resolve。同步 storage API 不再存在。
+
+### §7.4 调用方扫尾对账（DoD (b)(c) 闭合证据）
+
+storage.ts 全 async 化后的 caller 改造 grep 结果（2026-05-04 typecheck PASS 后）：
+
+| caller 文件 | 改 await 数 | 说明 |
+|---|---|---|
+| `services/auth.ts` | 6 | initAuth `await getItem(TOKEN_KEY)` × 1 + doWxLogin `await setItem` × 1 + refreshToken `await setItem` × 2（mock + real）+ clearToken `await removeItem` × 1 + logout `await clearToken` × 1 |
+| `services/sync.ts` | 5 | getCursor `await getItem` × 1 + setCursor `await setItem` × 1 + syncPull `await getCursor/setCursor` × 2 + enqueueLocalEntry `await getItem/setItem` × 2 + __peekOutbox `await getItem` × 1（合计去重计入函数数）|
+| `services/request.ts` | 1 | 401 兜底分支 `await clearToken()`（COSTRA-125 顺扫漏点）|
+| `app.ts` | 2 | onLaunch 内 `await ensureVersion(); await initAuth();`（封在 IIFE bootstrapPromise 内）|
+| `pages/login/index.ts` | 0 | 无直接 storage 调用 · onLoad 走 `await getApp().bootstrapPromise.then(...)` gate |
+| `pages/home/index.ts` | 0 | 同上 |
+| `pages/mine/index.ts` | 0 | 同上 |
+| `pages/entry/index.ts` | 0 | 已有 `await enqueueLocalEntry(...)`（COSTRA-102 即对齐）|
+
+### §7.5 增值发现（Sprint-2 议题候选）
+
+R2 普查过程中识别到一个**潜在二阶时序约束**（**不在本卡范围 · 仅登记为 Sprint-2 议题候选**）：
+
+- `app.ts:globalData.bootAt = Date.now()` 在 `console.info('[Costra] onLaunch env=', ...)` 之前执行
+- 当前 `bootAt` 仅作为业务遥测使用 · 不影响 storage · 但若未来某处用 `bootAt` 做"启动是否完成"判断 · 应改用 `app.bootstrapPromise` 而非 `bootAt`（语义更准）
+
+### §7.6 与 §5 候选 CI 脚本的关系
+
+COSTRA-125 修复后 · §5 提议的 `scripts/devops/startup-top-level-call-check.mjs` 候选脚本依然有效 · 但应**扩展第 4 类规则**：
+
+- 旧规则（COSTRA-124 R1 期定义）：扫"模块顶层 `wx.*StorageSync`"
+- 新规则（COSTRA-125 R2 期补充）：扫"任何位置的 `wx.*StorageSync` 调用"（启动期 + 运行期都禁用同步 API · 因为渲染层 `_prepare` 就绪状态在前后台切换、热重载等场景仍可能未就绪）
+- 实施成本：从 0.5 点上调到 0.7 点（多一类 AST 模式匹配）· 决策人：Sprint-2 Planning
+
+---
+
+**R2 追写结束 · 2026-05-04 by `costra-miniapp-dev`（COSTRA-125 R1 交付物 · DoD (h) 文档追写）**

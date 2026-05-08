@@ -632,7 +632,62 @@ R1 MiniApp 交付 · T2 Tech 单轨 APPROVE 35/35 · Human 第五次模拟器启
 
 ---
 
-#### 🆕 f.1 · 第 4 次观察（定性翻转）+ 第 5 次观察（修复验证 · 待 Human 实测）· COSTRA-124 R1 追写
+#### 🆕 f.4 · COSTRA-125 R1 实装（方案 B'+E' 落盘 · 2026-05-04 · 等 Human 第 8 次实测）
+
+**追写时间**：2026-05-04（COSTRA-125 R1 实装交付时 · 由装扮 subagent `costra-miniapp-dev` 落盘）
+
+**追写依据**：dispatch §3 DoD (h) FU 分裂明细 · 严守"Human 实测未通过前 FU 不真 closed"硬约束（沿袭 f.1.B 范式）
+
+##### f.4.A · COSTRA-125 R1 改动落盘（2026-05-04）
+
+- **DoD (a) storage.ts 全量 async**：`getItem / setItem / removeItem / ensureVersion` 4 个导出 API 全部返回 `Promise<T>` / `Promise<void>` · 内部走 `wx.getStorage({key})` Promise 形态（基础库 2.21.0+） · 4 条不变量注释（顶部 ⚠️ 段）+ data not found 错误路径吞错 · `*StorageSync` 同步 API 全部消灭（grep 0 命中 · 详见 `docs/devops/startup-api-call-audit.md §7.3`）
+- **DoD (b) auth.ts 全路径 async**：initAuth `await getItem(TOKEN_KEY)`（**R1 漏网点** · async function 体内 await 之前同步执行）+ doWxLogin/refreshToken 4 处 `await setItem` + clearToken 改 `async` + logout `await clearToken`
+- **DoD (c) sync.ts 全路径 async**：getCursor / setCursor / enqueueLocalEntry / __peekOutbox 全改 async · syncPull 内 `await getCursor()/setCursor()`
+- **DoD (d) app.ts bootstrapPromise**：声明 `bootstrapPromise: Promise<void>` 占位 → onLaunch 内 IIFE 串行 `await ensureVersion(); await initAuth(); 无登录态跳 login` · onShow 走 `void this.bootstrapPromise.then(...)` gate · 错误兜底兼容 R1 行为（`wx.reLaunch` 跳 login）
+- **DoD (e) 3 个 Page onLoad gate**：login / home / mine 三页 `onLoad` 改 `getApp<{bootstrapPromise:Promise<void>}>().bootstrapPromise.then(...)` 内判定 hasValidSession · home/mine 的 onShow 同步检查保留（onShow 必触发于 onLoad 之后 · bootstrap 已完成 · 不破坏 tabBar 进入语义）
+- **DoD (f) 单测**：新建 `services/storage.spec.ts`（8 测：3 无 wx 环境兼容 + 5 mock wx 异步 API · 含 ttl 过期 + ensureVersion 首次/幂等 + data not found 路径）· `auth.spec.ts` 现状不调 storage（仅测 buildStored / wrap 同步逻辑）· 无需改 mock · 全 21 测 PASS
+- **顺扫漏点**：`request.ts:113` 401 兜底分支 `clearToken()` 改 `await clearToken()`（clearToken 改 async 后调用方未 await · typecheck PASS 因为表达式语句兼容 · 但 race 漏点修复）
+
+##### f.4.B · 第 8 次模拟器实测（2026-05-0x · 待 Human 触发）
+
+**触发预期**：COSTRA-125 R1 commit 落盘后 · Human 清缓存 + 重新编译 + 冷启动 · 按 dispatch §9 附录 5 条检查清单验证。
+
+**5 条断言**（AND 语义 · Launch Time AMBER 容差继承 P2-2）：
+
+- ☐ 1. `too eayly`（任意变种：get/set/remove/metadata）Console 错误 0 次上报
+- ☐ 2. `Expected updated data but get first rendering data` 0 次上报
+- ☐ 3. Launch Time ≤ 900 ms（基线 865 ms · AMBER 900-935 ms Human 个案裁决）
+- ☐ 4. 一键微信登录 → `auth.ts:157 [auth] wx.login ok {codeLen: 32}`
+- ☐ 5. 首页 → 记一笔 · 可进入 · 无白屏 · 无报错
+
+**实测结果**：**（待 Human 实测 @ 2026-05-0x · pending）**
+
+##### f.4.C · 子 FU 状态流转（待 Human 第 8 次实测后由 Orchestrator 改写）
+
+| 子 FU | 当前 | 第 8 次实测后预期 |
+|---|---|---|
+| FU-LAUNCH-A · 顶层副作用 | `closed` @ COSTRA-124 R1（commit `a296be0` 已落） | 保持 `closed`（不变） |
+| **FU-LAUNCH-B · 渲染层 storage group `_prepare` 时序** | `open`（COSTRA-125 R1 已实装 · 等实测） | **断言 1 PASS → `closed` @ COSTRA-125** · 断言 1 FAIL → 触发 dispatch §0 P2-3 降级路径（C' 回退 libVersion 2.30.x 应急 + Sprint-2 E' 完整 bootstrap 重构） |
+| FU-LAUNCH-C · 首渲染数据投递错位 | `open`（独立观察） | 断言 2 PASS → `closed` @ COSTRA-125 · 断言 2 FAIL → 保持 `open` 转 Sprint-2 |
+
+**父 FU `FU-LAUNCH-FIRST-RENDER-RACE`**：A/B/C 三子全 `closed` 后由 Orchestrator 同步 close。
+
+##### f.4.D · COSTRA-125 R1 涉及范围（commit 预设 sha 占位）
+
+- commit 1（待落盘）：`fix(miniapp): migrate storage/auth/sync to async api + bootstrap promise (COSTRA-125)`
+  - `miniprogram/services/storage.ts` · `auth.ts` · `sync.ts` · `request.ts` · `app.ts`
+  - `miniprogram/pages/login/index.ts` · `home/index.ts` · `mine/index.ts`
+  - 新建 `miniprogram/services/storage.spec.ts`
+- commit 2（待落盘）：`docs(repo): costra-125 fu split + libversion-upgrade anti-pattern #4 (COSTRA-125)`
+  - `.team/follow-ups/README.md`（本段 §f.4）
+  - `docs/devops/startup-api-call-audit.md §7`（R2 普查追写）
+  - `docs/devops/libversion-upgrade.md §3.4`（反模式 #4 · 已在 COSTRA-124 R2 翻转时随 dispatch 落盘 · 本卡仅核对存在性）
+  - `.team/members/miniapp-dev/state.md`（§2/§3/§7）
+  - `.team/members/miniapp-dev/history/2026-05-04-costra-125-r1-implement.md`（新建）
+
+---
+
+
 
 **追写时间**：2026-05-02 21:xx（COSTRA-124 R1 实装交付时 · 由装扮 subagent `costra-miniapp-dev` 落盘）
 
