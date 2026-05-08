@@ -1,7 +1,8 @@
 // services/auth.ts · 登录闭环（真实链路 + Mock 降级）
 // 卡号: COSTRA-102（重写）· 原骨架: COSTRA-030
+// COSTRA-125: storage async 迁移 · R1 漏网点 auth.ts:70 `getItem(TOKEN_KEY)` 改 await · initAuth/doWxLogin/refreshToken/clearToken 全链 async 对齐
 // 契约事实源: server/api/openapi.yaml #/components/schemas/AuthTokenPair
-// 上游派单: .team/dispatch/COSTRA-102-miniapp-login-e2e.md §D2.2
+// 上游派单: .team/dispatch/COSTRA-102-miniapp-login-e2e.md §D2.2 · .team/dispatch/COSTRA-125-miniapp-storage-async-migration.md §3 (b)
 // 承接 COSTRA-118 路径 A: E.P0-1（code 日志脱敏）/ E.P0-2（TokenRaw 字段对齐）/ E.P0-3（refresh body 字段名）
 import { getEnv } from './env';
 import { setItem, getItem, removeItem } from './storage';
@@ -67,7 +68,9 @@ function buildStored(raw: TokenRaw): TokenStored {
 }
 
 export async function initAuth(): Promise<void> {
-  const saved = getItem<TokenStored>(TOKEN_KEY);
+  // COSTRA-125: getItem 已改 async · 必须 await · 否则 saved 是 Promise 永不等于 TokenStored
+  // R2 诊断（2026-05-03）坐实：R1 漏网点 · async function 体内 await 之前的同步代码仍在 onLaunch 栈内执行
+  const saved = await getItem<TokenStored>(TOKEN_KEY);
   if (saved && saved.access_expires_at > Date.now()) {
     current = wrap(saved);
     return;
@@ -108,9 +111,10 @@ export function getSession(): {
   };
 }
 
-export function clearToken(): void {
+export async function clearToken(): Promise<void> {
   current = null;
-  removeItem(TOKEN_KEY);
+  // COSTRA-125: removeItem 已改 async · 调用方 logout() 已 async · 天然兼容
+  await removeItem(TOKEN_KEY);
 }
 
 /**
@@ -137,7 +141,7 @@ export async function logout(): Promise<void> {
     }
   }
 
-  clearToken();
+  await clearToken();
   try {
     wx.reLaunch({ url: '/pages/login/index' });
   } catch {
@@ -160,7 +164,7 @@ export async function doWxLogin(): Promise<Token> {
     const mock = mockExchange(code);
     const stored = buildStored(mock);
     current = wrap(stored);
-    setItem(TOKEN_KEY, stored);
+    await setItem(TOKEN_KEY, stored);  // COSTRA-125: async
     return current;
   }
 
@@ -174,7 +178,7 @@ export async function doWxLogin(): Promise<Token> {
   });
   const stored = buildStored(resp);
   current = wrap(stored);
-  setItem(TOKEN_KEY, stored);
+  await setItem(TOKEN_KEY, stored);  // COSTRA-125: async
   return current;
 }
 
@@ -194,7 +198,7 @@ export async function refreshToken(): Promise<void> {
     const refreshed = mockExchange('refresh', current.raw.refresh_token);
     const stored = buildStored(refreshed);
     current = wrap(stored);
-    setItem(TOKEN_KEY, stored);
+    await setItem(TOKEN_KEY, stored);  // COSTRA-125: async
     return;
   }
   const { request } = await import('./request');
@@ -206,7 +210,7 @@ export async function refreshToken(): Promise<void> {
   });
   const stored = buildStored(resp);
   current = wrap(stored);
-  setItem(TOKEN_KEY, stored);
+  await setItem(TOKEN_KEY, stored);  // COSTRA-125: async
 }
 
 // ---- helpers ----

@@ -1,5 +1,6 @@
 // services/request.ts · 统一请求层（Token 注入 + 错误映射 + 自动续签 + Idempotency-Key）
 // 卡号: COSTRA-102（重写）· 原骨架: COSTRA-030
+// COSTRA-125: clearToken 已改 async（storage async 迁移）· 401 兜底分支加 await
 // 契约事实源: server/api/openapi.yaml · docs/api/error-codes.md
 // 承接 COSTRA-118 路径 A: E.P0-4（Idempotency-Key 自动注入）/ E.P0-5（错误响应顶层字段解析）/ E.P1-2（CLIENT_NETWORK_ERROR 前缀）
 import { getEnv } from './env';
@@ -110,7 +111,8 @@ export async function request<T = unknown>(opts: RequestOptions): Promise<T> {
             });
             resolve(retried);
           } catch (e) {
-            clearToken();
+            // COSTRA-125: clearToken 已改 async · 必须 await（否则 reject 在 storage 写入前就抛 · race）
+            await clearToken();
             try { wx.reLaunch({ url: '/pages/login/index' }); } catch { /* noop */ }
             reject(toApiError(status, body));
           }

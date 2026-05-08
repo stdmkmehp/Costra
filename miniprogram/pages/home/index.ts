@@ -1,9 +1,14 @@
 // pages/home/index.ts
 // 首页（tabBar #1）：本月概览 + 最近 5 笔 + 快捷入口。
 // 卡号: COSTRA-102 · 承接 COSTRA-118 E.P1-4（TODO 注释纠正）
-// Refs: COSTRA-030, docs/design/ia.md §首页
+// COSTRA-125: onLoad 加 bootstrapPromise gate · onShow 同步检查保留（onShow 必在 onLoad 之后 · bootstrap 已完成）
+// Refs: COSTRA-030, docs/design/ia.md §首页 · .team/dispatch/COSTRA-125-miniapp-storage-async-migration.md §3 (e)
 import { hasValidSession, getToken } from '../../services/auth';
 import { formatMoney } from '../../utils/money';
+
+interface AppWithBootstrap {
+  bootstrapPromise: Promise<void>;
+}
 
 Page({
   data: {
@@ -17,6 +22,17 @@ Page({
     incomeDisplay: '0.00',
     expenseDisplay: '0.00',
     netDisplay: '0.00',
+  },
+
+  onLoad() {
+    // COSTRA-125: 等 bootstrap 完成再判定登录态 · 否则首次进首页（深链接 / 冷启动）会误跳 login
+    // onShow 中保留同步 hasValidSession 检查 · onShow 必触发于 onLoad 之后 · bootstrap 已完成
+    const app = getApp<AppWithBootstrap>();
+    void app.bootstrapPromise.then(() => {
+      if (!hasValidSession()) {
+        wx.reLaunch({ url: '/pages/login/index' });
+      }
+    });
   },
 
   onShow() {

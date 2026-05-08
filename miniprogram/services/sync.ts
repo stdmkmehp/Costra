@@ -1,8 +1,10 @@
 // services/sync.ts · 增量同步（骨架 → 契约对齐版）
 // 卡号: COSTRA-102（重写）· 原骨架: COSTRA-030
+// COSTRA-125: storage async 迁移 · D3 不留半拉子 · getCursor/setCursor/enqueueLocalEntry/__peekOutbox 全改 async · syncPull 内部加 await
 // 契约事实源: server/api/openapi.yaml /sync/pull · docs/api/sync-protocol.md §3
 // 承接 COSTRA-118 路径 A: E.P0-6（/sync/pull 端点契约对齐）/ E.P0-7（Entity 枚举对齐 OpenAPI tags）
 // 后续承接卡: COSTRA-103（outbox payload snake_case + 批量 push）/ COSTRA-104（真实推送）
+// Refs: .team/dispatch/COSTRA-125-miniapp-storage-async-migration.md §3 (c)
 
 import { request } from './request';
 import { getItem, setItem } from './storage';
@@ -57,12 +59,15 @@ interface OutboxItem extends LocalEntryInput {
   createdAt: number;
 }
 
-export function getCursor(): SyncCursor {
-  return getItem<SyncCursor>(CURSOR_KEY) || { watermark: EPOCH_ZERO };
+export async function getCursor(): Promise<SyncCursor> {
+  // COSTRA-125: getItem 已改 async · 必须 await
+  const saved = await getItem<SyncCursor>(CURSOR_KEY);
+  return saved || { watermark: EPOCH_ZERO };
 }
 
-export function setCursor(cur: SyncCursor): void {
-  setItem(CURSOR_KEY, cur);
+export async function setCursor(cur: SyncCursor): Promise<void> {
+  // COSTRA-125: setItem 已改 async · 必须 await
+  await setItem(CURSOR_KEY, cur);
 }
 
 /**
@@ -79,7 +84,7 @@ export function setCursor(cur: SyncCursor): void {
  * 留给 COSTRA-103 本地持久化卡承接。
  */
 export async function syncPull(familyId: string, opts?: { limit?: number }): Promise<SyncPullResponse> {
-  const cur = getCursor();
+  const cur = await getCursor();  // COSTRA-125: async
   const resp = await request<SyncPullResponse>({
     method: 'GET',
     path: '/sync/pull',
@@ -91,7 +96,7 @@ export async function syncPull(familyId: string, opts?: { limit?: number }): Pro
   });
   // 本卡只对水位做"拉后推进"最小语义 · 真实冲突合并与去重在 COSTRA-103
   if (resp && typeof resp.watermark === 'string') {
-    setCursor({ watermark: resp.watermark });
+    await setCursor({ watermark: resp.watermark });  // COSTRA-125: async
   }
   return resp;
 }
@@ -102,15 +107,17 @@ export async function syncPull(familyId: string, opts?: { limit?: number }): Pro
  * Refs: COSTRA-030, docs/api/sync-protocol.md §2 push
  */
 export async function enqueueLocalEntry(entry: LocalEntryInput): Promise<{ localId: string }> {
-  const outbox = getItem<OutboxItem[]>(OUTBOX_KEY) || [];
+  // COSTRA-125: getItem/setItem 已改 async · 必须 await
+  const outbox = (await getItem<OutboxItem[]>(OUTBOX_KEY)) || [];
   const localId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const item: OutboxItem = { ...entry, localId, createdAt: Date.now() };
   outbox.push(item);
-  setItem(OUTBOX_KEY, outbox);
+  await setItem(OUTBOX_KEY, outbox);
   return { localId };
 }
 
 /** 仅供单测与 Human 本地验证脚本读取队列长度 · 生产页面不应消费 */
-export function __peekOutbox(): OutboxItem[] {
-  return getItem<OutboxItem[]>(OUTBOX_KEY) || [];
+export async function __peekOutbox(): Promise<OutboxItem[]> {
+  // COSTRA-125: getItem 已改 async · 必须 await
+  return (await getItem<OutboxItem[]>(OUTBOX_KEY)) || [];
 }
