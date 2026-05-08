@@ -231,3 +231,6 @@ BEGIN
 END $$;
 
 COMMIT;
+
+-- 运营风险审查（容量 / 清理 / 索引 / 软删-硬删策略）见 docs/db/ops-risk-audit-todo.md
+-- FU-DB-OPS-AUDIT · P3 · 触发阈值 DAU > 100 / Sprint-2+ DBA 体检窗口

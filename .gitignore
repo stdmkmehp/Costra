@@ -38,3 +38,6 @@ coverage/
 .husky/_
 
 key/
+
+# CodeBuddy IDE CloudBase 集成自动生成（项目未使用 CloudBase · ADR-0002 选 Go/MySQL/COS）
+.cloudbase/

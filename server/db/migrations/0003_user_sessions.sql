@@ -36,3 +36,6 @@ CREATE INDEX idx_user_sessions_expires
     ON user_sessions (expires_at) WHERE revoked_at IS NULL;
 
 COMMIT;
+
+-- 运营风险审查（user_sessions 容量估算 / 缺清理 job / idx 设计反讽 / 注销级联）
+-- 见 docs/db/ops-risk-audit-todo.md §4 · FU-DB-OPS-AUDIT

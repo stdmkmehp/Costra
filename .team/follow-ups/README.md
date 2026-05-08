@@ -14,6 +14,22 @@
 
 ## 登记列表
 
+### FU-DB-OPS-AUDIT · DB 全表运营风险审查（立卡前案）
+
+- **来源**：2026-05-08 Human 在 COSTRA-102 本地 server 验证期间提出
+- **登记时间**：2026-05-08 20:12（COSTRA-128 同卡簇收官后搬迁登记）
+- **范围**：12 张表 + audit_logs 分区 + idempotency_keys 横切运营态健康度审查（容量 / 清理 / 索引膨胀 / 软删-硬删策略 / GDPR 对齐）
+- **建议**：Backend-Agent 主驾 · DevOps 协同清理 job 落 cron · 5 项交付物（A 增长公式 / B 清理策略 / C 索引膨胀 / D 容量阈值 / E 隐私合规对齐）
+- **阻断级别**：P3（治理 · 不阻当前任何卡 · MVP ~10 用户无感）
+- **触发立案的可观察阈值**：
+  - DAU > 100（user_sessions 估算一年 18 万行 · 仍轻量但应建立机制）
+  - 或 Sprint-2+ DBA 体检窗口
+- **认领建议**：Sprint-2+ Backend-Agent 主驾 · DevOps 协同
+- **状态**：`open`
+- **完整前案**：[`docs/db/ops-risk-audit-todo.md`](../../docs/db/ops-risk-audit-todo.md)（横切清单 + user_sessions 单表锚点）
+
+---
+
 ### FU-001 · 业务占位昵称配置化
 
 - **来源**：`.team/reviews/COSTRA-101/round-1-tech.md` P2-1
