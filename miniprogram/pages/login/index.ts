@@ -2,6 +2,7 @@
 // 登录页：启动即检查续期；用户点按 → wx.login → POST /auth/wx-login → 可选 getUserProfile PATCH /users/me → 跳首页
 // 卡号: COSTRA-102 · 承接 COSTRA-118 E.P0-10-partA（去 getUserInfo）
 // COSTRA-125: onLoad 加 bootstrapPromise gate · 等 app.ts 串行 ensureVersion+initAuth 完成后再判定登录态
+// COSTRA-127: switchTab → reLaunch · 避免冷启动复用 home 旧实例触发 first-rendering-data race · 见 docs/devops/libversion-upgrade.md §3.6 反模式 #6
 // Refs: COSTRA-030, ADR-0004 §3 Token, Design flows/login.md · .team/dispatch/COSTRA-125-miniapp-storage-async-migration.md §3 (e)
 import { loginFlow, hasValidSession, getToken } from '../../services/auth';
 import { request } from '../../services/request';
@@ -23,7 +24,8 @@ Page({
     void app.bootstrapPromise.then(() => {
       // 若已有有效会话 → 直接跳首页（冷启动续期）
       if (hasValidSession()) {
-        wx.switchTab({ url: '/pages/home/index' });
+        // COSTRA-127: reLaunch 强制重新初始化 home · 避免 switchTab 复用旧实例触发 first-rendering-data race
+        wx.reLaunch({ url: '/pages/home/index' });
       }
       // 否则：保留在登录页 · 等用户点 onTapLogin
     });
@@ -79,7 +81,8 @@ Page({
         }
       }
 
-      wx.switchTab({ url: '/pages/home/index' });
+      // COSTRA-127: reLaunch 强制重新初始化 home · 避免 switchTab 复用旧实例触发 first-rendering-data race
+      wx.reLaunch({ url: '/pages/home/index' });
     } catch (e: any) {
       // 错误分型：服务端 401 / 网络错 / 其他
       let msg = '登录失败，请重试';

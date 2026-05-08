@@ -1,7 +1,8 @@
 // pages/home/index.ts
 // 首页（tabBar #1）：本月概览 + 最近 5 笔 + 快捷入口。
 // 卡号: COSTRA-102 · 承接 COSTRA-118 E.P1-4（TODO 注释纠正）
-// COSTRA-125: onLoad 加 bootstrapPromise gate · onShow 同步检查保留（onShow 必在 onLoad 之后 · bootstrap 已完成）
+// COSTRA-125: onLoad 加 bootstrapPromise gate
+// COSTRA-127: onShow 加 bootstrapPromise gate · 避免与 onLoad gate 形成 race · 修复 first-rendering-data 错误
 // Refs: COSTRA-030, docs/design/ia.md §首页 · .team/dispatch/COSTRA-125-miniapp-storage-async-migration.md §3 (e)
 import { hasValidSession, getToken } from '../../services/auth';
 import { formatMoney } from '../../utils/money';
@@ -36,12 +37,17 @@ Page({
   },
 
   onShow() {
-    if (!hasValidSession()) {
-      wx.reLaunch({ url: '/pages/login/index' });
-      return;
-    }
-    this.hydrateUser();
-    this.refresh();
+    // COSTRA-127: onShow 加 bootstrapPromise gate · 避免与 onLoad gate 形成 race
+    // 实测推翻"onShow 必在 onLoad 之后"假设：reLaunch 后 onShow 先触发，bootstrap 未完成时 hasValidSession() 返回 false
+    const app = getApp<AppWithBootstrap>();
+    void app.bootstrapPromise.then(() => {
+      if (!hasValidSession()) {
+        wx.reLaunch({ url: '/pages/login/index' });
+        return;
+      }
+      this.hydrateUser();
+      this.refresh();
+    });
   },
 
   /**
