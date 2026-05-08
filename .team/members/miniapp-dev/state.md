@@ -21,7 +21,7 @@
 - **COSTRA-124 · 完全闭合**（FU-LAUNCH-A `closed` + FU-LAUNCH-B `closed` 由 COSTRA-125 接力 · COSTRA-126 跨 lib 实测证伪 v3 假设 · 整卡架构治理价值保留）
 - **COSTRA-125 · 整卡 CLOSED**（2026-05-08 · 业务侧 storage/auth/sync 全 async + bootstrapPromise + 3 Page gate · COSTRA-126 跨 lib 实测证伪"业务有责"假设 · 真根因为 lib 2.32.x ~ 2.33.x SDK 内部 race · 业务侧实装为充分必要正确实践 · 等 Orchestrator 视情况 spawn review-tech 形式 R1 + Human 终审）
 - **🆕 COSTRA-126 · R1 实装已交付**（2026-05-08 · 开发期 libVersion 2.32.3 → 3.8.12 + 反模式 #4 措辞收紧 v4 + 反模式 #5 新增（禁 `development` lib）+ COSTRA-125 同卡簇收官 · 等 Orchestrator spawn review-tech 形式 R1 + Human 终审）
-- **🆕 COSTRA-127 · R1 实装已交付**（2026-05-08 · 方案 B 实装（login reLaunch + home/mine onShow bootstrap gate）+ FU-LAUNCH-C true close + libversion v5 + 反模式 #6 · 等 Human 实测 + Orchestrator spawn review-tech 形式 R1）
+- **🆕 COSTRA-127 · 整卡 CLOSED**（2026-05-08 17:55 · 方案 B 实装（login reLaunch + home/mine onShow bootstrap gate）+ FU-LAUNCH-C true close + libversion v5 + 反模式 #6 · **Human 模拟器实测 5 条断言全 PASS**（0 次 `Expected updated data` + 0 次 `too eayly` + 登录贯通 + tabBar 正常）· FU-LAUNCH 族 4 卡治理叙事完整收官 · 等 Orchestrator 视情况 spawn review-tech 形式 R1 + Human 终审）
 
 ## §3 交付历史索引
 
@@ -84,3 +84,4 @@
 - 2026-05-04T08:30:00+08:00 · COSTRA-125 Card-Review Round-1 PASS 31/35（by costra-card-reviewer-tech · SBAI v1.1 P2'' 冒烟第 2 次 · 审查档物理只读验证通过 · 0 P0 · 0 P1 · 4 P2 记本 §6 FU-125-P2-1~4 · 不触发 Round-2 · dispatch §0 补 Card-Review 响应段 · 下一步 Orchestrator spawn `costra-miniapp-dev` R1 实装）
 - **2026-05-04T16:05:00+08:00 · COSTRA-125 R1 实装交付**（SBAI v1.1 接力卡实战第 4 回 · 六闸全绿 · 等 Human 第 8 次模拟器实测 + Orchestrator spawn review-tech Round-1）
 - **2026-05-08T18:30:00+08:00 · COSTRA-127 R1 实装交付**（SBAI v1.1 实战第 5 回 · 方案 B 实装（login reLaunch + home/mine onShow bootstrap gate）+ libversion v5 + 反模式 #6 + FU §f.6 + state.md §2/§3/§7 收尾 · 六闸全绿 · 2 commit 落盘 · 等 Human 实测 0 次 Expected updated data + Orchestrator spawn review-tech R1）
+- **2026-05-08T17:55:00+08:00 · COSTRA-127 Human 实测 5 条断言全 PASS · 整卡 CLOSED**（FU-LAUNCH-C `closed @ COSTRA-127` · 父 FU-LAUNCH-FIRST-RENDER-RACE `closed` · FU-LAUNCH 族 4 卡治理叙事完整收官 · D-017 Step 2 跨版本对照范式 + 业务时序根因诊断范式建立 · Sprint-1 末同卡簇 4 卡【124/125/126/127】全数收官）

@@ -778,9 +778,15 @@ R1 MiniApp 交付 · T2 Tech 单轨 APPROVE 35/35 · Human 第五次模拟器启
 
 | 子 FU | 旧状态 | 新状态 | 闭合依据 |
 |---|---|---|---|
-| **FU-LAUNCH-C · 首渲染数据投递错位** | `degraded-to-p3-observe` @ COSTRA-126 | **`closed` @ COSTRA-127** | 方案 B 实装（login reLaunch + home/mine onShow bootstrap gate）+ Human 模拟器实测 0 次 `Expected updated data` |
+| **FU-LAUNCH-C · 首渲染数据投递错位** | `degraded-to-p3-observe` @ COSTRA-126 | **`closed` @ COSTRA-127** | 方案 B 实装（login reLaunch + home/mine onShow bootstrap gate）+ **Human 模拟器实测 5 条断言全 PASS @ 2026-05-08 17:55**（0 次 `Expected updated data` · 0 次 `too eayly` · 登录链路贯通 · tabBar 切换正常）|
 
-**父 FU `FU-LAUNCH-FIRST-RENDER-RACE`**：A/B 真 closed + C 真 closed → **父 FU `closed @ COSTRA-127`**
+**父 FU `FU-LAUNCH-FIRST-RENDER-RACE`**：A/B 真 closed + C 真 closed → **父 FU `closed @ COSTRA-127` @ 2026-05-08 17:55（Human 实测兑现）**
+
+**FU-LAUNCH 族 4 卡治理叙事完整收官**：
+- COSTRA-124（顶层副作用）→ FU-LAUNCH-A close
+- COSTRA-125（业务全 async）→ 治理充分必要正确实践
+- COSTRA-126（lib 升级 + 跨版本实测）→ FU-LAUNCH-B close + 证伪 v3 假设
+- COSTRA-127（业务 onShow 时序）→ FU-LAUNCH-C close + 证伪 v4 "业务无责" 假设
 
 ##### f.6.C · v4 → v5 措辞修正记录
 
