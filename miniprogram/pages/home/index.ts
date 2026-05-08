@@ -25,9 +25,9 @@ Page({
     netDisplay: '0.00',
   },
 
+  // onLoad gate（冗余兜底 · onShow gate 是主防线）
   onLoad() {
-    // COSTRA-125: 等 bootstrap 完成再判定登录态 · 否则首次进首页（深链接 / 冷启动）会误跳 login
-    // onShow 中保留同步 hasValidSession 检查 · onShow 必触发于 onLoad 之后 · bootstrap 已完成
+    // 等 bootstrap 完成再判登录态 · 避免冷启动竞速误跳 login
     const app = getApp<AppWithBootstrap>();
     void app.bootstrapPromise.then(() => {
       if (!hasValidSession()) {

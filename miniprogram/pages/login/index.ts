@@ -5,6 +5,7 @@
 // COSTRA-127: switchTab → reLaunch · 避免冷启动复用 home 旧实例触发 first-rendering-data race · 见 docs/devops/libversion-upgrade.md §3.6 反模式 #6
 // Refs: COSTRA-030, ADR-0004 §3 Token, Design flows/login.md · .team/dispatch/COSTRA-125-miniapp-storage-async-migration.md §3 (e)
 import { loginFlow, hasValidSession, getToken } from '../../services/auth';
+import { getEnv } from '../../services/env';
 import { request } from '../../services/request';
 
 interface AppWithBootstrap {
@@ -65,7 +66,7 @@ Page({
       await loginFlow();
 
       // Step 4: 可选画像同步（失败不阻塞）
-      if (profile && getToken()) {
+      if (profile && getToken() && !getEnv().mockLogin) { // Mock 模式短路
         try {
           await request({
             method: 'PATCH',

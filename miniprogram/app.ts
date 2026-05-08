@@ -54,6 +54,7 @@ App<AppOption>({
     this.bootstrapPromise = (async () => {
       await ensureVersion();
       await initAuth();
+      // 启动期兜底 · entry page 渲染前先定登录态（与 Page.onLoad/onShow gate 形成多层保险）
       if (!isLoggedIn()) {
         try { wx.reLaunch({ url: '/pages/login/index' }); } catch { /* 单测 / 非 wx 环境 noop */ }
       }

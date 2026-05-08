@@ -15,8 +15,9 @@ Page({
     avatarUrl: '',
   },
 
+  // onLoad gate（冗余兜底 · onShow gate 是主防线）
   onLoad() {
-    // COSTRA-125: 等 bootstrap 完成再判定登录态
+    // 等 bootstrap 完成再判登录态
     const app = getApp<AppWithBootstrap>();
     void app.bootstrapPromise.then(() => {
       if (!hasValidSession()) {
