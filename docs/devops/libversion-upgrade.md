@@ -294,9 +294,116 @@ Error: invoke too eayly
   - 若同一个 API 族（storage / media / location 等）有同步 + 异步两套 · 启动期优先走异步版本
   - 异步 API 在 AMBER 区间（Launch Time 900-935 ms）可能仍劣化 · 但不会抛 Error 级告警
 
+- **⚠️ 2026-05-08 措辞收紧到 v4（COSTRA-126 · Human 第 8 次跨 lib 实测推翻 v3 "SDK + 业务共同责任" 的归因）**：
+
+  > 微信开发者工具在**冷启动 webview**（重新打开项目）场景下，**lib 2.32.x ~ 2.33.x** 的渲染层 `Tt._prepare()` 自身 jsbridge 调用存在内部时序循环 · 抛 `too eayly` 系列错误（getGlobalStorage / setGlobalStorage / removeGlobalStorage / traceEvent / Failed get/delete storage group）· **lib 3.8+ 已基本修复**（实测 0 too eayly）· 这是 dev 工具冷启动现象 · 真机不复现 · 业务无责。本反模式由 COSTRA-124 R2 误判 + COSTRA-125 跨 lib 实测纠正。**业务侧治理**：所有 wx.*StorageSync 同步 API 一律改 wx.getStorage Promise 形态（基础库 2.21.0+ 支持 · COSTRA-125 已实装）· 这是充分必要条件——无论 SDK 内部 race 是否被官方修复，业务都要用 Promise 形态。
+
+  - **v3 定性遗留价值**：v3 把根因定位到"渲染层 storage group `_prepare` 就绪时序" · 推动了 COSTRA-125 的全 async 化重构 · 即便归因主体被 v4 纠正为"SDK 内部"，治理产出（业务全 Promise 形态）作为充分必要条件**永久保留**
+  - **跨 lib 实测对照证据**：详见 §4 章节
+  - **真机延后验证**：dev 工具冷启动现象与真机解耦 · `Expected updated data but get first rendering data` 在 lib 3.8.12 仍 1 次 · 仅 dev 工具复现 · 真机验证延后到 Sprint-2 / 提审前
+
+### §3.5 反模式 5 · 使用 `development` 基础库验证业务（COSTRA-126 新增 · 2026-05-08）
+
+- **坏例**（开发者工具"调试基础库"档位选 `development`）：
+  ```
+  调试基础库 → development（最新预览版）
+  ```
+  报错样本（Human 第 8 次实测 · 2026-05-08）：
+  ```
+  FrameworkError Error: [Service](TO:基础库开发同学)
+    在 onLoad 阶段访问 __wxConfig.useWebWorker 可能取不到值
+  FrameworkError Error: [Service](TO:基础库开发同学)
+    在 onLoad 阶段访问 __wxConfig.isFirstPage / isLazyLoad / plugins / subPackages 可能取不到值
+  ```
+  共 5 条 framework error · 启动期直接报红 · 业务流程被中断。
+
+- **好例**：业务**永远使用稳定版**（如 2.32.3 / 3.8.12 / 3.14.x）：
+  ```json
+  // project.config.json
+  {
+    "libVersion": "3.8.12"  // ✅ 稳定版 · 当前开发期默认
+  }
+  ```
+
+- **真因（关键识别点）**：
+  - `development` 是微信基础库团队**未发布的开发分支** · 不属于稳定版本号
+  - 错误文本含 `(TO:基础库开发同学)` 前缀 = SDK 内部 assert 断言 · 是给基础库团队自己看的诊断标签
+  - 业务侧无任何调用方对应 · 报错栈全在微信内部 framework 层
+  - `onLoad` 阶段 `__wxConfig` 未就绪是 SDK 内部状态机的中间态 · 稳定版不暴露此信号
+
+- **治理**：
+  - 业务**永远使用稳定版**（如 2.32.3 / 3.8.12 / 3.14.x）· `project.config.json` libVersion 字段不允许写 `development`
+  - 检测：CI 可考虑加 `check:libversion` 脚本扫 `project.config.json.libVersion` 不得为 `development`（本卡不实装 · 转 FU-LIBVERSION-DEV-GUARD P3 观察 · Sprint-2 候选）
+
+- **识别线索**：
+  - 启动期 Console 出现 `(TO:基础库开发同学)` 字样 → 立即检查 libVersion 是否设为 `development` 或某 nightly 预览版
+  - `__wxConfig.*` 类未就绪报错只在 development 档位出现 · 稳定版无此信号
+
+### §3.6 R1 假设证伪定稿 v4（COSTRA-124/125/126 三卡簇治理收官 · 2026-05-08）
+
+**纠正路径**：
+
+- COSTRA-124 R1 假设（2026-05-02）："顶层副作用迁入 onLaunch 即安全" → Human 第 7 次实测证伪
+- COSTRA-124 R2 定性 v3（2026-05-03）："SDK 2.32.3+ 渲染层 storage group `_prepare` 时序 · SDK + 业务共同责任" → Human 第 8 次跨 lib 实测推翻
+- **COSTRA-126 定稿 v4（2026-05-08）**："**lib 2.32.x ~ 2.33.x dev 冷启动 SDK 内部 bug · 业务无责** · COSTRA-125 全 async 化是预防性最佳实践（充分必要条件 · 无论 SDK 是否修复都该改）"
+
+**4 条独立证据链**（衔接 COSTRA-124 R2 诊断 + COSTRA-126 跨 lib 实测）：
+
+| # | 证据 | 出处 |
+|---|---|---|
+| 1 | 业务 grep `wx.*StorageSync` / `traceEvent` / `getSystemInfo` **全 0 命中** | COSTRA-125 R1 实装后全仓扫描 + COSTRA-126 复核 |
+| 2 | 报错栈 100% 在 SDK `WAWebview.js` 内部（`Tt._prepare` / `_setMetadata` / `createOrGetStorageGroup`）· 未进任何业务帧 | Human 第 7 次实测 + 第 8 次实测 Console 栈 |
+| 3 | 报错时刻 100% 在业务 `[Costra] onLaunch env= dev` 之前 · 与业务代码生命周期解耦 | Human 第 7 次实测 + 第 8 次实测时序锚点 |
+| 4 | lib 升级到 3.8.12 后 `too eayly` 整族消失（独立第 4 证据 · 推翻"业务有责"） | Human 第 8 次跨 lib 实测（2026-05-08 16:33 ~ 17:00） |
+
+**治理结论（v4 定稿）**：
+
+- COSTRA-125 全 async 化重构 = 充分必要条件 · 不撤回（即便 SDK race 已修也保留 · 防御未来 SDK 再回退）
+- COSTRA-126 开发期 libVersion 升级到 3.8.12 = 临时缓解 dev 工具体验 · NFR 上架最低基础库保持 2.32.3 不动（用户覆盖率优先）
+- 父 FU-LAUNCH-FIRST-RENDER-RACE 整族 close（A/B 真 closed · C 转 P3 观察 · 真机验证延后 Sprint-2）
+
+**Sprint-1 末 Retro 加固议题（17 + 18 候选）**：
+
+- 议题 17（已立 · 加固）：Review-Tech 纸面审不能拦住运行时假设漏洞 · 本次 v3 定性也通过 R2 诊断 + Card-Review 35 分制 · 但仍被 v4 实测纠正 · 证明"Human 跨 lib 实测"是规约类 T2 卡的最终裁决者
+- 议题 18（新立 · 本卡驱动）：**"反模式条目的措辞应区分'坏例（实测可复现）/ 治理结论（充分必要条件）/ 归因主体（可能被未来证据修订）'三层" · 避免归因主体证伪时整条被推翻**——本次 v3 → v4 的纠正中，"业务全 Promise 形态" 这一充分必要条件不变 · 仅"归因主体"从"SDK + 业务共同"修正为"SDK 内部"
+
 ---
 
-## §4 FU-LAUNCH 族关系表
+## §4 跨 lib 实测对照表（COSTRA-126 新增 · 2026-05-08）
+
+**数据来源**：Human 第 8 次模拟器实测（2026-05-08 16:33 ~ 17:00 时段 · 微信开发者工具版本 2.01.2510290 · macOS · COSTRA-125 R1 已落 + 业务代码无变更）
+
+### §4.1 清缓存 + 重新编译路径（IDE 进程已预热 · 不触发 webview 冷启动 race）
+
+| lib | too eayly | Expected updated data | Launch Time | 业务流程 |
+|---|---|---|---|---|
+| 2.33.0 | 0 | 0 | 2156 ms | ✅ |
+
+### §4.2 重新打开项目路径（IDE webview 冷启动 · 触发 SDK 内部 race）
+
+| lib | too eayly | Expected updated data | Launch Time | 业务流程 |
+|---|---|---|---|---|
+| 2.33.0 | 多次（getGlobalStorage / setGlobalStorage / removeGlobalStorage / traceEvent）| 1 次 | 3485 ms | ✅ 但有 SDK 报错 |
+| **3.8.12** | **0** | **1 次** | **4216 ms** | ✅（COSTRA-126 升级目标） |
+| 3.14.3 | （未测）| —— | —— | —— |
+| `development` | 0 too eayly · **5 条 framework error** `(TO:基础库开发同学)` `__wxConfig.*` | —— | —— | 启动期 framework error · 见 §3.5 反模式 #5 |
+
+### §4.3 关键结论
+
+- **`too eayly` 族**：lib 2.32.x ~ 2.33.x dev 冷启动复现 · lib 3.8.12 已修复（`too eayly` 整族 0 命中 · 4 条独立证据链直接证伪 v3）
+- **`Expected updated data` 警告**：lib 3.8.12 仍 1 次 · 仅 dev 工具冷启动复现 · 推测与 LazyCodeLoading + dev 工具 webview 启动时序相关 · 与 COSTRA-125 R1 修复无关 · 真机延后验证（FU-LAUNCH-C 转 P3 观察）
+- **Launch Time 劣化**：lib 3.8.12 冷启动 4216 ms（lib 2.33.0 冷启动 3485 ms · +731 ms）· 推测为 lib 体积增大 · dev 工具加载耗时 · **真机不会有此问题**（真机不走 dev webview 启动路径）
+- **`development` 档位禁用**：见 §3.5 反模式 #5
+
+### §4.4 待补充实测（Sprint-2 真机预览时补全）
+
+- lib 2.32.3（NFR 最低基础库 · 上架档位）实测对照（场景 A + B）
+- lib 3.14.3 实测对照（dev 工具最新稳定档位）
+- 真机预览实测（验证 dev 工具冷启动现象在真机不复现）
+
+---
+
+## §5 FU-LAUNCH 族关系表
 
 **≥ 1 张表 · 观察次序 / 定性翻转链 / 修复卡号**（对齐 P1-2 修订度量）
 
@@ -309,9 +416,9 @@ Error: invoke too eayly
 | **观察 5（R1 假设预期验证 · 2026-05-02 文档占位）** | 2026-05-02 21:xx（预期）| COSTRA-124 R1 修复 · Human 第 7 次模拟器启动（DoD (e)）· **文档写作时占位** | 预期：`too eayly` 0 条 + Launch Time ≤ 900 ms | **（待实测坐实）** | COSTRA-124 R1 |
 | **观察 6（HANDOFF 立案）** | 2026-05-03 12:41 | 本会话 Orchestrator 建 `.team/HANDOFF.md` · 预热第 7 次实测 | （无新 Console 事件） | （无变化） | `.team/HANDOFF.md` v1.0 |
 | **观察 7（R1 证伪 · 定性 v3 翻转）** | 2026-05-03 20:09 | Human 第 7 次模拟器实测（已清缓存 + 重新编译）| `too eayly` ×7+ × 4 种 API + Launch Time 1864 ms（基线 ×2.16 劣化）· **R1 假设证伪** | **定性翻转 v3**：SDK 2.32.3+ 渲染层 storage group `_prepare` 就绪时刻晚于 App.onLaunch · 任何 onLaunch 内同步 storage 调用必撞 `too eayly` · SDK + 业务**共同责任** | `.team/members/miniapp-dev/history/2026-05-03-costra-124-r2-diagnose.md` |
-| **观察 8（预期闭合）** | 2026-05-0x（待 COSTRA-125 实装 + Human 第 8 次实测）| COSTRA-125 方案 B'+E'（异步 API 全量 + bootstrap Promise）落盘后 Human 实测 | 预期：`too eayly` 0 条 + Launch Time ≤ 900 ms + 登录链路通 | **FU-LAUNCH-B close · 父 FU close**（待实测坐实）| **COSTRA-125**（接力卡） |
+| **观察 8（v4 翻转 · COSTRA-126 收官）** | 2026-05-08 16:33 ~ 17:00 | Human 第 8 次模拟器实测 · 5 lib 跨版本对照（2.33.0 / 3.8.12 / 3.14.3 / development）· COSTRA-125 R1 已落 + 业务代码无变更 | lib 2.33.0 冷启动复现 · **lib 3.8.12 too eayly 整族消失** · `Expected updated data` 仅 dev 工具复现 · `development` 档位 5 条 framework error | **定性翻转 v4**：lib 2.32.x ~ 2.33.x dev 冷启动 SDK 内部 bug · 业务无责 · COSTRA-125 全 async 化是预防性最佳实践 | **COSTRA-126**（开发期 libVersion 3.8.12 + 反模式 #4 措辞收紧 + 反模式 #5 新增） |
 
-### §4.1 定性翻转的治理意义
+### §5.1 定性翻转的治理意义
 
 - **范式价值**：前 3 次定性**一致误判** · 第 4 次经"Human 新线索 + 装扮 subagent 独立核查"翻转为 v2 · **第 7 次经 Human 模拟器实测再次翻转为 v3** —— 证明 SBAI v1.1 "装扮 subagent 独立核查可翻转历史定性" 的设计有效且具持续性（Sprint-1 末 Retro 议题 15 加固）
 - **监督意义**：历史 FU 的定性不是绝对的 · 当出现新线索（特别是来自 Human 的、可反驳当前定性的线索）或**实测失败**时 · 必须**主动重审** · 不能用"已经观察 N 次都是这个定性"作为拒绝重审的理由

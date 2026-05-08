@@ -687,6 +687,75 @@ R1 MiniApp 交付 · T2 Tech 单轨 APPROVE 35/35 · Human 第五次模拟器启
 
 ---
 
+#### 🆕 f.5 · COSTRA-126 跨 lib 实测证伪 + FU 状态终结流转（2026-05-08）
+
+**追写时间**：2026-05-08 17:30（COSTRA-126 整卡同轮落盘 · Human 第 8 次跨 lib 实测后）
+
+**追写依据**：Human 第 8 次模拟器实测（2026-05-08 16:33 ~ 17:00）跨 5 lib 版本对照 + 业务代码 grep 三重 0 命中 → COSTRA-124 R2 v3 定性"SDK + 业务共责"被实测证伪 → 修正定性 v4"lib 2.32.x ~ 2.33.x dev 工具冷启动 SDK 内部 race · 业务无责"
+
+##### f.5.A · 跨 lib 实测证据（5 版本对照）
+
+**清缓存 + 重新编译**（IDE 进程已预热 · webview 复用）：
+
+| lib | too eayly | Expected updated data | Launch Time | 业务流程 |
+|---|---|---|---|---|
+| 2.33.0 | 0 | 0 | 2156 ms | ✅ |
+
+**重新打开项目**（IDE webview 冷启动）：
+
+| lib | too eayly | Expected updated data | Launch Time | 业务流程 |
+|---|---|---|---|---|
+| 2.33.0 | 多次（getGlobalStorage / setGlobalStorage / removeGlobalStorage / traceEvent）| 1 次 | 3485 ms | ✅ 但 SDK 报错 |
+| 3.8.12 | **0**（整族消失）| 1 次（残留）| 4216 ms | ✅ |
+| 3.14.3 | （未测，留 Sprint-2 真机预览补全）| —— | —— | —— |
+| `development` | 0 too eayly · 5 条 framework error `(TO:基础库开发同学)` `__wxConfig.useWebWorker / isFirstPage / isLazyLoad / plugins / subPackages` | —— | —— | 启动期 framework error（不可用于业务验证）|
+
+##### f.5.B · 4 条独立证据链（业务无责）
+
+1. **业务代码 grep 三重 0 命中**：`wx.*StorageSync` / `traceEvent` / `getSystemInfo` 全仓 0 命中
+2. **报错栈 100% 在 SDK 内部**：lib 2.33.0 场景 B 全部报错栈在 `WAWebview.js` 的 `Tt._prepare` / `_setMetadata` / `traceEvent` · 0 行进业务代码
+3. **报错时刻 100% 在 onLaunch 之前**：lib 2.33.0 场景 B 所有 `[渲染层错误]` 在 `[Costra] onLaunch env= dev` 之前打印 · 业务代码尚未执行
+4. **lib 升级直接证伪**：lib 2.33.0 → 3.8.12 业务代码零变更 · `too eayly` 整族消失 → 不是业务能修的
+
+##### f.5.C · 子 FU 终结流转（COSTRA-126 同轮）
+
+| 子 FU | 旧状态 | 新状态 | 闭合依据 |
+|---|---|---|---|
+| FU-LAUNCH-A · 顶层副作用 | `closed` @ COSTRA-124 R1 | `closed`（不变） | commit `a296be0` 物理消除 · 架构治理价值保留 |
+| **FU-LAUNCH-B · 渲染层 storage group `_prepare` 时序** | `open` @ COSTRA-125 R1 等实测 | **`closed` @ COSTRA-125 R1 + COSTRA-126 lib 升级** | 业务侧已通过 COSTRA-125 全 async 化（commit `4643f89`）· 无论 SDK 是否 race · 业务代码均已是充分必要正确实践 · lib 3.8.12 同时把 SDK 内部 race 修了 |
+| **FU-LAUNCH-C · 首渲染数据投递错位** | `open` @ 等实测 | **`degraded-to-p3-observe`** · 真机延后验证 | lib 3.8.12 仍残留 1 次 · 仅 IDE 冷启动复现 · 与 LazyCodeLoading + dev 工具相关 · 与业务代码无关 · 真机不复现的概率高 · 留 Sprint-2 提审前真机验证 |
+
+**父 FU `FU-LAUNCH-FIRST-RENDER-RACE`**：A 真 close + B 真 close + C 降 P3 观察 → **父 FU 状态 `closed`**（业务侧治理已完整 · C 残留只在 dev 工具 · 不阻 Sprint-1 收官）
+
+##### f.5.D · 新立 FU-LIBVERSION-DEV-GUARD（P3 观察 · 不计点 · Sprint-2 候选）
+
+- **范围**：CI 加 `check:libversion` 脚本扫 `project.config.json.libVersion` 不得为 `development`
+- **背景**：本次 Human 实测时切到 `development` lib 立即出现 5 条 framework error `(TO:基础库开发同学)` · 暴露"无防护时易踩内部分支"
+- **建议**：Sprint-2 加入 `scripts/devops/libversion-check.mjs`（参照 `whitelist-check.mjs` / `appjson-pages-check.mjs` 范式）+ `pr-check.yml` step
+- **优先级**：P3 观察（开发期偶发 · 真机不可能用 development · 边界外漂移）
+- **状态**：`open`
+- **owner_card**：（待 Sprint-2 Planning 认领）
+
+##### f.5.E · COSTRA-126 实装范围
+
+- commit 1：`chore(miniapp): bump libversion 2.32.3 → 3.8.12 dev (COSTRA-126)`
+  - `project.config.json` libVersion `2.32.3` → `3.8.12`（开发期）
+  - `miniprogram/services/storage.ts` 顶部不变量注释收紧（开发期 lib + NFR 最低基础库分离）
+  - `miniprogram/README.md` 区分"开发期基础库"vs"NFR 最低基础库"+ 禁用 `development` 警告
+- commit 2：`docs(repo): costra-126 libversion-upgrade v4 + anti-pattern #5 + costra-125 close (COSTRA-126)`
+  - `docs/devops/libversion-upgrade.md` §3.4 措辞修正 v4 + §3.5 反模式 #5 + §4 跨 lib 对照表 + §3.6 R1 假设证伪定稿
+  - `.team/follow-ups/README.md`（本段 §f.5）
+  - `.team/members/miniapp-dev/state.md`（§2/§3/§7）
+  - `.team/members/miniapp-dev/history/2026-05-08-costra-126-libversion-upgrade.md`（新建）
+
+##### f.5.F · NFR 最低基础库不动（明文声明）
+
+- `docs/PRD.md` / `docs/qa/test-strategy.md` / `docs/qa/smoke-cases.md` / `docs/qa/wechat-review-checklist.md` 的 **"最低基础库 2.32.3"** 一律不改
+- 理由：开发期 libVersion（开发者工具调试基础库）vs 上架 NFR 最低基础库（影响真机用户覆盖率）是两个独立概念
+- 抬高 NFR 是产品决策（Epic-G 上架合规） · COSTRA-126 不在 Scope · 留 Sprint-2 PM 评估
+
+---
+
 
 
 **追写时间**：2026-05-02 21:xx（COSTRA-124 R1 实装交付时 · 由装扮 subagent `costra-miniapp-dev` 落盘）

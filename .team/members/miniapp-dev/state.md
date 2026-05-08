@@ -18,8 +18,9 @@
 
 - COSTRA-102 · 登录→首页→记一笔端到端（等 Human 人验）· 5~10 分钟
 - Todo: COSTRA-103（本地持久化 + outbox）/ COSTRA-112（主体字样清扫）
-- **COSTRA-124 · 部分闭合**（顶层副作用子目标 close · commit `a296be0` · FU-LAUNCH-A closed · 架构价值保留 · R1 假设证伪部分由 COSTRA-125 接力）
-- **🆕 COSTRA-125 · R1 实装已交付**（2026-05-04 · 方案 B'+E' 落盘 · storage/auth/sync 全 async + app bootstrapPromise + 3 Page onLoad gate + storage.spec.ts 新建 8 测 + FU §f.4 + startup-audit §7 R2 普查 + state §6 P2 4 条 · typecheck/test/lint/check:appjson/check:tooling/check:whitelist 六闸全绿 · 等 Human 第 8 次模拟器实测 + Orchestrator spawn review-tech Round-1）
+- **COSTRA-124 · 完全闭合**（FU-LAUNCH-A `closed` + FU-LAUNCH-B `closed` 由 COSTRA-125 接力 · COSTRA-126 跨 lib 实测证伪 v3 假设 · 整卡架构治理价值保留）
+- **COSTRA-125 · 整卡 CLOSED**（2026-05-08 · 业务侧 storage/auth/sync 全 async + bootstrapPromise + 3 Page gate · COSTRA-126 跨 lib 实测证伪"业务有责"假设 · 真根因为 lib 2.32.x ~ 2.33.x SDK 内部 race · 业务侧实装为充分必要正确实践 · 等 Orchestrator 视情况 spawn review-tech 形式 R1 + Human 终审）
+- **🆕 COSTRA-126 · R1 实装已交付**（2026-05-08 · 开发期 libVersion 2.32.3 → 3.8.12 + 反模式 #4 措辞收紧 v4 + 反模式 #5 新增（禁 `development` lib）+ COSTRA-125 同卡簇收官 · `project.config.json` 1 行 + `storage.ts` 顶部注释 + `README.md` 开发期/NFR 区分 + libversion-upgrade.md 113 行追写 · 等 Orchestrator spawn review-tech 形式 R1 + Human 终审）
 
 ## §3 交付历史索引
 
@@ -27,6 +28,7 @@
 - 2026-05-02 · `history/2026-05-02-costra-124-r1-implement.md` · COSTRA-124 R1 实装（SBAI v1.1 P2' 实战第 2 回 · DoD (a)(b)(c 路径 ①)(d)(f 预闭合)(g) 已交付 · (e) 待 Human 实测 · 2 文件代码修复 + 2 份新文档 + FU f.1+f.2 追写）
 - 2026-05-03 · `history/2026-05-03-costra-124-r2-diagnose.md` · COSTRA-124 **Revise-Round-2 根因重做**（SBAI v1.1 P2' 冒烟第 3 回 · D-017 Step 2 只诊断不修复 · 基于 Human 第 7 次实测证伪 R1 假设 · L1-L4 四层根因重做 · 6 方案对比 · 8 Q 决策点 · 0 次 miniprogram/ 写入 · 0 次 git commit）
 - **2026-05-04** · `history/2026-05-04-costra-125-r1-implement.md` · COSTRA-125 **R1 实装交付**（SBAI v1.1 接力卡实战第 4 回 · 接续 R1 部分实装的 3 文件未提交 diff · 补齐 DoD (a)~(h) 全 8 条 · 8 文件代码改动 + 1 单测新建 + 3 文档追写 + state §2/§3/§7 收尾 · 六闸全绿 · 等 Human 第 8 次实测）
+- **2026-05-08** · `history/2026-05-08-costra-126-libversion-upgrade.md` · COSTRA-126 **跨 lib 实测证伪 + libVersion 升级 + 同卡簇收官**（Human 第 8 次跨 5 lib 版本实测 · 业务代码 grep 三重 0 命中 + 报错栈 SDK 内部 + 报错时刻 onLaunch 之前 + lib 升级整族消失 · 4 条独立证据链 · COSTRA-124 v3 定性纠正 v4 · COSTRA-125 整卡 CLOSED · FU-LAUNCH 父 FU close · 立 FU-LIBVERSION-DEV-GUARD P3 观察）
 
 ## §4 最近决策影响
 
