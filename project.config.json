@@ -53,7 +53,7 @@
     "useCompilerPlugins": ["typescript"]
   },
   "compileType": "miniprogram",
-  "libVersion": "2.32.3",
+  "libVersion": "3.8.12",
   "condition": {},
   "miniprogramRoot": "miniprogram/",
   "editorSetting": {

@@ -8,7 +8,10 @@
 - 微信原生 MINA + TypeScript（`miniprogram-api-typings`）
 - 分包：主包（登录 / 首页 / 家庭面板 / 统计总览 / 记一笔 / 我的）+ `pages-stat/`（月度统计 · 分包）+ `pages-family/`（家庭 home · 设置 · 隐私 · 分包）
 - Lint：ESLint + Prettier + Husky（pre-commit）+ commitlint（Conventional Commits）
-- 最低基础库：**2.32.3**（对齐 PRD NFR）
+- 最低基础库：
+  - 开发期基础库：**3.8.12**（开发者工具调试基础库 + project.config.json 默认 · COSTRA-126）
+  - NFR 最低基础库：**2.32.3**（对齐 PRD §NFR · 上架时微信后台"最低基础库"档位 · 影响真机用户覆盖率）
+  - 禁用：`development` 基础库（含 `(TO:基础库开发同学)` 内部 assert 断言 · 不应用于业务验证 · 见 `docs/devops/libversion-upgrade.md §3.5` 反模式 #5）
 - 生产 AppID：`wxf8b0d3e3a83f9941`
 
 ## 2. 目录结构

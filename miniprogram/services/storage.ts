@@ -11,7 +11,7 @@
 //   1. 不得再使用任何 `wx.*StorageSync` 同步 API · 启动期会撞渲染层 `_prepare` 未就绪抛 too eayly
 //   2. 本模块所有导出 API 必须返回 Promise<T>/Promise<void>· caller 必须 await
 //   3. `wx.getStorage({key})` / `wx.setStorage({...})` / `wx.removeStorage({...})` / `wx.clearStorage()`
-//      是基础库 2.21.0+ 的官方 Promise 形态（不传 success/fail/complete 时返回 Promise）· 项目 libVersion 2.32.3 满足
+//      是基础库 2.21.0+ 的官方 Promise 形态（不传 success/fail/complete 时返回 Promise）· 当前开发期 libVersion 3.8.12 满足 · NFR 最低基础库 2.32.3 亦满足（Epic-G 上架合规）
 //   4. 业务调用方必须走 app.globalData.bootstrapPromise gate · 避免在 bootstrap 未就绪时调 storage
 
 const STORAGE_VERSION = 1;
