@@ -13,7 +13,7 @@
 
 ## §0 一句话断点（HEAD 之前 = 已兑现 · 之后 = 待做）
 
-> **2026-05-04 08:30 当前断点**：**COSTRA-125 Card-Review R1 PASS 31/35**（by `costra-card-reviewer-tech` · 临界 PASS · 0 P0 · 0 P1 · 4 P2 记 state.md §6 遗留 · 不触发 Round-2）· dispatch §0 补 Card-Review 响应段 · **下一步 = spawn `costra-miniapp-dev` 派 COSTRA-125 R1 实装**（方案 B'+E' 合并版 · 8 条 DoD · ~2-2.5 h AI 侧）· R1 交付后 spawn `costra-review-tech` R1 审查 · PASS 后 Human 第 8 次模拟器实测 5 条断言 · 全 PASS → FU-LAUNCH-B close + COSTRA-125 Done + COSTRA-124 整卡 Done + Sprint-1 基建线 9 卡全数收官。Sprint-1 倒计剩 2 天。
+> **2026-05-08 20:16 当前断点**：🏆 **Sprint-1 主线 + 启动期治理叙事终极收官** · 5 卡合并终审 APPROVED CLOSED（102/125/126/127/128 @ 19:11）· FU-LAUNCH 族 5 卡完整闭环（124 顶层副作用 + 125 业务全 async + 126 lib 升级 + 127 业务时序 + 128 注释清洗）· 4 次定性翻转 v1→v2→v3→v4→v5 · v5 唯一定稿 · Sprint-1 14 卡 100% CLOSED · 26 commits 已 push origin/dev · 工作树 clean · **下一步 = Human 主动决策 G4 合并闸门 + Sprint-2 立卡（COSTRA-103 本地持久化优先）**。本会话因上下文过长 · Human 决定开新会话接续 · 本 HANDOFF 用作锚点。
 
 ---
 
@@ -21,36 +21,47 @@
 
 ### §1.1 当前时间戳
 
-- **更新时间**：2026-05-04 08:30
-- **更新者**：本会话 Orchestrator（HEAD = `6d1a6c2` · 本轮 Card-Review 落盘 + dispatch §0 补响应 + state.md/board.md/HANDOFF.md 追写 · 待合进下一 commit）
-- **Sprint**：Sprint-1（2026-04-23 ~ 2026-05-06 · **收官期 · 剩 2 天**）
+- **更新时间**：2026-05-08 20:16
+- **更新者**：本会话 Orchestrator（HEAD = `fbac38a` · 已 push origin/dev · 工作树 clean）
+- **Sprint**：Sprint-1（2026-04-23 ~ 2026-05-06 · **已超期 2 天 · 14 卡 100% CLOSED · 等 G4 决策**）
 
 ### §1.2 当前在办卡
 
 | 卡号 | Owner | Type | Points | 阶段 | 下一步 |
 |---|---|---|---|---|---|
-| **COSTRA-125** | miniapp-dev | fix | 2 | **Card-Review R1 PASS 31/35 · 待 R1 实装** | spawn `costra-miniapp-dev` 派 R1 实装（方案 B'+E'） |
-| COSTRA-124 | miniapp-dev | fix | 1 | **部分闭合**（顶层副作用分支 close · architecture 保留）| 待 COSTRA-125 收官后 · FU-LAUNCH-A 真 close + 124 整卡 Done |
-| COSTRA-102 | miniapp-dev | feature | - | 等 Human 人验（长期挂起） | Human 本地验证 |
-| COSTRA-117 | devops-ops | fix | - | Todo（未动） | Sprint-2 或 Sprint-1 末扫一下 husky v10 |
+| **无在办卡** | — | — | — | Sprint-1 全部收官 | 等 Human 拍板 G4 决策 + Sprint-2 立卡 |
 
-### §1.3 Human 下一步动作（**预期**）
+#### Sprint-1 全数 CLOSED 索引（14 卡）
 
-**本轮无须 Human 动作** · 等 Orchestrator 执行：
-
-1. 同轮 commit 本轮产出（dispatch + board + backlog + FU + libversion-upgrade + state + HANDOFF）
-2. Spawn `costra-card-reviewer-tech` 对 COSTRA-125 dispatch 做卡审（D-014 规则）
-3. 若卡审 PASS → 同轮 spawn `costra-miniapp-dev` 做 R1 实装
-4. R1 交付后 spawn `costra-review-tech` 做 R1 审查
-5. R1 审查 PASS 后回给 Human **第 8 次模拟器实测**（5 条断言 · 见 `.team/dispatch/COSTRA-125-miniapp-storage-async-migration.md §9`）
-
-### §1.4 Orchestrator 接收 Human 第 8 次实测结果后的三路径响应契约
-
-| 路径 | 触发条件 | 响应动作 |
+| 类别 | 卡号 | 终审时间 |
 |---|---|---|
-| **α · 全 PASS** | 5 条全绿（Launch Time ≤ 900 ms 硬门槛或 AMBER Human approve） | (1) 改 FU-LAUNCH-B `open → closed` + 补闭合 commit sha · (2) 判定 FU-LAUNCH-C（如 `Expected updated data` 未复现则同 close · 否则保持 open 观察）· (3) 父 FU `FU-LAUNCH-FIRST-RENDER-RACE` 整体 close · (4) 改 board COSTRA-125 到 Done · COSTRA-124 同步 Done（顶层副作用分支已 close）· (5) Human T2 `approve:COSTRA-125` · CLOSED · Sprint-1 基建线 **9 卡全数收官**（100+101+119-125） |
-| **β · 部分 PASS** | 断言 1 PASS（too eayly 0 次）· 其他有一条 FAIL | 走 dispatch DoD (c/e) 分析链 · 针对具体 FAIL 断言立 COSTRA-126（如 Launch Time 仍超 AMBER · 或登录链路断）· COSTRA-125 部分闭合 |
-| **γ · 断言 1 FAIL** | `too eayly` 仍有复现 | 说明方案 B' 的"异步 API 内部等 `_prepare` 就绪"假设再被证伪 · spawn `costra-miniapp-dev` 做 revise-round-2 · 候选方案：降到 C'（基础库降版）或 E'（bootstrap Promise 更强门控）· 可能需要 COSTRA-125 整卡 REVISE |
+| **主线** | COSTRA-102 | 2026-05-08 19:11 (T1 APPROVED · Mock + 本地 server 实测) |
+| **基建** | 100 / 101 / 115 / 116 | Sprint-1 中前期 |
+| **同族盲区** | 119 / 120 / 121 / 122 / 123 | Sprint-1 中前期 |
+| **启动期治理 5 卡（FU-LAUNCH 族）** | **124 / 125 / 126 / 127 / 128** | **2026-05-08 19:11（5 卡合并终审）** |
+| **审计** | 118 | 已 CLOSED |
+| **未触发** | 114（DevOps bootstrap 卡定义已批 · 未开工） | 留 Sprint-2 |
+
+### §1.3 Human 下一步动作（**预期 · 按优先级**）
+
+1. **🟡 Sprint-1 末 G4 合并闸门决策**（已超期 2 天 · 议题 14+ 条就绪 · 见 §6.1）
+2. **🟢 Sprint-2 立卡**：COSTRA-103（本地持久化 + outbox · 已解锁）/ Epic-D 家庭共享 / Epic-E 预算 / Epic-F 报表
+3. **🟢 真 staging 验证**（COSTRA-102 方式 C · 留 Sprint-2 提审前 · ICP 下证 + 白名单后跑手册步骤 1/2/5）
+4. **🟢 被动等**：ICP 备案首审短信 / 订阅消息文案 v0.1 / 隐私指引清单
+5. **ICP 下证日（估 5 月中下旬）**：配 `api.costra.cloud` 微信白名单 → 发 `close:R-013`
+
+### §1.4 Sprint-1 治理范式资产（5 卡簇定稿 · v5）
+
+**FU-LAUNCH 族 4 次定性翻转**（重要事故学习记录）：
+
+| 版本 | 定性 | 卡号 | 状态 |
+|---|---|---|---|
+| v1~v2 | 误判 · 见 history | 124 | 已修正 |
+| v3 | SDK + 业务共责（onLaunch 同步 storage） | 125 | 被 v4 证伪 |
+| v4 | SDK race · 业务无责 | 126 | 被 v5 证伪 |
+| **v5（定稿）** | 双因（SDK race · lib 3.8+ 修复 + 业务 onShow setData 时序竞速 · COSTRA-127 修复） | **127** | **唯一定稿** |
+
+**v5 定稿存于**：`docs/devops/libversion-upgrade.md §3.4`（COSTRA-128 已清洗 · 删除 v3/v4 全文 · 仅留 v5 + 4 行版本演进表）
 
 ---
 
@@ -61,11 +72,16 @@
 ### §2.1 必读（**每次新会话启动都读**）
 
 1. **`.team/HANDOFF.md`** — 本文件 · 锚点入口
-2. **`.team/board.md`** — 最后更新行 + COSTRA-125 📌 段（当前在办卡）
-3. **`.team/dispatch/COSTRA-125-miniapp-storage-async-migration.md`** — 当前在办卡完整 dispatch（含 §2 方案 B'+E' + §3 DoD 8 条 + §9 Human 第 8 次实测清单）
-4. **`.team/members/miniapp-dev/history/2026-05-03-costra-124-r2-diagnose.md`** — R2 根因重做报告（500 行 · L1-L4 新根因 + 6 方案 + 8 Q 全推荐）· **理解为何立 125 而非 124 内 revise**
-5. **`.team/follow-ups/README.md`** — 搜 `FU-LAUNCH-FIRST-RENDER-RACE` 跳到 §519-xxx · 特别看 f.3 段（第 7 次观察 + 定性翻转 v3 + FU 分裂 A/B/C）
-6. **`.team/members/miniapp-dev/state.md`** — 装扮 subagent 当前状态（§2 active tasks 更新到 COSTRA-125 · §6 遗留 v3 定性 · §7 时间戳 20:32）
+2. **`.team/board.md`** — 最后更新行 + Sprint-1 Done 段（14 卡终审记录）
+3. **5 张 FINAL.md**（5 卡合并终审 · 含 SOP 偏差合规说明）：
+   - `.team/reviews/COSTRA-102/FINAL.md`（T1 主线 · Mock + 本地 server 实测）
+   - `.team/reviews/COSTRA-125/FINAL.md`（T2 fix · 跨 lib 实测兜底）
+   - `.team/reviews/COSTRA-126/FINAL.md`（T3 chore 自动关闭）
+   - `.team/reviews/COSTRA-127/FINAL.md`（**T2 fix · review-tech R1 跳过 · Human 终审吸收 R1 职责** · 议题 17 实战二次兑现）
+   - `.team/reviews/COSTRA-128/FINAL.md`（T3 chore · 删比加多 -57/+17）
+4. **`docs/devops/libversion-upgrade.md`** — v5 定稿（COSTRA-128 清洗后唯一定稿 · §3.4 + §3.5 反模式 #5 + §3.6 反模式 #6 + §4 跨 lib 对照表）
+5. **`.team/follow-ups/README.md`** — Sprint-2 转移 FU 队列（FU-DB-OPS-AUDIT 首位 + FU-LIBVERSION-DEV-GUARD + FU-102-* 5 条 + 旧 FU-118-* 等）
+6. **`.team/members/miniapp-dev/state.md`** — 装扮 subagent 当前状态（active tasks 已清空 · §6 已大幅清洗）
 
 ### §2.2 按需（**遇到对应场景才读**）
 
@@ -90,10 +106,12 @@
 
 | 类型 | Subagent 列表 | 工具白名单 | permissionMode |
 |---|---|---|---|
-| **装扮档**（6 个） | `costra-miniapp-dev` · `costra-backend-dev` · `costra-pm-writer` · `costra-design-maker` · `costra-devops-ops` · `costra-qa-planner` | `Read, Write, Edit, MultiEdit, Bash, Grep, Glob, LS, TodoWrite, WebFetch` | `acceptEdits` |
-| **审查档**（4 个） | `costra-review-tech` · `costra-review-product` · `costra-card-reviewer-tech` · `costra-card-reviewer-product` | `Read, Grep, Glob, LS, WebFetch`（**物理无写权**） | `default` |
+| **装扮档**（6 个） | `costra-miniapp-dev` · `costra-backend-dev` · `costra-pm-writer` · `costra-design-maker` · `costra-devops-ops` · `costra-qa-planner` | `Read, Write, Edit, MultiEdit, Bash, Grep, Glob, LS, TodoWrite, WebFetch` | **`bypassPermissions`**（2026-05-08 改造 · 见 commit `4399ee9`）|
+| **审查档**（4 个） | `costra-review-tech` · `costra-review-product` · `costra-card-reviewer-tech` · `costra-card-reviewer-product` | `Read, Grep, Glob, LS, Bash, WebFetch`（**物理无文件写权 · Bash 仅只读语义**）| **`bypassPermissions`** |
 
-> **冒烟记录**：`costra-miniapp-dev` 两次实战（P2' 20:20 根因报告 · P2' 2nd 21:10-21:30 R1 实装）· `costra-card-reviewer-tech` 一次（P2'' 21:05 卡审）· `costra-review-tech` 一次（2026-05-03 12:02 产出审）· 审查档两次 Grep 自证 tool 集合 `{Read,Grep,Glob,WebFetch}` 0 写调用 · 物理隔离稳定成立。
+> **2026-05-08 改造**：原 `acceptEdits` / `default` 全部改为 `bypassPermissions` · 4 个 reviewer 加 `Bash`（仅只读纪律）· 全员追加破坏性命令禁令段（push --force / reset --hard / rm -rf 项目根 / npm publish 等）· devops-ops 加生产高危 Human 显式拍板红线（terraform apply / kubectl apply / miniprogram-ci upload）。
+>
+> **冒烟记录**：本 Sprint-1 累计 5 次实战（miniapp-dev × 5 · card-reviewer-tech × 1 · 详见各卡 history）。审查档物理隔离稳定成立。
 
 ### §3.2 Spawn 模板（Context Injection Contract §A~§H · D-018 §3.3）
 
@@ -126,23 +144,29 @@
 
 ---
 
-## §5 本会话 10 commits 溯源（`e11a58f → 20b0e48`）
+## §5 本会话 commits 溯源（2026-05-04 ~ 2026-05-08 · 26 commits 已 push origin）
 
 ```
-20b0e48 docs(repo): costra-124 review-tech round-1 pass-with-followup 33/35  ← HEAD
-221b074 docs(repo): startup api call audit + libversion upgrade methodology
-a296be0 fix(miniapp): move ensureversion from storage top-level to app onlaunch
-f2fbd4c docs(repo): costra-124 card-review round-1 response · pass-with-followup 26/30
-b66eda8 docs(repo): costra-124 card definition · startup storage timing fix
-1c28fb9 docs(repo): sbai v1.1 p1' step 3b · batch 9 subagents
-4dcf733 docs(repo): sbai v1.1 frontmatter pitfall · tools must be csv
-1391436 docs(repo): sbai v1.1 p1' step 3a sample + p2' smoke evidence
-331724b docs(repo): d-018 sbai decision stele (v1.0+v1.1) · fu observation #3
-e11a58f docs(repo): sbai v1.0 p1 merge · align sop family with sync subagent
-7ad6ea5 fix(repo): add npm bridge config for decimal.js runtime loading (COSTRA-123)  ← 上轮 Sprint-1 收官 commit
+fbac38a chore(db): extract ops audit todo to docs/db prework + ignore .cloudbase  ← HEAD（已 push）
+a7a4d3a chore(repo): 5-card merged approval · sprint-1 final closure (COSTRA-102/125/126/127/128)
+a77ffce docs(repo): costra-128 libversion v5 finalize + state.md cleanup (COSTRA-128)
+d321b58 chore(miniapp): cleanup v3/v4 narrative comments in storage/home/mine/app (COSTRA-128)
+fd7302e chore(repo): costra-127 human verify pass · fu-launch-c true closed (COSTRA-127)
+737595a docs(repo): costra-127 fu-launch-c true-close + libversion v5 + anti-pattern #6
+1c640f0 fix(miniapp): replace switchTab with reLaunch + onShow bootstrap gate
+4399ee9 chore(repo): subagent bypassPermissions + reviewer Bash readonly
+3903b9c docs(repo): costra-126 libversion-upgrade v4 + anti-pattern #5 + costra-125 close (COSTRA-126)
+c52fd7f chore(miniapp): bump libversion 2.32.3 to 3.8.12 dev (COSTRA-126)
+d85d040 docs(repo): costra-125 r1 fu-launch f.4 + startup-audit r2 audit
+4643f89 fix(miniapp): migrate storage/auth/sync to async api + bootstrap promise (COSTRA-125)
+ca27d88 docs(repo): costra-125 card-review-1-tech pass-31/35 + 4 p2 followup
+6d1a6c2 docs(repo): costra-125 立卡 + costra-124 r2 诊断 + fu-launch 分裂 a/b/c
+42494f1 docs(repo): add cross-session handoff anchor for orchestrator continuity
+20b0e48 docs(repo): costra-124 review-tech round-1 pass-with-followup 33/35  ← v1.0 立案点
+... (更早 v1.0 之前 commit 见 git log)
 ```
 
-本会话累计：**10 commits · 68 files · +8163 行**。
+**累计**：5 卡簇治理（124~128）+ 主线终审（102）+ subagent 改造 + DB ops 搬迁 = **26 commits 已 push origin/dev**。
 
 ---
 
