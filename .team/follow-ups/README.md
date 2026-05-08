@@ -756,6 +756,47 @@ R1 MiniApp 交付 · T2 Tech 单轨 APPROVE 35/35 · Human 第五次模拟器启
 
 ---
 
+#### 🆕 f.6 · COSTRA-127 实装 + FU-LAUNCH-C 真 closed（2026-05-08）
+
+**追写时间**：2026-05-08（COSTRA-127 R1 实装 + Human 拍板全按推荐）
+
+**追写依据**：COSTRA-127 dispatch + D-017 Step 2 诊断（方案 B） + Human 拍板 Q1-A/Q2-A/Q3-A/Q4-A
+
+##### f.6.A · COSTRA-127 实装范围
+
+- **commit 1**：`fix(miniapp): replace switchTab with reLaunch + onShow bootstrap gate (COSTRA-127)`
+  - `miniprogram/pages/login/index.ts`（两处 switchTab → reLaunch + 注释）
+  - `miniprogram/pages/home/index.ts`（onShow 加 bootstrapPromise.then gate）
+  - `miniprogram/pages/mine/index.ts`（onShow 加 bootstrapPromise.then gate）
+- **commit 2**：`docs(repo): costra-127 fu-launch-c true-close + libversion v5 + anti-pattern #6 (COSTRA-127)`
+  - `docs/devops/libversion-upgrade.md`（§3.4 v5 措辞 + §3.6 反模式 #6）
+  - `.team/follow-ups/README.md`（本段 §f.6）
+  - `.team/members/miniapp-dev/state.md`（§2/§3/§7）
+  - `.team/members/miniapp-dev/history/2026-05-08-costra-127-r1-implement.md`（新建）
+
+##### f.6.B · FU-LAUNCH-C 状态流转
+
+| 子 FU | 旧状态 | 新状态 | 闭合依据 |
+|---|---|---|---|
+| **FU-LAUNCH-C · 首渲染数据投递错位** | `degraded-to-p3-observe` @ COSTRA-126 | **`closed` @ COSTRA-127** | 方案 B 实装（login reLaunch + home/mine onShow bootstrap gate）+ Human 模拟器实测 0 次 `Expected updated data` |
+
+**父 FU `FU-LAUNCH-FIRST-RENDER-RACE`**：A/B 真 closed + C 真 closed → **父 FU `closed @ COSTRA-127`**
+
+##### f.6.C · v4 → v5 措辞修正记录
+
+§3.4 反模式 #4 措辞从 v4 修正为 v5：
+- **v4（COSTRA-126）**：`Expected updated data` 1 次 → `degraded-to-p3-observe`
+- **v5（COSTRA-127）**：`Expected updated data` 双因（SDK race + 业务时序）→ C 真 closed
+
+##### f.6.D · 反模式 #6 立案
+
+`docs/devops/libversion-upgrade.md §3.6` 新增反模式 #6：
+- **坏例**：`login → switchTab(home) · home onShow 同步 hydrateUser + refresh`
+- **好例**：`login → reLaunch(home) · home onShow 内 await bootstrapPromise`
+- **原因**：switchTab 复用 home 旧实例 + onShow 同步执行无 gate · 与 bootstrap 完成时序竞速 · 渲染层抛 `Expected updated data`
+
+---
+
 
 
 **追写时间**：2026-05-02 21:xx（COSTRA-124 R1 实装交付时 · 由装扮 subagent `costra-miniapp-dev` 落盘）

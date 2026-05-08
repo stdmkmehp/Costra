@@ -20,7 +20,8 @@
 - Todo: COSTRA-103（本地持久化 + outbox）/ COSTRA-112（主体字样清扫）
 - **COSTRA-124 · 完全闭合**（FU-LAUNCH-A `closed` + FU-LAUNCH-B `closed` 由 COSTRA-125 接力 · COSTRA-126 跨 lib 实测证伪 v3 假设 · 整卡架构治理价值保留）
 - **COSTRA-125 · 整卡 CLOSED**（2026-05-08 · 业务侧 storage/auth/sync 全 async + bootstrapPromise + 3 Page gate · COSTRA-126 跨 lib 实测证伪"业务有责"假设 · 真根因为 lib 2.32.x ~ 2.33.x SDK 内部 race · 业务侧实装为充分必要正确实践 · 等 Orchestrator 视情况 spawn review-tech 形式 R1 + Human 终审）
-- **🆕 COSTRA-126 · R1 实装已交付**（2026-05-08 · 开发期 libVersion 2.32.3 → 3.8.12 + 反模式 #4 措辞收紧 v4 + 反模式 #5 新增（禁 `development` lib）+ COSTRA-125 同卡簇收官 · `project.config.json` 1 行 + `storage.ts` 顶部注释 + `README.md` 开发期/NFR 区分 + libversion-upgrade.md 113 行追写 · 等 Orchestrator spawn review-tech 形式 R1 + Human 终审）
+- **🆕 COSTRA-126 · R1 实装已交付**（2026-05-08 · 开发期 libVersion 2.32.3 → 3.8.12 + 反模式 #4 措辞收紧 v4 + 反模式 #5 新增（禁 `development` lib）+ COSTRA-125 同卡簇收官 · 等 Orchestrator spawn review-tech 形式 R1 + Human 终审）
+- **🆕 COSTRA-127 · R1 实装已交付**（2026-05-08 · 方案 B 实装（login reLaunch + home/mine onShow bootstrap gate）+ FU-LAUNCH-C true close + libversion v5 + 反模式 #6 · 等 Human 实测 + Orchestrator spawn review-tech 形式 R1）
 
 ## §3 交付历史索引
 
@@ -28,7 +29,8 @@
 - 2026-05-02 · `history/2026-05-02-costra-124-r1-implement.md` · COSTRA-124 R1 实装（SBAI v1.1 P2' 实战第 2 回 · DoD (a)(b)(c 路径 ①)(d)(f 预闭合)(g) 已交付 · (e) 待 Human 实测 · 2 文件代码修复 + 2 份新文档 + FU f.1+f.2 追写）
 - 2026-05-03 · `history/2026-05-03-costra-124-r2-diagnose.md` · COSTRA-124 **Revise-Round-2 根因重做**（SBAI v1.1 P2' 冒烟第 3 回 · D-017 Step 2 只诊断不修复 · 基于 Human 第 7 次实测证伪 R1 假设 · L1-L4 四层根因重做 · 6 方案对比 · 8 Q 决策点 · 0 次 miniprogram/ 写入 · 0 次 git commit）
 - **2026-05-04** · `history/2026-05-04-costra-125-r1-implement.md` · COSTRA-125 **R1 实装交付**（SBAI v1.1 接力卡实战第 4 回 · 接续 R1 部分实装的 3 文件未提交 diff · 补齐 DoD (a)~(h) 全 8 条 · 8 文件代码改动 + 1 单测新建 + 3 文档追写 + state §2/§3/§7 收尾 · 六闸全绿 · 等 Human 第 8 次实测）
-- **2026-05-08** · `history/2026-05-08-costra-126-libversion-upgrade.md` · COSTRA-126 **跨 lib 实测证伪 + libVersion 升级 + 同卡簇收官**（Human 第 8 次跨 5 lib 版本实测 · 业务代码 grep 三重 0 命中 + 报错栈 SDK 内部 + 报错时刻 onLaunch 之前 + lib 升级整族消失 · 4 条独立证据链 · COSTRA-124 v3 定性纠正 v4 · COSTRA-125 整卡 CLOSED · FU-LAUNCH 父 FU close · 立 FU-LIBVERSION-DEV-GUARD P3 观察）
+- **2026-05-08** · `history/2026-05-08-costra-126-libversion-upgrade.md` · COSTRA-126 **跨 lib 实测证伪 + libVersion 升级 + 同卡簇收官**（Human 第 8 次跨 5 lib 版本实测 · 4 条独立证据链 · v4 定性 + FU-LAUNCH A/B closed · C 降 P3 观察）
+- **2026-05-08** · `history/2026-05-08-costra-127-r1-implement.md` · COSTRA-127 **方案 B 实装 + FU-LAUNCH-C 真 closed**（login reLaunch + home/mine onShow bootstrap gate · D-017 Step 2 诊断置信度 90%+ · Human 拍板全按推荐 · 等 Human 实测 + review-tech R1）
 
 ## §4 最近决策影响
 
@@ -80,4 +82,5 @@
 - 2026-05-03T12:55:00+08:00 · COSTRA-124 Revise-Round-2 根因重做完成（by costra-miniapp-dev · SBAI v1.1 P2' 冒烟第 3 回 · **只诊断不改代码** · 基于 Human 第 7 次实测证伪 R1 假设 · L1-L4 四层根因重做 · 定性升级到 v3（SDK+业务共同责任）· 6 方案对比 · 8 Q 决策点 · **0 次 miniprogram/ 写入 · 0 次 git commit** · 等 Orchestrator 收 final message 回给 Human 裁决）
 - 2026-05-03T20:32:00+08:00 · COSTRA-125 立卡（by Orchestrator · Human D1/D2/D3 全按推荐 · 方案 B'+E' 合并版 · COSTRA-124 部分闭合 · FU-LAUNCH 分裂 A/B/C 三子 FU · A closed · B/C open · libversion-upgrade.md §3 追反模式 #4 · 本 state.md §2 active 调整 · 等 Orchestrator 后续 spawn card-reviewer-tech 卡审 + 实装 spawn）
 - 2026-05-04T08:30:00+08:00 · COSTRA-125 Card-Review Round-1 PASS 31/35（by costra-card-reviewer-tech · SBAI v1.1 P2'' 冒烟第 2 次 · 审查档物理只读验证通过 · 0 P0 · 0 P1 · 4 P2 记本 §6 FU-125-P2-1~4 · 不触发 Round-2 · dispatch §0 补 Card-Review 响应段 · 下一步 Orchestrator spawn `costra-miniapp-dev` R1 实装）
-- **2026-05-04T16:05:00+08:00 · COSTRA-125 R1 实装交付**（by costra-miniapp-dev · SBAI v1.1 接力卡实战第 4 回 · 接续 spawn 前已落 3 文件 R1 部分 diff · 补齐 DoD (a)~(h) 全 8 条 · 8 文件代码改动（storage/auth/sync/app/request + 3 Page）+ storage.spec.ts 新建 8 测 + FU §f.4 + startup-audit §7 R2 普查 + state.md §2/§3/§7 收尾 · 六闸全绿（typecheck/test 21 pass/lint/check:appjson/check:tooling/check:whitelist exit 0）· 2 commit 待落盘 · 等 Human 第 8 次模拟器实测 + Orchestrator spawn review-tech Round-1）
+- **2026-05-04T16:05:00+08:00 · COSTRA-125 R1 实装交付**（SBAI v1.1 接力卡实战第 4 回 · 六闸全绿 · 等 Human 第 8 次模拟器实测 + Orchestrator spawn review-tech Round-1）
+- **2026-05-08T18:30:00+08:00 · COSTRA-127 R1 实装交付**（SBAI v1.1 实战第 5 回 · 方案 B 实装（login reLaunch + home/mine onShow bootstrap gate）+ libversion v5 + 反模式 #6 + FU §f.6 + state.md §2/§3/§7 收尾 · 六闸全绿 · 2 commit 落盘 · 等 Human 实测 0 次 Expected updated data + Orchestrator spawn review-tech R1）

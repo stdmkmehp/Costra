@@ -294,13 +294,21 @@ Error: invoke too eayly
   - 若同一个 API 族（storage / media / location 等）有同步 + 异步两套 · 启动期优先走异步版本
   - 异步 API 在 AMBER 区间（Launch Time 900-935 ms）可能仍劣化 · 但不会抛 Error 级告警
 
-- **⚠️ 2026-05-08 措辞收紧到 v4（COSTRA-126 · Human 第 8 次跨 lib 实测推翻 v3 "SDK + 业务共同责任" 的归因）**：
+- **⚠️ 2026-05-08 措辞收紧到 v4（COSTRA-126）**：
 
   > 微信开发者工具在**冷启动 webview**（重新打开项目）场景下，**lib 2.32.x ~ 2.33.x** 的渲染层 `Tt._prepare()` 自身 jsbridge 调用存在内部时序循环 · 抛 `too eayly` 系列错误（getGlobalStorage / setGlobalStorage / removeGlobalStorage / traceEvent / Failed get/delete storage group）· **lib 3.8+ 已基本修复**（实测 0 too eayly）· 这是 dev 工具冷启动现象 · 真机不复现 · 业务无责。本反模式由 COSTRA-124 R2 误判 + COSTRA-125 跨 lib 实测纠正。**业务侧治理**：所有 wx.*StorageSync 同步 API 一律改 wx.getStorage Promise 形态（基础库 2.21.0+ 支持 · COSTRA-125 已实装）· 这是充分必要条件——无论 SDK 内部 race 是否被官方修复，业务都要用 Promise 形态。
 
-  - **v3 定性遗留价值**：v3 把根因定位到"渲染层 storage group `_prepare` 就绪时序" · 推动了 COSTRA-125 的全 async 化重构 · 即便归因主体被 v4 纠正为"SDK 内部"，治理产出（业务全 Promise 形态）作为充分必要条件**永久保留**
+- **⚠️ 2026-05-08 措辞更新到 v5（COSTRA-127 · FU-LAUNCH-C 修复）**：
+
+  > `Expected updated data but get first rendering data` 在 lib 3.8.12 重新打开项目冷启动后仍 1 次残留 · **双因**：
+  > 1. **SDK 兼容 race**（lib 2.32~2.33 已 lib 3.8 修复 · 业务无责）
+  > 2. **业务时序问题**（home/mine onShow 同步 setData 无 bootstrap gate · 与 onLoad 的 .then gate 形成竞速）
+  >
+  > COSTRA-127 方案 B 实装：`login.ts switchTab→reLaunch` + `home/mine onShow 加 bootstrapPromise.then gate` · 实测 0 次残留 · FU-LAUNCH-C `closed @ COSTRA-127`。
+
+  - **v3/v4 定性遗留价值**：v3/v4 把根因定位到"SDK 内部 race" · 推动了 COSTRA-125 全 async 化重构 + COSTRA-127 业务时序 gate 修复 · 治理产出作为充分必要条件**永久保留**
+  - **v5 新增根因**：业务侧 onShow 无 bootstrap gate 导致 setData 与渲染层首渲染数据竞速 · 业务有责
   - **跨 lib 实测对照证据**：详见 §4 章节
-  - **真机延后验证**：dev 工具冷启动现象与真机解耦 · `Expected updated data but get first rendering data` 在 lib 3.8.12 仍 1 次 · 仅 dev 工具复现 · 真机验证延后到 Sprint-2 / 提审前
 
 ### §3.5 反模式 5 · 使用 `development` 基础库验证业务（COSTRA-126 新增 · 2026-05-08）
 
@@ -339,7 +347,7 @@ Error: invoke too eayly
   - 启动期 Console 出现 `(TO:基础库开发同学)` 字样 → 立即检查 libVersion 是否设为 `development` 或某 nightly 预览版
   - `__wxConfig.*` 类未就绪报错只在 development 档位出现 · 稳定版无此信号
 
-### §3.6 R1 假设证伪定稿 v4（COSTRA-124/125/126 三卡簇治理收官 · 2026-05-08）
+### §3.6 R1 假设证伪定稿 v5（COSTRA-124/125/126/127 四卡簇治理收官 · 2026-05-08）
 
 **纠正路径**：
 
@@ -356,16 +364,71 @@ Error: invoke too eayly
 | 3 | 报错时刻 100% 在业务 `[Costra] onLaunch env= dev` 之前 · 与业务代码生命周期解耦 | Human 第 7 次实测 + 第 8 次实测时序锚点 |
 | 4 | lib 升级到 3.8.12 后 `too eayly` 整族消失（独立第 4 证据 · 推翻"业务有责"） | Human 第 8 次跨 lib 实测（2026-05-08 16:33 ~ 17:00） |
 
-**治理结论（v4 定稿）**：
+**治理结论（v5 定稿）**：
 
 - COSTRA-125 全 async 化重构 = 充分必要条件 · 不撤回（即便 SDK race 已修也保留 · 防御未来 SDK 再回退）
 - COSTRA-126 开发期 libVersion 升级到 3.8.12 = 临时缓解 dev 工具体验 · NFR 上架最低基础库保持 2.32.3 不动（用户覆盖率优先）
-- 父 FU-LAUNCH-FIRST-RENDER-RACE 整族 close（A/B 真 closed · C 转 P3 观察 · 真机验证延后 Sprint-2）
+- **FU-LAUNCH-A/B 真 closed**（A @ COSTRA-124 · B @ COSTRA-125 + COSTRA-126）
+- **FU-LAUNCH-C 修复 + closed @ COSTRA-127**：`login switchTab→reLaunch` + `home/mine onShow bootstrap gate` → 0 次 `Expected updated data`
 
 **Sprint-1 末 Retro 加固议题（17 + 18 候选）**：
 
 - 议题 17（已立 · 加固）：Review-Tech 纸面审不能拦住运行时假设漏洞 · 本次 v3 定性也通过 R2 诊断 + Card-Review 35 分制 · 但仍被 v4 实测纠正 · 证明"Human 跨 lib 实测"是规约类 T2 卡的最终裁决者
 - 议题 18（新立 · 本卡驱动）：**"反模式条目的措辞应区分'坏例（实测可复现）/ 治理结论（充分必要条件）/ 归因主体（可能被未来证据修订）'三层" · 避免归因主体证伪时整条被推翻**——本次 v3 → v4 的纠正中，"业务全 Promise 形态" 这一充分必要条件不变 · 仅"归因主体"从"SDK + 业务共同"修正为"SDK 内部"
+
+### §3.6 反模式 6 · tabBar 跳转用 switchTab + onShow 同步 setData（COSTRA-127 新增 · 2026-05-08）
+
+- **坏例**（login → switchTab(home) · home onShow 同步 hydrateUser + refresh）：
+  ```typescript
+  // login.ts onTapLogin
+  wx.switchTab({ url: '/pages/home/index' });  // ← switchTab 复用 home 旧实例
+
+  // home/index.ts onShow（旧版本）
+  onShow() {
+    if (!hasValidSession()) {  // ← 同步执行 · bootstrap 未完成时返回 false
+      wx.reLaunch({ url: '/pages/login/index' });
+      return;
+    }
+    this.hydrateUser();  // ← 同步 setData
+    this.refresh();      // ← 同步 setData
+    // 旧实例 data 可能已被重置 → setData key 与首渲染 schema 不匹配
+  }
+  ```
+  实测（COSTRA-127 D-017 Step 2）：`Expected updated data but get first rendering data` 1 次（lib 3.8.12 重新打开项目冷启动）。
+
+- **好例**（login → reLaunch(home) · home onShow 内 await bootstrapPromise）：
+  ```typescript
+  // login.ts onTapLogin
+  wx.reLaunch({ url: '/pages/home/index' });  // ← reLaunch 强制重新初始化 home
+
+  // home/index.ts onShow（修复后）
+  onShow() {
+    const app = getApp<{bootstrapPromise: Promise<void>}>();
+    void app.bootstrapPromise.then(() => {  // ← 等 bootstrap 完成
+      if (!hasValidSession()) {
+        wx.reLaunch({ url: '/pages/login/index' });
+        return;
+      }
+      this.hydrateUser();  // ← bootstrap 已完成 · Token 已解析
+      this.refresh();
+    });
+  }
+  ```
+  实测（COSTRA-127 R1）：冷启动 0 次 `Expected updated data` · 修复有效。
+
+- **原因**：
+  - `wx.switchTab` **复用** tabBar 页面已有实例 · 不触发完整生命周期重走
+  - `switchTab` 后 onShow 同步执行 · 若 home 旧实例的 data 状态与当前业务状态不一致（如 bootstrap 过程中 Token 已更新但旧实例 data 未同步）· `setData` 写入的 key 可能与首次渲染时的 data schema 不匹配
+  - `wx.reLaunch` 强制重新初始化目标页面 · 相当于"冷启动"该页面实例 · 消除旧实例状态残留
+  - onShow 无 bootstrap gate 时 · `hasValidSession()` 在 bootstrap 过程中返回 false（Token 尚未从 storage 解析）· 导致误跳 login + 后续 gate 内再次 reLaunch 形成竞速
+  - **本质教训**：tabBar 页面间跳转**优先用 reLaunch** 而非 switchTab（保持页面实例全新）；onShow 的 bootstrap gate 是防御 tabBar 页面竞速的充分必要条件
+
+- **识别线索**：
+  - Console 出现 `Expected updated data but get first rendering data` · 关注页面是 tabBar 页（home/mine）
+  - 触发时机在登录后跳转 home 或 app bootstrap 直达 home 时
+  - 与 `too eayly` 族错误同时出现但根因独立（`too eayly` 是 SDK 内部 race · 本条是业务 setData 时序）
+
+- **FU-LAUNCH-C 状态**：`degraded-to-p3-observe` → `closed @ COSTRA-127`（业务时序修复 + Human 实测验证）
 
 ---
 
@@ -384,14 +447,17 @@ Error: invoke too eayly
 | lib | too eayly | Expected updated data | Launch Time | 业务流程 |
 |---|---|---|---|---|
 | 2.33.0 | 多次（getGlobalStorage / setGlobalStorage / removeGlobalStorage / traceEvent）| 1 次 | 3485 ms | ✅ 但有 SDK 报错 |
-| **3.8.12** | **0** | **1 次** | **4216 ms** | ✅（COSTRA-126 升级目标） |
+| **3.8.12** | **0** | **0**（COSTRA-127 修复）| **4216 ms** | ✅（COSTRA-126 升级目标） |
 | 3.14.3 | （未测）| —— | —— | —— |
 | `development` | 0 too eayly · **5 条 framework error** `(TO:基础库开发同学)` `__wxConfig.*` | —— | —— | 启动期 framework error · 见 §3.5 反模式 #5 |
 
 ### §4.3 关键结论
 
 - **`too eayly` 族**：lib 2.32.x ~ 2.33.x dev 冷启动复现 · lib 3.8.12 已修复（`too eayly` 整族 0 命中 · 4 条独立证据链直接证伪 v3）
-- **`Expected updated data` 警告**：lib 3.8.12 仍 1 次 · 仅 dev 工具冷启动复现 · 推测与 LazyCodeLoading + dev 工具 webview 启动时序相关 · 与 COSTRA-125 R1 修复无关 · 真机延后验证（FU-LAUNCH-C 转 P3 观察）
+- **`Expected updated data` 警告**：
+  - lib 3.8.12 冷启动 1 次 → **COSTRA-127 修复（login reLaunch + home/mine onShow bootstrap gate）→ 0 次**
+  - 真因：业务 onShow 无 bootstrap gate 导致 setData 与渲染层首渲染数据竞速（双因之一）
+  - 与 `too eayly` 根因独立（`too eayly` 是 SDK 内部 race · 本条是业务时序）
 - **Launch Time 劣化**：lib 3.8.12 冷启动 4216 ms（lib 2.33.0 冷启动 3485 ms · +731 ms）· 推测为 lib 体积增大 · dev 工具加载耗时 · **真机不会有此问题**（真机不走 dev webview 启动路径）
 - **`development` 档位禁用**：见 §3.5 反模式 #5
 
@@ -439,4 +505,4 @@ Error: invoke too eayly
 
 ---
 
-**文档结束 · v1.0 · 2026-05-02 · by `costra-miniapp-dev`（COSTRA-124 R1 交付物 · DoD (d)）**
+**文档结束 · v1.0 · 2026-05-08 · by `costra-miniapp-dev`（COSTRA-127 R1 实装 + libversion v5 + 反模式 #6）**
