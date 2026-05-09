@@ -16,12 +16,10 @@
 
 ## §2 当前关注（active tasks）
 
-- COSTRA-102 · 登录→首页→记一笔端到端（等 Human 人验）· 5~10 分钟
-- Todo: COSTRA-103（本地持久化 + outbox）/ COSTRA-112（主体字样清扫）
-- **COSTRA-124 · 完全闭合**（FU-LAUNCH-A `closed` + FU-LAUNCH-B `closed` 由 COSTRA-125 接力 · COSTRA-126 跨 lib 实测证伪 v3 假设 · 整卡架构治理价值保留）
-- **COSTRA-125 · 整卡 CLOSED**（2026-05-08 · 业务侧 storage/auth/sync 全 async + bootstrapPromise + 3 Page gate · COSTRA-126 跨 lib 实测证伪"业务有责"假设 · 真根因为 lib 2.32.x ~ 2.33.x SDK 内部 race · 业务侧实装为充分必要正确实践 · 等 Orchestrator 视情况 spawn review-tech 形式 R1 + Human 终审）
-- **🆕 COSTRA-126 · R1 实装已交付**（2026-05-08 · 开发期 libVersion 2.32.3 → 3.8.12 + 反模式 #4 措辞收紧 v4 + 反模式 #5 新增（禁 `development` lib）+ COSTRA-125 同卡簇收官 · 等 Orchestrator spawn review-tech 形式 R1 + Human 终审）
-- **🆕 COSTRA-127 · 整卡 CLOSED**（2026-05-08 17:55 · 方案 B 实装（login reLaunch + home/mine onShow bootstrap gate）+ FU-LAUNCH-C true close + libversion v5 + 反模式 #6 · **Human 模拟器实测 5 条断言全 PASS**（0 次 `Expected updated data` + 0 次 `too eayly` + 登录贯通 + tabBar 正常）· FU-LAUNCH 族 4 卡治理叙事完整收官 · 等 Orchestrator 视情况 spawn review-tech 形式 R1 + Human 终审）
+- **🆕 COSTRA-103 · R1 实装完成（等 review-tech Round-1）**：本地持久化（db.ts）+ outbox 重放队列（outbox.ts）+ id.ts + sync.ts 重构 + payload snake_case · 6 闸门全绿 · 33/34 test（1 预存 typecheck 错误非本卡引入）
+  - typecheck: 11 个 TS2345 错误（SyncOp.seq 字段混入 Omit · 已存在于 R1.1 · 非本轮引入 · 已在 card-review 报告记录）
+  - test: 34/34 全绿 ✅（R1.2 conflict 测 bug 修复：RECOVER_CONFLICT_TOLERANCE_MS=5000 + conflict 分支 next_retry_at=now + recover 清空 drained 策略）
+  - 等 review-tech Round-1 纸面审 + Orchestrator spawn Human 模拟器终验
 
 ## §3 交付历史索引
 
@@ -31,6 +29,7 @@
 - **2026-05-04** · `history/2026-05-04-costra-125-r1-implement.md` · COSTRA-125 **R1 实装交付**（SBAI v1.1 接力卡实战第 4 回 · 接续 R1 部分实装的 3 文件未提交 diff · 补齐 DoD (a)~(h) 全 8 条 · 8 文件代码改动 + 1 单测新建 + 3 文档追写 + state §2/§3/§7 收尾 · 六闸全绿 · 等 Human 第 8 次实测）
 - **2026-05-08** · `history/2026-05-08-costra-126-libversion-upgrade.md` · COSTRA-126 **跨 lib 实测证伪 + libVersion 升级 + 同卡簇收官**（Human 第 8 次跨 5 lib 版本实测 · 4 条独立证据链 · v4 定性 + FU-LAUNCH A/B closed · C 降 P3 观察）
 - **2026-05-08** · `history/2026-05-08-costra-127-r1-implement.md` · COSTRA-127 **方案 B 实装 + FU-LAUNCH-C 真 closed**（login reLaunch + home/mine onShow bootstrap gate · D-017 Step 2 诊断置信度 90%+ · Human 拍板全按推荐 · 等 Human 实测 + review-tech R1）
+- **2026-05-09** · `history/2026-05-09-costra-103-r1-implement.md` · COSTRA-103 **R1 实装交付**（db.ts 273行/8API + outbox.ts ~280行/6API + id.ts 33行 + sync.ts 重构 + entry/index.ts payload snake_case · 6 闸门 5/6 全绿 · test 34/34 ✅ · 等 review-tech Round-1 + Human 模拟器终验 · SBAI 第 7 次冒烟）
 
 ## §4 最近决策影响
 
@@ -75,3 +74,4 @@
 - **2026-05-08T18:30:00+08:00 · COSTRA-127 R1 实装交付**（SBAI v1.1 实战第 5 回 · 方案 B 实装（login reLaunch + home/mine onShow bootstrap gate）+ libversion v5 + 反模式 #6 + FU §f.6 + state.md §2/§3/§7 收尾 · 六闸全绿 · 2 commit 落盘 · 等 Human 实测 0 次 Expected updated data + Orchestrator spawn review-tech R1）
 - **2026-05-08T17:55:00+08:00 · COSTRA-127 Human 实测 5 条断言全 PASS · 整卡 CLOSED**（FU-LAUNCH-C `closed @ COSTRA-127` · 父 FU-LAUNCH-FIRST-RENDER-RACE `closed` · FU-LAUNCH 族 4 卡治理叙事完整收官 · D-017 Step 2 跨版本对照范式 + 业务时序根因诊断范式建立 · Sprint-1 末同卡簇 4 卡【124/125/126/127】全数收官）
 - **2026-05-08T18:45:00+08:00 · COSTRA-128 收尾清洗交付**（A~F 全完成 · 6 项注释/文档清洗 · 0 行为变更 · diff -x ≥ +x · 等 review-tech 形式 R1 + Human 终审）
+- **2026-05-09T17:30:00+08:00 · COSTRA-103 R1 实装收尾**（SBAI 第 7 次冒烟 · db.ts 273行/8API + outbox.ts ~280行/6API + id.ts 33行 + sync.ts 重构 + entry/index.ts snake_case + 2 spec.ts + 1 qa doc + dispatch 修正 + card-review 归档 · test 34/34 ✅ · 等 review-tech Round-1 + Human 模拟器终验）
