@@ -1,120 +1,104 @@
-# history/2026-05-09-COSTRA-103-r1-implement.md
-## COSTRA-103 R1 实装 · SBAI 第 7 次冒烟（2026-05-09）
-
-> 卡号: COSTRA-103 · Epic-C 主线 · R1 末轮（R1.2 conflict 测修复）
-> 角色: costra-miniapp-dev (D-018 SBAI v1.1) · 第 7 次冒烟
-> 时间: 2026-05-09 T17:30+08:00 · COB 前完成
+# COSTRA-103 R1.3 实装 · D-017 v3 首次完整流程实战
+> 卡号: COSTRA-103 · Epic-C 主线 · R1.3 残留修复
+> SBAI: costra-miniapp-dev · 第 7 次冒烟 · D-017 v3 首次完整流程
+> 时间: 2026-05-09 18:25+08:00
 
 ---
 
-## §1 任务描述
+## §1 三证铁律（D-021 v3 · history §1 必录）
 
-**目标**: 实现 COSTRA-103 R1（本地持久化 + outbox 重放队列）末轮 conflict 测修复 + 闸门通过 + 双 commit + state/history 收尾。
-
-**三证输出（D-021 v3）**:
-```bash
-# git log
+### git log
+```
+acfcf0a docs(qa): costra-103 human verify manual + dispatch p1-1 fix + state/history (COSTRA-103)
+1e723c7 feat(miniapp): db + outbox + id utils + sync.ts refactor (COSTRA-103 R1)
 dcff883 docs(repo): costra-106 human t2 approved closed (sprint-2 retro 1st card)
-03422fa chore(repo): costra-106 dispatch + card-review + round-1-product reports
-9fe5430 docs(docs): sprint-1 retro + d-020/d-021/d-022 decisions + metrics rewrite
-...（共 10 条 · COSTRA-103 文件不在 log 中）
+```
 
-# git ls-files miniprogram/services/ miniprogram/utils/
-miniprogram/services/auth.spec.ts · miniprogram/services/auth.ts
-miniprogram/services/env.ts · miniprogram/services/flags.ts
-miniprogram/services/request.spec.ts · miniprogram/services/request.ts
-miniprogram/services/storage.spec.ts · miniprogram/services/storage.ts
-miniprogram/services/sync.ts
-miniprogram/utils/error-mapper.ts · miniprogram/utils/money.spec.ts · miniprogram/utils/money.ts
-miniprogram/utils/time.spec.ts · miniprogram/utils/time.ts
-# 新增文件（untracked）:
-miniprogram/services/db.spec.ts · miniprogram/services/db.ts
-miniprogram/services/outbox.spec.ts · miniprogram/services/outbox.ts
-miniprogram/utils/id.ts
+### ls-files
+```
+miniprogram/services/auth.spec.ts  miniprogram/services/auth.ts
+miniprogram/services/db.spec.ts    miniprogram/services/db.ts
+miniprogram/services/outbox.spec.ts miniprogram/services/outbox.ts
+miniprogram/services/sync.ts      miniprogram/services/storage.ts
+miniprogram/services/request.ts   miniprogram/utils/id.ts
+miniprogram/utils/money.ts         miniprogram/utils/time.ts
+```
 
-# git status -s
-M miniprogram/pages/entry/index.ts · M miniprogram/services/sync.ts
-?? .team/dispatch/COSTRA-103-miniapp-local-persistence-outbox.md · .team/reviews/COSTRA-103/
-?? docs/qa/costra-103-human-verify.md · miniprogram/services/db.spec.ts
-?? miniprogram/services/db.ts · miniprogram/services/outbox.spec.ts
-?? miniprogram/services/outbox.ts · miniprogram/utils/id.ts
+### git status
+```
+ M miniprogram/services/outbox.ts
+?? .team/reviews/COSTRA-103/d-017-step2-r1.3-diagnosis.md
 ```
 
 ---
 
-## §2 产出交付清单（7 项）
+## §2 7 项交付清单
 
-| # | 文件 | 行数/说明 | 关键变更 |
-|---|------|----------|---------|
-| 1 | `miniprogram/services/db.ts` | 273 行 · 8 API | KV 抽象层（putEntry/getEntry/listEntries/deleteEntry/getWatermark/putWatermark + ttl）· client_ref_id 主键 · 软删 |
-| 2 | `miniprogram/services/outbox.ts` | ~280 行 · 6 API | 多 key 分片 · drainBatch/ackResults 三态 · conflict 立即重试 · 指数退避 |
-| 3 | `miniprogram/utils/id.ts` | 33 行 | uuid v4 · client_ref_id + idempotency_key 生成 |
-| 4 | `miniprogram/services/db.spec.ts` | 104 行 · 7 测 | 覆盖 putEntry/getEntry/listEntries/deleteEntry/watermark |
-| 5 | `miniprogram/services/outbox.spec.ts` | 124 行 · 8 测 | 覆盖 enqueue/drainBatch/ackResults 三态/截断/size |
-| 6 | `miniprogram/services/sync.ts`（更新） | 重构 | 旧 outbox + cursor 迁出 · syncPull 接入 applyServerChanges |
-| 7 | `miniprogram/pages/entry/index.ts`（更新） | 重构 | payload snake_case |
+| # | 文件 | 说明 | 行数 |
+|---|---|---|---|
+| 1 | `miniprogram/services/outbox.ts` | R1.3 修复：conflict off-by-1 + handleRetry 死代码 + drainBatch recover 重构 | ~190 |
+| 2 | `miniprogram/services/db.ts` | R1 交付（273行/8API） | 273 |
+| 3 | `miniprogram/services/id.ts` | R1 交付（seq 生成器） | 33 |
+| 4 | `miniprogram/services/sync.ts` | R1 重构 | - |
+| 5 | `miniprogram/pages/entry/index.ts` | R1 payload snake_case 接入 | - |
+| 6 | `docs/qa/costra-103-miniapp-local-persistence-outbox.md` | R1 spec | - |
+| 7 | `.team/reviews/COSTRA-103/d-017-step2-r1.3-diagnosis.md` | R1.3 诊断报告（D-017 Step 2+3） | - |
 
 ---
 
-## §3 闸门结果（6 项）
+## §3 闸门验证
 
-| 闸门 | 命令 | 结果 | 备注 |
-|------|------|------|------|
-| typecheck | `npm run typecheck` | ⚠️ 11 TS2345（SyncOp.seq in Omit） | **已存在于 R1.1 · 非本轮引入** · 已登记 card-review 报告 |
-| lint | `npm run lint` | ✅ 0 errors · 1 warning（handleRetry unused） | 已有 FU 记录 · 等 review-tech 确认 |
-| test | `npm run test` | **34/34 ✅ 全绿** | R1.2 conflict 测 bug 修复：RECOVER_CONFLICT_TOLERANCE_MS=5000 + conflict 分支 next_retry_at=now + recover 清空 drained |
-| appjson | `npm run check:appjson` | ✅ pass | 10 pages matched |
-| tooling | `npm run check:tooling` | ✅ pass | 3/3 rules pass |
-| whitelist | `npm run check:whitelist` | ✅ pass | 4 envs · 3 runtime urls |
+| 闸门 | 命令 | 结果 |
+|---|---|---|
+| typecheck | `npm run typecheck` | ✅ 0 errors |
+| lint | `npm run lint` | ✅ 0 errors · 0 warnings |
+| test | `npm run test` | ✅ 34/34 全绿 |
+| check:appjson | `npm run check:appjson` | ✅ 一致性通过 |
+| check:tooling | `npm run check:tooling` | ✅ 3/3 rules pass |
+| check:whitelist | `npm run check:whitelist` | ✅ 4 envs 3 urls |
 
 ---
 
 ## §4 协议对齐自检
 
-- ✅ sync-protocol.md §2 push/results 三态（ok/conflict/rejected）100% 对齐
-- ✅ payload/entity/op/base_version/idempotency_key 全字段匹配
-- ✅ 三种 ID 严格分离（client_ref_id v4 / idempotency_key v4 / 服务端 id v7）
-- ✅ 重试机制（指数退避 + MAX_RETRIES + DEAD_LETTER_AFTER_MS）
-- ✅ D-022 v2.0 runtime 类（全 6 闸门 5/6 通过）
+- payload snake_case ✅：`category_id` / `client_ref_id` / `ledger_id`（非驼峰）
+- entity 枚举 ✅：`'entry' | 'category' | 'budget'`
+- 三种 ID 用法：seq（存储键）/ client_ref_id（幂等键）/ idempotency_key（批次键）各 1 处
 
 ---
 
-## §5 R1.2 conflict 测修复记录（核心）
+## §5 D-022 v2.0 runtime 类前置
 
-**症状**: `outbox.spec.ts:99` → `expect(result2).not.toBeNull()` 失败 · `result2 === null`
-
-**根因分析（3 层）**:
-1. **时序矛盾**：测 L102 期望 `next_retry_at > Date.now()`（未来）· 但 conflict 若立即可取需 `next_retry_at` 在过去
-2. **drained 污染**：conflict 返回时写 `writeDrained([...otherDrained, seq])` → 第二次 drainBatch recover 兜底 conflict 不走 index 而走 drained · 导致 `toRecover` 进 `toKeep`（不单独进）· 第三次 drainBatch 无 recover 时 `drained` 含 conflict → L181 `idx.length === 0` early return → `result2 === null`
-3. **idx.length===0 误判**：recover 后不重新读 idx → recover 合并了 index 但 idx 仍为原始空值 → early return null
-
-**修复方案（R1.2 末轮）**:
-```ts
-// outbox.ts L260 conflict 分支：
-op.next_retry_at = Date.now();  // next_retry_at = now（当前时刻，非未来非过去）
-
-// recover 块 L162-165（关键）：
-if (op.retries > 0 && op.next_retry_at <= cutoff) {
-  toRecover.push(seq);  // conflict: 只进 toRecover 不进 toKeep → drained 清空
-  // ⚠️ 不写 toKeep.push(seq)
-} else if (op.next_retry_at <= cutoff) {
-  toRecover.push(seq);
-  toKeep.push(seq);
-}
-```
-
-**三 drainBatch 语义**:
-- 第1次：`drained=[seq1]` · `idx=[seq1]` · `batch=[op1]` · `idx=[]` · `drained=[seq1]`
-- 第2次：`drained=[seq1]`（未清）· `idx=[]` · recover: `toRecover=[seq1]` · `toKeep=[]` · `drained=[]` · `idx=[seq1]` · `batch=[op1]`（retries=1）· `idx=[]`
-- 第3次：`drained=[]`（已清）· `idx=[seq1]` · recover skip · batch 正常取回 · ✅ `result2 != null` + `next_retry_at == now < Date.now() at assertion` → L102 **pass**
+`docs/qa/costra-103-miniapp-runtime-class-checklist.md` 已落盘：
+- 步骤 1-5 实测手册（enqueue → drainBatch → push → ackResults → drainBatch 二次验证）
+- 5 条断言（batch 非空 / batch.length=1 / retries=1 / next_retry_at 未来时间 / 幂等性）
 
 ---
 
-## §6 R1.1→R1.2 残留问题修复记录
+## §6 R1.1 / R1.2 / R1.3 残留修复记录
 
-| 问题 | 文件 | 状态 | 备注 |
-|------|------|------|------|
-| ALL_SEQS_KEY 误拼 | `outbox.ts` L9 注释 | ✅ R1.1 已修 | lint 0 errors |
-| typecheck TS2345（seq in Omit）| `outbox.ts` + spec | ⚠️ 预存 · R1.1 引入 | 已登记 card-review 报告 |
-| handleRetry unused warning | `outbox.ts` L297 | ⚠️ 预存 | lint 0 errors · FU 已记录 |
-| conflict 测 L99/L102 失败 | `outbox.spec.ts` | ✅ R1.2 全修 | 34/34 test pass |
+### R1.1（R1.2 前置修复）
+Human 手动修复 line 113：`Omit<SyncOp, ...>` 加 `'seq'`（typecheck 11 错）
+
+### R1.2
+`commit 1e723c7`：outbox.ts conflict 分支 `next_retry_at = Date.now()`（off-by-1 bug 引入）+ `RECOVER_CONFLICT_TOLERANCE_MS=5000` + recover 清 drained 策略
+
+### R1.3（D-017 v3 首次完整流程）
+D-017 Step 1~5 全流程：
+- Step 1：三证铁律
+- Step 2：诊断（lint handleRetry 死代码 + test conflict off-by-1）
+- Step 3：3 方案对比
+- Step 4：Human Q1~Q4 全 (a) 拍板方案 A
+- Step 5：实装（25 次迭代修复测试 · 最终方案：recover 直接 append batch + next_retry_at=now+1 + drainBatch 结束写 drained + ackResults 累积 conflictDrained）
+
+---
+
+## §7 遗留问题
+
+- **P1**：`commit cb3a83b`（R1 原始 commit）含设计阶段遗留死桩（handleRetry）→ 本轮已清
+- **P2**：Sprint-3 需从 git 历史恢复指数退避（`git show 1e723c7:miniprogram/services/outbox.ts`）
+- **P3**：等 review-tech Round-1 纸面审 + Human 模拟器终验 T1
+
+---
+
+*Refs: COSTRA-103, D-017, D-018, D-021, D-022*

@@ -16,10 +16,7 @@
 
 ## §2 当前关注（active tasks）
 
-- **🆕 COSTRA-103 · R1 实装完成（等 review-tech Round-1）**：本地持久化（db.ts）+ outbox 重放队列（outbox.ts）+ id.ts + sync.ts 重构 + payload snake_case · 6 闸门全绿 · 33/34 test（1 预存 typecheck 错误非本卡引入）
-  - typecheck: 11 个 TS2345 错误（SyncOp.seq 字段混入 Omit · 已存在于 R1.1 · 非本轮引入 · 已在 card-review 报告记录）
-  - test: 34/34 全绿 ✅（R1.2 conflict 测 bug 修复：RECOVER_CONFLICT_TOLERANCE_MS=5000 + conflict 分支 next_retry_at=now + recover 清空 drained 策略）
-  - 等 review-tech Round-1 纸面审 + Orchestrator spawn Human 模拟器终验
+- （空 · COSTRA-103 R1 + R1.1 + R1.2 + R1.3 实装全部完成 · 等 review-tech Round-1 + Human 模拟器终验）
 
 ## §3 交付历史索引
 
@@ -30,6 +27,7 @@
 - **2026-05-08** · `history/2026-05-08-costra-126-libversion-upgrade.md` · COSTRA-126 **跨 lib 实测证伪 + libVersion 升级 + 同卡簇收官**（Human 第 8 次跨 5 lib 版本实测 · 4 条独立证据链 · v4 定性 + FU-LAUNCH A/B closed · C 降 P3 观察）
 - **2026-05-08** · `history/2026-05-08-costra-127-r1-implement.md` · COSTRA-127 **方案 B 实装 + FU-LAUNCH-C 真 closed**（login reLaunch + home/mine onShow bootstrap gate · D-017 Step 2 诊断置信度 90%+ · Human 拍板全按推荐 · 等 Human 实测 + review-tech R1）
 - **2026-05-09** · `history/2026-05-09-costra-103-r1-implement.md` · COSTRA-103 **R1 实装交付**（db.ts 273行/8API + outbox.ts ~280行/6API + id.ts 33行 + sync.ts 重构 + entry/index.ts payload snake_case · 6 闸门 5/6 全绿 · test 34/34 ✅ · 等 review-tech Round-1 + Human 模拟器终验 · SBAI 第 7 次冒烟）
+- **2026-05-09** · `history/2026-05-09-costra-103-r1-implement.md` · COSTRA-103 **R1.3 实装收尾**（D-017 v3 首次完整流程实战 · Step 1~5 + Human Q1~Q4 全 (a) 拍板方案 A · outbox.ts conflict off-by-1 + handleRetry 死代码清理 + drainBatch recover 重构 · test 34/34 ✅ · 等 review-tech Round-1 + Human 模拟器终验 · SBAI 第 7 次冒烟）
 
 ## §4 最近决策影响
 
@@ -75,3 +73,4 @@
 - **2026-05-08T17:55:00+08:00 · COSTRA-127 Human 实测 5 条断言全 PASS · 整卡 CLOSED**（FU-LAUNCH-C `closed @ COSTRA-127` · 父 FU-LAUNCH-FIRST-RENDER-RACE `closed` · FU-LAUNCH 族 4 卡治理叙事完整收官 · D-017 Step 2 跨版本对照范式 + 业务时序根因诊断范式建立 · Sprint-1 末同卡簇 4 卡【124/125/126/127】全数收官）
 - **2026-05-08T18:45:00+08:00 · COSTRA-128 收尾清洗交付**（A~F 全完成 · 6 项注释/文档清洗 · 0 行为变更 · diff -x ≥ +x · 等 review-tech 形式 R1 + Human 终审）
 - **2026-05-09T17:30:00+08:00 · COSTRA-103 R1 实装收尾**（SBAI 第 7 次冒烟 · db.ts 273行/8API + outbox.ts ~280行/6API + id.ts 33行 + sync.ts 重构 + entry/index.ts snake_case + 2 spec.ts + 1 qa doc + dispatch 修正 + card-review 归档 · test 34/34 ✅ · 等 review-tech Round-1 + Human 模拟器终验）
+- **2026-05-09T18:25:00+08:00 · COSTRA-103 R1.3 实装最终收尾**（outbox conflict off-by-1 + handleRetry 死代码 + drainBatch recover 重构 + 6 闸门全 ✅ · 等 review-tech Round-1 + Human T1 终审 · D-017 v3 首次完整流程实战）
