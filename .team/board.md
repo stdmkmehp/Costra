@@ -9,7 +9,9 @@
 > **🆕 验证问题响应 SOP（D-017 · 2026-04-28 13:59 Human 立案 · 14:15 落盘）**：项目遇到验证失败时标准流程 —— ① 责任领域识别（Orchestrator 30s） → ② 责任 Agent 根因分析（只诊断不改文件） → ③ 多方案对比（≥2~3 方案 · 列成本/价值/风险 + Human 决策点 Qn） → ④ Human 评估裁决 → ⑤ 派单实装。**禁止 Orchestrator 自行分析根因**（反模式 A） · E1/E2/E3 例外 · 反模式 ABCD 禁令 · COSTRA-120 首次实战。详见 `.team/decisions/D-017-verification-problem-response-sop.md`。
 > **🔄 D-011 实战验证三次通过**（2026-04-23）：COSTRA-100（2 轮 · 69 min） + Sprint-0 补审（7 卡 × 2 轮 · 29 min 并行） + **COSTRA-101 Round 1 刚自动拉起（22:49 · D-014-b 首次实战）**
 
-最后更新：`2026-05-09`（Orchestrator · ✅ **COSTRA-106 pm-writer R1 实装 + Sprint-2 段开建** · 主报告（sprint-1-retro.md · 14+ 议题处置）+ D-020/D-021/D-022 三决议落盘 + metrics.json 重写（11 卡补齐 + sprint_1_summary）+ board.md Sprint-2 段开建 + backlog.json 流转 + state.md/history 收尾 · D-017 v3 三证铁律已遵守 · **D-016 第 13 次实战合规** · SBAI v1.1 第 6 次冒烟 · pm-writer 首次实战 · 9 文件全数产出）
+最后更新：`2026-05-09 10:39`（Orchestrator · 🏆 **COSTRA-106 Human T2 APPROVED CLOSED @ 10:39** · `approve:COSTRA-106` · Sprint-2 第 1 张 Retro 卡满分收官 · 双 30/30 满分范式（Card-Review 30/30 + R1 Product Review 30/30）· pm-writer 首次实战 0 漏项 · SBAI v1.1 第 6 次冒烟成功 · 审查档第 3 次实战 · D-016 第 13~14 次实战合规 · 立卡到终审 30 分钟 · 20 项议题全落地（含 D-020/D-021/D-022 三决议产出）· 解锁 Sprint-2 主线 COSTRA-103 立卡 · `.team/reviews/COSTRA-106/FINAL.md` 落盘）
+>
+> （上一条归档）`2026-05-09 09:44`（Orchestrator · ✅ **G4 合并闸门 PASS · Sprint-1 收官 · Sprint-2 Planning 中** · 路径 A 决议落盘 `.team/decisions/D-019-g4-sprint-1-closure.md`（议题 10~17 + D-016 升定稿 + D-017 v3 升级 + 紧急卡五连溢出 14+ 议题转 COSTRA-106 Retro 卡 · Sprint-2 周期 2026-05-10~05-23 · 总估点目标 32~36）· FU-102-* 5 条 + FU-DB-OPS-AUDIT + FU-LIBVERSION-DEV-GUARD 等转 Sprint-2 · 下一步 Human 触发 `run pm COSTRA-106`（Retro · Sprint-2 第 1 张）· 接续 `run miniapp COSTRA-103`（本地持久化 · 5 点 · Sprint-2 主线）· HANDOFF v1.4 + board 同轮刷新）
 >
 > （上一条归档）`2026-05-03 20:32`（Orchestrator · 🆕 **COSTRA-125 立卡**：启动期 storage 异步化 · onLaunch 内同步调用根因解决 · 2 点 · P1 · 方案 B'+E' 合并版（异步 API 全量 + bootstrap Promise）· **COSTRA-124 R1 假设 Human 第 7 次模拟器实测证伪** · R2 诊断翻转为定性 v3（SDK + 业务共责 · 渲染层 storage group `_prepare` 就绪晚于 App.onLaunch）· **COSTRA-124 部分闭合**（顶层副作用子目标 close · commit `a296be0` 架构正确保留）· FU-LAUNCH 分裂为 A/B/C 三子 FU · A close · B/C open 交棒 COSTRA-125 · D-017 第 5 次实战 · SBAI v1.1 P2' 冒烟第 3 回产物）
 >
@@ -74,7 +76,7 @@
 **Sprint-1 总估点**：**48 点**（40 + 2 [119] + 2 [120] + 2 [121] + 1 [122] + 1 [123] · **连续五张紧急卡溢出 40 工时顶格约束** · Sprint-0 骨架期遗留微信规约债务同族**五连** · Sprint-1 末 Retro 议题升级：紧急卡五连溢出 / D-017 v1→v2 升级（四次实战完整证据 · 候选新增 E4 代职边界例外）/ D-016 升定稿规约（12 次实战）/ T2 档位结构性局限 / Review-Tech 评分表增"runtime 加载性"维度（议题 13 升 P0）/ CI 引入 miniprogram-ci 真实编译冒烟（议题 15 新增）/ 同族盲区系统性预防 Epic-F 立案（议题 10 升 P0））
 
 ## 🔄 Doing（清洗后仅列真正 in-flight · 其余为 Todo-等触发）
-- [~] **COSTRA-106** @pm-writer · **Sprint-1 Retro · 14+ 议题处置 + 工程度量刷新（R1 实装中）** · 2 点 · P0 · Sprint-2 第 1 张 · **D-020/D-021/D-022 三决议 + metrics 重写 + board 更新** · 等待 Human T2 终审
+- [~] **COSTRA-114** @DevOps-Agent · 开发服务器 bootstrap **手册**（D-009）· **🟠 卡定义已 approve 但实际未开工**（I-003 · 04-24 17:00 澄清 · `docs/ops/` 目录不存在）· 等 Human 真正触发 `run devops COSTRA-114`
 
 ## 👀 Review
 
@@ -206,6 +208,10 @@ _（无强阻塞。COSTRA-040 "真实上传链路激活" 仍依赖外部资源�
 - [D] **🏆 COSTRA-128** FU-LAUNCH 族 124~127 治理收尾清洗（注释 + 文档 v5 唯一定稿 · 同卡簇第 5 卡 · 终极收官）    @MiniApp-Agent  · 2026-05-08 19:11 **Human T2 approve** · 整卡 CLOSED · D-013 T3 追溯档自动关闭路径（chore + P3 + 0 行为变更）· 6 项清洗（A~F）· **删比加多原则严格执行**（纯改动文件 -57/+17 = 净删 -40 行 · 删行 vs 加行 = 3.4 倍）· FU-LAUNCH 族 5 卡治理叙事终极收官 · commit `d321b58` + `a77ffce` · `.team/reviews/COSTRA-128/FINAL.md`
 - [D] **🏆 COSTRA-102** MiniApp 登录→首页→记一笔端到端（**Sprint-1 主线**）    @MiniApp-Agent  · 2026-05-08 19:11 **Human T1 approve** · 整卡 CLOSED · Tech 31/35 + Product 27/30 双签 APPROVE @ 2026-04-27 · Human 实测 Mock + 本地 server 双模式贯通（手册 §0.2 推荐路径全覆盖）· 真 staging 模式延后到 Sprint-2 提审前 · 5 条 P1 FU 转 Sprint-2（FU-102-* 段）· **首张 T1 双签 + Human 实测 5 步贯通的纯前端卡范式**（FU-102-HUMAN-VERIFY-PARADIGM）· 同卡簇 13 卡协同收官（100/101/116/119/120/121/122/123/124/125/126/127/128）· `.team/reviews/COSTRA-102/FINAL.md`
 
+### Sprint-2
+
+- [D] **🏆 COSTRA-106** Sprint-1 Retro · 14+ 议题处置 + 工程度量刷新（**Sprint-2 第 1 张 · Retro 启动期治理**）    @pm-writer  · 2026-05-09 10:39 **Human T2 approve** · 整卡 CLOSED · **双 30/30 满分范式**（Card-Review 30/30 by `costra-card-reviewer-product` + R1 Product Review 30/30 by `costra-review-product`）· 主报告 `docs/retrospectives/sprint-1-retro.md`（558 行 · 20 项议题全处置）+ **D-020/D-021/D-022 三决议**（D-016 升定稿 · D-017 v3 升级 · review-tech 评分表 v2.0）+ metrics.json 重写（11 卡补齐 + sprint_1_summary）+ board/backlog Sprint-2 流转 · 9 文件 · 1891 行净增 · 8 闸门全绿（jq×2 + 3 CI check + typecheck + lint + test 21/21）· 0 业务代码（C8 红线零触碰）· **SBAI v1.1 第 6 次冒烟 · pm-writer 首次实战 0 漏项 · 审查档第 3 次实战** · D-016 第 13~14 次实战合规 · 立卡到终审 30 分钟（10:09→10:39）· commit `9fe5430` + `03422fa` · `.team/reviews/COSTRA-106/FINAL.md`
+
 ---
 
 ## 📋 Todo · Sprint-2（2026-05-10 ~ 2026-05-23 · 2 周 · 估点目标 32~36）
@@ -214,8 +220,8 @@ _（无强阻塞。COSTRA-040 "真实上传链路激活" 仍依赖外部资源�
 
 | 卡号 | 标题 | Owner | 估点 | 优先级 | 依赖 | 备注 |
 |---|---|---|---|---|---|---|
-| **COSTRA-106** | **Sprint-1 Retro · 14+ 议题处置 + 工程度量刷新** | pm-writer | 2 | **P0**（Sprint-2 第 1 张）| — | R1 实装中 · 等待 Human T2 终审 |
-| **COSTRA-103** | **本地 SQLite/IndexedDB 持久化 + outbox_queue**（Epic-C 主线）| MiniApp-Agent | 5 | **P0** | COSTRA-100 | Sprint-1 已解锁 |
+| ~~COSTRA-106~~ | ~~**Sprint-1 Retro · 14+ 议题处置 + 工程度量刷新**~~ | ~~pm-writer~~ | ~~2~~ | ~~**P0**~~ | ~~—~~ | **🏆 Human T2 APPROVED CLOSED @ 2026-05-09 10:39 · 移至 Done** |
+| **COSTRA-103** | **本地 SQLite/IndexedDB 持久化 + outbox_queue**（Epic-C 主线）| MiniApp-Agent | 5 | **P0**（Sprint-2 主线主头）| COSTRA-100 | Sprint-1 已解锁 · 等 Human 触发 `run miniapp COSTRA-103` |
 | **COSTRA-104** | `/entries` CRUD + `/sync/push` 批量通道 | Backend-Agent | 6 | **P0** | COSTRA-100/103 | 与 103 协议对齐 |
 | **COSTRA-105** | 单人记账闭环冒烟（含离线弱网）| QA-Agent | 3 | P1 | COSTRA-103/104 | Sprint-2 中段 |
 | **COSTRA-112** | `miniprogram/config/subject.ts` + 硬编码主体字样清扫 | MiniApp-Agent | 1 | P1 | D-008 | 主体红线最后一公里 |
@@ -273,26 +279,33 @@ _（无强阻塞。COSTRA-040 "真实上传链路激活" 仍依赖外部资源�
 
 ## 🧭 Human 下一次介入节点
 
-1. **🟢 立即可做（推荐）**：`git push origin dev`（24 commit 领先 · 备份压力上来了）
-2. **🟡 Sprint-1 末 G4 决策（已超期 2 天）**：合并闸门拍板（Retro 14+ 条议题就绪 · 含本轮新增议题：① 紧急卡五连溢出 47→50 点 ② 同族规约盲区四连 + 启动期治理五连 ③ D-017 v1→v2→v3 升级（v3 增"跨版本对照对照"前置）④ D-016 升定稿规约 ⑤ T2 档位 review-tech R1 跳过的合规边界 ⑥ 议题 17 "Review-Tech 纸面审不能拦住运行时假设漏洞" 实战教训二次兑现）
-3. **🟢 立即可做**：Sprint-2 立卡（Epic-C 本地持久化 COSTRA-103 / Epic-D 家庭共享 / Epic-E 预算 · 解锁顺位）
+1. **🟢 立即可做（推荐）**：`run miniapp COSTRA-103`（**Sprint-2 主线主头** · 本地 SQLite/IndexedDB 持久化 + outbox_queue · 5 点 · Epic-C 主线 · COSTRA-106 已解锁）
+2. **🟢 接续**：`run backend COSTRA-104`（`/entries` CRUD + `/sync/push` 批量通道 · 6 点 · 与 103 协议对齐 · 串行）
+3. **🟢 Sprint-2 其他立卡**（D-019 §3.2 建议清单）：COSTRA-105（单人冒烟 · 3 点 · 中段）/ COSTRA-112（主体清扫 · 1 点）/ COSTRA-114（DevOps bootstrap · 2 点）/ COSTRA-160（设计 tokens pipeline · 2 点）
 4. **🟢 真 staging 验证**：Sprint-2 提审前 / ICP 备案下证 + `api.costra.cloud` 白名单配置完成时 · 复跑 `docs/qa/costra-102-human-verify.md` 步骤 1/2/5（手册 §0.2 方式 C）
 5. **🟢 被动等**：ICP 备案短信审核到达时 5 分钟内回验证码（通常 3~5 日首审）
 6. **🟢 被动等**：订阅消息文案 v0.1 + 隐私指引辅助清单到手后 → 微信后台填写
 7. **ICP 下证日（估 05 月中下旬）**：把 `api.costra.cloud` 配进微信后台"服务器域名"白名单，发 `close:R-013`
 8. **2026-07-16**：开发服务器到期前 7 日决策（续费 vs 迁移云托管）
 
-> **Sprint-1 主线已兑现**：COSTRA-102 + 启动期治理 5 卡（124~128）+ 同族规约盲区 4 卡（119~122）+ 基建线 4 卡（100/101/115/116）= **14 卡协同收官** · 全部 Human T1/T2 APPROVED CLOSED · 24 commit 等推。
+> **Sprint-2 启动期治理已兑现** ✅：COSTRA-106 Sprint-1 Retro 双 30/30 满分收官 · 14+ 议题全落地（D-020/D-021/D-022 三决议 + Sprint-2 FU 队列 + libversion v5 锁定）· 解锁主线 COSTRA-103/104。
 
 ---
 
 ## 💤 Orchestrator 状态
 
-- **MODE**：`sprint-1-final-closure`（🏆 **5 卡合并终审 APPROVED CLOSED @ 2026-05-08 19:11** · `approve:COSTRA-102, COSTRA-125, COSTRA-126, COSTRA-127, COSTRA-128` Human 一次性裁决 · COSTRA-102 主线 + FU-LAUNCH 族 5 卡治理叙事完整收官 · Sprint-1 基建线 + 主线 100% CLOSED · 5 张 FINAL.md 落盘 · board.md / state.md / FU README 状态全部更新 · 1 个收官 commit 待落盘）
-- **下一动作**：等 Human 拍板 G4 合并闸门 + Sprint-2 立卡 + git push
-- **保存点**：5 张 FINAL.md（COSTRA-102/125/126/127/128 · 各含完整 Human 终审记录 + SOP 偏差说明 + commit 索引）+ board.md（Done 段追加 6 条 + Human 节点 + Orchestrator 状态全部更新）+ state.md（不动 · 已在 COSTRA-128 收尾时写过）+ FU README（不动 · 父 FU/子 FU 已在 COSTRA-127 fd7302e 收尾）
-- **关键 SOP 偏差合规记录**：
-  - **COSTRA-127 跳过 review-tech R1**：D-017 Step 2 诊断 90%+ 置信 + Human 实测 5 条断言全 PASS 兜底 · "Human 终审吸收 review-tech R1 职责" 显式记 FINAL §3 · 议题 17 实战二次兑现
-  - **COSTRA-102 真 staging 延后**：Mock + 本地 server 双模式实测覆盖手册 §0.2 推荐路径 · 真 staging（方式 C）延后到 Sprint-2 提审前 · Human 主动决定 · FINAL §3/§5 显式记录
-- **FU-LAUNCH 族 5 卡治理叙事终极收官** 🏆：124（顶层副作用）+ 125（业务全 async）+ 126（lib 升级 + 跨版本实测）+ 127（业务时序）+ 128（注释清洗）· 4 次定性翻转 v1→v2→v3→v4→v5 · v5 唯一定稿存于 `docs/devops/libversion-upgrade.md §3.4`
-- **Sprint-1 总估点定稿**：48 + 1（126）+ 2（127）+ 1（128）= **52 点**（紧急卡五连 + 启动期治理五连 + 主线 1 卡 · Sprint-1 末 Retro 议题"五连溢出 40 工时顶格"+1 条证据）
+- **MODE**：`sprint-2-in-progress`（🏆 **COSTRA-106 Sprint-1 Retro 双 30/30 满分收官 @ 2026-05-09 10:39** · `approve:COSTRA-106` Human T2 一次性裁决 · Sprint-2 第 1/7 卡 CLOSED · **D-020/D-021/D-022 三决议生效** · metrics.json 工程度量定稿 · 解锁 Sprint-2 主线 COSTRA-103/104 立卡 · 等 Human 触发 `run miniapp COSTRA-103`）
+- **下一动作**：等 Human 触发 Sprint-2 主线（首选 COSTRA-103 本地持久化 · 5 点 · Epic-C 主线主头）
+- **保存点**：FINAL.md（COSTRA-106 终审记录）+ metrics.json（COSTRA-106 terminal_verdict APPROVED）+ board.md（Sprint-2 段开建 + 106 流转 Done + 最后更新 + Human 节点 + Orchestrator 状态全部刷新）+ backlog.json（106 status Done）+ HANDOFF v1.5（待本轮 commit 落盘）+ 1 commit 待落盘
+- **Sprint-2 启动期治理范式建立** 🏆：
+  - **双 30/30 满分范式**（Card-Review 30/30 + R1 Product Review 30/30）· Sprint-2 后续 PM 卡参考
+  - **SBAI v1.1 第 6 次冒烟成功 · pm-writer 首次实战 0 漏项**（D-018 装扮档累计 6 次 + 审查档累计 3 次）
+  - **D-016 第 13~14 次实战合规**（card-review 同轮 + R1 Review 同轮 · 累计 14 次 0 跨轮异步反模式）
+  - **立卡到终审 30 分钟新纪录**（10:09→10:39）
+- **三决议生效**（自 2026-05-09 起）：
+  - **D-020**（D-016 同轮兑现升定稿规约 · 12 次实战证据）
+  - **D-021**（D-017 v3 升级 · 跨版本对照前置 + 三证铁律 + runtime 实测前置 · E1~E4 例外）
+  - **D-022**（review-tech 评分表 v1.0→v2.0 · C8 runtime 加载性维度 · runtime 类 T2 卡 Human 实测前置）
+- **工程度量定稿**：metrics.json 18 卡 + sprint_1_summary（Sprint-1 14 卡 / 52 点 / D-016 12 次 / D-017 v3 / SBAI 6 次 / CI 对账 1→3 / Human 终审 14/14 100%）
+- **Sprint-1 总估点定稿**：48 + 1（126）+ 2（127）+ 1（128）= **52 点**（紧急卡五连 + 启动期治理五连 + 主线 1 卡）
+- **FU-LAUNCH 族 5 卡治理叙事终极收官** 🏆（已归档 · 不再修改）：124（顶层副作用）+ 125（业务全 async）+ 126（lib 升级 + 跨版本实测）+ 127（业务时序）+ 128（注释清洗）· 4 次定性翻转 v1→v2→v3→v4→v5 · v5 唯一定稿存于 `docs/devops/libversion-upgrade.md §3.4`

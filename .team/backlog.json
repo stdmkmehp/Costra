@@ -89,11 +89,11 @@
         "priority": "P0",
         "sprint": "sprint-2",
         "epic": null,
-        "status": "Todo",
+        "status": "Done",
         "dependencies": [],
-        "description": "Sprint-1 收官 Retro · 14+ 议题（20 项）全处置 + D-020/D-021/D-022 三决议 + metrics 重写 · R1 实装完成 · 等待 Human T2 终审",
-        "disposition": "Sprint-2 第 1 张",
-        "updated_at": "2026-05-09T19:30:00+08:00"
+        "description": "Sprint-1 收官 Retro · 20 项议题全处置 + D-020/D-021/D-022 三决议 + metrics 重写 · Human T2 APPROVED CLOSED @ 2026-05-09 10:39 · 双 30/30 满分范式（Card-Review 30/30 + R1 Product Review 30/30）",
+        "disposition": "Sprint-2 第 1 张 · CLOSED",
+        "updated_at": "2026-05-09T10:39:00+08:00"
       },
       {
         "id": "COSTRA-103",

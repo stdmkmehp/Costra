@@ -13,7 +13,11 @@
 
 ## §0 一句话断点（HEAD 之前 = 已兑现 · 之后 = 待做）
 
-> **2026-05-08 20:16 当前断点**：🏆 **Sprint-1 主线 + 启动期治理叙事终极收官** · 5 卡合并终审 APPROVED CLOSED（102/125/126/127/128 @ 19:11）· FU-LAUNCH 族 5 卡完整闭环（124 顶层副作用 + 125 业务全 async + 126 lib 升级 + 127 业务时序 + 128 注释清洗）· 4 次定性翻转 v1→v2→v3→v4→v5 · v5 唯一定稿 · Sprint-1 14 卡 100% CLOSED · 26 commits 已 push origin/dev · 工作树 clean · **下一步 = Human 主动决策 G4 合并闸门 + Sprint-2 立卡（COSTRA-103 本地持久化优先）**。本会话因上下文过长 · Human 决定开新会话接续 · 本 HANDOFF 用作锚点。
+> **2026-05-09 10:39 当前断点**：🏆 **COSTRA-106 Sprint-1 Retro 双 30/30 满分收官 · Sprint-2 第 1/7 卡 CLOSED · 三决议生效（D-020/D-021/D-022）** · `approve:COSTRA-106` Human T2 一次性裁决 · 主报告 `docs/retrospectives/sprint-1-retro.md`（558 行 · 20 项议题全处置）+ D-020（D-016 升定稿规约）+ D-021（D-017 v3 升级 · 跨版本对照前置 + 三证铁律 + runtime 实测前置）+ D-022（review-tech 评分表 v1.0→v2.0 · runtime 加载性维度 + runtime 类 T2 卡 Human 实测前置）+ metrics.json 工程度量定稿（18 卡 + sprint_1_summary）· **SBAI v1.1 第 6 次冒烟成功 · pm-writer 首次实战 0 漏项**（装扮档累计 6 + 审查档累计 3）· **D-016 第 13~14 次实战合规**（累计 14 次 0 跨轮异步反模式）· 立卡到终审 30 分钟新纪录（10:09→10:39）· 30 commits 已 push origin/dev · 工作树本轮新增 5 文件改动 · **下一步 = Human 触发 `run miniapp COSTRA-103`（Sprint-2 主线主头 · 本地持久化 + outbox · 5 点）**。
+>
+> （上一断点归档）2026-05-09 09:44：✅ G4 合并闸门 PASS · Sprint-1 收官 · Sprint-2 Planning 中 · 路径 A 决议 D-019 落盘 · 14+ 议题转 COSTRA-106。
+>
+> （上一断点归档）2026-05-08 20:16：🏆 Sprint-1 主线 + 启动期治理叙事终极收官 · 5 卡合并终审 APPROVED CLOSED · FU-LAUNCH 族 5 卡完整闭环 · 4 次定性翻转 v1→v5。
 
 ---
 
@@ -21,15 +25,15 @@
 
 ### §1.1 当前时间戳
 
-- **更新时间**：2026-05-09 09:44
-- **更新者**：本会话 Orchestrator（HEAD 待本轮 commit 落盘 D-019 + HANDOFF v1.4 + board · 上一 HEAD = `8c93c73` HANDOFF v1.3 落盘 · 已 push origin/dev · 工作树本轮新增 3 文件改动）
-- **Sprint**：✅ **Sprint-1 收官 @ 2026-05-09 09:44**（2026-04-23 ~ 2026-05-08 · 14 卡 100% CLOSED · G4 PASS · D-019 决议）/ ⏳ **Sprint-2 Planning 中**（2026-05-10 ~ 2026-05-23 · 周期 2 周 · 总估点目标 32~36）
+- **更新时间**：2026-05-09 10:39
+- **更新者**：本会话 Orchestrator（HEAD 待本轮 commit 落盘 FINAL + metrics + board + backlog + HANDOFF v1.5 · 上一 HEAD = `03422fa` 已 push origin/dev · 工作树本轮新增 5 文件改动）
+- **Sprint**：✅ **Sprint-1 收官 @ 2026-05-09 09:44**（14 卡 100% CLOSED · G4 PASS · D-019）/ 🟢 **Sprint-2 进行中** @ 2026-05-09 10:39（2026-05-10~05-23 · 周期 2 周 · 总估点目标 32~36 · **1/7 卡 CLOSED** = COSTRA-106 Retro）
 
 ### §1.2 当前在办卡
 
 | 卡号 | Owner | Type | Points | 阶段 | 下一步 |
 |---|---|---|---|---|---|
-| **无在办卡** | — | — | — | Sprint-2 Planning 中 | 等 Human 触发 `run pm COSTRA-106`（Retro · Sprint-2 第 1 张）|
+| **无在办卡** | — | — | — | Sprint-2 第 1 张 CLOSED · 等主线立卡 | 等 Human 触发 `run miniapp COSTRA-103`（本地持久化 + outbox · 5 点 · Sprint-2 主线主头）|
 
 #### Sprint-1 全数 CLOSED 索引（14 卡）
 
@@ -44,11 +48,12 @@
 
 ### §1.3 Human 下一步动作（**预期 · 按优先级**）
 
-1. **🟡 Sprint-1 末 G4 合并闸门决策**（已超期 2 天 · 议题 14+ 条就绪 · 见 §6.1）
-2. **🟢 Sprint-2 立卡**：COSTRA-103（本地持久化 + outbox · 已解锁）/ Epic-D 家庭共享 / Epic-E 预算 / Epic-F 报表
-3. **🟢 真 staging 验证**（COSTRA-102 方式 C · 留 Sprint-2 提审前 · ICP 下证 + 白名单后跑手册步骤 1/2/5）
-4. **🟢 被动等**：ICP 备案首审短信 / 订阅消息文案 v0.1 / 隐私指引清单
-5. **ICP 下证日（估 5 月中下旬）**：配 `api.costra.cloud` 微信白名单 → 发 `close:R-013`
+1. **🟢 立即可做（推荐）**：`run miniapp COSTRA-103`（**Sprint-2 主线主头** · 本地 SQLite/IndexedDB 持久化 + outbox_queue · 5 点 · Epic-C 主线 · COSTRA-106 已解锁）
+2. **🟢 接续**：`run backend COSTRA-104`（`/entries` CRUD + `/sync/push` 批量通道 · 6 点 · 与 103 协议对齐 · 串行）
+3. **🟢 Sprint-2 其他立卡建议**（D-019 §3.2 完整清单）：COSTRA-105（单人冒烟 · 3 点 · 中段）/ COSTRA-112（主体清扫 · 1 点）/ COSTRA-114（DevOps bootstrap · 2 点 · Sprint-1 未开工）/ COSTRA-160（设计 tokens pipeline · 2 点）
+4. **🟢 真 staging 验证**（COSTRA-102 方式 C · 留 Sprint-2 提审前 · ICP 下证 + 白名单后跑手册步骤 1/2/5）
+5. **🟢 被动等**：ICP 备案首审短信 / 订阅消息文案 v0.1 / 隐私指引清单
+6. **ICP 下证日（估 5 月中下旬）**：配 `api.costra.cloud` 微信白名单 → 发 `close:R-013`
 
 ### §1.4 Sprint-1 治理范式资产（5 卡簇定稿 · v5）
 
@@ -144,10 +149,15 @@
 
 ---
 
-## §5 本会话 commits 溯源（2026-05-04 ~ 2026-05-08 · 26 commits 已 push origin）
+## §5 本会话 commits 溯源（2026-05-04 ~ 2026-05-09 · 30 commits 已 push origin · 本轮 COSTRA-106 终审待 commit）
 
 ```
-fbac38a chore(db): extract ops audit todo to docs/db prework + ignore .cloudbase  ← HEAD（已 push）
+（待落盘）docs(repo): costra-106 human t2 approved closed (sprint-2 retro 1st card)
+03422fa chore(repo): costra-106 dispatch + card-review + round-1-product reports  ← 当前 HEAD（已 push）
+9fe5430 docs(docs): sprint-1 retro + d-020/d-021/d-022 decisions + metrics rewrite (COSTRA-106 R1)
+d496b5d docs(repo): g4 sprint-1 closure decision + sprint-2 planning anchor (D-019)
+8c93c73 docs(repo): handoff v1.3 · sprint-1 final closure (cross-session anchor)
+fbac38a chore(db): extract ops audit todo to docs/db prework + ignore .cloudbase
 a7a4d3a chore(repo): 5-card merged approval · sprint-1 final closure (COSTRA-102/125/126/127/128)
 a77ffce docs(repo): costra-128 libversion v5 finalize + state.md cleanup (COSTRA-128)
 d321b58 chore(miniapp): cleanup v3/v4 narrative comments in storage/home/mine/app (COSTRA-128)
@@ -166,7 +176,7 @@ ca27d88 docs(repo): costra-125 card-review-1-tech pass-31/35 + 4 p2 followup
 ... (更早 v1.0 之前 commit 见 git log)
 ```
 
-**累计**：5 卡簇治理（124~128）+ 主线终审（102）+ subagent 改造 + DB ops 搬迁 = **26 commits 已 push origin/dev**。
+**累计**：5 卡簇治理（124~128）+ 主线终审（102）+ subagent 改造 + DB ops 搬迁 + G4 决议（D-019）+ Sprint-1 Retro 收官（COSTRA-106 + D-020/D-021/D-022）= **30 commits 已 push origin/dev**（含本轮 COSTRA-106 终审待 commit = 31）。
 
 ---
 
@@ -229,6 +239,9 @@ reviews + FU-LAUNCH + miniapp-dev state.md · 当前断点：COSTRA-124 R1 两�
 | v1.0 | 2026-05-03 12:41 | 本会话 Orchestrator | 立案 · 随 COSTRA-124 R1 Review 末端节点 · 会话 10 commits 末端（HEAD = 20b0e48） |
 | v1.1 | 2026-05-03 20:32 | 本会话 Orchestrator | R1 假设 Human 第 7 次实测证伪 → R2 诊断定性翻转 v3 → Human 全按推荐 → COSTRA-125 立卡 + COSTRA-124 部分闭合 + FU-LAUNCH 分裂 A/B/C + libversion-upgrade §3 反模式 #4 追写 · §0/§1/§2.1/§6 全面刷新 |
 | **v1.2** | **2026-05-04 08:30** | 本会话 Orchestrator | **COSTRA-125 Card-Review R1 PASS 31/35**（第 3 次 spawn 成功 · 前 2 次 Idle timeout 后 Human 选 P1 再试）· dispatch §0 补响应段 + 4 P2 记 state.md §6 · §0/§1.1/§1.2 刷新 · 下一步 spawn miniapp-dev R1 实装 |
+| **v1.3** | **2026-05-08 20:16** | 本会话 Orchestrator | **Sprint-1 5 卡合并终审 APPROVED CLOSED**（102/125/126/127/128 @ 19:11）· FU-LAUNCH 族 5 卡完整收官 · v5 唯一定稿 · 26 commits 已 push · 跨会话锚点定稿 |
+| **v1.4** | **2026-05-09 09:44** | 新会话 Orchestrator（接续会话）| **G4 合并闸门 PASS · Sprint-1 收官 · Sprint-2 Planning 中** · 路径 A 决议 D-019 落盘 · 议题 10~17 + 14+ 条转 COSTRA-106 Retro 卡 · 实际仅刷 §1.1/§1.2（§0/§1.3/§5/§8 v1.4 期间 silent fail · v1.5 一次性补齐）|
+| **v1.5** | **2026-05-09 10:39** | 新会话 Orchestrator | 🏆 **COSTRA-106 Sprint-1 Retro 双 30/30 满分收官 · Sprint-2 第 1/7 卡 CLOSED** · `approve:COSTRA-106` Human T2 一次性裁决 · 主报告 558 行 + D-020/D-021/D-022 三决议 + metrics 工程度量定稿 + board/backlog Sprint-2 流转 · SBAI v1.1 第 6 次冒烟成功 · pm-writer 首次实战 0 漏项 · D-016 第 13~14 次实战合规 · 立卡到终审 30 分钟新纪录 · §0/§1.1/§1.2/§1.3/§5/§8 全刷新（含 v1.4 漏改补齐）· 下一步 Human 触发 `run miniapp COSTRA-103`（Sprint-2 主线主头）|
 
 ---
 
