@@ -641,6 +641,54 @@
       "final_report": ".team/reviews/COSTRA-128/FINAL.md",
       "d016_compliance": "pass",
       "notes": "D-013 T3 追溯档自动关闭路径（chore + 0 行为变更）；FU-LAUNCH 族 5 卡治理叙事终极收官；libversion-upgrade.md v5 唯一定稿；SBAI v1.1 第 5 次冒烟。"
+    },
+    {
+      "cardId": "COSTRA-103",
+      "title": "本地 KV 持久化 + outbox + 冲突三态消费",
+      "owner": "miniapp-dev",
+      "sprint": "sprint-2",
+      "epic": "Epic-C",
+      "points": 5,
+      "review_type": "tech",
+      "review_tier": "T2-with-runtime",
+      "total_rounds": 1,
+      "r1_internal_iterations": "R1 + R1.1 + R1.2 + R1.3 (D-017 v3 完整流程)",
+      "terminal_verdict": "APPROVED",
+      "card_def_review_kickoff_source": "D-014-a",
+      "d016_compliance": "pass (R1.3 D-016 同轮兑现完整 · R1/R1.1/R1.2 漏 commit 已 R1.3 补齐)",
+      "card_def_tech_verdict": "PASS-WITH-FOLLOWUP",
+      "card_def_tech_score": "26.5/30",
+      "card_def_p1_items": 1,
+      "card_def_p1_resolved": "R1 实装时合并 (标题 → 本地 KV 持久化 + outbox + 冲突三态消费)",
+      "r1_artifacts": {
+        "db_ts": "miniprogram/services/db.ts (273 行)",
+        "outbox_ts": "miniprogram/services/outbox.ts (296 行)",
+        "id_ts": "miniprogram/utils/id.ts (33 行)",
+        "sync_ts": "miniprogram/services/sync.ts (103 行 · 重构)",
+        "entry_index_ts": "miniprogram/pages/entry/index.ts (90 行 · payload snake_case 接入)",
+        "db_spec_ts": "miniprogram/services/db.spec.ts (104 行 · 7 测)",
+        "outbox_spec_ts": "miniprogram/services/outbox.spec.ts (124 行 · 6 测 · 含 conflict 重入)",
+        "human_verify_md": "docs/qa/costra-103-human-verify.md (v1.1 · 277 行 · 5 步 + 5 硬断言 + R1 范围声明)"
+      },
+      "r1_tech_verdict": "APPROVE",
+      "r1_tech_score": "38/40",
+      "r1_tech_p2_items": 1,
+      "d022_v2_first_practice": "yes (35→40 分制 · C8 runtime 加载性 + C10 SBAI 流程合规两个新增维度首次实战 · 检出 2 处 minor 各扣 1 分)",
+      "human_simulator_verify": "pass (5 步 + 5 硬断言全 PASS · 重测后清 storage 起点)",
+      "human_simulator_findings": {
+        "step_C_count_4": "手册 BUG (B+C 累加) → 手册 v1.1 §0.5 实测起点重置铁律修复",
+        "step_D_no_post": "预期 (R1 不接调度器) → 手册 v1.1 §4.0 R1 范围声明 + INFO D3 + FU-103-CLIENT-SYNC-SCHEDULER 立件",
+        "step_E_watermark_empty": "预期 (syncPull 没人触发) + scope gap → 同上 FU + 手册 v1.1 §5.0"
+      },
+      "follow_ups_filed": [
+        "FU-103-CLIENT-SYNC-SCHEDULER (Sprint-3 候选 COSTRA-150 · P1 · 5 点)",
+        "FU-103-CONFLICT-MERGE-UI (Sprint-3 候选 COSTRA-151 · P2 · 5 点)"
+      ],
+      "d017_v3_first_full_practice": "yes (Step 1~5 + Q1~Q4 Human 拍板 · R1.3 残留 2 问题诊断 + 方案 A 实装)",
+      "human_final_decision": "approve",
+      "human_final_decision_at": "2026-05-09T19:17+08:00",
+      "final_report": ".team/reviews/COSTRA-103/FINAL.md",
+      "notes": "SBAI v1.1 第 7 次冒烟 · miniapp-dev 第 6 次实战；D-017 v3 完整流程首次实战 (Step 1~5 + Q1~Q4)；D-022 v2.0 评分表首次实战 (35→40)；Human 实测发现 R1 范围语义空白 → 立 2 条 FU 而非扩 R1 范围 (守住 INVEST small)；协议 100% 对齐 sync-protocol.md / id-strategy.md / error-codes.md；0 后端代码外溢；闸门 6/6 全绿 · 测 34/34。"
     }
   ]
 }
