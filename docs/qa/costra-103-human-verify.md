@@ -31,6 +31,37 @@ npm run test        # 期望：29+ tests passed
 **先跑 Mock 通路**（不依赖后端 COSTRA-104）：步骤 1/2/3/5 可在 Mock 模式下完成。
 步骤 4（断网→联网 push）需等 COSTRA-104 后端实装或本地 mock server。
 
+### 0.4 R1 范围声明（重要 · 避免误判 BUG）
+
+> **本卡 R1 实装范围 · Human 实测前必读**：
+>
+> COSTRA-103 R1 仅交付**本地 KV 持久化 + outbox 入队 + 三态消费函数体** · **不实装 client 端调度器**（即不接 `App.onLaunch` / `Page.onShow` / `wx.onNetworkStatusChange` / 周期 setInterval 的 wire-up）。原因：调度器需要 COSTRA-104 server `/sync/push` + `/sync/pull` 端点稳定后才能联调 · 此前实装是空跑 · 不符合 INVEST。
+>
+> **R1 不实装 · 留 follow-up 的明确范围**：
+>
+> | 不实装项 | 后续 owner | FU 登记 |
+> |---|---|---|
+> | client `pushDelta()` 调度触发（onShow / 网络恢复 / 10s 周期）| Sprint-3 候选 COSTRA-150 | `FU-103-CLIENT-SYNC-SCHEDULER` |
+> | client `syncPull()` 调度触发（同上 · 拉取 server changes）| 同上 | 同上 |
+> | watermark 推进（依赖 syncPull 触发后 server 返回）| 同上 | 同上 |
+> | conflict 真实合并 UI（替代当前"立即重试 next_retry_at = now+1"桩位）| Sprint-3 候选 COSTRA-151 | `FU-103-CONFLICT-MERGE-UI` |
+>
+> **Human 实测时**：步骤 D 看不到 `POST /sync/push` 是**预期**（不是 R1 BUG）· 步骤 E `watermark:` keys 为空数组 `[]` 也是**预期**（syncPull 没人触发就不会写）。详见各步骤断言文案。
+>
+> **R1 验证目标 = 函数体正确性**：H1~H5 全 PASS = 函数体无 bug · 调度层留 FU。
+
+### 0.5 实测起点重置（步骤 C 计数对齐铁律）
+
+**重要**：步骤 B 已记 1 笔 + 步骤 C 记 3 笔 = 累计 4 笔（不是 3）· 这会让步骤 C 断言 C1/C2 文案误读。**步骤 C 实测前必须清 storage**：
+
+```js
+// Console 执行（步骤 B 完成 · 步骤 C 开始前）
+wx.clearStorageSync()
+console.log('storage cleared, ready for step C')
+```
+
+或者 · 不清 storage 但**手动调整断言期望**：B+C 后 entry/outbox count 应该 = 4（不是 3）· 心算对齐即可。
+
 ---
 
 ## 1. 步骤 A · 启动检查（runtime 加载性基础验证）
@@ -98,16 +129,22 @@ console.log('index:', entryData)
 
 ## 3. 步骤 C · 断网记 3 笔（outbox 多 key 分片验证）
 
+### 3.0 前置（必读 · §0.5 已说明）
+
+**前提**：已执行 `wx.clearStorageSync()` 清空 storage 或重置项目。**否则 entry/outbox 计数会变成 4**（B 1 笔 + C 3 笔 = 4 · 这是手册描述漏洞 v1 → v1.1 修订点 · 见 §0.5）。
+
+如不想清 storage：手动把下列断言"长度 = 3"读作"长度 = 步骤 B 笔数 + 3"。
+
 ### 3.1 操作
 1. 开发者工具 → **Network → Offline**（模拟断网）
 2. 快速记 3 笔（金额随意，备注 `断网1` / `断网2` / `断网3`）
 3. 每次提交后**立即观察 Console + Storage Tab**
 
-### 3.2 断言（5 条全 PASS）
+### 3.2 断言（5 条全 PASS · 假设步骤 C 起点 storage 已清）
 
 | # | 断言 | 期望 |
 |---|---|---|
-| C1 | `entry:__index` 长度 = 3 | 3 条 entry |
+| C1 | `entry:__index` 长度 = 3 | 3 条 entry（步骤 C 起点已清 storage 时）|
 | C2 | `outbox:__index` 长度 = 3 | 3 条 seq（多 key 分片）|
 | C3 | **0 次**单 key 数组残留（不存在 `__costra_outbox_v1` 旧 key）| 0 |
 | C4 | payload 100% snake_case（`ledger_id` / `amount` / `category_id`）| 0 次驼峰 `amountCents` |
@@ -142,26 +179,48 @@ console.log('camelCase leak:', camelCase, '(expect [])')
 
 ## 4. 步骤 D · 联网推送（pushDelta 链路 + 三态消费预验证）
 
+### 4.0 R1 范围声明（重要）
+
+**预期：本步骤看不到 `POST /sync/push` 是正常的**（不是 BUG）。原因：
+
+- COSTRA-103 R1 **不实装** client 端调度器（即不接 `App.onLaunch` / `Page.onShow` / `wx.onNetworkStatusChange` / 周期 setInterval）
+- `pushDelta()` 函数体已实装（`miniprogram/services/sync.ts:74`）但**没人触发**
+- client 调度器实装留 follow-up `FU-103-CLIENT-SYNC-SCHEDULER`（Sprint-3 候选 COSTRA-150）
+
+**本步骤目标 = 验证模块加载无 runtime 错误**（D1/D2）· 不验证 push 实际触发。
+
 ### 4.1 操作
 1. **恢复 Network**（取消 Offline）
 2. 等待 30 秒观察 Console
 3. Console 搜索 `POST /sync/push` 或 `[outbox]`
 
-### 4.2 断言（2 条）
+### 4.2 断言（2 条 · 仅模块加载验证）
 
-> **注**：本卡 outbox 多 key 分片实装正确性可在本地验证；真正 push 成功需等 COSTRA-104 后端实装（/sync/push 端点）。本步骤预验证链路连通性。
+> **注**：本卡 outbox 多 key 分片实装正确性可在本地验证（步骤 B/C/E）；真正 push 触发需等 `FU-103-CLIENT-SYNC-SCHEDULER` 转正卡（Sprint-3）。本步骤仅预验证链路连通性 · **看不到 POST 是预期 · 不算 FAIL**。
 
 | # | 断言 | 期望 |
 |---|---|---|
 | D1 | Console 无 `TypeError: Cannot read property`（outbox API 调用链路）| 0 次 |
 | D2 | db.ts / outbox.ts 模块加载正常（无 `module not defined`）| 0 次 |
+| D3（INFO）| Console 无 `POST /sync/push` | **预期** · 不算 FAIL · 留 FU |
 
 ### 4.3 Pass/Fail
-- [ ] Pass · [ ] Fail（如 D1/D2 FAIL：发 `revise:COSTRA-103 reason:runtime module error`）
+- [ ] Pass · [ ] Fail（如 D1/D2 FAIL：发 `revise:COSTRA-103 reason:runtime module error`）· **D3 看不到 POST 不算 FAIL**
 
 ---
 
 ## 5. 步骤 E · 重启持久化验证（client_ref_id + watermark 不丢失）
+
+### 5.0 R1 范围声明（重要）
+
+**预期：本步骤 `watermark:` keys 为空数组 `[]` 是正常的**（不是 BUG）。原因：
+
+- watermark 的写入路径只有 `db.ts:271 setWatermark` · 唯一调用者 = `sync.ts:63 syncPull`
+- COSTRA-103 R1 **不触发 syncPull**（同 §4.0 client 调度器留 FU 原因）
+- watermark 永远没机会写入 storage · `keys.filter(k => k.startsWith('watermark:'))` 必然返回 `[]`
+- watermark 推进闭环留 follow-up `FU-103-CLIENT-SYNC-SCHEDULER`（Sprint-3 候选 COSTRA-150）
+
+**本步骤目标 = 验证 entry 持久化 + client_ref_id 不丢**（E1/E2）· 不验证 watermark 有值。
 
 ### 5.1 操作
 1. **重启小程序**（开发者工具 → 刷新，或点"编译"重新热加载）
@@ -171,23 +230,24 @@ console.log('camelCase leak:', camelCase, '(expect [])')
 ```js
 // 验证 entry 持久化
 const entryIdx = wx.getStorageSync('entry:__index')
-console.log('entry index after restart:', entryIdx?.d?.length, '(expect ≥ 3)')
+console.log('entry index after restart:', entryIdx?.d?.length, '(expect ≥ 3 if step C cleared storage / ≥ 4 otherwise)')
 
-// 验证 watermark 持久化
+// 验证 watermark 持久化（R1 预期为空 · 见 §5.0）
 const keys = wx.getStorageInfoSync().keys
 const wmKeys = keys.filter(k => k.startsWith('watermark:'))
-console.log('watermark keys:', wmKeys)
+console.log('watermark keys:', wmKeys, '(expect [] · R1 不接调度器 · FU-103-CLIENT-SYNC-SCHEDULER)')
 ```
 
-### 5.2 断言（2 条）
+### 5.2 断言（3 条 · 含 1 INFO）
 
 | # | 断言 | 期望 |
 |---|---|---|
 | E1 | `entry:__index` 长度 ≥ 3（断网 3 笔不丢失）| 持久化生效 |
 | E2 | `client_ref_id` 格式 UUID v4 仍正确 | 不损坏 |
+| E3（INFO）| `watermark:` keys 为 `[]` | **预期** · 不算 FAIL · 留 FU |
 
 ### 5.3 Pass/Fail
-- [ ] Pass · [ ] Fail（如 E1 FAIL：发 `revise:COSTRA-103 reason:persistent failure after restart`）
+- [ ] Pass · [ ] Fail（如 E1 FAIL：发 `revise:COSTRA-103 reason:persistent failure after restart`）· **E3 watermark 为 `[]` 不算 FAIL**
 
 ---
 

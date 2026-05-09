@@ -960,4 +960,60 @@ R1 MiniApp 交付 · T2 Tech 单轨 APPROVE 34/35 · Human 第 6 次模拟器启
 
 ---
 
+## 📌 COSTRA-103 R1 T2 Tech APPROVE 38/40 · Human 实测发现 R1 范围语义空白（2026-05-09 19:05）
+
+R1 review-tech APPROVE 38/40（D-022 v2.0 首次实战）· Human 模拟器实测步骤 D（无 POST）/ 步骤 E（watermark 空）发现是 **R1 dispatch 明示"留 COSTRA-104 接调度器"范围 · 不是 R1 bug** · 但 PRD AC-4「无网也能保存 → 写入本地队列 → 联网后自动上传」的"自动上传"语义 + 协议 §6.3 watermark 推进闭环 · **当前 backlog 无任何卡覆盖 client 端调度器 + 真实合并 UI** · scope gap 确认 · 同轮新立 2 条 FU：
+
+| FU-ID | 状态 | owner_card |
+|---|---|---|
+| 🆕 FU-103-CLIENT-SYNC-SCHEDULER | **`open`**（依赖 COSTRA-104 server 端稳定后转正 · Sprint-3 候选） | Sprint-3 候选 |
+| 🆕 FU-103-CONFLICT-MERGE-UI | **`open`**（同根因 PRD AC-4 · R1 留桩 mergeIntoConflictQueue · Sprint-3 候选） | Sprint-3 候选 |
+
+---
+
+### FU-103-CLIENT-SYNC-SCHEDULER · client 端同步调度器（onShow / 网络恢复 / 周期 / 启动触发 pushDelta + syncPull）
+
+- **来源**：2026-05-09 19:05 Human 模拟器实测 COSTRA-103 R1 步骤 D（无 POST）+ 步骤 E（watermark 空 · `keys.filter(k => k.startsWith('watermark:'))` = `[]`）
+- **登记时间**：2026-05-09 19:10（COSTRA-103 R1 Tech APPROVE 后 同手册修订一并登记）
+- **范围**：
+  - **触发时机**：① `App.onLaunch` / `Page.onShow` ② `wx.onNetworkStatusChange isConnected:true` ③ 周期 setInterval（10s · 兑现 PRD「联网 10s 自动推送」）④ 用户主动下拉刷新
+  - **调度 API**：`pushDelta()`（已实装 · `miniprogram/services/sync.ts:74`）+ `syncPull(family_id, since)`（已实装 · `miniprogram/services/sync.ts:43`）+ push/pull 互斥锁（协议 §6.1）
+  - **观测**：watermark 落到 storage `watermark:{family_id}` key · `entry:__index` 在 server 推送 changes 后被 `applyServerChanges` 同步
+  - **兜底**：网络失败 catch → outbox 整批留 + idempotency_key 不变 + 下次重试（已实装）
+- **依赖**：
+  - **必须**：COSTRA-104（server `/sync/push` + `/sync/pull` 端点 + ErrorCode + idempotency_keys 实装稳定）
+  - **建议**：COSTRA-103 R1 已落 syncPush/syncPull 函数体（不接调度器）· 本 FU 仅补"调度器"层（即 onShow/onNetworkStatusChange/setInterval 的 wire-up）
+- **PRD 锚点**：
+  - PRD AC-4：「无网也能保存 → 写入本地队列 → 联网后自动上传」
+  - sync-protocol.md §6.1：push/pull 互斥锁
+  - sync-protocol.md §6.3：watermark 单调推进
+- **阻断级别**：P1（PRD 核心承诺 · 当前由 R1 dispatch 明示推迟 · 不阻 COSTRA-103 R1 终审）
+- **认领建议**：Sprint-3 头部（COSTRA-104 server 稳定后立卡 · 估 5 点 · 候选卡号 COSTRA-150）
+- **状态**：`open`
+- **owner_card**：（待 Sprint-3 Planning 认领）
+- **不阻塞 COSTRA-103 终审依据**：D-022 v2.0 评分表 38/40 APPROVE · Human 实测 5 步 + 5 硬断言全 PASS（H1 sync API 0 / H2 outbox 多 key / H3 snake_case / H4 client_ref_id 持久 / H5 ensureVersion + lib 3.8+）· R1 dispatch §2 明示"COSTRA-104 接调度器"
+
+---
+
+### FU-103-CONFLICT-MERGE-UI · 真实 conflict 合并 UI（替代 R1 mergeIntoConflictQueue 桩）
+
+- **来源**：2026-05-09 同 FU-103-CLIENT-SYNC-SCHEDULER 同根因（PRD AC-4 离线优先架构最后一公里）
+- **登记时间**：2026-05-09 19:10
+- **范围**：
+  - 替换 `miniprogram/services/outbox.ts` 当前的"立即重试 next_retry_at = now+1"消极策略（仅 R1 桩）
+  - 实装真实合并 UI：`mergeIntoConflictQueue(op, server_state)` → 用户可视化 server 版本 vs client 版本 → 三选一（保留服务端 / 保留客户端 / 手动合并）
+  - 协议对齐：sync-protocol.md §2.4 「conflict → 保留 dirty + 等待合并」+ conflict-strategy.md（待 Sprint-3 立案）
+- **依赖**：
+  - **必须**：COSTRA-104 server `/sync/push` 返回 `conflict` 状态 + server_state payload
+  - **建议**：FU-103-CLIENT-SYNC-SCHEDULER 已上线（让 conflict 真实在生产环境出现）
+- **PRD 锚点**：
+  - PRD AC-3 转账冲突场景（家庭模式下父母同时改一笔）
+  - sync-protocol.md §2.4
+- **阻断级别**：P2（家庭模式才会触发 · MVP 单人记账暂不阻断 · Sprint-3+ 落地）
+- **认领建议**：Sprint-3 中后段（候选卡号 COSTRA-151 · 估 5 点 · 与 conflict-strategy.md 决议立案捆绑）
+- **状态**：`open`
+- **owner_card**：（待 Sprint-3 Planning 认领）
+
+---
+
 _本文件由 Orchestrator 按需追加；不直接编辑，仅在 Agent Revision Response 产出时同步新增条目。_
