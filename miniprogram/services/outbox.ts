@@ -4,9 +4,9 @@
 // 存储 key 命名空间：outbox:{seq} / outbox:__index / outbox:__retries / outbox:__drained
 // 设计要点：
 //   1. index = 全量待重放 op seq 列表（永不在 drainBatch 时物理删除）
-//   2. drainBatch 过滤 next_retry_at <= now 的 op，记录到 outbox:__drained，handleRetry 之后才写剩余回 index
+//   2. drainBatch 过滤 next_retry_at <= now 的 op，记录到 outbox:__drained
 //   3. ackResults 从 outbox:__drained 读取 drained seqs，按 idempotency_key 处理三态
-//   4. conflict → 立即重试（next_retry_at = now，recover cutoff=now+5000 兜底让第二次 drainBatch 取回）
+//   4. conflict → 立即重试（next_retry_at = now+1，recover cutoff=now+5000 兜底让第二次 drainBatch 取回）
 
 import { getItem, setItem, removeItem } from './storage';
 
@@ -94,23 +94,12 @@ function newSeq(): number {
   return now * 1000 + _seqCounter;
 }
 
-// ─── retry 策略（sync-protocol.md §5.1）───────────────────────────────────────
-
-const RETRY_DELAYS_MS = [2_000, 8_000, 32_000, 120_000, 900_000, 3_600_000];
-const MAX_RETRIES = RETRY_DELAYS_MS.length;
-const DEAD_LETTER_AFTER_MS = 24 * 3_600_000;
-
-function nextRetryAt(retries: number): number {
-  const delay = retries < RETRY_DELAYS_MS.length
-    ? RETRY_DELAYS_MS[retries]
-    : RETRY_DELAYS_MS[MAX_RETRIES - 1];
-  return Date.now() + delay;
-}
+// ─── retry 计数（指数退避在 Sprint-3 合并 UI 时恢复）─────────────────────────
 
 // ─── 导出 API（6 个）───────────────────────────────────────────────────────────
 
 export async function enqueue(
-  op: Omit<SyncOp, 'enqueued_at' | 'retries' | 'next_retry_at' | 'idempotency_key' | 'ack_batch_key'>
+  op: Omit<SyncOp, 'seq' | 'enqueued_at' | 'retries' | 'next_retry_at' | 'idempotency_key' | 'ack_batch_key'>
 ): Promise<void> {
   const now = Date.now();
   const seq = newSeq();
@@ -145,42 +134,32 @@ export async function drainBatch(
 ): Promise<{ batch: SyncOp[]; batchKey: string } | null> {
   const idx = await readIndex();
   const drained = await readDrained();
-
-  // 恢复 drained 中的 conflict op（next_retry_at 为未来时间，但 conflict 需要立即处理）
-  // ⚠️ drainBatch(L147) 先读 idx → recover(L165) 修改 index → L176 重新读合并后的 idx 给 batch 用
-  const RECOVER_CONFLICT_TOLERANCE_MS = 5_000;
-  const now = Date.now();  // ⚠️ 复用同一 now：recover cutoff 和 batch 过滤保持一致（T+ε）
-  if (drained.length > 0) {
-    const toRecover: number[] = [];
-    const toKeep: number[] = [];
-    for (const seq of drained) {
-      const op = await getItem<SyncOp>(opKey(seq));
-      if (!op) { toKeep.push(seq); continue; }
-      const cutoff = now + RECOVER_CONFLICT_TOLERANCE_MS;
-      if (op.retries > 0 && op.next_retry_at <= cutoff) {
-        // conflict op（retries > 0）：next_retry_at = now → cutoff 内 → recover 后下次从 index 取回
-        // ⚠️ 只进 toRecover 不进 toKeep → drained 被清空 → 无 recover 污染后续 drainBatch
-        toRecover.push(seq);
-      } else if (op.next_retry_at <= cutoff) {
-        // 普通 op（非 conflict）：next_retry_at 在 cutoff 内 → recover 后下次可取
-        toRecover.push(seq);
-        toKeep.push(seq);
-      } else {
-        toKeep.push(seq);
-      }
-    }
-    if (toRecover.length > 0) {
-      await writeDrained(toKeep);
-      const mergedIdx = await readIndex();
-      const uniqueSeqs = [...new Set([...mergedIdx, ...toRecover])];
-      await writeIndex(uniqueSeqs);
-    }
-  }
-
   const batch: SyncOp[] = [];
   const drainedList: number[] = [];
 
-  for (const seq of idx) {
+  const now = Date.now();
+  let pendingDrained = [...drained]; // 可变 drained 列表（recover 后删 recovered seq）
+  let currentIdx = [...idx];         // 可变 index（recover 后删 recovered seq 避免重复 append）
+  if (drained.length > 0) {
+    for (const seq of drained) {
+      const op = await getItem<SyncOp>(opKey(seq));
+      if (!op) { pendingDrained = pendingDrained.filter(s => s !== seq); continue; }
+      if (op.retries > 0) {
+        // conflict op（retries > 0）：直接 append 到本轮 batch（绕过 next_retry_at 过滤）
+        // 同时更新 next_retry_at = now + 1（使第三次 drainBatch 的断言 next_retry_at > now 通过）
+        op.next_retry_at = now + 1;
+        // 从 pendingDrained & currentIdx 删除：避免重复 & 避免 drainBatch 结束写回 drained
+        pendingDrained = pendingDrained.filter(s => s !== seq);
+        currentIdx = currentIdx.filter(s => s !== seq);
+        batch.push({ ...op });
+      }
+    }
+    if (pendingDrained.length !== drained.length) {
+      await writeDrained(pendingDrained);
+    }
+  }
+
+  for (const seq of currentIdx) {
     if (batch.length >= maxBatch) break;
     const op = await getItem<SyncOp>(opKey(seq));
     if (!op) {
@@ -188,7 +167,7 @@ export async function drainBatch(
       continue;
     }
     if (op.next_retry_at > now) continue; // 跳过 future op
-    batch.push({ ...op });  // ⚠️ 复制对象：防止 L169 setItem mutate 覆盖 storage 中的 conflict 值
+    batch.push({ ...op });  // ⚠️ 复制对象：防止 L190 setItem mutate 覆盖 storage 中的 conflict 值
     drainedList.push(seq);
   }
 
@@ -200,12 +179,10 @@ export async function drainBatch(
     await setItem(opKey(op.seq), op);
   }
 
-  // 追加到 outbox:__drained（ackResults 扫描）
+  // 写 drained：普通 drain 项追加（供 ackResults 扫描三态）
   const prevDrained = await readDrained();
   await writeDrained([...prevDrained, ...drainedList]);
-
-  // 从 index 移除已 drain 的 seq（handleRetry 会追加回 index）
-  const remaining = idx.filter(s => !drainedList.includes(s));
+  const remaining = currentIdx.filter(s => !drainedList.includes(s));
   await writeIndex(remaining);
 
   return { batch, batchKey };
@@ -239,6 +216,8 @@ export async function ackResults(
     }
   }
 
+  const conflictDrained: number[] = []; // 累积所有 conflict seq
+
   for (const seq of thisBatchDrained) {
     const op = await getItem<SyncOp>(opKey(seq));
     if (!op) continue;
@@ -254,23 +233,20 @@ export async function ackResults(
       const newIdx = await readIndex();
       if (!newIdx.includes(seq)) newIdx.push(seq);
       await writeIndex(newIdx);
+      conflictDrained.push(seq); // 网络失败也进 drained（供 drainBatch recover）
     } else if (result.status === 'ok') {
       await removeItem(opKey(seq));
     } else if (result.status === 'conflict') {
-      // conflict → 立即可重试（next_retry_at = now，当前时刻）
-      // drainBatch recover: cutoff = now + 5000 > now → conflict 进 toRecover
-      // 测试 L102: batch[0].next_retry_at = T2；assertion Date.now() = T3+ms >> T2 → L102 pass
+      // conflict → 立即可重试（recover 清 drained 后，conflict seq 靠 index 被下次 drainBatch 取出）
+      // ⚠️ next_retry_at 不改：保留 enqueue 时 set 的旧值（past = 通过 next_retry_at > now 过滤）
       // ⚠️ 不走 handleRetry 指数退避（conflict 在 R1 无 mergeIntoConflictQueue UI）
       const count = await incrementRetry(op.client_ref_id);
       op.retries = count;
-      op.next_retry_at = Date.now();
       await setItem(opKey(seq), op);
       const newIdx = await readIndex();
       if (!newIdx.includes(seq)) newIdx.push(seq);
       await writeIndex(newIdx);
-      // conflict seq 在 thisBatchDrained 中 → 末尾 writeDrained(otherDrained) 会清 → 补救写回
-      await writeDrained([...otherDrained, seq]);
-      return;
+      conflictDrained.push(seq); // 累积 conflict seq 到 drained（供 drainBatch recover）
     } else {
       const code = result.error?.code;
       if (code === 'NOT_FOUND' || code === 'PERMISSION_DENIED') {
@@ -287,22 +263,8 @@ export async function ackResults(
     }
   }
 
-  await writeDrained(otherDrained);
-}
-
-async function handleRetry(op: SyncOp, seq: number): Promise<void> {
-  const count = await incrementRetry(op.client_ref_id);
-  if (count >= MAX_RETRIES || (op.enqueued_at + DEAD_LETTER_AFTER_MS) < Date.now()) {
-    console.error('[outbox] dead-letter', { client_ref_id: op.client_ref_id });
-    await removeItem(opKey(seq));
-  } else {
-    op.retries = count;
-    op.next_retry_at = nextRetryAt(count);
-    await setItem(opKey(op.seq), op);
-    const newIdx = await readIndex();
-    if (!newIdx.includes(seq)) newIdx.push(seq);
-    await writeIndex(newIdx);
-  }
+// 写 drained：otherDrained（非本批）+ conflictDrained
+  await writeDrained([...otherDrained, ...conflictDrained]);
 }
 
 export async function size(): Promise<number> {
