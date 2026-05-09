@@ -1,9 +1,9 @@
 {
   "project": "Costra",
-  "version": "0.2.2",
-  "last_updated": "2026-05-03T20:32:00+08:00",
+  "version": "0.2.3",
+  "last_updated": "2026-05-09T19:30:00+08:00",
   "platform": "wechat-miniprogram",
-  "notes": "v0.2.2: COSTRA-124 R1 假设被 Human 第 7 次实测证伪（2026-05-03 20:09 · too eayly 复现 ×7 · Launch Time 1864 ms）· 定性翻转 v3（SDK 2.32.3+ 渲染层 storage group _prepare 就绪晚于 App.onLaunch · SDK + 业务共责）· 立 COSTRA-125（2 点 · P1 · 方案 B'+E' 合并版：异步 API 全量 + bootstrap Promise）· COSTRA-124 部分闭合（顶层副作用分支 close · commit a296be0 保留）· FU-LAUNCH 分裂 A/B/C 三子 FU · D-017 第 5 次实战 · SBAI v1.1 P2' 冒烟第 3 回。v0.2.1: 新增 COSTRA-124 Epic-C 补丁（启动期 storage 时序修复 + FU-LAUNCH 闭合 · 1 点 · SBAI v1.1 P2' 冒烟驱动 · D-018 v1.1）。v0.2.0: 发布平台由 iOS 改为微信小程序（见 ADR-0003），Epic-A/D/G 的 Story 名称与范围已同步。",
+  "notes": "v0.2.3: COSTRA-106 Sprint-1 Retro 全量交付（R1）· 14+ 议题（20 项）全处置 + D-020/D-021/D-022 三决议落盘 + metrics 重写补齐 11 卡 + sprint_1_summary + board Sprint-2 段开建 + backlog 流转 + 160 占位 · D-017 v3 三证铁律遵守 · D-016 第 13 次实战合规 · SBAI v1.1 第 6 次冒烟 · pm-writer 首次实战。v0.2.2: COSTRA-124 R1 假设被 Human 第 7 次实测证伪 · 定性翻转 v3 · 立 COSTRA-125 + FU-LAUNCH 分裂 A/B/C · D-017 第 5 次实战。",
   "epics": [
     {
       "id": "Epic-A",
@@ -76,6 +76,115 @@
         { "id": "COSTRA-903", "title": "APM + 微信小程序后台 JS 异常监控", "points": 3 }
       ]
     }
-  ]
+  ],
+  "sprint_management": {
+    "description": "Sprint 治理卡（Retro / Planning / 专项治理）· 不属于 Epic 体系",
+    "cards": [
+      {
+        "id": "COSTRA-106",
+        "title": "Sprint-1 Retro · 14+ 议题处置 + 工程度量刷新",
+        "owner": "pm-writer",
+        "type": "retro",
+        "points": 2,
+        "priority": "P0",
+        "sprint": "sprint-2",
+        "epic": null,
+        "status": "Todo",
+        "dependencies": [],
+        "description": "Sprint-1 收官 Retro · 14+ 议题（20 项）全处置 + D-020/D-021/D-022 三决议 + metrics 重写 · R1 实装完成 · 等待 Human T2 终审",
+        "disposition": "Sprint-2 第 1 张",
+        "updated_at": "2026-05-09T19:30:00+08:00"
+      },
+      {
+        "id": "COSTRA-103",
+        "title": "本地 SQLite/IndexedDB 持久化 + outbox_queue",
+        "owner": "MiniApp-Agent",
+        "type": "story",
+        "points": 5,
+        "priority": "P0",
+        "sprint": "sprint-2",
+        "epic": "Epic-C",
+        "status": "Backlog",
+        "dependencies": ["COSTRA-100"],
+        "description": "Epic-C 主线 · 本地持久化 + outbox 重放 + 冲突探测桩 · Sprint-2 主头",
+        "disposition": "Sprint-2 主线第 2 张（COSTRA-106 完成后立即开）",
+        "updated_at": "2026-05-09T19:30:00+08:00"
+      },
+      {
+        "id": "COSTRA-104",
+        "title": "/entries CRUD + /sync/push 批量通道",
+        "owner": "Backend-Agent",
+        "type": "story",
+        "points": 6,
+        "priority": "P0",
+        "sprint": "sprint-2",
+        "epic": "Epic-C",
+        "status": "Backlog",
+        "dependencies": ["COSTRA-100", "COSTRA-103"],
+        "description": "与 103 协议对齐 · 走 ErrorCode 枚举 + idempotency_keys",
+        "disposition": "Sprint-2 主线第 3 张（103 完工后串行开）",
+        "updated_at": "2026-05-09T19:30:00+08:00"
+      },
+      {
+        "id": "COSTRA-105",
+        "title": "单人记账闭环冒烟（含离线弱网）",
+        "owner": "QA-Agent",
+        "type": "story",
+        "points": 3,
+        "priority": "P1",
+        "sprint": "sprint-2",
+        "epic": "Epic-B",
+        "status": "Backlog",
+        "dependencies": ["COSTRA-103", "COSTRA-104"],
+        "description": "端到端冒烟 · Sprint-2 中段",
+        "disposition": "Sprint-2 中段（103/104 完工后开）",
+        "updated_at": "2026-05-09T19:30:00+08:00"
+      },
+      {
+        "id": "COSTRA-112",
+        "title": "miniprogram/config/subject.ts + 硬编码主体字样清扫",
+        "owner": "MiniApp-Agent",
+        "type": "story",
+        "points": 1,
+        "priority": "P1",
+        "sprint": "sprint-2",
+        "epic": "Epic-B",
+        "status": "Backlog",
+        "dependencies": ["D-008"],
+        "description": "主体红线最后一公里 · 与 113 对齐",
+        "disposition": "Sprint-2（可与主线并行）",
+        "updated_at": "2026-05-09T19:30:00+08:00"
+      },
+      {
+        "id": "COSTRA-114",
+        "title": "开发服务器 bootstrap 手册（SSH 加固/防火墙/docker/nginx+自签 HTTPS）",
+        "owner": "DevOps-Agent",
+        "type": "story",
+        "points": 2,
+        "priority": "P2",
+        "sprint": "sprint-2",
+        "epic": "Epic-G",
+        "status": "Backlog",
+        "dependencies": ["D-009"],
+        "description": "Sprint-1 未开工 · 转入 Sprint-2",
+        "disposition": "Sprint-2（可与主线并行）",
+        "updated_at": "2026-05-09T19:30:00+08:00"
+      },
+      {
+        "id": "COSTRA-160",
+        "title": "miniapp 设计 tokens pipeline（FU-118-3 根治）",
+        "owner": "Design-Agent + MiniApp-Agent",
+        "type": "story",
+        "points": 2,
+        "priority": "P2",
+        "sprint": "sprint-2",
+        "epic": "Epic-F",
+        "status": "Backlog",
+        "dependencies": ["COSTRA-011"],
+        "description": "构建脚本 scripts/gen-wxss-tokens.mjs · 设计-实装闭环",
+        "disposition": "Sprint-2（可与主线并行）",
+        "updated_at": "2026-05-09T19:30:00+08:00"
+      }
+    ]
+  }
 }
-

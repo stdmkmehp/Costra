@@ -9,7 +9,7 @@
 > **🆕 验证问题响应 SOP（D-017 · 2026-04-28 13:59 Human 立案 · 14:15 落盘）**：项目遇到验证失败时标准流程 —— ① 责任领域识别（Orchestrator 30s） → ② 责任 Agent 根因分析（只诊断不改文件） → ③ 多方案对比（≥2~3 方案 · 列成本/价值/风险 + Human 决策点 Qn） → ④ Human 评估裁决 → ⑤ 派单实装。**禁止 Orchestrator 自行分析根因**（反模式 A） · E1/E2/E3 例外 · 反模式 ABCD 禁令 · COSTRA-120 首次实战。详见 `.team/decisions/D-017-verification-problem-response-sop.md`。
 > **🔄 D-011 实战验证三次通过**（2026-04-23）：COSTRA-100（2 轮 · 69 min） + Sprint-0 补审（7 卡 × 2 轮 · 29 min 并行） + **COSTRA-101 Round 1 刚自动拉起（22:49 · D-014-b 首次实战）**
 
-最后更新：`2026-05-04 08:30`（Orchestrator · ✅ **COSTRA-125 Card-Review R1 PASS 31/35**（by `costra-card-reviewer-tech` · SBAI v1.1 P2'' 冒烟第 2 次 · 审查档物理只读验证通过 · 0 P0 · 0 P1 · 4 P2 记 state.md §6 遗留 · 不触发 Round-2）· dispatch §0 补 Card-Review 响应段 · 下一步 spawn `costra-miniapp-dev` R1 实装 · Sprint-1 末收官期 · 倒计剩 2 天）
+最后更新：`2026-05-09`（Orchestrator · ✅ **COSTRA-106 pm-writer R1 实装 + Sprint-2 段开建** · 主报告（sprint-1-retro.md · 14+ 议题处置）+ D-020/D-021/D-022 三决议落盘 + metrics.json 重写（11 卡补齐 + sprint_1_summary）+ board.md Sprint-2 段开建 + backlog.json 流转 + state.md/history 收尾 · D-017 v3 三证铁律已遵守 · **D-016 第 13 次实战合规** · SBAI v1.1 第 6 次冒烟 · pm-writer 首次实战 · 9 文件全数产出）
 >
 > （上一条归档）`2026-05-03 20:32`（Orchestrator · 🆕 **COSTRA-125 立卡**：启动期 storage 异步化 · onLaunch 内同步调用根因解决 · 2 点 · P1 · 方案 B'+E' 合并版（异步 API 全量 + bootstrap Promise）· **COSTRA-124 R1 假设 Human 第 7 次模拟器实测证伪** · R2 诊断翻转为定性 v3（SDK + 业务共责 · 渲染层 storage group `_prepare` 就绪晚于 App.onLaunch）· **COSTRA-124 部分闭合**（顶层副作用子目标 close · commit `a296be0` 架构正确保留）· FU-LAUNCH 分裂为 A/B/C 三子 FU · A close · B/C open 交棒 COSTRA-125 · D-017 第 5 次实战 · SBAI v1.1 P2' 冒烟第 3 回产物）
 >
@@ -74,7 +74,7 @@
 **Sprint-1 总估点**：**48 点**（40 + 2 [119] + 2 [120] + 2 [121] + 1 [122] + 1 [123] · **连续五张紧急卡溢出 40 工时顶格约束** · Sprint-0 骨架期遗留微信规约债务同族**五连** · Sprint-1 末 Retro 议题升级：紧急卡五连溢出 / D-017 v1→v2 升级（四次实战完整证据 · 候选新增 E4 代职边界例外）/ D-016 升定稿规约（12 次实战）/ T2 档位结构性局限 / Review-Tech 评分表增"runtime 加载性"维度（议题 13 升 P0）/ CI 引入 miniprogram-ci 真实编译冒烟（议题 15 新增）/ 同族盲区系统性预防 Epic-F 立案（议题 10 升 P0））
 
 ## 🔄 Doing（清洗后仅列真正 in-flight · 其余为 Todo-等触发）
-- [~] **COSTRA-114** @DevOps-Agent · 开发服务器 bootstrap **手册**（D-009）· **🟠 卡定义已 approve 但实际未开工**（I-003 · 04-24 17:00 澄清 · `docs/ops/` 目录不存在）· 等 Human 真正触发 `run devops COSTRA-114`
+- [~] **COSTRA-106** @pm-writer · **Sprint-1 Retro · 14+ 议题处置 + 工程度量刷新（R1 实装中）** · 2 点 · P0 · Sprint-2 第 1 张 · **D-020/D-021/D-022 三决议 + metrics 重写 + board 更新** · 等待 Human T2 终审
 
 ## 👀 Review
 
@@ -208,6 +208,26 @@ _（无强阻塞。COSTRA-040 "真实上传链路激活" 仍依赖外部资源�
 
 ---
 
+## 📋 Todo · Sprint-2（2026-05-10 ~ 2026-05-23 · 2 周 · 估点目标 32~36）
+
+> 📌 **Sprint-2 7 卡建议清单**（D-019 §3.2 · Human 待触发立卡）：
+
+| 卡号 | 标题 | Owner | 估点 | 优先级 | 依赖 | 备注 |
+|---|---|---|---|---|---|---|
+| **COSTRA-106** | **Sprint-1 Retro · 14+ 议题处置 + 工程度量刷新** | pm-writer | 2 | **P0**（Sprint-2 第 1 张）| — | R1 实装中 · 等待 Human T2 终审 |
+| **COSTRA-103** | **本地 SQLite/IndexedDB 持久化 + outbox_queue**（Epic-C 主线）| MiniApp-Agent | 5 | **P0** | COSTRA-100 | Sprint-1 已解锁 |
+| **COSTRA-104** | `/entries` CRUD + `/sync/push` 批量通道 | Backend-Agent | 6 | **P0** | COSTRA-100/103 | 与 103 协议对齐 |
+| **COSTRA-105** | 单人记账闭环冒烟（含离线弱网）| QA-Agent | 3 | P1 | COSTRA-103/104 | Sprint-2 中段 |
+| **COSTRA-112** | `miniprogram/config/subject.ts` + 硬编码主体字样清扫 | MiniApp-Agent | 1 | P1 | D-008 | 主体红线最后一公里 |
+| **COSTRA-114** | 开发服务器 bootstrap 手册 | DevOps-Agent | 2 | P2 | D-009 | Sprint-1 未开工 · 转入 |
+| **COSTRA-160** | miniapp 设计 tokens pipeline（FU-118-3 根治）| Design-Agent + MiniApp-Agent | 2 | P2 | COSTRA-011 | 构建脚本 `scripts/gen-wxss-tokens.mjs` |
+
+**Sprint-2 总估点（建议）**：2 + 5 + 6 + 3 + 1 + 2 + 2 = **21 点 + 紧急卡 buffer 12~16 点 = 32~36 点**
+
+> 📌 **Sprint-2 紧急卡 buffer 机制**（议题 A 处置）：留 12~16 点紧急卡 buffer · 占 ~40% 总估点 · 应对 Sprint-0 骨架期遗留微信规约债务系统性预防（议题 10）
+
+---
+
 ## 🚦 闸门状态
 
 | 闸门 | 状态 | 发起者 | 链接 |
@@ -215,8 +235,8 @@ _（无强阻塞。COSTRA-040 "真实上传链路激活" 仍依赖外部资源�
 | **G1 PRD** | ✅ **Approved** · 2026-04-21 15:22 | PM-Agent | `docs/PRD.md` v0.1 |
 | **G2 设计** | ✅ **Approved** · 2026-04-22 16:47 | Design-Agent | `docs/design/` |
 | **G3 契约** | ✅ **Approved (with follow-up)** · 2026-04-22 16:47 | Backend-Agent | `docs/api/` · `api/openapi.yaml` · 补齐见 COSTRA-100 |
-| **G4 合并** | ⏳ Sprint-1 末 | — | — |
-| **G5 发布** | 🟡 **Preempt-Ready** · 占位流水线已落地 | DevOps-Agent | `.github/workflows/*` · `docs/devops/` |
+| **G4 合并** | ✅ **PASS（2026-05-09 09:44 · D-019）** | 2026-05-09 09:44 |
+| **G5 发布** | 🟡 **Preempt-Ready**（占位流水线就绪 · 等 ICP + 主体定型 + 真 staging 实测）| — |
 
 ---
 
