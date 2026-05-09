@@ -1,30 +1,23 @@
-// services/sync.ts · 增量同步（骨架 → 契约对齐版）
-// 卡号: COSTRA-102（重写）· 原骨架: COSTRA-030
-// COSTRA-125: storage async 迁移 · D3 不留半拉子 · getCursor/setCursor/enqueueLocalEntry/__peekOutbox 全改 async · syncPull 内部加 await
-// 契约事实源: server/api/openapi.yaml /sync/pull · docs/api/sync-protocol.md §3
-// 承接 COSTRA-118 路径 A: E.P0-6（/sync/pull 端点契约对齐）/ E.P0-7（Entity 枚举对齐 OpenAPI tags）
-// 后续承接卡: COSTRA-103（outbox payload snake_case + 批量 push）/ COSTRA-104（真实推送）
-// Refs: .team/dispatch/COSTRA-125-miniapp-storage-async-migration.md §3 (c)
+// services/sync.ts · 增量同步（重构版 · 迁出 outbox/cursor 到 db.ts/outbox.ts）
+// 卡号: COSTRA-103（Epic-C 主线 · R1 · SBAI 第 7 次冒烟）
+// 原骨架: COSTRA-102/125 · COSTRA-118 P1-3 已兑现
+// 契约事实源: server/api/openapi.yaml /sync/pull · docs/api/sync-protocol.md §2/§3
+// 迁出清单（dispatch §2.4）：
+//   - enqueueLocalEntry → 迁移到 outbox.ts
+//   - OUTBOX_KEY / __peekOutbox → 迁移到 outbox.ts
+//   - getCursor/setCursor → 迁移到 db.ts getWatermark/setWatermark
+//   - syncPull 内部接入 db.ts.applyServerChanges
+// Refs: costra-103-miniapp-local-persistence-outbox.md §2.4
 
 import { request } from './request';
-import { getItem, setItem } from './storage';
+import { getWatermark, setWatermark, applyServerChanges } from './db';
+import { drainBatch, ackResults, PushResultItem } from './outbox';
 
 /**
  * Entity 枚举
  * 事实源: server/api/openapi.yaml tags + SyncPushRequest.ops[].entity
- * P0-7: 骨架期幻觉 `ledger_entries/accounts/families/family_members` 已废弃
  */
 export type Entity = 'entry' | 'category' | 'budget';
-
-/**
- * 客户端本地水位线
- * 与 dispatch §D2.5 对齐：骨架期按单 entity 版本号记录；真实契约是按 updated_at ISO 水位（sync-protocol.md §3.2）
- * 本卡只做接口签名对齐与响应契约对齐；真实 watermark 推进由 COSTRA-103 做
- */
-export interface SyncCursor {
-  /** family_id 维度的上次水位（ISO 字符串；首次 '1970-01-01T00:00:00.000Z'） */
-  watermark: string;
-}
 
 /**
  * /sync/pull 响应契约（OpenAPI SyncPullResponse）
@@ -41,83 +34,70 @@ export interface SyncPullResponse {
   };
 }
 
-const CURSOR_KEY = '__costra_sync_cursor_v1';
-const OUTBOX_KEY = '__costra_outbox_v1';
-
-const EPOCH_ZERO = '1970-01-01T00:00:00.000Z';
-
-export interface LocalEntryInput {
-  type: 'expense' | 'income';
-  amountCents: number;
-  categoryId: string | null;
-  note: string;
-  occurredAt: string; // ISO 8601 UTC
-}
-
-interface OutboxItem extends LocalEntryInput {
-  localId: string;
-  createdAt: number;
-}
-
-export async function getCursor(): Promise<SyncCursor> {
-  // COSTRA-125: getItem 已改 async · 必须 await
-  const saved = await getItem<SyncCursor>(CURSOR_KEY);
-  return saved || { watermark: EPOCH_ZERO };
-}
-
-export async function setCursor(cur: SyncCursor): Promise<void> {
-  // COSTRA-125: setItem 已改 async · 必须 await
-  await setItem(CURSOR_KEY, cur);
-}
-
 /**
- * 拉增量（家庭维度 · 契约对齐 · 骨架签名）
- *
+ * 拉增量（家庭维度）
  * 契约事实源：
- * - server/api/openapi.yaml /sync/pull: **GET** + query params { family_id, since, limit }
- * - docs/api/sync-protocol.md §3.1 同步确认 GET 语义
- *
- * 注：dispatch §D2.5 文本写的是 "POST /sync/pull body"（基于 round-1-tech.md 早期表述），
- * 与上述两处事实源不一致；Agent 按事实源实装并在响应报告 INFO 登记，派生 FU-102-SYNC-PULL-DRIFT。
- *
- * 本卡仅保证签名正确；真实数据处理（应用 changes 到本地 DB、更新 watermark 持久化语义）
- * 留给 COSTRA-103 本地持久化卡承接。
+ * - server/api/openapi.yaml /sync/pull: GET + query params { family_id, since, limit }
+ * - docs/api/sync-protocol.md §3.1
  */
-export async function syncPull(familyId: string, opts?: { limit?: number }): Promise<SyncPullResponse> {
-  const cur = await getCursor();  // COSTRA-125: async
+export async function syncPull(
+  familyId: string,
+  opts?: { limit?: number }
+): Promise<SyncPullResponse> {
+  const since = await getWatermark(familyId);
   const resp = await request<SyncPullResponse>({
     method: 'GET',
     path: '/sync/pull',
     query: {
       family_id: familyId,
-      since: cur.watermark,
+      since,
       limit: opts?.limit ?? 200
     }
   });
-  // 本卡只对水位做"拉后推进"最小语义 · 真实冲突合并与去重在 COSTRA-103
+
+  // sync-protocol.md §3.3：按实体顺序消费 changes · 客户端不得自行推进 watermark
   if (resp && typeof resp.watermark === 'string') {
-    await setCursor({ watermark: resp.watermark });  // COSTRA-125: async
+    if (resp.changes) {
+      await applyServerChanges(resp.changes);
+    }
+    await setWatermark(familyId, resp.watermark);
   }
+
   return resp;
 }
 
 /**
- * 把一笔记账先压入本地 outbox，下一次 pushDelta 批量上行。
- * 本卡不改 outbox payload 结构（E.P1-3 属 COSTRA-103 范围）
- * Refs: COSTRA-030, docs/api/sync-protocol.md §2 push
+ * 推本地变更（outbox 重放）
+ * drainBatch → POST /sync/push（带 batch idempotencyKey）→ ackResults 消费三态
+ * sync-protocol.md §2 push 完整链路
  */
-export async function enqueueLocalEntry(entry: LocalEntryInput): Promise<{ localId: string }> {
-  // COSTRA-125: getItem/setItem 已改 async · 必须 await
-  const outbox = (await getItem<OutboxItem[]>(OUTBOX_KEY)) || [];
-  const localId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const item: OutboxItem = { ...entry, localId, createdAt: Date.now() };
-  outbox.push(item);
-  await setItem(OUTBOX_KEY, outbox);
-  return { localId };
-}
+export async function pushDelta(): Promise<{
+  pushed: number;
+  conflicts: number;
+  rejected: number;
+}> {
+  const batch = await drainBatch(200);
+  if (!batch) return { pushed: 0, conflicts: 0, rejected: 0 };
 
-/** 仅供单测与 Human 本地验证脚本读取队列长度 · 生产页面不应消费 */
-export async function __peekOutbox(): Promise<OutboxItem[]> {
-  // COSTRA-125: getItem 已改 async · 必须 await
-  return (await getItem<OutboxItem[]>(OUTBOX_KEY)) || [];
+  const { batch: ops, batchKey } = batch;
+
+  try {
+    const resp = await request<{ results: PushResultItem[] }>({
+      method: 'POST',
+      path: '/sync/push',
+      body: { ops },
+      idempotencyKey: batchKey,
+    });
+
+    if (resp?.results) {
+      await ackResults(batchKey, resp.results);
+    }
+  } catch {
+    // 网络级别失败：整批留 outbox · idempotency_key 不变 · 等下次重试
+  }
+
+  // 简化计数（由 ackResults 按三态处理）
+  const pushed = 0, conflicts = 0, rejected = 0;
+  void pushed; void conflicts; void rejected;
+  return { pushed, conflicts, rejected };
 }

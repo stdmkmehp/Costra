@@ -1,7 +1,12 @@
 // pages/entry/index.ts
-// 记一笔页：类型切换 + 数字键盘 + 分类 + 备注。骨架阶段提交走 services/sync.ts 本地队列。
-// Refs: COSTRA-030, docs/design/flows/add-entry.md, ADR-0004 §4 金额精度
-import { enqueueLocalEntry } from '../../services/sync';
+// 记一笔页：类型切换 + 数字键盘 + 分类 + 备注。骨架阶段提交走 services/db.ts 本地持久化 + services/outbox.ts outbox 队列。
+// 卡号: COSTRA-103（Epic-C 主线 · R1 · SBAI 第 7 次冒烟）
+// Refs: COSTRA-103 §2.5 接入 · sync-protocol.md §2.1（payload snake_case）
+// P1-1 follow-up（card-review-round-1-tech.md）：payload 驼峰 → snake_case 修正
+
+import { putEntry } from '../../services/db';
+import { enqueue } from '../../services/outbox';
+import { newClientRefId } from '../../utils/id';
 import { parseAmountInputToCents, formatMoney } from '../../utils/money';
 
 Page({
@@ -44,12 +49,35 @@ Page({
     }
     this.setData({ submitting: true });
     try {
-      await enqueueLocalEntry({
+      const clientRefId = newClientRefId();
+      const now = new Date().toISOString();
+      // 构造 Entry（snake_case payload · 对齐 sync-protocol.md §2.1）
+      await putEntry({
+        client_ref_id: clientRefId,
+        ledger_id: 'default', // TODO(COSTRA-104): 从当前活跃账本取 ledger_id
+        amount: cents,
+        currency: 'CNY',
         type: this.data.type,
-        amountCents: cents,
-        categoryId: this.data.categoryId || null,
+        category_id: this.data.categoryId || null,
         note: this.data.note,
-        occurredAt: new Date().toISOString(),
+        occurred_at: now,
+        dirty: true,
+      });
+      // 入 outbox（snake_case payload · 驼峰 amountCents/categoryId/occurredAt 已修正）
+      await enqueue({
+        op: 'create',
+        entity: 'entry',
+        client_ref_id: clientRefId,
+        base_version: null,
+        payload: {
+          ledger_id: 'default',
+          amount: cents,
+          currency: 'CNY',
+          type: this.data.type,
+          category_id: this.data.categoryId || null,
+          note: this.data.note,
+          occurred_at: now,
+        },
       });
       wx.showToast({ title: '已记录', icon: 'success' });
       setTimeout(() => wx.navigateBack(), 400);
