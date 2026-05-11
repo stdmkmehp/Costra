@@ -16,11 +16,12 @@
 
 ## §2 当前关注（active tasks）
 
-- （无 · COSTRA-104 R1 实装完成 · 等 review-tech R1 + Human curl 实测）
+- （无 · COSTRA-104 R1.x 极窄修复完成 · 等 review-tech R1.x review）
 
 ## §3 交付历史索引
 
-- 2026-05-11 · COSTRA-104 R1 实装（POST /sync/push + POST/GET /entries + 3 stub 切出去铁律 · D-022 v2.0 第 2 次实战准备）· SBAI 第 8 次冒烟 · backend-dev 首次实战 · R1+R1.1+R1.2 三轮收口（D-016 反例第 5 次 · 由 Orchestrator 接管收尾）
+- 2026-05-11 · COSTRA-104 R1 实装（POST /sync/push + POST/GET /entries + 3 stub 切出去铁律 · D-022 v2.0 第 2 次实战准备）· 6d395bd / 6c17085 / 212f181 · SBAI 第 8 次冒烟 · backend-dev 首次实战 · R1+R1.1+R1.2 三轮收口（D-016 反例第 5 次 · 由 Orchestrator 接管收尾）
+- 2026-05-11 · COSTRA-104 R1.x 极窄修复（R1 review-tech 36/40 APPROVE 后同轮兑现 P1-1 + P2-1 · 补 T2 update conflict 测 + followup_id 字段名修正）· 363efa1 · SBAI 第 9 次冒烟 · backend-dev 第 2 次实战收口
 
 ## §4 最近决策影响
 
@@ -47,4 +48,4 @@
 ## §7 最近更新时间戳
 
 - 2026-05-02T19:24:00+08:00 · 初始化骨架（by Orchestrator）
-- 2026-05-11T15:05:00+08:00 · COSTRA-104 R1 实装最终收尾（含 R1.1/R1.2 残留修复 · Orchestrator 接管 state/history/commit 兜底）
+- 2026-05-11T20:57:43+08:00 · COSTRA-104 R1.x 极窄修复收口（363efa1 · P1-1 T2 测 + P2-1 followup_id）
