@@ -81,6 +81,64 @@ function applyMigrations(db: IMemoryDb): void {
       client_fp       TEXT,
       last_refresh_at TIMESTAMPTZ
     );
+    -- COSTRA-104: entries 测试需补充的表（简化版 · 兼容 pg-mem）
+    CREATE TABLE families (
+      id              UUID PRIMARY KEY,
+      name            TEXT NOT NULL,
+      owner_id        UUID NOT NULL,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+      deleted_at      TIMESTAMPTZ,
+      version         INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE TABLE ledgers (
+      id              UUID PRIMARY KEY,
+      family_id       UUID NOT NULL,
+      name            TEXT NOT NULL,
+      currency        TEXT NOT NULL DEFAULT 'CNY',
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+      deleted_at      TIMESTAMPTZ,
+      version         INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE TYPE family_role AS ENUM ('owner', 'member', 'viewer');
+    CREATE TABLE family_members (
+      family_id       UUID NOT NULL,
+      user_id         UUID NOT NULL,
+      role            family_role NOT NULL,
+      joined_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+      left_at         TIMESTAMPTZ,
+      PRIMARY KEY (family_id, user_id)
+    );
+    CREATE TABLE entries (
+      id              UUID PRIMARY KEY,
+      ledger_id       UUID NOT NULL,
+      amount          BIGINT NOT NULL,
+      currency        TEXT NOT NULL DEFAULT 'CNY',
+      type            TEXT NOT NULL,
+      category_id     UUID,
+      account_id      UUID,
+      to_account_id   UUID,
+      note            TEXT,
+      occurred_at     TIMESTAMPTZ NOT NULL,
+      created_by      UUID NOT NULL,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+      deleted_at      TIMESTAMPTZ,
+      version         INTEGER NOT NULL DEFAULT 1,
+      client_ref_id   TEXT
+    );
+    CREATE TABLE idempotency_keys (
+      key             TEXT NOT NULL,
+      endpoint        TEXT NOT NULL,
+      actor_user_id   UUID,
+      request_hash    TEXT NOT NULL,
+      response_status INTEGER NOT NULL,
+      response_body   JSONB,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+      expires_at      TIMESTAMPTZ NOT NULL,
+      PRIMARY KEY (key, endpoint)
+    );
   `;
   db.public.none(ddl);
 
@@ -103,7 +161,9 @@ function setupPgMem(): void {
 
 function resetPgMem(): void {
   if (memDb) {
-    memDb.public.none('DELETE FROM user_sessions; DELETE FROM users;');
+    memDb.public.none(
+      'DELETE FROM user_sessions; DELETE FROM users; DELETE FROM entries; DELETE FROM idempotency_keys;',
+    );
   }
 }
 

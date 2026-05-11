@@ -8,7 +8,7 @@
  *   2. 挂 CORS / sensible
  *   3. 注册 JWT 签发 / 校验 decorator
  *   4. 注册统一错误处理（setErrorHandler + setNotFoundHandler）
- *   5. 注册业务路由：/auth/* + /healthz
+ *   5. 注册业务路由：/auth/* + /healthz + /entries + /sync/*
  *
  * 注意：
  *   - 不在此文件启动监听（由 server.ts 负责 listen + 优雅关停）；
@@ -24,6 +24,8 @@ import { registerErrorHandler } from './plugins/errorHandler.js';
 import { registerJwt } from './plugins/jwt.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerHealthRoute } from './routes/healthz.js';
+import { registerEntriesRoutes } from './routes/entries.js';
+import { registerSyncRoutes } from './routes/sync.js';
 
 export interface BuildAppOptions {
   /** 测试注入：禁用 logger 以避免 vitest 日志噪音 */
@@ -64,6 +66,8 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   // --- 业务路由 ---
   await registerHealthRoute(app);
   await registerAuthRoutes(app);
+  await registerEntriesRoutes(app);
+  await registerSyncRoutes(app);
 
   return app;
 }
