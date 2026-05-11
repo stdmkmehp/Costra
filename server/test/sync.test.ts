@@ -45,6 +45,27 @@ beforeEach(async () => {
   app = await buildApp({ disableLogger: true });
   await app.ready();
   token = await login(app);
+
+  // T2 需 ledger '00000000-0000-0000-0000-000000000001'
+  // 该 ledger 属于 family '00000000-0000-0000-0000-0000000000f1'
+  const parts = token.split('.');
+  const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString()) as { sub: string };
+  const userId = payload.sub;
+  const familyId = '00000000-0000-0000-0000-0000000000f1';
+  const ledgerId = '00000000-0000-0000-0000-000000000001';
+  const pool = (await import('../src/db/pool.js')).getPool();
+  await pool.query(
+    `INSERT INTO families (id, name, owner_id) VALUES ($1, 'TestFamily', $2) ON CONFLICT DO NOTHING`,
+    [familyId, userId],
+  );
+  await pool.query(
+    `INSERT INTO ledgers (id, family_id, name) VALUES ($1, $2, 'Main') ON CONFLICT DO NOTHING`,
+    [ledgerId, familyId],
+  );
+  await pool.query(
+    `INSERT INTO family_members (family_id, user_id, role) VALUES ($1, $2, 'owner') ON CONFLICT DO NOTHING`,
+    [familyId, userId],
+  );
 });
 
 describe('POST /sync/push', () => {
@@ -77,6 +98,65 @@ describe('POST /sync/push', () => {
     expect(body.results[0].status).toBe('ok');
     expect(body.results[0].server_id).toMatch(/^[0-9a-f]{8}-/);
     expect(body.results[0].server_version).toBe(1);
+  });
+
+  it('T2 update conflict base_version 不匹配 → status=conflict + server_version', async () => {
+    // T1 先创建一个 entry，拿 server_id + server_version=1
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/sync/push',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${token}`,
+        'idempotency-key': '00000000-0000-0000-0000-000000000T20',
+      },
+      payload: {
+        ops: [{
+          op: 'create',
+          entity: 'entry',
+          client_ref_id: 'local-T2-create',
+          base_version: null,
+          payload: {
+            ledger_id: '00000000-0000-0000-0000-000000000001',
+            amount: 5000,
+            type: 'expense',
+            occurred_at: '2026-05-11T10:00:00.000Z',
+          },
+        }],
+      },
+    });
+    expect(createRes.statusCode).toBe(200);
+    const createBody = createRes.json() as { results: Array<{ status: string; server_id: string; server_version: number }> };
+    expect(createBody.results[0].status).toBe('ok');
+    const serverId = createBody.results[0].server_id;
+    expect(createBody.results[0].server_version).toBe(1);
+
+    // 再用错的 base_version=99 update 同一 entry，期望 conflict
+    const updateRes = await app.inject({
+      method: 'POST',
+      url: '/sync/push',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${token}`,
+        'idempotency-key': '00000000-0000-0000-0000-000000000T21',
+      },
+      payload: {
+        ops: [{
+          op: 'update',
+          entity: 'entry',
+          client_ref_id: 'local-T2-update',
+          base_version: 99, // 故意错，真实 server_version=1
+          payload: {
+            entry_id: serverId, // 用 T1 拿到的 server_id
+            amount: 9999,
+          },
+        }],
+      },
+    });
+    expect(updateRes.statusCode).toBe(200);
+    const updateBody = updateRes.json() as { results: Array<{ status: string; server_version?: number }> };
+    expect(updateBody.results[0].status).toBe('conflict');
+    expect(updateBody.results[0].server_version).toBe(1); // server 真实 version
   });
 
   it('T3 rejected entity=category → status=rejected + NOT_IMPLEMENTED', async () => {
@@ -156,9 +236,9 @@ describe('GET /sync/pull', () => {
       headers: { authorization: `Bearer ${token}` },
     });
     expect(res.statusCode).toBe(501);
-    const body = res.json() as { error: { code: string; details?: { deferred_card?: string; followup?: string } } };
+    const body = res.json() as { error: { code: string; details?: { deferred_card?: string; followup_id?: string } } };
     expect(body.error.code).toBe('NOT_IMPLEMENTED');
     expect(body.error.details?.deferred_card).toBe('COSTRA-154');
-    expect(body.error.details?.followup).toBe('FU-104-SYNC-PULL');
+    expect(body.error.details?.followup_id).toBe('FU-104-SYNC-PULL');
   });
 });

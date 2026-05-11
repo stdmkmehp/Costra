@@ -162,7 +162,7 @@ export async function registerSyncRoutes(app: FastifyInstance): Promise<void> {
         message: 'GET /sync/pull deferred to COSTRA-154',
         details: {
           deferred_card: 'COSTRA-154',
-          followup: 'FU-104-SYNC-PULL',
+          followup_id: 'FU-104-SYNC-PULL',
         },
       },
     });

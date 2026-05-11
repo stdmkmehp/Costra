@@ -168,7 +168,7 @@ export async function registerEntriesRoutes(app: FastifyInstance): Promise<void>
           message: 'PATCH /entries/{id} deferred to COSTRA-152',
           details: {
             deferred_card: 'COSTRA-152',
-            followup: 'FU-104-ENTRIES-PATCH',
+            followup_id: 'FU-104-ENTRIES-PATCH',
           },
         },
       });
@@ -182,10 +182,10 @@ export async function registerEntriesRoutes(app: FastifyInstance): Promise<void>
       error: {
         code: 'NOT_IMPLEMENTED',
         message: 'DELETE /entries/{id} deferred to COSTRA-153',
-        details: {
-          deferred_card: 'COSTRA-153',
-          followup: 'FU-104-ENTRIES-DELETE',
-        },
+          details: {
+            deferred_card: 'COSTRA-153',
+            followup_id: 'FU-104-ENTRIES-DELETE',
+          },
       },
     });
   });
