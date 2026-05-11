@@ -1016,4 +1016,67 @@ R1 review-tech APPROVE 38/40（D-022 v2.0 首次实战）· Human 模拟器实�
 
 ---
 
+## 📌 COSTRA-104 R1 切出去 3 件套铁律首次实战（2026-05-11 14:00）· Sprint-2 范式沉淀
+
+COSTRA-104 R1 实装时 · Q1.4 拍板将 "切出去 3 件套铁律"（OpenAPI x-deferred + FU 立件 + route stub 501 不静默）升为 Sprint-2 实战范式 · 本卡为首次实战 · 切出去 3 项：PATCH /entries/{id} · DELETE /entries/{id} · GET /sync/pull · 各 3 件套同步落地。
+
+**3 件套铁律（不可缺一）**：
+
+| L | 件 | 强制力 | 验证 |
+|---|---|---|---|
+| L1 | OpenAPI yaml 加 `x-deferred: COSTRA-XXX` 扩展字段 | 强（grep 1s 看到所有未兑现）| `grep -c x-deferred openapi.yaml` |
+| L2 | follow-ups README 立 FU 条目 + backlog.json 占位卡 | 中（Sprint Planning 必读）| `grep FU-XXX follow-ups/README.md` |
+| L3 | route stub 路由返回 501 NOT_IMPLEMENTED + error 含 `deferred_card + followup_id` 字段（不静默铁律）| 强（client 调用立即 501 不会误以为接口已实现）| 测覆盖 stub 路由 |
+
+**未来所有 "协议切出去" 必走此 3 件套铁律 · Sprint-2 末 Retro 议题正式沉淀。**
+
+| FU-ID | 状态 | owner_card | 阻断 |
+|---|---|---|---|
+| 🆕 FU-104-ENTRIES-PATCH | **`open`**（Sprint-3 候选 COSTRA-152）| Sprint-3 候选 | P1 |
+| 🆕 FU-104-ENTRIES-DELETE | **`open`**（Sprint-3 候选 COSTRA-153）| Sprint-3 候选 | P1 |
+| 🆕 FU-104-SYNC-PULL | **`open`**（Sprint-3 候选 COSTRA-154 · 与 FU-103-CLIENT-SYNC-SCHEDULER 联动）| Sprint-3 候选 | **P0**（PRD AC-4 核心）|
+
+---
+
+### FU-104-ENTRIES-PATCH · PATCH /entries/{entry_id} 实装（替代 R1 stub 501）
+
+- **来源**：2026-05-11 14:00 COSTRA-104 R1 切出去铁律（dispatch §2.2 · Q1.2 拍板 3 张独立卡）
+- **范围**：实装 `PATCH /entries/{entry_id}` 端点 · 支持部分字段更新（amount/note/category_id/...）+ 乐观锁（base_version 头部）+ 触发 outbox 同步 · 替代 R1 stub 501
+- **协议事实源**：`server/api/openapi.yaml` paths /entries/{entry_id} PATCH 完整定义 + EntryUpdate schema
+- **依赖**：COSTRA-104 R1 已实装 entryService（findById/optimisticUpdate 工具方法可复用）
+- **PRD 锚点**：用户记一笔后修改场景 · 高频
+- **阻断级别**：P1（不阻 MVP · 但用户体验缺口）
+- **认领建议**：Sprint-3 头部（COSTRA-152 · 估 3 点）
+- **状态**：`open`
+- **owner_card**：（待 Sprint-3 Planning 认领）
+
+---
+
+### FU-104-ENTRIES-DELETE · DELETE /entries/{entry_id} 软删实装（替代 R1 stub 501）
+
+- **来源**：同 FU-104-ENTRIES-PATCH
+- **范围**：实装 `DELETE /entries/{entry_id}` 端点 · 软删（设 `deleted_at` 列）+ 触发 outbox 同步删除事件 · 客户端 syncPull 时收到 deleted_at 不为空的 entry 后从 db 移除
+- **协议事实源**：`server/api/openapi.yaml` paths /entries/{entry_id} DELETE
+- **依赖**：COSTRA-104 R1 已建表 entries.deleted_at 列 + entryService 已有 softDelete 工具方法（部分实装）
+- **阻断级别**：P1（同 PATCH）
+- **认领建议**：Sprint-3 头部（COSTRA-153 · 估 2 点 · 比 PATCH 简单）
+- **状态**：`open`
+- **owner_card**：（待 Sprint-3 Planning 认领）
+
+---
+
+### FU-104-SYNC-PULL · GET /sync/pull 增量拉取实装（替代 R1 stub 501 · PRD AC-4 核心）
+
+- **来源**：同 FU-104-ENTRIES-PATCH · **与 FU-103-CLIENT-SYNC-SCHEDULER 联动**（client 调度器需要 server pull 才能闭环）
+- **范围**：实装 `GET /sync/pull?since=<watermark>&limit=N` · 返回增量 changes + 新 watermark · 协议 §3 + §6.3 · 客户端 db.ts setWatermark 落 storage
+- **协议事实源**：`server/api/openapi.yaml` paths /sync/pull + sync-protocol.md §3 + §6.3
+- **依赖**：COSTRA-104 R1 已实装 entries 表 + audit_logs 表（watermark 推进基础）
+- **PRD 锚点**：PRD AC-4 「无网也能保存 → 写入本地队列 → 联网后自动上传 + 多设备增量同步」
+- **阻断级别**：**P0**（PRD 核心承诺 + FU-103 调度器无 pull 即 client watermark 永远空）
+- **认领建议**：Sprint-3 头部（COSTRA-154 · 估 5 点 · 与 COSTRA-150 client 调度器一同做才有意义）
+- **状态**：`open`
+- **owner_card**：（待 Sprint-3 Planning 认领）
+
+---
+
 _本文件由 Orchestrator 按需追加；不直接编辑，仅在 Agent Revision Response 产出时同步新增条目。_
