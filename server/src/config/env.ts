@@ -42,6 +42,9 @@ export interface AppEnv {
   /** code2Session 上游 URL（默认腾讯官方地址，测试可替换为 mock server） */
   wxCode2SessionUrl: string;
 
+  /** dev 专用 · WX code2Session mock 注入开关 · 仅 nodeEnv=development 生效 · prod/test 严禁 */
+  wxMockLogin: boolean;
+
   /** 构建版本号（CI 注入；本地可为空串） */
   buildSha: string;
 }
@@ -70,6 +73,13 @@ function parsePort(v: string): number {
     throw new Error(`[env] PORT must be integer in [1, 65535], got: ${v}`);
   }
   return n;
+}
+
+function parseBool(v: string | undefined, fallback: boolean): boolean {
+  if (v == null || v === '') return fallback;
+  if (v === '1' || v === 'true' || v === 'TRUE') return true;
+  if (v === '0' || v === 'false' || v === 'FALSE') return false;
+  throw new Error(`[env] expected boolean (1/0/true/false), got: ${v}`);
 }
 
 function parseLogLevel(v: string): AppEnv['logLevel'] {
@@ -108,8 +118,13 @@ export function loadEnv(env: NodeJS.ProcessEnv = process.env): Readonly<AppEnv> 
       'https://api.weixin.qq.com/sns/jscode2session',
     ),
 
+    wxMockLogin: parseBool(env['WX_MOCK_LOGIN'], false),
+
     buildSha: optional(env, 'BUILD_SHA', ''),
   };
+  if (cfg.wxMockLogin && cfg.nodeEnv !== 'development') {
+    throw new Error('[env] WX_MOCK_LOGIN can only be enabled in NODE_ENV=development');
+  }
   return Object.freeze(cfg);
 }
 

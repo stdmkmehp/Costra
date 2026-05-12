@@ -18,6 +18,20 @@ import { closeRedis } from './db/redis.js';
 
 async function main(): Promise<void> {
   const env = appEnv();
+  if (env.wxMockLogin) {
+    // 动态 import 避免污染 prod bundle
+    const { setWxFetchForTests } = await import('./wx/code2Session.js');
+    setWxFetchForTests(
+      (async () =>
+        new Response(
+          JSON.stringify({
+            openid: 'mock-openid-' + Math.random().toString(36).slice(2, 10),
+            session_key: 'mock-session-key',
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )) as unknown as typeof fetch,
+    );
+  }
   const app = await buildApp();
 
   const shutdown = async (signal: string): Promise<void> => {
@@ -54,6 +68,12 @@ async function main(): Promise<void> {
   try {
     await app.listen({ port: env.port, host: '0.0.0.0' });
     app.log.info({ port: env.port, nodeEnv: env.nodeEnv }, 'costra-server listening');
+  if (env.wxMockLogin) {
+    app.log.warn(
+      { wxMockLogin: true },
+      '⚠️  WX_MOCK_LOGIN enabled · code2Session mocked · DO NOT enable in production',
+    );
+  }
   } catch (err) {
     app.log.fatal({ err }, 'failed to bind port');
     process.exit(1);

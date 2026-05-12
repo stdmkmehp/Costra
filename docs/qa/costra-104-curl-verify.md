@@ -4,7 +4,7 @@
 >
 > **实测者**：Human Orchestrator + Human 项目负责人
 > **预计时间**：~ 15 分钟
-> **修订版本**：v1.0 · 2026-05-11 14:00 · COSTRA-104 R1 实装收尾
+> **修订版本**：v1.2 · 2026-05-12 12:55 · COSTRA-104 R1.x.1
 
 ---
 
@@ -28,9 +28,29 @@ npm run dev    # 启动本地 server · 默认 http://127.0.0.1:8080（PORT 由 
 
 只要看到 `port: 8080` + `costra-server listening` 即视为启动成功。多接口监听（127.0.0.1 + 局域网 IP + 内网 IP）是预期（`server.ts:55` host: '0.0.0.0'）· 实测时只用 127.0.0.1 即可。
 
-### 0.2 准备一个新终端跑 curl（保留 dev server 终端）
+### 0.2 启动 dev WX mock 入口（curl 实测必需）
 
-### 0.3 R1 范围声明（重要）
+**问题**：默认 `npm run dev` 用真实腾讯 code2Session · curl 用假 code（如 `test-curl-verify`）会被腾讯返 `40029 invalid code` · 测无法继续。
+
+**解决**：启动期开启 `WX_MOCK_LOGIN=1` · server 注入硬编码 mock fetch · 任意 code 都返成功：
+
+```bash
+# 临时启动方式（推荐 · 不污染 .env）
+cd server
+WX_MOCK_LOGIN=1 npm run dev
+```
+
+期望日志额外多一行 warn：
+
+```json
+{"level":40,...,"wxMockLogin":true,"msg":"⚠️  WX_MOCK_LOGIN enabled · code2Session mocked · DO NOT enable in production"}
+```
+
+**安全保护**：`WX_MOCK_LOGIN=1` 只在 `NODE_ENV=development` 生效 · prod 启动时会被 loadEnv 校验拒绝（throw `[env] WX_MOCK_LOGIN can only be enabled in NODE_ENV=development`）· 永不暴露到生产。
+
+### 0.3 准备一个新终端跑 curl（保留 dev server 终端）
+
+### 0.4 R1 范围声明（重要）
 
 本卡 R1 实装范围（与 dispatch §2 + Card-Review PASS 29/30 锁定）：
 
@@ -290,3 +310,6 @@ curl -i -X POST http://127.0.0.1:8080/sync/push \
   - §0.1 端口：3000 → 8080（与 `server/.env.example` PORT=8080 + `server.ts:55 env.port` 对齐）
   - §0.1 日志格式：固定示例 → pino JSON 实情 + 启动成功语义判定（不规定字段数量/顺序）
   - 全文 11 处 curl 命令端口同步更新
+- v1.2 · 2026-05-12 12:55 · Human curl 实测发现真实腾讯 code 阻塞 → 加 dev WX mock 入口（D-017 §2.4 E1 例外路径 + R1.x.1 实装支持）
+  - §0.2 新增 dev WX mock 启动方式（WX_MOCK_LOGIN=1）+ 安全保护说明
+  - 配套实装：env.ts wxMockLogin + parseBool + dev-only 校验 + server.ts 启动期 setWxFetchForTests 注入 + .env.example 注释样例
