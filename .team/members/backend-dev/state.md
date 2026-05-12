@@ -16,12 +16,13 @@
 
 ## §2 当前关注（active tasks）
 
-- （无 · COSTRA-104 R1.x 极窄修复完成 · 等 review-tech R1.x review）
+- （无 · COSTRA-104 R1.x.1 完成 · 等 review-tech R1.x.1 review）
 
 ## §3 交付历史索引
 
 - 2026-05-11 · COSTRA-104 R1 实装（POST /sync/push + POST/GET /entries + 3 stub 切出去铁律 · D-022 v2.0 第 2 次实战准备）· 6d395bd / 6c17085 / 212f181 · SBAI 第 8 次冒烟 · backend-dev 首次实战 · R1+R1.1+R1.2 三轮收口（D-016 反例第 5 次 · 由 Orchestrator 接管收尾）
 - 2026-05-11 · COSTRA-104 R1.x 极窄修复（R1 review-tech 36/40 APPROVE 后同轮兑现 P1-1 + P2-1 · 补 T2 update conflict 测 + followup_id 字段名修正）· 363efa1 · SBAI 第 9 次冒烟 · backend-dev 第 2 次实战收口
+- 2026-05-12 · COSTRA-104 R1.x.1 极窄修复（human curl 实测发现真实腾讯 code 阻塞 40029 · 加 dev WX_MOCK_LOGIN=1 mock 入口 · env.ts wxMockLogin + parseBool + dev-only 校验 + server.ts setWxFetchForTests 启动期注入 + .env.example 注释 + curl-verify.md v1.2）· 95e00c6 · backend-dev 第 3 次实战
 
 ## §4 最近决策影响
 
@@ -49,3 +50,4 @@
 
 - 2026-05-02T19:24:00+08:00 · 初始化骨架（by Orchestrator）
 - 2026-05-11T20:57:43+08:00 · COSTRA-104 R1.x 极窄修复收口（363efa1 · P1-1 T2 测 + P2-1 followup_id）
+- 2026-05-12T12:52:05+08:00 · COSTRA-104 R1.x.1 极窄修复收口（95e00c6 · dev WX mock 入口）
