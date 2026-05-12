@@ -362,19 +362,31 @@ curl -i "http://127.0.0.1:8080/sync/pull?since=1970-01-01T00:00:00.000Z" \
 
 ## 5. 步骤 E · 重发同 Idempotency-Key 验证幂等
 
+### 5.1 重发同 body 验证幂等命中
+
 ```bash
-# 完全重发步骤 4.1 命令（同 idempotency-key + 同 body）
+# 完全重发步骤 D 4.1 命令（同 idempotency-key + 同 body）· 期望 server 返缓存 · 不重复入账
 curl -i -X POST http://127.0.0.1:8080/sync/push \
   -H 'content-type: application/json' \
   -H "authorization: Bearer $TOKEN" \
   -H 'idempotency-key: 11111111-1111-1111-1111-111111111111' \
-  -d '<同步骤 4.1 body>'
+  -d '{
+    "ops": [
+      {"op":"create","entity":"entry","client_ref_id":"curl-batch-001","base_version":null,
+       "payload":{"ledger_id":"00000000-0000-0000-0000-000000000001","amount":5000,"type":"expense","occurred_at":"2026-05-11T11:00:00.000Z"}},
+      {"op":"create","entity":"category","client_ref_id":"curl-batch-cat-001","base_version":null,
+       "payload":{"name":"餐饮","type":"expense"}},
+      {"op":"create","entity":"entry","client_ref_id":"curl-test-001","base_version":null,
+       "payload":{"ledger_id":"00000000-0000-0000-0000-000000000001","amount":12345,"type":"expense","occurred_at":"2026-05-11T10:00:00.000Z"}}
+    ]
+  }'
 ```
 
-**期望**：`HTTP/1.1 200 OK` · response 与第一次**完全一致**（不会重复入账 · 24h 内）。
+**期望**：`HTTP/1.1 200 OK` · response.body **完全一致** step D 第一次返回（同 server_id + 同 status 三态）· 不重复入账。
+
+### 5.2 同 idempotency-key 改 body 验证 mismatch
 
 ```bash
-# 同 idempotency-key 改 body 验证 mismatch
 curl -i -X POST http://127.0.0.1:8080/sync/push \
   -H 'content-type: application/json' \
   -H "authorization: Bearer $TOKEN" \
@@ -382,9 +394,10 @@ curl -i -X POST http://127.0.0.1:8080/sync/push \
   -d '{"ops":[]}'
 ```
 
-**期望**：`HTTP/1.1 409 Conflict` + `IDEMPOTENCY_KEY_MISMATCH`
+**期望**：`HTTP/1.1 409 Conflict` + `{"code":"IDEMPOTENCY_KEY_MISMATCH", ...}`（含 provided_hash + original_hash 双 hash · debug 友好）
 
-**Pass/Fail**：
+### 5.3 Pass/Fail
+
 - [ ] Pass · [ ] Fail（如重复入账 / 不返回缓存：`revise:COSTRA-104 reason:idempotency-broken`）
 
 ---
@@ -430,3 +443,7 @@ curl -i -X POST http://127.0.0.1:8080/sync/push \
   - §0.3 新增 4 条 migrations 全跑步骤（0001/0002/0003/0004 · 幂等可重跑）
   - §0.3/0.4/0.5 编号顺延（原 §0.3 → §0.4 / §0.4 → §0.5）
   - 后续审计议题（Sprint-2 末 Retro 候选）：G3 闸门 OpenAPI vs DB schema 列对账 CI（COSTRA-115/116 CI 对账族第 4 张）+ test/setup.ts 反模式（维护两套 schema 真相）+ FU-104-DB-MIGRATE-SCRIPT
+- v1.5 · 2026-05-12 13:54 · COSTRA-104 Human T1 终审通过 · 5 步 + 3 硬断言全 PASS · 收尾修订
+  - §5 步骤 E 改用完整可粘贴命令（去掉 `<同步骤 4.1 body>` 招呼语）+ 拆 §5.1/§5.2/§5.3 三段 + 提及 provided_hash/original_hash debug 友好
+  - 配套实装：server/scripts/dev/{migrate,reset-data,seed-curl-test}.sh · npm scripts 三件套（db:migrate / db:reset-data / db:seed:curl-test · 见 server/scripts/dev/README.md）
+  - 配套修复：reset-data.sh 末尾自动重跑 0002 seed（TRUNCATE families CASCADE 清 categories 副作用补偿）

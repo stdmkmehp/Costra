@@ -689,6 +689,72 @@
       "human_final_decision_at": "2026-05-09T19:17+08:00",
       "final_report": ".team/reviews/COSTRA-103/FINAL.md",
       "notes": "SBAI v1.1 第 7 次冒烟 · miniapp-dev 第 6 次实战；D-017 v3 完整流程首次实战 (Step 1~5 + Q1~Q4)；D-022 v2.0 评分表首次实战 (35→40)；Human 实测发现 R1 范围语义空白 → 立 2 条 FU 而非扩 R1 范围 (守住 INVEST small)；协议 100% 对齐 sync-protocol.md / id-strategy.md / error-codes.md；0 后端代码外溢；闸门 6/6 全绿 · 测 34/34。"
+    },
+    {
+      "cardId": "COSTRA-104",
+      "title": "/entries CRUD + /sync/push 批量通道（含切出去 3 件套铁律）",
+      "owner": "backend-dev",
+      "sprint": "sprint-2",
+      "epic": "Epic-C",
+      "points": 7,
+      "review_type": "tech",
+      "review_tier": "T2-with-curl-runtime",
+      "total_rounds": 1,
+      "r1_internal_iterations": "R1 + R1.1 + R1.2 + R1.x + R1.x.1 + R1.x.2 + R1.x.3 (7 轮 D-017 v3 完整流程)",
+      "terminal_verdict": "APPROVED",
+      "card_def_review_kickoff_source": "D-014-a",
+      "d016_compliance": "fail (R1/R1.1/R1.2 漏 commit 反例 3 次 · 由 Orchestrator 接管收尾 · D-018 §3.5 越权例外路径合规)",
+      "card_def_tech_verdict": "PASS",
+      "card_def_tech_score": "29/30",
+      "card_def_p1_items": 0,
+      "card_def_p2_items": 1,
+      "r1_artifacts": {
+        "sync_ts": "server/src/routes/sync.ts (244 行)",
+        "entries_ts": "server/src/routes/entries.ts (192 行)",
+        "entryService_ts": "server/src/services/entryService.ts (235 行 · 业务编排 + 乐观锁 + 软删工具)",
+        "idempotencyService_ts": "server/src/services/idempotencyService.ts (124 行 · 24h 强幂等)",
+        "entryRepo_ts": "server/src/repositories/entryRepo.ts (296 行)",
+        "sync_test_ts": "server/test/sync.test.ts (164 行 · 6 测含 T2 conflict)",
+        "entries_test_ts": "server/test/entries.test.ts (181 行 · 6 测)",
+        "openapi_yaml": "server/api/openapi.yaml (+14 行 · 3 处 x-deferred)",
+        "curl_verify_md": "docs/qa/costra-104-curl-verify.md (v1.4 · 320+ 行 · 5 步 + 3 硬断言)",
+        "migration_0004_sql": "server/db/migrations/0004_entries_account_columns.sql (24 行 · schema gap 修复)",
+        "dev_scripts": "server/scripts/dev/{migrate,reset-data,seed-curl-test}.sh + README (218 行)"
+      },
+      "r1_tech_verdict": "APPROVE",
+      "r1_tech_score": "36/40",
+      "r1_tech_p1_items": 1,
+      "r1_tech_p2_items": 2,
+      "d022_v2_practice_round": "2nd (首次 = COSTRA-103 38/40)",
+      "d022_v2_score_diff": "-2 vs costra-103 (-1 c8 followup_id 措辞 · -1 c10 d-016 漏 commit 反例)",
+      "human_curl_verify": "pass (5 步 a/b/b.5/c/d/e + 3 硬断言 h1/h2/h3 全 pass · D-022 §4.2 等效 runtime 实测前置)",
+      "human_curl_findings": {
+        "step_a_port_3000_8080": "手册 BUG → curl-verify v1.1 修订",
+        "step_b_real_wechat_block": "缺 dev mock → R1.x.1 加 WX_MOCK_LOGIN env switch",
+        "step_b_dynamic_import_bug": "tsx watch + ESM/CJS 互操作模块单例分裂 → R1.x.1.1 改静态 import",
+        "step_c_500_fk_ledger": "scope gap families/ledgers CRUD 未实装 + onboarding 缺 → curl-verify v1.3 加 §2.5 psql seed",
+        "step_c_500_schema_gap": "entries.account_id 协议有 schema 漏建（COSTRA-020 R2 P0-1）→ R1.x.2 + 0004 migration",
+        "step_c_client_ref_id_null": "POST /entries 漏桥接 client_ref_id → R1.x.3 修",
+        "step_d_conflict_dirty_data": "client_ref_id 因 R1.x.3 之前 BUG 入库 NULL · 脏数据让 conflict 路径走新建 · 重置 DB 后正确 conflict",
+        "step_e_idempotency_pass": "重发返缓存 + mismatch 409 一次通过"
+      },
+      "切出去_3_件套铁律_首次实战完整性": "9/9 (3 stub × 3 件套：openapi x-deferred + fu 立件 + route stub 501 不静默)",
+      "follow_ups_filed": [
+        "FU-104-ENTRIES-PATCH (Sprint-3 候选 COSTRA-152 · P1 · 3 点)",
+        "FU-104-ENTRIES-DELETE (Sprint-3 候选 COSTRA-153 · P1 · 2 点)",
+        "FU-104-SYNC-PULL (Sprint-3 候选 COSTRA-154 · P0 · 5 点 · PRD AC-4 核心)",
+        "FU-EPIC-FAMILY-LEDGER-CRUD (Sprint-3 候选 COSTRA-155 · P0 · 8 点 · scope gap)"
+      ],
+      "dev_dx_paradigm_built": [
+        "WX_MOCK_LOGIN env switch (server.ts 启动期 setWxFetchForTests + loadEnv prod 校验拒绝)",
+        "psql seed 脚本 (server/scripts/dev/seed-curl-test.sh)",
+        "DB migrate / reset-data / seed npm scripts 三件套 (package.json 暴露)"
+      ],
+      "d017_v3_e1_practices": "4 次窄 prompt 实战 (R1.x · R1.x.1 · R1.x.2 · R1.x.3 · 全部 ≤ 5 分钟单 commit 收尾)",
+      "human_final_decision": "approve",
+      "human_final_decision_at": "2026-05-12T13:54+08:00",
+      "final_report": ".team/reviews/COSTRA-104/FINAL.md",
+      "notes": "SBAI v1.1 第 8 次冒烟 · backend-dev 首次实战；D-017 v3 §2.4 E1 例外路径多次实战 (4 轮 P1/P2 修复)；D-022 v2.0 评分表第 2 次实战 (36/40 vs 103 38/40)；切出去 3 件套铁律首次实战 9/9 完整性；dev DX 治理三件套范式建立；Human curl 实测 5 步 + 3 硬断言全 PASS；累计 16 commits (6d395bd → 5279343)；累计 7 项 Sprint-2 末 Retro 议题（D-016 反例 6 次 · schema gap CI · setup.ts 反模式 · review-tech 评分维度 ×2 · scope gap 审查 · migrate.sh 幂等）。"
     }
   ]
 }

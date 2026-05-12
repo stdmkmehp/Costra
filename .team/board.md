@@ -9,9 +9,9 @@
 > **🆕 验证问题响应 SOP（D-017 · 2026-04-28 13:59 Human 立案 · 14:15 落盘）**：项目遇到验证失败时标准流程 —— ① 责任领域识别（Orchestrator 30s） → ② 责任 Agent 根因分析（只诊断不改文件） → ③ 多方案对比（≥2~3 方案 · 列成本/价值/风险 + Human 决策点 Qn） → ④ Human 评估裁决 → ⑤ 派单实装。**禁止 Orchestrator 自行分析根因**（反模式 A） · E1/E2/E3 例外 · 反模式 ABCD 禁令 · COSTRA-120 首次实战。详见 `.team/decisions/D-017-verification-problem-response-sop.md`。
 > **🔄 D-011 实战验证三次通过**（2026-04-23）：COSTRA-100（2 轮 · 69 min） + Sprint-0 补审（7 卡 × 2 轮 · 29 min 并行） + **COSTRA-101 Round 1 刚自动拉起（22:49 · D-014-b 首次实战）**
 
-最后更新：`2026-05-09 19:17`（Orchestrator · 🏆 **COSTRA-103 Human T1 APPROVED CLOSED @ 19:17** · `approve:COSTRA-103` · **Sprint-2 主线主头 · Epic-C 离线优先架构客户端层收官** · **D-022 v2.0 评分表 35→40 分制首次实战 · APPROVE 38/40** · **D-017 v3 完整流程首次实战**（Step 1~5 + Q1~Q4 Human 拍板 · R1.3 残留 2 问题诊断 + 方案 A 实装）· Human 模拟器实测 5 步 + 5 硬断言全 PASS · 2 条 FU 立件（FU-103-CLIENT-SYNC-SCHEDULER + FU-103-CONFLICT-MERGE-UI · Sprint-3 候选 COSTRA-150/151）· miniapp-dev 第 6 次实战 · SBAI v1.1 第 7 次冒烟 · 审查档第 4 次实战 · 协议 100% 对齐 + 0 后端外溢 · 8 commits（cb3a83b → f125f05）已 push · `.team/reviews/COSTRA-103/FINAL.md` 落盘）
+最后更新：`2026-05-12 13:54`（Orchestrator · 🏆 **COSTRA-104 Human T1 APPROVED CLOSED @ 13:54** · `approve:COSTRA-104` · **Sprint-2 主线第 3 张 · Epic-C server 侧主头收官** · **D-022 v2.0 评分表第 2 次实战 · APPROVE 36/40** · **切出去 3 件套铁律首次实战 9/9 完整性**（OpenAPI x-deferred + FU 立件 + route stub 501 不静默）· **dev DX 治理三件套范式建立**（WX_MOCK_LOGIN env switch + psql seed 脚本化 + npm scripts 三件套）· **D-017 v3 §2.4 E1 例外路径 4 次实战**（R1.x · R1.x.1 · R1.x.2 · R1.x.3 全部 ≤ 5 分钟单 commit 收尾）· Human curl 实测 5 步 + 3 硬断言全 PASS · 4 条 Sprint-3 候选 FU 立件（FU-104-ENTRIES-PATCH/DELETE/SYNC-PULL · COSTRA-152/153/154 · FU-EPIC-FAMILY-LEDGER-CRUD COSTRA-155 P0 8 点 scope gap）· backend-dev 首次实战（SBAI v1.1 第 8 次冒烟）· 审查档第 6 次实战 · 16 commits（6d395bd → 5279343）已 push · 累计 7 项 Sprint-2 末 Retro 议题（D-016 反例 6 次 + schema gap CI + setup.ts 反模式 + review-tech 评分维度 ×2 + scope gap 审查 + migrate.sh 幂等）· `.team/reviews/COSTRA-104/FINAL.md` 落盘）
 >
-> （上一条归档）`2026-05-09 10:39`（Orchestrator · 🏆 **COSTRA-106 Human T2 APPROVED CLOSED @ 10:39** · `approve:COSTRA-106` · Sprint-2 第 1 张 Retro 卡满分收官 · 双 30/30 满分范式 · pm-writer 首次实战 0 漏项 · SBAI v1.1 第 6 次冒烟成功 · 审查档第 3 次实战 · D-016 第 13~14 次实战合规 · 20 项议题全落地（含 D-020/D-021/D-022 三决议产出）· 解锁 Sprint-2 主线 COSTRA-103 立卡）
+> （上一条归档）`2026-05-09 19:17`（Orchestrator · 🏆 **COSTRA-103 Human T1 APPROVED CLOSED** · Sprint-2 主线主头 38/40 APPROVE · D-022 v2.0 + D-017 v3 双范式首次实战 · 2 条 Sprint-3 候选 FU 立件）
 >
 > （上一条归档）`2026-05-03 20:32`（Orchestrator · 🆕 **COSTRA-125 立卡**：启动期 storage 异步化 · onLaunch 内同步调用根因解决 · 2 点 · P1 · 方案 B'+E' 合并版（异步 API 全量 + bootstrap Promise）· **COSTRA-124 R1 假设 Human 第 7 次模拟器实测证伪** · R2 诊断翻转为定性 v3（SDK + 业务共责 · 渲染层 storage group `_prepare` 就绪晚于 App.onLaunch）· **COSTRA-124 部分闭合**（顶层副作用子目标 close · commit `a296be0` 架构正确保留）· FU-LAUNCH 分裂为 A/B/C 三子 FU · A close · B/C open 交棒 COSTRA-125 · D-017 第 5 次实战 · SBAI v1.1 P2' 冒烟第 3 回产物）
 >
@@ -214,6 +214,8 @@ _（无强阻塞。COSTRA-040 "真实上传链路激活" 仍依赖外部资源�
 
 - [D] **🏆 COSTRA-103** 本地 KV 持久化 + outbox + 冲突三态消费（**Sprint-2 主线主头 · Epic-C 离线优先架构客户端层**）    @miniapp-dev  · 2026-05-09 19:17 **Human T1 approve** · 整卡 CLOSED · **D-022 v2.0 评分表 35→40 分制首次实战 · APPROVE 38/40**（C8 runtime 加载性 + C10 SBAI 流程合规两个新增维度成功检出 2 处 minor）· **D-017 v3 完整流程首次实战**（Step 1~5 + Q1~Q4 Human 拍板 · R1.3 残留 2 问题诊断 + 方案 A 实装）· Card-Review 26.5/30 PASS-WITH-FOLLOWUP（P1-1 R1 已合并）· Human 模拟器实测 5 步 A/B/C/D/E + 5 硬断言 H1~H5 全 PASS · 2 条 FU 立件（FU-103-CLIENT-SYNC-SCHEDULER · FU-103-CONFLICT-MERGE-UI · Sprint-3 候选 COSTRA-150/151 · 守住 INVEST small）· 8 文件主代码（db.ts 273 + outbox.ts 296 + id.ts 33 + sync.ts 重构 103 + entry/index.ts 90 + 2 spec 228 + 手册 v1.1 277）+ 调度元数据 5 文件 = ~ 1330 行净增 · 6 闸门全绿（typecheck 0 / lint 0 warn / test 34-34 / appjson/tooling/whitelist 全 ✅）· 0 后端外溢（git diff HEAD~7..HEAD -- server/ api/ docs/api/ 空）· 协议 100% 对齐 sync-protocol.md + id-strategy.md + error-codes.md · **SBAI v1.1 第 7 次冒烟 · miniapp-dev 第 6 次实战 · 审查档第 4 次实战 · D-016 第 15~17 次实战合规** · 8 commits（cb3a83b feat → 1e723c7 + acfcf0a docs → 6c0b404 R1.3 fix → c8b6c06 chore → 561e884 backlog → 3a8623b review → f125f05 v1.1 + 2 FU）· `.team/reviews/COSTRA-103/FINAL.md`
 
+- [D] **🏆 COSTRA-104** /entries CRUD + /sync/push 批量通道（**Sprint-2 主线第 3 张 · Epic-C 离线优先架构 server 侧**）    @backend-dev  · 2026-05-12 13:54 **Human T1 approve** · 整卡 CLOSED · **D-022 v2.0 评分表第 2 次实战 · APPROVE 36/40**（vs COSTRA-103 38/40 -2 分：C8 followup_id 措辞 -1 + C10 D-016 漏 commit 反例 -1）· **切出去 3 件套铁律首次实战 9/9 完整性**（OpenAPI x-deferred + FU 立件 + route stub 501 不静默 · 3 stub × 3 件套）· **dev DX 治理三件套范式建立**（WX_MOCK_LOGIN env switch + psql seed + npm scripts 三件套）· **D-017 v3 §2.4 E1 例外路径 4 次实战**（R1.x · R1.x.1 · R1.x.2 · R1.x.3 · 4 轮 P1/P2 修复全部 ≤ 5 分钟单 commit 收尾）· Card-Review 29/30 PASS · Human curl 实测 5 步 A/B/B.5/C/D/E + 3 硬断言 H1~H3 全 PASS · **4 条 Sprint-3 候选 FU 立件**（FU-104-ENTRIES-PATCH/DELETE/SYNC-PULL · COSTRA-152/153/154 + FU-EPIC-FAMILY-LEDGER-CRUD COSTRA-155 P0 8 点 scope gap）· 主代码 11 文件 1517 行净增（sync.ts 244 + entries.ts 192 + entryService 235 + idempotencyService 124 + entryRepo 296 + 2 test 345 + setup 增强 + openapi +14 + app +6 + 0004 migration 24）+ 文档 320+ 行（curl-verify v1.4 + scripts/dev/README）+ devops 脚本 218 行 · 6 闸门全绿（typecheck 0 / test 20/20 / lint exit 0 / x-deferred=3 / deferred_card≥3 / 跨域 diff 空）· 协议 100% 对齐 sync-protocol.md + id-strategy.md + error-codes.md · **SBAI v1.1 第 8 次冒烟 · backend-dev 首次实装实战 · 审查档第 6 次实战** · D-018 §3.5 越权例外路径多次实战（state/history × 2 + 1 行 fix × 2）· 16 commits（6d395bd feat → 6c17085 / 212f181 chore → 363efa1 R1.x → 54cd931 chore → 3a8623b review → db1f1fc / 95e00c6 / 454cb82 / 6b242e4 R1.x.1 → b4544d5 / 929942f / 9845d82 R1.x.2 → a575a4a R1.x.3 → 5279343 devops scripts）· **累计 7 项 Sprint-2 末 Retro 议题**（D-016 反例 6 次升级 + schema gap CI + setup.ts 反模式 + review-tech 评分维度 ×2 + scope gap 审查 + migrate.sh 幂等）· `.team/reviews/COSTRA-104/FINAL.md`
+
 ---
 
 ## 📋 Todo · Sprint-2（2026-05-10 ~ 2026-05-23 · 2 周 · 估点目标 32~36）
@@ -224,7 +226,7 @@ _（无强阻塞。COSTRA-040 "真实上传链路激活" 仍依赖外部资源�
 |---|---|---|---|---|---|---|
 | ~~COSTRA-106~~ | ~~**Sprint-1 Retro · 14+ 议题处置 + 工程度量刷新**~~ | ~~pm-writer~~ | ~~2~~ | ~~**P0**~~ | ~~—~~ | **🏆 Human T2 APPROVED CLOSED @ 2026-05-09 10:39 · 移至 Done** |
 | **COSTRA-103** | ~~**本地 KV 持久化 + outbox + 冲突三态消费**（Epic-C 主线）~~ | ~~MiniApp-Agent~~ | ~~5~~ | ~~**P0**~~ | ~~COSTRA-100~~ | **🏆 Human T1 APPROVED CLOSED @ 2026-05-09 19:17 · 移至 Done** |
-| **COSTRA-104** | `/entries` CRUD + `/sync/push` 批量通道 | Backend-Agent | 6 | **P0** | COSTRA-100/103 | 与 103 协议对齐 |
+| **COSTRA-104** | ~~`/entries` CRUD + `/sync/push` 批量通道（含切出去 3 件套铁律）~~ | ~~Backend-Agent~~ | ~~7~~ | ~~**P0**~~ | ~~COSTRA-100/103~~ | **🏆 Human T1 APPROVED CLOSED @ 2026-05-12 13:54 · 移至 Done** |
 | **COSTRA-105** | 单人记账闭环冒烟（含离线弱网）| QA-Agent | 3 | P1 | COSTRA-103/104 | Sprint-2 中段 |
 | **COSTRA-112** | `miniprogram/config/subject.ts` + 硬编码主体字样清扫 | MiniApp-Agent | 1 | P1 | D-008 | 主体红线最后一公里 |
 | **COSTRA-114** | 开发服务器 bootstrap 手册 | DevOps-Agent | 2 | P2 | D-009 | Sprint-1 未开工 · 转入 |
@@ -254,7 +256,7 @@ _（无强阻塞。COSTRA-040 "真实上传链路激活" 仍依赖外部资源�
 |---|---|---|---|---|---|
 | Sprint-0 | 2026-04-21 ~ 2026-04-22 | 10 | 28 | ✅ 收官 | execute-now 模式，2 小时完成 7 张 Review 卡 |
 | Sprint-1 | 2026-04-23 ~ 2026-05-08 | 21 | 52 | ✅ **收官 @ 2026-05-09 09:44**（G4 PASS · D-019）| 主线 102 + 启动期治理 5 卡（124~128）+ 同族盲区 5 连（119~123）+ 基建 4 卡 · 紧急卡五连溢出 40→52（30%）· 14+ 议题转 COSTRA-106 |
-| **Sprint-2** | **2026-05-10 ~ 2026-05-23** | 7（建议）| 32~36（目标）| 🟢 **进行中** · 2/7 卡已 CLOSED（COSTRA-106 Retro @ 2026-05-09 10:39 + COSTRA-103 主线主头 @ 2026-05-09 19:17）· 累计 7 点 / 目标 32~36 | Epic-C 主线（103 ✅ + 104/105）+ Sprint-1 残债（112/114）+ COSTRA-106 Retro ✅ + COSTRA-160 设计 tokens pipeline · 详见 D-019 §3.2 |
+| **Sprint-2** | **2026-05-10 ~ 2026-05-23** | 7（建议）| 32~36（目标）| 🟢 **进行中** · 3/7 卡已 CLOSED（COSTRA-106 Retro @ 2026-05-09 10:39 + COSTRA-103 主线主头 @ 2026-05-09 19:17 + COSTRA-104 主线第 3 张 @ 2026-05-12 13:54）· 累计 14 点 / 目标 32~36（**39%**）| Epic-C 主线（103 ✅ + 104 ✅ + 105）+ Sprint-1 残债（112/114）+ COSTRA-106 Retro ✅ + COSTRA-160 设计 tokens pipeline · 详见 D-019 §3.2 |
 
 ---
 
@@ -281,36 +283,46 @@ _（无强阻塞。COSTRA-040 "真实上传链路激活" 仍依赖外部资源�
 
 ## 🧭 Human 下一次介入节点
 
-1. **🟢 立即可做（推荐）**：`run backend COSTRA-104`（**Sprint-2 主线第 3 张 · 与 103 协议对齐串行依赖** · `/entries` CRUD + `/sync/push` 批量通道 · 6 点 · server 端 ErrorCode + idempotency_keys · COSTRA-103 主线主头已解锁）
-2. **🟢 接续**：`run qa COSTRA-105`（单人记账闭环冒烟 · 含离线弱网 · 3 点 · 与 103+104 端到端对接）
-3. **🟢 Sprint-2 其他立卡**（D-019 §3.2 建议清单）：COSTRA-112（主体清扫 · 1 点）/ COSTRA-114（DevOps bootstrap · 2 点）/ COSTRA-160（设计 tokens pipeline · 2 点）
-4. **🟢 真 staging 验证**：Sprint-2 提审前 / ICP 备案下证 + `api.costra.cloud` 白名单配置完成时 · 复跑 `docs/qa/costra-102-human-verify.md` 步骤 1/2/5（手册 §0.2 方式 C）
-5. **🟢 被动等**：ICP 备案首审短信 / 订阅消息文案 v0.1 / 隐私指引清单
-6. **ICP 下证日（估 5 月中下旬）**：把 `api.costra.cloud` 配进微信后台"服务器域名"白名单，发 `close:R-013`
-7. **2026-07-16**：开发服务器到期前 7 日决策（续费 vs 迁移云托管）
+1. **🟢 立即可做（推荐）**：`run qa COSTRA-105`（**Sprint-2 主线第 4 张** · 单人记账闭环冒烟（含离线弱网）· 3 点 · 与 103+104 端到端对接 · 103 + 104 已 CLOSED · 解锁完整闭环）
+2. **🟢 接续**：Sprint-2 残债（COSTRA-112 主体清扫 1 点 · COSTRA-114 DevOps bootstrap 2 点 · COSTRA-160 设计 tokens pipeline 2 点）
+3. **🟢 真 staging 验证**：Sprint-2 提审前 / ICP 备案下证 + `api.costra.cloud` 白名单配置完成时 · 复跑 `docs/qa/costra-102-human-verify.md` 步骤 1/2/5（手册 §0.2 方式 C）
+4. **🟢 被动等**：ICP 备案首审短信 / 订阅消息文案 v0.1 / 隐私指引清单
+5. **ICP 下证日（估 5 月中下旬）**：把 `api.costra.cloud` 配进微信后台"服务器域名"白名单，发 `close:R-013`
+6. **2026-07-16**：开发服务器到期前 7 日决策（续费 vs 迁移云托管）
+7. **Sprint-3 候选**（待 Sprint-2 收官 + Retro · 累计 23 点候选）：FU-103-CLIENT-SYNC-SCHEDULER（COSTRA-150 P1 5 点）+ FU-103-CONFLICT-MERGE-UI（COSTRA-151 P2 5 点）+ FU-104-ENTRIES-PATCH/DELETE/SYNC-PULL（COSTRA-152/153/154 · 共 10 点）+ FU-EPIC-FAMILY-LEDGER-CRUD（COSTRA-155 P0 8 点）
 
-> **Sprint-2 主线主头已兑现** ✅：COSTRA-103 本地 KV 持久化 + outbox + 冲突三态消费 38/40 APPROVE 收官 · D-022 v2.0 评分表首次实战 + D-017 v3 完整流程首次实战 · 2 条 Sprint-3 候选 FU 立件（client 调度器 + conflict 合并 UI · 守住 INVEST small · 不扩 R1 范围）。
+> **Sprint-2 主线 Epic-C 双卡收官** ✅✅：COSTRA-103 客户端 + COSTRA-104 server 端协议对齐通路打通 · 共 12 点（5+7）· Sprint-2 累计 14 点 / 39%。剩余 4 卡（105/112/114/160）共 8 点 + 主线已开 14 点 = 总 22 点 · 距离目标 32~36 还差 ~ 10~14 点（属合理收官区间）。
 
 ---
 
 ## 💤 Orchestrator 状态
 
-- **MODE**：`sprint-2-in-progress`（🏆 **COSTRA-103 Sprint-2 主线主头 38/40 APPROVE CLOSED @ 2026-05-09 19:17** · `approve:COSTRA-103` Human T1 一次性裁决 · Sprint-2 第 2/7 卡 CLOSED · **D-022 v2.0 评分表首次实战 + D-017 v3 完整流程首次实战** · Human 模拟器实测 5 步 + 5 硬断言全 PASS · 2 条 Sprint-3 候选 FU 立件 · 解锁 COSTRA-104 立卡 · 等 Human 触发 `run backend COSTRA-104`）
-- **下一动作**：等 Human 触发 Sprint-2 主线第 3 张（首选 COSTRA-104 server 协议 · 6 点 · 与 103 协议对齐串行依赖）
-- **保存点**：FINAL.md（COSTRA-103 终审记录）+ metrics.json（COSTRA-103 terminal_verdict APPROVED · cards 数组 18→19）+ board.md（Sprint-2 段 1/7→2/7 + 103 流转 Done + 最后更新 + Human 节点 + Orchestrator 状态全部刷新）+ backlog.json（103 status Review→Done）+ HANDOFF v1.6（待本轮 commit 落盘）+ 1 commit 待落盘
-- **Sprint-2 范式建立** 🏆：
-  - **D-017 v3 完整流程首次实战**（Step 1~5 + Q1~Q4 Human 拍板 · 残留问题诊断 + 方案 A 实装 · subagent 撒谎风险被只读诊断 + 实装分轮规避）
-  - **D-022 v2.0 评分表 35→40 分制首次实战**（C8 runtime 加载性 + C10 SBAI 流程合规两个新增维度成功检出 minor）
-  - **Human 实测发现 R1 范围语义空白 → 立 FU 而非扩 R1 范围**（守住 INVEST small · D-017 §2.4 E1 例外路径首次合规）
-  - **scope gap 主动识别机制**（grep 反查 pushDelta/syncPull 调用链 · 0 命中 = scope gap 确认）
-  - **SBAI v1.1 第 7 次冒烟成功 · miniapp-dev 第 6 次实战 · 审查档第 4 次实战**
-  - **D-016 第 15~17 次实战合规**（R1.3 D-017 v3 实装同轮兑现）
-- **三决议生效持续**（自 2026-05-09 起 · 本卡实战检验）：
-  - **D-020**（D-016 同轮兑现升定稿规约 · 本卡 R1.3 完整实战 · R1/R1.1/R1.2 漏 commit 反例已 R1.3 补齐）
-  - **D-021**（D-017 v3 升级 · 跨版本对照前置 + 三证铁律 + runtime 实测前置 · 本卡 R1.3 + R1.2 三证铁律实战）
-  - **D-022 v2.0**（review-tech 评分表 v1.0→v2.0 · 本卡 R1 review-tech 首次实战 38/40 APPROVE）
-- **2 条 Sprint-3 候选 FU 立件**（PRD AC-4 离线最后一公里 · 守住 INVEST small）：
-  - **FU-103-CLIENT-SYNC-SCHEDULER**（Sprint-3 候选 COSTRA-150 · 5 点 P1 · 依赖 COSTRA-104 server 稳定）
-  - **FU-103-CONFLICT-MERGE-UI**（Sprint-3 候选 COSTRA-151 · 5 点 P2 · 替代 R1 桩位 next_retry_at = now+1）
-- **工程度量定稿**：metrics.json 19 卡（含 COSTRA-103）+ sprint_1_summary 段（不动）+ Sprint-2 累计 7 点（106 2 + 103 5）/ 目标 32~36
-- **Sprint-2 主线第 3 张解锁**：COSTRA-104（server 协议 · 6 点 · 与 103 协议对齐）+ 顺位 COSTRA-105/112/114/160
+- **MODE**：`sprint-2-in-progress`（🏆 **COSTRA-104 Sprint-2 主线第 3 张 36/40 APPROVE CLOSED @ 2026-05-12 13:54** · `approve:COSTRA-104` Human T1 一次性裁决 · Sprint-2 第 3/7 卡 CLOSED · **D-022 v2.0 评分表第 2 次实战** + **切出去 3 件套铁律首次实战 9/9** + **dev DX 治理三件套范式建立** · Human curl 实测 5 步 + 3 硬断言全 PASS · 4 条 Sprint-3 候选 FU 立件 · 解锁 COSTRA-105 立卡 · 等 Human 触发 `run qa COSTRA-105`）
+- **下一动作**：等 Human 触发 Sprint-2 主线第 4 张（首选 COSTRA-105 单人记账冒烟 · 3 点 · 端到端验证 103+104 通路）
+- **保存点**：FINAL.md（COSTRA-104 终审记录）+ metrics.json（COSTRA-104 terminal_verdict APPROVED · cards 数组 19→20）+ board.md（Sprint-2 段 2/7→3/7 + 104 流转 Done + 最后更新 + Human 节点 + Orchestrator 状态全部刷新）+ backlog.json（104 status Doing→Done · 已 add 4 占位卡 152/153/154/155）+ HANDOFF v1.7（待本轮 commit 落盘）+ docs/qa/curl-verify v1.4（实测路径已修订）+ 1 commit 待落盘
+- **Sprint-2 范式累计建立** 🏆🏆🏆：
+  - **D-017 v3 §2.4 E1 例外路径多次实战范式**（COSTRA-103 R1.3 + COSTRA-104 R1.x/R1.x.1/R1.x.2/R1.x.3 共 5 次 · 全部 ≤ 5 分钟单 commit 收尾）
+  - **D-022 v2.0 评分表第 2 次实战**（COSTRA-103 38/40 → COSTRA-104 36/40 · -2 分主因 D-016 反例 + C8 措辞）
+  - **切出去 3 件套铁律首次实战 9/9 完整性**（OpenAPI x-deferred + FU 立件 + route stub 501 不静默 · 3 stub × 3 件套）
+  - **dev DX 治理三件套范式**（WX_MOCK_LOGIN env switch + psql seed 脚本 + npm scripts 三件套 · 长期 backend 资产）
+  - **scope gap 主动识别机制延续**（COSTRA-103 watermark scope gap 范式 → COSTRA-104 schema gap + onboarding gap + families/ledgers CRUD scope gap · 立 4 条 FU）
+  - **D-018 §3.5 越权例外路径成熟使用**（COSTRA-104 累计 4 次：state/history × 2 + 1 行 fix × 2）
+  - **SBAI v1.1 第 8 次冒烟 · backend-dev 首次实战 · 审查档第 6 次实战**
+  - **D-016 反例累计 6 次升级议题**（COSTRA-103 × 3 + COSTRA-104 × 3 · Sprint-2 末 Retro 必处置）
+- **Sprint-2 末 Retro 议题清单**（累计 7 项 · 议题升级中）：
+  - 装扮档 6+ 点卡分阶段 commit 机制（D-016 累计反例 6 次）
+  - G3 OpenAPI vs DB schema 列对账 CI（COSTRA-115/116 CI 对账族第 4 张候选）
+  - test/setup.ts 维护两套 schema 真相反模式
+  - review-tech 评分应增"测应有 request → response 全字段保真断言"维度
+  - review-tech 评分应增"create UNIQUE 触发 conflict 端到端路径覆盖"维度
+  - scope gap 审查机制（审查档应额外评 PRD AC 链路完整性 · 同 COSTRA-103 watermark 范式）
+  - migrate.sh 幂等性 + 状态化 migrations 议题
+- **Sprint-3 候选 FU 累计 23 点**（待 Sprint-2 收官 + Retro 升级转正）：
+  - FU-103-CLIENT-SYNC-SCHEDULER（COSTRA-150 P1 5 点）
+  - FU-103-CONFLICT-MERGE-UI（COSTRA-151 P2 5 点）
+  - FU-104-ENTRIES-PATCH（COSTRA-152 P1 3 点）
+  - FU-104-ENTRIES-DELETE（COSTRA-153 P1 2 点）
+  - FU-104-SYNC-PULL（COSTRA-154 P0 5 点 · PRD AC-4 核心）
+  - FU-EPIC-FAMILY-LEDGER-CRUD（COSTRA-155 P0 8 点 · scope gap）
+- **工程度量定稿**：metrics.json 20 卡（含 COSTRA-104）+ sprint_1_summary 段（不动）+ Sprint-2 累计 14 点（106 2 + 103 5 + 104 7）/ 目标 32~36 · **39%** 进度
+- **Sprint-2 主线第 4 张解锁**：COSTRA-105 单人记账闭环冒烟（3 点 · 与 103+104 端到端对接）+ 顺位 COSTRA-112/114/160
