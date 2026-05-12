@@ -1079,4 +1079,24 @@ COSTRA-104 R1 实装时 · Q1.4 拍板将 "切出去 3 件套铁律"（OpenAPI x
 
 ---
 
+### FU-105-AUTOMATION-FULL-COVERAGE · 全量 14 用例自动化 + CI 集成
+
+- **来源**：COSTRA-105 R1 Card-Review P1-1（自动化脚手架降级路径）+ DoD §3.3（形式 ② README 占位）
+- **登记时间**：2026-05-12（COSTRA-105 R1 实装 · qa-planner 首次实战）
+- **范围**：
+  - 安装 `miniprogram-automator`（npm 包 + 微信开发者工具端口暴露配置）
+  - 实装 14 条用例自动化（SU-001~014）
+  - 集成 CI 流水线（`.github/workflows/pr-check.yml` 新增 `test:e2e` step）
+  - 目标：核心链路自动化覆盖 ≥ 80%
+- **依赖**：
+  - COSTSRA-104 server `/sync/push` + `/entries` 端点稳定
+  - `FU-103-CLIENT-SYNC-SCHEDULER`（client 调度器实装）
+- **PRD 锚点**：Epic-B（单人记账）+ Epic-C（离线同步）全链路自动化覆盖
+- **阻断级别**：P2（不阻 COSTRA-105 终审 · 但影响 Sprint-3 发版覆盖率）
+- **认领建议**：Sprint-3 头部（COSTRA-155 候选 · 5 点 · owner=qa-planner+miniapp-dev）
+- **状态**：`open`
+- **owner_card**：（待 Sprint-3 Planning 认领）
+
+---
+
 _本文件由 Orchestrator 按需追加；不直接编辑，仅在 Agent Revision Response 产出时同步新增条目。_
