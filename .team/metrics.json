@@ -1,7 +1,7 @@
 {
   "_schema": "costra-metrics-v1",
-  "_description": "Sprint-1 收官 + Sprint-2 启动锚点。COSTRA-106 Sprint-1 Retro 处置 14+ 议题 + 升 D-020/D-021/D-022 三个定稿规约 + metrics 重写补齐 11 卡 + sprint_1_summary。Sprint-1 14 卡 100% CLOSED · G4 PASS @ 2026-05-09 09:44。Sprint-2 Planning 中。",
-  "_updated_at": "2026-05-09T19:30:00+08:00",
+  "_description": "Sprint-1 收官 + Sprint-2 启动锚点 + COSTRA-105 review-tech APPROVE 40/40 满分 @ 2026-05-12 15:05（待 Human 模拟器实测）。Sprint-2 第 4/7 卡 review-tech 已通过 · D-022 v2.0 评分表第 3 次实战首次满分。",
+  "_updated_at": "2026-05-12T15:10:00+08:00",
   "sprint_1_summary": {
     "sprint": "Sprint-1",
     "period": "2026-04-23 ~ 2026-05-08（超期 2 天）",
@@ -755,6 +755,54 @@
       "human_final_decision_at": "2026-05-12T13:54+08:00",
       "final_report": ".team/reviews/COSTRA-104/FINAL.md",
       "notes": "SBAI v1.1 第 8 次冒烟 · backend-dev 首次实战；D-017 v3 §2.4 E1 例外路径多次实战 (4 轮 P1/P2 修复)；D-022 v2.0 评分表第 2 次实战 (36/40 vs 103 38/40)；切出去 3 件套铁律首次实战 9/9 完整性；dev DX 治理三件套范式建立；Human curl 实测 5 步 + 3 硬断言全 PASS；累计 16 commits (6d395bd → 5279343)；累计 7 项 Sprint-2 末 Retro 议题（D-016 反例 6 次 · schema gap CI · setup.ts 反模式 · review-tech 评分维度 ×2 · scope gap 审查 · migrate.sh 幂等）。"
+    },
+    {
+      "cardId": "COSTRA-105",
+      "title": "单人记账闭环冒烟（含离线弱网）",
+      "owner": "qa-planner",
+      "sprint": "sprint-2",
+      "epic": "Epic-B",
+      "points": 3,
+      "review_type": "tech",
+      "review_tier": "T1-with-runtime",
+      "total_rounds": 1,
+      "r1_internal_iterations": "R1 单轮（D-014 卡定义 + D-016 同轮兑现 一气呵成）",
+      "terminal_verdict": "PENDING-HUMAN-VERIFY",
+      "card_def_review_kickoff_source": "D-014-a",
+      "d016_compliance": "fail (state/history 漏 commit · D-016 反例第 7 次 · 由 Orchestrator 同轮 73d38d6 补 · D-018 §3.5 越权例外路径合规)",
+      "card_def_tech_verdict": "PASS-WITH-FOLLOWUP",
+      "card_def_tech_score": "26/30",
+      "card_def_p1_items": 1,
+      "card_def_p2_items": 1,
+      "card_def_info_items": 2,
+      "card_def_resolved": "R1 实装时全部采纳合并（P1-1 自动化降级路径形式 ② / P2-1 SU-007 失败路径补丁 / INFO-1 §1~§7 段名显式 / INFO-2 九类覆盖 markdown 表格）",
+      "r1_artifacts": {
+        "strategy_md": "qa/strategy.md (163 行 · 7 段结构)",
+        "cases_md": "qa/cases/single-user-smoke.md (403 行 · 14 用例 · 九类 9/9 覆盖)",
+        "human_smoke_md": "docs/qa/costra-105-human-smoke.md (277 行 · 5 步 + 5 硬断言)",
+        "automation_readme": "qa/automation/README.md (206 行 · 形式 ② README + SU-001/002 伪代码 · INVEST small 守卫)",
+        "wechat_review_skeleton": "qa/checklists/wechat-review.md (74 行 · 12 大类 A~L 占位)",
+        "follow_ups_added": ".team/follow-ups/README.md (+20 行 · FU-105-AUTOMATION-FULL-COVERAGE)"
+      },
+      "r1_tech_verdict": "APPROVE",
+      "r1_tech_score": "40/40",
+      "r1_tech_p0_items": 0,
+      "r1_tech_p1_items": 0,
+      "r1_tech_p2_items": 0,
+      "r1_tech_info_items": 1,
+      "d022_v2_practice_round": "3rd (首次 = COSTRA-103 38/40 · 第 2 次 = COSTRA-104 36/40 · 本卡 40/40 首次满分)",
+      "d022_v2_full_score_first_time": "yes (qa-planner 首次实装即满分 · SBAI v1.1 装扮档第 9 次冒烟成熟度证据)",
+      "human_simulator_verify": "pending (review-tech APPROVE 后立即 · 5 步 + 5 硬断言 H1~H5 全 PASS 才能 T1 终审)",
+      "follow_ups_filed": [
+        "FU-105-AUTOMATION-FULL-COVERAGE (Sprint-3 候选 · P2 · 5 点 · 全量 14 用例自动化 + CI 集成)"
+      ],
+      "nine_category_coverage": "9/9 (等价类 SU-001/002 · 边界 SU-008 · 异常 SU-007/010 · 幂等 SU-005 · 并发 SU-006 · 兼容 SU-012 · 安全 SU-013 · 弱网 SU-003/004/007 · 授权拒绝 SU-011)",
+      "p0_cases_count": "5 (SU-001~005)",
+      "prd_anchor_coverage": "13/13 cases × ≥1 PRD AC anchor",
+      "gates_passed": "6/6 + 1 N/A (typecheck / vitest 34+20 / appjson 10 pages tabBar 4/4 / tooling 3 rules / whitelist 4 envs 3 urls / cross-domain diff 空 · automation syntax SKIP 形式 ②)",
+      "human_final_decision": "pending",
+      "final_report": ".team/reviews/COSTRA-105/round-1-tech.md (R1 Review · 40/40 满分)",
+      "notes": "SBAI v1.1 第 9 次冒烟 · qa-planner 首次实装实战；D-022 v2.0 评分表第 3 次实战首次满分 (40/40 vs 103 38/40 vs 104 36/40)；Card-Review PASS-WITH-FOLLOWUP 26/30 路径下 P1/P2/INFO 修订率 100%；C8 runtime 加载性 5/5 满分（C8-1/2/3/4 全到位）；0 业务代码 0 协议改动 G6 跨域 diff 空；commit c046d25 (R1 实装 6 文件 +1143 行) + 73d38d6 (state/history 补 commit · D-016 反例第 7 次 · 议入 Sprint-2 末 Retro 升 P0)；累计 8 项 Sprint-2 末 Retro 议题（D-016 反例 7 次升 P0 + 装扮档 commit 完整性检查清单 + 其余 7 项延续 COSTRA-104 议题）。"
     }
   ]
 }

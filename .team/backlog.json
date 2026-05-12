@@ -1,9 +1,9 @@
 {
   "project": "Costra",
-  "version": "0.2.3",
-  "last_updated": "2026-05-09T19:30:00+08:00",
+  "version": "0.2.4",
+  "last_updated": "2026-05-12T14:18:00+08:00",
   "platform": "wechat-miniprogram",
-  "notes": "v0.2.3: COSTRA-106 Sprint-1 Retro 全量交付（R1）· 14+ 议题（20 项）全处置 + D-020/D-021/D-022 三决议落盘 + metrics 重写补齐 11 卡 + sprint_1_summary + board Sprint-2 段开建 + backlog 流转 + 160 占位 · D-017 v3 三证铁律遵守 · D-016 第 13 次实战合规 · SBAI v1.1 第 6 次冒烟 · pm-writer 首次实战。v0.2.2: COSTRA-124 R1 假设被 Human 第 7 次实测证伪 · 定性翻转 v3 · 立 COSTRA-125 + FU-LAUNCH 分裂 A/B/C · D-017 第 5 次实战。",
+  "notes": "v0.2.4: COSTRA-105 Sprint-2 主线第 4 张立卡（Backlog→Todo 流转 · 单人记账闭环冒烟含离线弱网 · QA-Agent · 3 点 · P1 · 派单档落盘 dispatch/COSTRA-105-qa-single-user-smoke-offline.md · 等 Card-Review R1）· qa-planner 首次实装实战 · SBAI v1.1 第 9 次冒烟候选 · D-022 v2.0 评分表第 3 次实战候选。v0.2.3: COSTRA-106 Sprint-1 Retro 全量交付。",
   "epics": [
     {
       "id": "Epic-A",
@@ -179,11 +179,12 @@
         "priority": "P1",
         "sprint": "sprint-2",
         "epic": "Epic-B",
-        "status": "Backlog",
+        "status": "Todo",
         "dependencies": ["COSTRA-103", "COSTRA-104"],
-        "description": "端到端冒烟 · Sprint-2 中段",
-        "disposition": "Sprint-2 中段（103/104 完工后开）",
-        "updated_at": "2026-05-09T19:30:00+08:00"
+        "description": "Sprint-2 主线第 4 张 · 端到端冒烟 client(103) + server(104) 拼接成单人记账完整闭环 + 离线弱网专项断言 + 自动化脚手架 · 0 业务代码 · qa-planner 首次实装实战 · 派单档 dispatch/COSTRA-105-qa-single-user-smoke-offline.md",
+        "disposition": "Sprint-2 主线第 4 张（103/104 已 CLOSED · 解锁完整闭环）· 等 Card-Review R1",
+        "dispatch_at": "2026-05-12T14:18:00+08:00",
+        "updated_at": "2026-05-12T14:18:00+08:00"
       },
       {
         "id": "COSTRA-112",
