@@ -80,7 +80,11 @@ export async function registerEntriesRoutes(app: FastifyInstance): Promise<void>
     },
     async (req, reply) => {
       const userId = await parseUserId(req);
-      const result = await entryService.createWithIdempotency(userId, req.body);
+      const result = await entryService.createWithIdempotency(
+        userId,
+        req.body,
+        req.body.client_ref_id,
+      );
       if (result.status === 'ok') {
         const entry = await entryService.findById(userId, result.serverId);
         reply.code(201).send({

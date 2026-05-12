@@ -87,6 +87,7 @@ describe('POST /entries', () => {
         type: 'income',
         occurred_at: '2026-05-11T08:00:00.000Z',
         note: '工资',
+        client_ref_id: 'local-T7-salary',
       },
     });
     expect(res.statusCode).toBe(201);
@@ -96,6 +97,7 @@ describe('POST /entries', () => {
     expect(body.currency).toBe('CNY');
     expect(body.type).toBe('income');
     expect(body.version).toBe(1);
+    expect(body.client_ref_id).toBe('local-T7-salary'); // R1.x.3 防回归：request → response 字段保真
     expect(body.created_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 

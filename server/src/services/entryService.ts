@@ -45,6 +45,7 @@ export interface CreateEntryPayload {
   to_account_id?: string | null;
   note?: string | null;
   occurred_at: string;
+  client_ref_id?: string;
 }
 
 export interface UpdateEntryPayload {
