@@ -97,7 +97,90 @@ echo "TOKEN=$TOKEN"
 **Pass/Fail**：
 - [ ] Pass · [ ] Fail
 
-> **注**：开发环境 `wx_fetch` mock 已注入 · code 任意值都能成功登入。
+> **注**：dev WX mock 已在 §0.2 启动期注入 · code 任意值都能成功登入。
+
+---
+
+## 2.5 步骤 B.5 · 准备测试数据（首次实测必跑 · psql 手动 seed）
+
+### 2.5.1 为什么需要
+
+COSTRA-104 R1 仅实装 `/entries` CRUD + `/sync/push` · **未实装** `/families` + `/ledgers` CRUD（OpenAPI 已定义 · 路由 0 实装 · scope gap）· 也未实装首登 onboarding 流（COSTRA-101 明示 MVP 不做）· 因此 mock-openid-xxx 用户登录后 DB 没有任何 family/ledger · 直接 POST /entries 会触发 FK 违反 → 500 INTERNAL。
+
+**临时解决**：psql 手动 INSERT 一行 family + ledger + family_members(owner) · 关联到步骤 B 拿 token 的 user.id。
+
+> **后续治理**：本卡 Human 实测后立 `FU-EPIC-FAMILY-LEDGER-CRUD`（Sprint-3 候选 COSTRA-155）· 实装真实 CRUD 后此手动步骤可废弃。
+
+### 2.5.2 取出 user.id
+
+```bash
+# 从步骤 B 的 RESPONSE 中提取（如未保留 RESPONSE 重跑步骤 B 即可）
+USER_ID=$(echo $RESPONSE | jq -r '.user.id')
+echo "USER_ID=$USER_ID"
+```
+
+期望：UUID 格式（如 `019e1a8d-2d20-7ac4-8b63-471645e1d6f8`）。
+
+### 2.5.3 连 psql 执行 SQL seed
+
+> **DB 连接串**：`postgres://costra:costra_dev_pw@localhost:5432/costra`（来自 `server/.env.example`）· 你的本地 dev DB 应已用此账号启动。
+
+```bash
+# 用 user.id 替换下方 SQL 里的 :user_id（psql -v 注入）
+psql 'postgres://costra:costra_dev_pw@localhost:5432/costra' \
+  -v user_id="'$USER_ID'" <<'SQL'
+
+BEGIN;
+
+-- 固定 family_id（手册其他步骤复用 · 与 ledger_id 配对）
+INSERT INTO families (id, name, owner_id)
+VALUES ('00000000-0000-0000-0000-0000000000F0', 'CurlTestFamily', :user_id)
+ON CONFLICT (id) DO UPDATE SET owner_id = EXCLUDED.owner_id;
+
+-- 关键：ledger_id = 00000000-...-001（手册步骤 C/D/E 全部用此 id）
+INSERT INTO ledgers (id, family_id, name)
+VALUES ('00000000-0000-0000-0000-000000000001',
+        '00000000-0000-0000-0000-0000000000F0',
+        'Main')
+ON CONFLICT (id) DO NOTHING;
+
+-- user 必须是 family 的 owner 成员（entries.created_by 走 ledger.family_id → family_members 权限校验）
+INSERT INTO family_members (family_id, user_id, role)
+VALUES ('00000000-0000-0000-0000-0000000000F0', :user_id, 'owner')
+ON CONFLICT DO NOTHING;
+
+COMMIT;
+
+-- 验证
+SELECT 'families' AS t, count(*) FROM families WHERE id = '00000000-0000-0000-0000-0000000000F0'
+UNION ALL SELECT 'ledgers',  count(*) FROM ledgers  WHERE id = '00000000-0000-0000-0000-000000000001'
+UNION ALL SELECT 'members',  count(*) FROM family_members WHERE family_id = '00000000-0000-0000-0000-0000000000F0' AND user_id = :user_id;
+SQL
+```
+
+**期望输出**：3 行 count=1：
+
+```
+    t     | count
+----------+-------
+ families |     1
+ ledgers  |     1
+ members  |     1
+```
+
+### 2.5.4 Pass/Fail
+
+- [ ] Pass（3 行 count=1 · ledger_id `00000000-...-001` 已就位）· [ ] Fail（看 SQL 报错：FK 违反 = USER_ID 不对 · 主键冲突 = 无视即可 ON CONFLICT 已处理）
+
+### 2.5.5 重置 mock 用户（可选）
+
+`mock-openid-` 后缀是随机的 → 每次重启 server 拿到的 user.id 都不同 → entries 残留旧 user 关联。如需干净起点：
+
+```bash
+psql 'postgres://costra:costra_dev_pw@localhost:5432/costra' -c \
+  "DELETE FROM users WHERE openid LIKE 'mock-openid-%';"
+# 之后重新跑步骤 B + B.5
+```
 
 ---
 
@@ -113,7 +196,7 @@ curl -i -X POST http://127.0.0.1:8080/entries \
     "currency": "CNY",
     "type": "expense",
     "occurred_at": "2026-05-11T10:00:00.000Z",
-    "note": "curl 实测 1",
+    "note": "curl test 1",
     "client_ref_id": "curl-test-001"
   }'
 ```
@@ -313,3 +396,7 @@ curl -i -X POST http://127.0.0.1:8080/sync/push \
 - v1.2 · 2026-05-12 12:55 · Human curl 实测发现真实腾讯 code 阻塞 → 加 dev WX mock 入口（D-017 §2.4 E1 例外路径 + R1.x.1 实装支持）
   - §0.2 新增 dev WX mock 启动方式（WX_MOCK_LOGIN=1）+ 安全保护说明
   - 配套实装：env.ts wxMockLogin + parseBool + dev-only 校验 + server.ts 启动期 setWxFetchForTests 注入 + .env.example 注释样例
+- v1.3 · 2026-05-12 13:10 · Human 实测发现步骤 C 500（FK 违反 · ledger 不存在）→ 加 §2.5 步骤 B.5 psql 手动 seed family/ledger/family_members
+  - 根因：families/ledgers CRUD 端点 OpenAPI 定义但路由 0 实装（scope gap）+ COSTRA-101 wx-login 不做 onboarding
+  - 临时方案：psql 手动 INSERT 关联 mock 用户 · 后续真业务 CRUD 上线可废弃
+  - §2 步骤 B 末尾 mock 注释指向 §0.2（去掉过时的"wx_fetch mock 已注入"措辞）
