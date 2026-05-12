@@ -48,9 +48,34 @@ WX_MOCK_LOGIN=1 npm run dev
 
 **安全保护**：`WX_MOCK_LOGIN=1` 只在 `NODE_ENV=development` 生效 · prod 启动时会被 loadEnv 校验拒绝（throw `[env] WX_MOCK_LOGIN can only be enabled in NODE_ENV=development`）· 永不暴露到生产。
 
-### 0.3 准备一个新终端跑 curl（保留 dev server 终端）
+### 0.3 DB migrations 全跑齐（首次实测 / 重建 DB 后必跑）
 
-### 0.4 R1 范围声明（重要）
+**关键**：必须把 `server/db/migrations/*.sql` 全部跑齐 · 否则会有列缺失 / 类型缺失 / 表缺失等运行时炸点。
+
+```bash
+cd server
+for f in db/migrations/*.sql; do
+  echo "=== $f ==="
+  psql 'postgres://costra:costra_dev_pw@localhost:5432/costra' -f "$f"
+done
+```
+
+期望按文件名顺序跑完 4 个：
+
+| 文件 | 内容 | 备注 |
+|---|---|---|
+| `0001_init.sql` | 表 schema 全建（users/families/ledgers/family_members/entries/categories/budgets/...）| COSTRA-021 |
+| `0002_seed_system_categories.sql` | 12 条系统预设分类 | seed |
+| `0003_user_sessions.sql` | user_sessions 表 + 索引 | COSTRA-101 |
+| `0004_entries_account_columns.sql` | entries 加 `account_id` + `to_account_id` 列 | **COSTRA-104 R1.x.2** · 修 schema gap |
+
+**已建 DB 重新跑也安全**：所有 migration 都用 `IF NOT EXISTS` / `ON CONFLICT DO NOTHING` 幂等保护。
+
+> **后续治理**：长期应通过 `npm run db:migrate` 脚本自动按序执行（当前脚本仅 echo 提示 · 见 server/package.json）· 立 follow-up `FU-104-DB-MIGRATE-SCRIPT`（Sprint-3 候选 · 与 CI 对账族联动）。
+
+### 0.4 准备一个新终端跑 curl（保留 dev server 终端）
+
+### 0.5 R1 范围声明（重要）
 
 本卡 R1 实装范围（与 dispatch §2 + Card-Review PASS 29/30 锁定）：
 
@@ -400,3 +425,8 @@ curl -i -X POST http://127.0.0.1:8080/sync/push \
   - 根因：families/ledgers CRUD 端点 OpenAPI 定义但路由 0 实装（scope gap）+ COSTRA-101 wx-login 不做 onboarding
   - 临时方案：psql 手动 INSERT 关联 mock 用户 · 后续真业务 CRUD 上线可废弃
   - §2 步骤 B 末尾 mock 注释指向 §0.2（去掉过时的"wx_fetch mock 已注入"措辞）
+- v1.4 · 2026-05-12 13:23 · Human curl 实测步骤 C 暴露 schema gap（entries 缺 account_id / to_account_id 列 · PG 42703）→ 加 §0.3 DB migrations 全跑齐 + 配套实装 0004 migration（commit 929942f · R1.x.2）
+  - 根因：协议 OpenAPI 含字段（COSTRA-020 R2 P0-1 新增）但 0001_init.sql 漏建列 · 测因 pg-mem 自定义 schema 巧合对齐而掩盖 BUG
+  - §0.3 新增 4 条 migrations 全跑步骤（0001/0002/0003/0004 · 幂等可重跑）
+  - §0.3/0.4/0.5 编号顺延（原 §0.3 → §0.4 / §0.4 → §0.5）
+  - 后续审计议题（Sprint-2 末 Retro 候选）：G3 闸门 OpenAPI vs DB schema 列对账 CI（COSTRA-115/116 CI 对账族第 4 张）+ test/setup.ts 反模式（维护两套 schema 真相）+ FU-104-DB-MIGRATE-SCRIPT
