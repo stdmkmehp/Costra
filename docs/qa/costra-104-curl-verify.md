@@ -16,16 +16,17 @@
 
 ```bash
 cd server
-npm run dev    # 启动本地 server · 默认 http://127.0.0.1:3000
+npm run dev    # 启动本地 server · 默认 http://127.0.0.1:8080（PORT 由 server/.env.example 锁定）
 ```
 
-确认终端输出：
+**期望终端输出**（pino JSON 格式 · 字段顺序/数量不强制 · 关键看 `msg` 含 listening + port 8080）：
 
+```json
+{"level":30,...,"msg":"Server listening at http://127.0.0.1:8080"}
+{"level":30,...,"port":8080,"nodeEnv":"development","msg":"costra-server listening"}
 ```
-[server] listening on http://127.0.0.1:3000
-[plugins] jwt loaded · errorHandler loaded · ratelimit loaded
-[routes] /auth/wx-login + /auth/refresh + /auth/logout + /entries + /sync/push + /sync/pull(stub) registered
-```
+
+只要看到 `port: 8080` + `costra-server listening` 即视为启动成功。多接口监听（127.0.0.1 + 局域网 IP + 内网 IP）是预期（`server.ts:55` host: '0.0.0.0'）· 实测时只用 127.0.0.1 即可。
 
 ### 0.2 准备一个新终端跑 curl（保留 dev server 终端）
 
@@ -50,7 +51,7 @@ npm run dev    # 启动本地 server · 默认 http://127.0.0.1:3000
 ## 1. 步骤 A · 启动检查
 
 ```bash
-curl -i http://127.0.0.1:3000/healthz
+curl -i http://127.0.0.1:8080/healthz
 ```
 
 **期望**：`HTTP/1.1 200 OK` + `{"status":"ok"}`
@@ -63,7 +64,7 @@ curl -i http://127.0.0.1:3000/healthz
 ## 2. 步骤 B · 登录拿 JWT
 
 ```bash
-RESPONSE=$(curl -s -X POST http://127.0.0.1:3000/auth/wx-login \
+RESPONSE=$(curl -s -X POST http://127.0.0.1:8080/auth/wx-login \
   -H 'content-type: application/json' \
   -d '{"code":"test-curl-verify"}')
 echo $RESPONSE | jq .
@@ -83,7 +84,7 @@ echo "TOKEN=$TOKEN"
 ## 3. 步骤 C · POST /entries 创建一笔（验 201 + Entry 全字段 snake_case）
 
 ```bash
-curl -i -X POST http://127.0.0.1:3000/entries \
+curl -i -X POST http://127.0.0.1:8080/entries \
   -H 'content-type: application/json' \
   -H "authorization: Bearer $TOKEN" \
   -d '{
@@ -127,7 +128,7 @@ curl -i -X POST http://127.0.0.1:3000/entries \
 ### 4.1 三态混合一次推 3 op
 
 ```bash
-curl -i -X POST http://127.0.0.1:3000/sync/push \
+curl -i -X POST http://127.0.0.1:8080/sync/push \
   -H 'content-type: application/json' \
   -H "authorization: Bearer $TOKEN" \
   -H 'idempotency-key: 11111111-1111-1111-1111-111111111111' \
@@ -189,7 +190,7 @@ curl -i -X POST http://127.0.0.1:3000/sync/push \
 
 ```bash
 # PATCH /entries stub
-curl -i -X PATCH "http://127.0.0.1:3000/entries/00000000-0000-0000-0000-000000000001" \
+curl -i -X PATCH "http://127.0.0.1:8080/entries/00000000-0000-0000-0000-000000000001" \
   -H 'content-type: application/json' \
   -H "authorization: Bearer $TOKEN" \
   -d '{"note":"试更新"}'
@@ -212,7 +213,7 @@ curl -i -X PATCH "http://127.0.0.1:3000/entries/00000000-0000-0000-0000-00000000
 
 ```bash
 # DELETE /entries stub
-curl -i -X DELETE "http://127.0.0.1:3000/entries/00000000-0000-0000-0000-000000000001" \
+curl -i -X DELETE "http://127.0.0.1:8080/entries/00000000-0000-0000-0000-000000000001" \
   -H "authorization: Bearer $TOKEN"
 ```
 
@@ -220,7 +221,7 @@ curl -i -X DELETE "http://127.0.0.1:3000/entries/00000000-0000-0000-0000-0000000
 
 ```bash
 # GET /sync/pull stub
-curl -i "http://127.0.0.1:3000/sync/pull?since=1970-01-01T00:00:00.000Z" \
+curl -i "http://127.0.0.1:8080/sync/pull?since=1970-01-01T00:00:00.000Z" \
   -H "authorization: Bearer $TOKEN"
 ```
 
@@ -235,7 +236,7 @@ curl -i "http://127.0.0.1:3000/sync/pull?since=1970-01-01T00:00:00.000Z" \
 
 ```bash
 # 完全重发步骤 4.1 命令（同 idempotency-key + 同 body）
-curl -i -X POST http://127.0.0.1:3000/sync/push \
+curl -i -X POST http://127.0.0.1:8080/sync/push \
   -H 'content-type: application/json' \
   -H "authorization: Bearer $TOKEN" \
   -H 'idempotency-key: 11111111-1111-1111-1111-111111111111' \
@@ -246,7 +247,7 @@ curl -i -X POST http://127.0.0.1:3000/sync/push \
 
 ```bash
 # 同 idempotency-key 改 body 验证 mismatch
-curl -i -X POST http://127.0.0.1:3000/sync/push \
+curl -i -X POST http://127.0.0.1:8080/sync/push \
   -H 'content-type: application/json' \
   -H "authorization: Bearer $TOKEN" \
   -H 'idempotency-key: 11111111-1111-1111-1111-111111111111' \
@@ -285,3 +286,7 @@ curl -i -X POST http://127.0.0.1:3000/sync/push \
 
 **修订记录**：
 - v1.0 · 2026-05-11 14:00 · COSTRA-104 R1 实装收尾首版
+- v1.1 · 2026-05-12 12:40 · Human 实测发现端口/日志格式瑕疵 → 修订（Orchestrator · D-017 §2.4 E1 例外路径）
+  - §0.1 端口：3000 → 8080（与 `server/.env.example` PORT=8080 + `server.ts:55 env.port` 对齐）
+  - §0.1 日志格式：固定示例 → pino JSON 实情 + 启动成功语义判定（不规定字段数量/顺序）
+  - 全文 11 处 curl 命令端口同步更新
