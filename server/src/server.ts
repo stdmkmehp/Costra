@@ -15,12 +15,13 @@ import { buildApp } from './app.js';
 import { appEnv } from './config/env.js';
 import { closePool } from './db/pool.js';
 import { closeRedis } from './db/redis.js';
+import { setWxFetchForTests } from './wx/code2Session.js';
 
 async function main(): Promise<void> {
   const env = appEnv();
   if (env.wxMockLogin) {
-    // 动态 import 避免污染 prod bundle
-    const { setWxFetchForTests } = await import('./wx/code2Session.js');
+    // 静态 import setWxFetchForTests（修 R1.x.1 动态 import 导致 tsx watch 模块缓存分裂 bug）
+    // 与 auth.ts/authService.ts 共用同一 code2Session 模块实例 · 确保 _fetch 单例被正确替换
     setWxFetchForTests(
       (async () =>
         new Response(
