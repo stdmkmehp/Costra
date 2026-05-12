@@ -19,7 +19,9 @@
     "test:coverage": "vitest run --coverage",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down -v",
-    "db:migrate": "echo \"Run: docker compose exec -T postgres psql -U costra -d costra < db/migrations/<file>.sql\""
+    "db:migrate": "bash scripts/dev/migrate.sh",
+    "db:reset-data": "bash scripts/dev/reset-data.sh",
+    "db:seed:curl-test": "bash scripts/dev/seed-curl-test.sh"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",
