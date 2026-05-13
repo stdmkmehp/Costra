@@ -16,13 +16,14 @@
 
 ## §2 当前关注（active tasks）
 
-- （无 · COSTRA-104 R1.x.1 完成 · 等 review-tech R1.x.1 review）
+- COSTRA-156 R1 实装完成（2026-05-13 · server /v1 prefix 加完 + 24处inject改完 + whitelist规则D加完 + 文档同步E1/E2/E3 + FU-105 closed）· 等 review-tech R1 APPROVE
 
 ## §3 交付历史索引
 
 - 2026-05-11 · COSTRA-104 R1 实装（POST /sync/push + POST/GET /entries + 3 stub 切出去铁律 · D-022 v2.0 第 2 次实战准备）· 6d395bd / 6c17085 / 212f181 · SBAI 第 8 次冒烟 · backend-dev 首次实战 · R1+R1.1+R1.2 三轮收口（D-016 反例第 5 次 · 由 Orchestrator 接管收尾）
 - 2026-05-11 · COSTRA-104 R1.x 极窄修复（R1 review-tech 36/40 APPROVE 后同轮兑现 P1-1 + P2-1 · 补 T2 update conflict 测 + followup_id 字段名修正）· 363efa1 · SBAI 第 9 次冒烟 · backend-dev 第 2 次实战收口
 - 2026-05-12 · COSTRA-104 R1.x.1 极窄修复（human curl 实测发现真实腾讯 code 阻塞 40029 · 加 dev WX_MOCK_LOGIN=1 mock 入口 · env.ts wxMockLogin + parseBool + dev-only 校验 + server.ts setWxFetchForTests 启动期注入 + .env.example 注释 + curl-verify.md v1.2）· 95e00c6 · backend-dev 第 3 次实战
+- 2026-05-13 · COSTRA-156 R1 实装（server /v1 prefix + 24处inject改/v1 + healthz保根 + whitelist规则D + 文档同步104curl-verify v1.5 + 105手册 v1.3 + FU-105 closed）· D-022 v2.0 第 4 次实战 · 等 review-tech R1 APPROVE
 
 ## §4 最近决策影响
 
@@ -32,7 +33,8 @@
 - `D-009 域名红线`· `costra.cloud` / 开发服务器 `49.235.216.20`（2026-07-23 到期）
 - **D-020 D-016 升定稿**（COSTRA-104 R1+R1.1+R1.2 漏 commit 第 5 次反例 · Sprint-2 末 Retro 议题）
 - **D-021 D-017 v3 升级**（三证铁律本卡实战）
-- **D-022 v2.0 review-tech 评分表**（本卡 review-tech R1 = D-022 v2.0 第 2 次实战）
+- **D-022 v2.0 review-tech 评分表**（本卡 review-tech R1 = D-022 v2.0 第 4 次实战）
+- **D-023 立案候选**：OpenAPI servers prefix 与 fastify register prefix 强制一致性规约（COSTRA-156 Sprint-2 Retro 议题 · 已在派单档 §9 标注）
 
 ## §5 工作区 + 权限
 
@@ -45,9 +47,11 @@
 - 金额精度 DECIMAL(18,4) + `decimal.js` 双端一致约束（已实装）
 - COSTRA-104 切出去 3 件套铁律首次实战遗留（FU-104-ENTRIES-PATCH/DELETE/SYNC-PULL → COSTRA-152/153/154 Sprint-3 候选）
 - **SBAI 装扮档 7 点卡需在 R1 内分阶段 commit 议题**（Sprint-2 末 Retro 必处置 · COSTRA-104 5 次反例确认）
+- **D-016 反例第 8 次预防**（COSTRA-156 本卡 state/history 随 commit 同轮落盘 · 成功）
 
 ## §7 最近更新时间戳
 
 - 2026-05-02T19:24:00+08:00 · 初始化骨架（by Orchestrator）
 - 2026-05-11T20:57:43+08:00 · COSTRA-104 R1.x 极窄修复收口（363efa1 · P1-1 T2 测 + P2-1 followup_id）
 - 2026-05-12T12:52:05+08:00 · COSTRA-104 R1.x.1 极窄修复收口（95e00c6 · dev WX mock 入口）
+- 2026-05-13T11:1x:00+08:00 · COSTRA-156 R1 实装收口（/v1 prefix + 24处inject + whitelist规则D + 文档同步 + FU-105 closed · 等 review-tech R1 APPROVE）

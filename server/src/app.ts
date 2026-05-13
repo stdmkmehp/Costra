@@ -64,10 +64,14 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   await registerErrorHandler(app);
 
   // --- 业务路由 ---
+  // healthz 保留根路径（K8s/SLB liveness probe 惯例 · 不进 v1 prefix）
   await registerHealthRoute(app);
-  await registerAuthRoutes(app);
-  await registerEntriesRoutes(app);
-  await registerSyncRoutes(app);
+  // 业务路由全部进 /v1 prefix 子作用域（COSTRA-156 · 让实装服从 OpenAPI servers 契约）
+  await app.register(async (v1) => {
+    await registerAuthRoutes(v1);
+    await registerEntriesRoutes(v1);
+    await registerSyncRoutes(v1);
+  }, { prefix: '/v1' });
 
   return app;
 }

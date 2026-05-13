@@ -23,7 +23,7 @@
 
 ---
 
-## 🟡 当前 open FU 速查表（14 条）
+## 🟢 当前 open FU 速查表（13 条）
 
 按主题族 + 推动优先级排序：
 
@@ -62,7 +62,7 @@
 
 ---
 
-## 🚀 族 A · Sprint-3 同步协议核心（6 条 · 强联动 · 必须打包做）
+## 🚀 族 A · Sprint-3 同步协议核心（5 条 · 强联动 · 必须打包做）
 
 ### FU-104-SYNC-PULL · GET /sync/pull 增量拉取实装（替代 R1 stub 501 · PRD AC-4 核心）
 
@@ -177,8 +177,9 @@
   - **议题 A**：CI 漏检反模式 ——"三源字符串相等"对账 ≠ "端到端可达性"对账 · whitelist-check 范式扩展到 path 维度（COSTRA-115/116 CI 对账族第 5 张候选）
   - **议题 B**：server 单测 `inject` 反模式 —— 不走真 HTTP · 不经过 client buildUrl · 漏检 client/server 协议层握手 gap · 议入测试策略 v0.2（建议补 supertest + jest-openapi 真 HTTP 集成测试 · COSTRA-050 §2.2 落地）
   - **议题 C**：D-022 v2.0 评分表 C8 子项扩展 —— C8 runtime 加载性维度增加"端到端契约联调可达性"子项（C8-5 候选）
-- **状态**：`open`（COSTRA-156 占位卡待 Sprint-3 Planning 认领）
-- **owner_card**：COSTRA-156（待立）
+- **状态**：`closed`（resolved_by COSTRA-156 R1 · commit xxxxxxx · 2026-05-13 11:0x）
+- **owner_card**：COSTRA-156 R1（已 review-tech APPROVE）
+- **闭合证据**：server 单测 20/20 全绿（含 /v1 prefix）+ whitelist-check 规则 D 动态拦截 + 105 方式 B 端到端联合实测 H1~H5 全 PASS
 
 ---
 

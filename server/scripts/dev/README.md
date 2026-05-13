@@ -33,7 +33,7 @@ npm run db:migrate    # 注：reset-data 已 TRUNCATE · 不需重跑 migrations
 WX_MOCK_LOGIN=1 npm run dev
 
 # 3. 拿 token + USER_ID（步骤 B）
-RESPONSE=$(curl -s -X POST http://127.0.0.1:8080/auth/wx-login \
+RESPONSE=$(curl -s -X POST http://127.0.0.1:8080/v1/auth/wx-login \
   -H 'content-type: application/json' \
   -d '{"code":"test"}')
 TOKEN=$(echo $RESPONSE | jq -r '.access_token')

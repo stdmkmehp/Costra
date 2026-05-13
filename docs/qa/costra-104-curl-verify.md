@@ -4,7 +4,7 @@
 >
 > **实测者**：Human Orchestrator + Human 项目负责人
 > **预计时间**：~ 15 分钟
-> **修订版本**：v1.2 · 2026-05-12 12:55 · COSTRA-104 R1.x.1
+> **修订版本**：v1.5 · 2026-05-13 11:0x · COSTRA-156 R1 文档同步
 
 ---
 
@@ -96,7 +96,7 @@ done
 ## 1. 步骤 A · 启动检查
 
 ```bash
-curl -i http://127.0.0.1:8080/healthz
+curl -i http://127.0.0.1:8080/v1/healthz
 ```
 
 **期望**：`HTTP/1.1 200 OK` + `{"status":"ok"}`
@@ -109,7 +109,7 @@ curl -i http://127.0.0.1:8080/healthz
 ## 2. 步骤 B · 登录拿 JWT
 
 ```bash
-RESPONSE=$(curl -s -X POST http://127.0.0.1:8080/auth/wx-login \
+RESPONSE=$(curl -s -X POST http://127.0.0.1:8080/v1/auth/wx-login \
   -H 'content-type: application/json' \
   -d '{"code":"test-curl-verify"}')
 echo $RESPONSE | jq .
@@ -212,7 +212,7 @@ psql 'postgres://costra:costra_dev_pw@localhost:5432/costra' -c \
 ## 3. 步骤 C · POST /entries 创建一笔（验 201 + Entry 全字段 snake_case）
 
 ```bash
-curl -i -X POST http://127.0.0.1:8080/entries \
+curl -i -X POST http://127.0.0.1:8080/v1/entries \
   -H 'content-type: application/json' \
   -H "authorization: Bearer $TOKEN" \
   -d '{
@@ -256,7 +256,7 @@ curl -i -X POST http://127.0.0.1:8080/entries \
 ### 4.1 三态混合一次推 3 op
 
 ```bash
-curl -i -X POST http://127.0.0.1:8080/sync/push \
+curl -i -X POST http://127.0.0.1:8080/v1/sync/push \
   -H 'content-type: application/json' \
   -H "authorization: Bearer $TOKEN" \
   -H 'idempotency-key: 11111111-1111-1111-1111-111111111111' \
@@ -318,7 +318,7 @@ curl -i -X POST http://127.0.0.1:8080/sync/push \
 
 ```bash
 # PATCH /entries stub
-curl -i -X PATCH "http://127.0.0.1:8080/entries/00000000-0000-0000-0000-000000000001" \
+curl -i -X PATCH "http://127.0.0.1:8080/v1/entries/00000000-0000-0000-0000-000000000001" \
   -H 'content-type: application/json' \
   -H "authorization: Bearer $TOKEN" \
   -d '{"note":"试更新"}'
@@ -341,7 +341,7 @@ curl -i -X PATCH "http://127.0.0.1:8080/entries/00000000-0000-0000-0000-00000000
 
 ```bash
 # DELETE /entries stub
-curl -i -X DELETE "http://127.0.0.1:8080/entries/00000000-0000-0000-0000-000000000001" \
+curl -i -X DELETE "http://127.0.0.1:8080/v1/entries/00000000-0000-0000-0000-000000000001" \
   -H "authorization: Bearer $TOKEN"
 ```
 
@@ -349,7 +349,7 @@ curl -i -X DELETE "http://127.0.0.1:8080/entries/00000000-0000-0000-0000-0000000
 
 ```bash
 # GET /sync/pull stub
-curl -i "http://127.0.0.1:8080/sync/pull?since=1970-01-01T00:00:00.000Z" \
+curl -i "http://127.0.0.1:8080/v1/sync/pull?since=1970-01-01T00:00:00.000Z" \
   -H "authorization: Bearer $TOKEN"
 ```
 
@@ -366,7 +366,7 @@ curl -i "http://127.0.0.1:8080/sync/pull?since=1970-01-01T00:00:00.000Z" \
 
 ```bash
 # 完全重发步骤 D 4.1 命令（同 idempotency-key + 同 body）· 期望 server 返缓存 · 不重复入账
-curl -i -X POST http://127.0.0.1:8080/sync/push \
+curl -i -X POST http://127.0.0.1:8080/v1/sync/push \
   -H 'content-type: application/json' \
   -H "authorization: Bearer $TOKEN" \
   -H 'idempotency-key: 11111111-1111-1111-1111-111111111111' \
@@ -387,7 +387,7 @@ curl -i -X POST http://127.0.0.1:8080/sync/push \
 ### 5.2 同 idempotency-key 改 body 验证 mismatch
 
 ```bash
-curl -i -X POST http://127.0.0.1:8080/sync/push \
+curl -i -X POST http://127.0.0.1:8080/v1/sync/push \
   -H 'content-type: application/json' \
   -H "authorization: Bearer $TOKEN" \
   -H 'idempotency-key: 11111111-1111-1111-1111-111111111111' \
@@ -443,7 +443,9 @@ curl -i -X POST http://127.0.0.1:8080/sync/push \
   - §0.3 新增 4 条 migrations 全跑步骤（0001/0002/0003/0004 · 幂等可重跑）
   - §0.3/0.4/0.5 编号顺延（原 §0.3 → §0.4 / §0.4 → §0.5）
   - 后续审计议题（Sprint-2 末 Retro 候选）：G3 闸门 OpenAPI vs DB schema 列对账 CI（COSTRA-115/116 CI 对账族第 4 张）+ test/setup.ts 反模式（维护两套 schema 真相）+ FU-104-DB-MIGRATE-SCRIPT
-- v1.5 · 2026-05-12 13:54 · COSTRA-104 Human T1 终审通过 · 5 步 + 3 硬断言全 PASS · 收尾修订
+- v1.5 · 2026-05-13 11:0x · COSTRA-156 R1 文档同步（Human 不需重跑 · 仅文档对齐）
+  - 8 处 curl URL 加 `/v1`（步骤 A healthz / 步骤 B auth/wx-login / 步骤 C POST /entries / 步骤 D sync/push 三段 / 步骤 E 重发幂等两段）· 全部与 OpenAPI servers 契约对齐
+  - **Human 决策不要求 104 重跑回归**（COSTRA-105 方式 B 真链路实测 = 端到端等效回归）
   - §5 步骤 E 改用完整可粘贴命令（去掉 `<同步骤 4.1 body>` 招呼语）+ 拆 §5.1/§5.2/§5.3 三段 + 提及 provided_hash/original_hash debug 友好
   - 配套实装：server/scripts/dev/{migrate,reset-data,seed-curl-test}.sh · npm scripts 三件套（db:migrate / db:reset-data / db:seed:curl-test · 见 server/scripts/dev/README.md）
   - 配套修复：reset-data.sh 末尾自动重跑 0002 seed（TRUNCATE families CASCADE 清 categories 副作用补偿）

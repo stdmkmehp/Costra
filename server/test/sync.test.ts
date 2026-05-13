@@ -30,7 +30,7 @@ async function login(app: FastifyInstance): Promise<string> {
   );
   const res = await app.inject({
     method: 'POST',
-    url: '/auth/wx-login',
+    url: '/v1/auth/wx-login',
     payload: { code: 'test-sync' },
     headers: { 'content-type': 'application/json' },
   });
@@ -72,7 +72,7 @@ describe('POST /sync/push', () => {
   it('T1 happy 单条 create entry → status=ok + server_id + server_version=1', async () => {
     const res = await app.inject({
       method: 'POST',
-      url: '/sync/push',
+      url: '/v1/sync/push',
       headers: {
         'content-type': 'application/json',
         authorization: `Bearer ${token}`,
@@ -104,7 +104,7 @@ describe('POST /sync/push', () => {
     // T1 先创建一个 entry，拿 server_id + server_version=1
     const createRes = await app.inject({
       method: 'POST',
-      url: '/sync/push',
+      url: '/v1/sync/push',
       headers: {
         'content-type': 'application/json',
         authorization: `Bearer ${token}`,
@@ -134,7 +134,7 @@ describe('POST /sync/push', () => {
     // 再用错的 base_version=99 update 同一 entry，期望 conflict
     const updateRes = await app.inject({
       method: 'POST',
-      url: '/sync/push',
+      url: '/v1/sync/push',
       headers: {
         'content-type': 'application/json',
         authorization: `Bearer ${token}`,
@@ -162,7 +162,7 @@ describe('POST /sync/push', () => {
   it('T3 rejected entity=category → status=rejected + NOT_IMPLEMENTED', async () => {
     const res = await app.inject({
       method: 'POST',
-      url: '/sync/push',
+      url: '/v1/sync/push',
       headers: {
         'content-type': 'application/json',
         authorization: `Bearer ${token}`,
@@ -201,7 +201,7 @@ describe('POST /sync/push', () => {
     }));
     const res = await app.inject({
       method: 'POST',
-      url: '/sync/push',
+      url: '/v1/sync/push',
       headers: {
         'content-type': 'application/json',
         authorization: `Bearer ${token}`,
@@ -217,7 +217,7 @@ describe('POST /sync/push', () => {
   it('T8 无 JWT → 401 UNAUTHENTICATED', async () => {
     const res = await app.inject({
       method: 'POST',
-      url: '/sync/push',
+      url: '/v1/sync/push',
       headers: {
         'content-type': 'application/json',
         'idempotency-key': '00000000-0000-0000-0000-000000000008',
@@ -232,7 +232,7 @@ describe('GET /sync/pull', () => {
   it('T7 stub 返回 501 + deferred_card=COSTRA-154', async () => {
     const res = await app.inject({
       method: 'GET',
-      url: '/sync/pull',
+      url: '/v1/sync/pull',
       headers: { authorization: `Bearer ${token}` },
     });
     expect(res.statusCode).toBe(501);

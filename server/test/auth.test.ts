@@ -38,7 +38,7 @@ async function doWxLogin(code = 'valid-code'): Promise<{
 }> {
   const res = await app.inject({
     method: 'POST',
-    url: '/auth/wx-login',
+    url: '/v1/auth/wx-login',
     payload: { code },
     headers: { 'content-type': 'application/json' },
   });
@@ -91,7 +91,7 @@ describe('POST /auth/wx-login', () => {
     );
     const res = await app.inject({
       method: 'POST',
-      url: '/auth/wx-login',
+      url: '/v1/auth/wx-login',
       payload: { code: 'expired' },
       headers: { 'content-type': 'application/json' },
     });
@@ -104,7 +104,7 @@ describe('POST /auth/wx-login', () => {
   it('T7 err Schema 拒绝：空 body → 400 INVALID_ARGUMENT', async () => {
     const res = await app.inject({
       method: 'POST',
-      url: '/auth/wx-login',
+      url: '/v1/auth/wx-login',
       payload: {},
       headers: { 'content-type': 'application/json' },
     });
@@ -129,7 +129,7 @@ describe('POST /auth/refresh', () => {
     const login = await doWxLogin();
     const res = await app.inject({
       method: 'POST',
-      url: '/auth/refresh',
+      url: '/v1/auth/refresh',
       payload: { refresh_token: login.body.refresh_token },
       headers: { 'content-type': 'application/json' },
     });
@@ -148,7 +148,7 @@ describe('POST /auth/refresh', () => {
   it('T4 err 伪造 refresh_token → 401 REFRESH_TOKEN_INVALID', async () => {
     const res = await app.inject({
       method: 'POST',
-      url: '/auth/refresh',
+      url: '/v1/auth/refresh',
       payload: { refresh_token: 'not.a.valid.jwt' },
       headers: { 'content-type': 'application/json' },
     });
@@ -171,7 +171,7 @@ describe('POST /auth/logout', () => {
 
     const firstLogout = await app.inject({
       method: 'POST',
-      url: '/auth/logout',
+      url: '/v1/auth/logout',
       payload: { refresh_token: login.body.refresh_token },
       headers: { 'content-type': 'application/json' },
     });
@@ -180,7 +180,7 @@ describe('POST /auth/logout', () => {
     // 幂等：第二次 logout 同样 204
     const secondLogout = await app.inject({
       method: 'POST',
-      url: '/auth/logout',
+      url: '/v1/auth/logout',
       payload: { refresh_token: login.body.refresh_token },
       headers: { 'content-type': 'application/json' },
     });
@@ -189,7 +189,7 @@ describe('POST /auth/logout', () => {
     // 已吊销后的 refresh 再用 → REFRESH_TOKEN_INVALID
     const refreshAfterLogout = await app.inject({
       method: 'POST',
-      url: '/auth/refresh',
+      url: '/v1/auth/refresh',
       payload: { refresh_token: login.body.refresh_token },
       headers: { 'content-type': 'application/json' },
     });

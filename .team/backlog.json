@@ -1,9 +1,9 @@
 {
   "project": "Costra",
-  "version": "0.2.5",
-  "last_updated": "2026-05-13T10:25:00+08:00",
+  "version": "0.2.6",
+  "last_updated": "2026-05-13T10:35:00+08:00",
   "platform": "wechat-miniprogram",
-  "notes": "v0.2.5: COSTRA-156 占位卡入 Sprint-3（FU-105-CLIENT-SERVER-URL-PREFIX-MISMATCH 转正候选 · P0 · 2 点 · backend-dev · server 加 /v1 prefix 让实装服从 OpenAPI 契约 · COSTRA-105 R1.1 手册修订时发现根因三层 · Human 2026-05-12 16:27 决策方案 A · 早于 COSTRA-150 client 调度器）。v0.2.4: COSTRA-105 立卡 + 派单。v0.2.3: COSTRA-106 Sprint-1 Retro 全量交付。",
+  "notes": "v0.2.6: COSTRA-156 流转 Sprint-3 Backlog → Sprint-2 Todo · Human 决策\"先 156 再 smoke 105\"（2026-05-13 10:30）· 从 Sprint-3 头部提前拉入 Sprint-2 · 与 105 配联合实测兑现端到端真链路覆盖（D-022 §4.1 runtime 类强制铁律）· 派单档落盘 dispatch/COSTRA-156-backend-add-v1-prefix.md（500+ 行 · 12 项 DoD + 10 闸门 + 9 项 scope）· 等 Card-Review R1。v0.2.5: COSTRA-156 占位卡入 Sprint-3。v0.2.4: COSTRA-105 立卡。",
   "epics": [
     {
       "id": "Epic-A",
@@ -347,16 +347,17 @@
         "type": "fix",
         "points": 2,
         "priority": "P0",
-        "sprint": "sprint-3",
+        "sprint": "sprint-2",
         "epic": "Epic-C",
-        "status": "Backlog",
+        "status": "Todo",
         "dependencies": [
           "COSTRA-104",
           "COSTRA-105"
         ],
         "description": "Sprint-3 头部 P0 fix · server app.ts 加 v1 prefix 注册（healthz 保留根路径）+ server/test/{auth,entries,sync}.test.ts 25 处 inject url 加 /v1 + scripts/dev/README.md curl 示例 + docs/qa/costra-104-curl-verify.md v1.4→v1.5 + docs/qa/costra-105-human-smoke.md §0.1 去 BLOCKED 注记 + scripts/devops/whitelist-check.mjs 加规则 D（fastify prefix vs OpenAPI servers path 强制对账 防回归）+ 立 D-023 工具链层规约 · 早于 COSTRA-150（client 调度器联调依赖此 fix）· 不要求 Human 重跑 COSTRA-104（COSTRA-105 方式 B 真链路实测 = 端到端覆盖 = 等效回归）· COSTRA-105 R1.1 手册修订时显式暴露根因三层（L1 协议歧义 + L2 验证盲区 + L3 CI 误判）· Human 2026-05-12 16:27 决策方案 A",
-        "disposition": "Sprint-3 头部 P0 · 早于 COSTRA-150 · COSTRA-105 R1.1 手册修订发现 · Human 决策方案 A",
-        "updated_at": "2026-05-13T10:25:00+08:00"
+        "disposition": "Sprint-2 主线第 5 张（提前从 Sprint-3 拉入 · Human 决策\"先 156 再 smoke 105\"· 156 完成后 105 + 156 联合实测端到端真链路）",
+        "updated_at": "2026-05-13T10:35:00+08:00",
+        "dispatch_at": "2026-05-13T10:35:00+08:00"
       }
     ]
   }

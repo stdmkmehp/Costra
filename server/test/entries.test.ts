@@ -27,7 +27,7 @@ async function login(app: FastifyInstance): Promise<string> {
   );
   const res = await app.inject({
     method: 'POST',
-    url: '/auth/wx-login',
+    url: '/v1/auth/wx-login',
     payload: { code: 'test-entries' },
     headers: { 'content-type': 'application/json' },
   });
@@ -79,7 +79,7 @@ describe('POST /entries', () => {
   it('T7 happy 直接创建 entry → 201 + 完整 Entry 字段', async () => {
     const res = await app.inject({
       method: 'POST',
-      url: '/entries',
+      url: '/v1/entries',
       headers: authHeader(),
       payload: {
         ledger_id: '00000000-0000-0000-0000-000000000001',
@@ -104,7 +104,7 @@ describe('POST /entries', () => {
   it('T12 invalid body 缺 required 字段 → 400 INVALID_ARGUMENT', async () => {
     const res = await app.inject({
       method: 'POST',
-      url: '/entries',
+      url: '/v1/entries',
       headers: authHeader(),
       payload: { amount: 100 }, // 缺 ledger_id / type / occurred_at
     });
@@ -117,10 +117,10 @@ describe('POST /entries', () => {
 describe('GET /entries', () => {
   it('T8 游标分页 25 条 → 返回 next_cursor', async () => {
     // 先建 25 条 entry
-    for (let i = 0; i < 25; i++) {
+for (let i = 0; i < 25; i++) {
       await app.inject({
         method: 'POST',
-        url: '/entries',
+        url: '/v1/entries',
         headers: authHeader(),
         payload: {
           ledger_id: '00000000-0000-0000-0000-000000000001',
@@ -132,7 +132,7 @@ describe('GET /entries', () => {
     }
     const res = await app.inject({
       method: 'GET',
-      url: '/entries?limit=20',
+      url: '/v1/entries?limit=20',
       headers: authHeader(),
     });
     expect(res.statusCode).toBe(200);
@@ -144,7 +144,7 @@ describe('GET /entries', () => {
   it('T11 无 JWT → 401 UNAUTHENTICATED', async () => {
     const res = await app.inject({
       method: 'GET',
-      url: '/entries',
+      url: '/v1/entries',
       headers: { 'content-type': 'application/json' },
     });
     expect(res.statusCode).toBe(401);
@@ -155,7 +155,7 @@ describe('PATCH /entries/{entry_id} stub', () => {
   it('T9 stub 返回 501 + deferred_card=COSTRA-152', async () => {
     const res = await app.inject({
       method: 'PATCH',
-      url: '/entries/00000000-0000-0000-0000-0000000000ff',
+      url: '/v1/entries/00000000-0000-0000-0000-0000000000ff',
       headers: authHeader(),
       payload: { amount: 999 },
     });
@@ -171,7 +171,7 @@ describe('DELETE /entries/{entry_id} stub', () => {
   it('T10 stub 返回 501 + deferred_card=COSTRA-153', async () => {
     const res = await app.inject({
       method: 'DELETE',
-      url: '/entries/00000000-0000-0000-0000-0000000000ee',
+      url: '/v1/entries/00000000-0000-0000-0000-0000000000ee',
       headers: { authorization: authHeader().authorization }, // Bug3 fix: 不带 content-type 避免 Fastify 空 body 400
     });
     expect(res.statusCode).toBe(501);

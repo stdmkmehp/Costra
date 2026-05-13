@@ -6,10 +6,11 @@
  * 母决策：.team/decisions/D-009-domain-and-dev-server-locked.md
  * SSOT：infra/wechat/domains.md §1.1
  *
- * 对账三源：
+ * 对账四源：
  *   ① server/api/openapi.yaml servers 段
  *   ② miniprogram/services/env.ts 的 apiBaseUrl
  *   ③ infra/wechat/domains.md §1.1 env → url 映射
+ *   ④ server/src/app.ts fastify register prefix（COSTRA-156 规则 D）
  *
  * 契约（见 dispatch §6.5）：
  *   exit 0 · 一致
@@ -30,6 +31,7 @@ const repoRoot = path.resolve(__dirname, '..', '..');
 const OPENAPI_PATH = path.join(repoRoot, 'server', 'api', 'openapi.yaml');
 const ENV_TS_PATH = path.join(repoRoot, 'miniprogram', 'services', 'env.ts');
 const DOMAINS_MD_PATH = path.join(repoRoot, 'infra', 'wechat', 'domains.md');
+const APP_TS_PATH = path.join(repoRoot, 'server', 'src', 'app.ts');
 
 /**
  * 豁免清单（预留锚点 · 当前为空集）
@@ -205,6 +207,21 @@ function reconcile(openapiUrls, envTsEntries, domainsMdEntries) {
         );
       }
     }
+  }
+
+  // 规则 D: fastify register prefix 与 OpenAPI servers[0] path 段一致性（COSTRA-156 防回归）
+  // 抽取 app.ts 中的 prefix 字面量（轻量正则，不做 AST 解析）
+  const appTsContent = readFileSync(APP_TS_PATH, 'utf8');
+  const prefixMatch = appTsContent.match(/prefix:\s*(['"])(\/[^'"]*)\1/);
+  const fastifyPrefix = prefixMatch ? prefixMatch[2] : '';
+
+  // 抽取 OpenAPI servers[0] 的 path 段
+  const openapiServerPath = new URL(openapiUrls[0]).pathname; // e.g. '/v1'
+
+  if (fastifyPrefix !== openapiServerPath) {
+    errors.push(
+      `[D] fastify register prefix=${JSON.stringify(fastifyPrefix)} vs OpenAPI servers[0] path=${JSON.stringify(openapiServerPath)} 不一致 (COSTRA-156 防回归 · 修复：在 server/src/app.ts 用 app.register(..., { prefix: '${openapiServerPath}' }) 包裹业务路由)`
+    );
   }
 
   return { errors, warnings };
