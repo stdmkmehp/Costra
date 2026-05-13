@@ -18,14 +18,12 @@
 
 ## 📚 归档索引
 
-- **Sprint-1 期间已闭合 FU**（13 条 · 含同族规约盲区 5 连 + FU-LAUNCH 族 4 卡）→ [`_archive/follow-ups-closed-sprint-1.md`](../_archive/follow-ups-closed-sprint-1.md)
-- 完整治理叙事（v1→v5 翻转链 / D-017 SOP 立案 / CI 对账族三代）原文亦在归档文件中
+- **Sprint-1 + Sprint-2 早期已闭合 FU**（18 条 · 含同族规约盲区 5 连 + FU-LAUNCH 族 4 卡 + FU-105-URL + 2026-05-13 维护批 4 条账本同步）→ [`_archive/follow-ups-closed-sprint-1.md`](../_archive/follow-ups-closed-sprint-1.md)
+- 完整治理叙事（v1→v5 翻转链 / D-017 SOP 立案 / CI 对账族五代）原文亦在归档文件中
 
 ---
 
-## 🟢 当前 open FU 速查表（13 条）
-
-按主题族 + 推动优先级排序：
+## 🟢 当前 open FU 速查表（20 条 · 按主题族 + 推动优先级）
 
 | 主题族 | FU-ID | 优先级 | 候选卡 / 归属 | 状态 |
 |---|---|---|---|---|
@@ -34,27 +32,24 @@
 | **Sprint-3 同步协议核心** | FU-104-ENTRIES-PATCH | P1 | COSTRA-152 | open |
 | **Sprint-3 同步协议核心** | FU-104-ENTRIES-DELETE | P1 | COSTRA-153 | open |
 | **Sprint-3 同步协议核心** | FU-103-CONFLICT-MERGE-UI | P2 | COSTRA-151 | open |
-| **Epic-F 用户资料** | FU-001 | P2 | Sprint-2 Epic-F | open |
-| **Epic-F 用户资料** | FU-118-2 | P2 | 合 FU-001 | open |
-| **Epic-F 用户资料** | FU-102-PROFILE-REFUSE-UI | P2 | Sprint-2 Epic-F | open |
-| **Epic-F 用户资料** | FU-102-ERROR-MAPPER-INTEGRATION | P1 | Sprint-2 Epic-F 或单独修 | open |
-| **Epic-F 用户资料** | FU-102-AVATAR-ONERROR | P1 | Sprint-2 Epic-F 或单独修 | open |
-| **DevOps 基建** | FU-118-3（→ COSTRA-160）| P0 根因 / P2 优先级 | COSTRA-160 | open |
-| **DevOps 基建** | FU-118-5 | P2 | 合 COSTRA-903 APM | open |
+| **Epic-F 用户资料**（建议合卡）| FU-001 | P2 | Sprint-2 用户资料合卡 | open |
+| **Epic-F 用户资料**（建议合卡）| FU-118-2 | P2 | 合 FU-001 | open |
+| **Epic-F 用户资料**（建议合卡）| FU-102-PROFILE-REFUSE-UI | P2 | Sprint-2 用户资料合卡 | open |
+| **Epic-F 用户资料**（建议合卡）| FU-102-ERROR-MAPPER-INTEGRATION | **P1**（红线违反）| Sprint-2 用户资料合卡 | open |
+| **Epic-F 用户资料**（建议合卡）| FU-102-AVATAR-ONERROR | **P1**（红线违反）| Sprint-2 用户资料合卡 | open |
+| **DevOps 基建** | FU-118-3（→ COSTRA-160）| P0 根因 / P2 优先级 | COSTRA-160（已立卡）| open |
 | **DevOps 基建** | FU-CI-MP-BUILD-NPM-ENFORCE | P2 | Sprint-2 CI 升级 | open |
 | **DevOps 基建** | FU-LIBVERSION-DEV-GUARD | P3 | Sprint-2 候选 | open |
-| **DevOps 基建** | FU-118-4 | P2 | Sprint-2 Retro 末批 | open |
+| **DevOps 基建** | FU-118-5 | P2 | 合 COSTRA-903 APM | open |
+| **DevOps 基建** | FU-118-4 | P2 | Sprint-2 末维护批 | open |
 | **DB 治理** | FU-DB-OPS-AUDIT | P3 | DAU>100 触发 | open |
-| **协议 / 规约残留** | FU-102-SYNC-PULL-DRIFT | INFO | 已并入 COSTRA-106 Retro | open |
-| **协议 / 规约残留** | FU-COMMON-MINIAPP-PATCH-LIMIT | O 观察 | engineering-guidelines / common-contract | open-observation |
-| **协议 / 规约残留** | FU-118-1 | P3 观察 | engineering-guidelines §2.5 | open-observation |
-| **协议 / 规约残留** | FU-102-HUMAN-VERIFY-PARADIGM | INFO | 已并入 COSTRA-106 Retro | open |
+| **协议 / 规约残留** | FU-COMMON-MINIAPP-PATCH-LIMIT | O 观察 | 顺手随 COSTRA-152（PATCH→PUT 收口）| open-observation |
 | **QA 自动化** | FU-105-AUTOMATION-FULL-COVERAGE | P2 | COSTRA-155 | open |
-| **QA 自动化** | FU-156-OUTBOX-FLAKY | P2 | Sprint-3 头部 | open |
-| **Review 机制** | FU-REVIEW-TECH-RUNTIME-DIM | P0（已部分兑现）| 已并入 COSTRA-106 Retro D-022 | open |
+| **QA 自动化** | FU-156-OUTBOX-FLAKY | P2 | Sprint-3 头部 miniapp-dev | open |
 | **外部触发** | FU-115-2 | O 观察 | Human ICP 下证日触发 | open |
 
-> 注：FU-102-SYNC-PULL-DRIFT / FU-102-HUMAN-VERIFY-PARADIGM / FU-REVIEW-TECH-RUNTIME-DIM 已在 COSTRA-106 Sprint-1 Retro（2026-05-09 闭环）中议过 · 但条目本身未正式 close · 实务上视为"议题已沉淀 D-020/D-021/D-022 三决议 · FU 文档登记可在下次维护批次同步关闭"
+> **2026-05-13 维护批同步关闭 5 条 FU**（已迁入归档 · 不再列于本表）：
+> FU-105-CLIENT-SERVER-URL-PREFIX-MISMATCH（COSTRA-156 R1 实质闭合）· FU-102-SYNC-PULL-DRIFT / FU-102-HUMAN-VERIFY-PARADIGM / FU-REVIEW-TECH-RUNTIME-DIM（COSTRA-106 Retro 三决议沉淀）· FU-118-1（账本同步 · engineering-guidelines §2.5 文字留 PM 维护批落字）
 
 ---
 
@@ -140,46 +135,6 @@
 - **认领建议**：Sprint-3 中后段（候选卡号 COSTRA-151 · 估 5 点 · 与 conflict-strategy.md 决议立案捆绑）
 - **状态**：`open`
 - **owner_card**：COSTRA-151（待 Sprint-3 Planning 认领）
-
-### FU-105-CLIENT-SERVER-URL-PREFIX-MISMATCH · client/server `/v1` URL 前缀实装层 mismatch（Sprint-3 头部 P0 · 早于 COSTRA-150）
-
-- **来源**：2026-05-12 16:1x · COSTRA-105 R1.1 手册修订时（修订方式 B 真链路实测段）显式暴露
-- **登记时间**：2026-05-12（COSTRA-105 R1.1 · 2026-05-12 16:27 Human 决策方案 A）
-- **根因**（三层）：
-  - **L1 协议歧义**：OpenAPI 3.0.3 `servers[].url` 含 `/v1` path（COSTRA-020 G3 通过 30/30）+ `paths[]` 为相对 path · 规约允许但**不强制实装方实现 servers prefix** · fastify/express 等框架不会自动从 OpenAPI servers 推导 prefix
-  - **L2 验证盲区**：server 单测全部走 `inject({ url: '/...' })` 内部路径 · client 默认 `mockLogin: true` 不发真 HTTP · COSTRA-104 curl 直打 server 绕过 client buildUrl · **三条独立路径都自洽 · 端到端契约联调用例从未存在**
-  - **L3 CI 误判**：`scripts/devops/whitelist-check.mjs` 三方对账（env.ts ↔ openapi.yaml servers ↔ domains.md）按"字符串相等"全 PASS · **没核对 path 拼接后的有效 URL** · 给虚假安全感
-- **事实**：
-  - server `app.ts:67-70` 注册路由无 prefix · 实际监听 `/auth/wx-login` `/sync/push` `/entries`
-  - server 25 处 inject test 用 `url: '/auth/...'`（auth 9 + entries 8 + sync 8）· 与 server 实装一致 · 全绿
-  - OpenAPI `servers[]` 4 条全带 `/v1`（openapi.yaml:24-32）
-  - client `apiBaseUrl` 4 个 env 全带 `/v1`（env.ts:17/28/39）
-  - client `path` 字面量无 `/v1`（auth.ts:134/175/206 / sync.ts:87）
-  - `buildUrl(base, path)` 字符串拼接（request.ts:135-143）→ 实际请求 `http://localhost:8080/v1/auth/wx-login`
-  - server 收到该请求 → setNotFoundHandler → 404
-- **影响**：105 R1.1 手册方式 B 步骤 D（client 联网→outbox push）撞 404 · 步骤 E（curl 直打 server · 沿用 104 范式不带 /v1）不受影响
-- **决策**：✅ **Human 已选方案 A**（2026-05-12 16:27）· server 加 `/v1` prefix · 让实装服从 OpenAPI 契约 · COSTRA-104 不回归（COSTRA-105 方式 B 真链路实测 = 端到端覆盖 = 等效回归）
-- **scope**（COSTRA-156 · Sprint-3 头部）：
-  1. `server/src/app.ts` 加 v1 prefix 注册（`app.register(async (v1) => { ... }, { prefix: '/v1' })` · healthz 保留根路径供 K8s/SLB 健康检查）
-  2. `server/test/auth.test.ts` 9 处 inject url 加 `/v1` 前缀
-  3. `server/test/entries.test.ts` 8 处 inject url 加 `/v1` 前缀
-  4. `server/test/sync.test.ts` 8 处 inject url 加 `/v1` 前缀
-  5. `server/scripts/dev/README.md` curl 示例加 `/v1`
-  6. `docs/qa/costra-104-curl-verify.md` 8 处 curl URL 加 `/v1` · v1.4→v1.5（**不要求 Human 重跑**）
-  7. `docs/qa/costra-105-human-smoke.md` §0.1 警示段去 BLOCKED 注记 + 步骤 D 转 ✅ 可跑
-  8. `scripts/devops/whitelist-check.mjs` 加规则 D：fastify register prefix（从 app.ts AST 抽取）vs OpenAPI servers path 段 · 强制一致性 CI 闸门（防回归）
-  9. 立 `.team/decisions/D-023`：OpenAPI servers prefix 与 fastify register prefix 强制一致性规约（工具链 SSOT 层 · 类比 D-011 工具链层规约）
-- **依赖**：早于 COSTRA-150（client 调度器）· 因为 150 联调 push/pull 必须先有正确 URL
-- **PRD 锚点**：Epic-A AC-1（登录）/ Epic-B AC-4（离线）/ Epic-C 整体（同步引擎）联调可达性
-- **阻断级别**：**P0**（Sprint-3 主线 150/154 联调依赖此 fix · 必须 Sprint-3 头部完成）
-- **认领建议**：Sprint-3 头部 COSTRA-156 · **2 点** · owner=backend-dev 主驾 + qa-planner 回归 + devops-ops CI 扩展
-- **Sprint-2 末 Retro 议题候选**（升 P0）：
-  - **议题 A**：CI 漏检反模式 ——"三源字符串相等"对账 ≠ "端到端可达性"对账 · whitelist-check 范式扩展到 path 维度（COSTRA-115/116 CI 对账族第 5 张候选）
-  - **议题 B**：server 单测 `inject` 反模式 —— 不走真 HTTP · 不经过 client buildUrl · 漏检 client/server 协议层握手 gap · 议入测试策略 v0.2（建议补 supertest + jest-openapi 真 HTTP 集成测试 · COSTRA-050 §2.2 落地）
-  - **议题 C**：D-022 v2.0 评分表 C8 子项扩展 —— C8 runtime 加载性维度增加"端到端契约联调可达性"子项（C8-5 候选）
-- **状态**：`closed`（resolved_by COSTRA-156 R1 · commit xxxxxxx · 2026-05-13 11:0x）
-- **owner_card**：COSTRA-156 R1（已 review-tech APPROVE）
-- **闭合证据**：server 单测 20/20 全绿（含 /v1 prefix）+ whitelist-check 规则 D 动态拦截 + 105 方式 B 端到端联合实测 H1~H5 全 PASS
 
 ---
 
@@ -328,7 +283,7 @@
 
 ---
 
-## 📋 族 E · 协议 / 规约残留（4 条）
+## 📋 族 E · 协议 / 规约残留（1 条 · 平台限制观察）
 
 ### FU-COMMON-MINIAPP-PATCH-LIMIT · wx.request 不支持 PATCH（平台限制登记）
 
@@ -337,47 +292,14 @@
 - **范围**：`miniprogram/services/request.ts` PATCH 方法在 wx.request type 中不存在 · Agent 已降级 `method === 'PATCH'` 时走 POST + `X-HTTP-Method-Override: PATCH` header
 - **建议**：登记为跨卡复用的平台限制 · server 侧约定处理该 header · 不可修
 - **阻断级别**：O-观察项（平台限制 · 已合规兜底）
-- **认领建议**：server 端任一接受 PATCH 的接口（如 `PATCH /users/me`）需文档化接受 `X-HTTP-Method-Override` header · 议入 `docs/api/common-contract.md`
+- **认领建议**：**强烈建议随 COSTRA-152（PATCH /entries/{id}）顺手做**：方案 (c) OpenAPI PATCH→PUT（语义等价 · 无破坏 · 微信原生支持）· 同时清掉 server 侧 `X-HTTP-Method-Override` 兼容代码 + miniprogram request.ts 降级分支
 - **状态**：`open-observation`
-- **owner_card**：跨卡通用（可入 engineering-guidelines 或 common-contract）
+- **owner_card**：建议挂 COSTRA-152（实质合并修复）· 或留 engineering-guidelines / common-contract 归档
 - **🆕 首次实触发观察**（2026-05-01 21:18 · COSTRA-123 Human 第 6 次模拟器启动）：
   - 现象：`request.ts:88 POST http://localhost:8080/v1/users/me 404` + `[login] PATCH /users/me soft-fail Error: route not found`
   - 链路精准命中 R1 Review §P1-2 预言（`.team/reviews/COSTRA-102/round-1-tech.md:74-81`）
   - 兜底有效：`pages/login/index.ts:68` `catch (e) { console.warn }` 打印 `soft-fail` · 不阻登录流程
-  - **三方案预议**（保留 · 待 Sprint-2 选）：(a) server/Fastify 加统一 `methodOverride` 中间件 · (b) MiniApp 切到 DELETE+重建语义 · (c) OpenAPI 改 PATCH → PUT（无破坏 · 语义等价）
-
-### FU-118-1 · miniprogram README 出现 AppID（灰色区 / 观察项）
-
-- **来源**：`.team/reviews/COSTRA-118/round-1-tech.md` 灰色区二裁段
-- **登记时间**：2026-04-24 19:35
-- **范围**：`miniprogram/README.md:12, :42` 两处出现 `wxf8b0d3e3a83f9941`
-- **问题**：Review-Tech §3.5 红线"AppID 不得出现在 miniprogram 源码中"的"源码"定义存在歧义 — 狭义（.ts/.wxml/.wxss/.json）vs 广义（含 README/文档）。Reviewer 主张务实派（README 不打包进小程序产物 · 开发可读性价值高）· 降级为观察项。
-- **建议**：Sprint-2 在 `engineering-guidelines §2.5` 补一句显式澄清："AppID 红线仅针对会打包进小程序产物的文件（.ts/.wxml/.wxss/.json）· README 等文档类文件豁免"
-- **阻断级别**：O-观察项
-- **认领建议**：Sprint-2 PM 维护批
-- **状态**：`open-observation`
-
-### FU-102-SYNC-PULL-DRIFT · dispatch 派单推导与事实源漂移（已部分兑现 · 待正式 close）
-
-- **来源**：`.team/reviews/COSTRA-102/round-1-miniapp-response.md` INFO-B + `round-1-tech.md` INFO
-- **登记时间**：2026-04-27 10:14
-- **范围**：`.team/dispatch/COSTRA-102-miniapp-login-e2e.md §D2.5` 写 "POST /sync/pull body"；事实源 `server/api/openapi.yaml L614-637` + `docs/api/sync-protocol.md §3.1` 明确为 GET + query string · Agent 按事实源实装 · Reviewer 确认正确
-- **建议**：Orchestrator 派单推导机制应增加"事实源对账自查表"步骤（类似 O-R4-2 Revise 主报告自查表）· 避免派单引入次生幻觉
-- **阻断级别**：INFO（本次未造成实装事故 · Agent 按事实源优先原则兜住）
-- **认领建议**：**已并入 COSTRA-106 Sprint-1 Retro 议题处置（2026-05-09 闭环）**· 议题已沉淀到 D-020/D-021 · 本 FU 文档登记可在下次维护批次同步关闭
-- **状态**：`open`（议题已沉淀 · 文档登记待同步）
-- **owner_card**：COSTRA-106
-
-### FU-102-HUMAN-VERIFY-PARADIGM · 首张纯前端 T1 卡范式（已部分兑现 · 待正式 close）
-
-- **来源**：`.team/reviews/COSTRA-102/round-1-product.md` INFO + card-def-product.md INFO-2
-- **登记时间**：2026-04-27 10:14
-- **范围**：COSTRA-102 作为首张纯前端 T1 卡 · 建立 "Agent 交付三件套（代码 + 单测 + 手册） + Human 20 分钟本地验证 = T1 终审必要凭证" 范式 · 破解 Agent 无真机访问权的能力边界约束
-- **建议**：议入 `SOP-REVIEW.md v2.1 §11`：纯前端客户端 T1 卡 R1 交付必含本地验证手册 `docs/qa/COSTRA-<xxx>-human-verify.md`（0 前置 + 步骤明确 + 失败报告模板）
-- **阻断级别**：INFO（范式议入 · 非缺陷）
-- **认领建议**：**已并入 COSTRA-106 Sprint-1 Retro · D-022 v2.0 评分表已包含"runtime 类 T2 卡判定 + Human 实测前置铁律"** · 范式已明文化
-- **状态**：`open`（议题已沉淀 · 文档登记待同步）
-- **owner_card**：COSTRA-106
+  - **三方案预议**（保留 · 推荐方案 c）：(a) server/Fastify 加统一 `methodOverride` 中间件 · (b) MiniApp 切到 DELETE+重建语义 · **(c) OpenAPI 改 PATCH → PUT**（无破坏 · 语义等价 · 微信原生支持）
 
 ---
 
@@ -420,22 +342,7 @@
 
 ---
 
-## 🔍 族 G · Review 机制（1 条 · 已部分兑现）
-
-### FU-REVIEW-TECH-RUNTIME-DIM · Review-Tech 评分表新增 runtime 加载性维度
-
-- **来源**：COSTRA-123 收官时立 · 同族规约盲区 5 连共同根因
-- **登记时间**：2026-05-01 21:28
-- **范围**：Review-Tech 35 分评分表 7 维（契约/代码/架构/数据/安全/可测/纪律）无一覆盖 runtime · 119~123 五次复发本质原因
-- **建议**：Review-Tech 评分表升 v2.0 · 新增第 8 维"runtime 加载性"（5 分制 · 含微信/Node/Browser 三栏可选）
-- **阻断级别**：原 P0（Sprint-1 末 Retro 必议题）
-- **认领建议**：**已并入 COSTRA-106 Sprint-1 Retro D-022 v2.0 · 评分表升级到 40 分制**（D-022 v2.0 已在 COSTRA-103/104/105 三次实战 · 趋势 38→36→40）
-- **状态**：`open`（议题已沉淀 · 文档登记待同步关闭）
-- **owner_card**：COSTRA-106
-
----
-
-## 🌐 族 H · 外部触发（1 条 · Human 主动）
+## 🌐 族 G · 外部触发（1 条 · Human 主动）
 
 ### FU-115-2 · ICP 下证后配 api.costra.cloud 至微信服务器域名白名单
 

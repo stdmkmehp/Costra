@@ -8,7 +8,10 @@
 
 ---
 
-## 一、闭合 FU 速查表（13 条）
+## 一、闭合 FU 速查表（18 条）
+
+> Sprint-1（13 条 · 同族盲区 5 连 + FU-LAUNCH 族 4 卡 + 杂项 3 条）
+> Sprint-2（5 条 · COSTRA-156 闭合 1 条 + 2026-05-13 维护批 4 条账本同步）
 
 | FU-ID | 主题 | 闭合卡 | 闭合时间 |
 |---|---|---|---|
@@ -24,6 +27,11 @@
 | FU-LAUNCH-B | 渲染层 storage group `_prepare` 时序（FU-LAUNCH 子 FU）| COSTRA-125 + COSTRA-126 | 2026-05-08 |
 | FU-LAUNCH-C | 首渲染数据投递错位（FU-LAUNCH 子 FU）| COSTRA-127 | 2026-05-08 17:55 |
 | **FU-LAUNCH-FIRST-RENDER-RACE**（父）| 启动期首渲染时序警告族（A/B/C 全闭合）| COSTRA-127 | 2026-05-08 17:55 |
+| FU-105-CLIENT-SERVER-URL-PREFIX-MISMATCH | client/server `/v1` URL 前缀实装层 mismatch | COSTRA-156 R1 | 2026-05-13 11:27 |
+| FU-102-SYNC-PULL-DRIFT | dispatch 派单推导与事实源漂移（账本同步）| COSTRA-106 Retro | 2026-05-13 13:48（账本同步）|
+| FU-102-HUMAN-VERIFY-PARADIGM | 首张纯前端 T1 卡范式（账本同步 → D-022 v2.0）| COSTRA-106 Retro | 2026-05-13 13:48（账本同步）|
+| FU-REVIEW-TECH-RUNTIME-DIM | Review-Tech 评分表新增 runtime 加载性维度（账本同步 → D-022 v2.0）| COSTRA-106 Retro | 2026-05-13 13:48（账本同步）|
+| FU-118-1 | miniprogram README 出现 AppID（账本同步 → engineering-guidelines §2.5 待 PM 维护批落字）| engineering-guidelines | 2026-05-13 13:48（账本同步 · 待文档落字）|
 
 ---
 
@@ -173,3 +181,49 @@
 ---
 
 _本归档由 Orchestrator 在 Sprint-2 初期整理时一次性产出 · 完整原文可在 git history 中追溯（commit `42494f1` 及之前）_
+
+---
+
+## 五、Sprint-2 期间闭合追加（2026-05-13 维护批 · 5 条）
+
+### FU-105-CLIENT-SERVER-URL-PREFIX-MISMATCH（COSTRA-156 R1 · 2026-05-13 11:27）
+
+**完整原文** 见主文件 `commit 1b8baf3` 之前版本 §族 A · 144~182 行（2026-05-12 16:1x 立件 · 2026-05-13 11:27 R1 review-tech APPROVE 40/40 满分闭合）。
+
+**核心追溯锚点**：
+- 三层根因：L1 协议歧义（OpenAPI servers `/v1` vs paths 相对）+ L2 验证盲区（25 处 inject 不走真 HTTP）+ L3 CI 误判（whitelist-check 字符串相等 ≠ 端到端可达性）
+- 修复 9 项：server `app.ts` v1 prefix（healthz 保根）+ 24 处 inject /v1 + curl 文档同步 + whitelist-check 规则 D（fastify prefix vs OpenAPI servers path 静态对账）+ D-023 工具链层规约
+- 治理价值：D-017 v3 §2.4 第 6 次完整实战 · D-022 v2.0 评分表第 4 次实战连续两卡满分（105 + 156）· D-016 反例第 8 次首次预防成功 · CI 对账族第 5 张
+- 闭合证据：commit `edca8da`（15 文件 +762/-75 行）+ 105 方式 B 联合实测 H1~H5 全 PASS
+
+### FU-102-SYNC-PULL-DRIFT（账本同步 · COSTRA-106 Retro · 2026-05-13）
+
+- **原议题**：dispatch 派单推导与事实源漂移（COSTRA-102 R1 INFO）
+- **沉淀位置**：COSTRA-106 Sprint-1 Retro · D-020/D-021/D-022 三决议中 · 派单事实源对账自查表已纳入 D-021 SOP-CARD-REVIEW v1.1
+- **闭合理由**：议题已完整议过 · 三决议落地 · 文档登记账本同步关闭
+- **resolved_by**：COSTRA-106 Sprint-1 Retro（commit `9fe5430` + `03422fa`）
+
+### FU-102-HUMAN-VERIFY-PARADIGM（账本同步 · COSTRA-106 Retro · 2026-05-13）
+
+- **原议题**：首张纯前端 T1 卡范式（"Agent 三件套交付 + Human 20 分钟本地验证 = T1 终审凭证"）
+- **沉淀位置**：D-022 v2.0 评分表 §11 "runtime 类 T2 卡判定 + Human 实测前置铁律" 已明文化
+- **闭合理由**：D-022 v2.0 已在 COSTRA-103/104/105/156 四次实战 · 范式稳固
+- **resolved_by**：COSTRA-106 Sprint-1 Retro · D-022 v2.0
+
+### FU-REVIEW-TECH-RUNTIME-DIM（账本同步 · COSTRA-106 Retro · 2026-05-13）
+
+- **原议题**：Review-Tech 评分表加 runtime 加载性维度（同族规约盲区 5 连共同根因）
+- **沉淀位置**：D-022 v2.0 评分表 35→40 分制 · C8 维度（runtime 加载性 5 分）+ C10 维度（SBAI 流程合规 5 分）已落地
+- **闭合理由**：D-022 v2.0 趋势 38→36→40→40（103/104/105/156）· 维度有效性已验证
+- **resolved_by**：COSTRA-106 Sprint-1 Retro · D-022 v2.0
+
+### FU-118-1（账本同步 · 待 PM 维护批落字 · 2026-05-13）
+
+- **原议题**：miniprogram README 出现 AppID（灰色区观察项 · 建议 engineering-guidelines §2.5 加显式澄清）
+- **闭合处理**：本次维护批同步关闭账本登记 · 实际 engineering-guidelines §2.5 文字补充留待下次 PM 维护批一并落字（不阻当前任何卡 · 务实派定性维持）
+- **resolved_by**：本次 follow-ups 维护批（2026-05-13 13:48）+ 待 engineering-guidelines §2.5 PM 维护批文字补充
+- **后续无血脉的小尾巴**：若未来同类 AppID 出现位置歧义争议再起 · 重启此 FU 升 P2
+
+---
+
+_Sprint-2 期间闭合追加段由 Orchestrator 在 2026-05-13 13:48 维护批整理时落盘_
