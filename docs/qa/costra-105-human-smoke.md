@@ -24,8 +24,14 @@
 
 > **本次推荐**：先 A 后 B（共 ~ 25 分钟）· C 留 Sprint-2 提审前 ICP 下证 + R-013 关闭后跑（参 charter §9 / `infra/wechat/domains.md §4`）。
 
-> **⚠️ 已知 gap（修订手册时新发现 · 暂记此处 · Human 知情）**：
-> client `services/env.ts` `apiBaseUrl=http://localhost:8080/v1` + server 实际路由无 `/v1` 前缀 · **方式 B 步骤 D（client 离线→联网→自动 push）会撞 404**。属 client/server URL 一致性 gap · 不在 105 owner 范围 · 等本手册修订完毕后 Human 决策方案。当前手册中**步骤 D 方式 B 部分**会显式标注 `🚧 BLOCKED-BY-URL-MISMATCH`，不阻断本卡（103 R1 范围声明已说明调度器 + URL 联调留 FU）。**步骤 E（curl 直打 server · 不经 client）不受影响**，可正常实测。
+> **⚠️ 已知 gap · ✅ 已决策（2026-05-12 16:27 Human 选方案 A · 委托 COSTRA-156 Sprint-3 头部修复）**：
+> client `services/env.ts` `apiBaseUrl=http://localhost:8080/v1` + server 实际路由无 `/v1` 前缀 · **方式 B 步骤 D（client 离线→联网→自动 push）会撞 404**。
+>
+> **决策**：方案 A · server `app.ts` 加 `/v1` prefix 让实装服从 OpenAPI 契约（OpenAPI servers 段 4 条全带 `/v1` 是事实源）。client 0 改动。
+>
+> **责任卡**：`COSTRA-156` Sprint-3 头部 · 2 点 · backend-dev 主驾 · 早于 COSTRA-150（client 调度器联调依赖此 fix）。详见 `.team/follow-ups/README.md` §族 A · `FU-105-CLIENT-SERVER-URL-PREFIX-MISMATCH`。
+>
+> **本卡处置**：方式 B 步骤 D 显式标 `🚧 BLOCKED-BY-COSTRA-156` · 不阻断本卡 H1~H5 终审。**步骤 E（curl 直打 server · 不经 client buildUrl）不受影响**，可正常实测验证 H4 幂等。**步骤 D 待 COSTRA-156 实装并通过其 review 后回归再跑**（Sprint-3 头部）。
 
 ---
 
@@ -269,7 +275,7 @@ USER_ID='mock-user-abc123' npm run db:seed:curl-test
 > | 全量 14 用例自动化 + CI 集成 | FU-105-AUTOMATION-FULL-COVERAGE（Sprint-3 P2 5 点）| 不影响（自动化是脚手架 · 实测靠手动）|
 > | client 调度器（onShow / 网络恢复 / 周期 setInterval）| FU-103-CLIENT-SYNC-SCHEDULER（Sprint-3 候选 COSTRA-150）| **方式 B 步骤 D**（client 自动 push 不会触发 · 需 console 手动调 `pushDelta()`）|
 > | conflict 真实合并 UI | FU-103-CONFLICT-MERGE-UI（Sprint-3 候选 COSTRA-151）| 不影响本卡（步骤 E curl 验幂等 · 不验合并 UI）|
-> | client/server URL `/v1` 前缀一致性 | 🆕 **待 Human 决策**（手册修订发现 · 详见 §0.1 警示）| **方式 B 步骤 D**（client 真发请求会撞 404）|
+> | client/server URL `/v1` 前缀一致性 | ✅ **已决策方案 A · COSTRA-156**（Sprint-3 头部 · server 加 prefix）| **方式 B 步骤 D**（当前撞 404 · COSTRA-156 实装后回归）|
 >
 > **R1 实测目标 = 闭环可达性 + 用例可执行性**：H1~H5 全 PASS = 用例集 + 手册 + 闭环逻辑无 bug · 调度器 + URL 一致性留 FU 不阻断。
 
@@ -411,8 +417,8 @@ cd server && npm run db:reset-data
 | 模式 | 是否适用 | 备注 |
 |---|---|---|
 | 方式 A · Mock | ❌ 不适用 | mockLogin 不发 HTTP · 看不到 push 行为 · 直接 SKIP |
-| 方式 B · 本地 server | 🚧 **当前 BLOCKED-BY-URL-MISMATCH** | client `/v1/sync/push` vs server `/sync/push` 路径不匹配 · 实测会撞 404 · 不阻断本卡（FU-103-CLIENT-SYNC-SCHEDULER 已声明调度器留 Sprint-3）|
-| 方式 C · 真 staging | 🚧 阻塞（§0.5）| URL mismatch 修复 + 调度器实装后再跑 |
+| 方式 B · 本地 server | 🚧 **BLOCKED-BY-COSTRA-156**（已决策方案 A · 待 Sprint-3 头部修）| client `/v1/sync/push` vs server `/sync/push` 路径不匹配 · 实测会撞 404 · 不阻断本卡（已立 FU-105-CLIENT-SERVER-URL-PREFIX-MISMATCH + COSTRA-156 占位卡）|
+| 方式 C · 真 staging | 🚧 阻塞（§0.5）| COSTRA-156 URL fix + COSTRA-150 调度器实装后再跑 |
 
 ### 4.1 操作（方式 B · 阻塞下仅做"诊断式实测"）
 
@@ -435,9 +441,9 @@ cd server && npm run db:reset-data
 ### 4.3 Pass/Fail
 
 - [ ] 方式 A · SKIP（不适用）
-- [ ] 方式 B · 🚧 当前 BLOCKED-BY-URL-MISMATCH（不阻断本卡终审 · 留 Sprint-3 修）
+- [ ] 方式 B · 🚧 BLOCKED-BY-COSTRA-156（不阻断本卡终审 · COSTRA-156 Sprint-3 头部修复后回归）
 
-> **失败处置**：步骤 D 当前 FAIL 是预期 · 等同 COSTRA-103 R1 范围声明所述。等 Human 决策 URL mismatch 方案后 · COSTRA-105 R1.2 / Sprint-3 COSTRA-150 修复后再回归。**本卡步骤 D 不计入 H1~H5 硬断言**。
+> **失败处置**：步骤 D 当前 FAIL 是预期 · COSTRA-156（Sprint-3 头部 · 2 点 · backend-dev）实装并通过 review 后回归再跑。**本卡步骤 D 不计入 H1~H5 硬断言**。
 
 ---
 
@@ -512,7 +518,7 @@ curl -s -X POST http://127.0.0.1:8080/sync/push \
 
 **H1~H5 全 PASS = T1 终审放行** · **任意 FAIL（不含步骤 D 当前 BLOCKED）= 卡退回 R1 修复**
 
-> 步骤 D 因 URL mismatch BLOCKED 不计入 H1~H5。该 gap 等待 Human 在本手册修订完毕后决策方案 · 留 Sprint-3 修复（候选合并入 COSTRA-150 client 调度器卡）。
+> 步骤 D 因 URL mismatch BLOCKED 不计入 H1~H5。该 gap 已 Human 决策方案 A · 委托 COSTRA-156（Sprint-3 头部 · 独立卡 · 早于 COSTRA-150）修复。
 
 ---
 
@@ -532,10 +538,10 @@ curl -s -X POST http://127.0.0.1:8080/sync/push \
 | 步骤 FAIL | 转介 Agent | 说明 |
 |---|---|---|
 | A · 登录链路（A1~A4 任一）| miniapp-dev + backend-dev | 方式 A：mockExchange 走错；方式 B：wx.login 真链路 / JWT 错 |
-| A · A5（方式 B 网络断言）| backend-dev（URL mismatch 候选）| client `/v1` 前缀 vs server 无前缀（手册修订发现 · 待立 FU）|
+| A · A5（方式 B 网络断言）| backend-dev（COSTRA-156）| client `/v1` 前缀 vs server 无前缀 · 已立 FU-105-CLIENT-SERVER-URL-PREFIX-MISMATCH + COSTRA-156 占位卡 |
 | B · 写本地 / payload | miniapp-dev | COSTRA-103 client outbox 行为 |
 | C · 离线 outbox 入队 | miniapp-dev（COSTRA-103 相关）| outbox 多 key 分片 / payload snake_case |
-| D · push 失败（当前 BLOCKED）| 待 Human 决策（本手册 §0.1 警示）| URL mismatch 修复后再走 |
+| D · push 失败（当前 BLOCKED-BY-COSTRA-156）| backend-dev（COSTRA-156 主驾）| COSTRA-156 Sprint-3 头部修复后再走 |
 | E · 幂等（E1/E2/E3）| backend-dev（COSTRA-104 相关）| server idempotency_keys 表逻辑 |
 
 ---
@@ -554,6 +560,7 @@ curl -s -X POST http://127.0.0.1:8080/sync/push \
 
 | 版本 | 时间 | 修订 |
 |---|---|---|
+| **v1.2** | 2026-05-13 10:2x | URL mismatch Human 决策同步：§0.1 警示 + §0.6 R1 范围 + §4 步骤 D 模式矩阵/Pass-Fail/失败处置 + §6 H1~H5 注记 + §8 失败分流 D 行 / A5 行 全部从"待 Human 决策"刷新为"✅ 已决策方案 A · 委托 COSTRA-156 Sprint-3 头部修复" · COSTRA-105 R1.1 文档 housekeeping |
 | **v1.1** | 2026-05-12 16:1x | §0 三模式前置完整重写（方式 A Mock / 方式 B 本地 server / 方式 C 真 staging）+ 各步骤模式适用矩阵 + §0.5 真 staging 触发条件 + 复跑剧本 + 警示 client/server URL `/v1` 前缀 mismatch（待 Human 决策）+ 步骤 D 标 BLOCKED-BY-URL-MISMATCH 不阻断 H1~H5 + 修订记录段 · COSTRA-105 R1.1 |
 | v1.0 | 2026-05-12 14:55 | COSTRA-105 R1 初版（qa-planner 首次实装实战）|
 

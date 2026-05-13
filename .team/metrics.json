@@ -1,7 +1,7 @@
 {
   "_schema": "costra-metrics-v1",
-  "_description": "Sprint-1 收官 + Sprint-2 启动锚点 + COSTRA-105 review-tech APPROVE 40/40 满分 @ 2026-05-12 15:05（待 Human 模拟器实测）。Sprint-2 第 4/7 卡 review-tech 已通过 · D-022 v2.0 评分表第 3 次实战首次满分。",
-  "_updated_at": "2026-05-12T15:10:00+08:00",
+  "_description": "Sprint-1 收官 + Sprint-2 启动锚点 + COSTRA-105 review-tech APPROVE 40/40 满分 @ 2026-05-12 15:05（待 Human 模拟器实测）+ COSTRA-105 R1.1 手册 v1.2 落盘 + URL mismatch Human 决策方案 A · COSTRA-156 占位卡入 Sprint-3 P0 头部 @ 2026-05-13 10:25。Sprint-2 第 4/7 卡 review-tech 已通过 · 等 Human 实测 · D-022 v2.0 评分表第 3 次实战首次满分 · COSTRA-156 早于 COSTRA-150 修复 client/server URL 前缀 mismatch（根因三层 L1/L2/L3 已沉淀 Sprint-2 末 Retro 议题 18/19/20 升 P0）。",
+  "_updated_at": "2026-05-13T10:25:00+08:00",
   "sprint_1_summary": {
     "sprint": "Sprint-1",
     "period": "2026-04-23 ~ 2026-05-08（超期 2 天）",
@@ -802,7 +802,18 @@
       "gates_passed": "6/6 + 1 N/A (typecheck / vitest 34+20 / appjson 10 pages tabBar 4/4 / tooling 3 rules / whitelist 4 envs 3 urls / cross-domain diff 空 · automation syntax SKIP 形式 ②)",
       "human_final_decision": "pending",
       "final_report": ".team/reviews/COSTRA-105/round-1-tech.md (R1 Review · 40/40 满分)",
-      "notes": "SBAI v1.1 第 9 次冒烟 · qa-planner 首次实装实战；D-022 v2.0 评分表第 3 次实战首次满分 (40/40 vs 103 38/40 vs 104 36/40)；Card-Review PASS-WITH-FOLLOWUP 26/30 路径下 P1/P2/INFO 修订率 100%；C8 runtime 加载性 5/5 满分（C8-1/2/3/4 全到位）；0 业务代码 0 协议改动 G6 跨域 diff 空；commit c046d25 (R1 实装 6 文件 +1143 行) + 73d38d6 (state/history 补 commit · D-016 反例第 7 次 · 议入 Sprint-2 末 Retro 升 P0)；累计 8 项 Sprint-2 末 Retro 议题（D-016 反例 7 次升 P0 + 装扮档 commit 完整性检查清单 + 其余 7 项延续 COSTRA-104 议题）。"
+      "notes": "SBAI v1.1 第 9 次冒烟 · qa-planner 首次实装实战；D-022 v2.0 评分表第 3 次实战首次满分 (40/40 vs 103 38/40 vs 104 36/40)；Card-Review PASS-WITH-FOLLOWUP 26/30 路径下 P1/P2/INFO 修订率 100%；C8 runtime 加载性 5/5 满分（C8-1/2/3/4 全到位）；0 业务代码 0 协议改动 G6 跨域 diff 空；commit c046d25 (R1 实装 6 文件 +1143 行) + 73d38d6 (state/history 补 commit · D-016 反例第 7 次 · 议入 Sprint-2 末 Retro 升 P0)；累计 8 项 Sprint-2 末 Retro 议题（D-016 反例 7 次升 P0 + 装扮档 commit 完整性检查清单 + 其余 7 项延续 COSTRA-104 议题）。",
+      "r1_1_manual_revision": {
+        "date": "2026-05-13",
+        "version": "v1.1 → v1.2",
+        "trigger": "Human 反馈 §0 三模式前置不清晰",
+        "patches": "§0 三模式前置完整重写（方式 A/B/C）+ 各步骤模式适用矩阵 + §0.5 真 staging 触发条件 + 复跑剧本 + 警示 client/server URL `/v1` 前缀 mismatch · 修订时显式暴露 P0 gap",
+        "commit": "625417a (R1.1 v1.1) + 待本轮 commit (R1.1 v1.2 URL 决策同步)",
+        "gap_discovered": "FU-105-CLIENT-SERVER-URL-PREFIX-MISMATCH (L1 协议歧义 + L2 验证盲区 server 25 inject 不走真 HTTP + L3 CI 误判 whitelist 字符串相等对账)",
+        "human_decision": "2026-05-12 16:27 方案 A · server 加 /v1 prefix · client 0 改 · 104 不回归 · 105 方式 B 真链路实测 = 等效回归",
+        "follow_up_filed": "FU-105-CLIENT-SERVER-URL-PREFIX-MISMATCH (族 A · P0) + COSTRA-156 占位卡 (Sprint-3 头部 · 2 点 · backend-dev · 9 scope · 早于 COSTRA-150)",
+        "retro_topics_added": "议题 18 CI 漏检反模式升 P0 + 议题 19 server 单测 inject 反模式升 P0 + 议题 20 D-022 v2.0 C8-5 端到端契约联调可达性子项扩展"
+      }
     }
   ]
 }

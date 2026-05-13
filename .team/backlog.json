@@ -1,18 +1,30 @@
 {
   "project": "Costra",
-  "version": "0.2.4",
-  "last_updated": "2026-05-12T14:18:00+08:00",
+  "version": "0.2.5",
+  "last_updated": "2026-05-13T10:25:00+08:00",
   "platform": "wechat-miniprogram",
-  "notes": "v0.2.4: COSTRA-105 Sprint-2 主线第 4 张立卡（Backlog→Todo 流转 · 单人记账闭环冒烟含离线弱网 · QA-Agent · 3 点 · P1 · 派单档落盘 dispatch/COSTRA-105-qa-single-user-smoke-offline.md · 等 Card-Review R1）· qa-planner 首次实装实战 · SBAI v1.1 第 9 次冒烟候选 · D-022 v2.0 评分表第 3 次实战候选。v0.2.3: COSTRA-106 Sprint-1 Retro 全量交付。",
+  "notes": "v0.2.5: COSTRA-156 占位卡入 Sprint-3（FU-105-CLIENT-SERVER-URL-PREFIX-MISMATCH 转正候选 · P0 · 2 点 · backend-dev · server 加 /v1 prefix 让实装服从 OpenAPI 契约 · COSTRA-105 R1.1 手册修订时发现根因三层 · Human 2026-05-12 16:27 决策方案 A · 早于 COSTRA-150 client 调度器）。v0.2.4: COSTRA-105 立卡 + 派单。v0.2.3: COSTRA-106 Sprint-1 Retro 全量交付。",
   "epics": [
     {
       "id": "Epic-A",
       "name": "账号体系（微信登录）",
       "priority": "P0",
       "stories": [
-        { "id": "COSTRA-101", "title": "微信登录（wx.login + code2Session）", "points": 5 },
-        { "id": "COSTRA-102", "title": "手机号绑定（wx.getPhoneNumber 可选）", "points": 3 },
-        { "id": "COSTRA-103", "title": "业务 Token 鉴权 + 刷新（存 wx.storage 封装）", "points": 3 }
+        {
+          "id": "COSTRA-101",
+          "title": "微信登录（wx.login + code2Session）",
+          "points": 5
+        },
+        {
+          "id": "COSTRA-102",
+          "title": "手机号绑定（wx.getPhoneNumber 可选）",
+          "points": 3
+        },
+        {
+          "id": "COSTRA-103",
+          "title": "业务 Token 鉴权 + 刷新（存 wx.storage 封装）",
+          "points": 3
+        }
       ]
     },
     {
@@ -20,10 +32,26 @@
       "name": "单人记账",
       "priority": "P0",
       "stories": [
-        { "id": "COSTRA-111", "title": "资金账户 CRUD", "points": 5 },
-        { "id": "COSTRA-112", "title": "分类管理 + 图标", "points": 3 },
-        { "id": "COSTRA-113", "title": "记一笔（收入/支出/转账）", "points": 8 },
-        { "id": "COSTRA-114", "title": "流水列表（分页 + 筛选）", "points": 5 }
+        {
+          "id": "COSTRA-111",
+          "title": "资金账户 CRUD",
+          "points": 5
+        },
+        {
+          "id": "COSTRA-112",
+          "title": "分类管理 + 图标",
+          "points": 3
+        },
+        {
+          "id": "COSTRA-113",
+          "title": "记一笔（收入/支出/转账）",
+          "points": 8
+        },
+        {
+          "id": "COSTRA-114",
+          "title": "流水列表（分页 + 筛选）",
+          "points": 5
+        }
       ]
     },
     {
@@ -31,10 +59,26 @@
       "name": "本地存储 + 云同步",
       "priority": "P0",
       "stories": [
-        { "id": "COSTRA-121", "title": "wx.storage 封装 + 版本化结构（含 LRU）", "points": 5 },
-        { "id": "COSTRA-122", "title": "同步引擎（增量 + 版本号）", "points": 13 },
-        { "id": "COSTRA-123", "title": "冲突解决策略", "points": 5 },
-        { "id": "COSTRA-124", "title": "启动期 storage 时序修复 + FU-LAUNCH 闭合", "points": 1 }
+        {
+          "id": "COSTRA-121",
+          "title": "wx.storage 封装 + 版本化结构（含 LRU）",
+          "points": 5
+        },
+        {
+          "id": "COSTRA-122",
+          "title": "同步引擎（增量 + 版本号）",
+          "points": 13
+        },
+        {
+          "id": "COSTRA-123",
+          "title": "冲突解决策略",
+          "points": 5
+        },
+        {
+          "id": "COSTRA-124",
+          "title": "启动期 storage 时序修复 + FU-LAUNCH 闭合",
+          "points": 1
+        }
       ]
     },
     {
@@ -42,10 +86,26 @@
       "name": "家庭共享",
       "priority": "P1",
       "stories": [
-        { "id": "COSTRA-201", "title": "家庭邀请码 + 微信群分享卡片", "points": 5 },
-        { "id": "COSTRA-202", "title": "成员角色与权限", "points": 5 },
-        { "id": "COSTRA-203", "title": "实时变更推送（WebSocket + 订阅消息兜底）", "points": 8 },
-        { "id": "COSTRA-204", "title": "审计日志", "points": 3 }
+        {
+          "id": "COSTRA-201",
+          "title": "家庭邀请码 + 微信群分享卡片",
+          "points": 5
+        },
+        {
+          "id": "COSTRA-202",
+          "title": "成员角色与权限",
+          "points": 5
+        },
+        {
+          "id": "COSTRA-203",
+          "title": "实时变更推送（WebSocket + 订阅消息兜底）",
+          "points": 8
+        },
+        {
+          "id": "COSTRA-204",
+          "title": "审计日志",
+          "points": 3
+        }
       ]
     },
     {
@@ -53,8 +113,16 @@
       "name": "预算 / 周期账单",
       "priority": "P1",
       "stories": [
-        { "id": "COSTRA-301", "title": "月度预算 + 超支提醒（订阅消息）", "points": 5 },
-        { "id": "COSTRA-302", "title": "周期账单（cron + 订阅消息提醒）", "points": 8 }
+        {
+          "id": "COSTRA-301",
+          "title": "月度预算 + 超支提醒（订阅消息）",
+          "points": 5
+        },
+        {
+          "id": "COSTRA-302",
+          "title": "周期账单（cron + 订阅消息提醒）",
+          "points": 8
+        }
       ]
     },
     {
@@ -62,8 +130,16 @@
       "name": "统计报表",
       "priority": "P1",
       "stories": [
-        { "id": "COSTRA-401", "title": "月度饼图 / 趋势折线（分包）", "points": 5 },
-        { "id": "COSTRA-402", "title": "年度报告分享页（分包 + 分享卡片）", "points": 8 }
+        {
+          "id": "COSTRA-401",
+          "title": "月度饼图 / 趋势折线（分包）",
+          "points": 5
+        },
+        {
+          "id": "COSTRA-402",
+          "title": "年度报告分享页（分包 + 分享卡片）",
+          "points": 8
+        }
       ]
     },
     {
@@ -71,9 +147,21 @@
       "name": "上线与运营",
       "priority": "P0",
       "stories": [
-        { "id": "COSTRA-901", "title": "隐私协议 + 类目合规 + 提交微信审核", "points": 5 },
-        { "id": "COSTRA-902", "title": "分阶段发布（1%→10%→50%→100%）", "points": 5 },
-        { "id": "COSTRA-903", "title": "APM + 微信小程序后台 JS 异常监控", "points": 3 }
+        {
+          "id": "COSTRA-901",
+          "title": "隐私协议 + 类目合规 + 提交微信审核",
+          "points": 5
+        },
+        {
+          "id": "COSTRA-902",
+          "title": "分阶段发布（1%→10%→50%→100%）",
+          "points": 5
+        },
+        {
+          "id": "COSTRA-903",
+          "title": "APM + 微信小程序后台 JS 异常监控",
+          "points": 3
+        }
       ]
     }
   ],
@@ -105,7 +193,9 @@
         "sprint": "sprint-2",
         "epic": "Epic-C",
         "status": "Done",
-        "dependencies": ["COSTRA-100"],
+        "dependencies": [
+          "COSTRA-100"
+        ],
         "description": "Epic-C 主线客户端层 · 微信 storage API + storage.ts 异步 KV 抽象 + db.ts 实体分层 + outbox 多 key 分片 + 三态 ackResults 消费 · 离线优先架构兑现 PRD 断网记账 · R1 实装完成（D-017 v3 首次完整流程实战 · D-022 v2.0 首次实战）· Human T1 APPROVED CLOSED @ 2026-05-09 19:17 · 双范式建立",
         "disposition": "Sprint-2 主线主头 · CLOSED",
         "updated_at": "2026-05-09T19:17:00+08:00"
@@ -120,7 +210,10 @@
         "sprint": "sprint-2",
         "epic": "Epic-C",
         "status": "Done",
-        "dependencies": ["COSTRA-100", "COSTRA-103"],
+        "dependencies": [
+          "COSTRA-100",
+          "COSTRA-103"
+        ],
         "description": "Sprint-2 主线第 3 张 server 侧 · 实装 POST /sync/push + POST/GET /entries · PATCH/DELETE/sync-pull stub 501（切出去 3 件套铁律首次实战 9/9 完整性）+ dev DX 治理三件套（WX mock + psql seed + npm scripts）· Human T1 APPROVED CLOSED @ 2026-05-12 13:54 · D-022 v2.0 第 2 次实战 36/40",
         "disposition": "Sprint-2 主线第 3 张 · CLOSED",
         "updated_at": "2026-05-12T13:54:00+08:00"
@@ -135,7 +228,9 @@
         "sprint": "sprint-3",
         "epic": "Epic-C",
         "status": "Backlog",
-        "dependencies": ["COSTRA-104"],
+        "dependencies": [
+          "COSTRA-104"
+        ],
         "description": "FU-104-ENTRIES-PATCH 转正 · 实装部分字段更新 + 乐观锁 + outbox 同步 · 协议事实源 server/api/openapi.yaml + sync-protocol.md",
         "disposition": "Sprint-3 候选 · COSTRA-104 R1 切出去 3 件套铁律首次实战遗留",
         "updated_at": "2026-05-11T14:00:00+08:00"
@@ -150,7 +245,9 @@
         "sprint": "sprint-3",
         "epic": "Epic-C",
         "status": "Backlog",
-        "dependencies": ["COSTRA-104"],
+        "dependencies": [
+          "COSTRA-104"
+        ],
         "description": "FU-104-ENTRIES-DELETE 转正 · 实装软删（deleted_at 列）+ outbox 同步删除事件 · 客户端 syncPull 时移除",
         "disposition": "Sprint-3 候选 · COSTRA-104 R1 切出去 3 件套铁律首次实战遗留",
         "updated_at": "2026-05-11T14:00:00+08:00"
@@ -165,7 +262,10 @@
         "sprint": "sprint-3",
         "epic": "Epic-C",
         "status": "Backlog",
-        "dependencies": ["COSTRA-104", "COSTRA-150"],
+        "dependencies": [
+          "COSTRA-104",
+          "COSTRA-150"
+        ],
         "description": "FU-104-SYNC-PULL 转正 · 与 COSTRA-150 client 调度器联动 · 实装 since=watermark 增量拉取 · 协议 §3 + §6.3 · PRD AC-4 核心承诺",
         "disposition": "Sprint-3 头部 · COSTRA-104 R1 切出去 3 件套铁律首次实战遗留 · 与 COSTRA-150 一同认领",
         "updated_at": "2026-05-11T14:00:00+08:00"
@@ -180,7 +280,10 @@
         "sprint": "sprint-2",
         "epic": "Epic-B",
         "status": "Todo",
-        "dependencies": ["COSTRA-103", "COSTRA-104"],
+        "dependencies": [
+          "COSTRA-103",
+          "COSTRA-104"
+        ],
         "description": "Sprint-2 主线第 4 张 · 端到端冒烟 client(103) + server(104) 拼接成单人记账完整闭环 + 离线弱网专项断言 + 自动化脚手架 · 0 业务代码 · qa-planner 首次实装实战 · 派单档 dispatch/COSTRA-105-qa-single-user-smoke-offline.md",
         "disposition": "Sprint-2 主线第 4 张（103/104 已 CLOSED · 解锁完整闭环）· 等 Card-Review R1",
         "dispatch_at": "2026-05-12T14:18:00+08:00",
@@ -196,7 +299,9 @@
         "sprint": "sprint-2",
         "epic": "Epic-B",
         "status": "Backlog",
-        "dependencies": ["D-008"],
+        "dependencies": [
+          "D-008"
+        ],
         "description": "主体红线最后一公里 · 与 113 对齐",
         "disposition": "Sprint-2（可与主线并行）",
         "updated_at": "2026-05-09T19:30:00+08:00"
@@ -211,7 +316,9 @@
         "sprint": "sprint-2",
         "epic": "Epic-G",
         "status": "Backlog",
-        "dependencies": ["D-009"],
+        "dependencies": [
+          "D-009"
+        ],
         "description": "Sprint-1 未开工 · 转入 Sprint-2",
         "disposition": "Sprint-2（可与主线并行）",
         "updated_at": "2026-05-09T19:30:00+08:00"
@@ -226,10 +333,30 @@
         "sprint": "sprint-2",
         "epic": "Epic-F",
         "status": "Backlog",
-        "dependencies": ["COSTRA-011"],
+        "dependencies": [
+          "COSTRA-011"
+        ],
         "description": "构建脚本 scripts/gen-wxss-tokens.mjs · 设计-实装闭环",
         "disposition": "Sprint-2（可与主线并行）",
         "updated_at": "2026-05-09T19:30:00+08:00"
+      },
+      {
+        "id": "COSTRA-156",
+        "title": "server 加 /v1 prefix · 让实装服从 OpenAPI 契约（FU-105-CLIENT-SERVER-URL-PREFIX-MISMATCH 转正）",
+        "owner": "backend-dev",
+        "type": "fix",
+        "points": 2,
+        "priority": "P0",
+        "sprint": "sprint-3",
+        "epic": "Epic-C",
+        "status": "Backlog",
+        "dependencies": [
+          "COSTRA-104",
+          "COSTRA-105"
+        ],
+        "description": "Sprint-3 头部 P0 fix · server app.ts 加 v1 prefix 注册（healthz 保留根路径）+ server/test/{auth,entries,sync}.test.ts 25 处 inject url 加 /v1 + scripts/dev/README.md curl 示例 + docs/qa/costra-104-curl-verify.md v1.4→v1.5 + docs/qa/costra-105-human-smoke.md §0.1 去 BLOCKED 注记 + scripts/devops/whitelist-check.mjs 加规则 D（fastify prefix vs OpenAPI servers path 强制对账 防回归）+ 立 D-023 工具链层规约 · 早于 COSTRA-150（client 调度器联调依赖此 fix）· 不要求 Human 重跑 COSTRA-104（COSTRA-105 方式 B 真链路实测 = 端到端覆盖 = 等效回归）· COSTRA-105 R1.1 手册修订时显式暴露根因三层（L1 协议歧义 + L2 验证盲区 + L3 CI 误判）· Human 2026-05-12 16:27 决策方案 A",
+        "disposition": "Sprint-3 头部 P0 · 早于 COSTRA-150 · COSTRA-105 R1.1 手册修订发现 · Human 决策方案 A",
+        "updated_at": "2026-05-13T10:25:00+08:00"
       }
     ]
   }
