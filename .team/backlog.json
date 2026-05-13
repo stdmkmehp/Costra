@@ -1,9 +1,9 @@
 {
   "project": "Costra",
-  "version": "0.2.6",
-  "last_updated": "2026-05-13T10:35:00+08:00",
+  "version": "0.2.7",
+  "last_updated": "2026-05-13T11:30:00+08:00",
   "platform": "wechat-miniprogram",
-  "notes": "v0.2.6: COSTRA-156 流转 Sprint-3 Backlog → Sprint-2 Todo · Human 决策\"先 156 再 smoke 105\"（2026-05-13 10:30）· 从 Sprint-3 头部提前拉入 Sprint-2 · 与 105 配联合实测兑现端到端真链路覆盖（D-022 §4.1 runtime 类强制铁律）· 派单档落盘 dispatch/COSTRA-156-backend-add-v1-prefix.md（500+ 行 · 12 项 DoD + 10 闸门 + 9 项 scope）· 等 Card-Review R1。v0.2.5: COSTRA-156 占位卡入 Sprint-3。v0.2.4: COSTRA-105 立卡。",
+  "notes": "v0.2.7: COSTRA-156 R1 review-tech APPROVE 40/40 满分 @ 2026-05-13 11:27 (D-022 v2.0 第 4 次实战连续两卡满分 105+156) · commit edca8da (15 文件 +762/-75 行 · server/src/app.ts v1 prefix + 24 inject + CI 规则 D + 文档同步)。156 Todo → Doing · 等 Human 联合 105 实测（手册 v1.3 步骤 D 现可跑）。立 FU-156-OUTBOX-FLAKY 入族 F (Sprint-3 头部 P2 miniapp-dev · pre-existing client outbox 时间 race · 156 0 改动 miniprogram)。D-016 反例第 8 次首次预防成功 (累计 7 次反例后首次合规 · 议题已升 P0)。",
   "epics": [
     {
       "id": "Epic-A",
@@ -349,14 +349,14 @@
         "priority": "P0",
         "sprint": "sprint-2",
         "epic": "Epic-C",
-        "status": "Todo",
+        "status": "Doing",
         "dependencies": [
           "COSTRA-104",
           "COSTRA-105"
         ],
         "description": "Sprint-3 头部 P0 fix · server app.ts 加 v1 prefix 注册（healthz 保留根路径）+ server/test/{auth,entries,sync}.test.ts 25 处 inject url 加 /v1 + scripts/dev/README.md curl 示例 + docs/qa/costra-104-curl-verify.md v1.4→v1.5 + docs/qa/costra-105-human-smoke.md §0.1 去 BLOCKED 注记 + scripts/devops/whitelist-check.mjs 加规则 D（fastify prefix vs OpenAPI servers path 强制对账 防回归）+ 立 D-023 工具链层规约 · 早于 COSTRA-150（client 调度器联调依赖此 fix）· 不要求 Human 重跑 COSTRA-104（COSTRA-105 方式 B 真链路实测 = 端到端覆盖 = 等效回归）· COSTRA-105 R1.1 手册修订时显式暴露根因三层（L1 协议歧义 + L2 验证盲区 + L3 CI 误判）· Human 2026-05-12 16:27 决策方案 A",
-        "disposition": "Sprint-2 主线第 5 张（提前从 Sprint-3 拉入 · Human 决策\"先 156 再 smoke 105\"· 156 完成后 105 + 156 联合实测端到端真链路）",
-        "updated_at": "2026-05-13T10:35:00+08:00",
+        "disposition": "Sprint-2 主线第 5 张 · review-tech APPROVE 40/40 满分 @ 2026-05-13 11:27 · 等 Human 联合 105 实测（手册 v1.3 步骤 D 现可跑）",
+        "updated_at": "2026-05-13T11:30:00+08:00",
         "dispatch_at": "2026-05-13T10:35:00+08:00"
       }
     ]

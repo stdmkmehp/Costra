@@ -30,7 +30,6 @@
 | 主题族 | FU-ID | 优先级 | 候选卡 / 归属 | 状态 |
 |---|---|---|---|---|
 | **Sprint-3 同步协议核心** | FU-104-SYNC-PULL | **P0** | COSTRA-154 | open |
-| **Sprint-3 同步协议核心** | FU-105-CLIENT-SERVER-URL-PREFIX-MISMATCH | **P0** | COSTRA-156 | open |
 | **Sprint-3 同步协议核心** | FU-103-CLIENT-SYNC-SCHEDULER | P1 | COSTRA-150 | open |
 | **Sprint-3 同步协议核心** | FU-104-ENTRIES-PATCH | P1 | COSTRA-152 | open |
 | **Sprint-3 同步协议核心** | FU-104-ENTRIES-DELETE | P1 | COSTRA-153 | open |
@@ -51,6 +50,7 @@
 | **协议 / 规约残留** | FU-118-1 | P3 观察 | engineering-guidelines §2.5 | open-observation |
 | **协议 / 规约残留** | FU-102-HUMAN-VERIFY-PARADIGM | INFO | 已并入 COSTRA-106 Retro | open |
 | **QA 自动化** | FU-105-AUTOMATION-FULL-COVERAGE | P2 | COSTRA-155 | open |
+| **QA 自动化** | FU-156-OUTBOX-FLAKY | P2 | Sprint-3 头部 | open |
 | **Review 机制** | FU-REVIEW-TECH-RUNTIME-DIM | P0（已部分兑现）| 已并入 COSTRA-106 Retro D-022 | open |
 | **外部触发** | FU-115-2 | O 观察 | Human ICP 下证日触发 | open |
 
@@ -381,7 +381,7 @@
 
 ---
 
-## 🧪 族 F · QA 自动化（1 条）
+## 🧪 族 F · QA 自动化（2 条）
 
 ### FU-105-AUTOMATION-FULL-COVERAGE · 全量 14 用例自动化 + CI 集成
 
@@ -398,6 +398,23 @@
 - **PRD 锚点**：Epic-B（单人记账）+ Epic-C（离线同步）全链路自动化覆盖
 - **阻断级别**：P2（不阻 COSTRA-105 终审 · 但影响 Sprint-3 发版覆盖率）
 - **认领建议**：Sprint-3 头部（COSTRA-155 候选 · 5 点 · owner=qa-planner+miniapp-dev）
+- **状态**：`open`
+- **owner_card**：（待 Sprint-3 Planning 认领）
+
+### FU-156-OUTBOX-FLAKY · client outbox.spec.ts 时间相关 flaky test 修复
+
+- **来源**：2026-05-13 11:27 COSTRA-156 R1 review-tech 独立 5 次跑诊断（2/5 失败 3/5 通过 · 非确定性）
+- **性质**：pre-existing flaky（COSTRA-103 R1 client outbox 实装时引入 · COSTRA-156 0 改动 miniprogram 仅触发显式化）
+- **失败行**：`miniprogram/services/outbox.spec.ts:102` `expect(result2!.batch[0].next_retry_at > Date.now()).toBe(true)`
+- **根因**：测试代码 setup `next_retry_at = Date.now() + 1` · 断言时再取 `Date.now()` · 若间隔超 1ms 则 `next_retry_at <= Date.now()` · 时间相关 race condition（毫秒级精度）
+- **修复方案候选**：
+  - A. 增大 buffer：`next_retry_at = Date.now() + 100`（简单粗暴 · 不彻底）
+  - B. 用 `>=` 替换 `>`（语义不严格 · 能避 race）
+  - **C. fake timers**（`vi.useFakeTimers()` · 标准做法 · 需重构 outbox.ts 时间依赖 · 推荐）
+- **阻断级别**：P2（不阻 156/105 终审 · 影响 CI 稳定性 · 当前 root vitest 偶发 1 失败）
+- **认领建议**：Sprint-3 头部 miniapp-dev · 0.5~1 点
+- **PRD 锚点**：无（CI 稳定性议题）
+- **依赖**：无（独立 fix）
 - **状态**：`open`
 - **owner_card**：（待 Sprint-3 Planning 认领）
 
