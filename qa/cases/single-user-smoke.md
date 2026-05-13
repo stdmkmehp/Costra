@@ -1,14 +1,14 @@
-# COSTRA-105 · 单人记账闭环冒烟用例集（单人记账 SU-001 ~ SU-014）
+# COSTRA-105 · 单人记账闭环冒烟用例集（单人记账 SU-001 ~ SU-014 · 15 条 v1.1 含 SU-004A/B 拆分）
 
 > **卡号**：COSTRA-105（Sprint-2 主线第 4 张 · qa-planner 首次实装实战）
 > **Owner**：qa-planner（装扮型 subagent · D-018 SBAI v1.1）
 > **依赖上游**：COSTRA-103（CLOSED 2026-05-09）+ COSTRA-104（CLOSED 2026-05-12）
 > **覆盖 Epic**：Epic-A 登录 + Epic-B 单人记账 + Epic-C 离线优先架构
-> **版本**：v1.0（2026-05-12 R1 实装）
+> **版本**：v1.1（2026-05-13 · SU-004 拆 A/B + 十类覆盖 · 同步手册 v1.4 H6）
 
 ---
 
-## 0. 九类覆盖核对表
+## 0. 十类覆盖核对表（v1.1 扩展 · 原九类 + 集成层契约对齐）
 
 | 类别 | 用例 | 状态 |
 |---|---|---|
@@ -19,10 +19,11 @@
 | **并发** | **SU-006（version conflict 三态消费）** | ✅ |
 | 兼容 | SU-012（基础库双版本） | ✅ |
 | 安全 | SU-013（Token 不入日志） | ✅ |
-| **弱网** | **SU-003（离线入队）· SU-004（联网回放）· SU-007（降级兜底）** | ✅ |
+| **弱网** | **SU-003（离线入队）· SU-004A（联网 push）· SU-004B（冷启 pull 回环）· SU-007（降级兜底）** | ✅ |
+| **集成层契约对齐**（v1.1 新增 · D-022 §4.1）| **SU-004B（client⇄server 端到端协议契约 · 唯一手动捕获路径）** | ✅ |
 | 授权拒绝 | SU-011（隐私拒绝 → 只读演示） | ✅ |
 
-> 9/9 全覆盖 ✅
+> 10 类覆盖（原 9 类 + 集成层契约对齐 v1.1 新增）✅
 
 ---
 
@@ -117,27 +118,73 @@
 
 ---
 
-## SU-004 联网恢复 → outbox 自动 push（POST /sync/push）
+## SU-004 联网恢复 → 完整闭环（拆 SU-004A push 链路 + SU-004B client 视角回环 · v1.1 补强）
+
+> **v1.1 拆分动机**（2026-05-13 · 手册 v1.4 同步）：原 SU-004 仅验 push 链路诊断（client 真发 + DB 落库），漏过 client⇄server 协议契约对齐验证。SU-004B 补 client 视角端到端回环（冷启 → pull → 首页显示一致），与 SU-004A 互补不重叠 · 兑现 H6 硬断言。
+
+### SU-004A · push 链路诊断（POST /v1/sync/push · 集成层联通）
 
 - **Category**：弱网 / 离线幂等
 - **Severity**：P0
 - **PRD 锚点**：COSTRA-113 AC-4 + COSTRA-122 AC-3（同步可恢复 + 幂等键防重）
 - **前置条件**：
   - SU-003 已完成（outbox 有 ≥1 条待推记录）
+  - server 起着（WX_MOCK_LOGIN=1 · §0.4 三件套已跑）
   - Network 仍为 Offline
 - **步骤**：
   1. 开发者工具 → **Network → Online**（取消离线）
-  2. 等待 10~30s 观察 Console
-  3. Console 搜索 `POST /sync/push` 或 `[outbox]`
+  2. **手动触发 push**（FU-103-CLIENT-SYNC-SCHEDULER 未实装自动触发）：Console 执行：
+     ```js
+     const sync = require('./services/sync')
+     sync.pushDelta().then(r => console.log('push result', r))
+     ```
+  3. 观察 Console + Network + Storage
 - **预期**：
-  - Console 有 `POST /sync/push` 请求（日志在 `sync.ts` 或 `outbox.ts`）
-  - `outbox:__index` 长度 = 原长度 - 已推条数（outbox 消费）
-  - 或 `outbox:{seq}` 仍存在但带 `pushed_at` 时间戳（协议确认后标记）
-  - **幂等保证**：同一 `client_ref_id` 重推不产生重复 entry（server 24h 幂等键）
+  - Network 面板有 `POST http://localhost:8080/v1/sync/push` 200
+  - `outbox:__index` 长度 = 原长度 - 已推条数（或对应 outbox key 已 removeItem）
+  - DB 查询：`psql ... -c "SELECT count(*) FROM entries WHERE note = 'offline-test-c'"` → 1
+  - **幂等保证**：同一 `client_ref_id` 重推不产生重复 entry（server 24h 幂等键 · 配合 SU-005）
 - **实际**：（Human 填）
-- **责任**：MiniApp（client 调度器 `pushDelta`）+ Backend（POST /sync/push）
+- **责任**：MiniApp（client `pushDelta`）+ Backend（POST /v1/sync/push · COSTRA-156 prefix 已对齐）
 - **真机信息**：（Human 填）
-- **注意**：若 `POST /sync/push` 未出现 → 可能是 `FU-103-CLIENT-SYNC-SCHEDULER` 未触发 · 不算本用例失败 · 记录到 follow-up
+
+### SU-004B · client 视角端到端回环（GET /v1/sync/pull → 首页显示一致 · v1.1 新增）
+
+- **Category**：弱网 / 离线幂等 / **集成层契约对齐**
+- **Severity**：P0
+- **PRD 锚点**：COSTRA-113 AC-4 + sync-protocol.md §3.1 / §3.2 SyncPullResponse
+- **立意**：**唯一能在手动测试阶段捕获 client⇄server 协议契约 mismatch 类集成 bug 的路径**（如 COSTRA-156 修的 `/v1` URL prefix mismatch · server 单测 + curl + SU-004A 都漏不出来）。这是 D-022 §4.1 runtime 类 T2 卡 Human 实测前置铁律的真正立意兑现。
+- **前置条件**：
+  - SU-004A 已 PASS（offline-test-c 已落 DB）
+  - 不清 storage（起点 = SU-004A 结束态）
+- **步骤**：
+  1. 拿 family_id（Console：`wx.getStorageSync('__costra_family_id_v1')` 或 §0.4.6 seed 输出值）
+  2. 模拟"换设备 / 重装小程序"场景 · 清 watermark + entry 索引：
+     ```js
+     wx.removeStorageSync('sync:watermark:<family_id>')  // 替换实际 family_id
+     wx.removeStorageSync('entry:__index')
+     ```
+  3. **手动触发 pull**：Console 执行：
+     ```js
+     const sync = require('./services/sync')
+     sync.syncPull('<family_id>').then(r => console.log('pull result', JSON.stringify(r, null, 2)))
+     ```
+  4. 冷启小程序（编译 → 普通编译）· 进首页
+- **预期**：
+  - Network 面板有 `GET http://localhost:8080/v1/sync/pull?family_id=...&since=...&limit=200` 200 · 响应含 `watermark` + `changes.entries` ≥ 1 条
+  - `entry:__index` 重新含 `offline-test-c` 那笔的 client_ref_id（来自 server · 不是 storage 残留）
+  - 冷启首页"最近账单"显示 `offline-test-c` · 金额 56.78 · 分类"交通" · 与 SU-003 输入完全一致（端到端字段无丢失/无错位/无类型变换 bug）
+  - pull 响应 payload 100% snake_case（0 次 `clientRefId` / `occurredAt` / `serverVersion` 等驼峰）
+- **实际**：（Human 填）
+- **责任**：
+  - 网络/URL 失败 → Backend（COSTRA-156 prefix · 若仍 404 立 P0）
+  - applyServerChanges entry 索引未恢复 → MiniApp（COSTRA-103 R1 · `services/db.ts` line 235~252）
+  - UI 显示与输入不一致 → MiniApp（amount cents↔元 / category_id 映射 / home 渲染）
+  - 驼峰命名 → Backend（COSTRA-104 / 155 schema 序列化）
+- **真机信息**：（Human 填）
+- **注意**：
+  - FU-103-CLIENT-SYNC-SCHEDULER 未实装冷启自动 pull · 步骤 3 必须 Console 手动触发
+  - 失败回报：`revise:COSTRA-105 reason:<具体断言失败>`
 
 ---
 
@@ -210,7 +257,7 @@
   3. 提交后**不等待**（立即观察 UI）
   4. 等待 8s 观察 Toast / 错误提示
 - **预期（成功路径）**：
-  - 若网络恢复：outbox 入队 → 联网后自动 push（见 SU-004）
+  - 若网络恢复：outbox 入队 → 联网后自动 push（见 SU-004A）
   - Toast "已记录"（本地兜底成功）
 - **预期（失败路径）**：
   - ≥ 8s 无响应时 Toast/Modal 提示"网络开小差"
@@ -378,14 +425,15 @@
 
 ---
 
-## 附录 A：PRD 锚点索引（13 条用例 × ≥1 条）
+## 附录 A：PRD 锚点索引（15 条用例 × ≥1 条 · v1.1 含 SU-004A/B 拆分）
 
 | Case ID | PRD 锚点 |
 |---|---|
 | SU-001 | COSTRA-101 AC-1 · AC-2 |
 | SU-002 | COSTRA-113 AC-1 |
 | SU-003 | COSTRA-113 AC-4 |
-| SU-004 | COSTRA-113 AC-4 · COSTRA-122 AC-3 |
+| SU-004A | COSTRA-113 AC-4 · COSTRA-122 AC-3 |
+| SU-004B | COSTRA-113 AC-4 · sync-protocol §3.1/§3.2 · D-022 §4.1（runtime T2 集成层）|
 | SU-005 | COSTRA-122 AC-3 · sync-protocol §2.5 |
 | SU-006 | COSTRA-123 AC-1 · sync-protocol §3 |
 | SU-007 | NFR · S-014 |
@@ -400,4 +448,5 @@
 ---
 
 **修订记录**：
+- v1.1 · 2026-05-13 · SU-004 拆 SU-004A（push 链路诊断）+ SU-004B（client 视角端到端回环）· 九类覆盖扩展为十类（新增"集成层契约对齐"）· 同步手册 v1.4 H6 硬断言 · 兑现 D-022 §4.1 runtime 类 T2 卡 Human 实测前置铁律真正立意
 - v1.0 · 2026-05-12 · COSTRA-105 R1 实装（qa-planner 首次实战）

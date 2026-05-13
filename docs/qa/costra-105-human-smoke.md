@@ -6,7 +6,7 @@
 > **预计耗时**：25~35 分钟（5 个步骤 + ≥ 5 硬断言）
 > **验证对象**：单人记账完整闭环（client 103 + server 104 拼接）+ 离线弱网专项
 > **runtime 类 T2 铁律**：D-022 §4.1 命中（平台 API 运行时行为 + 微信基础库版本差异）· 断言全 PASS 才能 T1 终审
-> **修订**：v1.3 · 2026-05-13 11:0x · COSTRA-156 R1 实装后 BLOCKED 注记清除（联合实测时序：等 156 R1 review-tech APPROVE 后才能跑步骤 D）
+> **修订**：v1.4 · 2026-05-13 13:5x · 步骤 D 拆为 D.1（push 链路诊断）+ D.2（client 视角端到端回环 · 新增 4 条断言）· §6 新增 H6 硬断言（client 离线写入 → push → 冷启 pull 回环显示一致）· 兑现 D-022 §4.1 runtime 类 T2 卡集成层捕获能力 · 总硬断言 H1~H6（原 H1~H5）
 
 ---
 
@@ -27,9 +27,9 @@
 > **⚠️ 已知 gap 已修复 · ✅ COSTRA-156 R1 review-tech APPROVE 后即可跑步骤 D**：
 > 2026-05-13 COSTRA-156 R1 实装完成：server `app.ts` 加 `/v1` prefix 包裹业务路由 · client 0 改动 · OpenAPI servers 契约已兑现。
 >
-> **联合实测时序**：本手册步骤 D 需等 156 R1 review-tech APPROVE 后才能跑（COSTRA-105 R1.1 手册 v1.3 同步明示）。
+> **联合实测时序**：本手册步骤 D（D.1 + D.2）需等 156 R1 review-tech APPROVE 后才能跑（COSTRA-105 R1.1 手册 v1.4 同步明示）。
 >
-> **步骤 A/B/C/E 均不受影响**，可正常实测验证 H1~H5（H1~H5 不含步骤 D）。
+> **步骤 A/B/C/E 均不受影响**，可正常实测验证 H1~H5；**H6 必须等 156 APPROVE 后跑步骤 D.2 才能验**（v1.4 新增）。
 
 ---
 
@@ -271,11 +271,11 @@ USER_ID='mock-user-abc123' npm run db:seed:curl-test
 > | 不实装项 | 留 FU | 影响实测哪步 |
 > |---|---|---|
 > | 全量 14 用例自动化 + CI 集成 | FU-105-AUTOMATION-FULL-COVERAGE（Sprint-3 P2 5 点）| 不影响（自动化是脚手架 · 实测靠手动）|
-> | client 调度器（onShow / 网络恢复 / 周期 setInterval）| FU-103-CLIENT-SYNC-SCHEDULER（Sprint-3 候选 COSTRA-150）| 方式 B 步骤 D（当前可跑 · 等 156 review-tech APPROVE）|
+> | client 调度器（onShow / 网络恢复 / 周期 setInterval / **冷启自动 pull**）| FU-103-CLIENT-SYNC-SCHEDULER（Sprint-3 候选 COSTRA-150）| 步骤 D.1 push（Console 手动触发可跑）+ 步骤 D.2 pull（Console 手动触发可跑）|
 > | conflict 真实合并 UI | FU-103-CONFLICT-MERGE-UI（Sprint-3 候选 COSTRA-151）| 不影响本卡（步骤 E curl 验幂等 · 不验合并 UI）|
-> | client/server URL `/v1` 前缀一致性 | ✅ **已修复· COSTRA-156 R1**（server 加 prefix · client 0 改动）| 步骤 D 现可全跑（等 156 review-tech APPROVE）|
+> | client/server URL `/v1` 前缀一致性 | ✅ **已修复· COSTRA-156 R1**（server 加 prefix · client 0 改动）| 步骤 D.1+D.2 现可全跑（等 156 review-tech APPROVE）|
 >
-> **R1 实测目标 = 闭环可达性 + 用例可执行性**：H1~H5 全 PASS = 用例集 + 手册 + 闭环逻辑无 bug · 调度器 + URL 一致性留 FU 不阻断。
+> **R1 实测目标 = 闭环可达性 + 用例可执行性 + 集成层契约对齐**（v1.4 强化）：H1~H6 全 PASS = 用例集 + 手册 + 闭环逻辑 + client⇄server 协议无 bug · 调度器自动化留 FU 不阻断（手动 Console 触发 pull/push 可达成 H6）。
 
 ---
 
@@ -408,40 +408,119 @@ cd server && npm run db:reset-data
 
 ---
 
-## 4. 步骤 D · 联网恢复 → outbox 自动 push（SU-004 对应）
+## 4. 步骤 D · 联网恢复 → outbox push + client 视角端到端回环（SU-004 对应）
+
+> **本步骤拆两小节**（v1.4 补强）：
+> - **D.1** · push 链路诊断（client→server 真发 + outbox 出队 + DB 落库 · 验"通不通"）
+> - **D.2** · client 视角端到端回环（冷启 → pull → 首页显示一致 · 验"用户路径走得通"）
+>
+> **设计动机**（v1.4）：D.1 与步骤 E（curl 直打 server）配对——前者验集成层联通、后者验 server 内核幂等；D.2 与 D.1 配对——前者验"端到端协议契约对齐"（如 COSTRA-156 修的 `/v1` URL prefix mismatch 类集成 bug）、后者验"server 行为正确"。三者互补不重叠。
 
 ### 4.0 模式适用矩阵
 
 | 模式 | 是否适用 | 备注 |
 |---|---|---|
-| 方式 A · Mock | ❌ 不适用 | mockLogin 不发 HTTP · 看不到 push 行为 · 直接 SKIP |
-| 方式 B · 本地 server | ✅ **可跑**（server 已加 `/v1` prefix · 等 156 review-tech APPROVE 后实测）| COSTA-156 R1 实装兑现后步骤 D 可跑 |
-| 方式 C · 真 staging | 🚧 阻塞（§0.5）| COSTRA-150 调度器实装后再跑 |
+| 方式 A · Mock | ❌ 不适用 | mockLogin 不发 HTTP · 看不到 push/pull 行为 · 直接 SKIP |
+| 方式 B · 本地 server | ✅ **必跑**（server 已加 `/v1` prefix · 等 156 review-tech APPROVE 后实测）| D.1 + D.2 全跑 |
+| 方式 C · 真 staging | 🚧 阻塞（§0.5）| 解锁后同方式 B |
 
-### 4.1 操作（方式 B · 等 156 review-tech APPROVE 后实测）
+---
+
+### 4.1 D.1 · push 链路诊断（方式 B · 等 156 review-tech APPROVE 后实测）
+
+#### 4.1.1 操作
 
 1. 开发者工具 → **Network → Online**（取消离线）
-2. **手动触发 push**（因为 R1 不实装调度器 · 不会自动）：在 Console 执行：
+2. **手动触发 push**（因为 R1 不实装调度器 · FU-103-CLIENT-SYNC-SCHEDULER · COSTRA-150 候选）：在 Console 执行：
    ```js
    const sync = require('./services/sync')
    sync.pushDelta().then(r => console.log('push result', r)).catch(e => console.error('push fail', e))
    ```
-3. 观察 Console + Network
+3. 观察 Console + Network + Storage
 
-### 4.2 断言（3 条 · 仅做诊断 · **当前不阻断 H1~H5**）
+#### 4.1.2 断言（3 条 · 集成层联通诊断）
 
-| # | 断言 | 期望 | 联合实测时 |
+| # | 断言 | 期望 | 验证位置 |
 |---|---|---|---|
-| D1 | Console 有 `POST .../v1/sync/push` 请求 | 日志可见 | 等 156 review-tech APPROVE |
-| D2 | `outbox:__index` 长度 = 原长度 - 已推条数（或 outbox item 有 `pushed_at` 标记）| Storage Tab | 等 156 review-tech APPROVE |
-| D3 | DB 查询：`psql ... -c "SELECT count(*) FROM entries WHERE note = 'offline-test-c'"` → 1 | psql | 等 156 review-tech APPROVE |
+| D1.1 | Network 面板有 `POST http://localhost:8080/v1/sync/push` 200 | 网络日志 | 网络面板 |
+| D1.2 | `outbox:__index` 长度 = 原长度 - 已推条数（或对应 `outbox:{seq}` key 已 removeItem · 不再存在）| Storage Tab | Storage Tab grep `outbox:` |
+| D1.3 | DB：`psql 'postgres://costra:costra_dev_pw@localhost:5432/costra' -c "SELECT count(*) FROM entries WHERE note = 'offline-test-c'"` → 1 | psql 输出 `count = 1` | psql 命令行 |
 
-### 4.3 Pass/Fail
+#### 4.1.3 Pass/Fail
 
-- [ ] 方式 A · SKIP（不适用）
-- [ ] 方式 B · 等 156 review-tech APPROVE 后跑（如当前已 APPROVE 则正常实测）
+- [ ] 方式 B · D.1 · Pass · [ ] Fail
 
-> **失败处置**：步骤 D 当前 FAIL 是预期 · COSTRA-156（Sprint-3 头部 · 2 点 · backend-dev）实装并通过 review 后回归再跑。**本卡步骤 D 不计入 H1~H5 硬断言**。
+> **D.1 失败处置**：
+> - D1.1 Network 无 POST 请求 → 触发逻辑 bug（miniapp-dev · COSTRA-103 R1 边界）
+> - D1.1 有 POST 但 404 → URL 契约不一致（应已被 COSTRA-156 修复 · 若仍 404 立 P0 缺陷）
+> - D1.2 outbox 未出队 → ackResults 三态消费 bug（miniapp-dev · COSTRA-103 R1.2）
+> - D1.3 DB count = 0 → server push 落库 bug（backend-dev · COSTRA-104 R1）
+
+---
+
+### 4.2 D.2 · client 视角端到端回环（方式 B · v1.4 新增 · 真实用户路径验证）
+
+> **本节立意**：D.1 验"client 真发 HTTP 能让 server 收到"，D.2 验"server 数据能真正流回 client UI"。这是**唯一能在手动测试阶段捕获 client⇄server 协议契约 mismatch（如字段命名/类型/URL prefix）类集成 bug 的路径**——server 单元测试 + curl + D.1 push 都可能漏过此类问题。
+
+#### 4.2.1 前置确认（D.1 已 PASS）
+
+- D.1 全 3 条断言已 PASS · `offline-test-c` 已落 DB
+- 不要清 storage（D.2 起点 = D.1 结束态 · 含 watermark + 本地 entry）
+- server 仍运行（不要 ctrl-c）
+
+#### 4.2.2 操作
+
+1. **拿当前 family_id**（在 Console 执行 · 或从 §0.4.6 seed 输出复用）：
+   ```js
+   // 方式 1：从 storage 读（如 client 已写入）
+   wx.getStorageSync('__costra_family_id_v1')
+   // 方式 2：从 §0.4.6 seed 输出取（manual-test 默认）
+   // → 'F0000000-0000-0000-0000-0000000000F0'（按你的 seed 实际值替换）
+   ```
+
+2. **手动重置 watermark + 清本地 entries 索引**（模拟"换设备 / 重装小程序后冷启从 server 拉数据"场景 · 这是 D.2 的核心场景）：
+   ```js
+   // 仅清 watermark + entry 索引 · 保留 token（避免重新登录）
+   wx.removeStorageSync('sync:watermark:F0000000-0000-0000-0000-0000000000F0')  // 替换为实际 family_id
+   wx.removeStorageSync('entry:__index')
+   // 注：不删 entry:{ref_id} 原始 key · syncPull 会用 server 数据 putEntity 覆盖 · 验证"server 是数据真源"
+   console.log('watermark + entry index cleared, ready for D.2')
+   ```
+
+3. **手动触发 pull**（FU-103-CLIENT-SYNC-SCHEDULER 未实装冷启自动 pull · 需 Console 触发）：
+   ```js
+   const sync = require('./services/sync')
+   sync.syncPull('F0000000-0000-0000-0000-0000000000F0')  // 替换为实际 family_id
+     .then(r => console.log('pull result', JSON.stringify(r, null, 2)))
+     .catch(e => console.error('pull fail', e))
+   ```
+
+4. **冷启小程序**（编译 → 普通编译 · 触发 home 页重新渲染）
+
+5. 进入首页 · 观察"最近账单"列表
+
+#### 4.2.3 断言（4 条 · 集成层端到端契约对齐）
+
+| # | 断言 | 期望 | 验证位置 |
+|---|---|---|---|
+| **D2.1** | Network 面板有 `GET http://localhost:8080/v1/sync/pull?family_id=...&since=...&limit=200` 200 · 响应含 `watermark` + `changes.entries` 数组 ≥ 1 条 | 网络日志 + Response Body | 网络面板 |
+| **D2.2** | 步骤 3 pull 后 · `entry:__index` 重新含 `offline-test-c` 那笔的 `client_ref_id`（来自 server · 不是 storage 残留 · 因步骤 2 已清 index）| Storage Tab | Storage Tab grep `entry:__index` |
+| **D2.3** | 冷启首页"最近账单"列表显示 `offline-test-c` · 金额 56.78 · 分类"交通" · 与步骤 C 输入**完全一致**（端到端字段无丢失/无错位/无类型变换 bug · 如 `amount: 5678` cents → UI 显示 56.78 元）| 首页 UI | 视觉检查 |
+| **D2.4** | pull 响应 payload 100% snake_case（响应字段 0 次 `clientRefId` / `occurredAt` / `serverVersion` 等驼峰 · 与 H5 互补 · H5 验 push 请求/E 验 server 响应 · D2.4 验 pull 响应）| 响应 Body | Network 面板 → Response → 字段名 grep |
+
+#### 4.2.4 Pass/Fail
+
+- [ ] 方式 B · D.2 · Pass · [ ] Fail
+- 失败回报模板：`revise:COSTRA-105 reason:<step-D.2 具体断言失败>`
+
+> **D.2 失败处置**：
+> - **D2.1 Network 无 GET pull / 404** → URL 契约 mismatch（client 路径 vs server 路由 · 应已被 COSTRA-156 修复 · 若仍 404 立 P0 缺陷转 backend-dev）
+> - **D2.2 entry index 未恢复** → `applyServerChanges` 实装 bug（miniapp-dev · COSTRA-103 R1 边界 · 见 `services/db.ts` line 235~252 entries 分支）
+> - **D2.3 UI 显示与输入不一致**：
+>   - 金额错位（如显示 5678 元 / 0.5678 元）→ amount cents↔元 转换 bug（miniapp-dev · 步骤 C `amount: 5678` 应 ÷100 渲染）
+>   - 分类丢失/错位 → category_id 映射 bug（miniapp-dev · home 渲染层）
+>   - 备注丢失 → server 写入丢字段（backend-dev · COSTRA-104 sync/push 落库列）
+> - **D2.4 驼峰命名出现** → server 响应序列化 bug（backend-dev · COSTRA-104 / 155 schema 序列化）
 
 ---
 
@@ -504,7 +583,7 @@ curl -s -X POST http://127.0.0.1:8080/v1/sync/push \
 
 ---
 
-## 6. ≥ 5 硬断言（H1~H5 · 全 PASS 才可 T1 终审）
+## 6. ≥ 6 硬断言（H1~H6 · 全 PASS 才可 T1 终审 · v1.4 新增 H6）
 
 | # | 断言 | 验证位置 | 模式要求 | 对应 DoD |
 |---|---|---|---|---|
@@ -512,20 +591,21 @@ curl -s -X POST http://127.0.0.1:8080/v1/sync/push \
 | **H2** | `entry:__index` 离线写入持久化不丢（`offline-test-c` 在）| 步骤 C C2 | 方式 A 或 B 任一 PASS | DoD §3.2 |
 | **H3** | `outbox:__index` 多 key 分片正确（0 次单 key 数组残留 · 每条独立 key）| 步骤 C C3+C4 | 方式 A 或 B 任一 PASS | DoD §3.2 |
 | **H4** | idempotency 重放不重复入账（DB count = 1）| 步骤 E E3 | **方式 B 必跑**（curl 直打 server）| DoD §3.2 |
-| **H5** | payload 100% snake_case（`ledger_id` / `amount` / `category_id`）| 步骤 B B4 + 步骤 E E4 | 方式 A B4 + 方式 B E4 双覆盖 | DoD §3.2 |
+| **H5** | payload 100% snake_case（`ledger_id` / `amount` / `category_id`）| 步骤 B B4 + 步骤 E E4 + 步骤 D.2.4 | 方式 A B4 + 方式 B E4/D2.4 三覆盖 | DoD §3.2 |
+| **H6** | client 离线写入 → push → **冷启 pull 回**显示与输入完全一致（端到端协议契约对齐 · 集成层 bug 唯一手动捕获路径）| 步骤 D.2.2 + D.2.3 | **方式 B 必跑**（156 review-tech APPROVE 后） | DoD §3.2 集成补强（v1.4）|
 
-**H1~H5 全 PASS = T1 终审放行** · **任意 FAIL（不含步骤 D 当前 BLOCKED）= 卡退回 R1 修复**
+**H1~H6 全 PASS = T1 终审放行** · **任意 FAIL = 卡退回 R1 修复**
 
-> 步骤 D 因 URL mismatch BLOCKED 不计入 H1~H5。该 gap 已 Human 决策方案 A · 委托 COSTRA-156（Sprint-3 头部 · 独立卡 · 早于 COSTRA-150）修复。
+> **H6 立意**（v1.4 补强）：H4 验 server 内核数学幂等（curl 直打）· H6 验 client→server→DB→client 完整路径契约对齐（小程序连 server）· 二者**互补不重叠**——H4 漏不掉幂等 bug · H6 漏不掉集成 bug（如 COSTRA-156 修的 `/v1` URL prefix mismatch · server 单测 + curl 都看不出来）。这是 D-022 §4.1 runtime 类 T2 卡 Human 实测前置铁律的真正立意兑现。
 
 ---
 
 ## 7. 真机矩阵填充表
 
-| 机型 | 系统 | 微信版本 | 基础库版本 | 模式 | 步骤 A | 步骤 B | 步骤 C | 步骤 D | 步骤 E | 通过/失败 |
-|---|---|---|---|---|---|---|---|---|---|---|
-| （Human 填）| | | | A 或 B | | | | | | |
-| （Human 填）| | | | A 或 B | | | | | | |
+| 机型 | 系统 | 微信版本 | 基础库版本 | 模式 | 步骤 A | 步骤 B | 步骤 C | 步骤 D.1 | 步骤 D.2 | 步骤 E | 通过/失败 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| （Human 填）| | | | A 或 B | | | | | | | |
+| （Human 填）| | | | A 或 B | | | | | | | |
 
 > Sprint-2 现实约束：Human 持微信开发者工具模拟器 + 1 真机 · iOS/Android 各 ≥ 2 真机 + 基础库三档延 Sprint-3 · 走 FU-105-AUTOMATION-FULL-COVERAGE 后回头补。
 
@@ -539,7 +619,8 @@ curl -s -X POST http://127.0.0.1:8080/v1/sync/push \
 | A · A5（方式 B 网络断言）| backend-dev（COSTRA-156）| client `/v1` 前缀 vs server 无前缀 · 已立 FU-105-CLIENT-SERVER-URL-PREFIX-MISMATCH + COSTRA-156 占位卡 |
 | B · 写本地 / payload | miniapp-dev | COSTRA-103 client outbox 行为 |
 | C · 离线 outbox 入队 | miniapp-dev（COSTRA-103 相关）| outbox 多 key 分片 / payload snake_case |
-| D · push 失败 | backend-dev（COSTRA-156 R1 已实装 · 等 review-tech APPROVE 后实测）| 156 实装 + review 后联合实测 |
+| **D.1** · push 链路诊断（D1.1~D1.3 任一）| backend-dev（COSTRA-156 R1 已实装 · 等 review-tech APPROVE 后实测）| 156 实装 + review 后联合实测 |
+| **D.2** · client 视角端到端回环（D2.1~D2.4 任一）| 见 §4.2.4 D.2 失败处置矩阵（按 D2.x 具体编号分流 client/server）| v1.4 新增 · 集成层 bug 唯一手动捕获路径 |
 | E · 幂等（E1/E2/E3）| backend-dev（COSTRA-104 相关）| server idempotency_keys 表逻辑 |
 
 ---
@@ -558,6 +639,7 @@ curl -s -X POST http://127.0.0.1:8080/v1/sync/push \
 
 | 版本 | 时间 | 修订 |
 |---|---|---|
+| **v1.4** | 2026-05-13 13:5x | 步骤 D 拆 D.1（push 链路诊断 · 3 条断言）+ D.2（client 视角端到端回环 · 4 条断言 · 冷启 → pull → 首页显示一致）· §6 新增 H6 硬断言（client 离线写入 → push → 冷启 pull 回环 · 集成层 bug 手动捕获路径） · §0.1 警示 / §0.6 R1 范围 / §8 失败分流 同步 · 立意：H4 curl 验 server 内核幂等 vs H6 小程序连 server 验集成层契约对齐 · 互补不重叠 · 兑现 D-022 §4.1 runtime 类 T2 卡 Human 实测前置铁律真正立意 · 总硬断言 H1~H6（原 H1~H5）|
 | **v1.3** | 2026-05-13 11:0x | COSTRA-156 R1 实装后 BLOCKED 注记清除（联合实测时序明示：等 156 R1 review-tech APPROVE 后才能跑步骤 D）· §0.1 警示段/§0.6 R1范围/§4 模式矩阵/§4.2断言/§4.3 Pass-Fail/§6 H4注记/§8失败分流 D行 全部从"BLOCKED-BY-COSTRA-156"刷新为"✅ 可跑·等 156 review-tech APPROVE" · INFO-2 联合实测时序兑现 |
 | **v1.2** | 2026-05-13 10:2x | URL mismatch Human 决策同步：§0.1 警示 + §0.6 R1 范围 + §4 步骤 D 模式矩阵/Pass-Fail/失败处置 + §6 H1~H5 注记 + §8 失败分流 D 行 / A5 行 全部从"待 Human 决策"刷新为"✅ 已决策方案 A · 委托 COSTRA-156 Sprint-3 头部修复" · COSTRA-105 R1.1 文档 housekeeping |
 | **v1.1** | 2026-05-12 16:1x | §0 三模式前置完整重写（方式 A Mock / 方式 B 本地 server / 方式 C 真 staging）+ 各步骤模式适用矩阵 + §0.5 真 staging 触发条件 + 复跑剧本 + 警示 client/server URL `/v1` 前缀 mismatch（待 Human 决策）+ 步骤 D 标 BLOCKED-BY-URL-MISMATCH 不阻断 H1~H5 + 修订记录段 · COSTRA-105 R1.1 |

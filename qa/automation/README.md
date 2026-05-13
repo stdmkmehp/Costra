@@ -173,7 +173,7 @@ qa/automation/
 
 1. 安装 `miniprogram-automator`（`npm install -D miniprogram-automator`）
 2. 配置微信开发者工具端口暴露（`project.config.json` + IDE 设置）
-3. 实装 14 条用例自动化（SU-001~014）
+3. 实装 15 条用例自动化（SU-001 ~ SU-014 · 含 SU-004A/B v1.1 拆分）
 4. 集成 CI 流水线（`.github/workflows/pr-check.yml` 新增 step）
 5. 目标：核心链路自动化覆盖 ≥ 80%
 
