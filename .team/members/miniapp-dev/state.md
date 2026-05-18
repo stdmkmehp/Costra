@@ -16,7 +16,7 @@
 
 ## §2 当前关注（active tasks）
 
-- （空 · COSTRA-103 R1 + R1.1 + R1.2 + R1.3 实装全部完成 · 等 review-tech Round-1 + Human 模拟器终验）
+- COSTRA-157 R1 · 5 FU 合并修复（用户资料完善 + 登录链路鲁棒性）· B/C/D/E + miniapp F 项实装完成 · 单 commit 已落盘 · 等 review-tech R1
 
 ## §3 交付历史索引
 
@@ -28,6 +28,7 @@
 - **2026-05-08** · `history/2026-05-08-costra-127-r1-implement.md` · COSTRA-127 **方案 B 实装 + FU-LAUNCH-C 真 closed**（login reLaunch + home/mine onShow bootstrap gate · D-017 Step 2 诊断置信度 90%+ · Human 拍板全按推荐 · 等 Human 实测 + review-tech R1）
 - **2026-05-09** · `history/2026-05-09-costra-103-r1-implement.md` · COSTRA-103 **R1 实装交付**（db.ts 273行/8API + outbox.ts ~280行/6API + id.ts 33行 + sync.ts 重构 + entry/index.ts payload snake_case · 6 闸门 5/6 全绿 · test 34/34 ✅ · 等 review-tech Round-1 + Human 模拟器终验 · SBAI 第 7 次冒烟）
 - **2026-05-09** · `history/2026-05-09-costra-103-r1-implement.md` · COSTRA-103 **R1.3 实装收尾**（D-017 v3 首次完整流程实战 · Step 1~5 + Human Q1~Q4 全 (a) 拍板方案 A · outbox.ts conflict off-by-1 + handleRetry 死代码清理 + drainBatch recover 重构 · test 34/34 ✅ · 等 review-tech Round-1 + Human 模拟器终验 · SBAI 第 7 次冒烟）
+- **2026-05-18** · `history/2026-05-18-costra-157-r1-miniapp-segment.md` · COSTRA-157 **R1 miniapp 段实装**（B/C/D/E + F 5 项 · 单卡双装扮档第 2 段 · defaults 配置化 + mapError 红线 + onAvatarError + 完善资料降级 UI + 8 单测 · 6+4 闸门全绿 · 等 review-tech R1）
 
 ## §4 最近决策影响
 
@@ -74,3 +75,4 @@
 - **2026-05-08T18:45:00+08:00 · COSTRA-128 收尾清洗交付**（A~F 全完成 · 6 项注释/文档清洗 · 0 行为变更 · diff -x ≥ +x · 等 review-tech 形式 R1 + Human 终审）
 - **2026-05-09T17:30:00+08:00 · COSTRA-103 R1 实装收尾**（SBAI 第 7 次冒烟 · db.ts 273行/8API + outbox.ts ~280行/6API + id.ts 33行 + sync.ts 重构 + entry/index.ts snake_case + 2 spec.ts + 1 qa doc + dispatch 修正 + card-review 归档 · test 34/34 ✅ · 等 review-tech Round-1 + Human 模拟器终验）
 - **2026-05-09T18:25:00+08:00 · COSTRA-103 R1.3 实装最终收尾**（outbox conflict off-by-1 + handleRetry 死代码 + drainBatch recover 重构 + 6 闸门全 ✅ · 等 review-tech Round-1 + Human T1 终审 · D-017 v3 首次完整流程实战）
+- **2026-05-18T18:20:00+08:00 · COSTRA-157 R1 miniapp 段实装**（B/C/D/E + F 5 项全落盘 · 单卡双装扮档第 2 段 · 6+4 闸门全绿 · 等 review-tech R1）

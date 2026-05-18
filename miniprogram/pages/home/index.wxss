@@ -2,6 +2,7 @@
 
 /* 用户画像问候区（COSTRA-102 · P1-4） */
 .greeting {
+  position: relative;
   display: flex;
   align-items: center;
   margin-bottom: 24rpx;
@@ -23,6 +24,16 @@
 .greeting__text {
   font-size: 30rpx;
   color: var(--color-text);
+}
+
+/* FU-102-PROFILE-REFUSE-UI (COSTRA-157) · 完善资料入口右上角 absolute */
+.greeting__action {
+  position: absolute;
+  top: 20rpx;
+  right: 32rpx;
+  font-size: 26rpx;
+  color: #999;
+  padding: 8rpx 16rpx;
 }
 
 .overview {

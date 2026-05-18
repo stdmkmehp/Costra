@@ -26,6 +26,7 @@ import type { Code2SessionResult } from '../wx/code2Session.js';
 import { AppError } from '../errors/AppError.js';
 import { ErrorCode } from '../errors/ErrorCode.js';
 import { newJti } from '../id/idGen.js';
+import { defaultNickname } from '../config/defaults.js';
 import { ttl } from '../config/ttl.js';
 import { getRedis } from '../db/redis.js';
 import * as userRepo from '../repositories/userRepo.js';
@@ -118,7 +119,7 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
       wxOpenid: openid,
       wxUnionid: unionid ?? null,
       // 首登用户昵称先占位；后续 PATCH /users/me 由客户端补全
-      nickname: '微信用户',
+      nickname: defaultNickname,
     });
 
     const pair = await signPair(user.id);

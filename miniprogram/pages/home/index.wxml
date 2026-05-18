@@ -5,6 +5,10 @@
     <image wx:if="{{userAvatar}}" class="greeting__avatar" src="{{userAvatar}}" mode="aspectFill" binderror="onAvatarError"/>
     <view wx:else class="greeting__avatar greeting__avatar--fallback">👤</view>
     <view class="greeting__text">你好，{{userName}}</view>
+    <!-- FU-102-PROFILE-REFUSE-UI (COSTRA-157 · Q1-A) · 未授权时显示完善资料入口 -->
+    <view wx:if="{{!hasProfile}}" class="greeting__action" bindtap="onTapCompleteProfile">
+      完善资料 →
+    </view>
   </view>
 
   <view class="overview">

@@ -5,6 +5,7 @@
 // COSTRA-127: switchTab → reLaunch · 避免冷启动复用 home 旧实例触发 first-rendering-data race · 见 docs/devops/libversion-upgrade.md §3.6 反模式 #6
 // Refs: COSTRA-030, ADR-0004 §3 Token, Design flows/login.md · .team/dispatch/COSTRA-125-miniapp-storage-async-migration.md §3 (e)
 import { loginFlow, hasValidSession, getToken } from '../../services/auth';
+import { mapError } from '../../utils/error-mapper';
 import { getEnv } from '../../services/env';
 import { request } from '../../services/request';
 
@@ -85,16 +86,15 @@ Page({
       // COSTRA-127: reLaunch 强制重新初始化 home · 避免 switchTab 复用旧实例触发 first-rendering-data race
       wx.reLaunch({ url: '/pages/home/index' });
     } catch (e: any) {
-      // 错误分型：服务端 401 / 网络错 / 其他
-      let msg = '登录失败，请重试';
-      if (e?.code === 'CLIENT_NETWORK_ERROR') {
-        msg = '网络异常';
-      } else if (e?.status === 401) {
-        msg = '登录失败，请重试';
-      } else if (e?.message) {
-        msg = e.message;
-      }
-      this.setData({ errMsg: msg });
+      // FU-102-ERROR-MAPPER-INTEGRATION (COSTRA-157)
+      // error-codes.md §0.5 红线：客户端不得直接展示 server message 给终端用户
+      // 注：mapError 返回 TOKEN_EXPIRED 时 title=desc='' (静默自动续签场景)
+      // 但该路径正常由 request.ts 拦截器处理 · 若续签失败冒泡到此 catch · fallback 文案合理
+      // 注：MappedError.action 字段（如 navigate-login）暂不消费 · Sprint-3 用户体验扩展时统一接通
+      const mapped = mapError(e);
+      this.setData({
+        errMsg: mapped.title ? `${mapped.title}：${mapped.desc}` : '登录失败，请重试',
+      });
     } finally {
       this.setData({ loading: false });
     }

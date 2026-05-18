@@ -4,6 +4,7 @@
 // COSTRA-127: onShow 加 bootstrapPromise gate · 避免与 onLoad gate 形成 race
 // Refs: COSTRA-030, docs/design/ia.md §我的 · .team/dispatch/COSTRA-125-miniapp-storage-async-migration.md §3 (e)
 import { hasValidSession, getSession, logout } from '../../services/auth';
+import { defaultNickname } from '../../config/defaults';
 
 interface AppWithBootstrap {
   bootstrapPromise: Promise<void>;
@@ -36,7 +37,7 @@ Page({
       }
       const s = getSession();
       this.setData({
-        nickname: s?.user?.nickname || '未命名用户',
+        nickname: s?.user?.nickname || defaultNickname,
         avatarUrl: s?.user?.avatarUrl || '',
       });
     });
