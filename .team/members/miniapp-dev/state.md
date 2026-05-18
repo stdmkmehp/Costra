@@ -17,6 +17,7 @@
 ## §2 当前关注（active tasks）
 
 - COSTRA-157 R1 · 5 FU 合并修复（用户资料完善 + 登录链路鲁棒性）· B/C/D/E + miniapp F 项实装完成 · 单 commit 已落盘 · 等 review-tech R1
+- COSTRA-105 R1.x.1 · BUG-001 ledger_id 'default' 字面量修复 · 已完成
 
 ## §3 交付历史索引
 
@@ -29,6 +30,7 @@
 - **2026-05-09** · `history/2026-05-09-costra-103-r1-implement.md` · COSTRA-103 **R1 实装交付**（db.ts 273行/8API + outbox.ts ~280行/6API + id.ts 33行 + sync.ts 重构 + entry/index.ts payload snake_case · 6 闸门 5/6 全绿 · test 34/34 ✅ · 等 review-tech Round-1 + Human 模拟器终验 · SBAI 第 7 次冒烟）
 - **2026-05-09** · `history/2026-05-09-costra-103-r1-implement.md` · COSTRA-103 **R1.3 实装收尾**（D-017 v3 首次完整流程实战 · Step 1~5 + Human Q1~Q4 全 (a) 拍板方案 A · outbox.ts conflict off-by-1 + handleRetry 死代码清理 + drainBatch recover 重构 · test 34/34 ✅ · 等 review-tech Round-1 + Human 模拟器终验 · SBAI 第 7 次冒烟）
 - **2026-05-18** · `history/2026-05-18-costra-157-r1-miniapp-segment.md` · COSTRA-157 **R1 miniapp 段实装**（B/C/D/E + F 5 项 · 单卡双装扮档第 2 段 · defaults 配置化 + mapError 红线 + onAvatarError + 完善资料降级 UI + 8 单测 · 6+4 闸门全绿 · 等 review-tech R1）
+- **2026-05-18** · `history/2026-05-18-costra-105-r1x1-bug001-ledger-fix.md` · COSTRA-105 **R1.x.1 BUG-001 修复**（ledger_id 'default' 字面量 → fallback UUID + globalData.activeLedgerId 类型声明 · D-017 v3 §2.4 E1 例外路径 · typecheck ✅ test 42/42 ✅）
 
 ## §4 最近决策影响
 
@@ -76,3 +78,4 @@
 - **2026-05-09T17:30:00+08:00 · COSTRA-103 R1 实装收尾**（SBAI 第 7 次冒烟 · db.ts 273行/8API + outbox.ts ~280行/6API + id.ts 33行 + sync.ts 重构 + entry/index.ts snake_case + 2 spec.ts + 1 qa doc + dispatch 修正 + card-review 归档 · test 34/34 ✅ · 等 review-tech Round-1 + Human 模拟器终验）
 - **2026-05-09T18:25:00+08:00 · COSTRA-103 R1.3 实装最终收尾**（outbox conflict off-by-1 + handleRetry 死代码 + drainBatch recover 重构 + 6 闸门全 ✅ · 等 review-tech Round-1 + Human T1 终审 · D-017 v3 首次完整流程实战）
 - **2026-05-18T18:20:00+08:00 · COSTRA-157 R1 miniapp 段实装**（B/C/D/E + F 5 项全落盘 · 单卡双装扮档第 2 段 · 6+4 闸门全绿 · 等 review-tech R1）
+- **2026-05-18T20:10:00+08:00 · COSTRA-105 R1.x.1 BUG-001 修复**（ledger_id 'default' → fallback UUID + activeLedgerId 类型声明 · D-017 v3 §2.4 E1 例外路径 · typecheck ✅ test 42/42 ✅ · 单 commit 已落盘）
