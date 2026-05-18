@@ -9,6 +9,10 @@ import { enqueue } from '../../services/outbox';
 import { newClientRefId } from '../../utils/id';
 import { parseAmountInputToCents, formatMoney } from '../../utils/money';
 
+// COSTRA-105 R1.x.1 BUG-001: 替换 ledger_id 'default' 字面量为 fallback UUID
+// FU-EPIC-FAMILY-LEDGER-CRUD（COSTRA-155）实装真账本切换 UI 后 supersede 此 fallback
+const FALLBACK_LEDGER_ID = '00000000-0000-0000-0000-000000000001'; // §0.4.6 seed 默认 ledger
+
 Page({
   data: {
     type: 'expense' as 'expense' | 'income',
@@ -54,7 +58,7 @@ Page({
       // 构造 Entry（snake_case payload · 对齐 sync-protocol.md §2.1）
       await putEntry({
         client_ref_id: clientRefId,
-        ledger_id: 'default', // TODO(COSTRA-104): 从当前活跃账本取 ledger_id
+        ledger_id: getApp().globalData.activeLedgerId || FALLBACK_LEDGER_ID,
         amount: cents,
         currency: 'CNY',
         type: this.data.type,
@@ -70,7 +74,7 @@ Page({
         client_ref_id: clientRefId,
         base_version: null,
         payload: {
-          ledger_id: 'default',
+          ledger_id: getApp().globalData.activeLedgerId || FALLBACK_LEDGER_ID,
           amount: cents,
           currency: 'CNY',
           type: this.data.type,

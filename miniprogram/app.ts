@@ -17,6 +17,8 @@ interface AppGlobalData {
   env: ReturnType<typeof getEnv>;
   tokens: typeof tokens;
   bootAt: number;
+  // COSTRA-105 R1.x.1 BUG-001: COSTRA-155 实装真账本切换时填充 · 目前 fallback 到 FALLBACK_LEDGER_ID
+  activeLedgerId?: string;
 }
 
 /**
