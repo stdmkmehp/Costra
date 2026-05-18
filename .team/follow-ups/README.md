@@ -23,7 +23,7 @@
 
 ---
 
-## 🟢 当前 open FU 速查表（20 条 · 按主题族 + 推动优先级）
+## 🟢 当前 open FU 速查表（23 条 · 按主题族 + 推动优先级）
 
 | 主题族 | FU-ID | 优先级 | 候选卡 / 归属 | 状态 |
 |---|---|---|---|---|
@@ -32,16 +32,19 @@
 | **Sprint-3 同步协议核心** | FU-104-ENTRIES-PATCH | P1 | COSTRA-152 | open |
 | **Sprint-3 同步协议核心** | FU-104-ENTRIES-DELETE | P1 | COSTRA-153 | open |
 | **Sprint-3 同步协议核心** | FU-103-CONFLICT-MERGE-UI | P2 | COSTRA-151 | open |
-| **Epic-F 用户资料**（建议合卡）| FU-001 | P2 | Sprint-2 用户资料合卡 | open |
-| **Epic-F 用户资料**（建议合卡）| FU-118-2 | P2 | 合 FU-001 | open |
-| **Epic-F 用户资料**（建议合卡）| FU-102-PROFILE-REFUSE-UI | P2 | Sprint-2 用户资料合卡 | open |
-| **Epic-F 用户资料**（建议合卡）| FU-102-ERROR-MAPPER-INTEGRATION | **P1**（红线违反）| Sprint-2 用户资料合卡 | open |
-| **Epic-F 用户资料**（建议合卡）| FU-102-AVATAR-ONERROR | **P1**（红线违反）| Sprint-2 用户资料合卡 | open |
+| **Epic-A 用户资料**（→ COSTRA-157 合卡）| FU-001 | P2 | COSTRA-157 | scoped |
+| **Epic-A 用户资料**（→ COSTRA-157 合卡）| FU-118-2 | P2 | COSTRA-157 | scoped |
+| **Epic-A 用户资料**（→ COSTRA-157 合卡）| FU-102-PROFILE-REFUSE-UI | P2 | COSTRA-157 | scoped |
+| **Epic-A 用户资料**（→ COSTRA-157 合卡）| FU-102-ERROR-MAPPER-INTEGRATION | **P1**（红线违反）| COSTRA-157 | scoped |
+| **Epic-A 用户资料**（→ COSTRA-157 合卡）| FU-102-AVATAR-ONERROR | **P1**（红线违反）| COSTRA-157 | scoped |
 | **DevOps 基建** | FU-118-3（→ COSTRA-160）| P0 根因 / P2 优先级 | COSTRA-160（已立卡）| open |
 | **DevOps 基建** | FU-CI-MP-BUILD-NPM-ENFORCE | P2 | Sprint-2 CI 升级 | open |
 | **DevOps 基建** | FU-LIBVERSION-DEV-GUARD | P3 | Sprint-2 候选 | open |
 | **DevOps 基建** | FU-118-5 | P2 | 合 COSTRA-903 APM | open |
 | **DevOps 基建** | FU-118-4 | P2 | Sprint-2 末维护批 | open |
+| **DevOps 基建** | FU-DEVOPS-NGINX-ICP-HEADER | P3 | DNS+SSL+反代上线触发 | open-observation |
+| **DevOps 基建** | FU-DEVOPS-ICP-HEALTH-PROBE | P2 | 合 COSTRA-903 APM | open |
+| **DevOps 基建** | FU-DEVOPS-ICP-CROSS-SSOT-CHECK | P2 | Sprint-2 CI 升级（与 FU-CI-MP-BUILD-NPM-ENFORCE 同节奏）| open |
 | **DB 治理** | FU-DB-OPS-AUDIT | P3 | DAU>100 触发 | open |
 | **协议 / 规约残留** | FU-COMMON-MINIAPP-PATCH-LIMIT | O 观察 | 顺手随 COSTRA-152（PATCH→PUT 收口）| open-observation |
 | **QA 自动化** | FU-105-AUTOMATION-FULL-COVERAGE | P2 | COSTRA-155 | open |
@@ -138,7 +141,9 @@
 
 ---
 
-## 👤 族 B · Sprint-2 Epic-F 用户资料完善（5 条 · 强烈建议合并到一张卡）
+## 👤 族 B · Epic-A 用户资料完善（5 条 · 已合卡到 COSTRA-157 · 等 Card-Review R1）
+
+> **2026-05-18 状态流转**：Human all-A 决策 · 5 条 FU 合并到 **COSTRA-157**（3 点 · miniapp-dev + backend-dev 单卡双装扮档）· dispatch 已落盘 [`.team/dispatch/COSTRA-157-user-profile-completion-and-login-resilience.md`](../dispatch/COSTRA-157-user-profile-completion-and-login-resilience.md) · 等 Card-Review R1 启动 D-014-a 流程
 
 ### FU-001 · 业务占位昵称配置化
 
@@ -147,20 +152,21 @@
 - **范围**：`server/src/services/authService.ts` wxLogin 路径里的硬编码 `nickname: '微信用户'`
 - **建议**：抽到 `server/src/config/defaults.ts` 导出 `defaultNickname`，支持 env 覆盖 + subjectConfig 语境化
 - **阻断级别**：P2（不阻当卡 · 登录链路业务可用）
-- **认领建议**：Sprint-2 **Epic-F 用户资料完善**（若立项）或并入"小程序首次登录完善资料"卡
-- **状态**：`open`
-- **owner_card**：（待 Sprint-2 Planning 认领）
-- **同类拓展**：FU-118-2（miniprogram 端 "未命名用户"）· 建议合并处理
+- **认领建议**：✅ **已合入 COSTRA-157**（A 项 server defaults · Q2-A 硬编码 fallback · 不引入 env 覆盖）
+- **状态**：`scoped`
+- **owner_card**：**COSTRA-157**（dispatch 已落盘 · 等 Card-Review R1）
+- **同类拓展**：FU-118-2（miniprogram 端 "未命名用户"）· 已合并处理
 
 ### FU-118-2 · miniprogram 端硬编码昵称 "未命名用户"
 
 - **来源**：`.team/reviews/COSTRA-118/round-1-tech.md` P2-2
 - **登记时间**：2026-04-24 19:35
-- **范围**：`miniprogram/pages/mine/index.ts:19`
-- **建议**：与 FU-001 合并处理（server 与 miniprogram 两端同时改）· 统一读 `config/subject.ts` 或 `config/defaults.ts` 的 `defaultNickname`
+- **范围**：`miniprogram/pages/mine/index.ts:39` + `miniprogram/pages/home/index.ts:62`（hydrateUser 兜底也走同一字符串）
+- **建议**：与 FU-001 合并处理（server 与 miniprogram 两端同时改）· 新建 `miniprogram/config/defaults.ts` 与 server 端对齐
 - **阻断级别**：P2
-- **认领建议**：Sprint-2 合入 FU-001 同卡
-- **状态**：`open`
+- **认领建议**：✅ **已合入 COSTRA-157**（B 项 miniapp defaults）
+- **状态**：`scoped`
+- **owner_card**：**COSTRA-157**
 
 ### FU-102-PROFILE-REFUSE-UI · 用户拒绝 getUserProfile 的空窗期 UI 状态
 
@@ -169,31 +175,31 @@
 - **范围**：`miniprogram/pages/login/index.ts` 调 `wx.getUserProfile` 被用户取消授权时的 home 页空头像空昵称降级显示策略
 - **建议**：home 页显示占位头像 + "欢迎" 无名称版本 + 页面角标"完善资料"入口（Sprint-2 产品细节）
 - **阻断级别**：P2
-- **认领建议**：Sprint-2 Epic-F 用户资料卡
-- **状态**：`open`
-- **owner_card**：（待 Sprint-2 Planning 认领）
+- **认领建议**：✅ **已合入 COSTRA-157**（E 项 home 降级 UI · Q1-A 占位头像 + 欢迎 + Q5-A 临时文字链入口 · Sprint-3 Epic-D 完善资料页落地后再接通）
+- **状态**：`scoped`
+- **owner_card**：**COSTRA-157**
 
 ### FU-102-ERROR-MAPPER-INTEGRATION · login 页错误分支直出 err.message 违反红线
 
 - **来源**：`.team/reviews/COSTRA-102/round-1-tech.md` P1-NEW-1 + `round-1-product.md` P1-NEW-1（双签方共识）
 - **登记时间**：2026-04-27 10:14
-- **范围**：`miniprogram/pages/login/index.ts` 错误分支 `wx.showToast({ title: err.message })` 违反 `docs/api/error-codes.md §0.5` 红线"客户端不得直接展示 message 给终端用户"
-- **建议**：改为 `import { mapError } from '../../utils/error-mapper'; const m = mapError(err); wx.showModal({ title: m.title, content: m.desc })`
-- **阻断级别**：P1（双签方均判非阻塞 · 放 FU 交 Human T1 终审前修或入下一轮）
-- **认领建议**：合入 Epic-F 卡 · 或单独 0.5 点小卡随时修
-- **状态**：`open`
-- **owner_card**：COSTRA-102（本卡兜底）→ 实测已转 Sprint-2
+- **范围**：`miniprogram/pages/login/index.ts:87-97` 错误分支 `msg = e.message`（line 94-96）违反 `docs/api/error-codes.md §0.5` 红线"客户端不得直接展示 message 给终端用户"· 实际渲染路径是 `setData({ errMsg: msg })` 到模板（不是 toast）
+- **建议**：改为 `import { mapError } from '../../utils/error-mapper'; const m = mapError(e); setData({ errMsg: m.title ? \`${m.title}：${m.desc}\` : '登录失败，请重试' })`
+- **阻断级别**：**P1**（红线违反 · 双签方均判非阻塞 · 但应优先清掉）
+- **认领建议**：✅ **已合入 COSTRA-157**（C 项 mapError 改造）
+- **状态**：`scoped`
+- **owner_card**：**COSTRA-157**
 
 ### FU-102-AVATAR-ONERROR · home.wxml binderror 对应 handler 未实现
 
 - **来源**：`.team/reviews/COSTRA-102/round-1-tech.md` P1-NEW-2
 - **登记时间**：2026-04-27 10:14
-- **范围**：`miniprogram/pages/home/index.wxml` `<image binderror="onAvatarError">` · `index.ts` 无 `onAvatarError` 方法 · 头像 404 时无降级
-- **建议**：补 `onAvatarError(): void { this.setData({ 'user.avatarUrl': '' }) }` 走 CSS fallback
-- **阻断级别**：P1（功能非致命 · 头像 URL 不达可用默认）
-- **认领建议**：与 FU-102-ERROR-MAPPER-INTEGRATION 同批次修
-- **状态**：`open`
-- **owner_card**：COSTRA-102 → 实测已转 Sprint-2
+- **范围**：`miniprogram/pages/home/index.wxml:5` `<image binderror="onAvatarError">` 已存在 · `index.ts` 无 `onAvatarError` 方法 · 头像 404 时无 fallback 触发
+- **建议**：补 `onAvatarError(): void { this.setData({ userAvatar: '' }) }` 走 wxml `wx:if` fallback 切换到 👤 占位
+- **阻断级别**：P1（功能非致命 · 头像 URL 不达静默失败）
+- **认领建议**：✅ **已合入 COSTRA-157**（D 项 onAvatarError handler）
+- **状态**：`scoped`
+- **owner_card**：**COSTRA-157**
 
 ---
 
@@ -260,6 +266,47 @@
   - COSTRA-060 → COSTRA-109（PM 隐私指引清单）或 COSTRA-901（Epic-G 隐私协议）
 - **阻断级别**：P2
 - **认领建议**：Sprint-2 末文档维护批
+- **状态**：`open`
+
+### FU-DEVOPS-NGINX-ICP-HEADER · nginx 反代注入 X-ICP-Number 响应头
+
+- **来源**：DevOps-Agent 自评 · 2026-05-13 ICP 下证后落地交付协作锚点
+- **登记时间**：2026-05-13 16:57
+- **背景**：腾讯云规范要求"网站底部显著位置 + 工信部超链"。Costra 当前后端纯 API 域名，未来 `api.costra.cloud` 上线 nginx 反代后，可在 HTTP 响应头注入 `X-ICP-Number: 沪ICP备2026017253号-2`，便于自动化合规巡检（如腾讯云抽查）证明备案号在线可见。
+- **范围**：
+  - `infra/nginx/api.costra.cloud.conf`（待创建）`add_header X-ICP-Number "沪ICP备2026017253号-2" always;`
+  - **不取代** `server/src/config/icp.ts` 运行期 SSOT 与 `GET /v1/legal/icp` 程序化查询
+  - 边界：nginx 配置中的备案号字符串若与代码 SSOT 漂移，由 FU-DEVOPS-ICP-CROSS-SSOT-CHECK 兜底
+- **触发条件**：DNS §4.1 子记录创建 ✅ + SSL 证书签发 ✅ + nginx 反代上线 → 同卡顺手做
+- **阻断级别**：P3
+- **认领建议**：与 DNS+SSL+反代上线同卡顺手交付
+- **状态**：`open-observation`
+
+### FU-DEVOPS-ICP-HEALTH-PROBE · APM 拨测每日探活 GET /v1/legal/icp
+
+- **来源**：DevOps-Agent 自评 · 2026-05-13 ICP 下证后落地交付协作锚点
+- **登记时间**：2026-05-13 16:57
+- **背景**：备案号字符串若被误改 / 误删 / 部署回滚，可能在不被察觉的情况下违反"显著位置可查"规范。APM 加入对 `GET /v1/legal/icp` 每日定时探活，并对 `service` / `miniapp` 字符串做 diff 校验，触发即告警。
+- **范围**：
+  - 拨测目标：`https://api.costra.cloud/v1/legal/icp`（生产）+ `https://api-staging.costra.cloud/v1/legal/icp`（预发）
+  - 期望响应：HTTP 200 + body.service === `沪ICP备2026017253号-2` + body.miniapp === `沪ICP备2026017253号-1X`
+  - 频率：每日一次即可（备案号字符串静态，不需高频）
+  - 告警通道：与 COSTRA-903 APM 卡共用
+- **阻断级别**：P2
+- **认领建议**：合 COSTRA-903 APM 卡（同节奏：FU-115-WECHAT-WHITELIST-ALERT 也走 APM 拨测，可同卡打包）
+- **状态**：`open`
+
+### FU-DEVOPS-ICP-CROSS-SSOT-CHECK · whitelist-check.mjs 升级到强等值校验
+
+- **来源**：DevOps-Agent 自评 · 2026-05-13 ICP 下证后落地交付协作锚点
+- **登记时间**：2026-05-13 16:57
+- **背景**：当前 `scripts/devops/whitelist-check.mjs assertIcpRecorded()` 只对 `infra/wechat/domains.md` §0 做"子串存在"轻量校验。两个 SSOT（运行期 `server/src/config/icp.ts ICP_INFO` + 文档 `infra/wechat/domains.md §0`）字符串若漂移不会被发现。
+- **范围**：
+  - 升级 `whitelist-check.mjs`：解析 `server/src/config/icp.ts` 导出的 `ICP_INFO.service` / `ICP_INFO.miniapp` 字面量，与 `domains.md §0` 表格中的备案号字符串做强等值断言
+  - 任一漂移 → exit 1 + 打印 diff（参考现有 OpenAPI ↔ env.ts ↔ domains.md §1.1 三方对账实现）
+  - 落地后可移除 `assertIcpRecorded()` 中的轻量子串校验，由强等值校验替代
+- **阻断级别**：P2（不阻塞当前卡 · ICP 已下证字符串短期内不会变）
+- **认领建议**：Sprint-2 CI 升级批，与 FU-CI-MP-BUILD-NPM-ENFORCE 同节奏
 - **状态**：`open`
 - **⚠️ 卡号冲突警告**：原指引 COSTRA-150 已被 FU-103-CLIENT-SYNC-SCHEDULER 占用 · 必须重新分配占位页指向
 
