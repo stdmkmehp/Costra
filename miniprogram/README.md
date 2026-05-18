@@ -59,10 +59,12 @@ cp project.private.config.json.example project.private.config.json
 | 环境 | API Base | Mock 登录 | 备案状态 |
 |---|---|---|---|
 | dev | `http://localhost:8080/v1` | ✅ | 开发工具"不校验合法域名" |
-| staging | `https://api-staging.costra.cloud/v1` | ❌ | ICP 下证后可用（D-009） |
-| prod | `https://api.costra.cloud/v1` | ❌ | ICP 下证后配入微信白名单（D-009） |
+| staging | `https://costra.cloud/v1` | ❌ | D-023 临时复用 prod URL · 子域搁置 |
+| prod | `https://costra.cloud/v1` | ❌ | ICP 下证后配入微信白名单（D-009 · D-023） |
 
 > 🔒 **D-009 锁定**：生产域名 `costra.cloud`，域名源引用见 `docs/devops/domains.md`。**严禁在任何代码中使用 `.costra.app` 等历史域名**；CI（COSTRA-115）会校验 `services/env.ts` 与 OpenAPI `servers` 一致性。
+>
+> **D-023 补丁**（2026-05-18）：prod 入口由 `api.costra.cloud` 回归根域 `costra.cloud`，staging 暂复用 prod URL；子域规划保留至 Phase-2。
 
 Feature Flag 通过 `services/flags.ts` 读取，当前支持：
 - `family_sharing`：家庭共享开关

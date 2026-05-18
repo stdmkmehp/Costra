@@ -1,3 +1,4 @@
 .privacy { padding: 32rpx; background: var(--color-bg); min-height: 100vh; }
 .privacy__title { font-size: 36rpx; font-weight: 600; color: var(--color-text); }
 .privacy__body { margin-top: 24rpx; font-size: 28rpx; line-height: 1.6; color: var(--color-text-muted); }
+.privacy__icp { margin-top: 48rpx; font-size: 24rpx; color: #9E9E9E; text-align: center; }

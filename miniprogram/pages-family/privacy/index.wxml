@@ -1,6 +1,7 @@
 <view class="privacy">
   <view class="privacy__title">用户隐私保护指引</view>
   <view class="privacy__body">
-    Costra 尊重并保护用户隐私。正式上架前将补齐完整条款，包括收集的个人信息类型、使用目的、共享规则、存储期限、用户权利行使方式等。TODO(COSTRA-060): 由法务审核。
+    Costra 尊重并保护用户隐私。正式上架前将补齐完整条款，包括收集的个人信息类型、使用目的、共享规则、存储期限、用户权利行使方式等。Costra 已完成 ICP 备案：沪ICP备2026017253号-1X。完整《用户隐私保护指引》将在 M4 上架前由法务审核后正式发布。
   </view>
+  <view class="privacy__icp">沪ICP备2026017253号-1X · 沪ICP备2026017253号-2</view>
 </view>

@@ -59,4 +59,19 @@ Page({
       await logout();
     }
   },
+
+  // ICP 备案号点击：复制工信部链接 + 弹窗提示（满足腾讯云「显著位置 + 跳转 beian.miit.gov.cn」规范）
+  // Refs: 沪ICP备2026017253号-1X（小程序）· 沪ICP备2026017253号-2（后端 costra.cloud）
+  onTapIcp() {
+    wx.setClipboardData({
+      data: 'https://beian.miit.gov.cn/',
+      success: () => {
+        wx.showModal({
+          title: '已复制工信部备案查询链接',
+          content: '请在浏览器中粘贴打开以查询：沪ICP备2026017253号',
+          showCancel: false,
+        });
+      },
+    });
+  },
 });
