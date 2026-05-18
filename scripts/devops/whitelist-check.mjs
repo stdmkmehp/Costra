@@ -136,6 +136,11 @@ function parseDomainsMdRuntimeTable(text) {
       // 形如：env | server URL（代码中 apiBaseUrl） | DNS 条目
       if (cells.length < 2) continue;
       const env = cells[0];
+      // D-023：跳过被 ⚪ 标记或显式注明「D-023 搁置」的行（DNS 条目列）。
+      // 设计：staging 行虽被 D-023 临时复用 prod URL，DNS 条目列已写「⚪ D-023 临时复用」
+      // 故 staging 会被跳过；env.ts staging 块的 apiBaseUrl 与 prod 同 URL，规则 B 通过 prod 行命中。
+      const dnsCell = cells[2] || '';
+      if (/⚪|D-023 搁置/.test(dnsCell)) continue;
       // 第二列可能含反引号包裹：`http://...`
       const urlM = cells[1].match(/`([^`]+)`/);
       if (!urlM) continue;
@@ -228,6 +233,27 @@ function reconcile(openapiUrls, envTsEntries, domainsMdEntries) {
 }
 
 // ------------------------------------------------------------------
+// ICP 备案号 SSOT 断言（COSTRA-107 · 2026-05-13 下证后追加）
+// ------------------------------------------------------------------
+/**
+ * 轻量断言：infra/wechat/domains.md 顶部必须存在「沪ICP备2026017253号」字符串
+ * （SSOT §0 节）。缺失时 exit 1，提示「ICP 备案号 SSOT 缺失」。
+ *
+ * 设计：仅做存在性检查 · 不做格式 / 子号 / 日期校验（避免与 §0 表格耦合过紧）。
+ * 顶部范围限定为前 60 行内（§0 节本应处于 §1 之前）· 防止被误置文末。
+ */
+function assertIcpRecorded() {
+  const text = readFileSync(DOMAINS_MD_PATH, 'utf8');
+  const head = text.split(/\r?\n/).slice(0, 60).join('\n');
+  if (!head.includes('沪ICP备2026017253号')) {
+    console.error('❌ ICP 备案号 SSOT 缺失：infra/wechat/domains.md 顶部 60 行内未发现「沪ICP备2026017253号」');
+    console.error('   修复：在 §1 之前补充 §0「备案号一览（SSOT）」小节，列出小程序 -1X / 后端 -2 备案号');
+    console.error('   参考：COSTRA-107 · 2026-05-13 ICP 下证');
+    process.exit(1);
+  }
+}
+
+// ------------------------------------------------------------------
 // 主流程
 // ------------------------------------------------------------------
 function main() {
@@ -269,6 +295,8 @@ function main() {
     console.log(
       `   (openapi.yaml: ${openapiUrls.length} servers · env.ts: ${envTsEntries.length} apiBaseUrl · domains.md §1.1: ${domainsMdEntries.length} rows)`
     );
+    // 三方对账完成后追加轻量断言：ICP 备案号 SSOT 必须存在（COSTRA-107 · 2026-05-13 下证）
+    assertIcpRecorded();
     process.exit(0);
   }
 
