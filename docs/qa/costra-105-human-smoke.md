@@ -6,7 +6,7 @@
 > **预计耗时**：25~35 分钟（5 个步骤 + ≥ 5 硬断言）
 > **验证对象**：单人记账完整闭环（client 103 + server 104 拼接）+ 离线弱网专项
 > **runtime 类 T2 铁律**：D-022 §4.1 命中（平台 API 运行时行为 + 微信基础库版本差异）· 断言全 PASS 才能 T1 终审
-> **修订**：v1.4 · 2026-05-13 13:5x · 步骤 D 拆为 D.1（push 链路诊断）+ D.2（client 视角端到端回环 · 新增 4 条断言）· §6 新增 H6 硬断言（client 离线写入 → push → 冷启 pull 回环显示一致）· 兑现 D-022 §4.1 runtime 类 T2 卡集成层捕获能力 · 总硬断言 H1~H6（原 H1~H5）
+> **修订**：v1.5 · 2026-05-18 18:4x · D-023 落地后 prod/staging 入口收敛根域 `https://costra.cloud/v1` · §0.1 三模式表方式 C 升级 🚧→🟢 + §0.5 新增 §0.5.0 D-023 升级路径（**当前可跑实测主路径**：阻塞条件 5/7 已解 + Human 操作 3 件 + R-020 staging/prod 边界自检 3 项强制）+ §1~§5 五处步骤模式适用矩阵方式 C 行 URL 刷新 · 历史 §0.5.1~§0.5.3 D-023 §4.2 红线保留不动 · 等 Human 微信公众平台填白名单后即可跑方式 C 主路径 → 双卡 H1~H6 真链路实测 → 双卡 approve
 
 ---
 
@@ -20,9 +20,12 @@
 |---|---|---|---|---|
 | **方式 A · Mock 通路（client 端 mockLogin）** | 仅验 client 侧（登录假 token / 首页 / 记一笔写本地 / outbox 入队 / payload snake_case） | ❌ 不需要 | ❌ 不需要 | ⭐ 起手必跑（~ 8 分钟覆盖步骤 A/B/C） |
 | **方式 B · 本地 server**（client 真发 HTTP + server WX_MOCK_LOGIN） | 验 server 端幂等 / 三态消费 / DB 落库 / 离线 → 联网 push 端到端 | ✅ 需要 | ✅ 需要（migrations 全跑齐） | ⭐ 跟进跑（~ 15 分钟覆盖步骤 D/E + 复跑 A/B/C 走真链路） |
-| **方式 C · 真 staging** | 贯通真实链路（真 wx.login / 真 JWT / staging DB / 真域名）| ✅ staging server | ✅ staging DB | 🚧 **当前阻塞**（ICP 备案未下证 + `api.costra.cloud` 域名白名单未配 · R-013 未关闭）· 留 Sprint-2 提审前补跑（详见 §0.5） |
+| **方式 C · 真 staging / prod**（D-023 后路径 · v1.5 升级） | 贯通真实链路（真 wx.login / 真 JWT / 真 DB / 真域名 `costra.cloud`）| ✅ prod server（已部署）| ✅ prod DB（已 migrations 齐）| 🟢 **D-023 后可跑**（ICP ✅ 下证 + R-013 ✅ Closed + 主域 `costra.cloud` 🟢 已生效 + nginx/TLS 已配 · 仅等 Human 在微信公众平台填白名单 · 详见 §0.5.0）|
 
-> **本次推荐**：先 A 后 B（共 ~ 25 分钟）· C 留 Sprint-2 提审前 ICP 下证 + R-013 关闭后跑（参 charter §9 / `infra/wechat/domains.md §4`）。
+> **本次推荐**（v1.5 D-023 后）：
+> - **优先序**：A 起手 → B 跟进 → **C 主路径**（验真链路 · ~ 35 分钟全套 · 含 H1~H6 真 server 实测）
+> - **R-020 强约束**：方式 C staging 与 prod 共用域名 · 实测前 §0.5.0.5 三项自检全勾才执行（避免误污染 prod 数据）
+> - **方式 C 替代方式 B 大部分价值**：除非 server 端开发期 debug · 否则 D-023 后建议 A + C 双跑（B 退化为 server-side 修代码后回归用）
 
 > **⚠️ 已知 gap 已修复 · ✅ COSTRA-156 R1 review-tech APPROVE 后即可跑步骤 D**：
 > 2026-05-13 COSTRA-156 R1 实装完成：server `app.ts` 加 `/v1` prefix 包裹业务路由 · client 0 改动 · OpenAPI servers 契约已兑现。
@@ -189,7 +192,97 @@ USER_ID='mock-user-abc123' npm run db:seed:curl-test
 
 ---
 
-### 0.5 方式 C · 真 staging 前置（当前阻塞 · 解锁后复跑剧本）
+### 0.5 方式 C · 真 staging / prod 前置（D-023 升级路径 · v1.5 推荐主路径）
+
+> 📌 **v1.5 增量说明**（2026-05-18 D-023 落地后）：本节由 v1.4 的"🚧 阻塞段 + 解锁后剧本"升级为"🟢 D-023 后可跑主路径 + 历史叙事保留参考"。原 §0.5.1~§0.5.3 历史叙事**保留不动**（D-023 §4.2 红线 · 历史时序不回溯改写），新增 §0.5.0 为当前实际执行路径。
+
+#### 0.5.0 D-023 后状态升级（**当前可跑实测主路径** · v1.5 新增）
+
+##### 0.5.0.1 域名收敛事实（D-023 · 2026-05-18 落地）
+
+D-023 决议下 staging 与 prod 入口**临时共用根域** `https://costra.cloud/v1`（子域 `api.* / api-staging.*` 搁置至 Phase-2 · 重启触发条件见 D-023 §2.4）：
+
+| env | 当前 apiBaseUrl | D-009 原规划 | 备注 |
+|---|---|---|---|
+| dev | `http://localhost:8080/v1` | 不变 | 本地 server 模式 |
+| **staging** | **`https://costra.cloud/v1`** | `https://api-staging.costra.cloud/v1` | ⚪ D-023 临时复用 prod URL · 子域启用时切回 |
+| **prod** | **`https://costra.cloud/v1`** | `https://api.costra.cloud/v1`（曾规划）| 🟢 D-023 prod 入口回归根域 · 与 ICP 下证主域一致 |
+
+##### 0.5.0.2 阻塞条件最新清单（vs §0.5.1 历史叙事大幅松绑）
+
+| 阻塞项 | v1.4 状态 | **v1.5 D-023 后状态** | 备注 |
+|---|---|---|---|
+| ICP 备案 | 🟡 等通管局短信 | 🟢 **已下证**（沪ICP备2026017253号-1X / -2 @ 2026-05-13）| `docs/legal/compliance-registry.md` |
+| 服务器域名白名单 | ⏳ 备案下证后配 `api-staging.*` + `api.*` | 🟡 **仅等 Human 在微信公众平台后台填 `https://costra.cloud`**（D-023 §7 操作清单 #1 · ~5 分钟 · 即时生效）| `infra/wechat/domains.md §4.2` |
+| R-013 风险 | 未关闭 | 🟢 **已 Closed @ 2026-05-13** | risks.md |
+| R-019 公安联网备案 | — | 🟠 Open（截止 2026-06-12 · 不阻塞实测）| risks.md |
+| **R-020 staging/prod 边界**（D-023 派生）| — | 🟡 **新增 Open**（实测时引入"环境标识自检"避免误污染 prod 数据 · 见 §0.5.0.5）| risks.md |
+| staging server 部署 | 🟡 ADR-0002 §部署策略补丁 | 🟢 **prod = staging 共用** `49.235.216.20:80/443` 已就位 · `nginx + TLS + costra.cloud` 已生效 | 主域 A 记录 + Let's Encrypt 已签 |
+| `costra.cloud` 健康探测 | — | 🟢 `curl https://costra.cloud/v1/healthz` 期望 200 | 实测前自检命令 |
+
+##### 0.5.0.3 v1.5 推荐执行路径（vs v1.4 §0.5.2 复跑剧本简化版）
+
+**前置确认（3 项必勾才执行 · 比 v1.4 §0.5.2 的 5 项缩短 ~40%）**：
+
+- [ ] Human 已在微信公众平台「服务器域名」白名单填 `https://costra.cloud`（4 类全填：request / socket / uploadFile / downloadFile · D-023 §7 操作 #1）
+- [ ] 本机 `curl -i https://costra.cloud/v1/healthz` 期望 200 + JSON 含 `status:"ok"` · ICP 备案号 `沪ICP备2026017253号-2`（FU-DEVOPS-NGINX-ICP-HEADER 实装后头部也会带 · 见 D-023 §4.3）
+- [ ] `docs/legal/compliance-registry.md §3` 域名清单显示 `costra.cloud` 状态 🟢
+
+**切换步骤**（vs v1.4 §0.5.2 步骤 1 改两处 → v1.5 仅改 1 处 enum · 编译期常量已对齐）：
+
+1. **改 client `services/env.ts`** 仅 1 处（apiBaseUrl 不需改 · 已是 `https://costra.cloud/v1`）：
+
+   ```ts
+   // line 50：
+   const CURRENT_ENV: EnvName = 'staging';   // 'dev' → 'staging'（验"准 staging"）
+   // 或：
+   const CURRENT_ENV: EnvName = 'prod';      // 验真 prod 入口（**仅在 staging 验证完毕、Sprint-2 提审前才切 prod**）
+   ```
+
+   > **⚠️ R-020 边界**：`services/env.ts` line 25~46 staging 段含强约束注释 `// D-023 临时复用 prod URL...`，回切 staging 子域时按此注释精确恢复（防漂移）。**禁止 commit 此 CURRENT_ENV 改动** · 实测完毕 `git checkout miniprogram/services/env.ts` 还原。
+
+2. **微信开发者工具**：右上角 详情 → 本地设置 → **关闭"不校验合法域名"**（真链路必须真审 · 与 v1.4 §0.5.2 step 2 同）
+
+3. **跑前 5 分钟自检（v1.5 强化）**：
+   - `curl -sI https://costra.cloud/v1/healthz` 返回 200 + `Strict-Transport-Security` 头存在（HTTPS 强制）
+   - 网络面板能命中 `https://costra.cloud/v1/auth/wx-login`（走真 server · 不是 localhost）
+   - 拒绝任何 HTTP 明文请求（应该 0 条 · 微信平台合规要求）
+   - `wx.getStorageSync('__costra_token_v1')` 是真后端签发的 JWT（payload 解 base64 含真 user_id · 不是 mock）
+
+##### 0.5.0.4 复跑步骤映射（v1.5 与 v1.4 §0.5.2 对齐）
+
+跑步骤 **A → B → C → D.1 → D.2 → E** 全套（与方式 B 步骤一一对应 · 仅 base URL 替换）：
+
+| 步骤 | 方式 C URL 替换 | 与 v1.4 差异 |
+|---|---|---|
+| **A** | `POST https://costra.cloud/v1/auth/wx-login` | URL 由 `api-staging.costra.cloud` → `costra.cloud` |
+| **B** | client 真发 `POST https://costra.cloud/v1/sync/push`（H5 snake_case 验同方式 B）| 同上 |
+| **C** | 离线断网（不发 HTTP · 与方式 B 同）| 无差异 |
+| **D.1** | `POST https://costra.cloud/v1/sync/push` 200 + DB 落库（如 Human 有 server SSH 可 psql 自查；否则跳 D.1 D1.3 项）| URL 替换 |
+| **D.2** | `GET https://costra.cloud/v1/sync/pull?...` 200 + 冷启首页一致 | URL 替换 |
+| **E** | `curl https://costra.cloud/v1/sync/push ...` 验幂等 | URL 替换 |
+
+##### 0.5.0.5 R-020 staging/prod 边界自检（v1.5 强制 · 实测前必跑）
+
+> **R-020 风险描述**：D-023 §2.2 决议下 staging env 与 prod env 在「微信白名单」层共用 `https://costra.cloud`，从微信平台视角**无法区分两者**。若开发期误把 staging 测试数据 push 到 prod 数据库，造成**生产数据污染**。
+
+**实测前 3 项强制自检**（任一不满足 → 立即停止 · 不跑实测）：
+
+- [ ] **client 编译期常量隔离**：`services/env.ts` 当前 `CURRENT_ENV` 值与你预期一致（`staging` 或 `prod` · 不要混跑 · 一次只验一个 env）
+- [ ] **server `WX_MOCK_LOGIN` 隔离**：通过 `curl -i https://costra.cloud/v1/auth/wx-login -d '{"code":"verify-prod-isolation"}'`，期望返回**真腾讯 code2Session 错误**（`40029 invalid code` 或 `45011`）· **绝不应**返回 `mock-openid-*` · 若返 mock 则 server 误启 `WX_MOCK_LOGIN=1` → 立即停止 · 联系 backend-dev 排查 prod 构建产物
+- [ ] **数据隔离自标识**：实测记账时备注一律用 `staging-test-YYYY-MM-DD-<your-name>` 或 `prod-verify-YYYY-MM-DD-<your-name>` 前缀 · 实测后 Sprint-2 末由 backend-dev 跑 `npm run db:cleanup-test-data` 批量清理（候选 FU 待立 · 实测前先用前缀标识兜底）
+
+**实测中遇到 R-020 风险触发** → 立 P0 缺陷单（`qa/defects/2026-MM-DD-COSTRA-105-r-020-trigger.md`）+ 同时发 `revise:COSTRA-105 reason:r-020-triggered` 阻断 Sprint-2 提审。
+
+##### 0.5.0.6 真 staging 实测发现 BUG 处置（与 v1.4 §0.5.3 一致）
+
+- 立 P0 缺陷单（路径 `qa/defects/2026-MM-DD-COSTRA-105-staging-issue.md` · 模板 qa-planner §5.2）
+- 转介责任 Agent（backend-dev / miniapp-dev / devops-ops）
+- 阻断微信审核提交（COSTRA-901）直至修复
+
+---
+
+> 📂 **以下 §0.5.1~§0.5.3 为 v1.4 历史叙事 · D-023 §4.2 红线保留不动 · 仅供回溯参考**：当前路径请走上方 §0.5.0 D-023 升级路径。子域 `api-staging.costra.cloud` / `api.costra.cloud` 在 D-023 §2.4 触发条件出现时重启立卡，届时 §0.5.1~§0.5.3 才恢复执行价值。
 
 #### 0.5.1 当前阻塞原因（charter §9 / `infra/wechat/domains.md` §4）
 
@@ -306,7 +399,7 @@ cd server && npm run db:reset-data
 |---|---|---|
 | 方式 A · Mock | ✅ 必跑 | 验 client 端 mockExchange + storage 写入 · 不发 HTTP |
 | 方式 B · 本地 server | ✅ 复跑（推荐）| 验真 wx.login → POST /auth/wx-login → 真 JWT |
-| 方式 C · 真 staging | 🚧 阻塞（§0.5）| 同方式 B 但 base URL 是 `https://api-staging.costra.cloud/v1` |
+| 方式 C · 真 staging / prod（D-023 后）| 🟢 **可跑** | 同方式 B 但 base URL 是 `https://costra.cloud/v1`（D-023 §2.1/§2.2 收敛根域 · 不再分 staging/prod 子域）|
 
 ### 1.1 操作
 
@@ -348,7 +441,7 @@ cd server && npm run db:reset-data
 |---|---|---|
 | 方式 A · Mock | ✅ 必跑 | 验 client 写本地 entry storage + payload snake_case · 不发 HTTP |
 | 方式 B · 本地 server | ✅ 复跑 | 验 client 同时入本地 + 入 outbox 待 push（COSTRA-103 R1 行为）|
-| 方式 C · 真 staging | 🚧 阻塞（§0.5）| 同方式 B |
+| 方式 C · 真 staging / prod（D-023 后）| 🟢 **可跑** | 同方式 B（URL → `https://costra.cloud/v1`）|
 
 ### 2.1 操作
 
@@ -383,7 +476,7 @@ cd server && npm run db:reset-data
 |---|---|---|
 | 方式 A · Mock | ✅ 必跑 | mockLogin 模式下也走 outbox 入队（COSTRA-103 outbox 与 server 解耦 · 仅看 storage）|
 | 方式 B · 本地 server | ✅ 复跑 | 行为同方式 A · 入队后下一步 D 验 push |
-| 方式 C · 真 staging | 🚧 阻塞（§0.5）| 同方式 B |
+| 方式 C · 真 staging / prod（D-023 后）| 🟢 **可跑** | 同方式 B（URL → `https://costra.cloud/v1`）|
 
 ### 3.1 操作
 
@@ -422,7 +515,7 @@ cd server && npm run db:reset-data
 |---|---|---|
 | 方式 A · Mock | ❌ 不适用 | mockLogin 不发 HTTP · 看不到 push/pull 行为 · 直接 SKIP |
 | 方式 B · 本地 server | ✅ **必跑**（server 已加 `/v1` prefix · 等 156 review-tech APPROVE 后实测）| D.1 + D.2 全跑 |
-| 方式 C · 真 staging | 🚧 阻塞（§0.5）| 解锁后同方式 B |
+| 方式 C · 真 staging / prod（D-023 后）| 🟢 **强烈推荐**（v1.5）| 同方式 B（URL → `https://costra.cloud/v1`）· **D.2 H6 在真链路上的验证才是端到端契约对齐的最高保真证据** |
 
 ---
 
@@ -532,7 +625,7 @@ cd server && npm run db:reset-data
 |---|---|---|
 | 方式 A · Mock | ❌ 不适用（无 server）| SKIP |
 | 方式 B · 本地 server | ✅ **必跑**（不依赖 client URL · 直 curl 走 server 真实路径） | 复用 COSTRA-104 curl 范式 |
-| 方式 C · 真 staging | 🚧 阻塞（§0.5）| 把 base URL 换 staging |
+| 方式 C · 真 staging / prod（D-023 后）| 🟢 **强烈推荐**（v1.5）| `curl https://costra.cloud/v1/sync/push ...`（base URL 替换 · 验真 server 24h 幂等）|
 
 ### 5.1 操作（方式 B · 前置 §0.4.4 migrations + §0.4.6 seed 已做）
 
@@ -583,20 +676,22 @@ curl -s -X POST http://127.0.0.1:8080/v1/sync/push \
 
 ---
 
-## 6. ≥ 6 硬断言（H1~H6 · 全 PASS 才可 T1 终审 · v1.4 新增 H6）
+## 6. ≥ 6 硬断言（H1~H6 · 全 PASS 才可 T1 终审 · v1.4 新增 H6 · v1.5 加方式 C 路径补强）
 
 | # | 断言 | 验证位置 | 模式要求 | 对应 DoD |
 |---|---|---|---|---|
-| **H1** | 冷启 TTI ≤ 2s + Launch Time ≤ 900ms（3.8.12 基线）| 步骤 A A1 | 方式 A 或 B 任一 PASS 即可 | DoD §3.2 |
-| **H2** | `entry:__index` 离线写入持久化不丢（`offline-test-c` 在）| 步骤 C C2 | 方式 A 或 B 任一 PASS | DoD §3.2 |
-| **H3** | `outbox:__index` 多 key 分片正确（0 次单 key 数组残留 · 每条独立 key）| 步骤 C C3+C4 | 方式 A 或 B 任一 PASS | DoD §3.2 |
-| **H4** | idempotency 重放不重复入账（DB count = 1）| 步骤 E E3 | **方式 B 必跑**（curl 直打 server）| DoD §3.2 |
-| **H5** | payload 100% snake_case（`ledger_id` / `amount` / `category_id`）| 步骤 B B4 + 步骤 E E4 + 步骤 D.2.4 | 方式 A B4 + 方式 B E4/D2.4 三覆盖 | DoD §3.2 |
-| **H6** | client 离线写入 → push → **冷启 pull 回**显示与输入完全一致（端到端协议契约对齐 · 集成层 bug 唯一手动捕获路径）| 步骤 D.2.2 + D.2.3 | **方式 B 必跑**（156 review-tech APPROVE 后） | DoD §3.2 集成补强（v1.4）|
+| **H1** | 冷启 TTI ≤ 2s + Launch Time ≤ 900ms（3.8.12 基线）| 步骤 A A1 | 方式 A / B / C 任一 PASS | DoD §3.2 |
+| **H2** | `entry:__index` 离线写入持久化不丢（`offline-test-c` 在）| 步骤 C C2 | 方式 A / B / C 任一 PASS | DoD §3.2 |
+| **H3** | `outbox:__index` 多 key 分片正确（0 次单 key 数组残留 · 每条独立 key）| 步骤 C C3+C4 | 方式 A / B / C 任一 PASS | DoD §3.2 |
+| **H4** | idempotency 重放不重复入账（DB count = 1）| 步骤 E E3 | **方式 B 或 C 必跑**（curl 直打 server · D-023 后 C-staging 路径强烈推荐 v1.5）| DoD §3.2 |
+| **H5** | payload 100% snake_case（`ledger_id` / `amount` / `category_id`）| 步骤 B B4 + 步骤 E E4 + 步骤 D.2.4 | 方式 A B4 + 方式 B/C E4/D2.4 三覆盖 | DoD §3.2 |
+| **H6** | client 离线写入 → push → **冷启 pull 回**显示与输入完全一致（端到端协议契约对齐 · 集成层 bug 唯一手动捕获路径）| 步骤 D.2.2 + D.2.3 | **方式 B 或 C 必跑**（156 review-tech APPROVE 后 · D-023 后 v1.5 推荐 C-staging 路径上跑 H6 → 真链路保真度最高） | DoD §3.2 集成补强（v1.4 + v1.5 路径升级）|
 
 **H1~H6 全 PASS = T1 终审放行** · **任意 FAIL = 卡退回 R1 修复**
 
-> **H6 立意**（v1.4 补强）：H4 验 server 内核数学幂等（curl 直打）· H6 验 client→server→DB→client 完整路径契约对齐（小程序连 server）· 二者**互补不重叠**——H4 漏不掉幂等 bug · H6 漏不掉集成 bug（如 COSTRA-156 修的 `/v1` URL prefix mismatch · server 单测 + curl 都看不出来）。这是 D-022 §4.1 runtime 类 T2 卡 Human 实测前置铁律的真正立意兑现。
+> **H6 立意**（v1.4 补强 · v1.5 路径升级）：H4 验 server 内核数学幂等（curl 直打）· H6 验 client→server→DB→client 完整路径契约对齐（小程序连 server）· 二者**互补不重叠**——H4 漏不掉幂等 bug · H6 漏不掉集成 bug（如 COSTRA-156 修的 `/v1` URL prefix mismatch · server 单测 + curl 都看不出来）。这是 D-022 §4.1 runtime 类 T2 卡 Human 实测前置铁律的真正立意兑现。
+>
+> **v1.5 路径升级**：D-023 落地后真链路 `https://costra.cloud/v1` 已可达，H6 在 **C-staging 路径**上的验证才是端到端契约对齐的**最高保真证据**（vs 方式 B 本地 server 仅验编译期 + 协议字段层 · C-staging 还覆盖了 TLS / nginx / DNS / CDN / 微信白名单等真实部署链路环节）。
 
 ---
 
@@ -604,8 +699,10 @@ curl -s -X POST http://127.0.0.1:8080/v1/sync/push \
 
 | 机型 | 系统 | 微信版本 | 基础库版本 | 模式 | 步骤 A | 步骤 B | 步骤 C | 步骤 D.1 | 步骤 D.2 | 步骤 E | 通过/失败 |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| （Human 填）| | | | A 或 B | | | | | | | |
-| （Human 填）| | | | A 或 B | | | | | | | |
+| （Human 填）| | | | A / B / **C-staging** / **C-prod** | | | | | | | |
+| （Human 填）| | | | A / B / **C-staging** / **C-prod** | | | | | | | |
+
+> v1.5 新增"C-staging" / "C-prod"两值（D-023 后路径 · §0.5.0 推荐主路径）· 真机矩阵理想覆盖：A 起手 + B 跟进 + C-staging 真链路验 H1~H6 + C-prod 提审前最后一跑（仅 1 真机即可 · 因 C-staging 与 C-prod 在 D-023 后 URL 同 · 行为差异看 §0.5.0.5 R-020 自检矩阵）。
 
 > Sprint-2 现实约束：Human 持微信开发者工具模拟器 + 1 真机 · iOS/Android 各 ≥ 2 真机 + 基础库三档延 Sprint-3 · 走 FU-105-AUTOMATION-FULL-COVERAGE 后回头补。
 
@@ -639,6 +736,7 @@ curl -s -X POST http://127.0.0.1:8080/v1/sync/push \
 
 | 版本 | 时间 | 修订 |
 |---|---|---|
+| **v1.5** | 2026-05-18 18:4x | **D-023 落地后域名收敛根域刷新**：§0.1 三模式表方式 C 行 🚧→🟢 + URL `api-staging.*`→`costra.cloud` · §0.5 新增 §0.5.0 D-023 升级路径（§0.5.0.1 域名收敛事实 + §0.5.0.2 阻塞条件 5/7 已解 + §0.5.0.3 推荐执行路径 3 项前置 vs v1.4 5 项 · 缩 40% + §0.5.0.4 复跑步骤映射 + §0.5.0.5 R-020 staging/prod 边界自检 3 项强制 + §0.5.0.6 BUG 处置）· 历史 §0.5.1~§0.5.3 D-023 §4.2 红线保留不动 · §1/§2/§3/§4/§5 步骤模式矩阵方式 C 行 5 处 URL 刷新 · §7 真机矩阵加 v1.5 注记 · 立意：尽快兑现"用 costra.cloud 跑通正式流程"诉求 · 与 Sprint-2 提审前 prod 验收时间窗口对齐 · 不破坏 D-009 决策不可变性（D-023 §4.1 红线）|
 | **v1.4** | 2026-05-13 13:5x | 步骤 D 拆 D.1（push 链路诊断 · 3 条断言）+ D.2（client 视角端到端回环 · 4 条断言 · 冷启 → pull → 首页显示一致）· §6 新增 H6 硬断言（client 离线写入 → push → 冷启 pull 回环 · 集成层 bug 手动捕获路径） · §0.1 警示 / §0.6 R1 范围 / §8 失败分流 同步 · 立意：H4 curl 验 server 内核幂等 vs H6 小程序连 server 验集成层契约对齐 · 互补不重叠 · 兑现 D-022 §4.1 runtime 类 T2 卡 Human 实测前置铁律真正立意 · 总硬断言 H1~H6（原 H1~H5）|
 | **v1.3** | 2026-05-13 11:0x | COSTRA-156 R1 实装后 BLOCKED 注记清除（联合实测时序明示：等 156 R1 review-tech APPROVE 后才能跑步骤 D）· §0.1 警示段/§0.6 R1范围/§4 模式矩阵/§4.2断言/§4.3 Pass-Fail/§6 H4注记/§8失败分流 D行 全部从"BLOCKED-BY-COSTRA-156"刷新为"✅ 可跑·等 156 review-tech APPROVE" · INFO-2 联合实测时序兑现 |
 | **v1.2** | 2026-05-13 10:2x | URL mismatch Human 决策同步：§0.1 警示 + §0.6 R1 范围 + §4 步骤 D 模式矩阵/Pass-Fail/失败处置 + §6 H1~H5 注记 + §8 失败分流 D 行 / A5 行 全部从"待 Human 决策"刷新为"✅ 已决策方案 A · 委托 COSTRA-156 Sprint-3 头部修复" · COSTRA-105 R1.1 文档 housekeeping |
@@ -660,4 +758,8 @@ curl -s -X POST http://127.0.0.1:8080/v1/sync/push \
 
 **外部资源依据**：
 - charter §9（外部资源进度 · ICP / 域名 / AppID）
-- `infra/wechat/domains.md §4`（R-013 关闭条件 · `api.costra.cloud` 白名单）
+- `infra/wechat/domains.md §4`（R-013 关闭条件 · v1.5 D-023 后白名单填 `https://costra.cloud`）
+- `.team/decisions/D-023-prod-rollout-on-root-domain.md`（v1.5 主依据 · prod 入口回归根域 · 子域 Phase-2 搁置 · §7 Human 操作清单 3 件）
+- `.team/decisions/D-009-domain-and-dev-server-locked.md`（域名锁定原决议 · D-023 §4.1 红线保留不动）
+- `docs/legal/compliance-registry.md` v0.2（ICP 下证事实 · `沪ICP备2026017253号-1X` 小程序 + `沪ICP备2026017253号-2` 后端）
+- `.team/risks.md` R-013（🟢 Closed）/ R-019（🟠 公安联网备案截止 2026-06-12）/ R-020（🟡 staging/prod 边界 · §0.5.0.5 自检）
