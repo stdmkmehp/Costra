@@ -51,7 +51,7 @@
 | COSTRA-104 | `/entries` CRUD + `/sync/push` 批量通道 | Backend-Agent | COSTRA-100/103 | 6 |
 | COSTRA-105 | 单人记账闭环冒烟（含离线弱网） | QA-Agent | COSTRA-102/104 | 3 |
 | COSTRA-106 | Sprint-0 Retro + 工程度量刷新 | PM-Agent | D-006 | 1 |
-| COSTRA-107 | ICP 备案发起辅助文档（域名/主体/准备材料清单） | PM-Agent | - | 1 |
+| ~~COSTRA-107~~ | ~~ICP 备案发起辅助文档（域名/主体/准备材料清单）~~ | ~~PM-Agent~~ | ~~-~~ | ~~1~~ **（2026-05-13 · ICP 实际下证 · 整卡 CLOSED · 移至 Sprint-1 Done · 沪ICP备2026017253号-1X / 沪ICP备2026017253号-2）** |
 | COSTRA-108 | miniprogram-ci 上传演练（key 已落位） | DevOps-Agent | D-007 | 3 |
 | COSTRA-109 | 隐私指引填写辅助清单（对照微信后台表单） | PM-Agent | D-007 | 1 |
 | COSTRA-110 | 订阅消息 ×3 文案草稿（邀请/超支/新增记账） | PM-Agent | D-007 | 1 |
@@ -219,6 +219,7 @@ _（无强阻塞。COSTRA-040 "真实上传链路激活" 仍依赖外部资源�
 - [D] **🏆 COSTRA-127** switchTab→reLaunch + onShow bootstrap gate · FU-LAUNCH-C 真闭合（同卡簇第 4 卡）    @MiniApp-Agent  · 2026-05-08 19:11 **Human T2 approve** · 整卡 CLOSED · D-017 Step 2 诊断 90%+ 置信 + Step 4 实装 + Human 模拟器实测 5 条断言全 PASS（0 次 `Expected updated data` + 0 次 `too eayly`）· **Human 终审吸收 review-tech R1 职责**（Sprint-1 末 Retro 议题 17 实战教训）· v4 修正 v5 双因定稿 · 反模式 #6 立案 · commit `1c640f0` + `737595a` + `fd7302e` · `.team/reviews/COSTRA-127/FINAL.md`
 - [D] **🏆 COSTRA-128** FU-LAUNCH 族 124~127 治理收尾清洗（注释 + 文档 v5 唯一定稿 · 同卡簇第 5 卡 · 终极收官）    @MiniApp-Agent  · 2026-05-08 19:11 **Human T2 approve** · 整卡 CLOSED · D-013 T3 追溯档自动关闭路径（chore + P3 + 0 行为变更）· 6 项清洗（A~F）· **删比加多原则严格执行**（纯改动文件 -57/+17 = 净删 -40 行 · 删行 vs 加行 = 3.4 倍）· FU-LAUNCH 族 5 卡治理叙事终极收官 · commit `d321b58` + `a77ffce` · `.team/reviews/COSTRA-128/FINAL.md`
 - [D] **🏆 COSTRA-102** MiniApp 登录→首页→记一笔端到端（**Sprint-1 主线**）    @MiniApp-Agent  · 2026-05-08 19:11 **Human T1 approve** · 整卡 CLOSED · Tech 31/35 + Product 27/30 双签 APPROVE @ 2026-04-27 · Human 实测 Mock + 本地 server 双模式贯通（手册 §0.2 推荐路径全覆盖）· 真 staging 模式延后到 Sprint-2 提审前 · 5 条 P1 FU 转 Sprint-2（FU-102-* 段）· **首张 T1 双签 + Human 实测 5 步贯通的纯前端卡范式**（FU-102-HUMAN-VERIFY-PARADIGM）· 同卡簇 13 卡协同收官（100/101/116/119/120/121/122/123/124/125/126/127/128）· `.team/reviews/COSTRA-102/FINAL.md`
+- [D] **🏆 COSTRA-107** ICP 备案发起辅助文档（域名/主体/准备材料清单）    @PM-Agent  · **2026-05-13 实际下证 · 整卡 CLOSED**（下证日 2026-05-13 · 实际窗口符合预估 2026-05-18±5）· 小程序 `沪ICP备2026017253号-1X` + 后端服务 `沪ICP备2026017253号-2` · 主体上海 · 主域 `costra.cloud` / 公网 IP `49.235.216.20` · **PM 同轮交付合规登记**（新建 SSOT `docs/legal/compliance-registry.md` v0.1 · 更新 `docs/devops/icp-filing.md` 状态为已下证归档参考 · `infra/wechat/domains.md` 同轮 R-013 关闭条件满足）· **R-013 关闭** + **R-019 新增**（公安联网备案 30 日窗口截止 2026-06-12 · owner=Human · 🟠 · R-014 已在 D-008 占用为主体切换债务，故顺延至 R-019）· 5 处备案号悬挂位置已对齐（小程序「我的」/「隐私」页 footer + 后端 `GET /v1/legal/icp` + `/healthz` icp 字段 + `infra/wechat/domains.md §0` SSOT）
 
 ### Sprint-2
 
@@ -284,8 +285,8 @@ _（无强阻塞。COSTRA-040 "真实上传链路激活" 仍依赖外部资源�
 | 订阅消息模板 ×3 | 🟢 **PM 起草中**（COSTRA-110，04-23 12:00 前 v0.1） |
 | 生产域名 | 🟢 **`costra.cloud`** 已注册 · DNS → `49.235.216.20`（D-009） |
 | 开发服务器 | 🟢 **腾讯云 3 个月期** `49.235.216.20` · 2026-07-23 到期（R-017） |
-| ICP 备案（个人主体） | 🟡 **已提交接入商，等通管局短信审核**（3~5 日出首审） |
-| 服务器域名白名单 | ⏳ 备案下证后立即配 `api.costra.cloud`（R-013 关闭条件） |
+| ICP 备案（个人主体） | 🟢 **已下证 2026-05-13**（小程序 `沪ICP备2026017253号-1X` · 后端 `沪ICP备2026017253号-2` · 主体上海 · 详见 `docs/legal/compliance-registry.md`） |
+| 服务器域名白名单 | ⏳ 等 Human 配 `https://costra.cloud`（D-023 · 不再依赖子域 DNS） |
 | `miniprogram-ci` robot key | ✅ **已落位** `key/private.wxf8b0d3e3a83f9941.key` · DevOps 演练中（COSTRA-108） |
 | 《用户隐私保护指引》 | 🟢 **PM 起草辅助清单中**（COSTRA-109，04-23 18:00 前 v0.1），Human 届时按清单到微信后台在线填写 |
 | 对外名称 | ✅ **Costra**（MVP 阶段不拆分内部代号与上架名） |

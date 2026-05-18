@@ -14,14 +14,18 @@
 | R-010 | PRD v0.1 范围蔓延（Won't-Have 项被带入 MVP） | 中 | 中 | 🟡 | PM | 每 Sprint 评审 Won't-Have 边界；变更走 ADR | Open |
 | R-011 | 微信平台政策变更（API 能力收紧 / 订阅消息规则调整 / 类目细则） | 中 | 低 | 🟡 | DevOps / PM | DevOps 每月扫描"小程序最新公告"一次，产出平台变更监听周报 | Open |
 | R-012 | 体验号与生产号长期共用同一 AppID（wxf8b0d3e3a83f9941），导致真机调试冲撞审核/正式版，或 robot 上传污染生产 | 中 | 中 | 🟡 | PM / DevOps | ① 小程序首次进入审核前必须拆号 ② CI 上传演练仅走"体验版"通道不走"提审" ③ robot id 预留 ≥2，切号时零改动 | Open（D-007 登记） |
-| R-013 | 生产域名迟迟未定，ICP 表单无法填写具体 hostname，导致备案延期 | 高 | 中 | 🟢 | PM / Human | **已缓解**：2026-04-23 `costra.cloud` 注册 + DNS 解析到 `49.235.216.20` + 个人主体 ICP 已提交。**保持 Open 直到下证**，下证后关闭并将 `api.costra.cloud` 配进微信服务器域名白名单。**2026-04-27 COSTRA-115 落地** · CI 白名单一致性校验（`scripts/devops/whitelist-check.mjs`）接入 `pr-check` · 下证后 Human 按 `infra/wechat/domains.md §4` 执行 · 代码侧漂移即 block | Mitigating（D-009 · CI 已就位） |
+| R-013 | 生产域名迟迟未定，ICP 表单无法填写具体 hostname，导致备案延期 | 高 | 中 | 🟢 | PM / Human | **已关闭**：2026-04-23 `costra.cloud` 注册 + DNS 解析到 `49.235.216.20` + 个人主体 ICP 已提交 → 2026-05-13 ICP 实际下证（小程序 `沪ICP备2026017253号-1X` · 后端 `沪ICP备2026017253号-2` · 主体上海）。**关闭原因**：ICP 已下证 2026-05-13，关闭条件已满足。COSTRA-115 CI 白名单一致性校验（`scripts/devops/whitelist-check.mjs`）已接入 `pr-check`，下游 Human 按 `infra/wechat/domains.md §4` 配置微信"服务器域名"白名单。详见 `docs/legal/compliance-registry.md` | **Closed @ 2026-05-13** |
 | R-014 | 主体切换债务累积：硬编码主体字样散落在代码/文案/合规文档，未来个人→公司迁移工作量失控 | 高 | 中 | 🟠 | PM / MiniApp / Backend | ① 强制走 `config/subject.ts` 集中配置 ② 每 Sprint 末按 `docs/ops/subject-compat-matrix.md` 自查 ③ CI 加 grep 规则拦截硬编码 | Open（D-008 登记） |
 | R-015 | 个人主体小程序提审被拒概率高于企业主体（文案边界敏感） | 中 | 中 | 🟡 | PM / QA | COSTRA-050 自查清单新增"个人主体文案禁区"条目；避免"财务咨询/投资建议/商业经营"字样 | Open（D-008 登记） |
 | R-016 | 个人主体无法开通微信支付商户号，若 Sprint-3+ 不慎纳入付费能力将导致返工 | 高 | 低 | 🟠 | PM | D-008 明列付费/商户/交易组件为 Won't-Have；需求评审必过此闸 | Open（D-008 登记） |
 | R-017 | 开发用腾讯云服务器（49.235.216.20）3 个月到期（2026-07-23），未迁移将中断 Sprint-4/5 联调 | 中 | 中 | 🟡 | DevOps / Human | Orchestrator 在 2026-07-16 提醒；候选迁移目标：微信云托管 / Lighthouse 年付 | Open（D-009 登记） |
 | R-018 | 开发服务器首次暴露公网，SSH/web 攻击面骤增，若未做基线加固可能被爆破或利用跳板 | 高 | 中 | 🟠 | DevOps | COSTRA-114 强制完成：SSH 改端口+key-only / 云防火墙仅放 22(改)/80/443 / fail2ban / 告警。未完成不进 Sprint-1 端到端 | Open（D-009 登记） |
+| R-019 | 公安联网备案 30 日窗口（截止 2026-06-12），逾期可能被通报或限制访问 | 中 | 中 | 🟠 | Human | ICP 备案下证（2026-05-13）后 30 日内必须到 https://beian.mps.gov.cn/ 提交公安联网备案；PM-Agent 在 `docs/legal/compliance-registry.md §4` 跟踪 · 公安备案下证后回填 §4 公安备案号 + §5 悬挂位置同步追加 · 不阻塞小程序提审 / M4 上线，但 M5 观察期前必须完成 · D-023 决议下公安备案表填根域 `costra.cloud` 即可 | Open（2026-05-13 立 · ICP 下证后续）|
+| R-020 | 微信白名单 staging 边界模糊（D-023 短期内 staging env 与 prod 共用 `costra.cloud` 白名单） | 中 | 低 | 🟡 | DevOps | 短期：通过 `miniprogram/services/env.ts` 编译期常量隔离避免误用 + Backend `WX_MOCK_LOGIN` env switch 不在 prod 构建产物中 · 长期：由 D-023 §2.4 触发条件 (a)（staging 环境实际需要与 prod 隔离 · 如 DB / 数据集 / 灰度名单）重启 `stg.* / api-staging.*` 子域解决 · 详见 `.team/decisions/D-023-prod-rollout-on-root-domain.md §5.1` | Open（2026-05-18 立 · D-023 派生）|
 
-**等级说明**：🔴 红（立即处理） / 🟠 橙（一周内） / 🟡 黄（观察） / 🟢 绿（已缓解）
+**等级说明**：🔴 红（立即处理） / 🟠 橙（一周内） / 🟡 黄（观察） / 🟢 绿（已缓解 / 已关闭）
 
-**最后刷新**：2026-04-23 13:00（D-009 by Orchestrator · 域名锁定 R-013 缓解中 · 新增 R-017/R-018）
+**最后刷新**：2026-05-18 17:3x（PM-Agent · D-023 prod 入口回归根域 · 新增 R-020 微信白名单 staging 边界模糊）
+
+> **ID 占用说明**：原任务派单中要求新增"R-014 公安联网备案"，但 R-014~R-018 在 D-008 / D-009 时已占用（R-014 主体切换 / R-015 个人主体文案 / R-016 微信支付 / R-017 服务器到期 / R-018 SSH 攻击面）。本次新增按风险登记册 ID 单调递增原则使用 **R-019**（公安联网备案）。`docs/legal/compliance-registry.md §4` 中关联风险编号已同步指向 R-019。R-020（D-023 派生 · 2026-05-18）按 ID 顺延。
 

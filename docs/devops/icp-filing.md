@@ -2,7 +2,7 @@
 
 > 对应任务：**COSTRA-107 · ICP 备案发起辅助文档**
 > Owner：PM-Agent · 审阅：Human（steve）
-> 创建：2026-04-22 · 状态：**🔴 关键路径（20 工作日），建议今日发起**
+> 创建：2026-04-22 · 状态：**🟢 已下证（2026-05-13）· 归档参考**
 > 适用范围：Costra 微信小程序后端服务域名（`api.costra.xxx` / `ws.costra.xxx`）
 
 ---
@@ -155,6 +155,7 @@ D+20±
 | 2026-04-26 | 提交备案初审（Step 4） | Human | - |
 | 2026-04-28 | 云厂商核验电话 + 短信核验 | Human | - |
 | 2026-05-18（±5 天） | **预计下号** | 管局 | - |
+| **2026-05-13** | **实际下号**（小程序 `沪ICP备2026017253号-1X` · 后端 `沪ICP备2026017253号-2`） | 管局 | ✅ **完成**（实际下证日符合预估窗口 2026-05-18±5） |
 | 2026-05-19 | 配 HTTPS + 小程序白名单 | DevOps-Agent | 依赖下号 |
 | 2026-05-20 | COSTRA-040 真实上传链路激活 | DevOps-Agent | 依赖下号 |
 
@@ -181,11 +182,12 @@ D+20±
 
 ## 6. 备案成功后的合规尾款（Backend-Agent + QA-Agent 对齐）
 
-- [ ] 网站底部 / 小程序"关于我们"页展示 `粤ICP备2026xxxxxx号`
-- [ ] 备案号超链接到 https://beian.miit.gov.cn/
-- [ ] 《用户隐私保护指引》上传（charter §9 已列，不在 ICP 范围但同周期一起做）
-- [ ] 公安备案（**非工信部**）：备案通过 30 日内，到 https://www.beian.gov.cn/ 做公安联网备案（再 15~20 工作日，**不阻塞**小程序上线，但 M5 观察期前必须完成）
-- [ ] 在 `docs/legal/` 下新建 `compliance-registry.md` 登记：ICP 备案号 / 公安备案号 / 主体 / 域名清单（PM-Agent 下个 Sprint 做）
+- [x] 网站底部 / 小程序"关于我们"页展示 `沪ICP备2026017253号-1X`（小程序）/ `沪ICP备2026017253号-2`（后端服务）
+- [x] 备案号超链接到 https://beian.miit.gov.cn/
+- [ ] 微信公众平台白名单填 `https://costra.cloud`（D-023）→ 见 `.team/decisions/D-023-prod-rollout-on-root-domain.md §7`
+- [ ] 《用户隐私保护指引》上传（charter §9 已列，不在 ICP 范围但同周期一起做）→ 见 `docs/legal/compliance-registry.md §4 / §7`
+- [ ] 公安备案（**非工信部**）：备案通过 30 日内（截止 **2026-06-12**），到 https://beian.mps.gov.cn/ 做公安联网备案（再 15~20 工作日，**不阻塞**小程序上线，但 M5 观察期前必须完成）→ 见 `docs/legal/compliance-registry.md §4`
+- [x] 在 `docs/legal/` 下新建 `compliance-registry.md` 登记：ICP 备案号 / 公安备案号 / 主体 / 域名清单（**已于 2026-05-13 落地** · 详见 `docs/legal/compliance-registry.md`）
 
 ---
 
@@ -279,3 +281,5 @@ PM-Agent 会据此把 COSTRA-107 推进到 Review 并更新 `.team/board.md` §�
 | 版本 | 日期 | 作者 | 变更 |
 |---|---|---|---|
 | v0.1 | 2026-04-22 | PM-Agent | 初稿，配合 COSTRA-107 |
+| v0.2 | 2026-05-13 | PM-Agent | 实际下证后归档：状态由"🔴 关键路径"改"🟢 已下证（2026-05-13）· 归档参考"；§4 关键日期表追加实际下号行（2026-05-13 · ✅ 完成）；§6 合规尾款 1/2 项打勾 + 3/4 项指向 `docs/legal/compliance-registry.md §4` 跟踪；新建 SSOT `docs/legal/compliance-registry.md` |
+| v0.3 | 2026-05-18 | PM-Agent | D-023 prod 入口回归根域：§6 合规尾款追加微信白名单填 `https://costra.cloud`（替代原计划的 `api.costra.cloud`）· 子域搁置 Phase-2 详见 `.team/decisions/D-023-prod-rollout-on-root-domain.md` |
