@@ -214,6 +214,36 @@ describe('POST /sync/push', () => {
     expect(body.code).toBe('INVALID_ARGUMENT');
   });
 
+  it('T9 rejects non-uuid ledger_id → 400 INVALID_ARGUMENT (COSTRA-105 BUG-002)', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/sync/push',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${token}`,
+        'idempotency-key': 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+      },
+      payload: {
+        ops: [{
+          op: 'create',
+          entity: 'entry',
+          client_ref_id: '11111111-1111-4111-8111-111111111111',
+          base_version: null,
+          payload: {
+            ledger_id: 'default',
+            amount: 100,
+            currency: 'CNY',
+            type: 'expense',
+            occurred_at: '2026-05-18T11:00:00.000Z',
+          },
+        }],
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    const body = res.json() as { code: string };
+    expect(body.code).toBe('INVALID_ARGUMENT');
+  });
+
   it('T8 无 JWT → 401 UNAUTHENTICATED', async () => {
     const res = await app.inject({
       method: 'POST',

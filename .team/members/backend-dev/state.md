@@ -16,11 +16,13 @@
 
 ## §2 当前关注（active tasks）
 
+- COSTRA-105 R1.x.2 BUG-002 已完成（2026-05-18 · sync/push payload UUID schema 校验补全 + T9 单测 · 单 commit）
 - COSTRA-157 R1 实装进行中（backend 段完成 · 等 miniapp-dev 接手 B/C/D/E + 统一 commit）· A 项 server defaults 抽取 + F 项 server 单测
 - COSTRA-156 R1 实装完成（2026-05-13 · server /v1 prefix 加完 + 24处inject改完 + whitelist规则D加完 + 文档同步E1/E2/E3 + FU-105 closed）· 等 review-tech R1 APPROVE
 
 ## §3 交付历史索引
 
+- 2026-05-18 · COSTRA-105 R1.x.2 BUG-002 修复（sync/push payload UUID schema 校验补全 + T9 单测 · D-017 v3 §2.4 E1 例外路径）· SBAI 第 11 次冒烟
 - 2026-05-18 · COSTRA-157 R1 backend 段（A 项 server defaults 抽取 + F 项 server 单测 · 等 miniapp-dev 接手统一 commit）· SBAI 第 10 次冒烟
 - 2026-05-11 · COSTRA-104 R1 实装（POST /sync/push + POST/GET /entries + 3 stub 切出去铁律 · D-022 v2.0 第 2 次实战准备）· 6d395bd / 6c17085 / 212f181 · SBAI 第 8 次冒烟 · backend-dev 首次实战 · R1+R1.1+R1.2 三轮收口（D-016 反例第 5 次 · 由 Orchestrator 接管收尾）
 - 2026-05-11 · COSTRA-104 R1.x 极窄修复（R1 review-tech 36/40 APPROVE 后同轮兑现 P1-1 + P2-1 · 补 T2 update conflict 测 + followup_id 字段名修正）· 363efa1 · SBAI 第 9 次冒烟 · backend-dev 第 2 次实战收口
@@ -56,4 +58,4 @@
 - 2026-05-02T19:24:00+08:00 · 初始化骨架（by Orchestrator）
 - 2026-05-11T20:57:43+08:00 · COSTRA-104 R1.x 极窄修复收口（363efa1 · P1-1 T2 测 + P2-1 followup_id）
 - 2026-05-12T12:52:05+08:00 · COSTRA-104 R1.x.1 极窄修复收口（95e00c6 · dev WX mock 入口）
-- 2026-05-18T18:07:30+08:00 · COSTRA-157 R1 backend 段实装（A 项 defaults 抽取 + F 项 server 单测 · 等 miniapp-dev 统一 commit）
+- 2026-05-18T20:07:30+08:00 · COSTRA-105 R1.x.2 BUG-002 修复（sync/push payload UUID schema 校验补全）

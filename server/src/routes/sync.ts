@@ -90,7 +90,14 @@ const syncPushBodySchema = {
           entity: { type: 'string', enum: ['entry', 'category', 'budget'] },
           client_ref_id: { type: 'string' },
           base_version: { type: ['integer', 'null'] },
-          payload: { type: 'object', additionalProperties: true },
+          payload: {
+            type: 'object',
+            additionalProperties: true,
+            properties: {
+              ledger_id: { type: 'string', format: 'uuid' },
+              category_id: { type: ['string', 'null'], format: 'uuid' },
+            },
+          },
         },
       },
     },
