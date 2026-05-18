@@ -6,7 +6,7 @@
 > **预计耗时**：25~35 分钟（5 个步骤 + ≥ 5 硬断言）
 > **验证对象**：单人记账完整闭环（client 103 + server 104 拼接）+ 离线弱网专项
 > **runtime 类 T2 铁律**：D-022 §4.1 命中（平台 API 运行时行为 + 微信基础库版本差异）· 断言全 PASS 才能 T1 终审
-> **修订**：v1.5 · 2026-05-18 18:4x · D-023 落地后 prod/staging 入口收敛根域 `https://costra.cloud/v1` · §0.1 三模式表方式 C 升级 🚧→🟢 + §0.5 新增 §0.5.0 D-023 升级路径（**当前可跑实测主路径**：阻塞条件 5/7 已解 + Human 操作 3 件 + R-020 staging/prod 边界自检 3 项强制）+ §1~§5 五处步骤模式适用矩阵方式 C 行 URL 刷新 · 历史 §0.5.1~§0.5.3 D-023 §4.2 红线保留不动 · 等 Human 微信公众平台填白名单后即可跑方式 C 主路径 → 双卡 H1~H6 真链路实测 → 双卡 approve
+> **修订**：v1.6 · 2026-05-18 19:5x · **Human 实测期 4 个文档级 gap 修订 + 1 个真 P0 BUG 实测发现**：① Console 沙箱不可 `require`（弃 require 改 wx.request paste）· ② storage 层 Envelope 包装（`{v,t,d}` · 真数据在 `.d`）· ③ token 数据模型 `.d.raw.access_token`（双层嵌套）· ④ DB 列名 `version`（vs 协议 `server_version`）+ 查询 SQL 改用 `client_ref_id`（不依赖人工备注）· §4.1.1 + §4.2.2 改 wx.request fallback 5 步范式 · D1.2 + D2.2 路径降级（fallback 不走 ackResults / applyServerChanges）等 FU-105-DEV-CONSOLE-HOOK 实装后回归 · §4.1.4 新增"实测期发现真 BUG 处置 SOP" · 兑现 D-022 §4.1 runtime 类 T2 卡 Human 实测前置铁律真正立意（这次实测发现真 P0 BUG：client `payload.ledger_id = "default"` 字面量 + server 未做 UUID schema 校验 → 见 `qa/defects/2026-05-18-COSTRA-105-D1-real-test-findings.md`）
 
 ---
 
@@ -519,35 +519,94 @@ cd server && npm run db:reset-data
 
 ---
 
-### 4.1 D.1 · push 链路诊断（方式 B · 等 156 review-tech APPROVE 后实测）
+### 4.1 D.1 · push 链路诊断（方式 B / C · v1.6 路径修订 · Console 不可 require）
 
-#### 4.1.1 操作
+> **v1.6 修订动机**（2026-05-18 Human 实测发现）：微信小程序 Console 沙箱**禁用 CommonJS `require`**（基础库 2.x/3.x 全版本统一限制）+ storage 层 Envelope 包装（`{v, t, d}`）+ token 数据模型 `.d.raw.access_token`（非扁平）+ FU-103-CLIENT-SYNC-SCHEDULER 未实装。本节改为**直发 wx.request fallback 路径**（D1.2 outbox 自动出队断言降级为人工查 Storage · 因不走 ackResults）。等 FU-105-DEV-CONSOLE-HOOK（族 H · Sprint-3 候选 · miniapp-dev）实装 dev-only 调试钩子后回切为 `wx.__costra_dev_sync__.pushDelta()` 真路径。
+
+#### 4.1.1 操作（v1.6 · Console paste fallback · 5 步）
 
 1. 开发者工具 → **Network → Online**（取消离线）
-2. **手动触发 push**（因为 R1 不实装调度器 · FU-103-CLIENT-SYNC-SCHEDULER · COSTRA-150 候选）：在 Console 执行：
-   ```js
-   const sync = require('./services/sync')
-   sync.pushDelta().then(r => console.log('push result', r)).catch(e => console.error('push fail', e))
-   ```
-3. 观察 Console + Network + Storage
 
-#### 4.1.2 断言（3 条 · 集成层联通诊断）
+2. **第 1 步 · 取真 token**（注意 envelope `.d.raw` 解包 · v1.6 修订）：
+   ```js
+   const tokenEnv = wx.getStorageSync('__costra_token_v1')
+   const token = tokenEnv && tokenEnv.d && tokenEnv.d.raw && tokenEnv.d.raw.access_token
+   console.log('token (前 20 字符):', token && token.substring(0, 20))
+   console.log('token length:', token && token.length)
+   // 期望：token 长度 ≥ 36 · 不为 undefined
+   ```
+
+3. **第 2 步 · 取第一个 outbox op**（注意 envelope `.d` 解包）：
+   ```js
+   const idxEnv = wx.getStorageSync('outbox:__index')
+   const idx = idxEnv && idxEnv.d
+   console.log('outbox seqs:', idx)   // 期望：[seq1, seq2, ...] 非空数组
+   const op0Env = wx.getStorageSync(`outbox:${idx[0]}`)
+   const op0 = op0Env && op0Env.d
+   console.log('op0:', op0)           // 期望含 op/entity/client_ref_id/payload 等字段
+   ```
+
+   > 💡 **若 idx 为空**：说明 outbox 没有待推数据（步骤 C 离线记账未成功入队）· 回去重跑 §3 步骤 C。
+   >
+   > 💡 **storage 层 Envelope 包装说明**：v0.5+ `services/storage.ts` 所有 setItem 自动包装 `{v, t, ttl?, d}` 形态（schema 版本 + 时间戳 + TTL）· `wx.getStorageSync` 直读拿到的是 envelope · 真数据在 `.d` 字段。这与 `services/auth.ts` 的 `{raw, access_expires_at, refresh_expires_at}` 嵌套封装一起构成两层解包路径（envelope 外层 + auth 内层 raw）。
+
+4. **第 3 步 · 直发 push**（绕过 `services/request.ts` 包装层 · 仅验 server 收到 + DB 落库）：
+   ```js
+   wx.request({
+     url: 'http://localhost:8080/v1/sync/push',     // 方式 C 改 https://costra.cloud/v1/sync/push
+     method: 'POST',
+     header: {
+       'content-type': 'application/json',
+       'authorization': `Bearer ${token}`,
+       'idempotency-key': op0.idempotency_key
+     },
+     data: { ops: [{
+       op: op0.op,
+       entity: op0.entity,
+       client_ref_id: op0.client_ref_id,
+       base_version: op0.base_version,
+       payload: op0.payload
+     }]},
+     success: r => console.log('push response:', r.statusCode, r.data),
+     fail: e => console.error('push fail', e)
+   })
+   ```
+
+5. 观察 Console + Network + Storage Tab
+
+#### 4.1.2 断言（3 条 · 集成层联通诊断 · v1.6 D1.2 路径降级）
 
 | # | 断言 | 期望 | 验证位置 |
 |---|---|---|---|
-| D1.1 | Network 面板有 `POST http://localhost:8080/v1/sync/push` 200 | 网络日志 | 网络面板 |
-| D1.2 | `outbox:__index` 长度 = 原长度 - 已推条数（或对应 `outbox:{seq}` key 已 removeItem · 不再存在）| Storage Tab | Storage Tab grep `outbox:` |
-| D1.3 | DB：`psql 'postgres://costra:costra_dev_pw@localhost:5432/costra' -c "SELECT count(*) FROM entries WHERE note = 'offline-test-c'"` → 1 | psql 输出 `count = 1` | psql 命令行 |
+| D1.1 | Network 面板有 `POST /v1/sync/push` 200 · 响应 `{results: [{client_ref_id, status: 'ok', server_id, server_version: 1}]}` | 网络日志 + Console | 网络面板 |
+| D1.2 | （v1.6 fallback 路径下 SKIP）outbox 自动出队需走 `wx.__costra_dev_sync__.pushDelta()` 真路径 · 当前 fallback 不验 · 等 FU-105-DEV-CONSOLE-HOOK 实装后回归 | — | SKIP |
+| D1.3 | DB：用 op0 实际的 `client_ref_id` 查（**不要用 note 查 · 因 note 可能 Human 实测时随手填**）<br>`psql 'postgres://costra:costra_dev_pw@localhost:5432/costra' -c "SELECT id, ledger_id, client_ref_id, note, amount, type, version FROM entries WHERE client_ref_id = '<op0.client_ref_id>'"` → **1 行**（含 server_id 与 push 响应一致 · version=1）| psql 输出 | psql 命令行 |
+
+> **v1.6 重要修订**：
+> - 原 D1.2 假设走真 `pushDelta()` 路径触发 `ackResults` 自动出队。fallback 模式下不走该路径，故降级 SKIP。**此降级不影响 H4 + H6 终审判定**（H4 由步骤 E curl 直打验幂等，H6 由 D.2 cold-start pull 验回环 · D1.2 仅是诊断辅助）。
+> - 原 D1.3 SQL 用 `WHERE note = 'offline-test-c'` 是**手册写作盲区**：依赖"Human 一定按手册预设 note 填"——但实测中 Human 可能填任意备注。**v1.6 改用 `client_ref_id`**（client 自动生成的 UUID · 全程稳定唯一 · 不依赖人工输入）。
+> - **DB 列名**：`version`（DB schema · COSTRA-104 R1）vs `server_version`（sync-protocol 响应字段）—— v1.6 SQL 用 DB 真列名。
 
 #### 4.1.3 Pass/Fail
 
 - [ ] 方式 B · D.1 · Pass · [ ] Fail
+- [ ] 方式 C · D.1 · Pass · [ ] Fail
 
-> **D.1 失败处置**：
-> - D1.1 Network 无 POST 请求 → 触发逻辑 bug（miniapp-dev · COSTRA-103 R1 边界）
+> **D.1 失败处置**（v1.6 扩展）：
+> - D1.1 Network 无 POST 请求 → Console paste 命令报错（看 Console 红字）· 检查第 1 步 token 是否拿到（≥ 36 字符）/ 第 2 步 op0 是否拿到（不是 undefined）
+> - D1.1 有 POST 但 401 UNAUTHENTICATED → token 路径错（**最常见 · v1.6 实测发现**）：必须 `tokenEnv.d.raw.access_token` 不是 `tokenEnv.access_token` 也不是 `JSON.parse(tokenRaw).access_token`
+> - D1.1 有 POST 但 500 INTERNAL → server 端错误日志（**vps 终端找含响应 trace_id 的那行**）：常见根因 `payload.ledger_id` 不是合法 UUID（如 `"default"` 字符串字面量 → PG 22P02 错误）· 立 P0 BUG 单（参 §4.1.4）
 > - D1.1 有 POST 但 404 → URL 契约不一致（应已被 COSTRA-156 修复 · 若仍 404 立 P0 缺陷）
-> - D1.2 outbox 未出队 → ackResults 三态消费 bug（miniapp-dev · COSTRA-103 R1.2）
-> - D1.3 DB count = 0 → server push 落库 bug（backend-dev · COSTRA-104 R1）
+> - D1.3 cnt=0 → 检查查询条件是 `client_ref_id` 不是 `note`（v1.6 修订）· 或 server push 落库 bug（backend-dev · COSTRA-104 R1）
+
+#### 4.1.4 实测期发现真 BUG 处置（v1.6 新增）
+
+实测中若发现的根因不是手册命令错或环境配置错，而是真业务代码 bug（如 `payload.ledger_id = "default"` 字面量 / server 未做 UUID 入参 schema 校验），处置流程：
+
+1. **不停止当前 D.1 实测**（用 `payload: { ...op0.payload, ledger_id: '<真 UUID>' }` 临时覆盖继续往下走 · 拿到 D1.1+D1.3 通过证据）
+2. **立 P0 BUG 单**：`qa/defects/2026-MM-DD-COSTRA-105-D1-real-test-findings.md` · 含 client + server 双责任域具体根因（Console paste 模式实测的最大价值就是发现这类自动化 + curl 漏过的集成层 bug）
+3. **派单**：miniapp-dev（client 端字段填充修复）+ backend-dev（server 端 UUID schema 校验补充）· R1.x 修复 · ≤ 1 hour
+4. **不阻断 D.2 实测**（D.2 是另一条独立验证路径 · 可继续）
 
 ---
 
@@ -561,45 +620,66 @@ cd server && npm run db:reset-data
 - 不要清 storage（D.2 起点 = D.1 结束态 · 含 watermark + 本地 entry）
 - server 仍运行（不要 ctrl-c）
 
-#### 4.2.2 操作
+#### 4.2.2 操作（v1.6 · Console paste fallback · 5 步）
 
-1. **拿当前 family_id**（在 Console 执行 · 或从 §0.4.6 seed 输出复用）：
+1. **第 1 步 · 拿当前 family_id**（在 Console 执行 · 注意 envelope `.d` 解包 · v1.6 修订）：
    ```js
-   // 方式 1：从 storage 读（如 client 已写入）
-   wx.getStorageSync('__costra_family_id_v1')
-   // 方式 2：从 §0.4.6 seed 输出取（manual-test 默认）
-   // → 'F0000000-0000-0000-0000-0000000000F0'（按你的 seed 实际值替换）
+   // 方式 1：从 storage 读（如 client 已写入 family_id）
+   const famEnv = wx.getStorageSync('__costra_family_id_v1')
+   const familyId = famEnv && famEnv.d
+   console.log('family_id from storage:', familyId)
+   // 方式 2：若 storage 未写 family_id · 从 §0.4.6 seed 输出取（manual-test 默认）
+   // → '00000000-0000-0000-0000-0000000000F0'（按你的 seed 实际值替换）
+   // 方式 3：直接用 token 解析的 user_id 查 DB family_members 表反查
+   //   psql ... -c "SELECT family_id FROM family_members WHERE user_id = '<your_user_id>'"
    ```
 
-2. **手动重置 watermark + 清本地 entries 索引**（模拟"换设备 / 重装小程序后冷启从 server 拉数据"场景 · 这是 D.2 的核心场景）：
+2. **第 2 步 · 手动重置 watermark + 清本地 entries 索引**（模拟"换设备 / 重装小程序后冷启从 server 拉数据"场景 · 这是 D.2 的核心场景）：
    ```js
    // 仅清 watermark + entry 索引 · 保留 token（避免重新登录）
-   wx.removeStorageSync('sync:watermark:F0000000-0000-0000-0000-0000000000F0')  // 替换为实际 family_id
+   const FAM = '<上一步拿到的 family_id>'
+   wx.removeStorageSync(`sync:watermark:${FAM}`)
    wx.removeStorageSync('entry:__index')
    // 注：不删 entry:{ref_id} 原始 key · syncPull 会用 server 数据 putEntity 覆盖 · 验证"server 是数据真源"
    console.log('watermark + entry index cleared, ready for D.2')
    ```
 
-3. **手动触发 pull**（FU-103-CLIENT-SYNC-SCHEDULER 未实装冷启自动 pull · 需 Console 触发）：
+3. **第 3 步 · 直发 pull**（v1.6 改 wx.request fallback · 不再用 require）：
    ```js
-   const sync = require('./services/sync')
-   sync.syncPull('F0000000-0000-0000-0000-0000000000F0')  // 替换为实际 family_id
-     .then(r => console.log('pull result', JSON.stringify(r, null, 2)))
-     .catch(e => console.error('pull fail', e))
+   // 复用 §4.1.1 第 1 步拿到的 token · 若 Console 已清空请重跑 §4.1.1 第 1 步
+   const FAM = '<上一步拿到的 family_id>'
+   const SINCE = '1970-01-01T00:00:00.000Z'   // 模拟换设备首次 pull · since 起点
+   wx.request({
+     url: `http://localhost:8080/v1/sync/pull?family_id=${FAM}&since=${encodeURIComponent(SINCE)}&limit=200`,
+     method: 'GET',
+     header: {
+       'authorization': `Bearer ${token}`
+     },
+     success: r => {
+       console.log('pull response:', r.statusCode)
+       console.log('watermark:', r.data && r.data.watermark)
+       console.log('changes.entries.length:', r.data && r.data.changes && r.data.changes.entries && r.data.changes.entries.length)
+       console.log('full body:', JSON.stringify(r.data, null, 2))
+       // 期望 r.statusCode = 200 + watermark 是 ISO 时间戳 + entries 数组 ≥ 1 条
+     },
+     fail: e => console.error('pull fail', e)
+   })
    ```
 
-4. **冷启小程序**（编译 → 普通编译 · 触发 home 页重新渲染）
+   > 💡 **D.2 fallback 模式与 D.1 一致的 H6 立意打折说明**：fallback 直发 wx.request 跳过了 client `services/db.ts` 的 `applyServerChanges` 自动落 storage 逻辑 → 因此 **D2.2（entry:__index 自动恢复）需手动调 `applyServerChanges` 验**（见步骤 4）· 或等 FU-105-DEV-CONSOLE-HOOK 实装 dev-only 调试钩子后回切 `wx.__costra_dev_sync__.syncPull(familyId)` 真路径自动验。
 
-5. 进入首页 · 观察"最近账单"列表
+4. **第 4 步**（v1.6 fallback 路径下 · 跳过 D2.2 自动落 storage 验证 · 改人工查 server 返回的 changes.entries 内容是否符合预期）
 
-#### 4.2.3 断言（4 条 · 集成层端到端契约对齐）
+5. **第 5 步 · 冷启小程序**（编译 → 普通编译 · 触发 home 页重新渲染）· 进入首页 · 观察"最近账单"列表（**D2.3 视觉验证**）
+
+#### 4.2.3 断言（4 条 · 集成层端到端契约对齐 · v1.6 D2.2 路径降级）
 
 | # | 断言 | 期望 | 验证位置 |
 |---|---|---|---|
-| **D2.1** | Network 面板有 `GET http://localhost:8080/v1/sync/pull?family_id=...&since=...&limit=200` 200 · 响应含 `watermark` + `changes.entries` 数组 ≥ 1 条 | 网络日志 + Response Body | 网络面板 |
-| **D2.2** | 步骤 3 pull 后 · `entry:__index` 重新含 `offline-test-c` 那笔的 `client_ref_id`（来自 server · 不是 storage 残留 · 因步骤 2 已清 index）| Storage Tab | Storage Tab grep `entry:__index` |
-| **D2.3** | 冷启首页"最近账单"列表显示 `offline-test-c` · 金额 56.78 · 分类"交通" · 与步骤 C 输入**完全一致**（端到端字段无丢失/无错位/无类型变换 bug · 如 `amount: 5678` cents → UI 显示 56.78 元）| 首页 UI | 视觉检查 |
-| **D2.4** | pull 响应 payload 100% snake_case（响应字段 0 次 `clientRefId` / `occurredAt` / `serverVersion` 等驼峰 · 与 H5 互补 · H5 验 push 请求/E 验 server 响应 · D2.4 验 pull 响应）| 响应 Body | Network 面板 → Response → 字段名 grep |
+| **D2.1** | Network 面板有 `GET /v1/sync/pull?family_id=...&since=...&limit=200` 200 · Console 输出 watermark 是 ISO 时间戳 · changes.entries 数组 length ≥ 1 | 网络日志 + Console | 网络面板 |
+| **D2.2** | （v1.6 fallback 路径下降级）pull 响应 body 含步骤 C 离线记账的那笔 entry（`changes.entries[i].client_ref_id` 与你 op0.client_ref_id 匹配 · 不再验 client 自动 putEntity）· 等 FU-105-DEV-CONSOLE-HOOK 实装后回归自动验 | Console 输出 | full body 内容 |
+| **D2.3** | 冷启首页"最近账单"列表显示 D.1 PASS 的那笔 · 金额、分类、备注与步骤 C 输入**完全一致**（端到端字段无丢失/无错位/无类型变换 bug · 如 `amount: 5678` cents → UI 显示 56.78 元）<br>**注意**：fallback 路径下 D2.3 依赖 home 页冷启自身调 GET /sync/pull（如 home 未实装则需手动跑 home 页加载逻辑）· 若 home 未实装 pull 触发，则 D2.3 等 FU-103-CLIENT-SYNC-SCHEDULER 实装后回归 | 首页 UI | 视觉检查 |
+| **D2.4** | pull 响应 payload 100% snake_case（响应字段 0 次 `clientRefId` / `occurredAt` / `serverVersion` 等驼峰 · 与 H5 互补 · H5 验 push 请求 / E 验 server 响应 / D2.4 验 pull 响应）| 响应 Body | Network 面板 → Response → 字段名 grep |
 
 #### 4.2.4 Pass/Fail
 
@@ -736,6 +816,7 @@ curl -s -X POST http://127.0.0.1:8080/v1/sync/push \
 
 | 版本 | 时间 | 修订 |
 |---|---|---|
+| **v1.6** | 2026-05-18 19:5x | **Human 实测期 4 个文档级 gap 修订 + 1 个真 P0 BUG 实测发现**（这次实测兑现 D-022 §4.1 runtime 类 T2 卡 Human 实测前置铁律真正立意 · 自动化 + curl + server 单测 30+ 全绿但 Human 真链路实测在 ~30 分钟内捕获 4 个文档 gap + 1 个真 P0 BUG）<br>**4 个文档 gap**：① 微信小程序 Console 沙箱**不可 `require`**（CommonJS 禁用 · 弃用原 §4.1.1 step 2 `require('./services/sync').pushDelta()` 命令 · §4.2.2 step 3 `syncPull` 同改） ② storage 层 Envelope 包装（`services/storage.ts` setItem 自动包 `{v,t,ttl?,d}` · `wx.getStorageSync` 直读拿到的是 envelope · 真数据在 `.d` 字段 · 之前手册"Storage Tab 直接看 outbox:__index 长度"思维错误） ③ token 数据模型双层嵌套（`auth.ts` 把 server `wx-login` 响应包成 `{raw, access_expires_at, refresh_expires_at}` · `access_token` 路径是 `tokenEnv.d.raw.access_token` 不是顶层）④ DB 列名 `version`（vs sync-protocol 响应字段 `server_version`）+ §4.1.2 D1.3 SQL 改用 `client_ref_id`（不依赖 Human 备注一定填 `offline-test-c`）<br>**§4.1.1 全部重写**：5 步 Console paste fallback（取 token + 取 op0 + 直发 push + 观察）· §4.1.2 D1.2 路径降级 SKIP（fallback 不走 ackResults 自动出队）· **§4.1.4 新增"实测期发现真 BUG 处置 SOP"**（不停 D.1 实测 + 立 P0 BUG 单 + 派单 + 不阻断 D.2）<br>**§4.2.2 全部重写**：5 步 fallback（取 family_id + 清 watermark + 直发 pull + 观察 + 冷启）· §4.2.3 D2.2 路径降级（fallback 不走 applyServerChanges）<br>**真 P0 BUG**：实测发现 `payload.ledger_id = "default"` 字面量（client 端字段填充 bug · COSTRA-103 R1 边界）+ server 未做 UUID schema 校验（500 应改 400 BAD_REQUEST · COSTRA-104 边界）· 立 BUG 单 `qa/defects/2026-05-18-COSTRA-105-D1-real-test-findings.md` · 双责任 miniapp-dev + backend-dev · R1.x 修复 · 立 FU-105-DEV-CONSOLE-HOOK（族 H · Sprint-3 候选 · miniapp-dev 加 dev-only 调试钩子 `wx.__costra_dev_sync__.pushDelta/syncPull` · v1.7 回切真路径） |
 | **v1.5** | 2026-05-18 18:4x | **D-023 落地后域名收敛根域刷新**：§0.1 三模式表方式 C 行 🚧→🟢 + URL `api-staging.*`→`costra.cloud` · §0.5 新增 §0.5.0 D-023 升级路径（§0.5.0.1 域名收敛事实 + §0.5.0.2 阻塞条件 5/7 已解 + §0.5.0.3 推荐执行路径 3 项前置 vs v1.4 5 项 · 缩 40% + §0.5.0.4 复跑步骤映射 + §0.5.0.5 R-020 staging/prod 边界自检 3 项强制 + §0.5.0.6 BUG 处置）· 历史 §0.5.1~§0.5.3 D-023 §4.2 红线保留不动 · §1/§2/§3/§4/§5 步骤模式矩阵方式 C 行 5 处 URL 刷新 · §7 真机矩阵加 v1.5 注记 · 立意：尽快兑现"用 costra.cloud 跑通正式流程"诉求 · 与 Sprint-2 提审前 prod 验收时间窗口对齐 · 不破坏 D-009 决策不可变性（D-023 §4.1 红线）|
 | **v1.4** | 2026-05-13 13:5x | 步骤 D 拆 D.1（push 链路诊断 · 3 条断言）+ D.2（client 视角端到端回环 · 4 条断言 · 冷启 → pull → 首页显示一致）· §6 新增 H6 硬断言（client 离线写入 → push → 冷启 pull 回环 · 集成层 bug 手动捕获路径） · §0.1 警示 / §0.6 R1 范围 / §8 失败分流 同步 · 立意：H4 curl 验 server 内核幂等 vs H6 小程序连 server 验集成层契约对齐 · 互补不重叠 · 兑现 D-022 §4.1 runtime 类 T2 卡 Human 实测前置铁律真正立意 · 总硬断言 H1~H6（原 H1~H5）|
 | **v1.3** | 2026-05-13 11:0x | COSTRA-156 R1 实装后 BLOCKED 注记清除（联合实测时序明示：等 156 R1 review-tech APPROVE 后才能跑步骤 D）· §0.1 警示段/§0.6 R1范围/§4 模式矩阵/§4.2断言/§4.3 Pass-Fail/§6 H4注记/§8失败分流 D行 全部从"BLOCKED-BY-COSTRA-156"刷新为"✅ 可跑·等 156 review-tech APPROVE" · INFO-2 联合实测时序兑现 |

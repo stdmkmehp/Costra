@@ -23,7 +23,7 @@
 
 ---
 
-## 🟢 当前 open FU 速查表（23 条 · 按主题族 + 推动优先级）
+## 🟢 当前 open FU 速查表（26 条 · 按主题族 + 推动优先级 · 2026-05-18 加族 H 3 条）
 
 | 主题族 | FU-ID | 优先级 | 候选卡 / 归属 | 状态 |
 |---|---|---|---|---|
@@ -50,6 +50,9 @@
 | **QA 自动化** | FU-105-AUTOMATION-FULL-COVERAGE | P2 | COSTRA-155 | open |
 | **QA 自动化** | FU-156-OUTBOX-FLAKY | P2 | Sprint-3 头部 miniapp-dev | open |
 | **外部触发** | FU-115-2 | O 观察 | Human ICP 下证日触发 | open |
+| **🆕 QA 实测发现（族 H）** | **BUG-105-D1-LEDGER-ID-DEFAULT** | **🔴 P0** | COSTRA-105 R1.x.1（miniapp-dev · 派单中）| open |
+| **🆕 QA 实测发现（族 H）** | **BUG-156-SYNC-PUSH-PAYLOAD-NO-UUID-VALIDATION** | **🔴 P0** | COSTRA-105 R1.x.2（backend-dev · 派单中）| open |
+| **🆕 QA 实测发现（族 H）** | FU-105-DEV-CONSOLE-HOOK | P3 | Sprint-3 头部 miniapp-dev（候选 COSTRA-150 顺带）| open |
 
 > **2026-05-13 维护批同步关闭 5 条 FU**（已迁入归档 · 不再列于本表）：
 > FU-105-CLIENT-SERVER-URL-PREFIX-MISMATCH（COSTRA-156 R1 实质闭合）· FU-102-SYNC-PULL-DRIFT / FU-102-HUMAN-VERIFY-PARADIGM / FU-REVIEW-TECH-RUNTIME-DIM（COSTRA-106 Retro 三决议沉淀）· FU-118-1（账本同步 · engineering-guidelines §2.5 文字留 PM 维护批落字）
@@ -403,6 +406,64 @@
 - **阻断级别**：O-观察（非 Agent 可执 · Human 主动 · 外部依赖触发）
 - **认领建议**：**Human · 外部触发**（估 2026-05 中下旬 ICP 下证日）
 - **状态**：`open`
+
+---
+
+## 🐛 族 H · QA 实测发现（2026-05-18 · COSTRA-105 D.1 真链路实测兑现 D-022 §4.1）
+
+> **族说明**：D-022 §4.1 runtime 类 T2 卡 Human 实测前置铁律首次真兑现立意——自动化 + curl + server 单测 30+ 全绿，但 Human 真链路实测 ~30 分钟内捕获 4 个文档 gap + 1 个真 P0 双责 BUG。详见 `qa/defects/2026-05-18-COSTRA-105-D1-real-test-findings.md`。
+
+### FU-105-DEV-CONSOLE-HOOK · client app.ts dev-only 调试钩子
+
+- **来源**：`qa/defects/2026-05-18-COSTRA-105-D1-real-test-findings.md` §4
+- **登记时间**：2026-05-18 19:5x
+- **范围**：`miniprogram/app.ts` onLaunch 内加 ~5 行 dev-only 守卫：
+  ```ts
+  if (this.globalData.env.name === 'dev') {
+    import('./services/sync').then(({ pushDelta, syncPull }) => {
+      (wx as any).__costra_dev_sync__ = { pushDelta, syncPull };
+    });
+  }
+  ```
+- **价值**：D.1/D.2 实测命令回切真路径（`wx.__costra_dev_sync__.pushDelta()` / `syncPull(familyId)`） · 完整保留 H6 立意（端到端 client 调用栈含 request.ts token/idempotency-key 注入 + ackResults 自动出队 + applyServerChanges 自动落 storage）· prod 构建产物不含此钩子（编译期常量 + dev env 双重隔离）
+- **依赖**：构建脚本未来需保证 prod build 时 strip dev-only 代码（COSTRA-160 设计 tokens pipeline 顺手做 · 或独立小卡）
+- **阻断级别**：**P3**（fallback 模式可达成 D1.1+D1.3 PASS · H6 立意可由方式 C 真链路验证 · 不阻断双卡 approve）
+- **认领建议**：Sprint-3 头部 miniapp-dev（与 COSTRA-150 sync scheduler 同轮交付 · ~ 5 分钟改动）
+- **状态**：`open`
+- **owner_card**：未定（候选 COSTRA-150 顺带 / 或独立 1 点小卡）
+
+### BUG-105-D1-LEDGER-ID-DEFAULT · client `pages/entry/index.ts` 硬编码 `ledger_id: 'default'` 字面量（P0 真 BUG）
+
+- **来源**：`qa/defects/2026-05-18-COSTRA-105-D1-real-test-findings.md` §1
+- **登记时间**：2026-05-18 19:5x
+- **范围**：`miniprogram/pages/entry/index.ts` line 57+73 把 `ledger_id` 硬编码字符串 `"default"`（COSTRA-103 R1 留 TODO + COSTRA-104 R1 未接续 · scope gap fall-through）· server 端推 push 时 PG 22P02 invalid uuid 错误 → 500
+- **修复方案**：阶段 1 紧急止血用 `getApp().globalData.activeLedgerId || FALLBACK_LEDGER_ID`（`00000000-0000-0000-0000-000000000001` seed 默认）· 阶段 2 由 COSTRA-155 ledgers CRUD 卡接续做真选账本 UI
+- **阻断级别**：**P0**（D.1 实测靠 Human 临时覆盖 `payload.ledger_id` 才能 push 200 · 无法走 client 真 outbox 路径）
+- **认领建议**：**COSTRA-105 R1.x.1**（D-017 v3 §2.4 E1 例外路径 · ≤ 1 小时 · miniapp-dev · 单 commit 收尾）
+- **状态**：`open`
+- **owner_card**：COSTRA-105 R1.x.1（Orchestrator 派单中）
+
+### BUG-156-SYNC-PUSH-PAYLOAD-NO-UUID-VALIDATION · server `routes/sync.ts` payload 不校验 UUID 格式（P0 真 BUG）
+
+- **来源**：`qa/defects/2026-05-18-COSTRA-105-D1-real-test-findings.md` §2
+- **登记时间**：2026-05-18 19:5x
+- **范围**：`server/src/routes/sync.ts` line 93 `payload: { type: 'object', additionalProperties: true }` · 完全无 UUID format 校验 · 非法 UUID 直接喂 PG → 22P02 → 500（应返 400 BAD_REQUEST · `code: INVALID_ARGUMENT`）
+- **修复方案**：阶段 1 在 schema 加 `properties: { ledger_id: { type: 'string', format: 'uuid' }, category_id: { type: ['string','null'], format: 'uuid' } }` + 加 1 个单测 case rejects-non-uuid · 阶段 2 由 COSTRA-155 完整 entry/ledger schema 校验补全
+- **阻断级别**：**P0**（与 BUG-105-D1-LEDGER-ID-DEFAULT 联合触发链 · 单修任一即可止血 · 但 server 修复是 root fix · 防御未来其他客户端误传非 UUID 入参）
+- **认领建议**：**COSTRA-105 R1.x.2**（D-017 v3 §2.4 E1 例外路径 · ≤ 30 分钟 · backend-dev · 单 commit 收尾 · 与 R1.x.1 同轮 · 互不依赖可并行）
+- **状态**：`open`
+- **owner_card**：COSTRA-105 R1.x.2（Orchestrator 派单中）
+
+> 💡 **族 H 设计意图**：
+> - **集中登记 Human 实测期发现的债务**（vs 族 A~G 的 Review/Card-Review 期发现）
+> - **3 类内容混排**：FU（dev-only 调试钩子）+ BUG（client 端字段填充）+ BUG（server 端 schema 校验）—— 因为它们在同一次实测会话中根因关联（联合触发链）· 分散到不同族会丢失上下文
+> - **后续族 H+ 维护**：每次 Human 真链路实测会话发现的 BUG/FU 集中追加（按时间线 · 不同会话隔行分组）
+
+---
+
+## 🌐 族 I · QA 流程治理（占位 · 当前空 · 留 Sprint-2 末 Retro 议题落地）
+
+> **族说明**（占位）：本次实测会话暴露 4 项跨族议题（手册写作 dry-run 强制 / scope gap 跨卡 fall-through / server 单测 fuzz 缺失 / CI schema 对账 E 规则候选）· 待 Sprint-2 末 Retro 决议落地后转 FU 入此族 · 详见 `qa/defects/2026-05-18-COSTRA-105-D1-real-test-findings.md` §6。
 
 ---
 
