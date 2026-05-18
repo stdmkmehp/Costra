@@ -4,9 +4,23 @@
 > **验证类别**：T2-with-runtime · D-022 §4.1 runtime 类强制 Human 实测前置
 > **执行人**：Human · **预计耗时**：A 起手 ~ 8 min · B 跟进 ~ 15 min · C 主路径 ~ 35 min · 全套 ~ 50 min
 > **验证对象**：单人记账完整闭环（client 103 + server 104 + 156）+ 离线弱网专项
-> **修订**：v1.7 · 2026-05-18 20:1x · 精简整理（删冗 + 合矩阵 + 合 Pass/Fail 入 §6）· -300 行 / -35%
+> **修订**：v1.8 · 2026-05-18 20:4x · Human 实测收尾增量（USER_ID 占位修正 + D.2/H6 BLOCKED-BY-COSTRA-154 + prod 跳过纪要 + 部分 PASS 收口口径）
 >
-> 📌 **v1.6 的 4 个文档级 gap 修订 + R1.x BUG 修复内容全部保留**（v1.7 精简的是结构冗余 / v1.0~v1.4 的过期叙事 / 散表）
+> 📌 **v1.6 的 4 个文档级 gap 修订 + R1.x BUG 修复内容全部保留**（v1.7 精简结构 / v1.8 实测增量 · 不重构）
+
+---
+
+## ⚠ v1.8 顶层状态（2026-05-18 实测收尾 · 必读）
+
+| 项 | 状态 | 来源 |
+|---|---|---|
+| 方式 A · Mock | 🟢 **PASS**（H1/H2/H3/H5 命中）| Human 实测 2026-05-18 |
+| 方式 B · 本地 server | 🟢 **PASS · partial**（H1~H5 全命中 · BUG-001/002 已修 ≥ commit `9be5e84`）| Human 实测 2026-05-18 |
+| 方式 C · prod / staging | ⏸️ **跳过**（M2 Phase-2 复测 · 不阻 R1 双卡 approve）| Human 决策 2026-05-18 20:4x |
+| **§4.2 D.2 · 冷启 pull 回环** | 🔴 **BLOCKED-BY-COSTRA-154**（GET /sync/pull 返回 501 NOT_IMPLEMENTED · stub 主动切出 FU-104-SYNC-PULL）| Human 实测 2026-05-18 20:1x |
+| **H6 · 端到端契约对齐** | 🔴 **BLOCKED-BY-COSTRA-154**（同 D.2 · COSTRA-154 实装后回归即可）| 同上 |
+| **H4 · 幂等不重复入账** | 🟢 **PASS**（§5 curl 直打 · 不依赖 D.2）| Human 实测 2026-05-18 |
+| 收口口径 | **R1 部分 PASS · 双卡 approve 可放行**（v1.4 `BLOCKED-BY-COSTRA-156` 范式同款 · 等 Sprint-3 154 实装回归即闭环）| 见 §6 |
 
 ---
 
@@ -114,16 +128,27 @@ npm run db:migrate
 
 #### 0.4.4 seed family/ledger（D/E 必跑）
 
-`USER_ID` 来自步骤 A 登录响应：
+`USER_ID` = **步骤 A 登录响应里的 `user.id`**（server 端 users 表 UUID v7 主键 · 不是 openid · 不是字面量）。
 
-```bash
-# 步骤 A 登录后 · Console 复制 user.id
-USER_ID='mock-user-abc123' npm run db:seed:curl-test
+**两步范式**（v1.8 修订 · 避免直接抄占位字面量撞 PG 22P02）：
+
+```js
+// 步骤 1 · 微信开发者工具 Console（步骤 A 登录后跑）
+const env = wx.getStorageSync('__costra_token_v1')
+console.log('USER_ID =', env.d.raw.user.id)
+// 输出形如：019e1a8d-2d20-7xxx-xxxx-xxxxxxxxxxxx（envelope `.d.raw` 解包 · 见 §0.4.5 token 数据模型）
 ```
 
-期望输出：`family_id=...F0` + `ledger_id=00000000-0000-0000-0000-000000000001` + `✅ seed done`。
+```bash
+# 步骤 2 · 终端复制上一步真 UUID 跑 seed
+cd /Users/weizhao/Desktop/Costra/server
+USER_ID='019e1a8d-2d20-...' npm run db:seed:curl-test
+```
+
+期望输出：`families/ledgers/members count=1` × 3 行 + `✅ Seed complete. Ready to POST /entries with ledger_id=00000000-0000-0000-0000-000000000001`。
 
 > 不跑 seed → entries 写入会撞 FK 约束。
+> ❌ **禁止直接跑 `USER_ID='mock-user-abc123' npm run db:seed:curl-test`**（字符串字面量 → seed SQL `INSERT INTO families ... owner_id` UUID 列报 `invalid input syntax for type uuid`）。
 
 ---
 
@@ -344,6 +369,16 @@ D-023 决议下 staging 与 prod 入口**共用根域** `https://costra.cloud/v1
 
 ### 4.2 D.2 · client 视角端到端回环
 
+> 🔴 **v1.8 BLOCKED-BY-COSTRA-154**（2026-05-18 20:1x Human 实测发现）：
+> - **现象**：`GET /v1/sync/pull?family_id=...&since=...` 返回 **501 NOT_IMPLEMENTED**（server stub）+ 响应 body `deferred_card: COSTRA-154`
+> - **根因**：COSTRA-104 R1 主动切出去 sync/pull 实装到 FU-104-SYNC-PULL（候选卡 COSTRA-154 · Sprint-3 P0 头部 · 估 5 点）· 当前 R1 范围内 server 仅提供 stub
+> - **影响**：D.2 全 4 断言（D2.1~D2.4）无法验 · 联动 H6 同步 BLOCKED
+> - **不阻 COSTRA-105 R1 双卡 approve**：v1.4 `BLOCKED-BY-COSTRA-156` 范式同款（156 修 URL prefix 后 105 自动回归 PASS）· COSTRA-154 实装后 D.2 + H6 自动回归
+> - **当前指引**：D.2 全段 SKIP（不再要求 Human 跑）· 等 Sprint-3 COSTRA-154 实装后回归 = 自动等效验
+> - **缺陷单**：`qa/defects/2026-05-18-COSTRA-105-D2-pull-501-blocker.md`
+
+⚠ **以下步骤仅作为 COSTRA-154 实装后回归参考保留**（v1.4 H6 引入时设计 · client wx.request fallback 5 步范式）。
+
 **前置**：D.1 全 PASS · 不清 storage（D.2 起点 = D.1 结束态 · 含 watermark + 本地 entry）· server 仍运行。
 
 **操作**（5 步）：
@@ -449,6 +484,7 @@ curl -s -X POST http://127.0.0.1:8080/v1/sync/push \
 ## 6. ≥ 6 硬断言 + 步骤 Pass/Fail 集中勾选（v1.7 合并）
 
 > H1~H6 全 PASS = T1 终审放行 · 任意 FAIL = 退回 R1 修复
+> **v1.8 收口口径**：H1~H5 🟢 PASS · **H6 🔴 BLOCKED-BY-COSTRA-154**（不阻 R1 双卡 approve · 同 v1.4 BLOCKED-BY-COSTRA-156 范式 · 等 Sprint-3 154 实装后等效回归）· 方式 C ⏸️ M2 Phase-2 复测（不阻 R1）· **R1 = 部分 PASS（H1~H5 全绿 + H6 BLOCKED 已立单）= 双卡 approve 可放行**
 
 | # | 硬断言 | 验证位置 | 模式要求 |
 |---|---|---|---|
@@ -457,18 +493,18 @@ curl -s -X POST http://127.0.0.1:8080/v1/sync/push \
 | **H3** | `outbox:__index` 多 key 分片正确（每条独立 key）| §3 C3+C4 | A/B/C 任一 PASS |
 | **H4** | idempotency 重放不重复入账（DB count=1）| §5 E3 | **B 或 C 必跑** · curl 直打验 server 内核数学幂等 |
 | **H5** | payload 100% snake_case | §2 B4 + §5 E4 + §4.2 D2.4 三覆盖 | A B4 + B/C E4/D2.4 |
-| **H6** | client 离线写入 → push → **冷启 pull 回**显示与输入完全一致（端到端契约对齐 · 集成层 bug 唯一手动捕获路径）| §4.2 D2.2+D2.3 | **B 或 C 必跑** · D-023 后 C 真链路最高保真（覆盖 TLS/nginx/DNS/CDN/微信白名单 5 维）|
+| **H6** | client 离线写入 → push → **冷启 pull 回**显示与输入完全一致（端到端契约对齐 · 集成层 bug 唯一手动捕获路径）| §4.2 D2.2+D2.3 | **B 或 C 必跑** · D-023 后 C 真链路最高保真（覆盖 TLS/nginx/DNS/CDN/微信白名单 5 维）<br>🔴 **v1.8 BLOCKED-BY-COSTRA-154** · 154 实装后回归 |
 
-**步骤勾选清单**（v1.7 合并 · 替代散落 §X.3 Pass/Fail）：
+**步骤勾选清单**（v1.7 合并 · 替代散落 §X.3 Pass/Fail · v1.8 标 partial PASS 实测结果）：
 
 | 步骤 | 方式 A | 方式 B | 方式 C |
 |---|---|---|---|
-| §1 步骤 A | [ ] PASS / [ ] FAIL | [ ] PASS / [ ] FAIL | [ ] PASS / [ ] FAIL |
-| §2 步骤 B | [ ] PASS / [ ] FAIL | [ ] PASS / [ ] FAIL | [ ] PASS / [ ] FAIL |
-| §3 步骤 C | [ ] PASS / [ ] FAIL | [ ] PASS / [ ] FAIL | [ ] PASS / [ ] FAIL |
-| §4.1 步骤 D.1 | SKIP（不适用）| [ ] PASS / [ ] FAIL | [ ] PASS / [ ] FAIL |
-| §4.2 步骤 D.2 | SKIP（不适用）| [ ] PASS / [ ] FAIL | [ ] PASS / [ ] FAIL |
-| §5 步骤 E | SKIP（无 server）| [ ] PASS / [ ] FAIL | [ ] PASS / [ ] FAIL |
+| §1 步骤 A | 🟢 PASS | 🟢 PASS | ⏸️ SKIP（prod M2 复测）|
+| §2 步骤 B | 🟢 PASS | 🟢 PASS | ⏸️ SKIP |
+| §3 步骤 C | 🟢 PASS | 🟢 PASS | ⏸️ SKIP |
+| §4.1 步骤 D.1 | SKIP（不适用）| 🟢 PASS（BUG-001/002 已修 ≥ commit `9be5e84`）| ⏸️ SKIP |
+| §4.2 步骤 D.2 | SKIP（不适用）| 🔴 **BLOCKED-BY-COSTRA-154** | ⏸️ SKIP |
+| §5 步骤 E | SKIP（无 server）| 🟢 PASS（H4 幂等不重复入账 DB count=1）| ⏸️ SKIP |
 
 **任意失败回报**：`revise:COSTRA-105 reason:<step-X 具体断言失败>`
 
@@ -505,7 +541,8 @@ curl -s -X POST http://127.0.0.1:8080/v1/sync/push \
 
 | 版本 | 时间 | 修订 |
 |---|---|---|
-| **v1.7** | 2026-05-18 20:1x | **精简整理**：删 §0.5.1（v1.4 阻塞段）+ §0.5.3（与 §0.5.6 重复）+ §9（手册关系 · 信息量低）· 合并 §1~§5 五处模式适用矩阵 → 顶层 §0.2 单表 · 合并 §1.3/§2.3/§3.3/§4.x.3/§5.3 散落 Pass/Fail → §6 集中勾选清单 · 整合 §0.7 实测起点重置 → §0.3.3 · v1.0~v1.4 修订记录长尾保留摘要（git 历史完整保留）· -300 行 / -35%（846→~520）· **保留所有 v1.6 实测核心**（4 个文档 gap 修订 + R-020 自检 + 实测期真 BUG SOP）|
+| **v1.8** | 2026-05-18 20:4x | **Human 实测收尾增量**（v1.7 精简结构基础上 4 处增量 · 不重构）：① 顶层加 v1.8 实测状态表（A/B 🟢 PASS · C ⏸️ M2 跳过 · D.2/H6 🔴 BLOCKED-BY-COSTRA-154）· ② §0.4.4 USER_ID 占位字面量歧义修正为"Console 取真 UUID + 终端 seed"两步范式（避免直跑 `mock-user-abc123` 撞 PG 22P02）· ③ §4.2 D.2 顶部加 BLOCKED 横幅（GET /sync/pull 返 501 · stub 主动切出 FU-104-SYNC-PULL → COSTRA-154 · 不阻 R1）· ④ §6 H6 行 + 步骤勾选清单标 partial PASS 实测结果（H1~H5 🟢 + H6 🔴 BLOCKED + C ⏸️）· 收口口径："R1 部分 PASS = 双卡 approve 可放行"（v1.4 BLOCKED-BY-156 范式同款）· 缺陷单 `qa/defects/2026-05-18-COSTRA-105-D2-pull-501-blocker.md` |
+| v1.7 | 2026-05-18 20:1x | **精简整理**：删 §0.5.1（v1.4 阻塞段）+ §0.5.3（与 §0.5.6 重复）+ §9（手册关系 · 信息量低）· 合并 §1~§5 五处模式适用矩阵 → 顶层 §0.2 单表 · 合并 §1.3/§2.3/§3.3/§4.x.3/§5.3 散落 Pass/Fail → §6 集中勾选清单 · 整合 §0.7 实测起点重置 → §0.3.3 · v1.0~v1.4 修订记录长尾保留摘要（git 历史完整保留）· -300 行 / -35%（846→~520）· **保留所有 v1.6 实测核心**（4 个文档 gap 修订 + R-020 自检 + 实测期真 BUG SOP）|
 | **v1.6** | 2026-05-18 19:5x | Human 实测期 4 个文档级 gap 修订（Console 不可 require / storage Envelope `.d` / token `.d.raw.access_token` / DB 列名 `version` + SQL 用 `client_ref_id`）· §4.1.1+§4.2.2 改 wx.request fallback 5 步范式 · §4.1.4 新增"实测期发现真 BUG 处置 SOP" · D1.2/D2.2 路径降级 · 立 P0 BUG 单 `qa/defects/2026-05-18-COSTRA-105-D1-real-test-findings.md`（双责 miniapp-dev + backend-dev · COSTRA-105 R1.x.1/R1.x.2 已修 · commits 33dbdea + db488b9 + 9be5e84） |
 | **v1.5** | 2026-05-18 18:4x | D-023 路径升级 · staging/prod URL 收敛根域 `https://costra.cloud/v1` · §0.5 新增 D-023 升级路径（阻塞条件 5/7 已解 · R-020 自检 3 项强制）· §1~§5 模式矩阵方式 C 行 URL 刷新 |
 | **v1.4** | 2026-05-13 13:5x | 步骤 D 拆 D.1（push）+ D.2（client 视角回环 · 4 断言）· §6 新增 H6 硬断言（client 离线→push→冷启 pull 回环 · 集成层 bug 唯一手动捕获）· H1~H5→H1~H6 |
@@ -522,4 +559,5 @@ curl -s -X POST http://127.0.0.1:8080/v1/sync/push \
 - `.team/decisions/D-023-prod-rollout-on-root-domain.md`（v1.5 主依据）· D-009（域名锁定原决议 · D-023 §4.1 红线保留）
 - `docs/legal/compliance-registry.md` v0.2（沪ICP备2026017253号-1X / -2 · 2026-05-13 下证）
 - `.team/risks.md` R-013 🟢 Closed · R-019 🟠 Open（截止 2026-06-12）· R-020 🟡 staging/prod 边界
-- `qa/defects/2026-05-18-COSTRA-105-D1-real-test-findings.md`（v1.6 真链路实测发现）
+- `qa/defects/2026-05-18-COSTRA-105-D1-real-test-findings.md`（v1.6 真链路实测发现 · BUG-001/002 · 已修）
+- `qa/defects/2026-05-18-COSTRA-105-D2-pull-501-blocker.md`（v1.8 D.2 pull 501 blocker · 关联 COSTRA-154）
