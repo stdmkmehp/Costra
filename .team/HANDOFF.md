@@ -13,9 +13,23 @@
 
 ## §0 一句话断点（HEAD 之前 = 已兑现 · 之后 = 待做）
 
-> **2026-05-18 19:5x 当前断点**：🐛 **COSTRA-105 D.1 真链路实测兑现 D-022 §4.1 立意 · 5 个发现一次性暴露**（自动化 + curl + server 单测 30+ 全绿 · Human ~30 分钟实测捕获）：**4 个文档级 gap**（手册 v1.4/v1.5 沿用 · v1.6 修订）+ **1 条联合 P0 真 BUG**（client `pages/entry/index.ts` 硬编码 `ledger_id: 'default'` 字面量 · COSTRA-103 R1 留 TODO + COSTRA-104 R1 未接续 scope gap fall-through · 联合 server `routes/sync.ts` payload schema `additionalProperties: true` 不校验 UUID format · PG 22P02 → INTERNAL 500）· 4 文件落盘：`docs/qa/costra-105-human-smoke.md` v1.5→v1.6（§4.1.1 + §4.2.2 改 wx.request fallback 5 步范式 · §4.1.2 D1.3 SQL 改 client_ref_id 不依赖 note · D1.2/D2.2 路径降级等 FU-105-DEV-CONSOLE-HOOK 实装回归 · §4.1.4 新增"实测期发现真 BUG 处置 SOP"）+ `qa/defects/2026-05-18-COSTRA-105-D1-real-test-findings.md`（**新立 P0 BUG 单 412 行 · 双责 miniapp-dev + backend-dev · 含双阶段修复方案 + 4 项 Sprint-2 末 Retro 议题**）+ `.team/follow-ups/README.md` 加 **族 H · QA 实测发现** 3 条（BUG-105-D1-LEDGER-ID-DEFAULT P0 · BUG-156-SYNC-PUSH-PAYLOAD-NO-UUID-VALIDATION P0 · FU-105-DEV-CONSOLE-HOOK P3 · 速查表 23→26 条）+ **族 I · QA 流程治理（占位）** · 4 项 Retro 议题（手册写作 dry-run 强制 + scope gap 跨卡 fall-through + server 单测 fuzz 缺失 + CI schema 对账 E 规则候选）· **下一步派 COSTRA-105 R1.x.1（miniapp-dev ≤ 1h · BUG-001 修复）+ R1.x.2（backend-dev ≤ 30min · BUG-002 修复）同轮交付（D-017 v3 §2.4 E1 例外路径 · 互不依赖可并行）→ Human 重跑 D.1 fallback 验收 → 双卡 `approve:COSTRA-156` + `approve:COSTRA-105` 收官**。
+> **2026-05-18 20:1x 当前断点**：✅ **COSTRA-105 R1.x BUG 双修完成 + 手册 v1.7 精简整理**
 >
-> （上一断点归档）2026-05-18 18:4x：📘 **COSTRA-105 手册 v1.5 D-023 路径升级 · prod/staging URL 收敛根域 `https://costra.cloud/v1`** · commit 2e79950 · §0.5 新增 §0.5.0 D-023 升级路径 6 子节 · §1~§5 步骤模式矩阵方式 C 行 5 处 URL 刷新 · 不破坏 D-009/D-023 决策不可变性。
+> **R1.x 双修落盘**（commits `33dbdea` miniapp + `db488b9` backend + `9be5e84` 补漏 state/history）：
+> - **R1.x.1**（miniapp-dev · D-017 v3 §2.4 E1 例外路径）：BUG-001 修 client 端 `pages/entry/index.ts` 硬编码 `ledger_id: 'default'` → `getApp().globalData.activeLedgerId || FALLBACK_LEDGER_ID`（`00000000-0000-0000-0000-000000000001` seed 默认）· `app.ts AppGlobalData` 加 `activeLedgerId?: string` · 闸门 typecheck/test 全绿
+> - **R1.x.2**（backend-dev · D-017 v3 §2.4 E1 例外路径）：BUG-002 修 server `routes/sync.ts` payload schema 加 `properties.ledger_id format: 'uuid'` + `category_id format: 'uuid'` + 加 T9 单测 case `rejects-non-uuid → 400 INVALID_ARGUMENT` · 闸门 25/25 全绿（含新 case）· errorHandler 0 改动
+> - **D-016 反例第 9 次触发 + 补救**：miniapp-dev R1.x.1 自报告"D-016 DoD M 项 ✅"但实际 state/history 未同 commit · `9be5e84` 补漏 + 议入 Sprint-2 末 Retro（提议：subagent §4.8 DoD M 项强约束改为 `git status .team/members | wc -l = ops 总改动数` 不是 0）· 对照 backend-dev R1.x.2 同 commit 内含 state/history 4 文件（合规）
+>
+> **手册 v1.7 精简**（commit 跟进）：
+> - **846 → 525 行 · -38%**（按 Q1=C/Q2=同意/Q3=同意 推荐方案落地）
+> - **删 3 项**：§0.5.1（v1.4 阻塞段 · D-023 后已松绑）+ §0.5.3（与 §0.5.6 重复）+ §9（手册关系 · 信息量低）
+> - **合并 3 项**：§1~§5 五处模式适用矩阵 → 顶层 §0.2 5×3 单表 · §1.3/§2.3/§3.3/§4.x.3/§5.3 散落 Pass/Fail → §6 集中勾选清单 · §0.7 实测起点重置 → §0.3.3
+> - **保留 100% v1.6 实测核心**（4 个文档 gap 修订 + R-020 自检 + 实测期真 BUG SOP）
+> - **遵守 D-023 §4.2 红线 选项 C**：保留 §0.5.2 解锁后复跑剧本（Phase-2 子域重启时有参考价值）
+>
+> **下一步 = Human 重跑 D.1 fallback 验收**（手册 v1.7 §4.1 · 因 BUG 已修 · 无需手动覆盖 `payload.ledger_id` · 验非法 UUID 返 400）→ 跑 D.2 + 全套 H1~H6 → 双卡 `approve:COSTRA-156` + `approve:COSTRA-105` 收官 · Sprint-2 主线 4/7 + 5/7 双卡 CLOSED · 累计 14 → 22 点 / 32~36 = **47% → 61%**。
+>
+> （上一断点归档）2026-05-18 19:5x：🐛 **COSTRA-105 D.1 真链路实测兑现 D-022 §4.1 立意 · 5 个发现**（4 文档 gap + 1 联合 P0 真 BUG 双责）· commit `9821305` 立 P0 BUG 单 412 行 + 手册 v1.6 + follow-ups 加族 H 3 条。
 >
 > （上一断点归档）2026-05-13 11:30：🟢🟢 **COSTRA-156 R1 review-tech APPROVE 40/40 满分 @ 11:27 · D-022 v2.0 评分表第 4 次实战连续两卡满分**（105 40/40 + 156 40/40 · 装扮档评分稳定趋势 · qa-planner + backend-dev 双满分）· commit `edca8da`（15 文件 +762/-75 行）· **D-016 反例第 8 次首次预防成功**（累计 7 次反例后首次合规 · 卡审 §4.8 DoD M 项强约束）· **CI 对账族第 5 张规则 D 落地**（whitelist-check.mjs · fastify prefix vs OpenAPI servers path）· FU-105-URL closed + 立 FU-156-OUTBOX-FLAKY（族 F · P2 · pre-existing client outbox 时间 race · 156 0 改动 miniprogram）· **D-017 v3 §2.4 验证问题响应 SOP 第 6 次完整实战**（105 R1.1 手册修订 → 156 立卡 → R1 实装 → review-tech APPROVE 五步走完）· 105 手册 v1.2 → v1.3（10 处 BLOCKED 清除 + INFO-2 联合时序明示已兑现）· 104 curl-verify v1.4 → v1.5（8 处 URL doc-only sync · 不需 Human 重跑）· backlog v0.2.6 → v0.2.7（156 Doing · 22 卡）· metrics 21 → 22 cards · 1 commit 待落盘
 >
@@ -39,8 +53,8 @@
 
 ### §1.1 当前时间戳
 
-- **更新时间**：2026-05-18 19:5x
-- **更新者**：本会话 Orchestrator（HEAD = `2e79950` 上轮 v1.5 + 工作树新增 4 文件：105 手册 v1.6 + qa/defects/2026-05-18-...md（新建 412 行 BUG 单）+ follow-ups README 加族 H 3 条 + HANDOFF v1.13 · `miniprogram/services/env.ts mockLogin: dev=true→false` 仍是 Human 实测期临时改动 · 不入本轮 commit · 实测完毕 git checkout 还原）
+- **更新时间**：2026-05-18 20:1x
+- **更新者**：本会话 Orchestrator（HEAD = `9be5e84` R1.x.1 补漏 · 工作树新增 1 文件 doc-only：105 手册 v1.7 精简版 · 待本轮 commit 落盘 · `miniprogram/services/env.ts mockLogin: dev=true→false` 仍是 Human 实测期临时改动 · 不入本轮 commit · 实测完毕 git checkout 还原）
 - **Sprint**：✅ **Sprint-1 收官 @ 2026-05-09 09:44**（14 卡 100% CLOSED · G4 PASS · D-019）/ 🟢 **Sprint-2 进行中** @ 2026-05-12 15:10（2026-05-10~05-23 · 周期 2 周 · 总估点目标 32~36 · **3/7 卡 CLOSED + 1/7 review-tech APPROVE 等 Human 实测** = COSTRA-106 Retro ✅ + COSTRA-103 主线主头 ✅ + COSTRA-104 主线第 3 张 ✅ + COSTRA-105 主线第 4 张 🟢 等 Human 实测 · 累计 14 点 CLOSED + 3 点 pending = **17 点 / 47%**）
 
 ### §1.2 当前在办卡
@@ -71,16 +85,14 @@
 
 ### §1.3 Human 下一步动作（**预期 · 按优先级**）
 
-1. **🔴 立即派单（Orchestrator 主动 · 同轮 ≤ 1.5 小时）**：
-   - **COSTRA-105 R1.x.1**（miniapp-dev · ≤ 1h）：修 BUG-105-D1-LEDGER-ID-DEFAULT · `pages/entry/index.ts` line 57+73 改 `getApp().globalData.activeLedgerId || FALLBACK_LEDGER_ID`（D-017 v3 §2.4 E1 例外路径 · 单 commit 收尾）
-   - **COSTRA-105 R1.x.2**（backend-dev · ≤ 30min · 与 R1.x.1 互不依赖可并行）：修 BUG-156-SYNC-PUSH-PAYLOAD-NO-UUID-VALIDATION · `routes/sync.ts` line 93 加 `properties.ledger_id format: 'uuid'` + 1 个单测 case rejects-non-uuid（D-017 v3 §2.4 E1 例外路径 · 单 commit 收尾）
-   - 详见 `qa/defects/2026-05-18-COSTRA-105-D1-real-test-findings.md` §5.1
-2. **🟡 R1.x 修复落盘后 Human 重跑 D.1 验收**：用手册 v1.6 §4.1.1 5 步 fallback paste（无需手动覆盖 `payload.ledger_id` 因 BUG-001 已修 · 验非法 UUID push 返 400 因 BUG-002 已修）→ D1.1 PASS + D1.3 PASS（D1.2 SKIP 待 FU-105-DEV-CONSOLE-HOOK 实装）→ 继续跑 D.2 fallback 5 步
-3. **🟢 D.1+D.2 全 PASS 后**：发 `approve:COSTRA-156` + `approve:COSTRA-105` 双卡收官 · Sprint-2 主线 4/7 + 5/7 双卡 CLOSED
-4. **🟢 接续**：Sprint-2 残债（COSTRA-112 主体清扫 1 点 · COSTRA-114 DevOps bootstrap 2 点 · COSTRA-160 设计 tokens pipeline 2 点）
-5. **🟠 时间窗口**：R-019 公安联网备案截止 2026-06-12（剩 ~25 天 · 详见 risks.md · D-023 §7 操作 #2）
-6. **🟢 被动等**：订阅消息文案 v0.1 / 隐私指引清单
-7. **Sprint-3 候选**（待 Sprint-2 收官 + Retro · 累计 23+P0×2+P3×1 = 26 点候选）：FU-103-CLIENT-SYNC-SCHEDULER（COSTRA-150 P1 5 点）+ FU-103-CONFLICT-MERGE-UI（COSTRA-151 P2 5 点）+ FU-104-ENTRIES-PATCH/DELETE/SYNC-PULL（COSTRA-152/153/154 · 共 10 点）+ FU-EPIC-FAMILY-LEDGER-CRUD（COSTRA-155 P0 8 点 · **本次实测发现 BUG-001/002 阶段 2 修复方案合并入此卡**）+ FU-105-DEV-CONSOLE-HOOK（族 H · P3 · 候选 COSTRA-150 顺带）+ D-023 §2.4 子域重启候选（按触发条件 (a)~(d) 立卡 · 候选 D-024+）
+1. **🟡 强制前置**（5~10 分钟）：
+   - **方式 B 重跑**：HEAD ≥ `9be5e84` 含 BUG-001/002 双修 · 直接重启 server `WX_MOCK_LOGIN=1 npm run dev` + 微信开发者工具刷新 + 重新登录拿新 token + 重新记一笔（client 端 ledger_id 现走 fallback UUID 不再是 `'default'` 字面量 · 即使误传非 UUID server 也返 400 INVALID_ARGUMENT 不再 500）
+   - **方式 C 替代**（推荐）：Human 在微信公众平台填白名单 `https://costra.cloud`（D-023 §7 #1 · ~5 分钟）→ 跳过本地 server 直接走真链路
+2. **🟢 立即可做**（推荐 · runtime 类 T2 强制铁律）：跑手册 v1.7 · 5 步实测（A 起手 / B 在线记账 / C 离线记账 / **D.1 push 链路 + D.2 冷启 pull 回环** / E curl 幂等）+ §0.5.5 R-020 自检 3 项强制（仅方式 C）+ **H1~H6 硬断言全 PASS** → 发 `approve:COSTRA-156` + `approve:COSTRA-105` 双卡收官 · Sprint-2 主线 4/7 + 5/7 双卡 CLOSED
+3. **🟢 接续**：Sprint-2 残债（COSTRA-112 主体清扫 1 点 · COSTRA-114 DevOps bootstrap 2 点 · COSTRA-160 设计 tokens pipeline 2 点）
+4. **🟠 时间窗口**：R-019 公安联网备案截止 2026-06-12（剩 ~25 天 · D-023 §7 操作 #2）
+5. **🟢 被动等**：订阅消息文案 v0.1 / 隐私指引清单
+6. **Sprint-3 候选**：FU-103-CLIENT-SYNC-SCHEDULER（COSTRA-150 P1）+ FU-103-CONFLICT-MERGE-UI（COSTRA-151 P2）+ FU-104-ENTRIES-PATCH/DELETE/SYNC-PULL（COSTRA-152/153/154）+ FU-EPIC-FAMILY-LEDGER-CRUD（COSTRA-155 P0 8 点 · **含 BUG-001/002 阶段 2 修复合并入此卡**）+ FU-105-DEV-CONSOLE-HOOK（族 H · P3）+ D-023 §2.4 子域重启候选（候选 D-024+）
 
 ### §1.4 Sprint-1 治理范式资产（5 卡簇定稿 · v5）
 
@@ -294,6 +306,7 @@ reviews + FU-LAUNCH + miniapp-dev state.md · 当前断点：COSTRA-124 R1 两�
 | **v1.4** | **2026-05-09 09:44** | 新会话 Orchestrator（接续会话）| **G4 合并闸门 PASS · Sprint-1 收官 · Sprint-2 Planning 中** · 路径 A 决议 D-019 落盘 · 议题 10~17 + 14+ 条转 COSTRA-106 Retro 卡 · 实际仅刷 §1.1/§1.2（§0/§1.3/§5/§8 v1.4 期间 silent fail · v1.5 一次性补齐）|
 | **v1.5** | **2026-05-09 10:39** | 新会话 Orchestrator | 🏆 **COSTRA-106 Sprint-1 Retro 双 30/30 满分收官 · Sprint-2 第 1/7 卡 CLOSED** · `approve:COSTRA-106` Human T2 一次性裁决 · 主报告 558 行 + D-020/D-021/D-022 三决议 + metrics 工程度量定稿 + board/backlog Sprint-2 流转 · SBAI v1.1 第 6 次冒烟成功 · pm-writer 首次实战 0 漏项 · D-016 第 13~14 次实战合规 · 立卡到终审 30 分钟新纪录 · §0/§1.1/§1.2/§1.3/§5/§8 全刷新（含 v1.4 漏改补齐）· 下一步 Human 触发 `run miniapp COSTRA-103`（Sprint-2 主线主头）|
 | **v1.6** | **2026-05-09 19:17** | 新会话 Orchestrator | 🏆 **COSTRA-103 Sprint-2 主线主头 38/40 APPROVE CLOSED · D-022 v2.0 评分表首次实战 + D-017 v3 完整流程首次实战** · `approve:COSTRA-103` Human T1 一次性裁决 · Sprint-2 第 2/7 卡 CLOSED · Human 模拟器实测 5 步 + 5 硬断言全 PASS · 2 条 Sprint-3 候选 FU 立件（FU-103-CLIENT-SYNC-SCHEDULER COSTRA-150 P1 + FU-103-CONFLICT-MERGE-UI COSTRA-151 P2）· 8 文件主代码 ~ 1330 行净增 · 6 闸门全绿 + 协议 100% 对齐 + 0 后端外溢 · SBAI v1.1 第 7 次冒烟 · miniapp-dev 第 6 次实战 · 审查档第 4 次实战 · D-016 第 15~17 次实战合规 · 8 commits（cb3a83b → f125f05）· §0/§1.1/§1.2/§1.3/§5 全刷新 · 下一步 Human 触发 `run backend COSTRA-104`（Sprint-2 主线第 3 张）|
+| **v1.14** | **2026-05-18 20:1x** | 同会话 Orchestrator | ✅ **COSTRA-105 R1.x BUG 双修完成 + 手册 v1.7 精简整理**：R1.x.1（miniapp-dev BUG-001 ledger_id 字面量 · commit `33dbdea`）+ R1.x.2（backend-dev BUG-002 server payload UUID schema 校验 · commit `db488b9` 含 T9 单测）+ R1.x.1 state/history 补漏（commit `9be5e84` · D-016 反例第 9 次触发 + 补救）· 手册 v1.6→v1.7 精简 -38%（846→525 行 · Q1=C/Q2=同意/Q3=同意 推荐方案落地 · 删 §0.5.1+§0.5.3+§9 · 合并 §1~§5 模式矩阵到 §0.2 单表 + Pass/Fail 集中到 §6 + §0.7 整合到 §0.3.3 · 100% 保留 v1.6 实测核心）· §0/§1.1/§1.3/§8 全刷新 · 下一步 Human 重跑 D.1 fallback 验收（无需手动覆盖 payload.ledger_id · 验非法 UUID 返 400）→ 跑 D.2 + 全套 H1~H6 → 双卡 approve |
 | **v1.13** | **2026-05-18 19:5x** | 同会话 Orchestrator | 🐛 **COSTRA-105 D.1 真链路实测兑现 D-022 §4.1 立意 · 5 个发现一次性暴露**（自动化 + curl + server 单测 30+ 全绿 · Human ~30 分钟实测捕获）：**4 个文档级 gap**（手册 v1.4/v1.5 沿用）+ **1 条联合 P0 真 BUG**（client 硬编码 `ledger_id: 'default'` + server payload schema 不校验 UUID format · PG 22P02 → 500）· 4 文件落盘：`docs/qa/costra-105-human-smoke.md` v1.5→v1.6（§4.1.1 + §4.2.2 改 wx.request fallback 5 步范式 · §4.1.2 D1.3 SQL 改 client_ref_id · D1.2/D2.2 路径降级等 FU-105-DEV-CONSOLE-HOOK 实装回归 · §4.1.4 新增"实测期发现真 BUG 处置 SOP"）+ `qa/defects/2026-05-18-COSTRA-105-D1-real-test-findings.md`（**新立 P0 BUG 单 412 行 · 双责 miniapp-dev + backend-dev · 含双阶段修复方案 + 4 项 Sprint-2 末 Retro 议题**）+ `.team/follow-ups/README.md` 加族 H · QA 实测发现 3 条（BUG-105 P0 · BUG-156 P0 · FU-105-DEV-CONSOLE-HOOK P3 · 速查表 23→26 条）+ 族 I · QA 流程治理（占位 · Sprint-2 末 Retro 议题落地后填充）· §0/§1.1/§1.3/§8 全刷新 · 下一步 Orchestrator 主动派 R1.x.1（miniapp-dev ≤ 1h）+ R1.x.2（backend-dev ≤ 30min）同轮 → Human 重跑 D.1 验收 → 双卡 approve |
 | **v1.12** | **2026-05-18 18:4x** | 同会话 Orchestrator | 📘 **COSTRA-105 手册 v1.5 D-023 路径升级 · prod/staging URL 收敛根域 `https://costra.cloud/v1`**（doc-only · 不影响 156/105 review-tech APPROVE 40/40 · 不需重新 review）· Human 触发"用 costra.cloud 验证正式流程"诉求 · 与 D-023 §1.3 决策动机"尽快跑通 prod 端到端验收"完全对齐 · 1 文件落盘：`docs/qa/costra-105-human-smoke.md` v1.4→v1.5（**§0.1 三模式表方式 C 行 🚧→🟢 升级** + **§0.5 新增 §0.5.0 D-023 升级路径 6 子节**：§0.5.0.1 域名收敛事实 + §0.5.0.2 阻塞条件 5/7 已解（ICP 🟢 + 主域 🟢 + R-013 🟢 + nginx/TLS 🟢 + healthz 🟢） + §0.5.0.3 推荐执行路径 3 项前置（vs v1.4 5 项 · 缩 40%） + §0.5.0.4 复跑步骤映射 + §0.5.0.5 **R-020 staging/prod 边界自检 3 项强制** + §0.5.0.6 BUG 处置 · 历史 §0.5.1~§0.5.3 D-023 §4.2 红线保留不动 · §1/§2/§3/§4/§5 步骤模式矩阵方式 C 行 5 处 URL 刷新 · §6 H4/H6 模式要求扩展 + H6 立意 v1.5 路径升级 · §7 真机矩阵 mode 列加 C-staging/C-prod · §10 修订记录 v1.5 + 外部资源依据扩展 6 条 · 立意：D-023 §1.3 缩短 prod 验收路径 · Human 操作面 7→3（57% 收敛）· 与 Sprint-2 提审前 prod 验收时间窗口对齐 · 不破坏 D-009/D-023 决策不可变性（§4.1/§4.2 双红线）· §0/§1.1/§1.3 + §8 刷新 · 下一步 Human 配白名单 → 跑方式 C 主路径 5 步 + H1~H6 + R-020 自检 3 项 → 双卡 approve |
 | **v1.11** | **2026-05-13 13:5x** | 同会话 Orchestrator | 📘 **COSTRA-105 R1.2 手册 v1.4 补强 · H6 硬断言新增 + SU-004 拆 A/B + 十类覆盖**（doc-only · 不影响 156 review-tech APPROVE 40/40 · 不需重新 review）· Human 触发讨论 "curl 验证 vs 小程序连 server" 价值边界 · 经分析二者互补不重叠（curl 验 server 内核数学幂等 vs 小程序连 server 验集成层契约对齐 · COSTRA-156 修的 `/v1` URL prefix mismatch 类集成 bug · server 单测 + curl 都漏不出来 · **唯一手动捕获路径 = 小程序连 server 端到端回环**）· 4 文件落盘：`docs/qa/costra-105-human-smoke.md` v1.3→v1.4（步骤 D 拆 D.1 push 链路诊断 3 断言 + D.2 client 视角端到端回环 4 断言 · §6 H1~H5→**H1~H6** · §0.1/§0.6/§7 真机矩阵/§8 失败分流/§10 同步）+ `qa/cases/single-user-smoke.md` v1.0→v1.1（SU-004 拆 SU-004A push + SU-004B 冷启 pull 回环 · 九类→**十类含集成层契约对齐**类目 · 标题 14→15 条）+ `qa/strategy.md`（Epic-C 加 SU-004A/B + S-007 加 SU-004B + 14→15 条 + 9/9→10/10）+ `qa/automation/README.md`（14→15 条）· 立意：兑现 D-022 §4.1 runtime 类 T2 卡 Human 实测前置铁律真正立意 · §0/§1.1/§1.3/§8 刷新 · 下一步 Human 跑 105 手册 v1.4 联合实测 5 步 + H1~H6（含步骤 D.2 4 条新断言）→ 双卡 `approve:COSTRA-156` + `approve:COSTRA-105` |
