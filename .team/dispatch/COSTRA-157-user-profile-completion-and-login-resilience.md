@@ -1,11 +1,12 @@
 # COSTRA-157 · 用户资料完善 + 登录链路鲁棒性（5 FU 合并修复）
 
 > **派单时间**：2026-05-18 17:11（Orchestrator · Human `all-A` 决策后同轮落盘）
+> **修订**：2026-05-18 17:32（Card-Review R1 PASS-WITH-FOLLOWUP 25/30 · P1-1 + P1-2 + INFO-1/3 已采纳）
 > **触发**：2026-05-12 follow-ups 维护批分析后 Human 决策启动 · `all-A`（Q1~Q5 全按推荐）
 > **依赖**：COSTRA-101（Backend 登录 CLOSED · authService.ts 已有 wxLogin）· COSTRA-102（MiniApp 登录链路 CLOSED · login/home/mine 三页均已 bootstrap gate 化）
-> **下游解锁**：无强依赖（独立用户体验闭环 · 不阻 Sprint-3）
+> **下游解锁**：无强依赖（独立用户体验闭环 · 不阻 Sprint-3）· **弱下游**：Sprint-3 Epic-D 完善资料页（COSTRA-XXX 待立）将接通本卡 E 项临时入口
 >
-> ⚠️ **本档为 dispatch 草稿**（D-014-a 前置原料）· PM-Agent 在卡定义 Review 时可扩展 / 修订 / 拆解 · 最终以卡定义档为准
+> ✅ **本档已 Card-Review APPROVE**（PASS-WITH-FOLLOWUP 25/30 · P1 全采纳）· 等 R1 实装启动
 
 ---
 
@@ -51,6 +52,8 @@
 ### 2.1 主交付（5 项 · 必交）
 
 #### A · `server/src/config/defaults.ts` 默认昵称配置化（新建文件 · ~10 行）
+
+**注**：与 `server/src/config/{env,icp,subject,ttl}.ts` 范式一致 · `defaults.ts` 定位为"编译期常量"（非运行时配置）· **未来扩展**：当真有多环境 / 多商户 / 多主体差异化需求时，`defaultNickname` 升级为 `subjectConfig.defaultNickname`（与 D-008 主体策略联动）· MVP 阶段保持硬编码（Q2-A 决策）。
 
 ```ts
 // server/src/config/defaults.ts
@@ -197,6 +200,15 @@ onTapCompleteProfile() {
 hasProfile: false,
 ```
 
+**⚠️ 已知边界**（Card-Review P1-1 修订 · 2026-05-18 17:32）：
+
+若用户真实昵称恰好等于 `defaultNickname`（即 `'微信用户'` · 极低概率边界），`hasProfile` 判定为 `false` → 已授权用户错误显示"完善资料 →"入口。
+
+**MVP 接受此风险的理由**：
+1. 概率极低（用户名 = 占位字符串 = 撞库情况）· 即便误显示，点击后 `wx.showModal` 提示"功能开发中"也不构成功能错误
+2. Sprint-3 Epic-D 完善资料页落地后，该字段将改为消费服务端的 `user.has_completed_profile` 显式标记，不再依赖昵称比较 → 边界自然消失
+3. 不引入额外字段（如 `user.is_default_nickname`）· 守 INVEST small
+
 ### 2.2 副交付（2 项 · 单测）
 
 #### F · 单测覆盖
@@ -227,7 +239,7 @@ hasProfile: false,
 
 - [ ] F · 单测全绿 · server defaults.test.ts + miniapp home.spec.ts (+ login.spec.ts 修订如有)
 
-### §3.3 闸门（≥ 6 项 · 必跑全绿才提交）
+### §3.3 闸门（≥ 7 项 · 必跑全绿才提交）
 
 | # | 闸门 | 命令 | 期望 |
 |---|---|---|---|
@@ -237,11 +249,13 @@ hasProfile: false,
 | G4 | check:appjson | `npm run check:appjson` | exit 0 |
 | G5 | check:tooling | `npm run check:tooling` | exit 0 |
 | G6 | check:whitelist | `npm run check:whitelist` | exit 0 |
+| **G7** | **defaults 双端对齐**（Card-Review P1-2 修订 · 2026-05-18 17:32）| `grep -h "defaultNickname = '" server/src/config/defaults.ts miniprogram/config/defaults.ts \| sort -u \| wc -l \| tr -d ' '` | 输出 = `1`（两端同值 · 不一致则 ≥ 2）|
 
 ### §3.4 反向验证（2 项）
 
-- [ ] G7 · 临时改 `defaultNickname = ''` → server defaults.test.ts FAIL · revert → PASS
-- [ ] G8 · 临时把 `login/index.ts` 错误分支改回 `msg = e.message` → grep 反向断言 1 命中 / 单测 FAIL · revert → 0 命中 + PASS
+- [ ] G8 · 临时改 server `defaultNickname = ''` → server defaults.test.ts FAIL · revert → PASS
+- [ ] G9 · 临时把 `login/index.ts` 错误分支改回 `msg = e.message` → grep 反向断言 1 命中 / 单测 FAIL · revert → 0 命中 + PASS
+- [ ] G10 · 临时改 miniapp `defaultNickname = '其他值'` → G7 输出 `2` · revert → 输出 `1`（双端对齐反向验证）
 
 ---
 
@@ -369,4 +383,4 @@ Co-Authored-By: miniapp-dev <subagent>
 
 ---
 
-_本档由 Orchestrator 在 2026-05-18 17:11 落盘 · Human all-A 决策同轮 · 等 Card-Review R1（D-014-a 流程启动）_
+_本档由 Orchestrator 在 2026-05-18 17:11 落盘 · Human all-A 决策同轮 · 2026-05-18 17:32 Card-Review R1 PASS-WITH-FOLLOWUP 25/30（P1-1/P1-2/INFO-1/3 已采纳）· 等 R1 实装启动（D-014-b 自动拉起 · D-016 同轮兑现）_
