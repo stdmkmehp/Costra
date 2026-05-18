@@ -11,6 +11,7 @@
 
 import type { FastifyInstance } from 'fastify';
 import { appEnv } from '../config/env.js';
+import { ICP_INFO } from '../config/icp.js';
 
 export async function registerHealthRoute(app: FastifyInstance): Promise<void> {
   app.get('/healthz', async (_req, reply) => {
@@ -18,6 +19,7 @@ export async function registerHealthRoute(app: FastifyInstance): Promise<void> {
       status: 'ok',
       build_sha: appEnv().buildSha,
       now_utc: new Date().toISOString(),
+      icp: ICP_INFO,
     });
   });
 }

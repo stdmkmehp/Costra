@@ -106,3 +106,24 @@ docker compose down -v   # 删除数据卷
 - 提交：Conventional Commits，`feat(server): ...` / `Refs: COSTRA-xxx`
 - 金额分存、时间 UTC、软删除、乐观锁 → 见 `ADR-0004`
 - 字段命名：契约层（HTTP/JSON）**camelCase**；DB 层 **snake_case**（适配层负责映射）
+
+---
+
+## 备案信息
+
+- 服务备案号：沪ICP备2026017253号-2（域名 costra.cloud · 公网 IP 49.235.216.20）
+- 小程序备案号：沪ICP备2026017253号-1X
+- 主体：上海 · 下证：2026-05-13
+- 工信部查询：https://beian.miit.gov.cn/
+- 程序化查询：`GET /v1/legal/icp`（公开端点 · 无鉴权 · SSOT 见 `src/config/icp.ts`）
+- `/healthz` 响应 JSON 同步附带 `icp` 字段，便于运维 probe 一并校验
+
+---
+
+## 环境域名
+
+- prod：`https://costra.cloud/v1`（D-009 §2.1 + D-023 · ICP 下证 2026-05-13）
+- staging：`https://costra.cloud/v1`（D-023 临时复用 prod · 子域 api-staging 搁置）
+- dev-ip：`http://49.235.216.20:8080/v1`（开发期过渡）
+- local：`http://localhost:8080/v1`
+
