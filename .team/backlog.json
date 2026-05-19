@@ -1,9 +1,9 @@
 {
   "project": "Costra",
-  "version": "0.2.12",
-  "last_updated": "2026-05-19T14:35:00+08:00",
+  "version": "0.2.13",
+  "last_updated": "2026-05-19T15:10:00+08:00",
   "platform": "wechat-miniprogram",
-  "notes": "v0.2.12: D-024 SOP 立案（Human 实测批量触发条件 · 5 条触发 + 默认攒批 · 反节奏碎片化 · Human 反馈'实测接入太频繁'触发）· 同轮对当前积压 157+158 出清：落 docs/qa/sprint-2-batch-human-smoke.md（8 步合并清单 + 9 硬断言聚合 + 双 approve 命令）· 双卡 disposition 同步 AWAITING-BATCH-HUMAN-TEST · 范式参照 105+156 联合实测先例 · Sprint-3 起 Orchestrator 强制默认走攒批。 v0.2.11: COSTRA-158 R1 commit c7ea7f7 同轮 D-016 兑现（Card-Review 27/30 PASS → backend-dev 段 9 文件 + miniapp-dev 段 5 文件 → 双装扮档单 commit → review-tech R1 38/45 APPROVE）· Sprint-2 主线第 7 张 R1 等 Human T1 终审 · 0 P0 / 1 P1（K3 405 错误链路一致性 · 不阻 · Sprint-3 与 K3→K1 升级一同处理）/ 3 P2 / 2 INFO · 闸门全绿（server 35/35 + miniapp 43/43 测）· G10/G11 反向验证 PASS · D-022 v2.0 第 6 次实战 · 同步关闭 2 条 FU（FU-COMMON-MINIAPP-PATCH-LIMIT + FU-102-PROFILE-REFUSE-UI boundary risk 子项）· 与 COSTRA-157 R1 终审节奏可绑定（联合双卡 approve · 105+156 范式复用）。 v0.2.10: COSTRA-158 占位卡入 Sprint-2 主线第 7 张 · /users/me 完整实装 + has_completed_profile 严格资料判定 · 5 点 P1 · backend-dev + miniapp-dev 单卡双装扮档 · Human D-recommended 决策（COSTRA-157 R1 APPROVE 后 hasProfile 概率边界争议触发 · 调研发现 PATCH /users/me 在 OpenAPI 已定义但 server 从未实装 · 顺手关 FU-COMMON-MINIAPP-PATCH-LIMIT）· dispatch 已落盘 等 Card-Review R1。 v0.2.9: COSTRA-156 + COSTRA-105 双卡 Human T1 APPROVED CLOSED @ 2026-05-19 09:27 · 联合双卡终审同轮 approve（D-014 SOP）· 156 APPROVED 40/40 满分 · 105 APPROVED-PARTIAL（H1~H5 🟢 全 PASS · H6 🔴 BLOCKED-BY-COSTRA-154 自动等效回归 · 不阻 R1 双卡 approve · v1.4 BLOCKED-BY-COSTRA-156 范式同款第 2 次实战）· Sprint-2 5/7 卡 CLOSED · 累计 14→22 点 / 47%→61% · COSTRA-154 转 Sprint-3 P0 头部（FU-104-SYNC-PULL · 5 点 · 与 COSTRA-150 一同做才有意义 · 实装后回归 105 D.2 + H6 等效闭环）。 v0.2.8: COSTRA-157 占位卡入 Sprint-2 主线 · 用户资料完善 + 登录链路鲁棒性。",
+  "notes": "v0.2.13: Sprint-3 头部双卡 dispatch 落档（不 spawn 等 Sprint-2 收官 + Human 拍板触发）· COSTRA-154 GET /sync/pull 实装（5pt P0 backend-dev 单装扮档 9 项 scope · D-022 v2.0 第 7 次实战预定 · D-025 反模式扫描第 1 次实战）+ COSTRA-150 client sync 调度器（5pt P1 miniapp-dev 单装扮档 7 项 scope · D-022 v2.0 第 8 次实战预定 · 4 触发源 + mutex + 失败处理 · runtime T2 卡 · D-022 §4.1 铁律）· 双卡强联动 150 严格依赖 154 APPROVE · 联合 approve 优选（D-024 §2.2 C1 路径 · 105+156 / 157+158 范式三连）· 修正 154 dependencies 反向（移除 150 · 添加 156）· 同时立 D-025 反模式清单档（AP-001 字符串代理判定 + AP-002 概率极低就接受 + AP-003 契约-实装漂移 · Card-Review §4 + R1 Review §5 强制套用）· follow-ups README 同步 FU-104-SYNC-PULL + FU-103-CLIENT-SYNC-SCHEDULER 双卡指派。 v0.2.12: D-024 SOP 立案（Human 实测批量触发条件 · 5 条触发 + 默认攒批 · 反节奏碎片化 · Human 反馈'实测接入太频繁'触发）· 同轮对当前积压 157+158 出清：落 docs/qa/sprint-2-batch-human-smoke.md（8 步合并清单 + 9 硬断言聚合 + 双 approve 命令）· 双卡 disposition 同步 AWAITING-BATCH-HUMAN-TEST · 范式参照 105+156 联合实测先例 · Sprint-3 起 Orchestrator 强制默认走攒批。 v0.2.11: COSTRA-158 R1 commit c7ea7f7 同轮 D-016 兑现（Card-Review 27/30 PASS → backend-dev 段 9 文件 + miniapp-dev 段 5 文件 → 双装扮档单 commit → review-tech R1 38/45 APPROVE）· Sprint-2 主线第 7 张 R1 等 Human T1 终审 · 0 P0 / 1 P1（K3 405 错误链路一致性 · 不阻 · Sprint-3 与 K3→K1 升级一同处理）/ 3 P2 / 2 INFO · 闸门全绿（server 35/35 + miniapp 43/43 测）· G10/G11 反向验证 PASS · D-022 v2.0 第 6 次实战 · 同步关闭 2 条 FU（FU-COMMON-MINIAPP-PATCH-LIMIT + FU-102-PROFILE-REFUSE-UI boundary risk 子项）· 与 COSTRA-157 R1 终审节奏可绑定（联合双卡 approve · 105+156 范式复用）。 v0.2.10: COSTRA-158 占位卡入 Sprint-2 主线第 7 张 · /users/me 完整实装 + has_completed_profile 严格资料判定 · 5 点 P1 · backend-dev + miniapp-dev 单卡双装扮档 · Human D-recommended 决策（COSTRA-157 R1 APPROVE 后 hasProfile 概率边界争议触发 · 调研发现 PATCH /users/me 在 OpenAPI 已定义但 server 从未实装 · 顺手关 FU-COMMON-MINIAPP-PATCH-LIMIT）· dispatch 已落盘 等 Card-Review R1。 v0.2.9: COSTRA-156 + COSTRA-105 双卡 Human T1 APPROVED CLOSED @ 2026-05-19 09:27 · 联合双卡终审同轮 approve（D-014 SOP）· 156 APPROVED 40/40 满分 · 105 APPROVED-PARTIAL（H1~H5 🟢 全 PASS · H6 🔴 BLOCKED-BY-COSTRA-154 自动等效回归 · 不阻 R1 双卡 approve · v1.4 BLOCKED-BY-COSTRA-156 范式同款第 2 次实战）· Sprint-2 5/7 卡 CLOSED · 累计 14→22 点 / 47%→61% · COSTRA-154 转 Sprint-3 P0 头部（FU-104-SYNC-PULL · 5 点 · 与 COSTRA-150 一同做才有意义 · 实装后回归 105 D.2 + H6 等效闭环）。 v0.2.8: COSTRA-157 占位卡入 Sprint-2 主线 · 用户资料完善 + 登录链路鲁棒性。",
   "epics": [
     {
       "id": "Epic-A",
@@ -264,11 +264,34 @@
         "status": "Backlog",
         "dependencies": [
           "COSTRA-104",
-          "COSTRA-150"
+          "COSTRA-156"
         ],
-        "description": "FU-104-SYNC-PULL 转正 · 与 COSTRA-150 client 调度器联动 · 实装 since=watermark 增量拉取 · 协议 §3 + §6.3 · PRD AC-4 核心承诺",
-        "disposition": "Sprint-3 头部 · COSTRA-104 R1 切出去 3 件套铁律首次实战遗留 · 与 COSTRA-150 一同认领",
-        "updated_at": "2026-05-11T14:00:00+08:00"
+        "description": "Sprint-3 头部第 1 张 · 9 项 scope（entryRepo.findEntriesByFamilySince + syncPullService + routes/sync.ts 替换 stub + OpenAPI 删 x-deferred 修缩进 + sync-pull.test.ts ≥12 测含软删/分页/越权/字段映射 + follow-ups + 缺陷单 RESOLVED）· FU-104-SYNC-PULL 转正 · 与 COSTRA-150 client 调度器强联动（150 严格依赖 154 APPROVE）· 协议 §3 + §6.3 + §7 · PRD AC-4 核心承诺 · INVEST small 5pt · 单装扮档单 commit · dispatch 已落盘 .team/dispatch/COSTRA-154-sync-pull-incremental-fetch.md",
+        "disposition": "Sprint-3 头部第 1 张 · dispatch 已落档（2026-05-19 15:00）· 等 Sprint-2 7/7 收官 + Human 拍板 Sprint-3 启动后 spawn Card-Review · D-022 v2.0 第 7 次实战预定 · D-025 反模式扫描第 1 次实战（AP-003 契约-实装漂移好例 1 范式正向兑现）· 联合 approve 路径与 COSTRA-150 绑定（D-024 §2.2 C1 攒批）",
+        "updated_at": "2026-05-19T15:10:00+08:00",
+        "dispatch_at": "2026-05-19T15:00:00+08:00"
+      },
+      {
+        "id": "COSTRA-150",
+        "title": "client sync 调度器（onShow / 网络恢复 / 周期 / 启动触发 pushDelta + syncPull · FU-103-CLIENT-SYNC-SCHEDULER 转正）",
+        "owner": "MiniApp-Agent",
+        "type": "story",
+        "points": 5,
+        "priority": "P1",
+        "sprint": "sprint-3",
+        "epic": "Epic-C",
+        "status": "Backlog",
+        "dependencies": [
+          "COSTRA-103",
+          "COSTRA-104",
+          "COSTRA-126",
+          "COSTRA-127",
+          "COSTRA-154"
+        ],
+        "description": "Sprint-3 头部第 2 张 · 7 项 scope（services/syncScheduler.ts 新建 4 触发源 + mutex + 失败处理 + db.ts watermark 接口 + app.ts onLaunch/onHide 接入 + home/mine/entry 三页 onShow + syncScheduler.spec.ts ≥8 测 + follow-ups + 105 H6/D2 联合 RESOLVED）· FU-103-CLIENT-SYNC-SCHEDULER 转正 · 严格依赖 COSTRA-154 R1 APPROVE 才能 spawn（150 调 GET /sync/pull · 154 stub 时 401 全闸门红）· INVEST small 5pt · 单装扮档单 commit · D-022 v2.0 §4.1 runtime T2 卡铁律（C8 维度最高风险 · Human 实测前置不可省）· dispatch 已落盘 .team/dispatch/COSTRA-150-client-sync-scheduler.md",
+        "disposition": "Sprint-3 头部第 2 张 · dispatch 已落档（2026-05-19 15:05）· 等 COSTRA-154 R1 APPROVE 后 spawn · D-022 v2.0 第 8 次实战预定 · runtime T2 卡 · 联合 approve 路径与 COSTRA-154 绑定（D-024 §2.2 C1 攒批 · 105+156 / 157+158 范式三连）· 解锁 105 H6+D2 真链路自动等效回归 PASS",
+        "updated_at": "2026-05-19T15:10:00+08:00",
+        "dispatch_at": "2026-05-19T15:05:00+08:00"
       },
       {
         "id": "COSTRA-105",
