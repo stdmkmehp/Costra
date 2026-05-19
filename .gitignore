@@ -41,3 +41,5 @@ key/
 
 # CodeBuddy IDE CloudBase 集成自动生成（项目未使用 CloudBase · ADR-0002 选 Go/MySQL/COS）
 .cloudbase/
+# 微信开发者工具自动生成的小程序自动化测试目录（不入仓）
+minitest/
