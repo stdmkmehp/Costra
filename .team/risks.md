@@ -20,12 +20,12 @@
 | R-016 | 个人主体无法开通微信支付商户号，若 Sprint-3+ 不慎纳入付费能力将导致返工 | 高 | 低 | 🟠 | PM | D-008 明列付费/商户/交易组件为 Won't-Have；需求评审必过此闸 | Open（D-008 登记） |
 | R-017 | 开发用腾讯云服务器（49.235.216.20）3 个月到期（2026-07-23），未迁移将中断 Sprint-4/5 联调 | 中 | 中 | 🟡 | DevOps / Human | Orchestrator 在 2026-07-16 提醒；候选迁移目标：微信云托管 / Lighthouse 年付 | Open（D-009 登记） |
 | R-018 | 开发服务器首次暴露公网，SSH/web 攻击面骤增，若未做基线加固可能被爆破或利用跳板 | 高 | 中 | 🟠 | DevOps | COSTRA-114 强制完成：SSH 改端口+key-only / 云防火墙仅放 22(改)/80/443 / fail2ban / 告警。未完成不进 Sprint-1 端到端 | Open（D-009 登记） |
-| R-019 | 公安联网备案 30 日窗口（截止 2026-06-12），逾期可能被通报或限制访问 | 中 | 中 | 🟠 | Human | ICP 备案下证（2026-05-13）后 30 日内必须到 https://beian.mps.gov.cn/ 提交公安联网备案；PM-Agent 在 `docs/legal/compliance-registry.md §4` 跟踪 · 公安备案下证后回填 §4 公安备案号 + §5 悬挂位置同步追加 · 不阻塞小程序提审 / M4 上线，但 M5 观察期前必须完成 · D-023 决议下公安备案表填根域 `costra.cloud` 即可 | Open（2026-05-13 立 · ICP 下证后续）|
-| R-020 | 微信白名单 staging 边界模糊（D-023 短期内 staging env 与 prod 共用 `costra.cloud` 白名单） | 中 | 低 | 🟡 | DevOps | 短期：通过 `miniprogram/services/env.ts` 编译期常量隔离避免误用 + Backend `WX_MOCK_LOGIN` env switch 不在 prod 构建产物中 · 长期：由 D-023 §2.4 触发条件 (a)（staging 环境实际需要与 prod 隔离 · 如 DB / 数据集 / 灰度名单）重启 `stg.* / api-staging.*` 子域解决 · 详见 `.team/decisions/D-023-prod-rollout-on-root-domain.md §5.1` | Open（2026-05-18 立 · D-023 派生）|
+| R-019 | 公安联网备案 30 日窗口（截止 2026-06-12），逾期可能被通报或限制访问 | 中 | 中 | 🟡 | Human | ICP 备案下证（2026-05-13）后 30 日内必须到 https://beian.mps.gov.cn/ 提交公安联网备案；PM-Agent 在 `docs/legal/compliance-registry.md §4` 跟踪 · 公安备案下证后回填 §4 公安备案号 + §5 悬挂位置同步追加 · 不阻塞小程序提审 / M4 上线，但 M5 观察期前必须完成 · D-023 决议下公安备案表填根域 `costra.cloud` 即可 · **2026-05-19 Human 已提交申请**（在 30 日窗口内 · 风险等级 🟠→🟡 · 待公安系统 15~20 工作日审核下证 · 下证后回填备案号触发 §5 悬挂位置追加） | Open · Submitted（2026-05-19 已提交 · 等下证）|
+| R-020 | 微信白名单 staging 边界模糊（D-023 短期内 staging env 与 prod 共用 `costra.cloud` 白名单） | 中 | 低 | 🟡 | DevOps | 短期：通过 `miniprogram/services/env.ts` 编译期常量隔离避免误用 + Backend `WX_MOCK_LOGIN` env switch 不在 prod 构建产物中 · 长期：由 D-023 §2.4 触发条件 (a)（staging 环境实际需要与 prod 隔离 · 如 DB / 数据集 / 灰度名单）重启 `stg.* / api-staging.*` 子域解决 · 详见 `.team/decisions/D-023-prod-rollout-on-root-domain.md §5.1` · **2026-05-19 Human 已在微信公众平台填白名单 `https://costra.cloud`**（4 类 request/socket/uploadFile/downloadFile 全填 · 即时生效 · D-023 §7 #1 解锁条件已满足） | Open · Mitigated（2026-05-19 白名单已配 · staging/prod 共用边界由编译期常量 + WX_MOCK_LOGIN 隔离持续生效） |
 
 **等级说明**：🔴 红（立即处理） / 🟠 橙（一周内） / 🟡 黄（观察） / 🟢 绿（已缓解 / 已关闭）
 
-**最后刷新**：2026-05-18 17:3x（PM-Agent · D-023 prod 入口回归根域 · 新增 R-020 微信白名单 staging 边界模糊）
+**最后刷新**：2026-05-19 14:50（Orchestrator · Human 完成两项强阻塞清空：① 微信白名单已配 `https://costra.cloud` · ② 公安联网备案已提交申请 · R-019 🟠→🟡 / R-020 mitigation 落实）
 
 > **ID 占用说明**：原任务派单中要求新增"R-014 公安联网备案"，但 R-014~R-018 在 D-008 / D-009 时已占用（R-014 主体切换 / R-015 个人主体文案 / R-016 微信支付 / R-017 服务器到期 / R-018 SSH 攻击面）。本次新增按风险登记册 ID 单调递增原则使用 **R-019**（公安联网备案）。`docs/legal/compliance-registry.md §4` 中关联风险编号已同步指向 R-019。R-020（D-023 派生 · 2026-05-18）按 ID 顺延。
 

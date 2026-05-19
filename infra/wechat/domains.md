@@ -25,7 +25,7 @@
 > 🔗 **公示规范**（参考腾讯云 https://cloud.tencent.com/document/product/243/61412）：
 > - 网站底部显著位置显示备案号 + 超链 `https://beian.miit.gov.cn/`
 > - 小程序在「设置/介绍」显著位置展示备案号
-> - **备案后 30 日内**（截止 2026-06-12）需在「全国互联网安全管理服务平台」完成公安备案
+> - **备案后 30 日内**（截止 2026-06-12）需在「全国互联网安全管理服务平台」完成公安备案 · ✅ **2026-05-19 Human 已提交申请**（详见 `docs/legal/compliance-registry.md §4` · 等公安系统 15~20 工作日审核下证 · 下证后回填备案号触发悬挂位置追加）
 
 > 🧭 **双 SSOT 边界说明**（避免后人误判重复）：
 > - **文档 SSOT**（本节 §0）：服务 DNS 规划、合规公示、Human 操作清单。CI 通过 `assertIcpRecorded()` 轻量校验本节顶部存在备案号字符串。
@@ -38,7 +38,7 @@
 
 | env | domain | record_type | target | status | activation_condition |
 |---|---|---|---|---|---|
-| prod | `costra.cloud` | A | `49.235.216.20` | 🟢 已注册 · A 已配 · ICP 已下证（沪ICP备2026017253号-2，2026-05-13） · D-023 prod 入口直挂根域 | 已生效 |
+| prod | `costra.cloud` | A | `49.235.216.20` | 🟢 已注册 · A 已配 · ICP 已下证（沪ICP备2026017253号-2，2026-05-13） · D-023 prod 入口直挂根域 · **2026-05-19 微信白名单 `https://costra.cloud` 已配（4 类全填 · 即时生效）** | 已生效 |
 | dev | `dev.costra.cloud` | A | `49.235.216.20` | ⚪ 已搁置至 Phase-2（D-023） | ⚪ 已搁置至 Phase-2（D-023）· 重启触发条件见 D-023 §2.4 |
 | stg | `stg.costra.cloud` | A | `49.235.216.20`（Sprint-2 末若迁预发专用机则改 IP） | ⚪ 已搁置至 Phase-2（D-023） | ⚪ 已搁置至 Phase-2（D-023）· 重启触发条件见 D-023 §2.4 |
 | api | `api.costra.cloud` | CNAME | `costra.cloud.`（或 A 直指 IP · 看 nginx 部署） | ⚪ 已搁置至 Phase-2（D-023） | ⚪ 已搁置至 Phase-2（D-023）· 重启触发条件见 D-023 §2.4 |
@@ -175,3 +175,4 @@ dig +short api-staging.costra.cloud  # 预期: costra.cloud. 再 49.235.216.20
 | 2026-04-27 | 首次落地（四环境域名矩阵 + §1.1 运行期 URL + §4 Human 操作清单 + §3 三方对账规则） | COSTRA-115 R1 |
 | 2026-05-13 | ICP 备案下证（小程序 -1X · 后端 -2） · COSTRA-107 closed | COSTRA-107 |
 | 2026-05-18 | D-023 prod 入口回归根域 · 子域搁置至 Phase-2 · §1 status 🟡→⚪ · §1.1 prod/staging URL 切根域 | D-023 |
+| **2026-05-19** | **微信白名单 `https://costra.cloud` Human 已配（4 类全填 · 即时生效）+ 公安联网备案 Human 已提交申请（在 30 日窗口内）** · §1 prod 行 status 加白名单已配事实 · §0 公示规范加公安备案已提交 · 解锁路径：105 方式 C 真链路实测 + Sprint-3 154/152/153 staging 验证 | (Human 完成 R-019/R-020 解锁) |

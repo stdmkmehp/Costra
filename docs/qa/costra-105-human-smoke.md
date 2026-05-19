@@ -164,15 +164,15 @@ D-023 决议下 staging 与 prod 入口**共用根域** `https://costra.cloud/v1
 | **staging** | **`https://costra.cloud/v1`** ⚪ D-023 临时复用 prod URL |
 | **prod** | **`https://costra.cloud/v1`** 🟢 D-023 prod 回归根域 |
 
-#### 0.5.2 阻塞清单（5/7 已解 · 仅等 Human 配白名单）
+#### 0.5.2 阻塞清单（7/7 已解 · 公安备案已提交等下证）
 
 | 项 | 状态 |
 |---|---|
 | ICP 备案 | 🟢 已下证（沪ICP备2026017253号-1X / -2 @ 2026-05-13）|
-| **微信白名单** | 🟡 **仅等 Human 在公众平台后台填 `https://costra.cloud`**（D-023 §7 #1 · ~5 min 即时生效）|
+| **微信白名单** | 🟢 **Human 已配 `https://costra.cloud` @ 2026-05-19**（4 类 request/socket/uploadFile/downloadFile 全填 · 即时生效 · D-023 §7 #1 解锁条件已满足）|
 | R-013 风险 | 🟢 Closed @ 2026-05-13 |
-| R-019 公安联网备案 | 🟠 Open（截止 2026-06-12 · 不阻塞实测）|
-| **R-020 staging/prod 边界** | 🟡 D-023 派生 · 实测前 §0.5.5 自检 3 项强制 |
+| **R-019 公安联网备案** | 🟡 **Human 已提交申请 @ 2026-05-19**（在 30 日窗口内 · 距截止 2026-06-12 余 24 天 · 等公安系统 15~20 工作日审核下证 · 不阻塞实测）|
+| **R-020 staging/prod 边界** | 🟡 D-023 派生 · 实测前 §0.5.5 自检 3 项强制 · mitigation 已落实（编译期常量 + WX_MOCK_LOGIN env 隔离）|
 | prod server 部署 | 🟢 `49.235.216.20` + nginx + TLS + costra.cloud 已生效 |
 | 健康探测 | 🟢 `curl https://costra.cloud/v1/healthz` 期望 200 |
 

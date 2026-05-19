@@ -50,9 +50,14 @@
 | **QA 自动化** | FU-105-AUTOMATION-FULL-COVERAGE | P2 | COSTRA-155 | open |
 | **QA 自动化** | FU-156-OUTBOX-FLAKY | P2 | Sprint-3 头部 miniapp-dev | open |
 | **外部触发** | FU-115-2 | O 观察 | Human ICP 下证日触发 | open |
-| **🆕 QA 实测发现（族 H）** | **BUG-105-D1-LEDGER-ID-DEFAULT** | **🔴 P0** | COSTRA-105 R1.x.1（miniapp-dev · 派单中）| open |
-| **🆕 QA 实测发现（族 H）** | **BUG-156-SYNC-PUSH-PAYLOAD-NO-UUID-VALIDATION** | **🔴 P0** | COSTRA-105 R1.x.2（backend-dev · 派单中）| open |
+| **🆕 QA 实测发现（族 H）** | ~~BUG-105-D1-LEDGER-ID-DEFAULT~~ | ~~🔴 P0~~ → **closed** | ~~COSTRA-105 R1.x.1~~ | **closed @ commit 33dbdea**（COSTRA-105 R1.x.1 已修 · client `pages/entry/index.ts` 移除 `ledger_id: 'default'` 硬编码 · 105 已 Human T1 APPROVED CLOSED @ 2026-05-19 09:27）|
+| **🆕 QA 实测发现（族 H）** | ~~BUG-156-SYNC-PUSH-PAYLOAD-NO-UUID-VALIDATION~~ | ~~🔴 P0~~ → **closed** | ~~COSTRA-105 R1.x.2~~ | **closed @ commit db488b9**（COSTRA-105 R1.x.2 已修 · server `routes/sync.ts` payload schema 加 UUID format 校验 · 105 已 Human T1 APPROVED CLOSED）|
 | **🆕 QA 实测发现（族 H）** | FU-105-DEV-CONSOLE-HOOK | P3 | Sprint-3 头部 miniapp-dev（候选 COSTRA-150 顺带）| open |
+
+> **2026-05-19 14:50 同步整理**：
+> - **微信白名单已配**（Human 完成 `https://costra.cloud` 4 类全填 · 即时生效 · D-023 §7 #1 解锁）→ 解锁 105 方式 C 真链路实测 + Sprint-3 154/152/153 staging 验证
+> - **公安联网备案已提交**（Human 完成 @ 2026-05-19 · 在 30 日窗口内 · 详见 `docs/legal/compliance-registry.md §4` · R-019 🟠→🟡 Submitted）
+> - **过期 P0 BUG 标注 cleanup**：BUG-105-D1-LEDGER-ID-DEFAULT @ commit `33dbdea` + BUG-156-SYNC-PUSH-PAYLOAD-NO-UUID-VALIDATION @ commit `db488b9` · 两 BUG 早已修但 README 没同步 closed 标注 · 同步落档
 
 > **2026-05-19 COSTRA-158 同步关闭 2 条 FU**：FU-COMMON-MINIAPP-PATCH-LIMIT（server PATCH route 实装 + K3 method-override 兼容 · client 降级链路验证可用）· FU-102-PROFILE-REFUSE-UI boundary risk 子项（COSTRA-157 间接判定 → 158 严格 has_completed_profile 字段判定）
 
@@ -440,27 +445,29 @@
 - **状态**：`open`
 - **owner_card**：未定（候选 COSTRA-150 顺带 / 或独立 1 点小卡）
 
-### BUG-105-D1-LEDGER-ID-DEFAULT · client `pages/entry/index.ts` 硬编码 `ledger_id: 'default'` 字面量（P0 真 BUG）
+### BUG-105-D1-LEDGER-ID-DEFAULT · client `pages/entry/index.ts` 硬编码 `ledger_id: 'default'` 字面量（P0 真 BUG · 已修）
 
 - **来源**：`qa/defects/2026-05-18-COSTRA-105-D1-real-test-findings.md` §1
 - **登记时间**：2026-05-18 19:5x
 - **范围**：`miniprogram/pages/entry/index.ts` line 57+73 把 `ledger_id` 硬编码字符串 `"default"`（COSTRA-103 R1 留 TODO + COSTRA-104 R1 未接续 · scope gap fall-through）· server 端推 push 时 PG 22P02 invalid uuid 错误 → 500
 - **修复方案**：阶段 1 紧急止血用 `getApp().globalData.activeLedgerId || FALLBACK_LEDGER_ID`（`00000000-0000-0000-0000-000000000001` seed 默认）· 阶段 2 由 COSTRA-155 ledgers CRUD 卡接续做真选账本 UI
-- **阻断级别**：**P0**（D.1 实测靠 Human 临时覆盖 `payload.ledger_id` 才能 push 200 · 无法走 client 真 outbox 路径）
-- **认领建议**：**COSTRA-105 R1.x.1**（D-017 v3 §2.4 E1 例外路径 · ≤ 1 小时 · miniapp-dev · 单 commit 收尾）
-- **状态**：`open`
-- **owner_card**：COSTRA-105 R1.x.1（Orchestrator 派单中）
+- **阻断级别**：~~**P0**~~ → 已止血
+- **认领建议**：~~COSTRA-105 R1.x.1~~ · 已完成
+- **状态**：`closed @ commit 33dbdea`（COSTRA-105 R1.x.1 · miniapp-dev · 单 commit 收尾 · D-017 v3 §2.4 E1 路径 · COSTRA-105 已 Human T1 APPROVED CLOSED @ 2026-05-19 09:27）
+- **resolved_by**：commit `33dbdea` (`fix(miniapp): replace ledger_id "default" literal with fallback uuid (COSTRA-105 R1.x.1 BUG-001)`)
+- **阶段 2 接续**：COSTRA-155（Sprint-3 候选 · ledgers CRUD 真选账本 UI）
 
-### BUG-156-SYNC-PUSH-PAYLOAD-NO-UUID-VALIDATION · server `routes/sync.ts` payload 不校验 UUID 格式（P0 真 BUG）
+### BUG-156-SYNC-PUSH-PAYLOAD-NO-UUID-VALIDATION · server `routes/sync.ts` payload 不校验 UUID 格式（P0 真 BUG · 已修）
 
 - **来源**：`qa/defects/2026-05-18-COSTRA-105-D1-real-test-findings.md` §2
 - **登记时间**：2026-05-18 19:5x
 - **范围**：`server/src/routes/sync.ts` line 93 `payload: { type: 'object', additionalProperties: true }` · 完全无 UUID format 校验 · 非法 UUID 直接喂 PG → 22P02 → 500（应返 400 BAD_REQUEST · `code: INVALID_ARGUMENT`）
 - **修复方案**：阶段 1 在 schema 加 `properties: { ledger_id: { type: 'string', format: 'uuid' }, category_id: { type: ['string','null'], format: 'uuid' } }` + 加 1 个单测 case rejects-non-uuid · 阶段 2 由 COSTRA-155 完整 entry/ledger schema 校验补全
-- **阻断级别**：**P0**（与 BUG-105-D1-LEDGER-ID-DEFAULT 联合触发链 · 单修任一即可止血 · 但 server 修复是 root fix · 防御未来其他客户端误传非 UUID 入参）
-- **认领建议**：**COSTRA-105 R1.x.2**（D-017 v3 §2.4 E1 例外路径 · ≤ 30 分钟 · backend-dev · 单 commit 收尾 · 与 R1.x.1 同轮 · 互不依赖可并行）
-- **状态**：`open`
-- **owner_card**：COSTRA-105 R1.x.2（Orchestrator 派单中）
+- **阻断级别**：~~**P0**~~ → 已止血
+- **认领建议**：~~COSTRA-105 R1.x.2~~ · 已完成
+- **状态**：`closed @ commit db488b9`（COSTRA-105 R1.x.2 · backend-dev · 单 commit 收尾 · D-017 v3 §2.4 E1 路径 · 与 R1.x.1 同轮交付）
+- **resolved_by**：commit `db488b9` (`fix(backend): add uuid format validation to sync/push payload schema (COSTRA-105 R1.x.2 BUG-002)`)
+- **阶段 2 接续**：COSTRA-155（Sprint-3 候选 · 完整 entry/ledger schema 校验补全）
 
 > 💡 **族 H 设计意图**：
 > - **集中登记 Human 实测期发现的债务**（vs 族 A~G 的 Review/Card-Review 期发现）
