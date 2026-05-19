@@ -16,14 +16,16 @@
 
 ## §2 当前关注（active tasks）
 
+- ✅ **COSTRA-154 R1 实装完成**（2026-05-19 · GET /sync/pull 增量拉取实装 · 9 项 scope 全交付 · 49 测全绿 · 闸门 G1~G8+G15 全绿 · 等 review-tech R1）
 - ✅ **COSTRA-156 Human T1 APPROVED CLOSED**（2026-05-19 09:27 · 联合 105 双卡同轮 approve · 终审报告 `.team/reviews/COSTRA-156/FINAL.md` · D-022 v2.0 第 4 次实战 40/40 连续满分）
 - ✅ **COSTRA-105 R1.x.2 BUG-002 已闭环**（commit `db488b9` · 联合 105 终审 partial PASS 同轮 CLOSED）
 - ✅ **COSTRA-158 R1 backend 段完成**（8 项 server 改动 A~G' · 闸门全绿 · 等 miniapp-dev 接手 H~K + 统一 commit）
 - COSTRA-157 R1 实装进行中（backend 段完成 · 等 miniapp-dev 接手 B/C/D/E + 统一 commit）
-- 🔜 **Sprint-3 候选**：COSTRA-154（FU-104-SYNC-PULL · P0 · 5 点 · BLOCKED-BY 105 H6 自动回归 · 与 COSTRA-150 一同做才有意义）+ COSTRA-152/153（PATCH/DELETE entries）
+- 🔜 **Sprint-3 候选**：COSTRA-150（FU-103-CLIENT-SYNC-SCHEDULER · 严格依赖 154 R1 APPROVE）+ COSTRA-152/153（PATCH/DELETE entries）
 
 ## §3 交付历史索引
 
+- 2026-05-19 · **COSTRA-154 R1 实装**（GET /sync/pull 增量拉取 · 9 项 scope A~I · 替代 stub 501 · entryRepo findEntriesByFamilySince + syncPullService + routes 真实装 + OpenAPI x-deferred 删 + 14 单测 T1~T14 · FU-104-SYNC-PULL closed · 105 D2 defect resolved）· `history/2026-05-19-costra-154-r1-implement.md`
 - 2026-05-19 · **COSTRA-158 R1 backend 段**（8 项 server 改动 A~G' · /users/me GET+PATCH+POST K3 兜底 · has_completed_profile 严格判定 · 闸门 G1~G6+G8/G13/G14 全绿 · 等 miniapp-dev 段统一 commit）· `history/2026-05-19-COSTRA-158-r1-backend.md`
 - 2026-05-19 · **COSTRA-156 Human T1 APPROVED CLOSED**（联合 105 双卡终审 · D-022 v2.0 第 4 次实战 40/40 连续满分 · CI 对账族第 5 张规则 D 落地 · D-016 反例第 8 次首次预防成功）· `history/2026-05-19-COSTRA-156-final-approved.md`
 - 2026-05-18 · COSTRA-105 R1.x.2 BUG-002 修复（sync/push payload UUID schema 校验补全 + T9 单测 · D-017 v3 §2.4 E1 例外路径）· SBAI 第 11 次冒烟
@@ -64,3 +66,4 @@
 - 2026-05-12T12:52:05+08:00 · COSTRA-104 R1.x.1 极窄修复收口（95e00c6 · dev WX mock 入口）
 - 2026-05-18T20:07:30+08:00 · COSTRA-105 R1.x.2 BUG-002 修复（sync/push payload UUID schema 校验补全）
 - **2026-05-19T10:18:00+08:00 · COSTRA-158 R1 backend 段完成**（8 项 server 改动 · 闸门全绿 · 等 miniapp-dev 段统一 commit）
+- 2026-05-19T20:30:00+08:00 · COSTRA-154 R1 实装完成（9 项 scope · 49 测全绿 · 闸门 G1~G8+G15 全绿 · 等 review-tech R1）

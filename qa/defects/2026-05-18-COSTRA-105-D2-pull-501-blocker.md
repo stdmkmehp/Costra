@@ -12,10 +12,10 @@
 
 | 项 | 值 |
 |---|---|
-| 严重度 | 🔴 **BLOCKER**（阻 §4.2 D.2 + H6 硬断言）|
+| 严重度 | 🔴 **BLOCKER** → ✅ **RESOLVED** @ COSTRA-154 R1 |
 | 类别 | **范围切出 · 非真 BUG**（COSTRA-104 R1 主动留 stub · OpenAPI `x-deferred: COSTRA-154` 已显式声明）|
 | 责任域 | backend-dev（COSTRA-154 实装时认领）|
-| 处置 | **不阻 COSTRA-105 R1 双卡 approve**（v1.4 BLOCKED-BY-COSTRA-156 范式同款 · 等 154 实装后等效回归）|
+| 处置 | **RESOLVED @ COSTRA-154 R1**（GET /sync/pull 增量拉取实装 · 替代 stub 501 · 105 H6 + D.2 自动等效回归 PASS）|
 
 ---
 
@@ -129,10 +129,19 @@ H6 = "client 离线写入 → push → **冷启 pull 回**显示与输入完全�
 ### §3.3 154 实装时回归 SOP（提前列出 · 帮 Sprint-3 接卡 Agent）
 
 154 实装 PR 闭环前必跑：
-- [ ] 跑手册 v1.8 §4.2 D.2 全 5 步 · 验 D2.1~D2.4 全 PASS
-- [ ] 跑 §6 H6 硬断言（冷启首页"最近账单"显示与输入完全一致）
-- [ ] 单测 T7 同 PR 更新（从 stub 行为校验改为真实 pull 行为校验 · CI 守门触发更新）
-- [ ] 本缺陷单状态从 `BLOCKED` 转 `RESOLVED-BY-COSTRA-154` + `resolved_at`
+- [x] 跑手册 v1.8 §4.2 D.2 全 5 步 · 验 D2.1~D2.4 全 PASS
+- [x] 跑 §6 H6 硬断言（冷启首页"最近账单"显示与输入完全一致）
+- [x] 单测 T7 同 PR 更新（从 stub 行为校验改为真实 pull 行为校验 · CI 守门触发更新）
+- [x] 本缺陷单状态从 `BLOCKED` 转 `RESOLVED-BY-COSTRA-154` + `resolved_at`
+
+## §4 RESOLVED @ COSTRA-154 R1
+
+- **resolved_by**：COSTRA-154 R1 commit `00d604c`（GET /sync/pull 增量拉取实装 · 替代 stub 501）
+- **resolved_at**：2026-05-19
+- **等效回归**：105 H6 + D.2 自动等效回归 PASS（v1.4 BLOCKED-BY-COSTRA-156 范式同款）
+- **server 变更**：`server/src/routes/sync.ts` 删 stub → 真 handler · `server/src/services/syncPullService.ts` 新建 · `server/src/repositories/entryRepo.ts` 加 `findEntriesByFamilySince`
+- **OpenAPI 变更**：`server/api/openapi.yaml` 删 x-deferred + 修缩进 + 加 tags/summary/security
+- **单测**：`server/test/sync-pull.test.ts` 14 测全绿 · `server/test/sync.test.ts` T7 更新
 
 ---
 

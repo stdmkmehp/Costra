@@ -259,16 +259,11 @@ describe('POST /sync/push', () => {
 });
 
 describe('GET /sync/pull', () => {
-  it('T7 stub 返回 501 + deferred_card=COSTRA-154', async () => {
+  it('T7 pull 端点存在且需鉴权 → 401（替代原 stub 501 测 · COSTRA-154 实装后真实 handler 需 JWT）', async () => {
     const res = await app.inject({
       method: 'GET',
-      url: '/v1/sync/pull',
-      headers: { authorization: `Bearer ${token}` },
+      url: `/v1/sync/pull?family_id=00000000-0000-0000-0000-0000000000f1&since=${encodeURIComponent('1970-01-01T00:00:00.000Z')}`,
     });
-    expect(res.statusCode).toBe(501);
-    const body = res.json() as { error: { code: string; details?: { deferred_card?: string; followup_id?: string } } };
-    expect(body.error.code).toBe('NOT_IMPLEMENTED');
-    expect(body.error.details?.deferred_card).toBe('COSTRA-154');
-    expect(body.error.details?.followup_id).toBe('FU-104-SYNC-PULL');
+    expect(res.statusCode).toBe(401);
   });
 });

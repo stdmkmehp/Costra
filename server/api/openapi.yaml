@@ -626,13 +626,13 @@ paths:
               schema: { $ref: '#/components/schemas/Budget' }
 
   # ============ sync ============
-/sync/pull:
+  /sync/pull:
     get:
-      x-deferred:
-        owner_card: COSTRA-154
-        followup_id: FU-104-SYNC-PULL
-        deferred_at: 2026-05-11
-        deferred_reason: COSTRA-104 范围切分（Q1 选项 b · 推荐方案 C
+      tags: [sync]
+      summary: 增量拉取实体变更
+      security:
+        - BearerAuth: []
+      parameters:
         - name: family_id
           in: query
           required: true
@@ -651,6 +651,9 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SyncPullResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
 
   /sync/push:
     post:
@@ -1165,7 +1168,7 @@ components:
 
     SyncPullResponse:
       type: object
-      required: [watermark, changes]
+      required: [watermark, has_more, changes]
       properties:
         watermark:
           type: string

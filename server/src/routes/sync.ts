@@ -1,20 +1,18 @@
 /**
  * Costra · Server · sync 路由
  *
- * 卡号：COSTRA-104 · 事实源：server/api/openapi.yaml paths /sync/push | /sync/pull
+ * 卡号：COSTRA-104 + COSTRA-154 · 事实源：server/api/openapi.yaml paths /sync/push | /sync/pull
  *
  * 契约约束：
  *   - POST /sync/push body: { ops: [...] } → 200 { results: [...] }
- *   - GET  /sync/pull  stub 501 NOT_IMPLEMENTED
+ *   - GET  /sync/pull  query: family_id + since + limit → 200 { watermark, has_more, changes }
  *
  * 业务逻辑：
  *   1. JWT 鉴权
- *   2. Idempotency-Key 查表 → 命中返回缓存
+ *   2. Idempotency-Key 查表 → 命中返回缓存（push only）
  *   3. 校验 ops batch（≤ 200 / entity ∈ {entry,category,budget}）
  *   4. 逐条处理 ops（三态：ok/conflict/rejected）
  *   5. 写 idempotency_keys 表
- *
- * 注意：route 层只做 "HTTP 参数解析 / 响应装配"，业务编排统一交给 entryService。
  */
 
 import type { FastifyInstance, FastifyRequest } from 'fastify';
@@ -23,6 +21,7 @@ import { AppError } from '../errors/AppError.js';
 import { ErrorCode } from '../errors/ErrorCode.js';
 import { createEntryService } from '../services/entryService.js';
 import { checkAndGet, save } from '../services/idempotencyService.js';
+import { syncPull } from '../services/syncPullService.js';
 import type { CreateEntryPayload, UpdateEntryPayload } from '../services/entryService.js';
 
 // --- Types ---
@@ -72,6 +71,16 @@ function bodyHash(body: unknown): string {
 }
 
 // --- Schema ---
+
+const pullQuerySchema = {
+  type: 'object',
+  required: ['family_id', 'since'],
+  properties: {
+    family_id: { type: 'string', format: 'uuid' },
+    since: { type: 'string', format: 'date-time' },
+    limit: { type: 'integer', minimum: 1, maximum: 500, default: 200 },
+  },
+} as const;
 
 const syncPushBodySchema = {
   type: 'object',
@@ -161,19 +170,30 @@ export async function registerSyncRoutes(app: FastifyInstance): Promise<void> {
   const SYNC_PUSH_ENDPOINT = '/sync/push';
   const SYNC_PULL_ENDPOINT = '/sync/pull';
 
-  // GET /sync/pull stub（切出去 3 件套铁律）
-  app.get(SYNC_PULL_ENDPOINT, async (_req, reply) => {
-    reply.code(501).send({
-      error: {
-        code: 'NOT_IMPLEMENTED',
-        message: 'GET /sync/pull deferred to COSTRA-154',
-        details: {
-          deferred_card: 'COSTRA-154',
-          followup_id: 'FU-104-SYNC-PULL',
-        },
-      },
-    });
-  });
+  // GET /sync/pull（COSTRA-154 · 替代 stub 501）
+  app.get<{ Querystring: { family_id: string; since: string; limit?: number } }>(
+    SYNC_PULL_ENDPOINT,
+    { schema: { querystring: pullQuerySchema } },
+    async (req, reply) => {
+      const userId = await parseUserIdFromRequest(req);
+      const { family_id, since, limit = 200 } = req.query;
+
+      // since ISO 解析 · 容错（fastify schema 已校验 format · 但 Date 解析仍可能 NaN）
+      const sinceDate = new Date(since);
+      if (Number.isNaN(sinceDate.getTime())) {
+        throw new AppError(ErrorCode.INVALID_ARGUMENT, { message: 'since not a valid ISO datetime' });
+      }
+
+      const result = await syncPull({
+        userId,
+        familyId: family_id,
+        since: sinceDate,
+        limit,
+      });
+
+      reply.code(200).send(result);
+    },
+  );
 
   // POST /sync/push
   app.post<{ Body: SyncPushBody }>(

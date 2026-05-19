@@ -76,7 +76,7 @@ function rowToEntity(r: EntryRow): EntryEntity {
 /**
  * 执行器抽象：允许 repo 在 Pool 或 tx PoolClient 上运行。
  */
-type Runner = { query: (sql: string, params?: unknown[]) => Promise<{ rows: EntryRow[]; rowCount?: number | null }> };
+type Runner = { query: (sql: string, params?: unknown[]) => Promise<{ rows: (EntryRow & Record<string, unknown>)[]; rowCount?: number | null }> };
 
 function exec(): Runner {
   return getPool() as unknown as Runner;
@@ -257,6 +257,63 @@ export async function findEntriesByLedger(
     : null;
 
   return { entries, nextCursor };
+}
+
+// --- COSTRA-154: sync/pull 增量拉取 ---
+
+/**
+ * 增量拉取游标参数
+ * ⚠️ entries 表无 family_id 列 · 必须 JOIN ledgers · 参 findById L272-273 范式
+ */
+export interface PullCursor {
+  /** since watermark · ISO 8601 UTC */
+  since: Date;
+  /** family_id · 必须先校验属于当前 user · service 层用 isUserInFamily */
+  familyId: string;
+  /** 单批次最多返回 · 默认 200 · 上限 500 */
+  limit: number;
+}
+
+/**
+ * 增量拉取 entries 含 family_id（JOIN ledgers · 不直接读 entries 表 family_id 列）
+ * 用于 sync/pull 行返回 · 与 EntryEntity 区别：附加 familyId 字段
+ */
+export type PullEntryRow = EntryEntity & { familyId: string };
+
+/**
+ * 增量拉取 entries（按 ledgers.family_id + entries.updated_at 推进 watermark）
+ *
+ * 行为约定：
+ *   - JOIN ledgers · WHERE l.family_id = $1 AND e.updated_at > $2 · ORDER BY e.updated_at ASC, e.id ASC
+ *   - **不过滤 deleted_at**（协议 §3.5：软删行仍需在 since 窗口内返回 · client 据此本地软删）
+ *   - LIMIT $3 + 1（多取一行用于 has_more 判定 · 实际返 LIMIT 行）
+ *   - 复合排序保证同 updated_at 多行的稳定顺序（避免分页跳行）
+ *
+ * 返回：{ rows: PullEntryRow[]（EntryEntity + familyId）, hasMore: boolean }
+ */
+export async function findEntriesByFamilySince(
+  cursor: PullCursor,
+  client?: Runner,
+): Promise<{ rows: PullEntryRow[]; hasMore: boolean }> {
+  const runner = client ?? exec();
+  const limitPlusOne = cursor.limit + 1;
+  const res = await runner.query(
+    `SELECT e.id, e.ledger_id, l.family_id, e.amount, e.currency, e.type, e.category_id,
+            e.account_id, e.to_account_id, e.note, e.occurred_at,
+            e.created_by, e.created_at, e.updated_at, e.deleted_at, e.version, e.client_ref_id
+       FROM entries e
+       JOIN ledgers l ON l.id = e.ledger_id
+      WHERE l.family_id = $1
+        AND e.updated_at > $2
+      ORDER BY e.updated_at ASC, e.id ASC
+      LIMIT $3`,
+    [cursor.familyId, cursor.since.toISOString(), limitPlusOne],
+  );
+  const rows = res.rows.slice(0, cursor.limit).map((row): PullEntryRow => ({
+    ...rowToEntity(row),
+    familyId: row.family_id as string,  // 来自 JOIN · 非 entries 表列
+  }));
+  return { rows, hasMore: res.rows.length > cursor.limit };
 }
 
 /**
