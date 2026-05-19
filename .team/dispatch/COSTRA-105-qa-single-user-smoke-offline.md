@@ -312,3 +312,27 @@ Refs: COSTRA-105
 ## §9 上下文注入（subagent §F 用 · 同步 §1.1/1.3/2/3/4/5/6 inline）
 
 派单时 §F 仅含本卡卡号 + DoD 摘要 + Round-N + diff inline（subagent 只读派单档与磁盘 · 不依赖 Orchestrator 记忆）。
+
+---
+
+## §10 终审收尾段（2026-05-19 09:27）
+
+✅ **APPROVED-PARTIAL · CLOSED**（Human T1 终审 · `approve:COSTRA-105`）
+
+| 项 | 值 |
+|---|---|
+| 终审时间 | 2026-05-19 09:27 |
+| 终审路径 | 联合 COSTRA-156 双卡同轮 approve（D-014 SOP）|
+| R1 实装 commit | `c046d25` + `73d38d6`（2026-05-12 14:55 · 6 文件 +1143 行）|
+| R1.x BUG 双修 | `33dbdea`（client BUG-001）+ `db488b9`（server BUG-002）+ `9be5e84`（state/history 补漏）+ `16fd1a0`（v1.8 + D2 BLOCKER + HANDOFF v1.15）|
+| 手册迭代 | v1.0 → v1.8（8 次迭代 · 跨 7 天 · 多轮 Human 反馈驱动）|
+| R1 review-tech | APPROVE 40/40（D-022 v2.0 第 3 次实战首次满分）|
+| Human 实测裁决 | **partial PASS**（H1~H5 🟢 + H6 🔴 BLOCKED-BY-COSTRA-154 + 方式 C ⏸️ M2）|
+| 终审报告 | `.team/reviews/COSTRA-105/FINAL.md` |
+| 缺陷单 | D.1 BUG-001/002 已修 · D.2 pull 501 BLOCKER 转 Sprint-3 |
+| follow-ups | FU-104-SYNC-PULL P0 (COSTRA-154 · BLOCKED-BY 本卡 H6 自动回归) · FU-103-CLIENT-SYNC-SCHEDULER P1 (COSTRA-150) · FU-105-AUTOMATION-FULL-COVERAGE P2 (COSTRA-155) · FU-105-DEV-CONSOLE-HOOK P3 |
+| Sprint-2 进度 | 3/7 → **5/7**（联合 156）· 累计点数 14 → **22 / 47%→61%** |
+
+**partial PASS 范式确立**：v1.4 `BLOCKED-BY-COSTRA-156` 范式同款第 2 次实战 · OpenAPI `x-deferred` 显式声明 + server 单测 T7 守护契约 + 不阻 R1 核心承诺（H1~H5 全 PASS）→ 154 Sprint-3 实装后等效回归 D.2 + H6。
+
+**D-022 §4.1 真兑现立意首次实测**：自动化 + curl + server 单测 30+ 全绿 · Human 真链路实测 ~30 分钟内捕获 5 个发现（4 文档 gap + 1 联合 P0 BUG 双责）· 集成层 bug + 文档 gap 唯一手动捕获路径。

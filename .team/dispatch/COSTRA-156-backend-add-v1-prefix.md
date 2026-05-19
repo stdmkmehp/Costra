@@ -350,3 +350,22 @@ Refs: COSTRA-156, COSTRA-105
 - **议题 19 升 P0**：server 单测 inject 反模式（议题待 Sprint-3 立 supertest + jest-openapi 真 HTTP 集成测试 · 不阻 156）
 - **议题 20**：D-022 v2.0 C8-5 端到端契约联调可达性子项扩展（156 后归档证据）
 - **🆕 D-023 立案候选**：OpenAPI servers prefix 与 fastify register prefix 强制一致性规约（FU-156-D023-DECISION · 议入 Retro 立决议）
+
+---
+
+## §10 终审收尾段（2026-05-19 09:27）
+
+✅ **APPROVED · CLOSED**（Human T1 终审 · `approve:COSTRA-156`）
+
+| 项 | 值 |
+|---|---|
+| 终审时间 | 2026-05-19 09:27 |
+| 终审路径 | 联合 COSTRA-105 双卡同轮 approve（D-014 SOP · 联合实测时序）|
+| R1 实装 commit | `edca8da`（2026-05-13 11:18 · 15 文件 +762/-75 行）|
+| R1 review-tech | APPROVE 40/40（D-022 v2.0 第 4 次实战连续满分）|
+| 联合 105 实测 | 方式 B 真链路 PASS · 156 R1 范围 100% 覆盖 · 0 回归 |
+| 终审报告 | `.team/reviews/COSTRA-156/FINAL.md` |
+| follow-ups | FU-105-URL closed · FU-156-OUTBOX-FLAKY 转 Sprint-3 |
+| Sprint-2 进度 | 4/7 → **5/7**（联合 105）· 累计点数 14 → **22 / 47%→61%** |
+
+**bug 守护范式**（154 实装时回归 SOP）：whitelist 规则 D 守门（fastify prefix vs OpenAPI servers path 静态对账）· 反向验证删 prefix exit 1 · server 单测 24 处 inject `/v1` 全部命中。

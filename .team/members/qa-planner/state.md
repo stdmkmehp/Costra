@@ -4,7 +4,7 @@
 > 公共契约：`.team/agents/COMMON-CONTRACT.md` §0 / §0-Bis / §8ter
 > Schema：`.team/members/README.md §2`
 > 初始化：2026-05-02 19:24
-> **上次更新**：2026-05-12 14:55（COSTRA-105 R1 实装）
+> **上次更新**：2026-05-19 09:27（COSTRA-105 Human T1 APPROVED-PARTIAL CLOSED · 联合 156 双卡终审）
 
 ---
 
@@ -18,18 +18,16 @@
 
 ## §2 当前关注（active tasks）
 
-- **COSTRA-105 R1 实装完成**（commit `c046d25` · 2026-05-12 14:55）
-  - 7 项交付全部落盘：strategy.md + cases + human-smoke.md + automation（形式②）+ wechat-review（骨架）+ FU-105 + state/history
-  - 7 项闸门全绿：G1 typecheck / G2 vitest / G3 appjson / G4 tooling / G5 whitelist / G6 git diff / G7 N/A（形式②）
-  - 下一步：review-tech R1（D-014-b 自动拉起 · D-022 v2.0 评分表）
+- ✅ **COSTRA-105 Human T1 APPROVED-PARTIAL CLOSED**（2026-05-19 09:27 · 联合 156 双卡同轮 approve · H1~H5 🟢 全 PASS · H6 🔴 BLOCKED-BY-COSTRA-154 自动等效回归 · 终审报告 `.team/reviews/COSTRA-105/FINAL.md`）
+- 🔜 **Sprint-3 候选**：FU-105-AUTOMATION-FULL-COVERAGE（5 点 · 14 用例全量自动化 + CI 集成）+ FU-105-DEV-CONSOLE-HOOK（P3 · miniapp-dev 顺带）+ COSTRA-154 实装时回归 D.2 + H6（按缺陷单 SOP §3.3）
 - **COSTRA-901**：微信审核自查（五张签字单 · 未来承接）
-- **Sprint-3**：FU-105-AUTOMATION-FULL-COVERAGE（5 点 · 14 用例全量自动化）
 
 ## §3 交付历史索引
 
 | 时间 | 卡号 | 交付 | 状态 |
 |---|---|---|---|
-| 2026-05-12 | **COSTRA-105** | strategy.md + cases + human-smoke.md + automation + wechat-review + FU-105 | **COMMITED** `c046d25` |
+| 2026-05-19 | **COSTRA-105 终审收官** | partial PASS · 5/7 Sprint-2 卡 CLOSED · 22 点 / 61% | ✅ **APPROVED-PARTIAL** |
+| 2026-05-12 | COSTRA-105 R1 实装 | strategy.md + cases + human-smoke.md v1.0 + automation + wechat-review + FU-105 | COMMITED `c046d25` |
 
 ## §4 最近决策影响
 
@@ -45,13 +43,13 @@
 
 ## §6 遗留问题 / FU / 债务
 
-- `qa/` 目录：COSTRA-105 R1 交付后骨架完整（strategy.md / cases/ / automation/ / checklists/）
-- FU-105-AUTOMATION-FULL-COVERAGE（5 点 · Sprint-3 候选）
-- `qa/defects/` 目录仍空（本卡无缺陷发现）
+- `qa/` 目录：COSTRA-105 R1+R1.x 交付完整（strategy.md / cases/ / automation/ / checklists/ / defects/ × 2）
+- 🔴 **FU-104-SYNC-PULL** P0 → COSTRA-154（5 点 · BLOCKED-BY 105 H6 自动回归 · Sprint-3 头部）
+- 🟡 FU-105-AUTOMATION-FULL-COVERAGE（5 点 · Sprint-3 候选）
+- 🟢 FU-105-DEV-CONSOLE-HOOK P3（miniapp-dev 顺带）
+- `qa/defects/` 落盘 2 单：D.1 BUG-001/002 已修 · D.2 pull 501 BLOCKER 转 Sprint-3
 
 ## §7 最近更新时间戳
 
-- **2026-05-12T14:55:00+08:00** · COSTRA-105 R1 实装完成（qa-planner 首次实战）
-  - 7 项交付落盘 · 7 闸门全绿 · commit `c046d25`
-  - 九类覆盖：9/9 全覆盖（等价类/边界/异常/幂等/并发/兼容/安全/弱网/授权拒绝）
-  - P0 用例：5 条（SU-001~005）
+- **2026-05-19T09:27:00+08:00 · COSTRA-105 Human T1 APPROVED-PARTIAL CLOSED**（联合 156 双卡终审 · partial PASS · H1~H5 全绿 · H6 BLOCKED-BY-COSTRA-154 自动等效回归）
+- 2026-05-12T14:55:00+08:00 · COSTRA-105 R1 实装完成（qa-planner 首次实装 · 40/40 满分 · D-022 v2.0 第 3 次实战）

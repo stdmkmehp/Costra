@@ -1,7 +1,7 @@
 {
   "_schema": "costra-metrics-v1",
-  "_description": "Sprint-1 收官 + Sprint-2 进行中 · COSTRA-105 review-tech APPROVE 40/40 (40分制首次满分) + COSTRA-156 review-tech APPROVE 40/40 (D-022 v2.0 第 4 次实战连续满分) @ 2026-05-13 11:27 · 两卡均 PENDING-HUMAN-VERIFY · 等 Human 联合实测（105 手册 v1.3 步骤 D 现可跑）· D-016 反例第 8 次首次预防成功 · CI 对账族第 5 张规则 D 落地（whitelist-check.mjs · fastify prefix vs OpenAPI servers path 静态对账）。",
-  "_updated_at": "2026-05-13T11:30:00+08:00",
+  "_description": "Sprint-1 收官 + Sprint-2 进行中 · COSTRA-156 + COSTRA-105 双卡 Human T1 APPROVED CLOSED @ 2026-05-19 09:27（联合双卡终审同轮 approve · D-014 SOP）· 156 APPROVED 40/40 · 105 APPROVED-PARTIAL（H1~H5 🟢 全 PASS · H6 🔴 BLOCKED-BY-COSTRA-154 自动等效回归 · v1.4 BLOCKED-BY-COSTRA-156 范式同款第 2 次实战）· Sprint-2 5/7 卡 CLOSED · 累计 14→22 点 / 47%→61% · D-022 v2.0 第 3+4 次实战 40/40+40/40 连续满分（103 38/40 → 104 36/40 → 105 40/40 → 156 40/40）· D-016 反例第 8 次首次预防成功 · D-022 §4.1 真兑现立意首次实测（自动化+curl+server 单测 30+ 全绿 · Human ~30min 真链路实测捕获 5 发现：4 文档 gap + 1 联合 P0 BUG 双责）。",
+  "_updated_at": "2026-05-19T09:27:00+08:00",
   "sprint_1_summary": {
     "sprint": "Sprint-1",
     "period": "2026-04-23 ~ 2026-05-08（超期 2 天）",
@@ -766,10 +766,14 @@
       "review_type": "tech",
       "review_tier": "T1-with-runtime",
       "total_rounds": 1,
-      "r1_internal_iterations": "R1 单轮（D-014 卡定义 + D-016 同轮兑现 一气呵成）",
-      "terminal_verdict": "PENDING-HUMAN-VERIFY",
+      "r1_internal_iterations": "R1 + R1.x.1 + R1.x.2 + R1.x.1-state-fix + 手册 v1.0→v1.8（8 次迭代 · 跨 7 天 · D-014 卡定义 + D-016 同轮兑现 + Human 实测期 D-017 v3 §2.4 E1 例外路径 R1.x BUG 双修）",
+      "terminal_verdict": "APPROVED-PARTIAL",
+      "human_final_decision": "approve",
+      "human_final_decision_at": "2026-05-19T09:27:00+08:00",
+      "human_final_decision_path": "联合 COSTRA-156 双卡同轮 approve（D-014 SOP）",
+      "partial_pass_reason": "H1~H5 🟢 全 PASS · H6 🔴 BLOCKED-BY-COSTRA-154（GET /sync/pull 501 NOT_IMPLEMENTED · OpenAPI x-deferred 已声明 · server 单测 T7 已守护 · 154 实装后等效回归 · v1.4 BLOCKED-BY-COSTRA-156 范式同款第 2 次实战 · 不阻 R1 双卡 approve）",
       "card_def_review_kickoff_source": "D-014-a",
-      "d016_compliance": "fail (state/history 漏 commit · D-016 反例第 7 次 · 由 Orchestrator 同轮 73d38d6 补 · D-018 §3.5 越权例外路径合规)",
+      "d016_compliance": "fail × 2（state/history 漏 commit · D-016 反例第 7 次 73d38d6 补 + 第 9 次 9be5e84 补 · 议入 Sprint-2 末 Retro 升 P0）",
       "card_def_tech_verdict": "PASS-WITH-FOLLOWUP",
       "card_def_tech_score": "26/30",
       "card_def_p1_items": 1,
@@ -792,17 +796,35 @@
       "r1_tech_info_items": 1,
       "d022_v2_practice_round": "3rd (首次 = COSTRA-103 38/40 · 第 2 次 = COSTRA-104 36/40 · 本卡 40/40 首次满分)",
       "d022_v2_full_score_first_time": "yes (qa-planner 首次实装即满分 · SBAI v1.1 装扮档第 9 次冒烟成熟度证据)",
-      "human_simulator_verify": "pending (review-tech APPROVE 后立即 · 5 步 + 5 硬断言 H1~H5 全 PASS 才能 T1 终审)",
+      "human_simulator_verify": "pass-partial（方式 A Mock + 方式 B 本地 server 双跑 · A/B/C/D.1/E PASS · D.2 BLOCKED-BY-COSTRA-154 · H1~H5 🟢 全绿 · H4 = §5 curl idempotency 缓存命中 DB count=1 · H6 🔴 BLOCKED 154 实装后回归 · 方式 C ⏸️ M2 Phase-2 复测）",
       "follow_ups_filed": [
-        "FU-105-AUTOMATION-FULL-COVERAGE (Sprint-3 候选 · P2 · 5 点 · 全量 14 用例自动化 + CI 集成)"
+        "FU-105-AUTOMATION-FULL-COVERAGE (Sprint-3 候选 · P2 · 5 点 · 全量 14 用例自动化 + CI 集成)",
+        "FU-105-DEV-CONSOLE-HOOK (Sprint-3 候选 · P3 · miniapp-dev 顺带)"
       ],
+      "human_test_findings_d022_4_1_first_practice": {
+        "doc_gaps": 4,
+        "doc_gap_items": [
+          "Console 沙箱禁用 require → wx.request fallback 5 步范式",
+          "storage Envelope {v,t,d} 包装 → outbox:__index 取 .d 解包",
+          "token 数据模型双层嵌套 tokenEnv.d.raw.access_token",
+          "DB 列名 version vs 协议 server_version + SQL 用 client_ref_id"
+        ],
+        "p0_bugs": 1,
+        "p0_bug_items": [
+          "BUG-001 client pages/entry/index.ts 硬编码 ledger_id: 'default' 字面量 → R1.x.1 commit 33dbdea fix",
+          "BUG-002 server routes/sync.ts payload schema additionalProperties: true 不校验 UUID format → R1.x.2 commit db488b9 fix（含 T9 单测）"
+        ],
+        "elapsed_minutes": 30,
+        "automation_curl_unittest_pass_count": "30+ 全绿（漏检率 100%）",
+        "human_real_link_test_catch_rate": "5/5 (100%)"
+      },
       "nine_category_coverage": "9/9 (等价类 SU-001/002 · 边界 SU-008 · 异常 SU-007/010 · 幂等 SU-005 · 并发 SU-006 · 兼容 SU-012 · 安全 SU-013 · 弱网 SU-003/004/007 · 授权拒绝 SU-011)",
       "p0_cases_count": "5 (SU-001~005)",
       "prd_anchor_coverage": "13/13 cases × ≥1 PRD AC anchor",
       "gates_passed": "6/6 + 1 N/A (typecheck / vitest 34+20 / appjson 10 pages tabBar 4/4 / tooling 3 rules / whitelist 4 envs 3 urls / cross-domain diff 空 · automation syntax SKIP 形式 ②)",
-      "human_final_decision": "pending",
-      "final_report": ".team/reviews/COSTRA-105/round-1-tech.md (R1 Review · 40/40 满分)",
-      "notes": "SBAI v1.1 第 9 次冒烟 · qa-planner 首次实装实战；D-022 v2.0 评分表第 3 次实战首次满分 (40/40 vs 103 38/40 vs 104 36/40)；Card-Review PASS-WITH-FOLLOWUP 26/30 路径下 P1/P2/INFO 修订率 100%；C8 runtime 加载性 5/5 满分（C8-1/2/3/4 全到位）；0 业务代码 0 协议改动 G6 跨域 diff 空；commit c046d25 (R1 实装 6 文件 +1143 行) + 73d38d6 (state/history 补 commit · D-016 反例第 7 次 · 议入 Sprint-2 末 Retro 升 P0)；累计 8 项 Sprint-2 末 Retro 议题（D-016 反例 7 次升 P0 + 装扮档 commit 完整性检查清单 + 其余 7 项延续 COSTRA-104 议题）。",
+      "human_final_decision": "approve",
+      "final_report": ".team/reviews/COSTRA-105/FINAL.md (terminal_verdict: APPROVED-PARTIAL · partial PASS · H6 BLOCKED-BY-COSTRA-154 自动等效回归)",
+      "notes": "SBAI v1.1 第 9 次冒烟 · qa-planner 首次实装实战；D-022 v2.0 评分表第 3 次实战首次满分 (40/40 vs 103 38/40 vs 104 36/40)；Card-Review PASS-WITH-FOLLOWUP 26/30 路径下 P1/P2/INFO 修订率 100%；C8 runtime 加载性 5/5 满分（C8-1/2/3/4 全到位）；0 业务代码 0 协议改动 G6 跨域 diff 空；commit c046d25 (R1 实装 6 文件 +1143 行) + 73d38d6 (state/history 补 commit · D-016 反例第 7 次 · 议入 Sprint-2 末 Retro 升 P0) + 33dbdea (R1.x.1 BUG-001) + db488b9 (R1.x.2 BUG-002) + 9be5e84 (state/history 补漏 D-016 反例第 9 次) + 16fd1a0 (v1.8 + D2 BLOCKER + HANDOFF v1.15)；累计 5 项 Sprint-2 末 Retro 议题（D-016 反例 7+9 升 P0 · 实测期真 BUG 处置 SOP · 议题 18~20 联合 156 兑现）；Human T1 APPROVED-PARTIAL CLOSED @ 2026-05-19 09:27（联合 156 双卡同轮 approve · D-022 §4.1 真兑现立意首次实测 · v1.4 BLOCKED-BY-COSTRA-156 范式同款第 2 次实战）。",
       "r1_1_manual_revision": {
         "date": "2026-05-13",
         "version": "v1.1 → v1.2",
@@ -825,8 +847,11 @@
       "review_type": "tech",
       "review_tier": "T2-with-runtime",
       "total_rounds": 1,
-      "r1_internal_iterations": "R1 单轮（D-014 卡定义 + D-016 同轮兑现 + Card-Review P2-1/INFO-1/INFO-2/§4.8 全采纳）",
-      "terminal_verdict": "PENDING-HUMAN-VERIFY",
+      "r1_internal_iterations": "R1 单轮（D-014 卡定义 + D-016 同轮兑现 + Card-Review PASS 29/30 全采纳）",
+      "terminal_verdict": "APPROVED",
+      "human_final_decision": "approve",
+      "human_final_decision_at": "2026-05-19T09:27:00+08:00",
+      "human_final_decision_path": "联合 COSTRA-105 双卡同轮 approve（D-014 SOP）",
       "card_def_review_kickoff_source": "D-014-a",
       "card_def_tech_verdict": "PASS",
       "card_def_tech_score": "29/30",
@@ -858,9 +883,9 @@
         "FU-105-CLIENT-SERVER-URL-PREFIX-MISMATCH closed (resolved_by COSTRA-156 R1)",
         "FU-156-OUTBOX-FLAKY (Sprint-3 头部 · P2 · miniapp-dev · 0.5~1 点 · pre-existing flaky)"
       ],
-      "human_simulator_verify": "pending (联合 COSTRA-105 实测 · 手册 v1.3 步骤 D 现可跑)",
-      "human_final_decision": "pending",
-      "final_report": ".team/reviews/COSTRA-156/round-1-tech.md (R1 Review · 40/40 满分)",
+      "human_simulator_verify": "pass（联合 COSTRA-105 方式 B 真链路实测 = 端到端等效回归 · 156 R1 范围 100% 覆盖 · 0 回归 · D-022 §4.2 等效 runtime 实测前置）",
+      "human_final_decision": "approve",
+      "final_report": ".team/reviews/COSTRA-156/FINAL.md (terminal_verdict: APPROVED · 联合 105 双卡同轮 approve)",
       "notes": "SBAI v1.1 第 10 次冒烟 · backend-dev 第 2 次实装实战；D-022 v2.0 评分表第 4 次实战连续满分（105+156 双卡 40/40 · 装扮档评分趋势稳定）；Card-Review PASS 29/30 路径下 P2-1/INFO-1/INFO-2/§4.8 修订率 100%；D-017 v3 §2.4 验证问题响应 SOP 第 6 次完整实战（105 R1.1 手册修订 → 156 立卡 → R1 实装 → review-tech APPROVE）；FU-105-CLIENT-SERVER-URL-PREFIX-MISMATCH closed (resolved_by COSTRA-156 R1)；立 FU-156-OUTBOX-FLAKY 给 Sprint-3 miniapp-dev (pre-existing client outbox 时间 race · 156 0 改动 miniprogram 仅显式化)；CI 对账族第 5 张规则 D 落地 (whitelist-check.mjs · fastify prefix vs OpenAPI servers path)；D-016 反例第 8 次首次预防成功（累计 7 次反例后首次合规 · 议题升 P0 · 卡审 §4.8 DoD M 项强制度量效果显著）；commit edca8da · 15 文件 +762/-75 行；等 Human 联合 105 实测 → approve:COSTRA-156 + approve:COSTRA-105。"
     }
   ]
