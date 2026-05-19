@@ -1,9 +1,9 @@
 {
   "project": "Costra",
-  "version": "0.2.9",
-  "last_updated": "2026-05-19T09:27:00+08:00",
+  "version": "0.2.10",
+  "last_updated": "2026-05-19T09:44:00+08:00",
   "platform": "wechat-miniprogram",
-  "notes": "v0.2.9: COSTRA-156 + COSTRA-105 双卡 Human T1 APPROVED CLOSED @ 2026-05-19 09:27 · 联合双卡终审同轮 approve（D-014 SOP）· 156 APPROVED 40/40 满分 · 105 APPROVED-PARTIAL（H1~H5 🟢 全 PASS · H6 🔴 BLOCKED-BY-COSTRA-154 自动等效回归 · 不阻 R1 双卡 approve · v1.4 BLOCKED-BY-COSTRA-156 范式同款第 2 次实战）· Sprint-2 5/7 卡 CLOSED · 累计 14→22 点 / 47%→61% · COSTRA-154 转 Sprint-3 P0 头部（FU-104-SYNC-PULL · 5 点 · 与 COSTRA-150 一同做才有意义 · 实装后回归 105 D.2 + H6 等效闭环）。 v0.2.8: COSTRA-157 占位卡入 Sprint-2 主线 · 用户资料完善 + 登录链路鲁棒性。 v0.2.7: COSTRA-156 R1 review-tech APPROVE 40/40 满分。",
+  "notes": "v0.2.10: COSTRA-158 占位卡入 Sprint-2 主线第 7 张 · /users/me 完整实装 + has_completed_profile 严格资料判定 · 5 点 P1 · backend-dev + miniapp-dev 单卡双装扮档 · Human D-recommended 决策（COSTRA-157 R1 APPROVE 后 hasProfile 概率边界争议触发 · 调研发现 PATCH /users/me 在 OpenAPI 已定义但 server 从未实装 · 顺手关 FU-COMMON-MINIAPP-PATCH-LIMIT）· dispatch 已落盘 等 Card-Review R1。 v0.2.9: COSTRA-156 + COSTRA-105 双卡 Human T1 APPROVED CLOSED @ 2026-05-19 09:27 · 联合双卡终审同轮 approve（D-014 SOP）· 156 APPROVED 40/40 满分 · 105 APPROVED-PARTIAL（H1~H5 🟢 全 PASS · H6 🔴 BLOCKED-BY-COSTRA-154 自动等效回归 · 不阻 R1 双卡 approve · v1.4 BLOCKED-BY-COSTRA-156 范式同款第 2 次实战）· Sprint-2 5/7 卡 CLOSED · 累计 14→22 点 / 47%→61% · COSTRA-154 转 Sprint-3 P0 头部（FU-104-SYNC-PULL · 5 点 · 与 COSTRA-150 一同做才有意义 · 实装后回归 105 D.2 + H6 等效闭环）。 v0.2.8: COSTRA-157 占位卡入 Sprint-2 主线 · 用户资料完善 + 登录链路鲁棒性。",
   "epics": [
     {
       "id": "Epic-A",
@@ -370,15 +370,36 @@
         "priority": "P1",
         "sprint": "sprint-2",
         "epic": "Epic-A",
-        "status": "Backlog",
+        "status": "Doing",
         "dependencies": [
           "COSTRA-101",
           "COSTRA-102"
         ],
-        "description": "Sprint-2 主线第 6 张 · 5 条 FU 合并修复（FU-001 server defaults · FU-118-2 miniapp defaults · FU-102-ERROR-MAPPER-INTEGRATION 守 error-codes.md §0.5 红线 · FU-102-AVATAR-ONERROR home 头像 fallback · FU-102-PROFILE-REFUSE-UI home 拒绝授权降级 + 完善资料临时入口）· Human all-A 决策（Q1~Q5 全推荐 · 占位头像 + 欢迎 + 完善资料文字链 + 硬编码 fallback + 不并 PATCH→PUT + 单卡双装扮档 + 跳过设计稿）· INVEST small 3 点 · dispatch 已落盘 .team/dispatch/COSTRA-157-user-profile-completion-and-login-resilience.md",
-        "disposition": "Sprint-2 主线第 6 张（5 FU 合并修复 · INVEST small）· 等 Card-Review R1（D-014-a 流程启动）",
-        "updated_at": "2026-05-18T17:11:00+08:00",
+        "description": "Sprint-2 主线第 6 张 · 5 条 FU 合并修复（FU-001 server defaults · FU-118-2 miniapp defaults · FU-102-ERROR-MAPPER-INTEGRATION 守 error-codes.md §0.5 红线 · FU-102-AVATAR-ONERROR home 头像 fallback · FU-102-PROFILE-REFUSE-UI home 拒绝授权降级 + 完善资料临时入口）· Human all-A 决策（Q1~Q5 全推荐）· INVEST small 3 点 · R1 commit ac204e3 · R1 Review APPROVE 38/40（D-022 v2.0 第 5 次实战）· 等 Human 实测 + approve",
+        "disposition": "Sprint-2 主线第 6 张 · R1 APPROVE 38/40 等 Human 终审 · 但 hasProfile 边界判定 2026-05-19 09:42 Human 反对 · 已立 COSTRA-158 走严格判定方案 · 终审节奏可与 158 联合（参 105+156 范式）",
+        "updated_at": "2026-05-19T09:44:00+08:00",
         "dispatch_at": "2026-05-18T17:11:00+08:00"
+      },
+      {
+        "id": "COSTRA-158",
+        "title": "/users/me 完整实装 + has_completed_profile 严格资料判定",
+        "owner": "backend-dev + miniapp-dev",
+        "type": "feat",
+        "points": 5,
+        "priority": "P1",
+        "sprint": "sprint-2",
+        "epic": "Epic-A",
+        "status": "Backlog",
+        "dependencies": [
+          "COSTRA-101",
+          "COSTRA-104",
+          "COSTRA-156",
+          "COSTRA-157"
+        ],
+        "description": "Sprint-2 主线第 7 张 · 11 项 scope（DB migration + userRepo + authService + routes/users.ts 新建 + app.ts 注册 + OpenAPI User schema + server 单测 + miniapp TokenRaw + computeHasProfile 严格判定 + home.spec 修订 + 顺手关 FU-COMMON-MINIAPP-PATCH-LIMIT）· Human D-recommended 决策（COSTRA-157 R1 后 hasProfile 概率边界争议触发 · 调研发现 PATCH /users/me 在 OpenAPI 已定义但 server 从未实装 · COSTRA-101 遗留 gap）· INVEST small 5 点 · 双装扮档单 commit · dispatch 已落盘 .team/dispatch/COSTRA-158-users-me-and-has-completed-profile.md",
+        "disposition": "Sprint-2 主线第 7 张 · 等 Card-Review R1（D-014-a 同轮启动）· 与 COSTRA-157 终审节奏可绑定（联合 approve · 105+156 范式复用）",
+        "updated_at": "2026-05-19T09:44:00+08:00",
+        "dispatch_at": "2026-05-19T09:44:00+08:00"
       }
     ]
   }

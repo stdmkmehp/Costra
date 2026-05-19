@@ -200,14 +200,23 @@ onTapCompleteProfile() {
 hasProfile: false,
 ```
 
-**⚠️ 已知边界**（Card-Review P1-1 修订 · 2026-05-18 17:32）：
+**⚠️ 已知边界 + 处置（2026-05-19 09:42 Human 否决修订 · Q4-A）**：
 
-若用户真实昵称恰好等于 `defaultNickname`（即 `'微信用户'` · 极低概率边界），`hasProfile` 判定为 `false` → 已授权用户错误显示"完善资料 →"入口。
+`hasProfile` 用 `u.nickname !== defaultNickname` 做的是**字符串代理判定**（不是事实判定）· 边界缺陷：用户真实昵称恰好等于 `defaultNickname`（即 `'微信用户'`）时 · 已授权用户被误判为未补全资料。
 
-**MVP 接受此风险的理由**：
-1. 概率极低（用户名 = 占位字符串 = 撞库情况）· 即便误显示，点击后 `wx.showModal` 提示"功能开发中"也不构成功能错误
-2. Sprint-3 Epic-D 完善资料页落地后，该字段将改为消费服务端的 `user.has_completed_profile` 显式标记，不再依赖昵称比较 → 边界自然消失
-3. 不引入额外字段（如 `user.is_default_nickname`）· 守 INVEST small
+**Human 2026-05-19 09:42 否决"MVP 接受概率极低"的理由**：
+- "概率极低"不是工程理由 · 应该走"语义准确"路径
+- 用代理判定（字符串比较）做语义判定（is_completed）是反模式
+
+**实际处置（COSTRA-157 R1 已 commit · 不再改本卡）**：
+- COSTRA-157 R1 commit `ac204e3` 当前实装的 hasProfile 是过渡方案（基于 nickname 字符串比较）· R1 已 APPROVE 38/40
+- **真实闭环 → COSTRA-158**（5 点 · `.team/dispatch/COSTRA-158-users-me-and-has-completed-profile.md`）：
+  - DB 加 `users.has_completed_profile` 列（事实字段）
+  - server 实装 GET + PATCH /users/me（COSTRA-101 遗留 gap · OpenAPI 早定义但 server 从未实装）
+  - PATCH 成功后 `has_completed_profile = TRUE`
+  - client `computeHasProfile` 改用 `u.has_completed_profile` 严格判定
+  - 顺手关 FU-COMMON-MINIAPP-PATCH-LIMIT（server PATCH 路由真实存在）
+- **终审节奏建议**：COSTRA-157 + COSTRA-158 联合 Human approve（COSTRA-105 + 156 范式复用）· 也可 157 先单独 approve（不阻 158 修复 · 因为 R1 行为已 38/40 通过）
 
 ### 2.2 副交付（2 项 · 单测）
 
@@ -383,4 +392,4 @@ Co-Authored-By: miniapp-dev <subagent>
 
 ---
 
-_本档由 Orchestrator 在 2026-05-18 17:11 落盘 · Human all-A 决策同轮 · 2026-05-18 17:32 Card-Review R1 PASS-WITH-FOLLOWUP 25/30（P1-1/P1-2/INFO-1/3 已采纳）· 等 R1 实装启动（D-014-b 自动拉起 · D-016 同轮兑现）_
+_本档由 Orchestrator 在 2026-05-18 17:11 落盘 · Human all-A 决策同轮 · 2026-05-18 17:32 Card-Review R1 PASS-WITH-FOLLOWUP 25/30（P1-1/P1-2/INFO-1/3 已采纳）· 2026-05-18 ~19:1x R1 Review APPROVE 38/40（D-022 v2.0 第 5 次实战）· **2026-05-19 09:42 Human 否决 hasProfile 概率边界判定 → 立 COSTRA-158（5 点 · /users/me 完整实装 + has_completed_profile 严格事实判定）接力闭环**_

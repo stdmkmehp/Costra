@@ -34,7 +34,7 @@
 | **Sprint-3 同步协议核心** | FU-103-CONFLICT-MERGE-UI | P2 | COSTRA-151 | open |
 | **Epic-A 用户资料**（→ COSTRA-157 合卡）| FU-001 | P2 | COSTRA-157 | scoped |
 | **Epic-A 用户资料**（→ COSTRA-157 合卡）| FU-118-2 | P2 | COSTRA-157 | scoped |
-| **Epic-A 用户资料**（→ COSTRA-157 合卡）| FU-102-PROFILE-REFUSE-UI | P2 | COSTRA-157 | scoped |
+| **Epic-A 用户资料**（→ COSTRA-157 → ⚠️ COSTRA-158 严格判定）| FU-102-PROFILE-REFUSE-UI | **P1**（升级 · Human 否决概率边界）| **COSTRA-158** | reopened-scoped |
 | **Epic-A 用户资料**（→ COSTRA-157 合卡）| FU-102-ERROR-MAPPER-INTEGRATION | **P1**（红线违反）| COSTRA-157 | scoped |
 | **Epic-A 用户资料**（→ COSTRA-157 合卡）| FU-102-AVATAR-ONERROR | **P1**（红线违反）| COSTRA-157 | scoped |
 | **DevOps 基建** | FU-118-3（→ COSTRA-160）| P0 根因 / P2 优先级 | COSTRA-160（已立卡）| open |
@@ -46,7 +46,7 @@
 | **DevOps 基建** | FU-DEVOPS-ICP-HEALTH-PROBE | P2 | 合 COSTRA-903 APM | open |
 | **DevOps 基建** | FU-DEVOPS-ICP-CROSS-SSOT-CHECK | P2 | Sprint-2 CI 升级（与 FU-CI-MP-BUILD-NPM-ENFORCE 同节奏）| open |
 | **DB 治理** | FU-DB-OPS-AUDIT | P3 | DAU>100 触发 | open |
-| **协议 / 规约残留** | FU-COMMON-MINIAPP-PATCH-LIMIT | O 观察 | 顺手随 COSTRA-152（PATCH→PUT 收口）| open-observation |
+| **协议 / 规约残留** | FU-COMMON-MINIAPP-PATCH-LIMIT | O 观察 → P2 实装 | **COSTRA-158**（顺手 K3 method-override）| reopened-scoped |
 | **QA 自动化** | FU-105-AUTOMATION-FULL-COVERAGE | P2 | COSTRA-155 | open |
 | **QA 自动化** | FU-156-OUTBOX-FLAKY | P2 | Sprint-3 头部 miniapp-dev | open |
 | **外部触发** | FU-115-2 | O 观察 | Human ICP 下证日触发 | open |
@@ -176,11 +176,14 @@
 - **来源**：`.team/reviews/COSTRA-102/round-1-product.md` P2-NEW-1
 - **登记时间**：2026-04-27 10:14
 - **范围**：`miniprogram/pages/login/index.ts` 调 `wx.getUserProfile` 被用户取消授权时的 home 页空头像空昵称降级显示策略
-- **建议**：home 页显示占位头像 + "欢迎" 无名称版本 + 页面角标"完善资料"入口（Sprint-2 产品细节）
-- **阻断级别**：P2
-- **认领建议**：✅ **已合入 COSTRA-157**（E 项 home 降级 UI · Q1-A 占位头像 + 欢迎 + Q5-A 临时文字链入口 · Sprint-3 Epic-D 完善资料页落地后再接通）
-- **状态**：`scoped`
-- **owner_card**：**COSTRA-157**
+- **建议**：home 页显示占位头像 + "欢迎" 无名称版本 + 页面角标"完善资料"入口
+- **阻断级别**：原 P2 → **升级 P1**（2026-05-19 09:42 Human 否决"概率极低"接受边界）
+- **认领建议**：
+  - 🟡 COSTRA-157 R1 已实装"基于 nickname 字符串比较的代理判定"（u.nickname !== defaultNickname）· 完成边界 + Q5-A 临时文字链入口 · 但 Human 否决概率近似判定
+  - ✅ **真实闭环 → COSTRA-158**（5 点 · /users/me 完整实装 + has_completed_profile 显式字段事实判定 · 替换 157 R1 的代理判定）
+- **状态**：`reopened-scoped`（COSTRA-157 R1 已部分兑现 · 严格闭环依赖 COSTRA-158）
+- **owner_card**：**COSTRA-158**（接力卡 · 与 COSTRA-157 终审节奏可绑定）
+- **🆕 2026-05-19 09:42 Human 否决记录**：`u.nickname !== defaultNickname` 是字符串代理判定 · 不是事实判定 · 用户名='微信用户'撞库时误判 → 不能用"概率极低"理由接受 → 立 COSTRA-158 走严格事实字段（has_completed_profile）
 
 ### FU-102-ERROR-MAPPER-INTEGRATION · login 页错误分支直出 err.message 违反红线
 
@@ -341,15 +344,20 @@
 - **登记时间**：2026-04-27 10:14
 - **范围**：`miniprogram/services/request.ts` PATCH 方法在 wx.request type 中不存在 · Agent 已降级 `method === 'PATCH'` 时走 POST + `X-HTTP-Method-Override: PATCH` header
 - **建议**：登记为跨卡复用的平台限制 · server 侧约定处理该 header · 不可修
-- **阻断级别**：O-观察项（平台限制 · 已合规兜底）
-- **认领建议**：**强烈建议随 COSTRA-152（PATCH /entries/{id}）顺手做**：方案 (c) OpenAPI PATCH→PUT（语义等价 · 无破坏 · 微信原生支持）· 同时清掉 server 侧 `X-HTTP-Method-Override` 兼容代码 + miniprogram request.ts 降级分支
-- **状态**：`open-observation`
-- **owner_card**：建议挂 COSTRA-152（实质合并修复）· 或留 engineering-guidelines / common-contract 归档
+- **阻断级别**：原 O 观察 → **升级 P2 实装**（2026-05-19 调研发现真实根因双重 · server 路由完全未实装 + 平台限制 · 已挂 COSTRA-158）
+- **认领建议**：✅ **挂 COSTRA-158**（K3 兜底 · users 路由 POST handler 内识别 X-HTTP-Method-Override · 仅 users 作用域 · 守 INVEST small）
+- **状态**：`reopened-scoped`
+- **owner_card**：**COSTRA-158**
+- **闭合条件**（COSTRA-158 R1 时一并兑现）：
+  - server PATCH /users/me 路由真实存在 + POST /users/me K3 method-override 兜底
+  - E2E 实测：client login 后真调 PATCH 200（不再撞 404 soft-fail）
+  - 关闭时同步移除 dispatch 中"留 COSTRA-152 顺手做"的旧建议
+- **🆕 真实根因更正**（2026-05-19 调研）：原归因仅"wx.request 不支持 PATCH"只覆盖一半 · 调研 COSTRA-158 时发现 **server PATCH /users/me 路由完全未实装**（OpenAPI 早定义但 server/src/routes/ 无 users.ts · COSTRA-101 遗留 gap）· 即便 client 用真 PATCH 也会 404 · 双重原因
 - **🆕 首次实触发观察**（2026-05-01 21:18 · COSTRA-123 Human 第 6 次模拟器启动）：
   - 现象：`request.ts:88 POST http://localhost:8080/v1/users/me 404` + `[login] PATCH /users/me soft-fail Error: route not found`
   - 链路精准命中 R1 Review §P1-2 预言（`.team/reviews/COSTRA-102/round-1-tech.md:74-81`）
   - 兜底有效：`pages/login/index.ts:68` `catch (e) { console.warn }` 打印 `soft-fail` · 不阻登录流程
-  - **三方案预议**（保留 · 推荐方案 c）：(a) server/Fastify 加统一 `methodOverride` 中间件 · (b) MiniApp 切到 DELETE+重建语义 · **(c) OpenAPI 改 PATCH → PUT**（无破坏 · 语义等价 · 微信原生支持）
+  - **三方案预议历史**（保留 · 但 K3 兜底已被 COSTRA-158 选定）：(a) server/Fastify 加统一 `methodOverride` 中间件（K1 · 全局）· (b) MiniApp 切到 DELETE+重建语义（不可行）· (c) OpenAPI 改 PATCH → PUT（无破坏 · 语义等价 · 之前推荐 · 现被 K3 替代以保护 OpenAPI 纯净）
 
 ---
 
