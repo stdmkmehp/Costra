@@ -254,17 +254,19 @@ function mockExchange(_code: string, oldRefresh?: string): TokenRaw {
  * 不改 token 本身（access_token / refresh_token 不变）
  * dispatch §2.4 client 消费策略 · P1-1 修订产物
  */
-export function updateLocalUserProfile(
+export async function updateLocalUserProfile(
   partial: Partial<{
     nickname: string;
     avatar_url: string | null;
     has_completed_profile: boolean;
   }>,
-): void {
+): Promise<void> {
   if (!current) return;
   Object.assign(current.raw.user, partial);
-  // storage 同步写入 · 保持与 initAuth/clearToken 一致
-  wx.setStorageSync(TOKEN_KEY, {
+  // storage 写入 · 走 storage.ts envelope · 与 initAuth/doWxLogin/refreshToken 一致
+  // R1.x.1（COSTRA-158 BUG fix · 2026-05-19）：原 wx.setStorageSync 写裸对象 · 破坏
+  // storage envelope 一致性 · 重启后 initAuth getItem 读不到（env.d undefined）
+  await setItem<TokenStored>(TOKEN_KEY, {
     raw: current.raw,
     access_expires_at: current.access_expires_at,
     refresh_expires_at: current.refresh_expires_at,

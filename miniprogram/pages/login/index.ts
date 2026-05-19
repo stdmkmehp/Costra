@@ -80,7 +80,7 @@ Page({
           });
           // COSTRA-158 §2.4: PATCH 成功后更新本地 user 子对象
           // 这样 home 页 hydrateUser 下次执行（onShow gate）时能立即看到 has_completed_profile=true
-          updateLocalUserProfile({ nickname: profile.nickname, avatar_url: profile.avatarUrl, has_completed_profile: true });
+          await updateLocalUserProfile({ nickname: profile.nickname, avatar_url: profile.avatarUrl, has_completed_profile: true });
         } catch (e) {
           console.warn('[login] PATCH /users/me soft-fail', e);
         }

@@ -1,8 +1,28 @@
 // services/auth.spec.ts · TokenPair 字段对齐 + shouldRefresh 边界
 // 卡号: COSTRA-102 · D2.10 · COSTRA-158 §2.4 G' 扩展 updateLocalUserProfile 测
+// COSTRA-158 R1.x.1: updateLocalUserProfile 改 async + setItem · 测适配 + 重启回读单测
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { __test__ as authTest, getToken, getSession, updateLocalUserProfile } from './auth';
-import type { TokenRaw } from './auth';
+import { __test__ as authTest, getToken, getSession, updateLocalUserProfile, initAuth } from './auth';
+import type { TokenRaw, TokenStored } from './auth';
+
+// R1.x.1: mock storage.ts · 让 setItem/getItem 操作共享 Map（模拟真实 envelope 行为）
+const storageMap = new Map<string, unknown>();
+vi.mock('./storage', () => ({
+  setItem: vi.fn(async (_key: string, _data: unknown) => {
+    // 模拟真实 setItem: 写入 envelope {v, t, d}
+    storageMap.set(_key, { v: 1, t: Date.now(), d: _data });
+  }),
+  getItem: vi.fn(async (_key: string) => {
+    // 模拟真实 getItem: 读 envelope · 返回 env.d
+    if (!storageMap.has(_key)) return null;
+    const env = storageMap.get(_key);
+    if (!env || typeof env !== 'object') return null;
+    return (env as { d: unknown }).d;
+  }),
+  removeItem: vi.fn(async (_key: string) => {
+    storageMap.delete(_key);
+  }),
+}));
 
 // wx 运行时在单测环境不存在 · 仅 buildStored 与 wrap 逻辑不依赖 wx，直接测即可
 
@@ -65,19 +85,18 @@ describe('services/auth · TokenPair 字段 + 续签窗口', () => {
 });
 
 describe('services/auth · updateLocalUserProfile（COSTRA-158 §2.4）', () => {
-  const setStorageSyncMock = vi.fn();
 
   beforeEach(() => {
     authTest.reset();
-    vi.stubGlobal('wx', { setStorageSync: setStorageSyncMock });
+    storageMap.clear();
   });
 
   afterEach(() => {
-    vi.restoreAllMocks();
+    storageMap.clear();
     authTest.reset();
   });
 
-  it('PATCH 成功后本地 user 含 has_completed_profile=true', () => {
+  it('PATCH 成功后本地 user 含 has_completed_profile=true', async () => {
     const stored = authTest.buildStored(mockRaw);
     authTest.setCurrent(stored);
 
@@ -86,22 +105,45 @@ describe('services/auth · updateLocalUserProfile（COSTRA-158 §2.4）', () => 
     expect(tk!.raw.user.has_completed_profile).toBe(false);
 
     // 模拟 PATCH 成功后更新
-    updateLocalUserProfile({ nickname: '新昵称', avatar_url: 'https://new.png', has_completed_profile: true });
+    await updateLocalUserProfile({ nickname: '新昵称', avatar_url: 'https://new.png', has_completed_profile: true });
 
     // 验证内存态已更新
     expect(getToken()!.raw.user.has_completed_profile).toBe(true);
     expect(getToken()!.raw.user.nickname).toBe('新昵称');
     expect(getToken()!.raw.user.avatar_url).toBe('https://new.png');
 
-    // 验证 storage 同步写入被调用
-    expect(setStorageSyncMock).toHaveBeenCalled();
-    const callArg = setStorageSyncMock.mock.calls[0];
-    expect(callArg[0]).toBe('__costra_token_v1');
-    expect(callArg[1].raw.user.has_completed_profile).toBe(true);
+    // R1.x.1: 验证 storage 写入走 setItem envelope（非 setStorageSync 裸对象）
+    const written = storageMap.get('__costra_token_v1') as { v: number; t: number; d: TokenStored };
+    expect(written).toBeDefined();
+    expect(written.v).toBe(1);
+    expect(written.d.raw.user.has_completed_profile).toBe(true);
   });
 
-  it('current 为 null 时 updateLocalUserProfile 不抛异常', () => {
-    expect(() => updateLocalUserProfile({ has_completed_profile: true })).not.toThrow();
-    expect(setStorageSyncMock).not.toHaveBeenCalled();
+  it('current 为 null 时 updateLocalUserProfile 不抛异常', async () => {
+    await expect(updateLocalUserProfile({ has_completed_profile: true })).resolves.toBeUndefined();
+    expect(storageMap.has('__costra_token_v1')).toBe(false);
+  });
+
+  // R1.x.1（COSTRA-158 BUG fix · 2026-05-19）：重启回读测试
+  // 原 setStorageSync 写裸对象 · getItem 读 envelope env.d 返回 undefined · 重启即登出
+  it('updateLocalUserProfile 写入后 · 模拟重启 initAuth 应能读回新值（envelope 一致性）', async () => {
+    // 1. 模拟首登成功态
+    const stored = authTest.buildStored(mockRaw);
+    authTest.setCurrent(stored);
+
+    // 2. 调 updateLocalUserProfile
+    await updateLocalUserProfile({ nickname: '张三', has_completed_profile: true });
+
+    // 3. 重置内存 current = null（模拟杀进程）
+    authTest.reset();
+
+    // 4. 调 initAuth() 模拟重启 · storage mock 已配好 envelope 回读
+    await initAuth();
+
+    // 5. 期望 current 被恢复 · user.nickname='张三' has_completed_profile=true
+    const tk = getToken();
+    expect(tk).not.toBeNull();
+    expect(tk!.raw.user.nickname).toBe('张三');
+    expect(tk!.raw.user.has_completed_profile).toBe(true);
   });
 });
