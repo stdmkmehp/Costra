@@ -72,14 +72,16 @@
 BEGIN;
 
 ALTER TABLE users
-    ADD COLUMN has_completed_profile BOOLEAN NOT NULL DEFAULT FALSE;
+    ADD COLUMN IF NOT EXISTS has_completed_profile BOOLEAN NOT NULL DEFAULT FALSE;
 
 COMMENT ON COLUMN users.has_completed_profile IS
 'COSTRA-158: 用户是否完成资料补全（首登默认 FALSE · PATCH /users/me 成功后 TRUE）。'
 '用于客户端 home 页"完善资料"入口的严格判定（替代 nickname 字符串比较代理判定）。'
-'语义稳定字段：升级 default nickname 不影响判定 / 用户改名为占位串不误判 / 多端同账号一致。';
+'语义稳定字段：升级 default nickname 不影响判定 / 用户改名为占位串不误判 / 多端同账号一致。'
+'单调约束（应用层保证）：一旦 TRUE 不降级回 FALSE · 避免用户清空资料后再次显示完善入口。';
 
 -- 不做 backfill（MVP < 10 用户 · 让用户重新点"完善资料"自然修复 · 同时验证新链路）
+-- 已知体验：之前 PATCH 过资料的用户首次重登会再次看到"完善资料 →" · 重新 PATCH 一次后消失（一次性困惑）
 
 COMMIT;
 ```
@@ -268,6 +270,8 @@ User:
 | 6 | PATCH 第二次 nickname='李四' | 200 + has_completed_profile 保持 true |
 | 7 | PATCH avatar_url=null 显式清空 | 200 + avatar_url=null + has_completed_profile=true |
 | 8 | PATCH nickname 超长 33 字符 | 400 INVALID_ARGUMENT |
+| **9** | **K3 兼容**（Card-Review P2-2 修订显式化）：POST /v1/users/me + header `X-HTTP-Method-Override: PATCH` + body nickname='张三' | 200 + nickname='张三' + has_completed_profile=true（与测 5 等价路径）|
+| **10** | **K3 不兼容反例**：POST /v1/users/me 不带 X-HTTP-Method-Override header | 405 METHOD_NOT_ALLOWED 或 404（不识别为 PATCH 委托 · 走默认 POST 不存在路径）|
 
 **修订 `server/test/auth.test.ts`**：
 - wx-login 200 响应断言加 `user.has_completed_profile === false`（首登）
@@ -291,7 +295,10 @@ user: {
   id: `mock-user-${seed.slice(0, 4)}`,
   nickname: '测试用户',
   avatar_url: null,
-  has_completed_profile: true,   // ← mock 用户视为已补全（避免 mock 模式下 home 页常显"完善资料"入口）
+  // mock 模式下 has_completed_profile=true · 因此 mock 下无法验证"完善资料"入口显示路径
+  // 该路径由 §9 步骤 2（has_completed_profile=false 首登场景）Human 实测覆盖
+  // Card-Review P2-3 修订（2026-05-19 10:15）
+  has_completed_profile: true,
 }
 ```
 
@@ -363,6 +370,28 @@ export function computeHasProfile(u: UserLike | null | undefined): boolean {
 - 不写新文档 · history 段 4"交接"明示 Human 实测路径
 - engineering-guidelines / common-contract 是否要加 method override 说明？**留 follow-up**（不阻本卡）
 
+### 2.4 client 消费策略（Card-Review P1-1 修订 · 2026-05-19 10:15）
+
+> **场景**：实装 GET /users/me 后 · client 有两条获取用户信息路径：
+> 1. token 内嵌 `tk?.raw?.user`（首登/refresh 时由 server toUserView 返回 · 当前 hydrateUser 消费）
+> 2. 独立调 GET /v1/users/me（实装后可用 · 但当前 client 不调用）
+
+**MVP 决策（COSTRA-158 R1 不改 client 消费方式）**：
+
+- ✅ **首登/refresh 路径**：token 内嵌 `user.has_completed_profile` 自动同步（authService.toUserView 改字段后返回值含此字段 · COSTRA-158 R1 已覆盖）
+- ✅ **PATCH /users/me 成功后路径**：client 应**手动更新本地 TokenRaw.user**（在 login/index.ts:71-83 的 PATCH 成功 then 块中调 `auth.ts` 内部更新方法 · 不依赖重新 login/refresh）
+
+**实装动作**（追加到 H 项）：
+- `miniprogram/services/auth.ts` 暴露内部方法 `updateLocalUserProfile(partial: Partial<User>)`（更新 current.raw.user 子对象 + setItem 到 storage · 但**不改 token 本身**）
+- `miniprogram/pages/login/index.ts:71-83` PATCH 成功后调 `updateLocalUserProfile({ nickname, avatar_url, has_completed_profile: true })`
+- 这样 home 页 hydrateUser 下次执行（onShow gate）时能立即看到最新 has_completed_profile=true
+
+**MVP 不调 GET /v1/users/me**：
+- 当前 client 不主动调 GET /v1/users/me · 信任 token 内嵌 user 数据 + PATCH 成功后本地更新
+- 留 follow-up：Sprint-3 Epic-D 完善资料页可能调 GET /users/me 拉最新数据（与 PATCH 配对的 GET）· 不阻本卡
+
+**G' 项扩展**：home.spec.ts 应新增测："PATCH 成功后本地 user 含 has_completed_profile=true"（如 mock auth.updateLocalUserProfile）
+
 ---
 
 ## §3 DoD（可度量 · 18 项）
@@ -375,7 +404,7 @@ export function computeHasProfile(u: UserLike | null | undefined): boolean {
 - [ ] D · `server/src/routes/users.ts` 新建 · 含 GET + PATCH（+ POST K3 兜底） · 100~150 行
 - [ ] E · `server/src/app.ts` registerUsersRoutes(v1) + import · 2 行
 - [ ] F · `server/api/openapi.yaml` User schema 加 has_completed_profile + required · 3 行
-- [ ] G · `server/test/users.test.ts` 新建 · ≥ 8 测 · 含 K3 POST + Method-Override 兼容测
+- [ ] G · `server/test/users.test.ts` 新建 · ≥ 10 测 · 含 K3 POST + Method-Override 兼容测（测 9 正例）+ 反例测（测 10）
 - [ ] G' · `server/test/auth.test.ts` 修订 · wx-login 200 断言含 has_completed_profile=false · 1 测改
 - [ ] H · `miniprogram/services/auth.ts` TokenRaw.user.has_completed_profile + mockExchange · 2 行
 - [ ] I · `miniprogram/utils/profile.ts` computeHasProfile 改严格判定 · 全文件改写 · 注释更新
@@ -393,7 +422,7 @@ export function computeHasProfile(u: UserLike | null | undefined): boolean {
 | G6 | check:whitelist | `npm run check:whitelist` | exit 0 |
 | G7 | check:libversion | `npm run check:libversion`（如已存在 · COSTRA-126+ FU-LIBVERSION-DEV-GUARD 待 Sprint-2 末做 · 暂跳过）| - |
 | **G8** | **users 路由真实存在**（防止再次 OpenAPI 与实装漂移）| `grep -E "registerUsersRoutes\|/users/me" server/src/app.ts \| wc -l \| tr -d ' '` | ≥ 2（import + register）|
-| **G9** | **DB migration 幂等**（重复跑不报错）| `psql -c "ALTER TABLE users ADD COLUMN IF NOT EXISTS has_completed_profile BOOLEAN..."` 等价测试 · 用 `\d users` 验证列存在 | column 存在 |
+| **G9** | **DB migration 幂等性**（Card-Review P2-1 修订）| migration runner 跑一次后 · `psql -c "\d users"` 验证 has_completed_profile 列存在 + DEFAULT FALSE + NOT NULL · **R1 实装应在 SQL 中改用 `ALTER TABLE users ADD COLUMN IF NOT EXISTS has_completed_profile BOOLEAN NOT NULL DEFAULT FALSE`**（PostgreSQL 9.6+ 支持 ADD COLUMN IF NOT EXISTS · 重复跑不报错 · 真幂等）| 列存在 + 重复跑无错 |
 
 ### §3.3 反向验证（3 项）
 
@@ -463,17 +492,43 @@ export function computeHasProfile(u: UserLike | null | undefined): boolean {
 - ✅ **共用可写**：`.team/follow-ups/README.md`（关 FU-COMMON-MINIAPP-PATCH-LIMIT · 修订 FU-102-PROFILE-REFUSE-UI 状态）
 - ❌ **不可写**：`docs/`（除非派单明示）· `infra/` · `.team/dispatch/COSTRA-158-*.md`（dispatch 已锁 · 走 D-015 revise-round-N 修）· 其他 `.team/members/{other-role}/`
 
-### §5.2 严守 INVEST small（5 点）
+### §5.2 严守 INVEST small（5 点 · 含拆卡损益分析）
 
 - 5 点 · ~3.5 小时 R1 实装时间盒
 - 11 项虽多但单点修改密度高 · 无新业务逻辑发明 · 现有范式齐全
 - 若实装中发现 scope 超 5 点 → 触发 D-017 §2.4 验证问题响应 SOP · 不硬干
 
-### §5.3 K3 兜底子决策
+**拆卡损益分析（Card-Review P1-2 修订 · 2026-05-19 10:15 · 决策不拆）**：
+
+考虑过的拆卡方案：**158a（DB+server · A~G' 8 项 · 3pt）+ 158b（miniapp · H~K 3 项 · 2pt · 依赖 158a CLOSED）**
+
+- **损**：
+  - +1 次 Review 循环（~30min · Card-Review + R1 Review）
+  - +1 次 commit + state.md/history 更新
+  - 158a 的 C 项 authService.toUserView 改动会同时影响 client token 结构 · 158b 必须等 158a CLOSED 才能做 · Sprint-2 时间紧
+- **益**：
+  - server 段可独立跑闸门 · 风险隔离更清晰
+  - K3 决策可在 158a 集中处理 · 158b 纯 miniapp 不涉协议层
+
+**结论：不拆**。理由：
+1. 双域耦合度高（C 项 authService 改动同时影响 client TokenRaw · H/I 项必须同步）
+2. K3 兜底子决策需 backend + miniapp 协作判定 · 拆卡反而割裂决策上下文
+3. 拆卡时间成本 > 收益（多 30~45min 流程开销 vs 风险隔离收益不显著）
+4. 项目历史经验：COSTRA-104（7pt · 6 项 · 跨 server + 协议）单卡成功 · COSTRA-157（3pt · 5 项 · 跨双域）单卡成功 · 158 的 5pt / 11 项 scope 密度更高但单点更小 · 仍在 INVEST small 边界内
+
+### §5.3 K3 兜底子决策（含已知未知）
 
 - R1 实装中由 backend-dev 与 miniapp-dev 协作判定最终方案（K1 全局 middleware vs K3 局部 POST handler）
 - 若 backend-dev 提出更优方案（如 fastify-method-override 库），走 D-017 §2.4 报告 + 等 Human 决策
 - **默认 K3**：仅在 users 路由 POST handler 内识别 `X-HTTP-Method-Override: PATCH` 后委托
+
+**已知未知（Card-Review P2-2 修订 · 2026-05-19 10:15）**：
+
+COSTRA-152（PATCH /entries/{id}）实装时需决策是否将 K3 升级为 K1 全局 middleware。当前选择 K3 的理由是"作用域最小 · 不影响全局"· 但若 entries 路由也走 PATCH（COSTRA-152 已规划）· K3 模式需在 entries 路由内重复实现一次 · 届时升级 K1 全局 middleware 收益更大。
+
+- 当前不阻本卡（COSTRA-158 仅做 users 路由）
+- **留 follow-up（不立 FU · 在 Sprint-2 末 Retro 议题候选内已纳入）**：COSTRA-152 实装前评估 K3→K1 升级时机
+- 决策依据：若 Sprint-2 末 Retro 决议 K1 · 则 COSTRA-152 dispatch §2 中包含 K1 全局 middleware 实装 · 同时 158 的 K3 局部代码移除（约 10 行）· 反向兼容 X-HTTP-Method-Override header
 
 ### §5.4 D-016 同轮兑现
 
@@ -601,4 +656,4 @@ co-authored-by: miniapp-dev <subagent>
 
 ---
 
-_本档由 Orchestrator 在 2026-05-19 09:44 落盘 · Human D-recommended 决策同轮 · 等 Card-Review R1（D-014-a 流程启动）_
+_本档由 Orchestrator 在 2026-05-19 09:44 落盘 · Human D-recommended 决策同轮 · 2026-05-19 10:15 Card-Review R1 PASS 27/30（P1-1/P1-2/P2-1/P2-2/P2-3 已采纳）· 等 R1 实装启动（D-014-b 自动拉起 · D-016 同轮兑现）_
