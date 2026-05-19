@@ -46,6 +46,7 @@
 | **DevOps 基建** | FU-DEVOPS-ICP-HEALTH-PROBE | P2 | 合 COSTRA-903 APM | open |
 | **DevOps 基建** | FU-DEVOPS-ICP-CROSS-SSOT-CHECK | P2 | Sprint-2 CI 升级（与 FU-CI-MP-BUILD-NPM-ENFORCE 同节奏）| open |
 | **DevOps 基建** | **FU-DEVOPS-OPENAPI-IMPL-COVERAGE** | **P2** | **Sprint-3 中段 · DevOps-Agent 1 点小卡（whitelist-check.mjs 规则 E）**| **open**（D-025 AP-003 自动检测候选 · Sprint-2 末 Retro 立案）|
+| **DevOps 基建** | **FU-DEV-MOCKLOGIN-RUNTIME-TOGGLE** | **P3** | **Sprint-3 顺手（miniapp-dev · ~30min）**| **open**（dev `mockLogin` 改 runtime toggle · 真链路实测便利性提升 · 2026-05-19 实测期立案）|
 | **DB 治理** | FU-DB-OPS-AUDIT | P3 | DAU>100 触发 | open |
 | **协议 / 规约残留** | FU-COMMON-MINIAPP-PATCH-LIMIT | ~~P2~~ → **closed** | ~~COSTRA-158~~ | **closed @ COSTRA-158**（server PATCH route + K3 method-override compat · client 现有降级链路验证可用） |
 | **协议 / 规约残留** | **FU-K3-TO-K1-UPGRADE** | **P2** | **COSTRA-152 dispatch 时评估**| **open**（K3 局部 method-override 升级评估 · Sprint-2 末 Retro 立案）|
@@ -340,6 +341,22 @@
 - **PRD 立意**：D-025 AP-003 契约-实装漂移自动检测 · 让"OpenAPI 早定义 server 没实装"反模式无处遁形
 - **状态**：`open`
 - **owner_card**：（待 Sprint-3 Planning 认领 · 候选合并到既有 whitelist-check.mjs 升级卡）
+
+### FU-DEV-MOCKLOGIN-RUNTIME-TOGGLE · dev `mockLogin` 从源码常量改 runtime toggle（真链路实测便利性提升）
+
+- **来源**：2026-05-19 19:43~19:53 Human 实测 COSTRA-157+158 期间立案 · 切真链路需手改 `miniprogram/services/env.ts:18` 源码 + 重新编译 · 测完还原源码 · 不便利且易遗忘还原
+- **登记时间**：2026-05-19 19:55（实测收尾期立案）
+- **范围**：
+  - 升级 `miniprogram/services/env.ts` · `dev.mockLogin` 不再是源码常量 · 改为 runtime 读取
+  - 候选实现：(a) 读 storage `__costra_dev_flags_v1` · 提供 `wx.setStorageSync('__costra_dev_flags_v1', { mockLogin: false })` 的 console 入口 · (b) 读 `__wxConfig.envVersion === 'develop'` 时支持 ?mockLogin=false URL 参数（小程序无 URL 参数 · 此路不通）· (c) 读编译期 `process.env.MOCK_LOGIN` 通过 `npm run build:miniprogram` 注入（推荐 · 与 staging/prod 同范式）
+  - 真链路实测时 console 一行命令切换 + 重启 · 不改源码 + 不留 dirty 工作树
+- **依赖**：无
+- **阻断级别**：P3（不阻塞任何卡 · 但 Sprint-3 起 154/152/153 真链路实测频次会增加 · 越早做收益越大）
+- **认领建议**：Sprint-3 顺手 · miniapp-dev · ~30min 单 commit · 与 FU-DEVOPS-OPENAPI-IMPL-COVERAGE 同节奏批
+- **PRD 锚点**：无（dev 工程便利性议题）
+- **PRD 立意**：D-022 §4.1 runtime 实测前置铁律的工程支撑 · 降低真链路实测的摩擦成本
+- **状态**：`open`
+- **owner_card**：（待 Sprint-3 Planning 认领）
 
 ---
 

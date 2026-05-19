@@ -1,7 +1,7 @@
 {
   "_schema": "costra-metrics-v1",
-  "_description": "Sprint-2 末 Retro 沉淀 @ 2026-05-19 16:10（Human J 路径直驱 · Orchestrator 落 docs/retrospectives/sprint-2-retro.md ~640 行）· Sprint-2 战绩：5/7 主线 CLOSED + 2/7 R1 APPROVE 等批量实测（D-024 §2.2 C1 攒批）· 27 估点 · 56 commits · D-022 v2.0 平均分 37.7/40（vs Sprint-1 32.5）· 决议增量 D-023/024/025 三连 · 范式归档 5 项（联合实测 / 双装扮档单 commit / 切出去 3 件套 / runtime T2 实测前置 / 反模式扫描清单）· Sprint-3 头部 COSTRA-154 + COSTRA-150 dispatch 已落档等启动。",
-  "_updated_at": "2026-05-19T16:10:00+08:00",
+  "_description": "🎉 Sprint-2 真闭环 7/7 达成 @ 2026-05-19 19:53（COSTRA-157+158 双卡 Human T1 APPROVED CLOSED · 联合实测 16/16 全 PASS · D-024 §2.2 C1+C4 第 2 次实战 · 23min 完成）· 实测期发现 storage envelope drift P0 BUG → COSTRA-158 R1.x.1 修复（commit 99e3794 · D-017 v3 §2.4 E1 第 7 次实战）· COSTRA-158 双灵魂兑现：D.3 has=false→显示完善资料 + F.3 撞库 nickname+has=true→不显示（D-025 AP-001 字符串代理反模式正向规避铁证）· G5 闸门 🟡 → 🟢 PASSED · Sprint-3 启动条件齐 等 Human start:COSTRA-154。",
+  "_updated_at": "2026-05-19T19:55:00+08:00",
   "sprint_2_summary": {
     "sprint": "Sprint-2",
     "period": "2026-05-10 ~ 2026-05-23（计划 14 天 · 实际 11 天主线 R1 全 APPROVE · 提前 21%）",
@@ -11,7 +11,7 @@
     "avg_review_score_product": null,
     "full_score_cards_tech": 2,
     "full_score_cards_product": 0,
-    "human_final_approval_rate": "5/7 CLOSED + 2/7 R1 APPROVE 等批量实测",
+    "human_final_approval_rate": "7/7 (100%) Human T1 APPROVED CLOSED",
     "t1_cards": 7,
     "t2_cards": 0,
     "d016_practice_count": 6,
@@ -29,14 +29,18 @@
     "joint_smoke_practice_count": 3,
     "card_review_revision_adoption_rate": "100%",
     "runtime_t2_real_test_first_fulfilled": "COSTRA-105 ~30min Human 实测捕获 5 发现 = 4 文档 gap + 1 联合 P0 BUG 双责",
+    "runtime_t2_real_test_practice_count": 3,
+    "runtime_t2_real_test_third_play": "COSTRA-157+158 batch 23min 16/16 PASS + 发现 storage envelope drift P0 + R1.x.1 修复",
+    "ap_001_string_proxy_first_play": "COSTRA-158 F.3 撞库 nickname=微信用户+has=true→不显示完善资料（D-025 AP-001 字符串代理反模式正向规避铁证）",
     "approved_partial_pattern_count": 1,
     "approved_partial_first_card": "COSTRA-105 (H6 BLOCKED-BY-COSTRA-154 自动等效回归)",
     "emergency_card_overflow": "0（vs Sprint-1 30%）",
     "false_starts": 0,
-    "commits": 56,
-    "commits_last": "54acc32",
+    "commits": 60,
+    "commits_last": "等 commit · sprint-2 closure",
     "g4_status": "PASS @ 2026-05-09",
-    "g5_status": "🟡 主线 7/7 R1 APPROVE 等 COSTRA-157+158 Human 攒批实测后正式 PASS"
+    "g5_status": "🟢 PASSED @ 2026-05-19 19:53（主线 7/7 Human T1 APPROVED CLOSED · D-024 §2.2 C1+C4 联合实测 16/16 PASS · 105+156 范式复用 3rd play）",
+    "sprint_2_closure_at": "2026-05-19T19:53:00+08:00"
   },
   "sprint_1_summary": {
     "sprint": "Sprint-1",

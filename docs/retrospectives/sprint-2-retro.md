@@ -381,11 +381,11 @@
 
 | 字段 | 值 |
 |---|---|
-| **G5 Sprint-2 合并状态** | 🟡 主线 7/7 R1 APPROVE · 等 COSTRA-157+158 Human 攒批实测后正式 PASS（D-024 §2.2 C1 路径）|
-| **预计 G5 PASS 日期** | 2026-05-19 ~ 2026-05-23（Human 任意时间跑 `docs/qa/sprint-2-batch-human-smoke.md` 8 步 ~10min）|
-| **Sprint-3 启动条件** | G5 PASS + Human 主动召唤 `start:sprint-3` / `start:COSTRA-154` |
-| **本档 owner** | Orchestrator（J 路径直驱）|
-| **本档 commit** | 待本轮 commit 后回填（预计 commit `<待生成>`）|
+| **G5 Sprint-2 合并状态** | 🟢 **PASSED @ 2026-05-19 19:53**（主线 7/7 Human T1 APPROVED CLOSED · D-024 §2.2 C1+C4 联合实测 16/16 PASS · 105+156 范式复用 3rd play）|
+| **G5 PASS 实际日期** | **2026-05-19 19:53**（Human 跑 v3.0 实测清单 6 步 16 断言 · 实际耗时 23min · 含 P0 BUG 发现 + 修复 + 重测）|
+| **Sprint-3 启动条件** | ✅ G5 PASS · 等 Human 主动召唤 `start:sprint-3` / `start:COSTRA-154` |
+| **本档 owner** | Orchestrator（J 路径直驱 + Sprint-2 真闭环 v1.1 续修）|
+| **本档 commit** | v1.0 commit `0ce8b9c` · v1.1 待本轮 sprint-2 closure commit 回填 |
 
 ---
 
@@ -394,6 +394,7 @@
 | 版本 | 时间 | 修订 |
 |---|---|---|
 | v1.0 | 2026-05-19 16:05 | 初版落档 · Human J 路径直驱 · 范式参照 Sprint-1 retro · 议题 18~27 + 额外 L · 5 范式归档 + 6 议题→决议映射 |
+| **v1.1** | **2026-05-19 19:55** | **Sprint-2 真闭环签收**（COSTRA-157+158 Human T1 APPROVED CLOSED · 实测 16/16 PASS · §7 G5 闸门 🟡→🟢）· 实测期发现并修复 storage envelope drift P0 BUG（COSTRA-158 R1.x.1 commit `99e3794`）· D-022 §4.1 runtime 实测前置铁律第 3 次实战收益登记 · D-025 AP-001 字符串代理反模式第 1 次正向规避铁证（F.3 撞库 nickname=微信用户+has=true→不显示完善资料）· 实测报告 `qa/results/2026-05-19-sprint-2-batch-human-smoke-result.md` 已落档 · 立 FU-DEV-MOCKLOGIN-RUNTIME-TOGGLE（P3 · Sprint-3 顺手）|
 
 ---
 
