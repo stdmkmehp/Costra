@@ -45,8 +45,10 @@
 | **DevOps 基建** | FU-DEVOPS-NGINX-ICP-HEADER | P3 | DNS+SSL+反代上线触发 | open-observation |
 | **DevOps 基建** | FU-DEVOPS-ICP-HEALTH-PROBE | P2 | 合 COSTRA-903 APM | open |
 | **DevOps 基建** | FU-DEVOPS-ICP-CROSS-SSOT-CHECK | P2 | Sprint-2 CI 升级（与 FU-CI-MP-BUILD-NPM-ENFORCE 同节奏）| open |
+| **DevOps 基建** | **FU-DEVOPS-OPENAPI-IMPL-COVERAGE** | **P2** | **Sprint-3 中段 · DevOps-Agent 1 点小卡（whitelist-check.mjs 规则 E）**| **open**（D-025 AP-003 自动检测候选 · Sprint-2 末 Retro 立案）|
 | **DB 治理** | FU-DB-OPS-AUDIT | P3 | DAU>100 触发 | open |
 | **协议 / 规约残留** | FU-COMMON-MINIAPP-PATCH-LIMIT | ~~P2~~ → **closed** | ~~COSTRA-158~~ | **closed @ COSTRA-158**（server PATCH route + K3 method-override compat · client 现有降级链路验证可用） |
+| **协议 / 规约残留** | **FU-K3-TO-K1-UPGRADE** | **P2** | **COSTRA-152 dispatch 时评估**| **open**（K3 局部 method-override 升级评估 · Sprint-2 末 Retro 立案）|
 | **QA 自动化** | FU-105-AUTOMATION-FULL-COVERAGE | P2 | COSTRA-155 | open |
 | **QA 自动化** | FU-156-OUTBOX-FLAKY | P2 | Sprint-3 头部 miniapp-dev | open |
 | **外部触发** | FU-115-2 | O 观察 | Human ICP 下证日触发 | open |
@@ -321,6 +323,24 @@
 - **状态**：`open`
 - **⚠️ 卡号冲突警告**：原指引 COSTRA-150 已被 FU-103-CLIENT-SYNC-SCHEDULER 占用 · 必须重新分配占位页指向
 
+### FU-DEVOPS-OPENAPI-IMPL-COVERAGE · whitelist-check.mjs 规则 E：OpenAPI paths vs fastify register 一一对应（D-025 AP-003 自动检测）
+
+- **来源**：Sprint-2 末 Retro 议题 25（D-025 AP-003 契约-实装漂移立案触发）+ 议题 21（CI 对账族扩展 · Sprint-3 候选规则 E）
+- **登记时间**：2026-05-19 16:05（Sprint-2 末 Retro 立案）
+- **背景**：COSTRA-101（2026-04-24）OpenAPI 已定义 `/users/me` GET + PATCH · 但 server 路由从未实装 · 1 个月内无人发现 · 直到 COSTRA-158（2026-05-19）才补齐。隐性 gap 累积风险高 · 需 CI 静态规则兜底。
+- **范围**：
+  - 升级 `scripts/devops/whitelist-check.mjs`：解析 `server/api/openapi.yaml` 所有 `paths` · 与 `server/src/app.ts` + `server/src/routes/*.ts` 中 fastify register 调用做静态对账
+  - OpenAPI 定义但 server 没 register → exit 1 + 打印缺失 path 列表（除非 path 含 `x-deferred` 标记则降级 warning）
+  - server register 但 OpenAPI 没定义 → exit 1（防漂移反向 · OpenAPI 是契约真源）
+  - 与现有规则 D（fastify prefix vs OpenAPI servers）互补 · 同属 OpenAPI ↔ fastify 双向对账
+- **依赖**：现有 `whitelist-check.mjs` 规则 D 范式（COSTRA-156 commit `edca8da`）
+- **阻断级别**：P2（不阻塞当前任何卡 · 但 Sprint-3 起 154/152/153 等 OpenAPI 定义路径密集落地 · 越早做防御收益越大）
+- **认领建议**：Sprint-3 中段 · DevOps-Agent 1 点小卡 · 与 FU-DEVOPS-ICP-CROSS-SSOT-CHECK 同节奏（合并升级 whitelist-check.mjs）
+- **PRD 锚点**：无（CI 治理议题）
+- **PRD 立意**：D-025 AP-003 契约-实装漂移自动检测 · 让"OpenAPI 早定义 server 没实装"反模式无处遁形
+- **状态**：`open`
+- **owner_card**：（待 Sprint-3 Planning 认领 · 候选合并到既有 whitelist-check.mjs 升级卡）
+
 ---
 
 ## 🗄 族 D · DB 治理（1 条）
@@ -363,6 +383,27 @@
   - 链路精准命中 R1 Review §P1-2 预言（`.team/reviews/COSTRA-102/round-1-tech.md:74-81`）
   - 兜底有效：`pages/login/index.ts:68` `catch (e) { console.warn }` 打印 `soft-fail` · 不阻登录流程
   - **三方案预议历史**（保留 · 但 K3 兜底已被 COSTRA-158 选定）：(a) server/Fastify 加统一 `methodOverride` 中间件（K1 · 全局）· (b) MiniApp 切到 DELETE+重建语义（不可行）· (c) OpenAPI 改 PATCH → PUT（无破坏 · 语义等价 · 之前推荐 · 现被 K3 替代以保护 OpenAPI 纯净）
+
+### FU-K3-TO-K1-UPGRADE · K3 局部 method-override → K1 全局 middleware 升级评估
+
+- **来源**：Sprint-2 末 Retro 议题 Sprint-3-B（D-024 §2.4 关联 · COSTRA-158 dispatch §5.3 已知未知 · review-tech R1 INFO-2 强化）
+- **登记时间**：2026-05-19 16:05（Sprint-2 末 Retro 立案）
+- **背景**：
+  - COSTRA-158 R1 在 `server/src/routes/users.ts` 内 POST handler 识别 `X-HTTP-Method-Override: PATCH` 后委托给 PATCH handler（**K3 局部兜底**）· 作用域最小 · 不影响其他路由
+  - COSTRA-152 PATCH /entries/{entry_id} 实装时同样需要 method-override 兼容（wx.request 不支持 PATCH 是平台限制）· 若仍走 K3 模式 · 在 entries 路由内重复一次相同代码（约 10 行）
+  - K1 全局 method-override middleware 在 `server/src/app.ts` 注册一次 · 所有路由自动支持 X-HTTP-Method-Override
+- **范围**：
+  - 在 COSTRA-152 dispatch 阶段评估：是否将 K3 模式升级为 K1 全局 middleware
+  - 决策依据：① Sprint-3 起预计还有几个 PATCH 路由需要 method-override（152 + 153 DELETE 是否也需要）/ ② K1 全局 middleware 实装复杂度（fastify-method-override 库 vs 自实现）/ ③ 与现有 K3 兼容（同时存在不冲突 · K1 优先识别 · K3 fallback 不触发）
+  - 升级时同步移除 158 R1 的 K3 局部代码（约 10 行）· 反向兼容 X-HTTP-Method-Override header
+- **依赖**：
+  - 必须：COSTRA-158 R1 CLOSED（K3 实装为升级基线）
+  - 触发：COSTRA-152 dispatch（评估 K3 vs K1 取舍）
+- **阻断级别**：P2（不阻 152 启动 · 选 K3 持续路径继续工作 · 但若评估后选 K1 则在 152 dispatch 内一并实装）
+- **认领建议**：COSTRA-152 dispatch 阶段评估 · backend-dev 提议 · 走 D-017 §2.4 验证问题响应 SOP 上报决策点
+- **PRD 锚点**：无（架构层议题）
+- **状态**：`open`
+- **owner_card**：COSTRA-152（dispatch 时评估 · 升级或保持 K3 的决策都在 152 卡内做）
 
 ---
 
