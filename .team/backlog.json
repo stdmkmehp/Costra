@@ -1,9 +1,9 @@
 {
   "project": "Costra",
-  "version": "0.2.10",
-  "last_updated": "2026-05-19T09:44:00+08:00",
+  "version": "0.2.11",
+  "last_updated": "2026-05-19T10:08:00+08:00",
   "platform": "wechat-miniprogram",
-  "notes": "v0.2.10: COSTRA-158 占位卡入 Sprint-2 主线第 7 张 · /users/me 完整实装 + has_completed_profile 严格资料判定 · 5 点 P1 · backend-dev + miniapp-dev 单卡双装扮档 · Human D-recommended 决策（COSTRA-157 R1 APPROVE 后 hasProfile 概率边界争议触发 · 调研发现 PATCH /users/me 在 OpenAPI 已定义但 server 从未实装 · 顺手关 FU-COMMON-MINIAPP-PATCH-LIMIT）· dispatch 已落盘 等 Card-Review R1。 v0.2.9: COSTRA-156 + COSTRA-105 双卡 Human T1 APPROVED CLOSED @ 2026-05-19 09:27 · 联合双卡终审同轮 approve（D-014 SOP）· 156 APPROVED 40/40 满分 · 105 APPROVED-PARTIAL（H1~H5 🟢 全 PASS · H6 🔴 BLOCKED-BY-COSTRA-154 自动等效回归 · 不阻 R1 双卡 approve · v1.4 BLOCKED-BY-COSTRA-156 范式同款第 2 次实战）· Sprint-2 5/7 卡 CLOSED · 累计 14→22 点 / 47%→61% · COSTRA-154 转 Sprint-3 P0 头部（FU-104-SYNC-PULL · 5 点 · 与 COSTRA-150 一同做才有意义 · 实装后回归 105 D.2 + H6 等效闭环）。 v0.2.8: COSTRA-157 占位卡入 Sprint-2 主线 · 用户资料完善 + 登录链路鲁棒性。",
+  "notes": "v0.2.11: COSTRA-158 R1 commit c7ea7f7 同轮 D-016 兑现（Card-Review 27/30 PASS → backend-dev 段 9 文件 + miniapp-dev 段 5 文件 → 双装扮档单 commit → review-tech R1 38/45 APPROVE）· Sprint-2 主线第 7 张 R1 等 Human T1 终审 · 0 P0 / 1 P1（K3 405 错误链路一致性 · 不阻 · Sprint-3 与 K3→K1 升级一同处理）/ 3 P2 / 2 INFO · 闸门全绿（server 35/35 + miniapp 43/43 测）· G10/G11 反向验证 PASS · D-022 v2.0 第 6 次实战 · 同步关闭 2 条 FU（FU-COMMON-MINIAPP-PATCH-LIMIT + FU-102-PROFILE-REFUSE-UI boundary risk 子项）· 与 COSTRA-157 R1 终审节奏可绑定（联合双卡 approve · 105+156 范式复用）。 v0.2.10: COSTRA-158 占位卡入 Sprint-2 主线第 7 张 · /users/me 完整实装 + has_completed_profile 严格资料判定 · 5 点 P1 · backend-dev + miniapp-dev 单卡双装扮档 · Human D-recommended 决策（COSTRA-157 R1 APPROVE 后 hasProfile 概率边界争议触发 · 调研发现 PATCH /users/me 在 OpenAPI 已定义但 server 从未实装 · 顺手关 FU-COMMON-MINIAPP-PATCH-LIMIT）· dispatch 已落盘 等 Card-Review R1。 v0.2.9: COSTRA-156 + COSTRA-105 双卡 Human T1 APPROVED CLOSED @ 2026-05-19 09:27 · 联合双卡终审同轮 approve（D-014 SOP）· 156 APPROVED 40/40 满分 · 105 APPROVED-PARTIAL（H1~H5 🟢 全 PASS · H6 🔴 BLOCKED-BY-COSTRA-154 自动等效回归 · 不阻 R1 双卡 approve · v1.4 BLOCKED-BY-COSTRA-156 范式同款第 2 次实战）· Sprint-2 5/7 卡 CLOSED · 累计 14→22 点 / 47%→61% · COSTRA-154 转 Sprint-3 P0 头部（FU-104-SYNC-PULL · 5 点 · 与 COSTRA-150 一同做才有意义 · 实装后回归 105 D.2 + H6 等效闭环）。 v0.2.8: COSTRA-157 占位卡入 Sprint-2 主线 · 用户资料完善 + 登录链路鲁棒性。",
   "epics": [
     {
       "id": "Epic-A",
@@ -389,16 +389,16 @@
         "priority": "P1",
         "sprint": "sprint-2",
         "epic": "Epic-A",
-        "status": "Backlog",
+        "status": "Doing",
         "dependencies": [
           "COSTRA-101",
           "COSTRA-104",
           "COSTRA-156",
           "COSTRA-157"
         ],
-        "description": "Sprint-2 主线第 7 张 · 11 项 scope（DB migration + userRepo + authService + routes/users.ts 新建 + app.ts 注册 + OpenAPI User schema + server 单测 + miniapp TokenRaw + computeHasProfile 严格判定 + home.spec 修订 + 顺手关 FU-COMMON-MINIAPP-PATCH-LIMIT）· Human D-recommended 决策（COSTRA-157 R1 后 hasProfile 概率边界争议触发 · 调研发现 PATCH /users/me 在 OpenAPI 已定义但 server 从未实装 · COSTRA-101 遗留 gap）· INVEST small 5 点 · 双装扮档单 commit · dispatch 已落盘 .team/dispatch/COSTRA-158-users-me-and-has-completed-profile.md",
-        "disposition": "Sprint-2 主线第 7 张 · 等 Card-Review R1（D-014-a 同轮启动）· 与 COSTRA-157 终审节奏可绑定（联合 approve · 105+156 范式复用）",
-        "updated_at": "2026-05-19T09:44:00+08:00",
+        "description": "Sprint-2 主线第 7 张 · 11 项 scope（DB migration + userRepo + authService + routes/users.ts 新建 + app.ts 注册 + OpenAPI User schema + server 单测 + miniapp TokenRaw + computeHasProfile 严格判定 + home.spec 修订 + 顺手关 FU-COMMON-MINIAPP-PATCH-LIMIT）· Human D-recommended 决策（COSTRA-157 R1 后 hasProfile 概率边界争议触发 · 调研发现 PATCH /users/me 在 OpenAPI 已定义但 server 从未实装 · COSTRA-101 遗留 gap）· INVEST small 5 点 · 双装扮档单 commit c7ea7f7 · R1 commit 含 §2.4 client 消费策略追加（updateLocalUserProfile · login PATCH 成功后调）",
+        "disposition": "Sprint-2 主线第 7 张 · R1 commit c7ea7f7 落盘 · Card-Review R1 27/30 PASS（P1+P2 全采纳）· review-tech R1 38/45 APPROVE（D-022 v2.0 第 6 次实战 · 0 P0 / 1 P1 不阻 / 3 P2 / 2 INFO · K3 405 错误链路一致性 P1 留 Sprint-3 与 K3→K1 升级一同处理）· 闸门全绿 server 35/35 + miniapp 43/43 + G10/G11 反向验证 PASS · 同步关闭 FU-COMMON-MINIAPP-PATCH-LIMIT + FU-102-PROFILE-REFUSE-UI boundary risk 子项 · 等 Human T1 终审（与 COSTRA-157 联合 approve 节奏 · 105+156 范式复用）",
+        "updated_at": "2026-05-19T10:08:00+08:00",
         "dispatch_at": "2026-05-19T09:44:00+08:00"
       }
     ]
