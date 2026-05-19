@@ -21,6 +21,7 @@ export interface UserEntity {
   nickname: string;
   avatarUrl: string | null;
   timezone: string;
+  hasCompletedProfile: boolean; // COSTRA-158: 严格资料判定字段
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
@@ -34,6 +35,7 @@ interface UserRow {
   nickname: string;
   avatar_url: string | null;
   timezone: string;
+  has_completed_profile: boolean; // COSTRA-158
   created_at: Date;
   updated_at: Date;
   deleted_at: Date | null;
@@ -48,6 +50,7 @@ function rowToEntity(r: UserRow): UserEntity {
     nickname: r.nickname,
     avatarUrl: r.avatar_url,
     timezone: r.timezone,
+    hasCompletedProfile: r.has_completed_profile,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     deletedAt: r.deleted_at,
@@ -71,6 +74,7 @@ export async function findByOpenid(openid: string, client?: Runner): Promise<Use
   const runner = client ?? exec();
   const res = await runner.query(
     `SELECT id, wx_openid, wx_unionid, nickname, avatar_url, timezone,
+            has_completed_profile,
             created_at, updated_at, deleted_at, version
        FROM users
       WHERE wx_openid = $1 AND deleted_at IS NULL
@@ -85,6 +89,7 @@ export async function findById(id: string, client?: Runner): Promise<UserEntity 
   const runner = client ?? exec();
   const res = await runner.query(
     `SELECT id, wx_openid, wx_unionid, nickname, avatar_url, timezone,
+            has_completed_profile,
             created_at, updated_at, deleted_at, version
        FROM users
       WHERE id = $1 AND deleted_at IS NULL
@@ -113,7 +118,7 @@ export async function create(input: CreateUserInput, client?: Runner): Promise<U
     `INSERT INTO users (id, wx_openid, wx_unionid, nickname, avatar_url, timezone)
           VALUES ($1, $2, $3, $4, $5, COALESCE($6, 'Asia/Shanghai'))
         RETURNING id, wx_openid, wx_unionid, nickname, avatar_url, timezone,
-                  created_at, updated_at, deleted_at, version`,
+                  has_completed_profile, created_at, updated_at, deleted_at, version`,
     [
       id,
       input.wxOpenid,
@@ -137,4 +142,54 @@ export async function upsertByOpenid(input: CreateUserInput, client?: Runner): P
   const existing = await findByOpenid(input.wxOpenid, client);
   if (existing) return existing;
   return create(input, client);
+}
+
+// --- COSTRA-158: PATCH /users/me 资料更新 ---
+
+export interface UpdateProfileInput {
+  nickname?: string;
+  avatarUrl?: string | null;
+  timezone?: string;
+}
+
+/**
+ * 更新当前用户的画像信息（PATCH /users/me 路径消费）
+ *
+ * 行为约定：
+ *   - 只更新传入的字段（部分更新语义 · COALESCE 兜底）
+ *   - 任意字段更新成功后 has_completed_profile 设为 TRUE（语义：用户至少主动调过一次 PATCH）
+ *   - version + 1（乐观锁支持 · 与 COSTRA-104 entryService 范式一致）
+ *   - 软删用户（deleted_at IS NOT NULL）禁止更新
+ *
+ * 不做：
+ *   - has_completed_profile 一旦 TRUE 不可降级回 FALSE（语义单调 · 简化判定）
+ *   - 字段值校验由 service 层做（如 nickname 长度 · avatarUrl 格式）
+ */
+export async function updateProfile(
+  userId: string,
+  input: UpdateProfileInput,
+  client?: Runner,
+): Promise<UserEntity | null> {
+  const runner = client ?? exec();
+  const res = await runner.query(
+    `UPDATE users
+        SET nickname = COALESCE($2, nickname),
+            avatar_url = CASE WHEN $3::TEXT IS NULL AND $4::BOOLEAN THEN NULL
+                              ELSE COALESCE($3, avatar_url) END,
+            timezone = COALESCE($5, timezone),
+            has_completed_profile = TRUE,
+            updated_at = now(),
+            version = version + 1
+      WHERE id = $1 AND deleted_at IS NULL
+      RETURNING id, wx_openid, wx_unionid, nickname, avatar_url, timezone,
+                has_completed_profile, created_at, updated_at, deleted_at, version`,
+    [
+      userId,
+      input.nickname ?? null,
+      input.avatarUrl ?? null,
+      input.avatarUrl === null,  // 显式传 null = 想清空 avatar · 不是不更新
+      input.timezone ?? null,
+    ],
+  );
+  return res.rows[0] ? rowToEntity(res.rows[0]) : null;
 }

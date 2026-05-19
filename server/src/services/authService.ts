@@ -45,6 +45,7 @@ export interface AuthTokenPair {
     nickname: string;
     avatar_url: string | null;
     timezone: string;
+    has_completed_profile: boolean; // COSTRA-158: 严格资料判定字段
     created_at: string;
     updated_at: string;
   };
@@ -75,6 +76,7 @@ function toUserView(u: {
   nickname: string;
   avatarUrl: string | null;
   timezone: string;
+  hasCompletedProfile: boolean; // COSTRA-158
   createdAt: Date;
   updatedAt: Date;
 }): AuthTokenPair['user'] {
@@ -83,6 +85,7 @@ function toUserView(u: {
     nickname: u.nickname,
     avatar_url: u.avatarUrl,
     timezone: u.timezone,
+    has_completed_profile: u.hasCompletedProfile, // COSTRA-158
     created_at: u.createdAt.toISOString(),
     updated_at: u.updatedAt.toISOString(),
   };

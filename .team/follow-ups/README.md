@@ -23,7 +23,7 @@
 
 ---
 
-## 🟢 当前 open FU 速查表（26 条 · 按主题族 + 推动优先级 · 2026-05-18 加族 H 3 条）
+## 🟢 当前 open FU 速查表（24 条 · 按主题族 + 推动优先级 · 2026-05-19 COSTRA-158 关闭 2 条）
 
 | 主题族 | FU-ID | 优先级 | 候选卡 / 归属 | 状态 |
 |---|---|---|---|---|
@@ -34,7 +34,7 @@
 | **Sprint-3 同步协议核心** | FU-103-CONFLICT-MERGE-UI | P2 | COSTRA-151 | open |
 | **Epic-A 用户资料**（→ COSTRA-157 合卡）| FU-001 | P2 | COSTRA-157 | scoped |
 | **Epic-A 用户资料**（→ COSTRA-157 合卡）| FU-118-2 | P2 | COSTRA-157 | scoped |
-| **Epic-A 用户资料**（→ COSTRA-157 → ⚠️ COSTRA-158 严格判定）| FU-102-PROFILE-REFUSE-UI | **P1**（升级 · Human 否决概率边界）| **COSTRA-158** | reopened-scoped |
+| **Epic-A 用户资料** | FU-102-PROFILE-REFUSE-UI | ~~P1~~ → **closed** | ~~COSTRA-158~~ | **closed @ COSTRA-158**（boundary risk 子项 · 157 间接判定 → 158 严格 has_completed_profile） |
 | **Epic-A 用户资料**（→ COSTRA-157 合卡）| FU-102-ERROR-MAPPER-INTEGRATION | **P1**（红线违反）| COSTRA-157 | scoped |
 | **Epic-A 用户资料**（→ COSTRA-157 合卡）| FU-102-AVATAR-ONERROR | **P1**（红线违反）| COSTRA-157 | scoped |
 | **DevOps 基建** | FU-118-3（→ COSTRA-160）| P0 根因 / P2 优先级 | COSTRA-160（已立卡）| open |
@@ -46,7 +46,7 @@
 | **DevOps 基建** | FU-DEVOPS-ICP-HEALTH-PROBE | P2 | 合 COSTRA-903 APM | open |
 | **DevOps 基建** | FU-DEVOPS-ICP-CROSS-SSOT-CHECK | P2 | Sprint-2 CI 升级（与 FU-CI-MP-BUILD-NPM-ENFORCE 同节奏）| open |
 | **DB 治理** | FU-DB-OPS-AUDIT | P3 | DAU>100 触发 | open |
-| **协议 / 规约残留** | FU-COMMON-MINIAPP-PATCH-LIMIT | O 观察 → P2 实装 | **COSTRA-158**（顺手 K3 method-override）| reopened-scoped |
+| **协议 / 规约残留** | FU-COMMON-MINIAPP-PATCH-LIMIT | ~~P2~~ → **closed** | ~~COSTRA-158~~ | **closed @ COSTRA-158**（server PATCH route + K3 method-override compat · client 现有降级链路验证可用） |
 | **QA 自动化** | FU-105-AUTOMATION-FULL-COVERAGE | P2 | COSTRA-155 | open |
 | **QA 自动化** | FU-156-OUTBOX-FLAKY | P2 | Sprint-3 头部 miniapp-dev | open |
 | **外部触发** | FU-115-2 | O 观察 | Human ICP 下证日触发 | open |
@@ -54,8 +54,7 @@
 | **🆕 QA 实测发现（族 H）** | **BUG-156-SYNC-PUSH-PAYLOAD-NO-UUID-VALIDATION** | **🔴 P0** | COSTRA-105 R1.x.2（backend-dev · 派单中）| open |
 | **🆕 QA 实测发现（族 H）** | FU-105-DEV-CONSOLE-HOOK | P3 | Sprint-3 头部 miniapp-dev（候选 COSTRA-150 顺带）| open |
 
-> **2026-05-13 维护批同步关闭 5 条 FU**（已迁入归档 · 不再列于本表）：
-> FU-105-CLIENT-SERVER-URL-PREFIX-MISMATCH（COSTRA-156 R1 实质闭合）· FU-102-SYNC-PULL-DRIFT / FU-102-HUMAN-VERIFY-PARADIGM / FU-REVIEW-TECH-RUNTIME-DIM（COSTRA-106 Retro 三决议沉淀）· FU-118-1（账本同步 · engineering-guidelines §2.5 文字留 PM 维护批落字）
+> **2026-05-19 COSTRA-158 同步关闭 2 条 FU**：FU-COMMON-MINIAPP-PATCH-LIMIT（server PATCH route 实装 + K3 method-override 兼容 · client 降级链路验证可用）· FU-102-PROFILE-REFUSE-UI boundary risk 子项（COSTRA-157 间接判定 → 158 严格 has_completed_profile 字段判定）
 
 ---
 
@@ -180,10 +179,11 @@
 - **阻断级别**：原 P2 → **升级 P1**（2026-05-19 09:42 Human 否决"概率极低"接受边界）
 - **认领建议**：
   - 🟡 COSTRA-157 R1 已实装"基于 nickname 字符串比较的代理判定"（u.nickname !== defaultNickname）· 完成边界 + Q5-A 临时文字链入口 · 但 Human 否决概率近似判定
-  - ✅ **真实闭环 → COSTRA-158**（5 点 · /users/me 完整实装 + has_completed_profile 显式字段事实判定 · 替换 157 R1 的代理判定）
-- **状态**：`reopened-scoped`（COSTRA-157 R1 已部分兑现 · 严格闭环依赖 COSTRA-158）
-- **owner_card**：**COSTRA-158**（接力卡 · 与 COSTRA-157 终审节奏可绑定）
+  - ✅ **已由 COSTRA-158 闭环**（has_completed_profile 严格字段判定 · 替换 157 间接判定）
+- **状态**：`closed @ COSTRA-158`（boundary risk 子项 · 157 间接判定 → 158 严格 has_completed_profile）
+- **owner_card**：~~COSTRA-158~~（已闭环）
 - **🆕 2026-05-19 09:42 Human 否决记录**：`u.nickname !== defaultNickname` 是字符串代理判定 · 不是事实判定 · 用户名='微信用户'撞库时误判 → 不能用"概率极低"理由接受 → 立 COSTRA-158 走严格事实字段（has_completed_profile）
+- **🆕 2026-05-19 COSTRA-158 闭环**：server has_completed_profile 字段 + client computeHasProfile 严格判定 + auth.updateLocalUserProfile 本地同步 · 157 间接判定已完全替换
 
 ### FU-102-ERROR-MAPPER-INTEGRATION · login 页错误分支直出 err.message 违反红线
 
@@ -345,13 +345,13 @@
 - **范围**：`miniprogram/services/request.ts` PATCH 方法在 wx.request type 中不存在 · Agent 已降级 `method === 'PATCH'` 时走 POST + `X-HTTP-Method-Override: PATCH` header
 - **建议**：登记为跨卡复用的平台限制 · server 侧约定处理该 header · 不可修
 - **阻断级别**：原 O 观察 → **升级 P2 实装**（2026-05-19 调研发现真实根因双重 · server 路由完全未实装 + 平台限制 · 已挂 COSTRA-158）
-- **认领建议**：✅ **挂 COSTRA-158**（K3 兜底 · users 路由 POST handler 内识别 X-HTTP-Method-Override · 仅 users 作用域 · 守 INVEST small）
-- **状态**：`reopened-scoped`
-- **owner_card**：**COSTRA-158**
-- **闭合条件**（COSTRA-158 R1 时一并兑现）：
-  - server PATCH /users/me 路由真实存在 + POST /users/me K3 method-override 兜底
-  - E2E 实测：client login 后真调 PATCH 200（不再撞 404 soft-fail）
-  - 关闭时同步移除 dispatch 中"留 COSTRA-152 顺手做"的旧建议
+- **认领建议**：✅ **已由 COSTRA-158 闭环**（server PATCH /users/me 路由实装 + K3 method-override 兜底 · client 现有降级链路验证可用）
+- **状态**：`closed @ COSTRA-158`（server PATCH route 实装 + K3 method-override 兼容 · client 降级链路验证可用）
+- **owner_card**：~~COSTRA-158~~（已闭环）
+- **闭合条件**（COSTRA-158 R1 一并兑现 ✅）：
+  - ✅ server PATCH /users/me 路由真实存在 + POST /users/me K3 method-override 兜底
+  - ⏳ E2E 实测：client login 后真调 PATCH 200（不再撞 404 soft-fail）· 等 Human 实测（dispatch §9 步骤 4）
+  - ✅ 关闭时同步移除 dispatch 中"留 COSTRA-152 顺手做"的旧建议
 - **🆕 真实根因更正**（2026-05-19 调研）：原归因仅"wx.request 不支持 PATCH"只覆盖一半 · 调研 COSTRA-158 时发现 **server PATCH /users/me 路由完全未实装**（OpenAPI 早定义但 server/src/routes/ 无 users.ts · COSTRA-101 遗留 gap）· 即便 client 用真 PATCH 也会 404 · 双重原因
 - **🆕 首次实触发观察**（2026-05-01 21:18 · COSTRA-123 Human 第 6 次模拟器启动）：
   - 现象：`request.ts:88 POST http://localhost:8080/v1/users/me 404` + `[login] PATCH /users/me soft-fail Error: route not found`

@@ -24,6 +24,7 @@ export interface TokenRaw {
     id: string;
     nickname: string;
     avatar_url: string | null;
+    has_completed_profile: boolean;   // COSTRA-158: 严格资料判定字段
   };
 }
 
@@ -237,9 +238,37 @@ function mockExchange(_code: string, oldRefresh?: string): TokenRaw {
     user: {
       id: `mock-user-${seed.slice(0, 4)}`,
       nickname: '测试用户',
-      avatar_url: null
+      avatar_url: null,
+      // mock 模式下 has_completed_profile=true · 因此 mock 下无法验证"完善资料"入口显示路径
+      // 该路径由 §9 步骤 2（has_completed_profile=false 首登场景）Human 实测覆盖
+      // Card-Review P2-3 修订（2026-05-19 10:15）
+      has_completed_profile: true,
     }
   };
+}
+
+// ---- COSTRA-158 §2.4: PATCH 成功后本地更新 user 子对象 ----
+
+/**
+ * PATCH /users/me 成功后更新本地 TokenRaw.user 子对象 + storage
+ * 不改 token 本身（access_token / refresh_token 不变）
+ * dispatch §2.4 client 消费策略 · P1-1 修订产物
+ */
+export function updateLocalUserProfile(
+  partial: Partial<{
+    nickname: string;
+    avatar_url: string | null;
+    has_completed_profile: boolean;
+  }>,
+): void {
+  if (!current) return;
+  Object.assign(current.raw.user, partial);
+  // storage 同步写入 · 保持与 initAuth/clearToken 一致
+  wx.setStorageSync(TOKEN_KEY, {
+    raw: current.raw,
+    access_expires_at: current.access_expires_at,
+    refresh_expires_at: current.refresh_expires_at,
+  });
 }
 
 // ---- testing-only exports ----

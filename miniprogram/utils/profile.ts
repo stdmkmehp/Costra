@@ -1,20 +1,18 @@
 // utils/profile.ts · 用户画像判定辅助
-// 卡号：COSTRA-157 · FU-102-PROFILE-REFUSE-UI
+// 卡号：COSTRA-158 · 替换 COSTRA-157 间接判定（nickname 字符串比较）为严格事实判定
 //
-// 从 Page 层抽取 · 便于单测（避免 mock Page()/wx 全局）
-// hydrateUser 内调用 computeHasProfile · onTapCompleteProfile 不在此处
-
-import { defaultNickname } from '../config/defaults';
+// COSTRA-157 旧实装：u.nickname !== defaultNickname（代理判定 · Human 否决 2026-05-19 09:42）
+// COSTRA-158 新实装：u.has_completed_profile（事实字段 · server 显式标记）
+//
+// 语义优势：
+//   - 用户改名为 '微信用户' 不误判（之前会误判）
+//   - server 升级 default nickname 客户端不需要跟改
+//   - 多端同账号一致（之前是字符串比较 · 同账号同步）
 
 interface UserLike {
-  nickname?: string;
+  has_completed_profile?: boolean;
 }
 
-/**
- * 判定用户是否有真实资料（非默认占位昵称）
- * ⚠️ 已知边界（dispatch §2.1 E）：用户真实昵称 === defaultNickname 时误判 false
- * MVP 接受 · Sprint-3 Epic-D 落地后改用 user.has_completed_profile 显式标记
- */
 export function computeHasProfile(u: UserLike | null | undefined): boolean {
-  return !!(u && u.nickname && u.nickname !== defaultNickname);
+  return !!(u && u.has_completed_profile);
 }

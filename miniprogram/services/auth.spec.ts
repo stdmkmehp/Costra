@@ -1,7 +1,7 @@
 // services/auth.spec.ts · TokenPair 字段对齐 + shouldRefresh 边界
-// 卡号: COSTRA-102 · D2.10
+// 卡号: COSTRA-102 · D2.10 · COSTRA-158 §2.4 G' 扩展 updateLocalUserProfile 测
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { __test__ as authTest, getToken, getSession } from './auth';
+import { __test__ as authTest, getToken, getSession, updateLocalUserProfile } from './auth';
 import type { TokenRaw } from './auth';
 
 // wx 运行时在单测环境不存在 · 仅 buildStored 与 wrap 逻辑不依赖 wx，直接测即可
@@ -11,7 +11,7 @@ const mockRaw: TokenRaw = {
   refresh_token: 'r.s.t',
   access_token_ttl_sec: 7200,
   refresh_token_ttl_sec: 2592000,
-  user: { id: 'u-1', nickname: '测试昵称', avatar_url: 'https://x.png' },
+  user: { id: 'u-1', nickname: '测试昵称', avatar_url: 'https://x.png', has_completed_profile: false },
 };
 
 describe('services/auth · TokenPair 字段 + 续签窗口', () => {
@@ -61,5 +61,47 @@ describe('services/auth · TokenPair 字段 + 续签窗口', () => {
     // 过期前 6 分钟 → 不触发（> 5 分钟）
     vi.setSystemTime(baseNow + (7200 - 360) * 1000);
     expect(tk.shouldRefresh()).toBe(false);
+  });
+});
+
+describe('services/auth · updateLocalUserProfile（COSTRA-158 §2.4）', () => {
+  const setStorageSyncMock = vi.fn();
+
+  beforeEach(() => {
+    authTest.reset();
+    vi.stubGlobal('wx', { setStorageSync: setStorageSyncMock });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    authTest.reset();
+  });
+
+  it('PATCH 成功后本地 user 含 has_completed_profile=true', () => {
+    const stored = authTest.buildStored(mockRaw);
+    authTest.setCurrent(stored);
+
+    // 调用前 user.has_completed_profile = false
+    const tk = getToken();
+    expect(tk!.raw.user.has_completed_profile).toBe(false);
+
+    // 模拟 PATCH 成功后更新
+    updateLocalUserProfile({ nickname: '新昵称', avatar_url: 'https://new.png', has_completed_profile: true });
+
+    // 验证内存态已更新
+    expect(getToken()!.raw.user.has_completed_profile).toBe(true);
+    expect(getToken()!.raw.user.nickname).toBe('新昵称');
+    expect(getToken()!.raw.user.avatar_url).toBe('https://new.png');
+
+    // 验证 storage 同步写入被调用
+    expect(setStorageSyncMock).toHaveBeenCalled();
+    const callArg = setStorageSyncMock.mock.calls[0];
+    expect(callArg[0]).toBe('__costra_token_v1');
+    expect(callArg[1].raw.user.has_completed_profile).toBe(true);
+  });
+
+  it('current 为 null 时 updateLocalUserProfile 不抛异常', () => {
+    expect(() => updateLocalUserProfile({ has_completed_profile: true })).not.toThrow();
+    expect(setStorageSyncMock).not.toHaveBeenCalled();
   });
 });

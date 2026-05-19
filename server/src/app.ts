@@ -27,6 +27,7 @@ import { registerHealthRoute } from './routes/healthz.js';
 import { registerEntriesRoutes } from './routes/entries.js';
 import { registerSyncRoutes } from './routes/sync.js';
 import { registerLegalRoutes } from './routes/legal.js';
+import { registerUsersRoutes } from './routes/users.js';
 
 export interface BuildAppOptions {
   /** 测试注入：禁用 logger 以避免 vitest 日志噪音 */
@@ -73,6 +74,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
     await registerEntriesRoutes(v1);
     await registerSyncRoutes(v1);
     await registerLegalRoutes(v1);
+    await registerUsersRoutes(v1);
   }, { prefix: '/v1' });
 
   return app;

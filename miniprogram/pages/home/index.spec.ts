@@ -1,35 +1,29 @@
 // pages/home/index.spec.ts · 首页逻辑单测
-// 卡号：COSTRA-157 · F 项 miniapp 段
+// 卡号：COSTRA-158 · J 项 miniapp 段（删除 nickname 边界用例 · 新增 has_completed_profile 用例）
 // Refs: services/db.spec.ts mock 范本 · utils/profile.ts 纯函数抽取
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { computeHasProfile } from '../../utils/profile';
-import { defaultNickname } from '../../config/defaults';
 
 describe('utils/profile · computeHasProfile', () => {
   it('u 为 null → hasProfile = false', () => {
     expect(computeHasProfile(null)).toBe(false);
   });
 
-  it('u.nickname === defaultNickname → hasProfile = false（边界用例 · dispatch P1-1）', () => {
-    expect(computeHasProfile({ nickname: defaultNickname })).toBe(false);
+  it('has_completed_profile=true → hasProfile=true（不论 nickname 是否撞库 default）', () => {
+    expect(computeHasProfile({ has_completed_profile: true })).toBe(true);
   });
 
-  it('u.nickname === "张三" → hasProfile = true', () => {
-    expect(computeHasProfile({ nickname: '张三' })).toBe(true);
+  it('has_completed_profile=false → hasProfile=false', () => {
+    expect(computeHasProfile({ has_completed_profile: false })).toBe(false);
   });
 
-  it('u.nickname 为空串 → hasProfile = false', () => {
-    expect(computeHasProfile({ nickname: '' })).toBe(false);
+  it('has_completed_profile 缺失 → hasProfile=false', () => {
+    expect(computeHasProfile({})).toBe(false);
   });
 
-  it('u.nickname 为 undefined → hasProfile = false', () => {
-    expect(computeHasProfile({ nickname: undefined })).toBe(false);
-  });
-});
-
-describe('config/defaults · cross-side alignment', () => {
-  it('defaultNickname === "微信用户"（与 server 端一致 · G7 闸门保障）', () => {
-    expect(defaultNickname).toBe('微信用户');
+  it('u.nickname === "张三" 但 has_completed_profile 未设置 → hasProfile=false', () => {
+    // COSTRA-158 语义：不再依赖 nickname 字符串比较 · 只看事实字段
+    expect(computeHasProfile({ has_completed_profile: undefined })).toBe(false);
   });
 });
 

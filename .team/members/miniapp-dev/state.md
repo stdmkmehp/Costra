@@ -16,8 +16,7 @@
 
 ## §2 当前关注（active tasks）
 
-- COSTRA-157 R1 · 5 FU 合并修复（用户资料完善 + 登录链路鲁棒性）· B/C/D/E + miniapp F 项实装完成 · 单 commit 已落盘 · 等 review-tech R1
-- COSTRA-105 R1.x.1 · BUG-001 ledger_id 'default' 字面量修复 · 已完成
+- COSTRA-158 R1 · miniapp 段实装完成 · 单 commit 已落盘 · 等 review-tech R1
 
 ## §3 交付历史索引
 
@@ -31,6 +30,7 @@
 - **2026-05-09** · `history/2026-05-09-costra-103-r1-implement.md` · COSTRA-103 **R1.3 实装收尾**（D-017 v3 首次完整流程实战 · Step 1~5 + Human Q1~Q4 全 (a) 拍板方案 A · outbox.ts conflict off-by-1 + handleRetry 死代码清理 + drainBatch recover 重构 · test 34/34 ✅ · 等 review-tech Round-1 + Human 模拟器终验 · SBAI 第 7 次冒烟）
 - **2026-05-18** · `history/2026-05-18-costra-157-r1-miniapp-segment.md` · COSTRA-157 **R1 miniapp 段实装**（B/C/D/E + F 5 项 · 单卡双装扮档第 2 段 · defaults 配置化 + mapError 红线 + onAvatarError + 完善资料降级 UI + 8 单测 · 6+4 闸门全绿 · 等 review-tech R1）
 - **2026-05-18** · `history/2026-05-18-costra-105-r1x1-bug001-ledger-fix.md` · COSTRA-105 **R1.x.1 BUG-001 修复**（ledger_id 'default' 字面量 → fallback UUID + globalData.activeLedgerId 类型声明 · D-017 v3 §2.4 E1 例外路径 · typecheck ✅ test 42/42 ✅）
+- **2026-05-19** · `history/2026-05-19-costra-158-r1-miniapp-segment.md` · COSTRA-158 **R1 miniapp 段实装**（H/I/J + J'/G' 扩展 5 项 · 单卡双装扮档第 2 段 · TokenRaw + computeHasProfile 严格判定 + home.spec + login updateLocalUserProfile + auth.spec · 6 闸门全绿 · 反向验证 G10/G11 通过 · 等 review-tech R1）
 
 ## §4 最近决策影响
 
@@ -79,3 +79,4 @@
 - **2026-05-09T18:25:00+08:00 · COSTRA-103 R1.3 实装最终收尾**（outbox conflict off-by-1 + handleRetry 死代码 + drainBatch recover 重构 + 6 闸门全 ✅ · 等 review-tech Round-1 + Human T1 终审 · D-017 v3 首次完整流程实战）
 - **2026-05-18T18:20:00+08:00 · COSTRA-157 R1 miniapp 段实装**（B/C/D/E + F 5 项全落盘 · 单卡双装扮档第 2 段 · 6+4 闸门全绿 · 等 review-tech R1）
 - **2026-05-18T20:10:00+08:00 · COSTRA-105 R1.x.1 BUG-001 修复**（ledger_id 'default' → fallback UUID + activeLedgerId 类型声明 · D-017 v3 §2.4 E1 例外路径 · typecheck ✅ test 42/42 ✅ · 单 commit 已落盘）
+- **2026-05-19T10:35:00+08:00 · COSTRA-158 R1 miniapp 段实装**（H/I/J + J'/G' 扩展 5 项 · TokenRaw + computeHasProfile 严格判定 + home.spec + login updateLocalUserProfile + auth.spec · 6 闸门全绿 · 反向验证 G10/G11 通过 · 单 commit dd9b345 已落盘 · 等 review-tech R1）

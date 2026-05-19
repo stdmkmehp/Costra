@@ -874,12 +874,15 @@ components:
 
     User:
       type: object
-      required: [id, nickname, created_at]
+      required: [id, nickname, has_completed_profile, created_at]
       properties:
         id: { type: string, format: uuid }
         nickname: { type: string }
         avatar_url: { type: string, format: uri, nullable: true }
         timezone: { type: string, example: Asia/Shanghai }
+        has_completed_profile:
+          type: boolean
+          description: 'COSTRA-158: 用户是否完成资料补全（首登 false · PATCH /users/me 成功后 true）'
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
 

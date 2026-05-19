@@ -61,16 +61,17 @@ function applyMigrations(db: IMemoryDb): void {
   // 只抽取 auth 链路必需的 DDL（users + user_sessions）重写一份兼容版本
   const ddl = `
     CREATE TABLE users (
-      id              UUID PRIMARY KEY,
-      wx_openid       TEXT UNIQUE NOT NULL,
-      wx_unionid      TEXT UNIQUE,
-      nickname        TEXT NOT NULL,
-      avatar_url      TEXT,
-      timezone        TEXT NOT NULL DEFAULT 'Asia/Shanghai',
-      created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-      updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-      deleted_at      TIMESTAMPTZ,
-      version         INTEGER NOT NULL DEFAULT 1
+      id                      UUID PRIMARY KEY,
+      wx_openid               TEXT UNIQUE NOT NULL,
+      wx_unionid              TEXT UNIQUE,
+      nickname                TEXT NOT NULL,
+      avatar_url              TEXT,
+      timezone                TEXT NOT NULL DEFAULT 'Asia/Shanghai',
+      has_completed_profile   BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+      deleted_at              TIMESTAMPTZ,
+      version                 INTEGER NOT NULL DEFAULT 1
     );
     CREATE TABLE user_sessions (
       jti             UUID PRIMARY KEY,

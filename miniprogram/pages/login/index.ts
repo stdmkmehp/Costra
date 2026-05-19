@@ -4,7 +4,7 @@
 // COSTRA-125: onLoad 加 bootstrapPromise gate · 等 app.ts 串行 ensureVersion+initAuth 完成后再判定登录态
 // COSTRA-127: switchTab → reLaunch · 避免冷启动复用 home 旧实例触发 first-rendering-data race · 见 docs/devops/libversion-upgrade.md §3.6 反模式 #6
 // Refs: COSTRA-030, ADR-0004 §3 Token, Design flows/login.md · .team/dispatch/COSTRA-125-miniapp-storage-async-migration.md §3 (e)
-import { loginFlow, hasValidSession, getToken } from '../../services/auth';
+import { loginFlow, hasValidSession, getToken, updateLocalUserProfile } from '../../services/auth';
 import { mapError } from '../../utils/error-mapper';
 import { getEnv } from '../../services/env';
 import { request } from '../../services/request';
@@ -78,6 +78,9 @@ Page({
             },
             timeout: 5_000,
           });
+          // COSTRA-158 §2.4: PATCH 成功后更新本地 user 子对象
+          // 这样 home 页 hydrateUser 下次执行（onShow gate）时能立即看到 has_completed_profile=true
+          updateLocalUserProfile({ nickname: profile.nickname, avatar_url: profile.avatarUrl, has_completed_profile: true });
         } catch (e) {
           console.warn('[login] PATCH /users/me soft-fail', e);
         }
