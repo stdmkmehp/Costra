@@ -9,7 +9,9 @@
 > **🆕 验证问题响应 SOP（D-017 · 2026-04-28 13:59 Human 立案 · 14:15 落盘）**：项目遇到验证失败时标准流程 —— ① 责任领域识别（Orchestrator 30s） → ② 责任 Agent 根因分析（只诊断不改文件） → ③ 多方案对比（≥2~3 方案 · 列成本/价值/风险 + Human 决策点 Qn） → ④ Human 评估裁决 → ⑤ 派单实装。**禁止 Orchestrator 自行分析根因**（反模式 A） · E1/E2/E3 例外 · 反模式 ABCD 禁令 · COSTRA-120 首次实战。详见 `.team/decisions/D-017-verification-problem-response-sop.md`。
 > **🔄 D-011 实战验证三次通过**（2026-04-23）：COSTRA-100（2 轮 · 69 min） + Sprint-0 补审（7 卡 × 2 轮 · 29 min 并行） + **COSTRA-101 Round 1 刚自动拉起（22:49 · D-014-b 首次实战）**
 
-最后更新：`2026-05-19 09:27`（Orchestrator · 🏆🏆 **COSTRA-156 + COSTRA-105 双卡 Human T1 APPROVED CLOSED · Sprint-2 主线 4/7+5/7 双卡同轮收官**（D-014 SOP 联合双卡同轮 approve）· **156 APPROVED 40/40 满分** + **105 APPROVED-PARTIAL**（H1~H5 🟢 全 PASS · H6 🔴 BLOCKED-BY-COSTRA-154 自动等效回归 · 不阻 R1 双卡 approve · v1.4 BLOCKED-BY-COSTRA-156 范式同款第 2 次实战）· **D-022 v2.0 评分表第 3+4 次实战 40/40+40/40 连续满分**（103 38/40 → 104 36/40 → 105 40/40 → 156 40/40 · qa-planner + backend-dev 双满分）· **D-022 §4.1 真兑现立意首次实测**（自动化+curl+server 单测 30+ 全绿 · Human ~30min 真链路实测捕获 5 发现 = 4 文档 gap + 1 联合 P0 BUG 双责）· **CI 对账族第 5 张规则 D 落地** · **D-016 反例第 8 次首次预防成功**（156）+ **第 9 次触发+补救**（105 R1.x.1 议入 Retro）· 终审报告 .team/reviews/{COSTRA-156,COSTRA-105}/FINAL.md · Sprint-2 进度 47%→**61%**（14→**22 点** · 5/7 卡 CLOSED = 106+103+104+156+105）· 🔜 **COSTRA-154 转 Sprint-3 P0 头部**（FU-104-SYNC-PULL · 5 点 · 与 COSTRA-150 一同做才有意义 · 实装后回归 105 D.2+H6 自动等效闭环））
+最后更新：`2026-05-19 20:50`（Orchestrator · 🚀 **Sprint-3 启动 · COSTRA-154 R1 实装完成 + R1.x.1 修订** · commit `7e87bad` + `8eecd4c` · review-tech R1 PASS-WITH-FOLLOWUP 36/40 → R1.x.1 修订后 APPROVE 38/40 · D-022 v2.0 第 7 次实战 · D-025 反模式扫描清单首次套用（AP-003 正向兑现 3rd play）· D-016 反例第 9 次预防成功（合规第 2 次连续）· D-017 v3 §2.4 E1 第 8 次实战（卡审 R1→R2 revise + R1 review-tech follow-up 同轮）· **CI 对账族第 5 张规则 D 复跑全绿** · 等 Human 联合 150 实测 → 双卡 approve · **同时 Sprint-3 follow-up 8 张转正立卡 dispatch 落档**：COSTRA-150（client sync 调度器）+ 152（PATCH entries）+ 153（DELETE entries）+ 151（conflict UI）+ 155（QA 全量自动化）+ 159（outbox flaky fake timers）+ 161（whitelist 规则 E）+ 162（dev mockLogin runtime）+ 163（whitelist ICP 强等值）· Sprint-3 估点 ~30~36 含 buffer · 等 Human 触发 `start:COSTRA-150` 启动 150 链路）
+
+> （上一条归档）`2026-05-19 09:27`（Orchestrator · 🏆🏆 **COSTRA-156 + COSTRA-105 双卡 Human T1 APPROVED CLOSED · Sprint-2 主线 4/7+5/7 双卡同轮收官**（D-014 SOP 联合双卡同轮 approve）· **156 APPROVED 40/40 满分** + **105 APPROVED-PARTIAL** · D-022 v2.0 第 3+4 次实战 40/40+40/40 连续满分 · CI 对账族第 5 张规则 D 落地 · D-016 反例第 8 次首次预防成功 + 第 9 次触发+补救）
 
 > （上一条归档）`2026-05-18 20:4x`（Orchestrator · ✅ **COSTRA-105 R1 Human 实测 partial PASS · 等双卡 approve 收官** · H1~H5 🟢 全 PASS · §4.2 D.2 + H6 🔴 BLOCKED-BY-COSTRA-154 · 方式 C ⏸️ M2 跳过 · 3 文件 doc-only 落盘 · commit 16fd1a0）
 
@@ -96,6 +98,27 @@
 ## 🔄 Doing（清洗后仅列真正 in-flight · 其余为 Todo-等触发）
 - [~] **COSTRA-114** @DevOps-Agent · 开发服务器 bootstrap **手册**（D-009）· **🟠 卡定义已 approve 但实际未开工**（I-003 · 04-24 17:00 澄清 · `docs/ops/` 目录不存在）· 等 Human 真正触发 `run devops COSTRA-114`
 - [~] **COSTRA-157** @miniapp-dev + backend-dev · 用户资料完善 + 登录链路鲁棒性（5 FU 合并修复）· backend 段完成 · 等 miniapp-dev 接手 B/C/D/E + 统一 commit
+- [🟢] **COSTRA-154** @backend-dev · GET /sync/pull 增量拉取实装 · **R1 + R1.x.1 完成 @ 2026-05-19 20:35** · commit `7e87bad` + `8eecd4c` · review-tech APPROVE 38/40 · 等 Human 联合 150 实测 + approve（D-024 §2.2 C1 攒批）
+
+## 📋 Todo · Sprint-3（2026-05-19 启动 · 估点目标 30~36 含 buffer）
+
+| 卡号 | 标题 | Owner | 估点 | 优先级 | 依赖 | 状态 |
+|---|---|---|---|---|---|---|
+| **COSTRA-150** | client sync 调度器（onShow / 网络恢复 / 周期 / 启动）| miniapp-dev | 5 | P1 | COSTRA-154 R1 APPROVE（已等 Human）| dispatch-ready · 等 `start:COSTRA-150` |
+| **COSTRA-152** | PATCH /entries/{entry_id} 实装（替代 stub 501）| backend-dev | 3 | P1 | COSTRA-104 ✅ | dispatch-ready · 等 `start:COSTRA-152` |
+| **COSTRA-153** | DELETE /entries/{entry_id} 软删（替代 stub 501）| backend-dev | 2 | P1 | COSTRA-104 ✅ + COSTRA-152 K3/K1 决策延续 | dispatch-ready · 等 `start:COSTRA-153` |
+| **COSTRA-159** | outbox.spec.ts fake timers 重构（FU-156-OUTBOX-FLAKY）| miniapp-dev | 1 | P2 | 无 · 与 150 同链路顺手 | dispatch-ready · 等 `start:COSTRA-159` |
+| **COSTRA-161** | whitelist-check 规则 E（OpenAPI paths vs fastify register · D-025 AP-003 自动检测）| devops-ops | 1 | P2 | COSTRA-156 规则 D ✅ + 154/152/153 全 CLOSED 后启 | dispatch-ready · 等 `start:COSTRA-161` |
+| **COSTRA-162** | dev mockLogin runtime toggle | miniapp-dev | 1 | P3 | 无 | dispatch-ready · 等 `start:COSTRA-162` |
+| **COSTRA-163** | whitelist-check ICP 强等值校验 | devops-ops | 1 | P2 | COSTRA-107 ✅ · 与 161 同节奏批 | dispatch-ready · 等 `start:COSTRA-163` |
+| **COSTRA-155** | 全量 15 用例自动化 + CI 集成 | qa-planner + miniapp-dev | 5 | P2 | 154+150+152+153 全 CLOSED 后启 | dispatch-ready · Sprint-3 中后段 |
+| **COSTRA-151** | conflict 合并 UI（FU-103-CONFLICT-MERGE-UI）| miniapp-dev + design-maker | 5 | P2 | COSTRA-104 ✅ + COSTRA-150 CLOSED | dispatch-ready · Sprint-3 中后段 |
+
+**Sprint-3 总估点**：5（150）+ 3（152）+ 2（153）+ 1（159）+ 1（161）+ 1（162）+ 1（163）+ 5（155）+ 5（151）= **24 点 · + 154 已实装 5 点 = 累计 29 点 · + 紧急卡 buffer 3~7 点 = 30~36 点目标**
+
+> 📌 **Sprint-3 启动批量整理**（2026-05-19 20:50）：8 张 follow-up 转正立卡 dispatch 一次性落档 · COSTRA-154 R1 实装完成等 Human 联合 150 实测 · D-024 §2.2 C1 攒批节奏（154+150 联合 approve 优选 · 152+153 联合 · 161+163 联合 · 159+162 顺手）· Sprint-3 启动序列推荐：①154+150 联合 → ②152+153 联合 → ③155 全量自动化 → ④151 conflict UI → ⑤159+162+161+163 顺手批
+
+---
 
 ## 👀 Review
 

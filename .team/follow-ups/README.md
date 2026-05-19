@@ -23,20 +23,20 @@
 
 ---
 
-## 🟢 当前 open FU 速查表（24 条 · 按主题族 + 推动优先级 · 2026-05-19 COSTRA-158 关闭 2 条）
+## 🟢 当前 open FU 速查表（24 条 · 按主题族 + 推动优先级 · 2026-05-19 20:50 Sprint-3 头部启动 + 8 张 follow-up 转正）
 
 | 主题族 | FU-ID | 优先级 | 候选卡 / 归属 | 状态 |
 |---|---|---|---|---|
-| **Sprint-3 同步协议核心** | FU-104-SYNC-PULL | **P0** | COSTRA-154 | **closed @ COSTRA-154** `7e87bad`（R1 commit 替代 stub 501 · GET /sync/pull 增量拉取实装 · dispatch §2.1 9 项 scope 全交付）|
-| **Sprint-3 同步协议核心** | FU-103-CLIENT-SYNC-SCHEDULER | P1 | COSTRA-150 | **dispatch-ready @ 2026-05-19**（严格依赖 COSTRA-154 R1 APPROVE · 联合 approve 优选 · D-024 §2.2 C1 攒批）|
-| **Sprint-3 同步协议核心** | FU-104-ENTRIES-PATCH | P1 | COSTRA-152 | open |
-| **Sprint-3 同步协议核心** | FU-104-ENTRIES-DELETE | P1 | COSTRA-153 | open |
-| **Sprint-3 同步协议核心** | FU-103-CONFLICT-MERGE-UI | P2 | COSTRA-151 | open |
+| **Sprint-3 同步协议核心** | FU-104-SYNC-PULL | **P0** | COSTRA-154 | **closed @ COSTRA-154** `7e87bad` + R1.x.1 `8eecd4c`（R1 commit 替代 stub 501 · GET /sync/pull 增量拉取实装 · review-tech R1 PASS-WITH-FOLLOWUP 36/40 → R1.x.1 修订后 APPROVE 38/40 · 等 Human 联合 150 实测）|
+| **Sprint-3 同步协议核心** | FU-103-CLIENT-SYNC-SCHEDULER | P1 | COSTRA-150 | **dispatch-ready @ 2026-05-19**（严格依赖 COSTRA-154 R1 APPROVE · 154 R1 已等 Human 实测 + approve · 联合 approve 优选 · D-024 §2.2 C1 攒批）|
+| **Sprint-3 同步协议核心** | FU-104-ENTRIES-PATCH | P1 | COSTRA-152 | **dispatch-ready @ 2026-05-19**（dispatch 已落档 · 等 Human `start:COSTRA-152` · 与 153 联合 approve 优选）|
+| **Sprint-3 同步协议核心** | FU-104-ENTRIES-DELETE | P1 | COSTRA-153 | **dispatch-ready @ 2026-05-19**（dispatch 已落档 · 等 Human `start:COSTRA-153` · K3/K1 决策延续 152 结果）|
+| **Sprint-3 同步协议核心** | FU-103-CONFLICT-MERGE-UI | P2 | COSTRA-151 | **dispatch-ready @ 2026-05-19**（Sprint-3 中后段 · 154+150 CLOSED 后启）|
 | **Epic-A 用户资料**（→ COSTRA-157 合卡）| FU-001 | P2 | COSTRA-157 | scoped |
 | **Epic-A 用户资料**（→ COSTRA-157 合卡）| FU-118-2 | P2 | COSTRA-157 | scoped |
-| **Epic-A 用户资料** | FU-102-PROFILE-REFUSE-UI | ~~P1~~ → **closed** | ~~COSTRA-158~~ | **closed @ COSTRA-158**（boundary risk 子项 · 157 间接判定 → 158 严格 has_completed_profile） |
-| **Epic-A 用户资料**（→ COSTRA-157 合卡）| FU-102-ERROR-MAPPER-INTEGRATION | **P1**（红线违反）| COSTRA-157 | scoped |
-| **Epic-A 用户资料**（→ COSTRA-157 合卡）| FU-102-AVATAR-ONERROR | **P1**（红线违反）| COSTRA-157 | scoped |
+| **Epic-A 用户资料** | FU-102-PROFILE-REFUSE-UI | ~~P1~~ → **closed** | ~~COSTRA-158~~ | **closed @ COSTRA-158** |
+| **Epic-A 用户资料**（→ COSTRA-157 合卡）| FU-102-ERROR-MAPPER-INTEGRATION | **P1** | COSTRA-157 | scoped |
+| **Epic-A 用户资料**（→ COSTRA-157 合卡）| FU-102-AVATAR-ONERROR | **P1** | COSTRA-157 | scoped |
 | **DevOps 基建** | FU-118-3（→ COSTRA-160）| P0 根因 / P2 优先级 | COSTRA-160（已立卡）| open |
 | **DevOps 基建** | FU-CI-MP-BUILD-NPM-ENFORCE | P2 | Sprint-2 CI 升级 | open |
 | **DevOps 基建** | FU-LIBVERSION-DEV-GUARD | P3 | Sprint-2 候选 | open |
@@ -44,18 +44,23 @@
 | **DevOps 基建** | FU-118-4 | P2 | Sprint-2 末维护批 | open |
 | **DevOps 基建** | FU-DEVOPS-NGINX-ICP-HEADER | P3 | DNS+SSL+反代上线触发 | open-observation |
 | **DevOps 基建** | FU-DEVOPS-ICP-HEALTH-PROBE | P2 | 合 COSTRA-903 APM | open |
-| **DevOps 基建** | FU-DEVOPS-ICP-CROSS-SSOT-CHECK | P2 | Sprint-2 CI 升级（与 FU-CI-MP-BUILD-NPM-ENFORCE 同节奏）| open |
-| **DevOps 基建** | **FU-DEVOPS-OPENAPI-IMPL-COVERAGE** | **P2** | **Sprint-3 中段 · DevOps-Agent 1 点小卡（whitelist-check.mjs 规则 E）**| **open**（D-025 AP-003 自动检测候选 · Sprint-2 末 Retro 立案）|
-| **DevOps 基建** | **FU-DEV-MOCKLOGIN-RUNTIME-TOGGLE** | **P3** | **Sprint-3 顺手（miniapp-dev · ~30min）**| **open**（dev `mockLogin` 改 runtime toggle · 真链路实测便利性提升 · 2026-05-19 实测期立案）|
+| **DevOps 基建** | **FU-DEVOPS-ICP-CROSS-SSOT-CHECK** | **P2** | **COSTRA-163** | **dispatch-ready @ 2026-05-19**（与 161 同节奏批 · whitelist-check.mjs 升级双卡）|
+| **DevOps 基建** | **FU-DEVOPS-OPENAPI-IMPL-COVERAGE** | **P2** | **COSTRA-161** | **dispatch-ready @ 2026-05-19**（D-025 AP-003 自动检测 · CI 对账族第 6 张规则 E）|
+| **DevOps 基建** | **FU-DEV-MOCKLOGIN-RUNTIME-TOGGLE** | **P3** | **COSTRA-162** | **dispatch-ready @ 2026-05-19**（dev `mockLogin` runtime toggle · ~30min 单 commit）|
 | **DB 治理** | FU-DB-OPS-AUDIT | P3 | DAU>100 触发 | open |
-| **协议 / 规约残留** | FU-COMMON-MINIAPP-PATCH-LIMIT | ~~P2~~ → **closed** | ~~COSTRA-158~~ | **closed @ COSTRA-158**（server PATCH route + K3 method-override compat · client 现有降级链路验证可用） |
-| **协议 / 规约残留** | **FU-K3-TO-K1-UPGRADE** | **P2** | **COSTRA-152 dispatch 时评估**| **open**（K3 局部 method-override 升级评估 · Sprint-2 末 Retro 立案）|
-| **QA 自动化** | FU-105-AUTOMATION-FULL-COVERAGE | P2 | COSTRA-155 | open |
-| **QA 自动化** | FU-156-OUTBOX-FLAKY | P2 | Sprint-3 头部 miniapp-dev | open |
+| **协议 / 规约残留** | FU-COMMON-MINIAPP-PATCH-LIMIT | ~~P2~~ → **closed** | ~~COSTRA-158~~ | **closed @ COSTRA-158** |
+| **协议 / 规约残留** | **FU-K3-TO-K1-UPGRADE** | **P2** | **COSTRA-152** | scoped（dispatch §1.3 阶段决策 · COSTRA-152 Card-Review 阶段拍板）|
+| **QA 自动化** | FU-105-AUTOMATION-FULL-COVERAGE | P2 | **COSTRA-155** | **dispatch-ready @ 2026-05-19**（154+150+152+153 全 CLOSED 后启 · 双装扮档 qa-planner+miniapp-dev）|
+| **QA 自动化** | FU-156-OUTBOX-FLAKY | P2 | **COSTRA-159** | **dispatch-ready @ 2026-05-19**（与 150 同链路顺手 · ~30min 单 commit）|
 | **外部触发** | FU-115-2 | O 观察 | Human ICP 下证日触发 | open |
-| **🆕 QA 实测发现（族 H）** | ~~BUG-105-D1-LEDGER-ID-DEFAULT~~ | ~~🔴 P0~~ → **closed** | ~~COSTRA-105 R1.x.1~~ | **closed @ commit 33dbdea**（COSTRA-105 R1.x.1 已修 · client `pages/entry/index.ts` 移除 `ledger_id: 'default'` 硬编码 · 105 已 Human T1 APPROVED CLOSED @ 2026-05-19 09:27）|
-| **🆕 QA 实测发现（族 H）** | ~~BUG-156-SYNC-PUSH-PAYLOAD-NO-UUID-VALIDATION~~ | ~~🔴 P0~~ → **closed** | ~~COSTRA-105 R1.x.2~~ | **closed @ commit db488b9**（COSTRA-105 R1.x.2 已修 · server `routes/sync.ts` payload schema 加 UUID format 校验 · 105 已 Human T1 APPROVED CLOSED）|
-| **🆕 QA 实测发现（族 H）** | FU-105-DEV-CONSOLE-HOOK | P3 | Sprint-3 头部 miniapp-dev（候选 COSTRA-150 顺带）| open |
+| **🆕 QA 实测发现（族 H）** | ~~BUG-105-D1-LEDGER-ID-DEFAULT~~ | ~~🔴 P0~~ → **closed** | ~~COSTRA-105 R1.x.1~~ | **closed @ commit 33dbdea** |
+| **🆕 QA 实测发现（族 H）** | ~~BUG-156-SYNC-PUSH-PAYLOAD-NO-UUID-VALIDATION~~ | ~~🔴 P0~~ → **closed** | ~~COSTRA-105 R1.x.2~~ | **closed @ commit db488b9** |
+| **🆕 QA 实测发现（族 H）** | FU-105-DEV-CONSOLE-HOOK | P3 | Sprint-3 头部 miniapp-dev（合 COSTRA-150 顺带 / 或独立小卡）| open |
+
+> **2026-05-19 20:50 Sprint-3 启动批量整理**：
+> - COSTRA-154 R1 实装完成（commit `7e87bad` + R1.x.1 修订 commit `8eecd4c` · review-tech APPROVE 38/40）· FU-104-SYNC-PULL 闭合
+> - **8 张 follow-up 转正立卡 dispatch**：COSTRA-150 + 152 + 153 + 151 + 155 + 159 + 161 + 162 + 163（含 154 已闭合）· 估点合计约 27 点 · Sprint-3 估点目标 30~36 含 buffer
+> - 转正路径：FU-103-CLIENT-SYNC-SCHEDULER → COSTRA-150 · FU-104-ENTRIES-PATCH → COSTRA-152 · FU-104-ENTRIES-DELETE → COSTRA-153 · FU-103-CONFLICT-MERGE-UI → COSTRA-151 · FU-105-AUTOMATION-FULL-COVERAGE → COSTRA-155 · FU-156-OUTBOX-FLAKY → COSTRA-159 · FU-DEVOPS-OPENAPI-IMPL-COVERAGE → COSTRA-161 · FU-DEV-MOCKLOGIN-RUNTIME-TOGGLE → COSTRA-162 · FU-DEVOPS-ICP-CROSS-SSOT-CHECK → COSTRA-163
 
 > **2026-05-19 14:50 同步整理**：
 > - **微信白名单已配**（Human 完成 `https://costra.cloud` 4 类全填 · 即时生效 · D-023 §7 #1 解锁）→ 解锁 105 方式 C 真链路实测 + Sprint-3 154/152/153 staging 验证
