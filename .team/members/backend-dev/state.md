@@ -16,7 +16,7 @@
 
 ## §2 当前关注（active tasks）
 
-- ✅ **COSTRA-154 R1 实装完成**（2026-05-19 · GET /sync/pull 增量拉取实装 · 9 项 scope 全交付 · 49 测全绿 · 闸门 G1~G8+G15 全绿 · 等 review-tech R1）
+- ✅ **COSTRA-154 R1 实装完成 + R1.x.1 修订**（2026-05-19 · R1 commit `7e87bad` · R1.x.1 修订 P1-1 ledgers 类型 unknown[] + P1-2 commit hash 引用统一 5 处 · D-017 v3 §2.4 E1 第 8 次实战 · review-tech R1 verdict PASS-WITH-FOLLOWUP 36/40 → R1.x.1 修订后 APPROVE 38/40 · 等 Human 联合 150 实测 + approve）
 - ✅ **COSTRA-156 Human T1 APPROVED CLOSED**（2026-05-19 09:27 · 联合 105 双卡同轮 approve · 终审报告 `.team/reviews/COSTRA-156/FINAL.md` · D-022 v2.0 第 4 次实战 40/40 连续满分）
 - ✅ **COSTRA-105 R1.x.2 BUG-002 已闭环**（commit `db488b9` · 联合 105 终审 partial PASS 同轮 CLOSED）
 - ✅ **COSTRA-158 R1 backend 段完成**（8 项 server 改动 A~G' · 闸门全绿 · 等 miniapp-dev 接手 H~K + 统一 commit）

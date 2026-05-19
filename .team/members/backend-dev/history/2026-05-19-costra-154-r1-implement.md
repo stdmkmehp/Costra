@@ -1,6 +1,6 @@
 # COSTRA-154 R1 实装 · GET /sync/pull 增量拉取
 
-> 日期：2026-05-19 · backend-dev 一次性装扮档 · commit `00d604c`
+> 日期：2026-05-19 · backend-dev 一次性装扮档 · commit `7e87bad`
 
 ---
 

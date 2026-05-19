@@ -34,9 +34,14 @@ export interface SyncPullResult {
   has_more: boolean;
   changes: {
     entries: ReturnType<typeof entryToWire>[];
-    categories: never[];  // MVP 留空 · follow-up FU-154-CATEGORIES-PULL
-    budgets: never[];
-    ledgers: never[];
+    /**
+     * MVP 留空 · ledgers/categories/budgets 增量拉取留 follow-up FU-154-CATEGORIES-PULL
+     * 类型用 unknown[] 而非 never[]：避免后续 FU 实装时类型扩展撞编译错误
+     * （R1 Review P1-1 修订 · OpenAPI 定义为 ledgers: Ledger[] · MVP 实际返 [] 与契约兼容）
+     */
+    categories: unknown[];
+    budgets: unknown[];
+    ledgers: unknown[];
   };
 }
 

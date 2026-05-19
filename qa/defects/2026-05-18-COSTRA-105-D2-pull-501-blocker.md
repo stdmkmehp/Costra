@@ -136,7 +136,7 @@ H6 = "client 离线写入 → push → **冷启 pull 回**显示与输入完全�
 
 ## §4 RESOLVED @ COSTRA-154 R1
 
-- **resolved_by**：COSTRA-154 R1 commit `00d604c`（GET /sync/pull 增量拉取实装 · 替代 stub 501）
+- **resolved_by**：COSTRA-154 R1 commit `7e87bad`（GET /sync/pull 增量拉取实装 · 替代 stub 501）
 - **resolved_at**：2026-05-19
 - **等效回归**：105 H6 + D.2 自动等效回归 PASS（v1.4 BLOCKED-BY-COSTRA-156 范式同款）
 - **server 变更**：`server/src/routes/sync.ts` 删 stub → 真 handler · `server/src/services/syncPullService.ts` 新建 · `server/src/repositories/entryRepo.ts` 加 `findEntriesByFamilySince`

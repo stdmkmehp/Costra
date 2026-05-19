@@ -63,6 +63,7 @@
 **`server/src/repositories/entryRepo.ts`** 改动：
 
 > ⚠️ **注意文件名是 `entryRepo.ts`（单数）** · 不是 `entriesRepo.ts` · 与现有 `findEntriesByLedger`（L215-260）同文件
+> ⚠️ **entries 表无 family_id 列 · 必须 JOIN ledgers**（参 `findById` L272-273 范式 · COSTRA-154 R1 卡审 P0-1 修订）· 0001_init.sql 中 `entries.ledger_id → ledgers.family_id` 是间接关联
 
 新增方法（紧跟 findEntriesByLedger 之后）：
 
@@ -70,45 +71,56 @@
 export interface PullCursor {
   /** since watermark · ISO 8601 UTC */
   since: Date;
-  /** family_id · 必须先校验属于当前 user */
+  /** family_id · 必须先校验属于当前 user · service 层用 isUserInFamily */
   familyId: string;
   /** 单批次最多返回 · 默认 200 · 上限 500 */
   limit: number;
 }
 
 /**
- * 增量拉取 entries（按 family_id + updated_at 推进 watermark）
+ * 增量拉取 entries 含 family_id（JOIN ledgers · 不直接读 entries 表 family_id 列）
+ * 用于 sync/pull 行返回 · 与 EntryEntity 区别：附加 familyId 字段
+ */
+export type PullEntryRow = EntryEntity & { familyId: string };
+
+/**
+ * 增量拉取 entries（按 ledgers.family_id + entries.updated_at 推进 watermark）
  *
  * 行为约定：
- *   - WHERE family_id = $1 AND updated_at > $2 ORDER BY updated_at ASC, id ASC
+ *   - JOIN ledgers · WHERE l.family_id = $1 AND e.updated_at > $2 · ORDER BY e.updated_at ASC, e.id ASC
  *   - **不过滤 deleted_at**（协议 §3.5：软删行仍需在 since 窗口内返回 · client 据此本地软删）
  *   - LIMIT $3 + 1（多取一行用于 has_more 判定 · 实际返 LIMIT 行）
  *   - 复合排序保证同 updated_at 多行的稳定顺序（避免分页跳行）
  *
- * 返回：{ rows: EntryEntity[], hasMore: boolean }
+ * 返回：{ rows: PullEntryRow[]（EntryEntity + familyId）, hasMore: boolean }
  */
 export async function findEntriesByFamilySince(
   cursor: PullCursor,
   client?: Runner,
-): Promise<{ rows: EntryEntity[]; hasMore: boolean }> {
+): Promise<{ rows: PullEntryRow[]; hasMore: boolean }> {
   const runner = client ?? exec();
   const limitPlusOne = cursor.limit + 1;
   const res = await runner.query(
-    `SELECT id, ledger_id, family_id, user_id, client_ref_id,
-            account_id, to_account_id,
-            type, amount, category_id, occurred_at, note,
-            created_at, updated_at, deleted_at, version
-       FROM entries
-      WHERE family_id = $1
-        AND updated_at > $2
-      ORDER BY updated_at ASC, id ASC
+    `SELECT e.id, e.ledger_id, l.family_id, e.amount, e.currency, e.type, e.category_id,
+            e.account_id, e.to_account_id, e.note, e.occurred_at,
+            e.created_by, e.created_at, e.updated_at, e.deleted_at, e.version, e.client_ref_id
+       FROM entries e
+       JOIN ledgers l ON l.id = e.ledger_id
+      WHERE l.family_id = $1
+        AND e.updated_at > $2
+      ORDER BY e.updated_at ASC, e.id ASC
       LIMIT $3`,
     [cursor.familyId, cursor.since.toISOString(), limitPlusOne],
   );
-  const rows = res.rows.slice(0, cursor.limit).map(rowToEntity);
+  const rows = res.rows.slice(0, cursor.limit).map((row): PullEntryRow => ({
+    ...rowToEntity(row),
+    familyId: row.family_id,  // 来自 JOIN · 非 entries 表列
+  }));
   return { rows, hasMore: res.rows.length > cursor.limit };
 }
 ```
+
+> **R1 卡审 P0-1 修订记录**（2026-05-19 20:30）：原示例代码直查 `entries.family_id` · 但 0001_init.sql L108-124 entries 表无此列 · 必 SQL 运行时 500 · 已改为 JOIN ledgers 范式（与既有 `findById` L272-273 一致）。返回类型从 `EntryEntity[]` 改为 `PullEntryRow[]`（EntryEntity + familyId）以保留 family_id 用于 wire 输出 · 同时 EntryEntity 接口保持不变（不污染其他消费者）。
 
 #### B · 新建 syncPullService（业务层 watermark 推进 · 新建 1 文件 · 1 项）
 
@@ -131,8 +143,8 @@ export async function findEntriesByFamilySince(
  *   - 自动推进 client watermark（client 自己存 watermark · 见 COSTRA-150）
  *   - conflict 处理（pull 不引入冲突 · server 是真源）
  */
-import { findEntriesByFamilySince } from '../repositories/entryRepo.js';
-import { isUserInFamily } from '../repositories/familyMemberRepo.js';  // 待确认仓库 / 否则用 inline SQL
+import { findEntriesByFamilySince, type PullEntryRow } from '../repositories/entryRepo.js';
+import { isUserInFamily } from '../repositories/familyMemberRepo.js';  // 若不存在 → inline SQL（见下）
 import { AppError } from '../errors/AppError.js';
 import { ErrorCode } from '../errors/ErrorCode.js';
 
@@ -163,7 +175,7 @@ export async function syncPull(input: SyncPullInput): Promise<SyncPullResult> {
     });
   }
 
-  // 2. 拉增量
+  // 2. 拉增量（rows: PullEntryRow[] = EntryEntity & { familyId } · familyId 来自 JOIN ledgers）
   const { rows, hasMore } = await findEntriesByFamilySince({
     since: input.since,
     familyId: input.familyId,
@@ -188,24 +200,26 @@ export async function syncPull(input: SyncPullInput): Promise<SyncPullResult> {
 }
 
 /**
- * EntryEntity → wire（snake_case · 协议契约对齐）
+ * PullEntryRow → wire（snake_case · 协议契约对齐）
  * 含软删行：deleted_at !== null 时 client 据此本地软删
+ * family_id 由 A 项 JOIN ledgers 注入 · entries 表本身无此列
  */
-function entryToWire(e: EntryEntity) {
+function entryToWire(e: PullEntryRow) {
   return {
     id: e.id,
     ledger_id: e.ledgerId,
-    family_id: e.familyId,
-    user_id: e.userId,
+    family_id: e.familyId,                          // 来自 JOIN ledgers · 非 entries 表列
+    user_id: e.createdBy,                           // entries 表列名是 created_by · 协议 wire 字段名 user_id
     client_ref_id: e.clientRefId,
     account_id: e.accountId,
     to_account_id: e.toAccountId,
     type: e.type,
     amount: e.amount,
+    currency: e.currency,                           // 与 findEntriesByLedger SELECT 对齐 · 协议 §3.2 entries[*].currency
     category_id: e.categoryId,
     occurred_at: e.occurredAt.toISOString(),
     note: e.note,
-    server_version: e.version,                    // 协议字段名 server_version vs DB 列名 version
+    server_version: e.version,                      // 协议字段名 server_version vs DB 列名 version
     created_at: e.createdAt.toISOString(),
     updated_at: e.updatedAt.toISOString(),
     deleted_at: e.deletedAt ? e.deletedAt.toISOString() : null,
@@ -213,7 +227,11 @@ function entryToWire(e: EntryEntity) {
 }
 ```
 
-> **特别说明**：`isUserInFamily` 若仓库不存在 · backend-dev 用 inline SQL `SELECT 1 FROM family_members WHERE family_id=$1 AND user_id=$2 LIMIT 1` 兜底 · 不阻本卡。同时立 follow-up FU-154-FAMILY-MEMBER-REPO（如 COSTRA-200 系列卡需要时再抽）。
+> **特别说明**：`isUserInFamily` 若仓库不存在 · backend-dev 用 inline SQL 兜底（与 entryRepo.ts L273 范式一致 · 含 `left_at IS NULL` 排除已退出成员）：
+> ```sql
+> SELECT 1 FROM family_members WHERE family_id=$1 AND user_id=$2 AND left_at IS NULL LIMIT 1
+> ```
+> 同时立 follow-up FU-154-FAMILY-MEMBER-REPO（如 COSTRA-200 系列卡需要时再抽）。
 
 #### C · 替换 routes/sync.ts pull stub 为真 handler（修订 1 文件 · 1 项）
 
@@ -379,7 +397,7 @@ import { syncPull } from '../services/syncPullService.js';
 - [ ] G · follow-ups README FU-104-SYNC-PULL closed
 - [ ] H · 缺陷单 RESOLVED 标注
 
-### §3.2 闸门（≥ 8 项 · 必跑全绿才提交）
+### §3.2 闸门（≥ 10 项 · 必跑全绿才提交）
 
 | # | 闸门 | 命令 | 期望 |
 |---|---|---|---|
@@ -389,8 +407,10 @@ import { syncPull } from '../services/syncPullService.js';
 | G4 | check:appjson | `npm run check:appjson` | exit 0 |
 | G5 | check:tooling | `npm run check:tooling` | exit 0 |
 | G6 | check:whitelist | `npm run check:whitelist` | exit 0 |
-| G7 | OpenAPI 实装齐全 | `grep -E "app\.(get\|post\|delete)\(SYNC_PULL_ENDPOINT" server/src/routes/sync.ts \| wc -l` | ≥ 1 |
-| G8 | x-deferred 清理 | `grep "x-deferred" server/api/openapi.yaml \| grep -v "/sync/pull"` 应为空（其他 deferred 端点保留） | clean |
+| G7a | syncPull import 存在 | `grep "syncPull" server/src/routes/sync.ts \| wc -l` | ≥ 1 |
+| G7b | stub 已删除 | `grep "deferred_card.*COSTRA-154" server/src/routes/sync.ts \| wc -l` | = 0 |
+| G8 | x-deferred 清理 | `grep "x-deferred" server/api/openapi.yaml \| grep -v "/entries/{entry_id}"` 应为空（其他 deferred 端点保留 · 当前剩 PATCH/DELETE entries 共 2 处） | clean |
+| G15 | D-016 反例预防 | `git status -s \| grep '.team/members/' \| wc -l` | = 0（state.md + history 必须与 R1 同 commit）|
 
 ### §3.3 反向验证（3 项）
 
@@ -482,6 +502,11 @@ import { syncPull } from '../services/syncPullService.js';
 - 一次性装扮 · 任务结束销毁
 - backend-dev 段直接 commit（单装扮档单 commit · 与 156 范式同）
 - commit footer 单 `Co-Authored-By: backend-dev <subagent>`
+- **commit 前必含 final message 段**（Sprint-2 末 Retro 议题 21 v2.0 升定稿规约 · D-016 反例第 8 次预防成功后强制度量）：
+  ```bash
+  git status -s | grep '.team/members/' | wc -l   # 期望 = 0
+  ```
+  state.md + history 必须与 R1 同 commit 一并 add（避免再次 D-016 反例）
 
 ### §5.6 D-022 v2.0 评分表（review-tech R1 时适用 · 40 分制 · 第 7 次实战）
 
@@ -527,8 +552,8 @@ server side (9 changes):
 - h: 105 d2 pull blocker defect resolved
 
 closes:
-- fu-104-sync-pull (cosing pull stub by real impl)
-- costra-105 h6/d2 auto-equivalent regression (v1.4 blocked-by-156 same precedent)
+- FU-104-SYNC-PULL (closing pull stub by real impl)
+- COSTRA-105 h6/d2 auto-equivalent regression (v1.4 blocked-by-156 same precedent)
 
 gates: typecheck/lint/test/checks all green. g7 endpoint grep ok. g8 x-deferred clean.
 reverse verify: g9 (boundary >=) g10 (server_version mapping) g11 (permission) confirmed.

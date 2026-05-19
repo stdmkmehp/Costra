@@ -27,7 +27,7 @@
 
 | 主题族 | FU-ID | 优先级 | 候选卡 / 归属 | 状态 |
 |---|---|---|---|---|
-| **Sprint-3 同步协议核心** | FU-104-SYNC-PULL | **P0** | COSTRA-154 | **closed @ COSTRA-154** `00d604c`（R1 commit 替代 stub 501 · GET /sync/pull 增量拉取实装 · dispatch §2.1 9 项 scope 全交付）|
+| **Sprint-3 同步协议核心** | FU-104-SYNC-PULL | **P0** | COSTRA-154 | **closed @ COSTRA-154** `7e87bad`（R1 commit 替代 stub 501 · GET /sync/pull 增量拉取实装 · dispatch §2.1 9 项 scope 全交付）|
 | **Sprint-3 同步协议核心** | FU-103-CLIENT-SYNC-SCHEDULER | P1 | COSTRA-150 | **dispatch-ready @ 2026-05-19**（严格依赖 COSTRA-154 R1 APPROVE · 联合 approve 优选 · D-024 §2.2 C1 攒批）|
 | **Sprint-3 同步协议核心** | FU-104-ENTRIES-PATCH | P1 | COSTRA-152 | open |
 | **Sprint-3 同步协议核心** | FU-104-ENTRIES-DELETE | P1 | COSTRA-153 | open |
@@ -82,8 +82,8 @@
 - **PRD 锚点**：PRD AC-4「无网也能保存 → 写入本地队列 → 联网后自动上传 + 多设备增量同步」
 - **阻断级别**：**P0**（PRD 核心承诺 + FU-103 调度器无 pull 即 client watermark 永远空）
 - **认领建议**：Sprint-3 头部（COSTRA-154 · 估 5 点 · **与 COSTRA-150 client 调度器一同做才有意义**）
-- **状态**：`closed @ COSTRA-154` `00d604c`（R1 commit 替代 stub 501 · GET /sync/pull 增量拉取实装）
-- **owner_card**：COSTRA-154（已实装 · commit `00d604c`）
+- **状态**：`closed @ COSTRA-154` `7e87bad`（R1 commit 替代 stub 501 · GET /sync/pull 增量拉取实装）
+- **owner_card**：COSTRA-154（已实装 · commit `7e87bad`）
 
 ### FU-103-CLIENT-SYNC-SCHEDULER · client 端同步调度器（onShow / 网络恢复 / 周期 / 启动触发 pushDelta + syncPull）
 
