@@ -100,9 +100,20 @@ export async function syncOnce(trigger: TriggerSource): Promise<SyncResult | nul
 
 // ─── 调度器启动/停止 ──────────────────────────────────────────────────────────
 
-/** 启动调度器（app.onLaunch 调一次 · 周期 timer + 网络监听） */
+/**
+ * 启动调度器（app.onLaunch 调一次 · 周期 timer + 网络监听）
+ *
+ * [未经验测]（D-022 C8-3 · R1 Review P1-2 修订 · 2026-05-20 13:15）：
+ *   startScheduler 在 App.onLaunch 同步段调用 · 但 bootstrapPromise 是异步 IIFE
+ *   未 await 完成时被调用 · setTimeout 500ms 是"假设 bootstrap 500ms 内完成"的
+ *   隐性假设。微信开发者工具与真机行为可能有差异 · 由 §3.5 runtime 实测断言 B
+ *   （Human 联合 154 staging 实测）兜底验证。
+ *
+ *   若 bootstrap > 500ms：syncOnce('launch') 在 isLoggedIn()=false 时静默跳过 ·
+ *   下次 page-show 触发或 60s periodic 触发兜底（不致命 · 仅首次冷启不触发同步）。
+ */
 export function startScheduler(): void {
-  // 1. 启动触发（500ms 后 · 让 onLaunch 链路先跑完）
+  // 1. 启动触发（500ms 后 · 让 onLaunch 链路先跑完 · 见函数注释 [未经验测] 段）
   setTimeout(() => syncOnce('launch'), 500);
 
   // 2. 网络恢复触发

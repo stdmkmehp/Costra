@@ -32,7 +32,7 @@
 - **2026-05-18** · `history/2026-05-18-costra-105-r1x1-bug001-ledger-fix.md` · COSTRA-105 **R1.x.1 BUG-001 修复**（ledger_id 'default' 字面量 → fallback UUID + globalData.activeLedgerId 类型声明 · D-017 v3 §2.4 E1 例外路径 · typecheck ✅ test 42/42 ✅）
 - **2026-05-19** · `history/2026-05-19-costra-158-r1-miniapp-segment.md` · COSTRA-158 **R1 miniapp 段实装**（H/I/J + J'/G' 扩展 5 项 · 单卡双装扮档第 2 段 · TokenRaw + computeHasProfile 严格判定 + home.spec + login updateLocalUserProfile + auth.spec · 6 闸门全绿 · 反向验证 G10/G11 通过 · 等 review-tech R1）
 - **2026-05-19** · `history/2026-05-19-costra-158-r1x1-bug-fix.md` · COSTRA-158 **R1.x.1 P0 BUG 修复**（updateLocalUserProfile setStorageSync 裸对象 → async setItem envelope 一致性 · login/index.ts 加 await · auth.spec.ts 重启回读单测 · 反向验证 PASS · D-017 v3 §2.4 E1 例外路径第 7 次 · 等 Human 重新实测）
-- **2026-05-20** · `history/2026-05-20-costra-150-r1-implement.md` · COSTRA-150 **R1 实装** `4751491`（syncScheduler.ts 新建 4 触发源 + mutex + debounce + app.ts 接入 + home/mine onShow 接入 + 8 单测 + FU-103 CLOSED + 105 D2 联合 RESOLVED · G1~G6+G15 全绿 · 反向验证 G7~G9 通过 · 等 review-tech R1 + Human 联合 154 实测）
+- **2026-05-20** · `history/2026-05-20-costra-150-r1-implement.md` · COSTRA-150 **R1 实装** `ee97a7a`（syncScheduler.ts 新建 4 触发源 + mutex + debounce + app.ts 接入 + home/mine onShow 接入 + 8 单测 + FU-103 CLOSED + 105 D2 联合 RESOLVED · G1~G6+G15 全绿 · 反向验证 G7~G9 通过 · 等 review-tech R1 + Human 联合 154 实测）
 
 ## §4 最近决策影响
 
