@@ -28,7 +28,7 @@
 | 主题族 | FU-ID | 优先级 | 候选卡 / 归属 | 状态 |
 |---|---|---|---|---|
 | **Sprint-3 同步协议核心** | FU-104-SYNC-PULL | **P0** | COSTRA-154 | **closed @ COSTRA-154** `7e87bad` + R1.x.1 `8eecd4c`（R1 commit 替代 stub 501 · GET /sync/pull 增量拉取实装 · review-tech R1 PASS-WITH-FOLLOWUP 36/40 → R1.x.1 修订后 APPROVE 38/40 · 等 Human 联合 150 实测）|
-| **Sprint-3 同步协议核心** | FU-103-CLIENT-SYNC-SCHEDULER | P1 | COSTRA-150 | **dispatch-ready @ 2026-05-19**（严格依赖 COSTRA-154 R1 APPROVE · 154 R1 已等 Human 实测 + approve · 联合 approve 优选 · D-024 §2.2 C1 攒批）|
+| **Sprint-3 同步协议核心** | FU-103-CLIENT-SYNC-SCHEDULER | P1 | COSTRA-150 | **closed @ COSTRA-150** `4751491`（4 触发源调度器实装 · R1 卡审 APPROVE 29/30 · pushDelta+syncPull 复用 · mutex+debounce+periodic · 等 Human 联合 154 实测）|
 | **Sprint-3 同步协议核心** | FU-104-ENTRIES-PATCH | P1 | COSTRA-152 | **dispatch-ready @ 2026-05-19**（dispatch 已落档 · 等 Human `start:COSTRA-152` · 与 153 联合 approve 优选）|
 | **Sprint-3 同步协议核心** | FU-104-ENTRIES-DELETE | P1 | COSTRA-153 | **dispatch-ready @ 2026-05-19**（dispatch 已落档 · 等 Human `start:COSTRA-153` · K3/K1 决策延续 152 结果）|
 | **Sprint-3 同步协议核心** | FU-103-CONFLICT-MERGE-UI | P2 | COSTRA-151 | **dispatch-ready @ 2026-05-19**（Sprint-3 中后段 · 154+150 CLOSED 后启）|
@@ -108,8 +108,8 @@
   - sync-protocol.md §6.3：watermark 单调推进
 - **阻断级别**：P1（PRD 核心承诺 · 当前由 R1 dispatch 明示推迟 · 不阻 COSTRA-103 R1 终审）
 - **认领建议**：Sprint-3 头部（COSTRA-104 server 稳定后立卡 · 估 5 点 · 候选卡号 COSTRA-150）
-- **状态**：`open`
-- **owner_card**：COSTRA-150（待 Sprint-3 Planning 认领）
+- **状态**：`closed @ COSTRA-150` `4751491`（R1 实装 · 4 触发源调度器 · pushDelta+syncPull 复用）
+- **owner_card**：COSTRA-150
 - **不阻塞 COSTRA-103 终审依据**：D-022 v2.0 评分表 38/40 APPROVE · Human 实测 5 步 + 5 硬断言全 PASS（H1 sync API 0 / H2 outbox 多 key / H3 snake_case / H4 client_ref_id 持久 / H5 ensureVersion + lib 3.8+）· R1 dispatch §2 明示"COSTRA-104 接调度器"
 
 ### FU-104-ENTRIES-PATCH · PATCH /entries/{entry_id} 实装（替代 R1 stub 501）

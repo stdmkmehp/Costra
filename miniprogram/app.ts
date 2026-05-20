@@ -11,6 +11,7 @@
 import { initAuth, isLoggedIn, getToken } from './services/auth';
 import { getEnv } from './services/env';
 import { ensureVersion } from './services/storage';
+import { startScheduler, stopScheduler } from './services/syncScheduler';
 import { tokens } from './tokens/index';
 
 interface AppGlobalData {
@@ -64,6 +65,10 @@ App<AppOption>({
       console.error('[Costra] bootstrap failed', err);
       try { wx.reLaunch({ url: '/pages/login/index' }); } catch { /* noop */ }
     });
+
+    // COSTRA-150: 启动同步调度器（4 触发源 + mutex + debounce）
+    // 放在 bootstrapPromise 之后 · 不破异步等待链
+    startScheduler();
   },
 
   onShow() {
@@ -81,6 +86,11 @@ App<AppOption>({
         }
       }
     });
+  },
+
+  onHide() {
+    // COSTRA-150: 停止周期 timer · 切后台不跑 periodic sync
+    stopScheduler();
   },
 
   onError(msg: string) {

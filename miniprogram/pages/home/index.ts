@@ -8,6 +8,7 @@ import { hasValidSession, getToken } from '../../services/auth';
 import { defaultNickname } from '../../config/defaults';
 import { computeHasProfile } from '../../utils/profile';
 import { formatMoney } from '../../utils/money';
+import { triggerOnPageShow } from '../../services/syncScheduler';
 
 interface AppWithBootstrap {
   bootstrapPromise: Promise<void>;
@@ -50,6 +51,8 @@ Page({
       }
       this.hydrateUser();
       this.refresh();
+      // COSTRA-150: 页面 onShow 触发同步调度（debounce 5s）
+      triggerOnPageShow('home');
     });
   },
 

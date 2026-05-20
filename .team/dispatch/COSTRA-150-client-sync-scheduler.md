@@ -91,11 +91,11 @@
  *   - 失败时带 trace_id（如 server 返）· 便于联调
  */
 
-import { request } from './request.js';
-import { auth } from './auth.js';
-import { outbox } from './outbox.js';
-import * as db from './db.js';
-import { getCurrentFamilyId } from './family.js';  // 待确认是否存在 · 不存在用 storage 读
+// ⚠️ 以下为伪代码 · R1 实装时按现状 API 范式调整（参 R1 卡审 P0-1 修订记录 + 下方"现状 API 范式"段）
+
+import { syncPull, pushDelta } from './sync.js';   // COSTRA-103 已封装：pushDelta 含 drainBatch+POST/sync/push+ackResults · syncPull 含 watermark+request+applyServerChanges+setWatermark
+import { getToken, isLoggedIn } from './auth.js';  // 同步 API · 不需 await
+import { getItem } from './storage.js';
 
 interface SyncResult {
   pushed: number;     // 本次成功推送的 op 数
@@ -112,6 +112,18 @@ const SHOW_DEBOUNCE_MS = 5000;
 let periodicTimer: ReturnType<typeof setInterval> | null = null;
 const PERIODIC_INTERVAL_MS = 60_000;
 
+const FAMILY_ID_KEY = '__costra_family_id_v1';
+
+/**
+ * 取当前 active family_id · MVP 阶段从 storage 读
+ * ⚠️ miniprogram 全局当前无 active_family_id 概念（auth.user 仅含 user_id · ledger.family_id 散在各 entry）
+ * R1 卡审 P0-1 修订（family.ts 不存在 · 用 storage 兜底）· 留 follow-up FU-150-FAMILY-CONTEXT-SERVICE Sprint-3+ 抽 family.ts service
+ */
+async function getActiveFamilyId(): Promise<string | null> {
+  const familyId = await getItem<string>(FAMILY_ID_KEY);
+  return familyId || null;
+}
+
 export async function syncOnce(trigger: TriggerSource): Promise<SyncResult | null> {
   if (isRunning) {
     console.log(`[sync] skip · already running (trigger=${trigger})`);
@@ -120,41 +132,35 @@ export async function syncOnce(trigger: TriggerSource): Promise<SyncResult | nul
 
   isRunning = true;
   try {
-    const token = await auth.getValidToken();
-    if (!token) {
-      console.log(`[sync] skip · no valid token (trigger=${trigger})`);
+    // 1. 鉴权检查（同步 API · request.ts 内置 401→refresh→retry · 此处只兜底已退登场景）
+    if (!isLoggedIn()) {
+      console.log(`[sync] skip · not logged in (trigger=${trigger})`);
       return null;
     }
 
-    const familyId = await getCurrentFamilyId();
+    const familyId = await getActiveFamilyId();
     if (!familyId) {
       console.log(`[sync] skip · no active family (trigger=${trigger})`);
       return null;
     }
 
-    // 1. push delta
-    const pushed = await outbox.flushPending(token);
+    // 2. push delta（COSTRA-103 已封装：drainBatch + POST /sync/push + ackResults · 内置 idempotency-key）
+    const pushResult = await pushDelta();
 
-    // 2. pull
-    const watermark = await db.getWatermark(familyId);
-    const since = watermark ?? '1970-01-01T00:00:00.000Z';
-    const res = await request.get<SyncPullResponse>('/sync/pull', {
-      family_id: familyId,
-      since,
-      limit: 200,
-    });
+    // 3. syncPull（COSTRA-103 已封装：getWatermark + request GET /sync/pull + applyServerChanges + setWatermark）
+    const pullResult = await syncPull(familyId, { limit: 200 });
 
-    // 3. apply changes
-    await db.applyServerChanges(res.changes);
-
-    // 4. advance watermark（client 不得自行推进 · 用 server 返回的 watermark）
-    await db.setWatermark(familyId, res.watermark);
-
-    const pulled = res.changes.entries.length;
-    console.log(`[sync] ok · pushed=${pushed} pulled=${pulled} watermark=${res.watermark} (trigger=${trigger})`);
-    return { pushed, pulled, watermark: res.watermark, trigger };
+    const pulled = pullResult.changes.entries?.length || 0;
+    console.log(`[sync] ok · pushed=${pushResult.pushed} pulled=${pulled} watermark=${pullResult.watermark} (trigger=${trigger})`);
+    return {
+      pushed: pushResult.pushed,
+      pulled,
+      watermark: pullResult.watermark,
+      trigger,
+    };
 
   } catch (e: any) {
+    // 401 已由 request.ts L105-119 自动续签 retry · 此处 catch 是最终失败兜底
     console.warn(`[sync] fail · ${e?.code || 'unknown'} ${e?.message || e} (trigger=${trigger})`);
     return null;
   } finally {
@@ -200,16 +206,28 @@ export function triggerOnPageShow(pageName: string) {
 }
 ```
 
-> **特别说明**：`getCurrentFamilyId` / `db.getWatermark` / `db.setWatermark` / `db.applyServerChanges` / `outbox.flushPending` 这些底层 API 是 COSTRA-103/104 R1 已建立的范式 · 本卡只组装 · 不重新发明。若某 API 不存在 · backend-dev 协作之前 miniapp-dev 自行评估补齐路径（dispatch §5.3 已知未知）。
+> **现状 API 范式速查**（R1 卡审 P0-1 修订记录 · 2026-05-20 11:25）：
+>
+> | dispatch 旧引用 | 现状事实 | 修订做法 |
+> |---|---|---|
+> | `outbox.flushPending(token)` | outbox.ts 无此导出 · 实际 drainBatch+ackResults · sync.ts L74 已封装 `pushDelta()` | 改 `pushDelta()` |
+> | `auth.getValidToken()` async | auth.ts 无此导出 · 实际 `getToken(): Token \| null` 同步 + `isLoggedIn(): boolean` 同步 | 改 `isLoggedIn()` 同步检查 + request.ts 自动 401 续签兜底 |
+> | `getCurrentFamilyId()` from `family.ts` | `family.ts` 不存在 · miniprogram 全局无 active_family_id 概念 | inline 实现 storage 读取 `__costra_family_id_v1` · 留 FU-150-FAMILY-CONTEXT-SERVICE Sprint-3+ 抽 service |
+> | `request.get<T>(path, query)` 链式 | request.ts 是 RPC 风格 `request<T>({method, path, query})` | 改用 sync.ts 封装的 `syncPull(familyId, opts?)` |
+> | `db.getWatermark` 假设返 `string \| null` | 现状 db.ts L267 返 `Promise<string>` 默认 epoch | 改用 sync.ts 封装的 syncPull · 不直接调 db.getWatermark |
+>
+> **架构选择**（R1 卡审 P1-1 修订）：syncScheduler 不重写 sync 逻辑 · 直接复用 sync.ts 已封装 `pushDelta()` + `syncPull()` · 调度器只做"触发源 + mutex + debounce"调度逻辑 · 文件从 200~250 行降到 ~120 行 · 避免与 sync.ts 维护两份 sync 逻辑漂移（D-025 AP-003 隐性漂移预防）。
 
-#### B · `miniprogram/services/db.ts` watermark 接口（修订 1 文件 · 1 项）
+#### B · `miniprogram/services/db.ts` watermark 接口（确认现有 · 0 行改动 · 1 项核验）
 
-确认或新增：
-- `getWatermark(familyId: string): Promise<string | null>` · 读 storage `sync:watermark:${familyId}`
-- `setWatermark(familyId: string, watermark: string): Promise<void>` · 写 storage 同 key
-- `applyServerChanges(changes: SyncChanges): Promise<void>` · 按 sync-protocol §3.4 顺序消费 ledgers→categories→budgets→entries · entries 中含 deleted_at 软删行处理（local markDeleted）
+> R1 卡审 P2-1 修订（2026-05-20 11:25）：现状 db.ts L267-273 已含完整 `getWatermark/setWatermark/applyServerChanges` 三个函数 · 本卡仅核验签名是否满足调度器需求 · 不新增。
 
-> 现状若已部分实装则只补缺口 · 不重写。
+**核验项**：
+- ✅ `getWatermark(familyId: string): Promise<string>` · 默认 epoch（db.ts L267-268 已实装）· 注：返回类型是非 null string · 调度器无需 `??` 兜底
+- ✅ `setWatermark(familyId: string, watermark: string): Promise<void>` · db.ts L271-273 已实装
+- ✅ `applyServerChanges(changes: SyncChanges): Promise<void>` · db.ts L171-254 已按 sync-protocol §3.4 顺序消费 ledgers→categories→budgets→entries · 含软删行处理 + conflict queue hook（mergeIntoConflictQueue · 留 COSTRA-151 真实装）
+
+> 现状已完整 · 不动（D-018 §3.5 越权预防）。
 
 #### C · `miniprogram/app.ts` startScheduler 接入（修订 1 文件 · 1 项 · 1~3 行）
 
@@ -230,9 +248,13 @@ App({
 
 > 注意 COSTRA-127 onLaunch 异步化已建立 · scheduler 启动放在已 await 的位置之后 · 不破异步等待链。
 
-#### D · home / mine 页 onShow 接 triggerOnPageShow（修订 2~3 文件 · 1 项）
+#### D · home / mine 页 onShow 接 triggerOnPageShow（修订 2 文件 · 1 项）
 
-`miniprogram/pages/home/index.ts` + `miniprogram/pages/mine/index.ts` + `miniprogram/pages/entry/index.ts`（如有）的 `onShow` 末尾加：
+> R1 卡审 P0-3 修订（2026-05-20 11:25）：原 dispatch 含 entry 页 · 但 entry 是 navigateTo 子页（非 tabBar · 现状 entry/index.ts 95 行无 onShow/onLoad 调用）· debounce 防风暴语义不适用 · **R1 实装 entry 页不接入**。
+
+**接入清单**：仅 home + mine（tabBar 页）：
+
+`miniprogram/pages/home/index.ts` + `miniprogram/pages/mine/index.ts` 的 `onShow` 末尾加：
 
 ```ts
 import { triggerOnPageShow } from '../../services/syncScheduler';
@@ -240,12 +262,13 @@ import { triggerOnPageShow } from '../../services/syncScheduler';
 Page({
   onShow() {
     // ... 既有逻辑（hydrateUser 等）
-    triggerOnPageShow('home');
+    triggerOnPageShow('home');  // 或 'mine'
   },
 });
 ```
 
-> debounce 5s 在 syncScheduler 内部 · 多页切换不会风暴。
+> debounce 5s 在 syncScheduler 内部 · home ↔ mine 切换不会风暴（5s 内仅触发 1 次）。
+> entry 子页评估留 follow-up FU-150-ENTRY-PAGE-ONSHOW-SEMANTICS（P3 · 待 entry 加 onShow 时再评估 · 当前不动）。
 
 #### E · client 单测（新建 1 文件 · 1 项）
 
@@ -297,7 +320,7 @@ Page({
 - [ ] F · `db.spec.ts` watermark + applyChanges 测补充（若现状缺）
 - [ ] G · follow-ups README + 缺陷单标 RESOLVED
 
-### §3.2 闸门（≥ 6 项 · 必跑全绿才提交）
+### §3.2 闸门（≥ 7 项 · 必跑全绿才提交）
 
 | # | 闸门 | 命令 | 期望 |
 |---|---|---|---|
@@ -307,6 +330,7 @@ Page({
 | G4 | check:appjson | `npm run check:appjson` | exit 0 |
 | G5 | check:tooling | `npm run check:tooling` | exit 0 |
 | G6 | check:whitelist | `npm run check:whitelist` | exit 0 |
+| G15 | D-016 反例预防 | `git status -s \| grep '.team/members/' \| wc -l` | = 0（state.md + history 已 add 与 R1 同 commit · R1 卡审 P0-2 修订 · 第 4 次卡审强约束）|
 
 ### §3.3 反向验证（3 项）
 
@@ -320,7 +344,17 @@ Page({
 |---|---|---|
 | AP-001 字符串代理判定 | 不命中（150 用 isRunning boolean / network isConnected boolean / token validity 都是事实判定 · 不是字符串代理）|
 | AP-002 概率极低就接受 | 不命中（150 失败处理 + mutex 都是机制兜底 · 非概率论）|
-| AP-003 契约-实装漂移 | 不命中（150 调 GET /sync/pull 严格用 154 实装路径 · 协议契约对齐）|
+| AP-003 契约-实装漂移 | 不命中（150 调 GET /sync/pull 严格用 154 实装路径 · 协议契约对齐 · 复用 sync.ts 封装避免与 sync 逻辑维护两份）|
+
+### §3.5 D-022 §4.1 runtime 实测断言（≥ 5 条 · runtime T2 卡铁律 · R1 卡审 P1-2 修订）
+
+> 联合 154 staging 实测 · client 真实模拟器 + server prod/staging · 必须全 PASS 才整卡 approve（D-022 §4.1 不允许仅自动化绿）
+
+- [ ] **A**：Console 无 `[sync] fail` 以外 error/warn（联合 154 实测期间 · 5 分钟观察窗）
+- [ ] **B**：冷启 500ms 后 Console 出现 `[sync] ok · pushed=N pulled=N watermark=ISO (trigger=launch)`
+- [ ] **C**：home / mine 页切换 5s 内仅 1 次 `trigger=page-show`（debounce 验证 · 第 2 次切换 Console `[sync] skip page-show · debounced`）
+- [ ] **D**：切 Offline 模式（开发者工具 · network throttling: offline）→ 写一笔 entry → 切 Online → Console 出现 `[sync] ok ... trigger=network-recover` + 该 entry 已上传 server（pull 验证）
+- [ ] **E**：watermark 持久化 · 杀小程序进程冷启 → Console 出现 `since=<上次 watermark>` 而非 `since=1970-...`（pull 增量而非全量 · storage `watermark:${family_id}` 持久化验证）
 
 ---
 
@@ -446,7 +480,7 @@ miniapp side (7 changes):
 - g: follow-ups + 105 d2 defect resolved
 
 closes:
-- fu-103-client-sync-scheduler (4 triggers all wired)
+- FU-103-CLIENT-SYNC-SCHEDULER (4 triggers all wired)
 - costra-105 h6/d2 real-link regression now possible (combined with 154)
 
 gates: typecheck/lint/test all green. checks 6/6 pass.
@@ -457,7 +491,7 @@ invest small 5pt. single subagent single commit. d-016 same turn.
 runtime t2 card. d-024 c1 joint test path with costra-154.
 
 refs: docs/api/sync-protocol.md sec-3 sec-6.3 sec-7
-refs: .team/dispatch/costra-150-*.md .team/dispatch/costra-154-*.md
+refs: .team/dispatch/COSTRA-150-*.md .team/dispatch/COSTRA-154-*.md
 
 co-authored-by: miniapp-dev <subagent>
 ```

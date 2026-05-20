@@ -134,14 +134,15 @@ H6 = "client 离线写入 → push → **冷启 pull 回**显示与输入完全�
 - [x] 单测 T7 同 PR 更新（从 stub 行为校验改为真实 pull 行为校验 · CI 守门触发更新）
 - [x] 本缺陷单状态从 `BLOCKED` 转 `RESOLVED-BY-COSTRA-154` + `resolved_at`
 
-## §4 RESOLVED @ COSTRA-154 R1
+## §4 RESOLVED @ COSTRA-154 R1 + COSTRA-150 R1
 
-- **resolved_by**：COSTRA-154 R1 commit `7e87bad`（GET /sync/pull 增量拉取实装 · 替代 stub 501）
-- **resolved_at**：2026-05-19
-- **等效回归**：105 H6 + D.2 自动等效回归 PASS（v1.4 BLOCKED-BY-COSTRA-156 范式同款）
+- **resolved_by**：COSTRA-154 R1 commit `7e87bad`（GET /sync/pull 增量拉取实装 · 替代 stub 501）+ COSTRA-150 R1（client sync 调度器 · 4 触发源 pushDelta+syncPull 复用 · mutex+debounce+periodic）
+- **resolved_at**：2026-05-20
+- **等效回归**：105 H6 + D.2 自动等效回归 PASS 条件现已具备（154 server pull 200 + 150 client 调度器自动触发 syncOnce · 双卡 R1 APPROVE 后 H6+D.2 真链路可验）
 - **server 变更**：`server/src/routes/sync.ts` 删 stub → 真 handler · `server/src/services/syncPullService.ts` 新建 · `server/src/repositories/entryRepo.ts` 加 `findEntriesByFamilySince`
+- **client 变更**：`miniprogram/services/syncScheduler.ts` 新建（4 触发源 + mutex + debounce）· `app.ts` startScheduler/stopScheduler 接入 · `home/mine` onShow triggerOnPageShow 接入
 - **OpenAPI 变更**：`server/api/openapi.yaml` 删 x-deferred + 修缩进 + 加 tags/summary/security
-- **单测**：`server/test/sync-pull.test.ts` 14 测全绿 · `server/test/sync.test.ts` T7 更新
+- **单测**：`server/test/sync-pull.test.ts` 14 测全绿 · `server/test/sync.test.ts` T7 更新 · `miniprogram/services/syncScheduler.spec.ts` 8 测全绿
 
 ---
 

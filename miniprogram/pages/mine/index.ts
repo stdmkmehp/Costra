@@ -5,6 +5,7 @@
 // Refs: COSTRA-030, docs/design/ia.md §我的 · .team/dispatch/COSTRA-125-miniapp-storage-async-migration.md §3 (e)
 import { hasValidSession, getSession, logout } from '../../services/auth';
 import { defaultNickname } from '../../config/defaults';
+import { triggerOnPageShow } from '../../services/syncScheduler';
 
 interface AppWithBootstrap {
   bootstrapPromise: Promise<void>;
@@ -40,6 +41,8 @@ Page({
         nickname: s?.user?.nickname || defaultNickname,
         avatarUrl: s?.user?.avatarUrl || '',
       });
+      // COSTRA-150: 页面 onShow 触发同步调度（debounce 5s）
+      triggerOnPageShow('mine');
     });
   },
 
