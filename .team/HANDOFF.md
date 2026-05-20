@@ -13,7 +13,37 @@
 
 ## §0 一句话断点（HEAD 之前 = 已兑现 · 之后 = 待做）
 
-> **2026-05-19 20:50 当前断点**：🚀 **Sprint-3 启动 · COSTRA-154 R1 实装完成 + R1.x.1 修订 + Sprint-3 8 张 follow-up 转正立卡 dispatch 落档**
+> **2026-05-20 13:25 当前断点**：🚀🚀 **Sprint-3 头部双卡 R1 全闭环 · COSTRA-154 + COSTRA-150 双卡 review-tech APPROVE 等 Human 联合 staging 实测**（D-024 §2.2 C1 第 3 次实战候选 · 105+156 / 157+158 / **154+150** 三连）
+>
+> **COSTRA-150 R1 完整闭环**（单一对话轮 · D-014 同轮范式 · 154 范式复刻）：
+> - 卡审 R1：verdict=REVISE 21/30（3 P0 + 2 P1 + 2 P2）· P0-1 dispatch 引用 5 处不存在 API（outbox.flushPending / auth.getValidToken / family.ts / request.get 链式 / db.getWatermark 类型）· P0-2 缺 G15 · P0-3 entry 非 tabBar 页
+> - dispatch 修订 5 处：A 项改用 sync.ts 封装的 pushDelta+syncPull（一次解决 5 处不一致中的 4 处）+ G15 + entry 排除 + §3.5 runtime 实测断言 5 条 + commit footer 大写
+> - 卡审 R2：verdict=APPROVE 29/30（形式审 · D-016 同轮第 18 次实战）
+> - R1 实装 commit `ee97a7a`（amend 链 535c1f9 → 4751491 → ee97a7a · miniapp-dev 单装扮档 · 7 项 scope 全交付 · 52/52 测全绿 · syncScheduler.ts 158 行 + spec 226 行 · 复用 sync.ts pushDelta+syncPull 范式 · 不重写 sync 逻辑）
+> - R1 Review：verdict=PASS-WITH-FOLLOWUP 34/40（0 P0 / 2 P1 / 3 P2 · D-022 v2.0 第 8 次实战 · D-025 三项全 PASS）· P1-1 hash amend pattern（与 154 R1.x.1 P1-2 同款）· P1-2 startScheduler 500ms 隐性假设缺 [未经验测] 标注
+> - R1.x.1 修订 commit `5ac8153`（D-017 v3 §2.4 E1 第 9 次实战 · 6 文件 + 457 行）· P1-1 hash 4751491→ee97a7a 5 处 + P1-2 [未经验测] 注释 14 行
+> - **R1.x.1 修订后**：verdict 升级 APPROVE 38/40 · 等 Human 联合 154 staging 实测 + approve
+>
+> **双卡范式累计**（154 + 150 双卡 R1 全闭环）：
+> - **D-014 同轮范式**：连续 2 张卡 R1→R2 revise → R1 实装 → R1 Review → R1.x.1 全在单一对话轮
+> - **D-016 反例预防**：第 9 次（154）+ 第 10 次（150）连续合规 · 反例已成历史
+> - **D-017 v3 §2.4 E1 第 8+9 次实战**：双卡均为 PASS-WITH-FOLLOWUP 路径下 follow-up 强制 R1 一并修订 · 100% 修订率范式连续 5 卡（105+156+158+154+150）
+> - **D-022 v2.0 第 7+8 次实战**：双卡同分 38/40 稳定（103 38 → 104 36 → 105 40 → 156 40 → 157 38 → 158 38 → 154 38 → 150 38 · 满分趋势回归 38 常态 · qa-planner+backend-dev+miniapp-dev 装扮档评分稳定）
+> - **D-025 反模式扫描**：154 第 1 次（AP-003 正向兑现 3rd play）+ 150 第 2 次（3 项全 PASS · 复用范式不引入新漂移）
+> - **hash amend pattern 复发**：154 R1.x.1 P1-2 + 150 R1 P1-1 同款 · 留 Sprint-3 末 Retro 议题（候选 @SELF_COMMIT_HASH@ 占位符 + CI hook 回填）
+>
+> **下一步 = D-024 §2.2 C1 第 3 次实战联合 approve**：
+> - Human 联合 154+150 staging 实测（5 条 §3.5 断言 A~E · 含 launch / page-show / network-recover / watermark 持久化 / Console 无 error）
+> - `approve:COSTRA-154 + COSTRA-150` 联合双卡同轮 approve（105+156 范式 / 157+158 范式 第 3 次复用）
+> - Sprint-3 头部 2/9 卡 CLOSED · 累计 10/29 估点 = 34%
+>
+> **本轮落档**（commit `5ac8153`）：6 文件 · 含 syncScheduler [未经验测] 注释 + 5 处 hash 回填 + Card-Review R1+R2 + Review R1 三份报告
+>
+> （上一断点归档）2026-05-19 20:50：🚀 **Sprint-3 启动 · COSTRA-154 R1 实装完成 + R1.x.1 修订 + Sprint-3 8 张 follow-up 转正立卡 dispatch 落档**（commit `7e87bad` + `8eecd4c` + `7160724`）
+>
+> （上一断点归档）2026-05-19 19:53：🎉 **Sprint-2 真闭环 7/7 达成**
+
+---
 >
 > **COSTRA-154 R1 完成进度**（卡审 R1+R2 + R1 实装 + R1 Review + R1.x.1 同轮全闭环 · 单一会话）：
 > - **卡审 R1**：verdict=REVISE 21/30（2 P0 + 2 P1 + 2 P2）· P0-1 entries 表无 family_id 列 SQL 错误 · P0-2 缺 D-016 G15 反例预防 M 项
@@ -67,21 +97,21 @@
 
 ### §1.1 当前时间戳
 
-- **更新时间**：2026-05-19 20:50
-- **更新者**：Orchestrator（HEAD = `8eecd4c` Sprint-3 启动 · COSTRA-154 R1.x.1 修订 + 8 张 dispatch 立档 · 工作树干净 · 13 commits 待 push 到 origin/dev）
-- **Sprint**：✅ **Sprint-1 收官 @ 2026-05-09**（14 卡 100% CLOSED · G4 PASS · D-019）/ ✅ **Sprint-2 真闭环 7/7 @ 2026-05-19 19:53**（27 估点 · 60 commits · D-022 v2.0 平均 37.7/40 · G5 🟢 PASSED）/ 🚀 **Sprint-3 启动中**（COSTRA-154 R1 完成 + R1.x.1 修订 等 Human 联合 150 实测 · 8 张 dispatch 立档 · 估点 30~36 目标 · 累计 5/29 = 17%）
+- **更新时间**：2026-05-20 13:25
+- **更新者**：Orchestrator（HEAD = `5ac8153` Sprint-3 头部双卡 R1 全闭环 · COSTRA-150 R1.x.1 修订 · 工作树干净 · 16 commits 待 push 到 origin/dev）
+- **Sprint**：✅ **Sprint-1 收官** / ✅ **Sprint-2 真闭环 7/7** / 🚀 **Sprint-3 头部双卡 R1 完成**（154 + 150 双卡 review-tech APPROVE 38/40 等 Human 联合 staging 实测 + 双卡 approve · 估点 30~36 目标 · 累计 10/29 = 34%）
 
 ### §1.2 当前在办卡
 
 | 卡号 | Owner | 阶段 | 下一步 |
 |---|---|---|---|
-| **COSTRA-154** | backend-dev | R1 + R1.x.1 完成 @ 2026-05-19 20:35 · review-tech APPROVE 38/40 | 等 Human 联合 150 实测 → `approve:COSTRA-154 + COSTRA-150` 联合（D-024 §2.2 C1 攒批）|
-| **COSTRA-150** | miniapp-dev | dispatch-ready @ 2026-05-19 15:05 · **154 R1 已 APPROVE · 可启动** | 等 Human 触发 `start:COSTRA-150` 或 `start:sprint-3-head` |
-| **COSTRA-152** | backend-dev | dispatch-ready @ 2026-05-19 20:50 · 立档 | 等 Human 触发 `start:COSTRA-152`（建议与 153 联合 · K3/K1 决策点）|
-| **COSTRA-153** | backend-dev | dispatch-ready @ 2026-05-19 20:50 · 立档 | 等 Human 触发 `start:COSTRA-153`（建议与 152 联合）|
-| **COSTRA-151** | miniapp-dev+design-maker | dispatch-ready @ 2026-05-19 20:50 · 立档 | Sprint-3 中后段 · 154+150 CLOSED 后启 |
-| **COSTRA-155** | qa-planner+miniapp-dev | dispatch-ready @ 2026-05-19 20:50 · 立档 | Sprint-3 中后段 · 154+150+152+153 全 CLOSED 后启 |
-| **COSTRA-159** | miniapp-dev | dispatch-ready · 顺手小卡 | 与 150 同链路顺手交付 · 30min 单 commit |
+| **COSTRA-154** | backend-dev | R1+R1.x.1 完成 @ 2026-05-19 20:35 · APPROVE 38/40 | 等 Human 联合 150 staging 实测 → `approve:COSTRA-154 + COSTRA-150`（D-024 §2.2 C1 第 3 次实战）|
+| **COSTRA-150** | miniapp-dev | **R1+R1.x.1 完成 @ 2026-05-20 13:20 · APPROVE 38/40** | 同上 · 联合 154 实测 + 双卡 approve |
+| **COSTRA-152** | backend-dev | dispatch-ready @ 2026-05-19 20:50 | 等 Human 触发 `start:COSTRA-152`（建议与 153 联合 · K3/K1 决策点）|
+| **COSTRA-153** | backend-dev | dispatch-ready @ 2026-05-19 20:50 | 等 Human 触发 `start:COSTRA-153`（建议与 152 联合）|
+| **COSTRA-151** | miniapp-dev+design-maker | dispatch-ready @ 2026-05-19 20:50 | Sprint-3 中后段 · 154+150 CLOSED 后启 |
+| **COSTRA-155** | qa-planner+miniapp-dev | dispatch-ready @ 2026-05-19 20:50 | Sprint-3 中后段 · 154+150+152+153 全 CLOSED 后启 |
+| **COSTRA-159** | miniapp-dev | dispatch-ready · 顺手小卡 | 与 150 同链路（已可启 · 154+150 后启）|
 | **COSTRA-161** | devops-ops | dispatch-ready · 顺手小卡 | 154+152+153 全 CLOSED 后启 · 与 163 同节奏批 |
 | **COSTRA-162** | miniapp-dev | dispatch-ready · 顺手小卡 | 任意时间 · 30min 单 commit |
 | **COSTRA-163** | devops-ops | dispatch-ready · 顺手小卡 | 与 161 同节奏批 |
@@ -316,7 +346,8 @@ reviews + FU-LAUNCH + miniapp-dev state.md · 当前断点：COSTRA-124 R1 两�
 | **v1.4** | **2026-05-09 09:44** | 新会话 Orchestrator（接续会话）| **G4 合并闸门 PASS · Sprint-1 收官 · Sprint-2 Planning 中** · 路径 A 决议 D-019 落盘 · 议题 10~17 + 14+ 条转 COSTRA-106 Retro 卡 · 实际仅刷 §1.1/§1.2（§0/§1.3/§5/§8 v1.4 期间 silent fail · v1.5 一次性补齐）|
 | **v1.5** | **2026-05-09 10:39** | 新会话 Orchestrator | 🏆 **COSTRA-106 Sprint-1 Retro 双 30/30 满分收官 · Sprint-2 第 1/7 卡 CLOSED** · `approve:COSTRA-106` Human T2 一次性裁决 · 主报告 558 行 + D-020/D-021/D-022 三决议 + metrics 工程度量定稿 + board/backlog Sprint-2 流转 · SBAI v1.1 第 6 次冒烟成功 · pm-writer 首次实战 0 漏项 · D-016 第 13~14 次实战合规 · 立卡到终审 30 分钟新纪录 · §0/§1.1/§1.2/§1.3/§5/§8 全刷新（含 v1.4 漏改补齐）· 下一步 Human 触发 `run miniapp COSTRA-103`（Sprint-2 主线主头）|
 | **v1.6** | **2026-05-09 19:17** | 新会话 Orchestrator | 🏆 **COSTRA-103 Sprint-2 主线主头 38/40 APPROVE CLOSED · D-022 v2.0 评分表首次实战 + D-017 v3 完整流程首次实战** · `approve:COSTRA-103` Human T1 一次性裁决 · Sprint-2 第 2/7 卡 CLOSED · Human 模拟器实测 5 步 + 5 硬断言全 PASS · 2 条 Sprint-3 候选 FU 立件（FU-103-CLIENT-SYNC-SCHEDULER COSTRA-150 P1 + FU-103-CONFLICT-MERGE-UI COSTRA-151 P2）· 8 文件主代码 ~ 1330 行净增 · 6 闸门全绿 + 协议 100% 对齐 + 0 后端外溢 · SBAI v1.1 第 7 次冒烟 · miniapp-dev 第 6 次实战 · 审查档第 4 次实战 · D-016 第 15~17 次实战合规 · 8 commits（cb3a83b → f125f05）· §0/§1.1/§1.2/§1.3/§5 全刷新 · 下一步 Human 触发 `run backend COSTRA-104`（Sprint-2 主线第 3 张）|
-| **v1.17** | **2026-05-19 20:50** | 同会话 Orchestrator | 🚀 **Sprint-3 启动 · COSTRA-154 R1 实装完成 + R1.x.1 修订 + Sprint-3 8 张 follow-up 转正立卡 dispatch 落档** · 卡审 R1 verdict=REVISE 21/30（2 P0 + 2 P1 + 2 P2 · P0-1 entries 表无 family_id 列 SQL 错误 · P0-2 缺 D-016 G15 反例预防 M 项）· dispatch 修订 4 处（A 项 SQL JOIN ledgers + B 项 PullEntryRow 类型 + G7 拆 G7a/b + 加 G15 + commit footer 大写）· 卡审 R2 verdict=APPROVE 29/30（形式审）· R1 实装 commit `7e87bad`（backend-dev 单装扮档 · 9 项 scope 全交付 · 14 闸门 + 3 反向验证全绿 · 49 测全绿 · entryRepo.findEntriesByFamilySince + syncPullService + routes 真实装 + OpenAPI x-deferred 删 + sync-pull.test.ts 14 测 + FU-104-SYNC-PULL closed + 105 D2 defect resolved）· R1 Review verdict=PASS-WITH-FOLLOWUP 36/40（0 P0 / 2 P1 / 3 P2 · D-022 v2.0 第 7 次实战 · D-025 AP-003 命中并修复正向兑现 3rd play）· R1.x.1 修订 commit `8eecd4c`（D-017 v3 §2.4 E1 第 8 次实战 · P1-1 SyncPullResult.changes ledgers 类型 never[] → unknown[] + P1-2 5 处文档 commit hash 引用统一 00d604c → 7e87bad）· R1.x.1 修订后 verdict 升级 APPROVE 38/40 · 9 文件 + 9 张 dispatch 落档 · D-014 同轮范式 + D-016 反例第 9 次预防成功合规第 2 次连续 + D-017 v3 §2.4 E1 第 8 次 + D-022 v2.0 第 7 次 + D-025 反模式扫描清单首次套用 · **同时 8 张 follow-up 转正立卡 dispatch**：COSTRA-150（client sync 调度器 P1 5pt · 严格依赖 154 R1 APPROVE）+ 152（PATCH entries P1 3pt · entryService 全备）+ 153（DELETE entries P1 2pt · service 全备）+ 151（conflict UI P2 5pt · Sprint-3 中后段）+ 155（QA 全量 15 用例自动化 P2 5pt · 154+150+152+153 全 CLOSED 后启 · 双装扮档）+ 159（outbox flaky fake timers P2 1pt · 与 150 顺手）+ 161（whitelist 规则 E D-025 AP-003 自动检测 P2 1pt）+ 162（dev mockLogin runtime toggle P3 1pt）+ 163（whitelist ICP 强等值 P2 1pt）· Sprint-3 估点 24+5（154）= 29 点 + buffer 30~36 目标 · D-024 §2.2 攒批节奏（154+150 联合 / 152+153 联合 / 161+163 联合 / 159+162 顺手）· 下一步 = Human 触发 `start:COSTRA-150` 启动 150 链路（D-014 同轮范式 ~3~4h 自驱）→ Human 联合 154+150 实测 → `approve:COSTRA-154 + COSTRA-150`（D-024 §2.2 C1 第 3 次实战）|
+| **v1.18** | **2026-05-20 13:25** | 同会话 Orchestrator | 🚀🚀 **Sprint-3 头部双卡 R1 全闭环 · COSTRA-154 + COSTRA-150 双卡 review-tech APPROVE 38/40 等 Human 联合 staging 实测**（D-024 §2.2 C1 第 3 次实战候选 · 105+156 / 157+158 / 154+150 三连）· **150 R1 完整闭环单一对话轮 D-014 同轮范式 154 范式复刻**：卡审 R1 REVISE 21/30（3 P0 + 2 P1 + 2 P2 · P0-1 dispatch 引用 5 处不存在 API · P0-2 缺 G15 · P0-3 entry 非 tabBar）· dispatch 修订 5 处（A 项改用 sync.ts 封装 pushDelta+syncPull 一次解决 4/5 不一致 + G15 + entry 排除 + §3.5 runtime 5 条断言 + commit footer 大写）· 卡审 R2 APPROVE 29/30（形式审）· R1 实装 commit `ee97a7a`（amend 链 535c1f9→4751491→ee97a7a · miniapp-dev 单装扮档 · 7 项 scope · 52/52 测全绿 · syncScheduler.ts 158 行 + spec 226 行 · 复用 sync.ts 不重写）· R1 Review PASS-WITH-FOLLOWUP 34/40（0 P0 / 2 P1 / 3 P2 · D-022 v2.0 第 8 次实战 · D-025 三项全 PASS）· R1.x.1 修订 commit `5ac8153`（D-017 v3 §2.4 E1 第 9 次实战 · P1-1 hash 4751491→ee97a7a 5 处 + P1-2 startScheduler [未经验测] 14 行注释）· APPROVE 38/40 · **双卡范式累计**：D-014 同轮范式连续 2 次 / D-016 反例第 9~10 次预防成功（合规第 2~3 次连续 · 反例已成历史） / D-017 v3 §2.4 E1 第 8+9 次实战 / D-022 v2.0 第 7+8 次同分 38/40 稳定（满分趋势回归 38 常态）/ D-025 第 1~2 次套用（154 AP-003 正向兑现 + 150 三项全 PASS 复用范式不引入新漂移）/ hash amend pattern 复发（154 R1.x.1 P1-2 + 150 R1 P1-1 同款 · 留 Sprint-3 末 Retro 议题候选 @SELF_COMMIT_HASH@ 占位符 + CI hook 回填）· 下一步 = Human 联合 154+150 staging 实测（5 条 §3.5 断言 A~E）→ `approve:COSTRA-154 + COSTRA-150` 联合双卡同轮 approve · Sprint-3 头部 2/9 卡 CLOSED · 累计 10/29 估点 = 34% |
+| **v1.17** | **2026-05-19 20:50** | 同会话 Orchestrator | 🚀 **Sprint-3 启动 · COSTRA-154 R1 实装完成 + R1.x.1 修订 + Sprint-3 8 张 follow-up 转正立卡 dispatch 落档** · 卡审 R1 verdict=REVISE 21/30（2 P0 + 2 P1 + 2 P2 · P0-1 entries 表无 family_id 列 SQL 错误 · P0-2 缺 D-016 G15 反例预防 M 项）· dispatch 修订 4 处（A 项 SQL JOIN ledgers + B 项 PullEntryRow 类型 + G7 拆 G7a/b + 加 G15 + commit footer 大写）· 卡审 R2 verdict=APPROVE 29/30（形式审）· R1 实装 commit `7e87bad`（backend-dev 单装扮档 · 9 项 scope 全交付 · 14 闸门 + 3 反向验证全绿 · 49 测全绿 · entryRepo.findEntriesByFamilySince + syncPullService + routes 真实装 + OpenAPI x-deferred 删 + sync-pull.test.ts 14 测 + FU-104-SYNC-PULL closed + 105 D2 defect resolved）· R1 Review verdict=PASS-WITH-FOLLOWUP 36/40（0 P0 / 2 P1 / 3 P2 · D-022 v2.0 第 7 次实战 · D-025 AP-003 命中并修复正向兑现 3rd play）· R1.x.1 修订 commit `8eecd4c`（D-017 v3 §2.4 E1 第 8 次实战 · P1-1 SyncPullResult.changes ledgers 类型 never[] → unknown[] + P1-2 5 处文档 commit hash 引用统一 00d604c → 7e87bad）· R1.x.1 修订后 verdict 升级 APPROVE 38/40 · 9 文件 + 9 张 dispatch 落档 · D-014 同轮范式 + D-016 反例第 9 次预防成功合规第 2 次连续 + D-017 v3 §2.4 E1 第 8 次 + D-022 v2.0 第 7 次 + D-025 反模式扫描清单首次套用 · **同时 8 张 follow-up 转正立卡 dispatch** · 下一步 = Human 触发 `start:COSTRA-150` 启动 150 链路 |
 | **v1.16** | **2026-05-19 09:27** | 同会话 Orchestrator | 🏆🏆 **COSTRA-156 + COSTRA-105 双卡 Human T1 APPROVED CLOSED · Sprint-2 主线 4/7+5/7 双卡同轮收官**（D-014 SOP 联合双卡同轮 approve）· **156 APPROVED 40/40 满分**（D-022 v2.0 第 4 次实战连续满分 · 终审报告 `.team/reviews/COSTRA-156/FINAL.md`）+ **105 APPROVED-PARTIAL**（H1~H5 🟢 全 PASS · H6 🔴 BLOCKED-BY-COSTRA-154 自动等效回归 · v1.4 BLOCKED-BY-COSTRA-156 范式同款第 2 次实战 · 不阻 R1 · 终审报告 `.team/reviews/COSTRA-105/FINAL.md`）· **D-022 v2.0 评分表稳定趋势确立**（103 38/40 → 104 36/40 → 105 40/40 → 156 40/40 · 连续两卡满分 · qa-planner + backend-dev 双满分）· **D-022 §4.1 真兑现立意首次实测**（自动化+curl+server 单测 30+ 全绿 · Human 真链路实测 ~30min 捕获 5 发现：4 文档 gap + 1 联合 P0 BUG 双责）· 6 文件 doc-only 落盘：① + ② 双卡 FINAL.md（156: 7 §段 · 105: 8 §段 含 partial PASS 收口口径 + 5 范式建立）· ③ + ④ 双派单档 §10 终审收尾段 · ⑤ 双卡 state/history（backend-dev §2/§3/§7 + qa-planner §1.0/§2/§3/§6/§7 + 双 history/2026-05-19-*.md）· ⑥ HANDOFF v1.16 §0/§1.1/§1.2/§8 + board.md 顶部条 + Doing 列清空 + Done 列加双卡 + Todo 表 105/156 划销 + backlog v0.2.8→v0.2.9 双卡 status: Doing→Done + metrics.json _description + 双卡 terminal_verdict/human_final_decision/final_report 全刷新 · **CI 对账族第 5 张规则 D 落地**（whitelist-check.mjs · fastify prefix vs OpenAPI servers path 静态对账）· **D-016 反例第 8 次首次预防成功**（156 commit 前自检 wc -l = 0）+ **第 9 次触发+补救**（105 R1.x.1 议入 Sprint-2 末 Retro 升 P0）· Sprint-2 进度 47%→**61%**（14→**22 点** · 5/7 卡 CLOSED）· 下一步 = **COSTRA-154 转 Sprint-3 P0 头部**（FU-104-SYNC-PULL · 5 点 · 与 COSTRA-150 一同做才有意义 · 实装后回归 105 D.2+H6 自动等效闭环）|
 | **v1.15** | **2026-05-18 20:4x** | 同会话 Orchestrator | ✅ **COSTRA-105 R1 Human 实测 partial PASS · 等双卡 approve 收官**（H1~H5 🟢 全 PASS · H6 🔴 BLOCKED-BY-COSTRA-154 · 方式 C ⏸️ M2 跳过）· Human 实测顺序：方式 A Mock（A/B/C PASS · H1/H2/H3/H5）→ 方式 B 本地 server（A/B/C/D.1/E PASS · H1~H5 全命中 · H4 = §5 curl idempotency_keys 缓存命中 DB count=1 · BUG-001/002 ≥ commit `9be5e84` 修复后回归无误）→ §4.2 D.2 触发 501 NOT_IMPLEMENTED（GET /sync/pull stub · OpenAPI `x-deferred: COSTRA-154` · 单测 T7 已守护）→ Human 决策方式 C 跳过 M2 复测 · 3 文件 doc-only 落盘：① `docs/qa/costra-105-human-smoke.md` v1.7→v1.8（4 处实测增量 不重构）+ ② `qa/defects/2026-05-18-COSTRA-105-D2-pull-501-blocker.md`（新立 BLOCKER 缺陷单）+ ③ HANDOFF v1.14→v1.15 · commit `16fd1a0`（4 files +227/-35）|
 | **v1.14** | **2026-05-18 20:1x** | 同会话 Orchestrator | ✅ **COSTRA-105 R1.x BUG 双修完成 + 手册 v1.7 精简整理**：R1.x.1（miniapp-dev BUG-001 ledger_id 字面量 · commit `33dbdea`）+ R1.x.2（backend-dev BUG-002 server payload UUID schema 校验 · commit `db488b9` 含 T9 单测）+ R1.x.1 state/history 补漏（commit `9be5e84` · D-016 反例第 9 次触发 + 补救）· 手册 v1.6→v1.7 精简 -38%（846→525 行 · Q1=C/Q2=同意/Q3=同意 推荐方案落地 · 删 §0.5.1+§0.5.3+§9 · 合并 §1~§5 模式矩阵到 §0.2 单表 + Pass/Fail 集中到 §6 + §0.7 整合到 §0.3.3 · 100% 保留 v1.6 实测核心）· §0/§1.1/§1.3/§8 全刷新 · 下一步 Human 重跑 D.1 fallback 验收（无需手动覆盖 payload.ledger_id · 验非法 UUID 返 400）→ 跑 D.2 + 全套 H1~H6 → 双卡 approve |
