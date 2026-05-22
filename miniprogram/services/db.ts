@@ -264,10 +264,30 @@ async function mergeIntoConflictQueue(
   await setItem('conflict:__queue', queue);
 }
 
-export async function getWatermark(familyId: string): Promise<string> {
-  return (await getItem<string>(watermarkKey(familyId))) || '1970-01-01T00:00:00.000Z';
+export async function getWatermark(familyId: string): Promise<number> {
+  // BUG-COSTRA-154 v1.2 升级（2026-05-22）：
+  //   watermark 类型从 string（ISO 微秒）→ number（BIGINT change_seq）
+  //   兼容旧值：检测到 storage 残留 ISO 字符串自动重置为 0
+  //     → 触发一次性全量 pull · 之后正常增量
+  //     → 避免 server schema 校验失败（pullQuerySchema since: integer minimum=0）
+  const v = await getItem<unknown>(watermarkKey(familyId));
+  if (typeof v === 'number' && Number.isInteger(v) && v >= 0) {
+    return v;
+  }
+  if (typeof v === 'string') {
+    // 旧 v1.0/v1.1 ISO 字符串 watermark · 一次性清除 + 全量重拉
+    console.warn('[db] legacy ISO watermark detected, resetting to 0 (full re-sync)', { familyId, legacy: v });
+    await setItem<number>(watermarkKey(familyId), 0);
+    return 0;
+  }
+  return 0;
 }
 
-export async function setWatermark(familyId: string, watermark: string): Promise<void> {
-  await setItem(watermarkKey(familyId), watermark);
+export async function setWatermark(familyId: string, watermark: number): Promise<void> {
+  // 防御性校验：watermark 必须是非负整数（v1.2 协议契约）
+  if (!Number.isInteger(watermark) || watermark < 0) {
+    console.warn('[db] invalid watermark · ignored', { familyId, watermark });
+    return;
+  }
+  await setItem<number>(watermarkKey(familyId), watermark);
 }

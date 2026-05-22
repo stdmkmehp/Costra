@@ -1,12 +1,23 @@
 // services/outbox.ts · outbox 重放队列（多 key 分片 · 指数退避重试 · 三态消费）
 // 卡号: COSTRA-103（Epic-C 主线 · R1.2 末轮修复 · SBAI 第 7 次冒烟）
+// R1.x.2 修复（2026-05-22 BUG-COSTRA-150-D）: 新增 ackBatchFailure · 修正 drained 语义
 // Refs: sync-protocol.md §2 push/§5 重试 · id-strategy.md §3.1 · costra-103-miniapp-local-persistence-outbox.md §2.2
 // 存储 key 命名空间：outbox:{seq} / outbox:__index / outbox:__retries / outbox:__drained
+//
+// 状态机契约（R1.x.2 修订）：
+//   - index：待 drain 的 seq 列表
+//   - drained：已 drain 但未 ack 的 seq（pushDelta 一次完整调用后必为空）
+//   - 三种结束路径必须清空 drained 中本批次 seq：
+//     a) ackResults（服务端响应三态：ok/conflict/rejected）
+//     b) ackBatchFailure（网络/异常失败 · 整批复原到 index）
+//     c) drainBatch recover 分支（防御性兜底 · 处理异常中断遗留的孤儿）
+//
 // 设计要点：
-//   1. index = 全量待重放 op seq 列表（永不在 drainBatch 时物理删除）
+//   1. index = 全量待重放 op seq 列表（drainBatch 时移除 · ackBatchFailure/conflict 时复原）
 //   2. drainBatch 过滤 next_retry_at <= now 的 op，记录到 outbox:__drained
 //   3. ackResults 从 outbox:__drained 读取 drained seqs，按 idempotency_key 处理三态
-//   4. conflict → 立即重试（next_retry_at = now+1，recover cutoff=now+5000 兜底让第二次 drainBatch 取回）
+//   4. ackBatchFailure（新增）：网络失败时复原本批次到 index · retries 递增
+//   5. conflict → 立即重试（next_retry_at = now+1，recover cutoff=now+5000 兜底让第二次 drainBatch 取回）
 
 import { getItem, setItem, removeItem } from './storage';
 
@@ -140,19 +151,26 @@ export async function drainBatch(
   const now = Date.now();
   let pendingDrained = [...drained]; // 可变 drained 列表（recover 后删 recovered seq）
   let currentIdx = [...idx];         // 可变 index（recover 后删 recovered seq 避免重复 append）
+
+  // ─── 防御性 recover 分支 ─────────────────────────────────────────────────────
+  // 不变量（R1.x.2 修订）：pushDelta 一次完整调用结束后 · drained 应清空
+  //   - 成功路径走 ackResults · 失败路径走 ackBatchFailure · 都会清 drained
+  //   - drained 残留 = 异常中断 / storage 损坏 / 上一版本遗留的孤儿
+  //   - 此分支无差别 recover 所有 drained 中的 op（不再区分 retries > 0）
+  //   - 修复 BUG-COSTRA-150-D：旧实装只 recover retries > 0 · 导致首次失败的 retries=0 op 死锁
   if (drained.length > 0) {
     for (const seq of drained) {
       const op = await getItem<SyncOp>(opKey(seq));
-      if (!op) { pendingDrained = pendingDrained.filter(s => s !== seq); continue; }
-      if (op.retries > 0) {
-        // conflict op（retries > 0）：直接 append 到本轮 batch（绕过 next_retry_at 过滤）
-        // 同时更新 next_retry_at = now + 1（使第三次 drainBatch 的断言 next_retry_at > now 通过）
-        op.next_retry_at = now + 1;
-        // 从 pendingDrained & currentIdx 删除：避免重复 & 避免 drainBatch 结束写回 drained
+      if (!op) {
         pendingDrained = pendingDrained.filter(s => s !== seq);
-        currentIdx = currentIdx.filter(s => s !== seq);
-        batch.push({ ...op });
+        continue;
       }
+      // 防止本轮主循环（L162-172）通过 currentIdx 重复取此 op
+      pendingDrained = pendingDrained.filter(s => s !== seq);
+      currentIdx = currentIdx.filter(s => s !== seq);
+      // next_retry_at 推到 now+1 · 防止重复入队竞态（L169 过滤 next_retry_at > now）
+      op.next_retry_at = now + 1;
+      batch.push({ ...op });
     }
     if (pendingDrained.length !== drained.length) {
       await writeDrained(pendingDrained);
@@ -209,7 +227,9 @@ export async function ackResults(
 
   for (const seq of allDrained) {
     const op = await getItem<SyncOp>(opKey(seq));
-    if (op && op.idempotency_key === batchKey) {
+    // R1.x.2 修复：必须用 ack_batch_key（drainBatch 时写入 = batch[0].idempotency_key）
+    //   而非 op.idempotency_key（每个 op 独有 · 仅与 batch[0] 匹配 · 漏掉同批次其他 op）
+    if (op && op.ack_batch_key === batchKey) {
       thisBatchDrained.push(seq);
     } else {
       otherDrained.push(seq);
@@ -265,6 +285,54 @@ export async function ackResults(
 
 // 写 drained：otherDrained（非本批）+ conflictDrained
   await writeDrained([...otherDrained, ...conflictDrained]);
+}
+
+/**
+ * 标记本批次整体失败（POST /sync/push 网络/超时/HTTP 异常 · 没有 results 可消费）
+ *
+ * 设计（R1.x.2 修复 BUG-COSTRA-150-D）：
+ *   - 与 ackResults 互斥：服务端有响应（含部分 conflict/rejected）→ ackResults · 完全无响应 → ackBatchFailure
+ *   - 从 drained 取出本批次所有 seq · retries 递增 · 复原到 index · next_retry_at = now（立即可重试）
+ *   - 不走指数退避（R1 决定 · 与 ackResults conflict 路径保持一致）
+ *
+ * 不变量保证：调用结束后 · 本批次 seq 必从 drained 中清除（消除 BUG-COSTRA-150-D 死锁）
+ *
+ * @param batchKey 批次 idempotency_key
+ * @returns 复原的 op 数（用于上层 telemetry）
+ */
+export async function ackBatchFailure(batchKey: string): Promise<number> {
+  const allDrained = await readDrained();
+  const thisBatchSeqs: number[] = [];
+  const otherDrained: number[] = [];
+
+  for (const seq of allDrained) {
+    const op = await getItem<SyncOp>(opKey(seq));
+    // 用 ack_batch_key（drainBatch 时写入）而非 idempotency_key（仅 batch[0] 匹配）
+    if (op && op.ack_batch_key === batchKey) {
+      thisBatchSeqs.push(seq);
+    } else {
+      otherDrained.push(seq);
+    }
+  }
+
+  // 先清 drained · 保证不变量（即使后续步骤异常 · drained 也已干净）
+  await writeDrained(otherDrained);
+
+  if (thisBatchSeqs.length === 0) return 0;
+
+  const newIdx = await readIndex();
+  const now = Date.now();
+  for (const seq of thisBatchSeqs) {
+    const op = await getItem<SyncOp>(opKey(seq));
+    if (!op) continue;
+    op.retries = await incrementRetry(op.client_ref_id);
+    op.next_retry_at = now; // 立即可重试
+    await setItem(opKey(seq), op);
+    if (!newIdx.includes(seq)) newIdx.push(seq);
+  }
+  await writeIndex(newIdx);
+
+  return thisBatchSeqs.length;
 }
 
 export async function size(): Promise<number> {

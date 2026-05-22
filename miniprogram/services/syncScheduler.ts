@@ -17,8 +17,11 @@ export type TriggerSource = 'launch' | 'network-recover' | 'page-show' | 'period
 
 export interface SyncResult {
   pushed: number;      // 本次成功推送的 op 数
+  conflicts: number;   // 本次冲突的 op 数（已重新入 index 待重试）
+  rejected: number;    // 本次被拒绝的 op 数（NOT_FOUND/PERMISSION_DENIED 已删除）
+  failed: number;      // 本次网络/异常失败的 op 数（已复原 index 待重试）
   pulled: number;      // 本次拉取的 entries 数
-  watermark: string;   // 推进后的 watermark
+  watermark: number;   // 推进后的 watermark · BIGINT change_seq（v1.2 升级 · 2026-05-22）
   trigger: TriggerSource;
 }
 
@@ -73,7 +76,7 @@ export async function syncOnce(trigger: TriggerSource): Promise<SyncResult | nul
       return null;
     }
 
-    // 3. push delta（sync.ts L74: drainBatch + POST /sync/push + ackResults）
+    // 3. push delta（sync.ts L83: drainBatch + POST /sync/push + ackResults / ackBatchFailure）
     const pushResult = await pushDelta();
 
     // 4. syncPull（sync.ts L43: getWatermark + GET /sync/pull + applyServerChanges + setWatermark）
@@ -81,10 +84,13 @@ export async function syncOnce(trigger: TriggerSource): Promise<SyncResult | nul
 
     const pulled = pullResult.changes?.entries?.length || 0;
     console.log(
-      `[sync] ok · pushed=${pushResult.pushed} pulled=${pulled} watermark=${pullResult.watermark} (trigger=${trigger})`
+      `[sync] ok · pushed=${pushResult.pushed} conflicts=${pushResult.conflicts} rejected=${pushResult.rejected} failed=${pushResult.failed} pulled=${pulled} watermark=${pullResult.watermark} (trigger=${trigger})`
     );
     return {
       pushed: pushResult.pushed,
+      conflicts: pushResult.conflicts,
+      rejected: pushResult.rejected,
+      failed: pushResult.failed,
       pulled,
       watermark: pullResult.watermark,
       trigger,

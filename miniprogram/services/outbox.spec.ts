@@ -1,10 +1,12 @@
 // services/outbox.spec.ts · outbox 重放队列单测
 // 卡号: COSTRA-103（Epic-C 主线 · R1 · SBAI 第 7 次冒烟）
+// R1.x.2 补强（2026-05-22 BUG-COSTRA-150-D）: 加 ackBatchFailure 端到端 + 多轮失败死锁防御测试
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   enqueue,
   drainBatch,
   ackResults,
+  ackBatchFailure,
   size,
   __peek,
   __clear,
@@ -67,6 +69,15 @@ describe('services/outbox · 模拟 wx.storage（mock 环境）', () => {
     expect(result).not.toBeNull();
     expect(result!.batch).toHaveLength(2);
 
+    // R1.x.2 修订（BUG-150-D）：drained 语义统一 · 第一次 drainBatch 后必须先 ack 才能继续
+    //   旧实装：第一次取走 2 个后 · 这 2 个停在 drained · 第二次只取剩余 3 个 → 但 drained 永远死锁（隐性 BUG）
+    //   新实装：drained 中残留的 2 个会被防御性 recover 取回 → 第二次取到 5 个（前 2 个 + 后 3 个）
+    //   正确路径：第一次取走 2 个 → ack（成功/失败）清 drained → 第二次取剩余 3 个
+    const okResults: PushResultItem[] = result!.batch.map(op => ({
+      client_ref_id: op.client_ref_id, status: 'ok' as const, server_id: `srv-${op.client_ref_id}`, server_version: 1
+    }));
+    await ackResults(result!.batchKey, okResults);
+
     // 第二次 drainBatch：剩余 3 条（next_retry_at 已到 = Date.now()）
     const result2 = await drainBatch(200);
     expect(result2).not.toBeNull();
@@ -120,5 +131,109 @@ describe('services/outbox · 模拟 wx.storage（mock 环境）', () => {
     expect(await size()).toBe(2);
     await __clear();
     expect(await size()).toBe(0);
+  });
+
+  // ─── BUG-COSTRA-150-D 回归测试（2026-05-22 R1.x.2 修复）─────────────────────
+  // 历史 BUG：sync.ts catch 静默吞错 + drainBatch recover 仅捞 retries>0 → 网络失败的 op 永久死锁
+  // 修复方案：新增 ackBatchFailure · drained 语义统一 · 任何失败路径都必须清 drained
+
+  it('BUG-150-D · ackBatchFailure 复原本批次 · 下次 drainBatch 必能取回（retries 递增）', async () => {
+    await enqueue({ op: 'create', entity: 'entry', client_ref_id: 'net-fail-1', base_version: null, payload: { ledger_id: 'l1', amount: 100, currency: 'CNY', type: 'expense', category_id: null, note: '', occurred_at: '2026-05-09T00:00:00.000Z' } });
+    const result = await drainBatch(200);
+    expect(result).not.toBeNull();
+    expect(result!.batch).toHaveLength(1);
+
+    // 模拟网络失败：调 ackBatchFailure（替代旧实装的 catch 静默吞错）
+    const recovered = await ackBatchFailure(result!.batchKey);
+    expect(recovered).toBe(1);
+
+    // 不变量：drained 必须为空（否则下次 drainBatch 会形成死锁）
+    // 通过下次 drainBatch 间接验证（drained 残留会被防御性 recover 分支捞起 · 但不应触发该分支）
+
+    // 下次 drainBatch 必能取回 · retries=1
+    const result2 = await drainBatch(200);
+    expect(result2).not.toBeNull();
+    expect(result2!.batch).toHaveLength(1);
+    expect(result2!.batch[0].client_ref_id).toBe('net-fail-1');
+    expect(result2!.batch[0].retries).toBe(1);
+  });
+
+  it('BUG-150-D · 连续 3 次网络失败 + 1 次成功 · op 最终能上传（不死锁）', async () => {
+    await enqueue({ op: 'create', entity: 'entry', client_ref_id: 'persist-1', base_version: null, payload: { ledger_id: 'l1', amount: 100, currency: 'CNY', type: 'expense', category_id: null, note: '', occurred_at: '2026-05-09T00:00:00.000Z' } });
+
+    // 连续 3 次网络失败
+    for (let i = 0; i < 3; i++) {
+      const r = await drainBatch(200);
+      expect(r).not.toBeNull();
+      expect(r!.batch).toHaveLength(1);
+      expect(r!.batch[0].client_ref_id).toBe('persist-1');
+      expect(r!.batch[0].retries).toBe(i);
+      await ackBatchFailure(r!.batchKey);
+    }
+
+    // 第 4 次成功 · retries 累积 3 次
+    const r4 = await drainBatch(200);
+    expect(r4).not.toBeNull();
+    expect(r4!.batch).toHaveLength(1);
+    expect(r4!.batch[0].retries).toBe(3);
+
+    const okResults: PushResultItem[] = [{ client_ref_id: 'persist-1', status: 'ok', server_id: 'srv-final', server_version: 1 }];
+    await ackResults(r4!.batchKey, okResults);
+
+    // 物理删除 · index/drained 都干净
+    expect(await __peek()).toHaveLength(0);
+    expect(await size()).toBe(0);
+  });
+
+  it('BUG-150-D · ackBatchFailure 仅清本批次 · 不影响其他批次（idempotency_key 隔离）', async () => {
+    // 准备：enqueue A · drainBatch（取 A · drained=[A]）· ackBatchFailure A
+    // 验证：A 复原到 index · drained 为空 · 后续 enqueue B 与 A 互不干扰
+    await enqueue({ op: 'create', entity: 'entry', client_ref_id: 'iso-A', base_version: null, payload: { ledger_id: 'l1', amount: 100, currency: 'CNY', type: 'expense', category_id: null, note: '', occurred_at: '2026-05-09T00:00:00.000Z' } });
+    const rA = await drainBatch(200);
+    expect(rA).not.toBeNull();
+    expect(rA!.batch).toHaveLength(1);
+    expect(rA!.batch[0].client_ref_id).toBe('iso-A');
+
+    const recoveredA = await ackBatchFailure(rA!.batchKey);
+    expect(recoveredA).toBe(1);
+    // 不变量：drained 已清 · A 在 index 等重试 · retries=1
+
+    // 再 enqueue B · 然后 drainBatch · 应同时取到 A（重试）和 B（新增）· batch 干净
+    await enqueue({ op: 'create', entity: 'entry', client_ref_id: 'iso-B', base_version: null, payload: { ledger_id: 'l1', amount: 100, currency: 'CNY', type: 'expense', category_id: null, note: '', occurred_at: '2026-05-09T00:00:00.000Z' } });
+    const rAB = await drainBatch(200);
+    expect(rAB).not.toBeNull();
+    expect(rAB!.batch).toHaveLength(2);
+
+    const refIds = rAB!.batch.map(o => o.client_ref_id).sort();
+    expect(refIds).toEqual(['iso-A', 'iso-B']);
+
+    // ackResults 仅 A ok · B 网络失败 → 应能正确隔离
+    const partialResults: PushResultItem[] = [
+      { client_ref_id: 'iso-A', status: 'ok', server_id: 'srv-A', server_version: 1 }
+      // 注意：B 不在 results 中 → ackResults 视为"网络级失败"路径（L227-236）· 重新入 index
+    ];
+    await ackResults(rAB!.batchKey, partialResults);
+
+    // A 物理删除 · B 仍在 index（被 ackResults 的"results 缺失 → 网络失败"分支推回）
+    const peeked = await __peek();
+    expect(peeked).toHaveLength(1);
+    expect(peeked[0].client_ref_id).toBe('iso-B');
+  });
+
+  it('BUG-150-D · 防御性 recover：retries=0 的 drained 孤儿也能被取回（修复前死锁场景）', async () => {
+    // 模拟旧 BUG 留下的 drained 孤儿：retries=0 + 在 drained 中
+    // 实操：enqueue → drainBatch → 不调 ack* → 直接再 drainBatch
+    // 修复前：retries=0 → recover 跳过 → 永远死锁
+    // 修复后：无差别 recover · 下次 drainBatch 取回
+    await enqueue({ op: 'create', entity: 'entry', client_ref_id: 'orphan-1', base_version: null, payload: { ledger_id: 'l1', amount: 100, currency: 'CNY', type: 'expense', category_id: null, note: '', occurred_at: '2026-05-09T00:00:00.000Z' } });
+    const r1 = await drainBatch(200);
+    expect(r1).not.toBeNull();
+    // ⚠️ 故意不调 ackResults / ackBatchFailure · 模拟异常中断后 drained 残留 retries=0 op
+
+    // 下次 drainBatch 必须能从防御性 recover 分支取回（修复前此处会 return null · 死锁）
+    const r2 = await drainBatch(200);
+    expect(r2).not.toBeNull();
+    expect(r2!.batch).toHaveLength(1);
+    expect(r2!.batch[0].client_ref_id).toBe('orphan-1');
   });
 });

@@ -11,7 +11,7 @@
 
 import { request } from './request';
 import { getWatermark, setWatermark, applyServerChanges } from './db';
-import { drainBatch, ackResults, PushResultItem } from './outbox';
+import { drainBatch, ackResults, ackBatchFailure, PushResultItem } from './outbox';
 
 /**
  * Entity 枚举
@@ -22,9 +22,13 @@ export type Entity = 'entry' | 'category' | 'budget';
 /**
  * /sync/pull 响应契约（OpenAPI SyncPullResponse）
  * 对齐 docs/api/sync-protocol.md §3.2
+ *
+ * BUG-COSTRA-154 v1.2 升级（2026-05-22）：
+ *   watermark 类型从 string（ISO 微秒）→ number（BIGINT change_seq）
+ *   PG SEQUENCE 严格单调 · 不依赖时钟 · 完全消除同微秒并发漏拉风险
  */
 export interface SyncPullResponse {
-  watermark: string;
+  watermark: number;
   has_more?: boolean;
   changes: {
     entries?: unknown[];
@@ -39,6 +43,8 @@ export interface SyncPullResponse {
  * 契约事实源：
  * - server/api/openapi.yaml /sync/pull: GET + query params { family_id, since, limit }
  * - docs/api/sync-protocol.md §3.1
+ *
+ * v1.2：since 改 number · 不再 ISO 字符串
  */
 export async function syncPull(
   familyId: string,
@@ -56,7 +62,8 @@ export async function syncPull(
   });
 
   // sync-protocol.md §3.3：按实体顺序消费 changes · 客户端不得自行推进 watermark
-  if (resp && typeof resp.watermark === 'string') {
+  // v1.2：watermark 是 number · typeof === 'number' 防御
+  if (resp && typeof resp.watermark === 'number') {
     if (resp.changes) {
       await applyServerChanges(resp.changes);
     }
@@ -68,16 +75,26 @@ export async function syncPull(
 
 /**
  * 推本地变更（outbox 重放）
- * drainBatch → POST /sync/push（带 batch idempotencyKey）→ ackResults 消费三态
+ *
+ * 调用契约：
+ * - drainBatch 把 op 从 index 移到 drained · 等待 pushDelta 处理
+ * - 服务端正常响应（含部分 conflict/rejected）→ ackResults 按三态消费 drained
+ * - 网络/超时/HTTP 异常（无 results 可消费）→ ackBatchFailure 把 drained 复原到 index
+ *
+ * 状态机不变量（D-025 AP-002 修订）：
+ *   pushDelta 一次完整调用结束后 · 本批次的所有 seq 必从 drained 中清除
+ *   （否则下次 drainBatch 会形成死锁 · 见 BUG-COSTRA-150-D）
+ *
  * sync-protocol.md §2 push 完整链路
  */
 export async function pushDelta(): Promise<{
   pushed: number;
   conflicts: number;
   rejected: number;
+  failed: number;
 }> {
   const batch = await drainBatch(200);
-  if (!batch) return { pushed: 0, conflicts: 0, rejected: 0 };
+  if (!batch) return { pushed: 0, conflicts: 0, rejected: 0, failed: 0 };
 
   const { batch: ops, batchKey } = batch;
 
@@ -89,15 +106,21 @@ export async function pushDelta(): Promise<{
       idempotencyKey: batchKey,
     });
 
-    if (resp?.results) {
-      await ackResults(batchKey, resp.results);
-    }
-  } catch {
-    // 网络级别失败：整批留 outbox · idempotency_key 不变 · 等下次重试
-  }
+    // 服务端正常响应 · ackResults 消费三态（即使 results 为空数组也要调 · 清 drained）
+    const results = resp?.results || [];
+    await ackResults(batchKey, results);
 
-  // 简化计数（由 ackResults 按三态处理）
-  const pushed = 0, conflicts = 0, rejected = 0;
-  void pushed; void conflicts; void rejected;
-  return { pushed, conflicts, rejected };
+    let pushed = 0, conflicts = 0, rejected = 0;
+    for (const r of results) {
+      if (r.status === 'ok') pushed++;
+      else if (r.status === 'conflict') conflicts++;
+      else rejected++;
+    }
+    return { pushed, conflicts, rejected, failed: 0 };
+  } catch {
+    // 网络/超时/HTTP 4xx/5xx · 无 results 可消费 · 必须复原 drained 否则永久死锁
+    // 历史 BUG-COSTRA-150-D（COSTRA-103 R1 引入）· R1.x.2 修复
+    const failed = await ackBatchFailure(batchKey);
+    return { pushed: 0, conflicts: 0, rejected: 0, failed };
+  }
 }

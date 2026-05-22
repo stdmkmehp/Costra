@@ -65,21 +65,26 @@ describe('services/syncScheduler', () => {
   });
 
   // T3: syncOnce 正常路径 · pushDelta + syncPull 顺序调用 → 返 SyncResult 字段齐全
-  it('T3: syncOnce normal path calls pushDelta then syncPull', async () => {
+  // R1.x.2（BUG-150-D）：验证 pushed/conflicts/rejected/failed 真值传递
+  //   修复前 sync.ts pushDelta 永远返回 pushed=0 · 此测试会捕获回归
+  it('T3: syncOnce normal path calls pushDelta then syncPull · 三态真值传递', async () => {
     mockedIsLoggedIn.mockReturnValue(true);
     mockedGetItem.mockResolvedValue('family-123');
-    mockedPushDelta.mockResolvedValue({ pushed: 2, conflicts: 0, rejected: 0 });
+    mockedPushDelta.mockResolvedValue({ pushed: 2, conflicts: 1, rejected: 1, failed: 0 });
     mockedSyncPull.mockResolvedValue({
-      watermark: '2026-05-20T12:00:00.000Z',
+      watermark: 100,
       changes: { entries: [{ id: 'e1' }, { id: 'e2' }], categories: [], budgets: [], ledgers: [] },
     });
 
     const result = await syncOnce('launch');
 
     expect(result).not.toBeNull();
-    expect(result!.pushed).toBe(2);
+    expect(result!.pushed).toBe(2);            // ⚠️ 修复前永远是 0
+    expect(result!.conflicts).toBe(1);         // ⚠️ 新增字段
+    expect(result!.rejected).toBe(1);          // ⚠️ 新增字段
+    expect(result!.failed).toBe(0);            // ⚠️ 新增字段
     expect(result!.pulled).toBe(2);
-    expect(result!.watermark).toBe('2026-05-20T12:00:00.000Z');
+    expect(result!.watermark).toBe(100);
     expect(result!.trigger).toBe('launch');
 
     // 验证调用顺序
@@ -97,12 +102,12 @@ describe('services/syncScheduler', () => {
 
     // 让 pushDelta 永远 pending · 使第一次 syncOnce 不结束
     let resolveFirst!: () => void;
-    const pendingPromise = new Promise<{ pushed: number; conflicts: number; rejected: number }>(
-      (resolve) => { resolveFirst = () => resolve({ pushed: 0, conflicts: 0, rejected: 0 }); }
+    const pendingPromise = new Promise<{ pushed: number; conflicts: number; rejected: number; failed: number }>(
+      (resolve) => { resolveFirst = () => resolve({ pushed: 0, conflicts: 0, rejected: 0, failed: 0 }); }
     );
     mockedPushDelta.mockImplementation(() => pendingPromise);
     mockedSyncPull.mockResolvedValue({
-      watermark: '2026-05-20T12:00:00.000Z',
+      watermark: 100,
       changes: { entries: [], categories: [], budgets: [], ledgers: [] },
     });
 
@@ -141,9 +146,9 @@ describe('services/syncScheduler', () => {
   it('T6: triggerOnPageShow debounces within 5s', async () => {
     mockedIsLoggedIn.mockReturnValue(true);
     mockedGetItem.mockResolvedValue('family-123');
-    mockedPushDelta.mockResolvedValue({ pushed: 0, conflicts: 0, rejected: 0 });
+    mockedPushDelta.mockResolvedValue({ pushed: 0, conflicts: 0, rejected: 0, failed: 0 });
     mockedSyncPull.mockResolvedValue({
-      watermark: '2026-05-20T12:00:00.000Z',
+      watermark: 100,
       changes: { entries: [], categories: [], budgets: [], ledgers: [] },
     });
 
@@ -172,9 +177,9 @@ describe('services/syncScheduler', () => {
   it('T7: startScheduler creates periodic timer, stopScheduler clears it', async () => {
     mockedIsLoggedIn.mockReturnValue(true);
     mockedGetItem.mockResolvedValue('family-123');
-    mockedPushDelta.mockResolvedValue({ pushed: 0, conflicts: 0, rejected: 0 });
+    mockedPushDelta.mockResolvedValue({ pushed: 0, conflicts: 0, rejected: 0, failed: 0 });
     mockedSyncPull.mockResolvedValue({
-      watermark: '2026-05-20T12:00:00.000Z',
+      watermark: 100,
       changes: { entries: [], categories: [], budgets: [], ledgers: [] },
     });
 
@@ -212,9 +217,9 @@ describe('services/syncScheduler', () => {
   it('T8: syncOnce trigger field passes through', async () => {
     mockedIsLoggedIn.mockReturnValue(true);
     mockedGetItem.mockResolvedValue('family-456');
-    mockedPushDelta.mockResolvedValue({ pushed: 0, conflicts: 0, rejected: 0 });
+    mockedPushDelta.mockResolvedValue({ pushed: 0, conflicts: 0, rejected: 0, failed: 0 });
     mockedSyncPull.mockResolvedValue({
-      watermark: '2026-05-20T12:00:00.000Z',
+      watermark: 100,
       changes: { entries: [], categories: [], budgets: [], ledgers: [] },
     });
 

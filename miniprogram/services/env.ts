@@ -15,7 +15,7 @@ const ENV_MAP: Record<EnvName, EnvConfig> = {
   dev: {
     name: 'dev',
     apiBaseUrl: 'http://localhost:8080/v1',
-    mockLogin: true,
+    mockLogin: false,
     flags: {
       family_sharing: true,
       subscribe_msg: true,

@@ -10,6 +10,7 @@ import {
   getWatermark,
   setWatermark,
 } from './db';
+import { setItem } from './storage';
 
 // 共享 mock storage（模拟 wx.storage Promise 形态）
 let mockStore: Map<string, unknown>;
@@ -79,19 +80,37 @@ describe('services/db · 模拟 wx.storage（mock 环境）', () => {
     expect(list.some(e => e.client_ref_id === 'del-1')).toBe(false);
   });
 
-  it('watermark 读写单调', async () => {
-    await setWatermark('fam-1', '2026-05-09T00:00:00.000Z');
+  it('watermark 读写单调（v1.2 升级 · BIGINT change_seq）', async () => {
+    await setWatermark('fam-1', 100);
     const w1 = await getWatermark('fam-1');
-    expect(w1).toBe('2026-05-09T00:00:00.000Z');
-    await setWatermark('fam-1', '2026-05-09T10:00:00.000Z');
+    expect(w1).toBe(100);
+    await setWatermark('fam-1', 200);
     const w2 = await getWatermark('fam-1');
-    expect(w2).toBe('2026-05-09T10:00:00.000Z');
-    expect(w2 > w1).toBe(true);
+    expect(w2).toBe(200);
+    expect(w2).toBeGreaterThan(w1);
   });
 
-  it('getWatermark 不存在的 family 返回 EPOCH', async () => {
+  it('getWatermark 不存在的 family 返回 0（v1.2 升级 · 不再 EPOCH ISO）', async () => {
     const w = await getWatermark('never-exist-family');
-    expect(w).toBe('1970-01-01T00:00:00.000Z');
+    expect(w).toBe(0);
+  });
+
+  it('getWatermark legacy ISO 字符串自动重置为 0（v1.2 兼容）', async () => {
+    // 模拟旧 v1.0/v1.1 残留 ISO 字符串 watermark
+    await setItem('watermark:legacy-fam', '2026-05-22T07:53:04.621137Z' as never);
+    const w = await getWatermark('legacy-fam');
+    expect(w).toBe(0);
+    // 自动清除 · 下次读为 0（已被 setWatermark 覆盖）
+    const w2 = await getWatermark('legacy-fam');
+    expect(w2).toBe(0);
+  });
+
+  it('setWatermark 防御负数 / 非整数 · 静默忽略', async () => {
+    await setWatermark('fam-defense', 50);
+    await setWatermark('fam-defense', -1 as never);  // 负数
+    expect(await getWatermark('fam-defense')).toBe(50);  // 不被覆盖
+    await setWatermark('fam-defense', 1.5 as never);  // 浮点
+    expect(await getWatermark('fam-defense')).toBe(50);  // 不被覆盖
   });
 
   it('putEntry 重复 client_ref_id（幂等覆盖）', async () => {
