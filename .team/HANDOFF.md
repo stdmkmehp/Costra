@@ -13,7 +13,38 @@
 
 ## §0 一句话断点（HEAD 之前 = 已兑现 · 之后 = 待做）
 
-> **2026-05-22 17:45 当前断点**：🐛🚀 **Sprint-3 头部双卡 R1.x.2 v1.2 协议升级闭环 · 联合 staging 实测发现 P0+P1 双 BUG → 同轮彻底修复 → 等再次 staging 实测**（D-024 §2.2 C1 第 3 次实战 · 联合实测**首次触发 R1.x.2 协议破坏性升级**新范式 · staging/prod 测试 Human 暂缓今日不做）
+> **2026-05-22 20:45 当前断点**：🚀 **Sprint-3 头部双卡 152+153 R1 + R1.x.1 全闭环 · D-014 同轮范式第 3 次实战完美收官 · 等 Human 联合 approve**（与 154+150 解耦 · 不依赖 staging · 单 spawn 双卡同对话轮 Card-Review→R1→Review→R1.x.1 6 阶段全跑通）
+>
+> **本对话轮成果**（5 commits 已 push origin/dev · ~3 小时高密度）：
+> - `db7affa` **docs(repo)**：双卡 Card-Review R1+R2 闭环（152 R1 PASS-WITH-FOLLOWUP 25/30 → R2 PASS 28/30 · 153 R1 REVISE 22/30 → R2 PASS-WITH-FOLLOWUP 26/30 · §LINKAGE 双决策拍板：K3 + query `?version=N` · 11 项 FU 全落地）
+> - `513dd5a` **feat(backend)**：COSTRA-152 R1 实装（PATCH /entries/{id} + K3 method-override · entryRepo.findById userId 重载 + entryService.findById 调用方更新 · 13 files +1035/-138）+ **附加 P0 跨 family 守门补丁**（COSTRA-104 漏 + review-tech 36/40 漏检的真 P0 · 影响 152 T7 + 153 T6 + GET /entries/{id} 三处共享守门）+ entries-patch.test.ts 9 测 + entries.test.ts T-CROSS-FAMILY GET 测 + history 68 行 + state.md
+> - `ccd80b9` **feat(backend)**：COSTRA-153 R1 实装（DELETE /entries/{id} 软删 + query `?version=N` · 6 files +272/-35）+ entries-delete.test.ts 6 测 + history 49 行
+> - `167bf17` **fix(backend)**：R1.x.1 双胞胎 P1 同 commit 修订（D-017 v3 §2.4 E1 极窄修复第 10+11 次实战 · OpenAPI PATCH+DELETE 双端点加 403 Forbidden 响应 · doc-only 1 行 × 2 · 决策保留 404 优先不泄露 entry 存在性 · 403 仅契约扩展空间）+ 双 round-1-tech.md 落档 + state.md
+> - 本 commit（待落 · HANDOFF v1.21 + board + backlog v0.2.20 编排层落账）
+>
+> **关键 P0 修复事件**（同对话轮捕获 + 修复 + 反向验证铁证）：
+> - **R2 卡审形式审捕获**：跨 family 越权守门盲区 · entryRepo.findById 仅 JOIN family_members 不按 userId 过滤 · entryService.findById userId 接收但未实际使用 · 任意 userId 可查 / 改 / 删任意 entry（只要 entry 的 family 至少有一个成员）
+> - **R1 实装一并修补**：findById(entryId, userId?) 重载（带 userId 时 JOIN AND fm.user_id = $2 守门 · 不带时供 service 内部冲突回查）· 三处共享守门 · 不分独立卡
+> - **反向验证铁证**：临时移除 fm.user_id = $2 → 3 测全 FAIL（PATCH T7 + DELETE T6 + GET T-CROSS-FAMILY）→ revert → 70/70 全绿（守门生效的确定性证明）
+>
+> **review-tech R1 双卡同 spawn**（D-022 v2.0 第 9+10 次实战）：
+> - **152 PASS-WITH-FOLLOWUP 37/40**（C1=4 缺 OpenAPI 403 / C6=4 console.error 残留 / C7=4 / 其他 5/5 · 1 P1 + 2 P2）
+> - **153 PASS-WITH-FOLLOWUP 39/40**（C1=4 缺 OpenAPI 403 / 其他 5/5 满分 · 1 P1 双胞胎 + 1 P3 观察）
+> - 守门补丁特别评论：✅ 完整 + ✅ 反向验证铁证认可
+> - R1.x.1 双胞胎 P1 同 commit `167bf17` 修订 → 期望升 38+40
+>
+> **下一步 = Human 联合 152+153 staging/curl 实测 + `approve:COSTRA-152 + COSTRA-153` 联合双卡同轮 approve**（D-024 §2.2 C1 第 4 次实战 · 与 154+150 解耦不依赖 staging）：
+> - 实测路径：curl PATCH /v1/entries/{id} 带 body version + curl DELETE /v1/entries/{id}?version=N + curl GET（守门测）+ method-override POST + X-HTTP-Method-Override: PATCH
+> - server 70/70 自测全绿 · curl 实测主要验集成层路径
+> - approve 后 Sprint-3 头部累计 4/9 卡 CLOSED · 估点累计 15/29 = 52%
+>
+> **本轮范式累计**：D-014 同轮范式第 3 次实战完美收官（105+156 / 154+150 / **152+153**）· D-016 100% 修订率连续第 7~8 张（累计 105+156+158+154+150+152+153）· D-017 v3 §2.4 E1 极窄修复第 10+11 次实战 · D-018 SBAI v1.1 第 N 次冒烟（card-reviewer-tech 双卡同 spawn × 2 + backend-dev 双卡联合 spawn + review-tech 双卡同 spawn）· D-022 v2.0 评分表第 9+10 次实战（37/40+39/40）· D-024 §2.2 C1 攒批第 4 次候选 · D-025 AP-003 第 4+5 次正向兑现 · D-018 §3.5 越权例外路径多次实战
+>
+> **本轮新范式 / 议题**（议入 Sprint-3 末 Retro）：
+> - **R2 形式审 = 第 N 道闸**：本轮 153 R2 形式审捕获 P0 跨 family 守门盲区（COSTRA-104 R1 实装 + review-tech 36/40 双重漏检）· 暴露盲区：路由参数 userId 接收但未实际使用是常见 review 漏检模式 · 候选 D-022 v2.0 评分表 C8 增项 "service 层接收 userId 必须有实际使用证据"（已记 backend-dev state.md §6 议题 #5）
+> - **404 vs 403 跨 family 语义判定**：保留 404（不泄露 entry 存在性）+ OpenAPI 加 403（契约扩展空间）· 安全优先决策范式
+>
+> （上一断点归档）2026-05-22 17:45：🐛🚀 **Sprint-3 头部双卡 R1.x.2 v1.2 协议升级闭环**（154+150 联合实测发现 P0+P1 双 BUG → 选项 B 同轮彻底升级 ISO→BIGINT change_seq · 3 笔原子 commit · 等再次 staging 实测）
 >
 > **R1.x.2 v1.2 协议升级 完整闭环**（单一对话轮 · 联合实测捕获 → BUG 立卡 → 选项 B 同轮彻底修复 · 范式新增）：
 > - **联合 staging 实测**（v1.2 升级前）：Human 实测 5 条断言 A~E 期间发现 **2 个 BUG**：
@@ -121,49 +152,57 @@
 
 ### §1.1 当前时间戳
 
-- **更新时间**：2026-05-22 18:00
-- **更新者**：Orchestrator（HEAD = `3b3aa9a` 路径 A 编排层落账完成 · 工作树干净 · **17 commits 已 push origin/dev**）
-- **Sprint**：✅ **Sprint-1 收官** / ✅ **Sprint-2 真闭环 7/7** / 🚀 **Sprint-3 头部双卡 R1.x.2 v1.2 升级 + 编排层落账完成**（154 + 150 双卡 review-tech APPROVE 38/40 + 联合实测发现 P0+P1 双 BUG → R1.x.2 v1.2 协议升级 同轮彻底修复 + 编排层落账（backlog v0.2.18 / 双 state / 4 张 Retro 议题）→ 等再次 staging 实测 · 估点 30~36 目标 · 累计 10/29 = 34%）
+- **更新时间**：2026-05-22 20:45
+- **更新者**：Orchestrator（HEAD 待落 · 5 commits 同对话轮已 push origin/dev：`db7affa` + `513dd5a` + `ccd80b9` + `167bf17` + 本编排层 commit · 累计 22 commits 已 push origin/dev）
+- **Sprint**：✅ **Sprint-1 收官** / ✅ **Sprint-2 真闭环 7/7** / 🚀 **Sprint-3 头部双卡 152+153 R1+R1.x.1 全闭环等 Human approve**（154+150 v1.2 协议升级等 staging 重测 · 152+153 双卡 R1.x.1 完成等 Human T1 联合 approve · 估点 30~36 目标 · 累计 15/29 = 52%（152+153 approve 后））
 
 ### §1.2 当前在办卡
 
 | 卡号 | Owner | 阶段 | 下一步 |
 |---|---|---|---|
-| **COSTRA-154** | backend-dev | **R1.x.2 v1.2 协议升级完成 @ 2026-05-22 17:30 · APPROVE 38/40**（联合实测 P1 watermark 精度 BUG · 选项 B 同轮彻底改 ISO→BIGINT change_seq · commit `31fb893`+`261c280`）| 等 Human staging migration 0006 + 再次联合 154+150 实测 → `approve:COSTRA-154 + COSTRA-150`（D-024 §2.2 C1 第 3 次实战）|
-| **COSTRA-150** | miniapp-dev | **R1.x.2 完成 @ 2026-05-22 17:30 · APPROVE 38/40**（联合实测 P0 outbox 死锁 BUG-D · 同轮 sync.ts/outbox.ts 修 + v1.2 watermark 适配 · commit `2b28210`）| 同上 · 联合 154 再次实测 + 双卡 approve |
-| **COSTRA-152** | backend-dev | dispatch-ready @ 2026-05-19 20:50 | 等 Human 触发 `start:COSTRA-152`（建议与 153 联合 · K3/K1 决策点 · 与 154/150 主题独立可并行启）|
-| **COSTRA-153** | backend-dev | dispatch-ready @ 2026-05-19 20:50 | 等 Human 触发 `start:COSTRA-153`（建议与 152 联合）|
-| **COSTRA-151** | miniapp-dev+design-maker | dispatch-ready @ 2026-05-19 20:50 | Sprint-3 中后段 · 154+150 CLOSED 后启 |
-| **COSTRA-155** | qa-planner+miniapp-dev | dispatch-ready @ 2026-05-19 20:50 | Sprint-3 中后段 · 154+150+152+153 全 CLOSED 后启 |
-| **COSTRA-159** | miniapp-dev | dispatch-ready · 顺手小卡 | 与 150 同链路（已可启 · 154+150 后启）|
-| **COSTRA-161** | devops-ops | dispatch-ready · 顺手小卡 | 154+152+153 全 CLOSED 后启 · 与 163 同节奏批 |
+| **COSTRA-152** | backend-dev | **R1+R1.x.1 完成 @ 2026-05-22 20:45 · review-tech 37/40 → R1.x.1 后期望 ≥38**（commit `513dd5a` R1 + `167bf17` R1.x.1 · 含 P0 跨 family 守门补丁）| 等 Human 联合 153 staging/curl 实测 → `approve:COSTRA-152 + COSTRA-153`（D-024 §2.2 C1 第 4 次实战 · 与 154+150 解耦）|
+| **COSTRA-153** | backend-dev | **R1+R1.x.1 完成 @ 2026-05-22 20:45 · review-tech 39/40 → R1.x.1 后期望 ≥40**（commit `ccd80b9` R1 + `167bf17` R1.x.1 双胞胎共 commit · 复用 152 跨 family 守门补丁）| 同上 · 联合 152 实测 + 双卡 approve |
+| **COSTRA-154** | backend-dev | **R1.x.2 v1.2 协议升级完成 @ 2026-05-22 17:30 · APPROVE 38/40**（commit `31fb893` + `261c280`）| 等 Human staging migration 0006 + 再次联合 154+150 实测 → `approve:COSTRA-154 + COSTRA-150`（D-024 §2.2 C1 第 3 次实战 · 暂缓今日）|
+| **COSTRA-150** | miniapp-dev | **R1.x.2 完成 @ 2026-05-22 17:30 · APPROVE 38/40**（commit `2b28210`）| 同上 |
+| **COSTRA-151** | miniapp-dev+design-maker | dispatch-ready @ 2026-05-19 20:50 | Sprint-3 中后段 · 152/153/154/150 全 CLOSED 后启 |
+| **COSTRA-155** | qa-planner+miniapp-dev | dispatch-ready @ 2026-05-19 20:50 | Sprint-3 中后段 · 全部头部 CLOSED 后启 |
+| **COSTRA-159** | miniapp-dev | dispatch-ready · 顺手小卡 | 任意时间（与 150 同链路）|
+| **COSTRA-161** | devops-ops | dispatch-ready · 顺手小卡 | 152/153/154 全 CLOSED 后启 · 与 163 同节奏批 |
 | **COSTRA-162** | miniapp-dev | dispatch-ready · 顺手小卡 | 任意时间 · 30min 单 commit |
 | **COSTRA-163** | devops-ops | dispatch-ready · 顺手小卡 | 与 161 同节奏批 |
 | **COSTRA-114** | DevOps-Agent | 卡定义已 approve · 实际未开工（Sprint-1 残留）| 等 Human `run devops COSTRA-114` |
-| **COSTRA-160** | Design+MiniApp | Backlog | 等 Human 触发（design tokens pipeline 2pt）|
+| **COSTRA-160** | Design+MiniApp | Backlog | 等 Human 触发 |
 
-### §1.2-bis 本轮新立 BUG 卡（待 backlog 入账 · 留新对话处理）
+### §1.2-bis 本轮新闭合 / 修补的 FU
 
-| BUG ID | 优先级 | 来源 | 状态 | 缺陷文件 |
-|---|---|---|---|---|
-| **COSTRA-150-D** | P0 | 联合实测捕获 | **已修复**（`2b28210` outbox.ts/sync.ts）· 等再次 staging 实测验证回归 | `qa/defects/2026-05-22-COSTRA-150-D-outbox-deadlock-on-push-failure.md` |
-| **COSTRA-154**（精度议题）| P1 | 联合实测捕获 | **选项 B 同轮升级 v1.2 BIGINT change_seq**（`31fb893`+`2b28210`+`261c280`）· 等再次 staging 实测验证回归 | `qa/defects/2026-05-22-COSTRA-154-watermark-microsecond-precision.md`（693 行 · §11 v1.2 升级声明）|
+| FU ID | 类型 | 卡 | 状态 |
+|---|---|---|---|
+| FU-104-ENTRIES-PATCH | dispatch | COSTRA-152 | ✅ closed @ R1 实装 |
+| FU-104-ENTRIES-DELETE | dispatch | COSTRA-153 | ✅ closed @ R1 实装 |
+| FU-CROSS-FAMILY-GUARD-COSTRA-104 | P0 真 BUG | COSTRA-152 R1 | ✅ closed @ R1 实装（COSTRA-104 R1 漏 + review-tech 36/40 漏检 · 153 R2 卡审捕获 · 152 R1 实装一并修补 · 反向验证铁证）|
+| FU-152-001~005 | dispatch | COSTRA-152 | ✅ closed @ R1 |
+| FU-153-001~006 | dispatch | COSTRA-153 | ✅ closed @ R1 |
+| FU-152-R001 | review-tech P1 | COSTRA-152 | ✅ closed @ R1.x.1（commit `167bf17`）|
+| FU-153-R001 | review-tech P1 | COSTRA-153 | ✅ closed @ R1.x.1（同 commit · 双胞胎）|
 
 ### §1.3 Human 下一步动作（**预期 · 按优先级**）
 
-1. **🟡 Human 暂缓今日**：staging/prod v1.2 实测今日不做 · 待 staging 准备好后：(a) 重启 server 跑 migration 0006（PG SEQUENCE + change_seq 列 + 历史回填） → (b) 重跑联合 smoke 5 条断言 A~E（断言 D/E 重点验证 v1.2 watermark BIGINT + outbox 死锁修复）→ (c) `approve:COSTRA-154 + COSTRA-150` 联合双卡同轮 approve
-2. **🟢 立即可做（不阻塞 staging）**：`start:152+153` → spawn backend-dev 联合做 PATCH+DELETE entries（与 sync 协议解耦 · ~3~4h 自驱 · D-024 §2.2 C1 第 4 次实战候选）
+1. **🟢 立即可做（不依赖 staging）**：联合 152+153 staging/curl 实测 + `approve:COSTRA-152 + COSTRA-153` 联合双卡同轮 approve（D-024 §2.2 C1 第 4 次实战）：
+   - 实测路径：curl PATCH /v1/entries/{id} 带 body version + curl DELETE /v1/entries/{id}?version=N + curl GET（守门验证）+ method-override POST + X-HTTP-Method-Override: PATCH
+   - server 70/70 自测全绿（含 entries-patch 9 测 + entries-delete 6 测 + 跨 family 守门 3 测）
+   - 守门反向验证铁证：临时移除 fm.user_id = $2 → 3 测全 FAIL → revert → 全绿
+2. **🟡 暂缓今日**：staging/prod v1.2 实测（154+150）· 待 staging 准备好后跑 migration 0006 + 5 条断言 A~E + `approve:COSTRA-154 + COSTRA-150`
 3. **🟢 任意时间**：`start:159+162` 顺手小卡批 · `start:161+163` devops 小卡批
-4. **🟢 编排层落账（路径 A 已完成 @ 2026-05-22 18:00 commit `3b3aa9a`）**：HANDOFF v1.19 + board 顶部条 + backlog v0.2.18（154/150 In-R1.x.2 + 2 张 BUG 卡 150-D/154-D 入账）+ backend-dev/miniapp-dev state §2/§3/§6/§7 升级 + 2 份 history 详档 + follow-ups 速查表 28 条 + 4 张新 Sprint-3 末 Retro 议题登记（FU-PROTOCOL-VERSION-BUMP-CRITERIA P1 / FU-MICROSEC-VS-AUTOSEQ-PARADIGM P1 / FU-PG-MEM-SHARED-HELPER P2 / FU-JOINT-SMOKE-LAST-GATE-PARADIGM P1）+ FU-104/FU-103 预闭合纠正
-5. **🟠 时间窗口**：R-019 公安联网备案 🟡 已提交（2026-05-19）等公安系统 15~20 工作日审核（预计 2026-06-09 ± 5 天）· 不阻塞任何节点
-6. **🟢 被动等**：订阅消息文案 v0.1（Sprint-5 触发）/ 隐私指引法务审核（Sprint-7 触发）
+4. **🟠 时间窗口**：R-019 公安联网备案 🟡 已提交（2026-05-19）等公安系统 15~20 工作日审核（预计 2026-06-09 ± 5 天）· 不阻塞任何节点
+5. **🟢 被动等**：订阅消息文案 v0.1（Sprint-5 触发）/ 隐私指引法务审核（Sprint-7 触发）
 
-#### 🔥 R1.x.2 v1.2 升级建立的范式（新对话 Orchestrator 必知）
+#### 🔥 R1 实装 + 守门补丁建立的范式（新对话 Orchestrator 必知）
 
-- **联合实测 = 真闭环最后一道闸**：单测 + curl 都漏不出 outbox 死锁 + watermark 精度截断 · 必须真链路 client+server staging 实测才能捕获（D-024 §2.2 C1 立意首次得到协议升级级别证据）
-- **R1.x.2 协议破坏性升级范式**（vs 以往 R1.x.1 review-tech 修订型）：联合实测发现 P0+P1 双 BUG → Human 决策"选项 B 不背历史包袱" → 同轮 server+client+protocol+qa 四层升级 → 全测试绿 → 3 笔原子 commit · 是 D-014 同轮范式在协议层的最大规模实战
-- **协议演化纪律**：v1.0 ISO ms → v1.1 ISO μs（中途方案被证伪未上线）→ v1.2 BIGINT change_seq · client legacy ISO watermark 自动重置为 0（防御性兼容历史 wx.storage）
-- **pg-mem 实测兼容**：CREATE SEQUENCE/nextval 原生支持 · setval/timezone/to_char 需 mock · trigger 不支持改应用层显式 nextval（已写入 test/setup.ts）
+- **D-014 同轮范式第 3 次实战完美收官**：105+156（产出 review）/ 154+150（卡审 + R1）/ **152+153（卡审 + R1 + R1.x.1 全 6 阶段）** · 单对话轮 ~3 小时高密度
+- **R2 卡审形式审 = P0 漏洞最后一道闸**：路由参数 userId 接收但未实际使用是 review-tech 常见漏检模式 · COSTRA-104 R1 实装 + review-tech 36/40 双重漏检 · 153 R2 卡审形式审捕获 · 议入 Retro 升 D-022 v2.0 C8 维度强约束
+- **守门补丁三处共享 + 反向验证铁证**：findById userId 重载 + 三处路由（GET/PATCH/DELETE）共享守门 + 临时移除→3 测全 FAIL→revert→全绿（守门生效的确定性证明）
+- **R1.x.1 双胞胎 P1 同 commit**：双卡 OpenAPI 同款 P1 → 同 commit 修订（1 行 × 2）· D-017 v3 §2.4 E1 极窄修复范式
+- **404 vs 403 跨 family 语义**：保留 404（不泄露 entry 存在性 = 安全优先）+ OpenAPI 加 403（契约扩展空间）· 双重保险
 
 ### §1.4 Sprint-1 治理范式资产（5 卡簇定稿 · v5）
 
@@ -377,6 +416,7 @@ reviews + FU-LAUNCH + miniapp-dev state.md · 当前断点：COSTRA-124 R1 两�
 | **v1.4** | **2026-05-09 09:44** | 新会话 Orchestrator（接续会话）| **G4 合并闸门 PASS · Sprint-1 收官 · Sprint-2 Planning 中** · 路径 A 决议 D-019 落盘 · 议题 10~17 + 14+ 条转 COSTRA-106 Retro 卡 · 实际仅刷 §1.1/§1.2（§0/§1.3/§5/§8 v1.4 期间 silent fail · v1.5 一次性补齐）|
 | **v1.5** | **2026-05-09 10:39** | 新会话 Orchestrator | 🏆 **COSTRA-106 Sprint-1 Retro 双 30/30 满分收官 · Sprint-2 第 1/7 卡 CLOSED** · `approve:COSTRA-106` Human T2 一次性裁决 · 主报告 558 行 + D-020/D-021/D-022 三决议 + metrics 工程度量定稿 + board/backlog Sprint-2 流转 · SBAI v1.1 第 6 次冒烟成功 · pm-writer 首次实战 0 漏项 · D-016 第 13~14 次实战合规 · 立卡到终审 30 分钟新纪录 · §0/§1.1/§1.2/§1.3/§5/§8 全刷新（含 v1.4 漏改补齐）· 下一步 Human 触发 `run miniapp COSTRA-103`（Sprint-2 主线主头）|
 | **v1.6** | **2026-05-09 19:17** | 新会话 Orchestrator | 🏆 **COSTRA-103 Sprint-2 主线主头 38/40 APPROVE CLOSED · D-022 v2.0 评分表首次实战 + D-017 v3 完整流程首次实战** · `approve:COSTRA-103` Human T1 一次性裁决 · Sprint-2 第 2/7 卡 CLOSED · Human 模拟器实测 5 步 + 5 硬断言全 PASS · 2 条 Sprint-3 候选 FU 立件（FU-103-CLIENT-SYNC-SCHEDULER COSTRA-150 P1 + FU-103-CONFLICT-MERGE-UI COSTRA-151 P2）· 8 文件主代码 ~ 1330 行净增 · 6 闸门全绿 + 协议 100% 对齐 + 0 后端外溢 · SBAI v1.1 第 7 次冒烟 · miniapp-dev 第 6 次实战 · 审查档第 4 次实战 · D-016 第 15~17 次实战合规 · 8 commits（cb3a83b → f125f05）· §0/§1.1/§1.2/§1.3/§5 全刷新 · 下一步 Human 触发 `run backend COSTRA-104`（Sprint-2 主线第 3 张）|
+| **v1.21** | **2026-05-22 20:45** | 同会话 Orchestrator | 🚀 **Sprint-3 头部双卡 152+153 R1+R1.x.1 全闭环 · D-014 同轮范式第 3 次实战完美收官**（105+156 / 154+150 / 152+153 三连）· 单对话轮 ~3 小时高密度 · 5 commits 已 push origin/dev：① `db7affa` 双卡 Card-Review R1+R2 闭环（152 R1 PASS-WITH-FOLLOWUP 25/30 → R2 PASS 28/30 · 153 R1 REVISE 22/30 → R2 PASS-WITH-FOLLOWUP 26/30 · §LINKAGE 双决策 K3 + query `?version=N` · 11 项 FU 全落地）· ② `513dd5a` 152 R1 实装（PATCH /entries/{id} + K3 method-override · entryRepo.findById userId 重载 · 13 files +1035/-138）+ **附加 P0 跨 family 守门补丁**（COSTRA-104 R1 漏 + review-tech 36/40 漏检的真 P0 · 影响 152 T7 + 153 T6 + GET /entries/{id} 三处共享守门 · 反向验证铁证：临时移除 fm.user_id = $2 → 3 测全 FAIL → revert → 70/70 全绿）+ entries-patch.test.ts 9 测 + entries.test.ts T-CROSS-FAMILY GET 测 + history 68 行 · ③ `ccd80b9` 153 R1 实装（DELETE /entries/{id} 软删 + query `?version=N` · 6 files +272/-35）+ entries-delete.test.ts 6 测 + history 49 行 · ④ `167bf17` R1.x.1 双胞胎 P1 同 commit 修订（D-017 v3 §2.4 E1 极窄修复第 10+11 次实战 · OpenAPI PATCH+DELETE 双端点加 403 Forbidden 响应 · doc-only 1 行 × 2 · 决策保留 404 优先不泄露 entry 存在性 · 403 仅契约扩展空间）· ⑤ 本编排层 commit · **review-tech R1 双卡同 spawn**：152 PASS-WITH-FOLLOWUP 37/40（C1=4 缺 OpenAPI 403 / C6=4 console.error 残留 / C7=4 / 其他 5/5 · 1 P1 + 2 P2）+ 153 PASS-WITH-FOLLOWUP 39/40（C1=4 缺 OpenAPI 403 / 其他 5/5 满分 · 1 P1 双胞胎 + 1 P3 观察）+ 守门补丁特别评论 ✅ 完整 + ✅ 反向验证铁证认可 → R1.x.1 后期望升 38+40 · server 70/70 全绿 · **范式累计**：D-014 同轮范式第 3 次完美收官 / D-016 100% 修订率连续第 7~8 张（累计 105+156+158+154+150+152+153）/ D-017 v3 §2.4 E1 第 10+11 次实战 / D-018 SBAI v1.1 第 N 次冒烟（card-reviewer-tech 双卡同 spawn × 2 + backend-dev 双卡联合 + review-tech 双卡同 spawn）/ D-022 v2.0 第 9+10 次实战（37+39）/ D-024 §2.2 C1 攒批第 4 次候选 / D-025 AP-003 第 4+5 次正向兑现 · **本轮新议题**（议入 Sprint-3 末 Retro · 累计议题 5 项）：⑤ **service 层 user/family 守门作为 review-tech C8 维度强约束**（COSTRA-104 R1 漏 + review-tech 36/40 漏检 · 153 R2 卡审捕获 · 反映"路由参数 userId 接收但未实际使用"是常见 review 漏检模式 · 候选 D-022 v2.0 评分表升级）· **22 commits 已 push origin/dev** · §0/§1.1/§1.2/§1.2-bis/§1.3/§8 全刷新 · **下一步 = Human 联合 152+153 staging/curl 实测 + `approve:COSTRA-152 + COSTRA-153` 联合双卡同轮 approve（D-024 §2.2 C1 第 4 次实战 · 与 154+150 解耦不依赖 staging）** · Sprint-3 累计 4/9 卡（CLOSED 后） · 估点 15/29 = 52% |
 | **v1.20** | **2026-05-22 18:00** | 同会话 Orchestrator | 📋 **路径 A 编排层落账完成 · backlog v0.2.18 + 双 state + 4 张 Retro 议题**（commit `3b3aa9a` · v1.19 锚点 commit `7c52b82` 之上的小版补强）· backlog v0.2.18：154/150 升级 In-R1.x.2 · 新立 2 张 BUG 卡 COSTRA-150-D（P0 outbox 死锁 · 已修 commit `2b28210` 等 staging 重测）+ COSTRA-154-D（P1 watermark 微秒精度截断 · 已 v1.2 协议升级 commit `31fb893`+`2b28210`+`261c280` 等 staging 重测）· backend-dev state.md §2/§3/§6/§7 升级 + history `2026-05-22-costra-154-r1x2-watermark-v1.2-upgrade.md`（7 段 · 含 pg-mem 兼容记录 + 闸门 G1~G8+G15 全绿 + 协议演化声明 + 4 项 Retro 候选议题）· miniapp-dev state.md §2/§3/§7 升级 + history `2026-05-22-costra-150-r1x2-outbox-deadlock-and-v1.2-watermark.md`（6 段 · 含 outbox 死锁三重根因 + Part A/B 双修复 scope + 防御性 legacy ISO 兼容代码 + 4 项 Retro 候选议题）· follow-ups README 速查表 24→28 条 · 头部追加 4 张 Sprint-3 末 Retro 新议题：① **FU-PROTOCOL-VERSION-BUMP-CRITERIA**（P1 · 协议演化版本号变更条件 v1.x→v2.x · 区别 doc-only sync 与破坏性 schema 升级）② **FU-MICROSEC-VS-AUTOSEQ-PARADIGM**（P1 · 微秒精度 vs 自增序列号在分布式时序上的取舍范式 · 候选写入 ADR-0003 时序模型选型）③ **FU-PG-MEM-SHARED-HELPER**（P2 · pg-mem 测试基础设施补强 · setval/timezone/to_char mock 沉淀公共 helper · 候选独立卡 1pt）④ **FU-JOINT-SMOKE-LAST-GATE-PARADIGM**（P1 · 联合实测 = 真闭环最后一道闸新范式 · R1.x.2 协议破坏性升级范式 vs 以往 R1.x.1 review-tech 修订型 · 候选规约 SOP-REVIEW v2.x §11 强化）· FU-104-SYNC-PULL + FU-103-CLIENT-SYNC-SCHEDULER 状态纠正：closed → R1.x.2-fixed-pending-verify（FU 不真 closed 直至 Human approve 铁律守护 · 复用 Sprint-1 末 FU-LAUNCH 4 次定性翻转积累硬约束）· **17 commits 已 push origin/dev** · 下一步 = Human staging 准备好后重启 server 跑 migration 0006 + 重跑联合 5 条断言 A~E + `approve:COSTRA-154 + COSTRA-150` 联合双卡同轮 approve（staging/prod 测试 Human 暂缓今日不做）|
 | **v1.19** | **2026-05-22 17:45** | 同会话 Orchestrator | 🐛🚀 **Sprint-3 头部双卡 R1.x.2 v1.2 协议升级闭环 · 联合 staging 实测发现 P0+P1 双 BUG → 同轮彻底修复 → 等再次 staging 实测**（D-024 §2.2 C1 第 3 次实战 · **联合实测首次触发 R1.x.2 协议破坏性升级新范式**）· 联合实测 5 条断言 A~E 期间发现：**COSTRA-150-D（P0）**outbox 死锁（sync.ts catch 静默吞错 + drainBatch recover 仅捞 retries>0 + ackResults 字段错配 idempotency_key vs ack_batch_key · push 失败 drained 永久残留）+ **COSTRA-154（P1）**watermark 精度截断（JS Date 毫秒 vs PG TIMESTAMPTZ 微秒 · 实测 137μs 差 · 同条 entry 永久重传）· **Human 决策选项 B 同轮彻底修复**（不背历史包袱 · ISO 时间戳 → BIGINT change_seq · 自增序列号承担一致性 · updated_at 保留语义）· **3 笔原子 commit 已 push origin/dev**：① `31fb893` fix(backend) migration 0006 SEQUENCE entries_change_seq + entryRepo 显式 nextval + syncPullService watermark BIGINT + pg-mem setval mock + sync-pull.test +T18/T19/T20 + openapi int64 · server 56/56 PASS · ② `2b28210` fix(miniapp) v1.2 watermark 适配 db.ts/sync.ts/syncScheduler.ts + legacy ISO 自动重置 + outbox 死锁修复 sync.ts 不再吞错 + outbox.ts 加 ackBatchFailure + drainBatch 防御性 recover + 修复 ack_batch_key 字段 · client 58/58 PASS · ③ `261c280` docs(qa) sync-protocol §6.3 v1.2 完全重写 + 2 张 BUG 卡（150-D 死锁 P0 · 154 watermark 精度 P1 §11 v1.2 升级声明 693 行）+ joint-smoke v1.3 数字 watermark + .gitignore .steve/ · **协议演化**：v1.0 ISO ms → v1.1 ISO μs（中途未上线）→ v1.2 BIGINT change_seq（破坏性升级 · client legacy ISO 自动重置）· **本轮新范式**：联合实测 = 真闭环最后一道闸（单测+curl 都漏不出）· R1.x.2 协议破坏性升级范式（vs 以往 R1.x.1 review-tech 修订型）· **本轮新议题**（Sprint-3 末 Retro 议入）：① 协议演化版本号变更条件 ② 微秒精度 vs 自增序列号在分布式时序上的取舍范式 ③ pg-mem 测试基础设施补强（setval/timezone/to_char mock 沉淀公共 helper）· 22 文件 ~2100 行净增 · **15 commits 已 push origin/dev** · §0/§1.1/§1.2/§1.2-bis/§1.3/§8 全刷新 · **下一步 = Human staging 准备好后重启 server 跑 migration 0006 + 重跑联合 5 条断言 A~E + `approve:COSTRA-154 + COSTRA-150` 联合双卡同轮 approve**（staging/prod 测试 Human 暂缓今日不做）|
 | **v1.18** | **2026-05-20 13:25** | 同会话 Orchestrator | 🚀🚀 **Sprint-3 头部双卡 R1 全闭环 · COSTRA-154 + COSTRA-150 双卡 review-tech APPROVE 38/40 等 Human 联合 staging 实测**（D-024 §2.2 C1 第 3 次实战候选 · 105+156 / 157+158 / 154+150 三连）· **150 R1 完整闭环单一对话轮 D-014 同轮范式 154 范式复刻**：卡审 R1 REVISE 21/30（3 P0 + 2 P1 + 2 P2 · P0-1 dispatch 引用 5 处不存在 API · P0-2 缺 G15 · P0-3 entry 非 tabBar）· dispatch 修订 5 处（A 项改用 sync.ts 封装 pushDelta+syncPull 一次解决 4/5 不一致 + G15 + entry 排除 + §3.5 runtime 5 条断言 + commit footer 大写）· 卡审 R2 APPROVE 29/30（形式审）· R1 实装 commit `ee97a7a`（amend 链 535c1f9→4751491→ee97a7a · miniapp-dev 单装扮档 · 7 项 scope · 52/52 测全绿 · syncScheduler.ts 158 行 + spec 226 行 · 复用 sync.ts 不重写）· R1 Review PASS-WITH-FOLLOWUP 34/40（0 P0 / 2 P1 / 3 P2 · D-022 v2.0 第 8 次实战 · D-025 三项全 PASS）· R1.x.1 修订 commit `5ac8153`（D-017 v3 §2.4 E1 第 9 次实战 · P1-1 hash 4751491→ee97a7a 5 处 + P1-2 startScheduler [未经验测] 14 行注释）· APPROVE 38/40 · **双卡范式累计**：D-014 同轮范式连续 2 次 / D-016 反例第 9~10 次预防成功（合规第 2~3 次连续 · 反例已成历史） / D-017 v3 §2.4 E1 第 8+9 次实战 / D-022 v2.0 第 7+8 次同分 38/40 稳定（满分趋势回归 38 常态）/ D-025 第 1~2 次套用（154 AP-003 正向兑现 + 150 三项全 PASS 复用范式不引入新漂移）/ hash amend pattern 复发（154 R1.x.1 P1-2 + 150 R1 P1-1 同款 · 留 Sprint-3 末 Retro 议题候选 @SELF_COMMIT_HASH@ 占位符 + CI hook 回填）· 下一步 = Human 联合 154+150 staging 实测（5 条 §3.5 断言 A~E）→ `approve:COSTRA-154 + COSTRA-150` 联合双卡同轮 approve · Sprint-3 头部 2/9 卡 CLOSED · 累计 10/29 估点 = 34% |
