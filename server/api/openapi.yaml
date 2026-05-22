@@ -577,17 +577,22 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
     delete:
-      x-deferred:
-        owner_card: COSTRA-153
-        followup_id: FU-104-ENTRIES-DELETE
-        deferred_at: 2026-05-11
-        deferred_reason: COSTRA-104 范围切分（Q1 选项 b · 推荐方案 C 切出去 3 件套铁律）
-        sprint_target: sprint-3
       tags: [entries]
       summary: 软删除流水
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: version
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1 }
+          description: 当前客户端持有的 entry version（乐观锁）
       responses:
         '204': { description: 成功 }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
 
   # ============ budgets ============
   /budgets:

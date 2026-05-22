@@ -90,6 +90,15 @@ const patchEntryBodySchema = {
   },
 } as const;
 
+// COSTRA-153: DELETE /entries/{entry_id} query schema（required: ['version']）
+const deleteEntryQuerySchema = {
+  type: 'object',
+  required: ['version'],
+  properties: {
+    version: { type: 'integer', minimum: 1 },
+  },
+} as const;
+
 // --- 注册 ---
 
 export async function registerEntriesRoutes(app: FastifyInstance): Promise<void> {
@@ -253,18 +262,30 @@ export async function registerEntriesRoutes(app: FastifyInstance): Promise<void>
     },
   );
 
-  // DELETE /entries/{entry_id} stub（切出去 3 件套铁律）
-  // 注意：测试 T10 不带 content-type header，Fastify 不会尝试解析 JSON body
-  app.delete('/entries/:entry_id', async (_req, reply) => {
-    reply.code(501).send({
-      error: {
-        code: 'NOT_IMPLEMENTED',
-        message: 'DELETE /entries/{id} deferred to COSTRA-153',
-          details: {
-            deferred_card: 'COSTRA-153',
-            followup_id: 'FU-104-ENTRIES-DELETE',
-          },
-      },
-    });
-  });
+  // DELETE /entries/{entry_id}（COSTRA-153 R1 · 替代 stub 501）
+  const DELETE_ENTRIES_ENDPOINT = '/entries/:entry_id';
+
+  app.delete<{ Params: { entry_id: string }; Querystring: { version: number } }>(
+    DELETE_ENTRIES_ENDPOINT,
+    { schema: { params: entryIdParamsSchema, querystring: deleteEntryQuerySchema } },
+    async (req, reply) => {
+      const userId = await parseUserId(req);
+      const { entry_id: entryId } = req.params;
+      const { version: baseVersion } = req.query;
+
+      const result = await entryService.softDelete(userId, entryId, baseVersion);
+
+      if (result.status === 'ok') {
+        reply.code(204).send();
+        return;
+      }
+      if (result.status === 'conflict') {
+        throw new AppError(ErrorCode.VERSION_CONFLICT, {
+          message: 'version conflict',
+          details: { server_version: result.serverVersion },
+        });
+      }
+      throw new AppError(ErrorCode.INVALID_ARGUMENT, { message: result.error.message });
+    },
+  );
 }

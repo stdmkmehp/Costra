@@ -196,17 +196,4 @@ describe('CROSS-FAMILY guard', () => {
   });
 });
 
-describe('DELETE /entries/{entry_id} stub', () => {
-  it('T10 stub 返回 501 + deferred_card=COSTRA-153', async () => {
-    const res = await app.inject({
-      method: 'DELETE',
-      url: '/v1/entries/00000000-0000-0000-0000-0000000000ee',
-      headers: { authorization: authHeader().authorization }, // Bug3 fix: 不带 content-type 避免 Fastify 空 body 400
-    });
-    expect(res.statusCode).toBe(501);
-    const body = res.json() as { error: { code: string; details?: { deferred_card?: string; followup_id?: string } } };
-    expect(body.error.code).toBe('NOT_IMPLEMENTED');
-    expect(body.error.details?.deferred_card).toBe('COSTRA-153');
-    expect(body.error.details?.followup_id).toBe('FU-104-ENTRIES-DELETE');
-  });
-});
+

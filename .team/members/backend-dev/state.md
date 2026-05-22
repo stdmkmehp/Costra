@@ -16,7 +16,7 @@
 
 ## §2 当前关注（active tasks）
 
-- 🆕 **COSTRA-152 R1 实装完成 + P0 跨 family 守门补丁**（2026-05-22 · PATCH /entries/{id} + K3 method-override + entryRepo.findById userId 过滤 · 70/70 测全绿 · 守门反向验证通过 · FU-104-ENTRIES-PATCH closed · FU-CROSS-FAMILY-GUARD closed · 等 review-tech R1）
+- 🆕 **COSTRA-152 R1 实装完成 + P0 跨 family 守门补丁**（2026-05-22 commit `513dd5a` · PATCH /entries/{id} + K3 method-override + entryRepo.findById userId 过滤 + version+1 显式 SET 修复 · 65/65 测全绿 · 守门反向验证通过 · FU-104-ENTRIES-PATCH closed · FU-CROSS-FAMILY-GUARD closed · 等 review-tech R1）
 - 🆕 **COSTRA-153 R1 实装完成**（2026-05-22 · DELETE /entries/{id} 软删 + query ?version=N · 70/70 测全绿 · FU-104-ENTRIES-DELETE closed · 等 review-tech R1）
 - 🆕 **COSTRA-154 R1.x.2 v1.2 协议升级完成**（2026-05-22 17:30 · commit `31fb893` · 联合 staging 实测发现 P1 watermark 微秒精度截断 BUG → Human 选项 B 同轮升级 ISO 时间戳 → BIGINT change_seq · migration 0006 SEQUENCE entries_change_seq + entryRepo 显式 nextval + syncPullService watermark BIGINT + sync-pull.test +T18/T19/T20 + openapi int64 · server 56/56 PASS · 等 Human staging 重启 migration + 再次联合实测 + approve）
 - ✅ **COSTRA-154 R1 实装完成 + R1.x.1 修订**（2026-05-19 · R1 commit `7e87bad` · R1.x.1 修订 P1-1 ledgers 类型 unknown[] + P1-2 commit hash 引用统一 5 处 · D-017 v3 §2.4 E1 第 8 次实战 · review-tech R1 verdict PASS-WITH-FOLLOWUP 36/40 → R1.x.1 修订后 APPROVE 38/40）
