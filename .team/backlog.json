@@ -1,9 +1,9 @@
 {
   "project": "Costra",
-  "version": "0.2.18",
-  "last_updated": "2026-05-22T17:50:00+08:00",
+  "version": "0.2.19",
+  "last_updated": "2026-05-22T19:00:00+08:00",
   "platform": "wechat-miniprogram",
-  "notes": "v0.2.17: 🚀🚀 Sprint-3 头部双卡 R1 全闭环 · COSTRA-154 + COSTRA-150 双卡 review-tech APPROVE 38/40 等 Human 联合 staging 实测（D-024 §2.2 C1 第 3 次实战候选）· 150 R1 完整闭环单一对话轮 D-014 同轮范式 154 范式复刻：卡审 R1 REVISE 21/30（3 P0 + 2 P1 + 2 P2 · P0-1 dispatch 引用 5 处不存在 API · P0-2 缺 G15 · P0-3 entry 非 tabBar）→ dispatch 修订 5 处 → 卡审 R2 APPROVE 29/30 → R1 实装 commit ee97a7a（miniapp-dev 单装扮档 · 7 项 scope · 52/52 测全绿 · syncScheduler 158 行 · 复用 sync.ts pushDelta+syncPull 不重写）→ R1 Review PASS-WITH-FOLLOWUP 34/40（D-022 v2.0 第 8 次实战 · D-025 三项全 PASS）→ R1.x.1 commit 5ac8153（D-017 v3 §2.4 E1 第 9 次实战 · P1-1 hash 5 处回填 + P1-2 startScheduler [未经验测] 14 行注释）→ APPROVE 38/40 · 双卡范式累计：D-014 连续 2 次 / D-016 反例第 9~10 次预防（合规第 2~3 次连续 · 反例已成历史）/ D-017 v3 §2.4 E1 第 8+9 次 / D-022 v2.0 第 7+8 次同分 38/40 稳定 / D-025 第 1~2 次套用 / hash amend pattern 复发（留 Retro 议题候选 @SELF_COMMIT_HASH@ 占位符）· 等 Human 联合 154+150 staging 实测（5 条 §3.5 断言 A~E）→ approve:COSTRA-154 + COSTRA-150 联合双卡同轮 approve · Sprint-3 头部 2/9 卡 CLOSED · 累计 10/29 估点 = 34%。 v0.2.16: 🚀 Sprint-3 启动 · COSTRA-154 R1 实装完成 + R1.x.1 修订 · 同时 Sprint-3 8 张 follow-up 转正立卡 dispatch 落档（150/152/153/151/155/159/161/162/163 · 估点 24+5=29 含 buffer 30~36 目标）。",
+  "notes": "v0.2.19: 🔍 Sprint-3 头部双卡 Card-Review 闭环 · COSTRA-152 + COSTRA-153 双卡同轮 R1+R2 Card-Review 完成（D-014 同轮范式 · 105+156 / 154+150 / 152+153 第 3 次复刻）· **152 R1 PASS-WITH-FOLLOWUP 25/30 → R2 PASS 28/30**（5 项 FU-152-001~005 全落地 · K3 拍板 + 409 体 + 行号注释 + DoD 21 项 + version ∈ body 显式）· **153 R1 REVISE 22/30 → R2 PASS-WITH-FOLLOWUP 26/30**（6 项 FU-153-001~006 全落地 · DoD 19 项 + 409 体 + version required + 常量值 + OpenAPI 401/403/409 + §LINKAGE 决策 2 query 拍板入卡）· **§LINKAGE 联合决策双锚点全落地**：决策 1 K3 method-override（152 §1.3+§2.1B · 158 范式复刻 · FU-K3-TO-K1-UPGRADE 留 Sprint-4）+ 决策 2 DELETE version 传递（153 §1.3+§2.1A+§2.1B · 拍板方案 A query `?version=N` · 依据 3 条入卡）· **R2 暴露真 P0 跨 family 越权守门盲区**（COSTRA-104 R1 实装漏 + review-tech 36/40 漏检 · entryRepo.findById 仅 JOIN family_members 不按 userId 过滤 · entryService.findById userId 接收但未实际使用 · 影响 152 T7 + 153 T6 + 已存在 GET /entries/{id} · backend-dev R1 期间必须验证 + 补 isUserInFamily 守门 · 议入 Sprint-3 末 Retro 议题候选）· **dispatch v2.0 双修订**：152 +43 行 / 153 +68 行 · §10 修订记录 + Card-Review FINAL.md 双卡落档 · 4 reviews 文件 + 2 dispatch 共 6 文件 doc-only 落档 · 等 Orchestrator commit + spawn backend-dev R1 实装（双卡联合单装扮档双 commit · 含 P0 守门补丁）。 v0.2.18: 🚀🚀 Sprint-3 头部双卡 R1.x.2 v1.2 协议升级闭环（154+150 联合实测 P0+P1 双 BUG → 选项 B 同轮升级 ISO→BIGINT change_seq · 3 笔原子 commit `31fb893`+`2b28210`+`261c280` · 等 staging 重测）。",
   "epics": [
     {
       "id": "Epic-A",
@@ -227,13 +227,18 @@
         "priority": "P1",
         "sprint": "sprint-3",
         "epic": "Epic-C",
-        "status": "Backlog",
+        "status": "Doing",
         "dependencies": [
           "COSTRA-104"
         ],
         "description": "FU-104-ENTRIES-PATCH 转正 · 实装部分字段更新 + 乐观锁 + outbox 同步 · 协议事实源 server/api/openapi.yaml + sync-protocol.md",
-        "disposition": "Sprint-3 候选 · COSTRA-104 R1 切出去 3 件套铁律首次实战遗留",
-        "updated_at": "2026-05-11T14:00:00+08:00"
+        "disposition": "Sprint-3 候选 · COSTRA-104 R1 切出去 3 件套铁律首次实战遗留 · Card-Review R1 PASS-WITH-FOLLOWUP 25/30 + R2 形式审 PASS 28/30 @ 2026-05-22 · 5 项 FU-152-001~005 全落地 · §LINKAGE 决策 1 K3 拍板 · dispatch v2.0 已修订 +43 行 · 等 backend-dev R1 实装（双卡联合启）",
+        "card_review": {
+          "round_1": { "verdict": "PASS-WITH-FOLLOWUP", "score": "25/30", "fu_count": 5 },
+          "round_2": { "verdict": "PASS", "score": "28/30", "fu_landed": "5/5" },
+          "final": "PASS"
+        },
+        "updated_at": "2026-05-22T18:55:00+08:00"
       },
       {
         "id": "COSTRA-153",
@@ -244,13 +249,20 @@
         "priority": "P1",
         "sprint": "sprint-3",
         "epic": "Epic-C",
-        "status": "Backlog",
+        "status": "Doing",
         "dependencies": [
-          "COSTRA-104"
+          "COSTRA-104",
+          "COSTRA-152"
         ],
         "description": "FU-104-ENTRIES-DELETE 转正 · 实装软删（deleted_at 列）+ outbox 同步删除事件 · 客户端 syncPull 时移除",
-        "disposition": "Sprint-3 候选 · COSTRA-104 R1 切出去 3 件套铁律首次实战遗留",
-        "updated_at": "2026-05-11T14:00:00+08:00"
+        "disposition": "Sprint-3 候选 · COSTRA-104 R1 切出去 3 件套铁律首次实战遗留 · Card-Review R1 REVISE 22/30 + R2 形式审 PASS-WITH-FOLLOWUP 26/30 @ 2026-05-22 · 6 项 FU-153-001~006 全落地 · §LINKAGE 决策 2 query `?version=N` 拍板 · dispatch v2.0 已修订 +68 行 · §7 暴露真 P0 跨 family 越权守门盲区（COSTRA-104 漏 · backend-dev R1 必修）· 等 backend-dev R1 实装（双卡联合启）",
+        "card_review": {
+          "round_1": { "verdict": "REVISE", "score": "22/30", "fu_count": 6 },
+          "round_2": { "verdict": "PASS-WITH-FOLLOWUP", "score": "26/30", "fu_landed": "6/6" },
+          "final": "PASS-WITH-FOLLOWUP",
+          "carryover_observation": "跨 family T6 真 P0 守门盲区 · backend-dev R1 期间必须验证 + 补 isUserInFamily"
+        },
+        "updated_at": "2026-05-22T18:55:00+08:00"
       },
       {
         "id": "COSTRA-154",

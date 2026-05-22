@@ -16,13 +16,18 @@
 
 ## §2 当前关注（active tasks）
 
+- 🆕 **COSTRA-152 + COSTRA-153 Card-Review 双卡同轮闭环**（2026-05-22 18:55 · D-014 同轮范式第 3 次实战 · 105+156 / 154+150 / 152+153 三连）：
+  - **152 R1 PASS-WITH-FOLLOWUP 25/30 → R2 形式审 PASS 28/30**（5 项 FU-152-001~005 全落地）· dispatch v2.0 修订 +43 行
+  - **153 R1 REVISE 22/30 → R2 形式审 PASS-WITH-FOLLOWUP 26/30**（6 项 FU-153-001~006 全落地）· dispatch v2.0 修订 +68 行
+  - **§LINKAGE 联合决策双锚点全落地**：决策 1 K3 method-override（FU-K3-TO-K1-UPGRADE 留 Sprint-4）+ 决策 2 DELETE version 传递方式 A query `?version=N`
+  - **R2 暴露真 P0 跨 family 越权守门盲区**（COSTRA-104 R1 实装漏 · entryRepo.findById 仅 JOIN family_members 不按 userId 过滤 · entryService.findById userId 接收但未使用 · 影响 152 T7 / 153 T6 / 已存在 GET /entries/{id}）· R1 实装期必修
+  - **下一步**：等 Orchestrator spawn 双卡联合 R1 实装（单装扮档双 commit · 含 P0 守门补丁）
 - 🆕 **COSTRA-154 R1.x.2 v1.2 协议升级完成**（2026-05-22 17:30 · commit `31fb893` · 联合 staging 实测发现 P1 watermark 微秒精度截断 BUG → Human 选项 B 同轮升级 ISO 时间戳 → BIGINT change_seq · migration 0006 SEQUENCE entries_change_seq + entryRepo 显式 nextval + syncPullService watermark BIGINT + sync-pull.test +T18/T19/T20 + openapi int64 · server 56/56 PASS · 等 Human staging 重启 migration + 再次联合实测 + approve）
 - ✅ **COSTRA-154 R1 实装完成 + R1.x.1 修订**（2026-05-19 · R1 commit `7e87bad` · R1.x.1 修订 P1-1 ledgers 类型 unknown[] + P1-2 commit hash 引用统一 5 处 · D-017 v3 §2.4 E1 第 8 次实战 · review-tech R1 verdict PASS-WITH-FOLLOWUP 36/40 → R1.x.1 修订后 APPROVE 38/40）
 - ✅ **COSTRA-156 Human T1 APPROVED CLOSED**（2026-05-19 09:27 · 联合 105 双卡同轮 approve · 终审报告 `.team/reviews/COSTRA-156/FINAL.md` · D-022 v2.0 第 4 次实战 40/40 连续满分）
 - ✅ **COSTRA-105 R1.x.2 BUG-002 已闭环**（commit `db488b9` · 联合 105 终审 partial PASS 同轮 CLOSED）
 - ✅ **COSTRA-158 R1 backend 段完成**（8 项 server 改动 A~G' · 闸门全绿 · 等 miniapp-dev 接手 H~K + 统一 commit）
 - COSTRA-157 R1 实装进行中（backend 段完成 · 等 miniapp-dev 接手 B/C/D/E + 统一 commit）
-- 🔜 **Sprint-3 候选**：COSTRA-152/153（PATCH/DELETE entries · 主题独立可并行启 · 与 154/150 解耦）
 
 ## §3 交付历史索引
 
@@ -57,7 +62,7 @@
 
 - 契约漂移风险（/sync/push 5 字段冲突解决策略已 G3 冻结 · COSTRA-100 closed）
 - 金额精度 DECIMAL(18,4) + `decimal.js` 双端一致约束（已实装）
-- COSTRA-104 切出去 3 件套铁律首次实战遗留（FU-104-ENTRIES-PATCH/DELETE/SYNC-PULL → COSTRA-152/153/154 Sprint-3 候选）
+- COSTRA-104 切出去 3 件套铁律首次实战遗留（FU-104-ENTRIES-PATCH/DELETE/SYNC-PULL → COSTRA-152/153/154 Sprint-3 候选 · 152/153 Card-Review 双卡同轮闭环 · 等 R1 实装）
 - **SBAI 装扮档 7 点卡需在 R1 内分阶段 commit 议题**（Sprint-2 末 Retro 必处置 · COSTRA-104 5 次反例确认）
 - **D-016 反例第 8 次预防**（COSTRA-156 本卡 state/history 随 commit 同轮落盘 · 成功）
 - 🆕 **R1.x.2 v1.2 协议升级 Sprint-3 末 Retro 议题候选**（议入 4 项）：
@@ -65,6 +70,8 @@
   2. 微秒精度 vs 自增序列号在分布式时序上的取舍范式（本卡 Human 追问 "watermark 靠精度就能完美解决吗" 产物）
   3. pg-mem 测试基础设施补强（setval / timezone / to_char mock 沉淀公共 helper · 当前 `test/setup.ts` 内联）
   4. 联合实测 = 真闭环最后一道闸新范式（D-024 §2.2 C1 立意首次得到协议升级级别证据）
+- 🆕 **COSTRA-152+153 Card-Review 暴露 Sprint-3 末 Retro 议题候选**（议入 1 项）：
+  5. **service 层 user/family 守门作为 review-tech 强制审查维度**（COSTRA-104 R1 实装时漏写 entryService.findById 的 userId 过滤 · review-tech R1 36/40 APPROVE 也漏检 · 153 R2 卡审形式审才捕获 · 暴露盲区：路由参数 userId 接收但未实际使用是常见 review 漏检模式）· 候选 D-022 v2.0 评分表 C8（红线）增项 "service 层接收 userId 必须有实际使用证据"
 
 ## §7 最近更新时间戳
 
@@ -75,3 +82,4 @@
 - 2026-05-19T10:18:00+08:00 · COSTRA-158 R1 backend 段完成（8 项 server 改动 · 闸门全绿 · 等 miniapp-dev 段统一 commit）
 - 2026-05-19T20:30:00+08:00 · COSTRA-154 R1 实装完成（9 项 scope · 49 测全绿 · 闸门 G1~G8+G15 全绿 · 等 review-tech R1）
 - **2026-05-22T17:30:00+08:00 · COSTRA-154 R1.x.2 v1.2 协议升级完成**（commit `31fb893` · ISO 时间戳 → BIGINT change_seq · migration 0006 + entryRepo 显式 nextval + syncPullService BIGINT + pg-mem setval mock + sync-pull.test +T18/T19/T20 + openapi int64 · server 56/56 PASS · 等 Human staging 重启 + 再次联合实测）
+- **2026-05-22T18:55:00+08:00 · COSTRA-152 + COSTRA-153 双卡 Card-Review 闭环**（D-014 同轮范式第 3 次 · 152 R1 PASS-WITH-FOLLOWUP 25/30 → R2 PASS 28/30 · 153 R1 REVISE 22/30 → R2 PASS-WITH-FOLLOWUP 26/30 · 11 项 FU 全落地 · §LINKAGE 决策 1 K3 + 决策 2 query `?version=N` 拍板 · R2 暴露真 P0 跨 family 越权守门盲区 · 等 R1 实装 spawn）
