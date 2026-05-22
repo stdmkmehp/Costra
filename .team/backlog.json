@@ -1,7 +1,7 @@
 {
   "project": "Costra",
-  "version": "0.2.17",
-  "last_updated": "2026-05-20T13:25:00+08:00",
+  "version": "0.2.18",
+  "last_updated": "2026-05-22T17:50:00+08:00",
   "platform": "wechat-miniprogram",
   "notes": "v0.2.17: 🚀🚀 Sprint-3 头部双卡 R1 全闭环 · COSTRA-154 + COSTRA-150 双卡 review-tech APPROVE 38/40 等 Human 联合 staging 实测（D-024 §2.2 C1 第 3 次实战候选）· 150 R1 完整闭环单一对话轮 D-014 同轮范式 154 范式复刻：卡审 R1 REVISE 21/30（3 P0 + 2 P1 + 2 P2 · P0-1 dispatch 引用 5 处不存在 API · P0-2 缺 G15 · P0-3 entry 非 tabBar）→ dispatch 修订 5 处 → 卡审 R2 APPROVE 29/30 → R1 实装 commit ee97a7a（miniapp-dev 单装扮档 · 7 项 scope · 52/52 测全绿 · syncScheduler 158 行 · 复用 sync.ts pushDelta+syncPull 不重写）→ R1 Review PASS-WITH-FOLLOWUP 34/40（D-022 v2.0 第 8 次实战 · D-025 三项全 PASS）→ R1.x.1 commit 5ac8153（D-017 v3 §2.4 E1 第 9 次实战 · P1-1 hash 5 处回填 + P1-2 startScheduler [未经验测] 14 行注释）→ APPROVE 38/40 · 双卡范式累计：D-014 连续 2 次 / D-016 反例第 9~10 次预防（合规第 2~3 次连续 · 反例已成历史）/ D-017 v3 §2.4 E1 第 8+9 次 / D-022 v2.0 第 7+8 次同分 38/40 稳定 / D-025 第 1~2 次套用 / hash amend pattern 复发（留 Retro 议题候选 @SELF_COMMIT_HASH@ 占位符）· 等 Human 联合 154+150 staging 实测（5 条 §3.5 断言 A~E）→ approve:COSTRA-154 + COSTRA-150 联合双卡同轮 approve · Sprint-3 头部 2/9 卡 CLOSED · 累计 10/29 估点 = 34%。 v0.2.16: 🚀 Sprint-3 启动 · COSTRA-154 R1 实装完成 + R1.x.1 修订 · 同时 Sprint-3 8 张 follow-up 转正立卡 dispatch 落档（150/152/153/151/155/159/161/162/163 · 估点 24+5=29 含 buffer 30~36 目标）。",
   "epics": [
@@ -261,14 +261,14 @@
         "priority": "P0",
         "sprint": "sprint-3",
         "epic": "Epic-C",
-        "status": "Backlog",
+        "status": "In-R1.x.2",
         "dependencies": [
           "COSTRA-104",
           "COSTRA-156"
         ],
         "description": "Sprint-3 头部第 1 张 · 9 项 scope（entryRepo.findEntriesByFamilySince + syncPullService + routes/sync.ts 替换 stub + OpenAPI 删 x-deferred 修缩进 + sync-pull.test.ts ≥12 测含软删/分页/越权/字段映射 + follow-ups + 缺陷单 RESOLVED）· FU-104-SYNC-PULL 转正 · 与 COSTRA-150 client 调度器强联动（150 严格依赖 154 APPROVE）· 协议 §3 + §6.3 + §7 · PRD AC-4 核心承诺 · INVEST small 5pt · 单装扮档单 commit · dispatch 已落盘 .team/dispatch/COSTRA-154-sync-pull-incremental-fetch.md",
-        "disposition": "Sprint-3 头部第 1 张 · dispatch 已落档（2026-05-19 15:00）· 等 Sprint-2 7/7 收官 + Human 拍板 Sprint-3 启动后 spawn Card-Review · D-022 v2.0 第 7 次实战预定 · D-025 反模式扫描第 1 次实战（AP-003 契约-实装漂移好例 1 范式正向兑现）· 联合 approve 路径与 COSTRA-150 绑定（D-024 §2.2 C1 攒批）",
-        "updated_at": "2026-05-19T15:10:00+08:00",
+        "disposition": "Sprint-3 头部第 1 张 · R1+R1.x.1 APPROVE 38/40 @ 2026-05-19 → 联合 staging 实测发现 P1 watermark 微秒精度截断 BUG → Human 决策选项 B 同轮升级 v1.2 BIGINT change_seq → R1.x.2 commit `31fb893`(server) + `2b28210`(client v1.2 适配) + `261c280`(协议文档) · 已 push origin/dev · 等 Human staging 重启 + 再次联合实测 + `approve:COSTRA-154 + COSTRA-150` 双卡同轮 approve",
+        "updated_at": "2026-05-22T17:30:00+08:00",
         "dispatch_at": "2026-05-19T15:00:00+08:00"
       },
       {
@@ -280,7 +280,7 @@
         "priority": "P1",
         "sprint": "sprint-3",
         "epic": "Epic-C",
-        "status": "Backlog",
+        "status": "In-R1.x.2",
         "dependencies": [
           "COSTRA-103",
           "COSTRA-104",
@@ -289,8 +289,8 @@
           "COSTRA-154"
         ],
         "description": "Sprint-3 头部第 2 张 · 7 项 scope（services/syncScheduler.ts 新建 4 触发源 + mutex + 失败处理 + db.ts watermark 接口 + app.ts onLaunch/onHide 接入 + home/mine/entry 三页 onShow + syncScheduler.spec.ts ≥8 测 + follow-ups + 105 H6/D2 联合 RESOLVED）· FU-103-CLIENT-SYNC-SCHEDULER 转正 · 严格依赖 COSTRA-154 R1 APPROVE 才能 spawn（150 调 GET /sync/pull · 154 stub 时 401 全闸门红）· INVEST small 5pt · 单装扮档单 commit · D-022 v2.0 §4.1 runtime T2 卡铁律（C8 维度最高风险 · Human 实测前置不可省）· dispatch 已落盘 .team/dispatch/COSTRA-150-client-sync-scheduler.md",
-        "disposition": "Sprint-3 头部第 2 张 · dispatch 已落档（2026-05-19 15:05）· 等 COSTRA-154 R1 APPROVE 后 spawn · D-022 v2.0 第 8 次实战预定 · runtime T2 卡 · 联合 approve 路径与 COSTRA-154 绑定（D-024 §2.2 C1 攒批 · 105+156 / 157+158 范式三连）· 解锁 105 H6+D2 真链路自动等效回归 PASS",
-        "updated_at": "2026-05-19T15:10:00+08:00",
+        "disposition": "Sprint-3 头部第 2 张 · R1+R1.x.1 APPROVE 38/40 @ 2026-05-20 → 联合 staging 实测发现 P0 outbox 死锁 BUG（150-D · push 失败后 drained 残留 + ackResults 字段错配）→ R1.x.2 commit `2b28210`（含 v1.2 watermark 适配 + outbox 死锁修复 sync.ts 不再吞错 + outbox.ts ackBatchFailure + drainBatch 防御性 recover）· 已 push origin/dev · 等再次联合实测 + 双卡 approve",
+        "updated_at": "2026-05-22T17:30:00+08:00",
         "dispatch_at": "2026-05-19T15:05:00+08:00"
       },
       {
@@ -425,6 +425,42 @@
         "updated_at": "2026-05-19T19:55:00+08:00",
         "dispatch_at": "2026-05-19T09:44:00+08:00",
         "closed_at": "2026-05-19T19:53:00+08:00"
+      },
+      {
+        "id": "COSTRA-150-D",
+        "title": "outbox 死锁 BUG · push 失败后 drained 永久残留（联合 staging 实测发现）",
+        "owner": "MiniApp-Agent",
+        "type": "defect",
+        "points": 0,
+        "priority": "P0",
+        "sprint": "sprint-3",
+        "epic": "Epic-C",
+        "status": "Fixed-Awaiting-Verify",
+        "dependencies": [
+          "COSTRA-150"
+        ],
+        "description": "联合 staging 实测捕获 · 三重根因：(1) sync.ts catch 静默吞错 (2) drainBatch recover 仅捞 retries>0 (3) ackResults 用错字段 idempotency_key vs ack_batch_key · 修复 commit `2b28210` · 已写 outbox.spec.ts 回归测试 · 详见 qa/defects/2026-05-22-COSTRA-150-D-outbox-deadlock-on-push-failure.md",
+        "disposition": "已修复 commit `2b28210` · 等 staging 重测验证回归 · 与 COSTRA-150 主卡同轮 approve",
+        "updated_at": "2026-05-22T17:30:00+08:00",
+        "defect_file": "qa/defects/2026-05-22-COSTRA-150-D-outbox-deadlock-on-push-failure.md"
+      },
+      {
+        "id": "COSTRA-154-D",
+        "title": "watermark 微秒精度截断 → 同条 entry 永久重传（联合 staging 实测发现 · 触发 v1.2 协议升级）",
+        "owner": "Backend-Agent",
+        "type": "defect",
+        "points": 0,
+        "priority": "P1",
+        "sprint": "sprint-3",
+        "epic": "Epic-C",
+        "status": "Fixed-Awaiting-Verify",
+        "dependencies": [
+          "COSTRA-154"
+        ],
+        "description": "联合 staging 实测 + SQL 验证捕获 137μs 差 · 根因：JS Date 毫秒精度 vs PG TIMESTAMPTZ 微秒精度 · Human 决策选项 B 彻底升级 ISO 时间戳 → BIGINT change_seq · 协议演化 v1.0 ISO ms → v1.1 ISO μs（中途未上线）→ v1.2 BIGINT（破坏性升级 · client legacy ISO 自动重置）· 修复 3 笔 commit `31fb893` + `2b28210` + `261c280` · 详见 qa/defects/2026-05-22-COSTRA-154-watermark-microsecond-precision.md（693 行 · §11 v1.2 升级声明）",
+        "disposition": "已修复 v1.2 协议升级 · 等 staging 重启 migration 0006 + 再次联合实测验证回归 · 与 COSTRA-154 主卡同轮 approve",
+        "updated_at": "2026-05-22T17:30:00+08:00",
+        "defect_file": "qa/defects/2026-05-22-COSTRA-154-watermark-microsecond-precision.md"
       }
     ]
   }

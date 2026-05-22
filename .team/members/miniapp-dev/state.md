@@ -16,7 +16,8 @@
 
 ## §2 当前关注（active tasks）
 
-- COSTRA-150 R1 实装已交付 · 等 review-tech R1 + Human 联合 154 实测
+- 🆕 **COSTRA-150 R1.x.2 outbox 死锁修复 + v1.2 watermark 适配完成**（2026-05-22 17:30 · commit `2b28210` · 联合 staging 实测发现 P0 outbox 死锁 BUG-D（150-D · sync.ts catch 静默吞错 + drainBatch recover 仅捞 retries>0 + ackResults 字段错配 idempotency_key vs ack_batch_key）+ 协议 v1.2 升级 client 段适配（getWatermark 返 number · legacy ISO 自动重置 · setWatermark 防御性校验 · syncScheduler.spec 5 mock 升级）· client 58/58 PASS · 等 Human 再次联合实测 + approve）
+- ✅ **COSTRA-150 R1 实装已交付**（commit `ee97a7a` + R1.x.1 `5ac8153` APPROVE 38/40 · review-tech R1 PASS-WITH-FOLLOWUP 34/40 → R1.x.1 修订后 APPROVE 38/40）
 
 ## §3 交付历史索引
 
@@ -32,6 +33,7 @@
 - **2026-05-18** · `history/2026-05-18-costra-105-r1x1-bug001-ledger-fix.md` · COSTRA-105 **R1.x.1 BUG-001 修复**（ledger_id 'default' 字面量 → fallback UUID + globalData.activeLedgerId 类型声明 · D-017 v3 §2.4 E1 例外路径 · typecheck ✅ test 42/42 ✅）
 - **2026-05-19** · `history/2026-05-19-costra-158-r1-miniapp-segment.md` · COSTRA-158 **R1 miniapp 段实装**（H/I/J + J'/G' 扩展 5 项 · 单卡双装扮档第 2 段 · TokenRaw + computeHasProfile 严格判定 + home.spec + login updateLocalUserProfile + auth.spec · 6 闸门全绿 · 反向验证 G10/G11 通过 · 等 review-tech R1）
 - **2026-05-19** · `history/2026-05-19-costra-158-r1x1-bug-fix.md` · COSTRA-158 **R1.x.1 P0 BUG 修复**（updateLocalUserProfile setStorageSync 裸对象 → async setItem envelope 一致性 · login/index.ts 加 await · auth.spec.ts 重启回读单测 · 反向验证 PASS · D-017 v3 §2.4 E1 例外路径第 7 次 · 等 Human 重新实测）
+- **2026-05-22** · **COSTRA-150 R1.x.2 outbox 死锁修复 + v1.2 watermark 适配** `2b28210`（联合 staging 实测捕获 P0 outbox 死锁 BUG-D 三重根因：sync.ts catch 吞错 + drainBatch recover 仅捞 retries>0 + ackResults 字段错配 ack_batch_key · 协议 v1.2 client 段适配 db.ts/sync.ts/syncScheduler.ts watermark:number + legacy ISO 自动重置 + 4 条 v1.2 回归测 + outbox.spec 死锁回归测 · client 58/58 PASS · 等 Human 再次联合实测 + 双卡 approve）· `history/2026-05-22-costra-150-r1x2-outbox-deadlock-and-v1.2-watermark.md`
 - **2026-05-20** · `history/2026-05-20-costra-150-r1-implement.md` · COSTRA-150 **R1 实装** `ee97a7a`（syncScheduler.ts 新建 4 触发源 + mutex + debounce + app.ts 接入 + home/mine onShow 接入 + 8 单测 + FU-103 CLOSED + 105 D2 联合 RESOLVED · G1~G6+G15 全绿 · 反向验证 G7~G9 通过 · 等 review-tech R1 + Human 联合 154 实测）
 
 ## §4 最近决策影响
@@ -83,3 +85,4 @@
 - **2026-05-18T20:10:00+08:00 · COSTRA-105 R1.x.1 BUG-001 修复**（ledger_id 'default' → fallback UUID + activeLedgerId 类型声明 · D-017 v3 §2.4 E1 例外路径 · typecheck ✅ test 42/42 ✅ · 单 commit 已落盘）
 - **2026-05-19T19:28:00+08:00 · COSTRA-158 R1.x.1 P0 BUG 修复交付**（updateLocalUserProfile setStorageSync→async setItem + login await + auth.spec 重启回读测 · 六闸全绿 · 反向验证 PASS · 单 commit 99e3794 · 等 Human 重新清缓存+干净环境实测 · D-017 v3 §2.4 E1 例外路径第 7 次）
 - **2026-05-20T12:00:00+08:00 · COSTRA-150 R1 实装交付**（syncScheduler.ts 4 触发源+mutex+debounce · app.ts startScheduler/stopScheduler · home/mine triggerOnPageShow · 8 单测全绿 · G1~G6+G15 全绿 · 反向验证 G7~G9 通过 · 等 review-tech R1 + Human 联合 154 实测 · SBAI 第 8 次冒烟）
+- **2026-05-22T17:30:00+08:00 · COSTRA-150 R1.x.2 outbox 死锁修复 + v1.2 watermark 适配交付**（commit `2b28210` · 双修复同 commit · sync.ts 不再吞错 + outbox.ts ackBatchFailure + drainBatch 防御性 recover + ack_batch_key 字段修复 · db.ts/sync.ts/syncScheduler.ts watermark:number + legacy ISO 自动重置 · 8 文件 +310/-54 · client 58/58 PASS · 等 Human 再次联合实测 · D-017 v3 §2.4 E1 例外路径第 11 次）

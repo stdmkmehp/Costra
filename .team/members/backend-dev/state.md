@@ -16,15 +16,17 @@
 
 ## §2 当前关注（active tasks）
 
-- ✅ **COSTRA-154 R1 实装完成 + R1.x.1 修订**（2026-05-19 · R1 commit `7e87bad` · R1.x.1 修订 P1-1 ledgers 类型 unknown[] + P1-2 commit hash 引用统一 5 处 · D-017 v3 §2.4 E1 第 8 次实战 · review-tech R1 verdict PASS-WITH-FOLLOWUP 36/40 → R1.x.1 修订后 APPROVE 38/40 · 等 Human 联合 150 实测 + approve）
+- 🆕 **COSTRA-154 R1.x.2 v1.2 协议升级完成**（2026-05-22 17:30 · commit `31fb893` · 联合 staging 实测发现 P1 watermark 微秒精度截断 BUG → Human 选项 B 同轮升级 ISO 时间戳 → BIGINT change_seq · migration 0006 SEQUENCE entries_change_seq + entryRepo 显式 nextval + syncPullService watermark BIGINT + sync-pull.test +T18/T19/T20 + openapi int64 · server 56/56 PASS · 等 Human staging 重启 migration + 再次联合实测 + approve）
+- ✅ **COSTRA-154 R1 实装完成 + R1.x.1 修订**（2026-05-19 · R1 commit `7e87bad` · R1.x.1 修订 P1-1 ledgers 类型 unknown[] + P1-2 commit hash 引用统一 5 处 · D-017 v3 §2.4 E1 第 8 次实战 · review-tech R1 verdict PASS-WITH-FOLLOWUP 36/40 → R1.x.1 修订后 APPROVE 38/40）
 - ✅ **COSTRA-156 Human T1 APPROVED CLOSED**（2026-05-19 09:27 · 联合 105 双卡同轮 approve · 终审报告 `.team/reviews/COSTRA-156/FINAL.md` · D-022 v2.0 第 4 次实战 40/40 连续满分）
 - ✅ **COSTRA-105 R1.x.2 BUG-002 已闭环**（commit `db488b9` · 联合 105 终审 partial PASS 同轮 CLOSED）
 - ✅ **COSTRA-158 R1 backend 段完成**（8 项 server 改动 A~G' · 闸门全绿 · 等 miniapp-dev 接手 H~K + 统一 commit）
 - COSTRA-157 R1 实装进行中（backend 段完成 · 等 miniapp-dev 接手 B/C/D/E + 统一 commit）
-- 🔜 **Sprint-3 候选**：COSTRA-150（FU-103-CLIENT-SYNC-SCHEDULER · 严格依赖 154 R1 APPROVE）+ COSTRA-152/153（PATCH/DELETE entries）
+- 🔜 **Sprint-3 候选**：COSTRA-152/153（PATCH/DELETE entries · 主题独立可并行启 · 与 154/150 解耦）
 
 ## §3 交付历史索引
 
+- **2026-05-22** · **COSTRA-154 R1.x.2 v1.2 协议升级**（联合实测 P1 watermark 精度截断 → Human 选项 B 彻底升级 ISO → BIGINT change_seq · migration 0006 + entryRepo 显式 nextval + syncPullService BIGINT + pg-mem setval mock + sync-pull.test +T18/T19/T20 + openapi int64 · server 56/56 PASS · commit `31fb893`）· `history/2026-05-22-costra-154-r1x2-watermark-v1.2-upgrade.md`
 - 2026-05-19 · **COSTRA-154 R1 实装**（GET /sync/pull 增量拉取 · 9 项 scope A~I · 替代 stub 501 · entryRepo findEntriesByFamilySince + syncPullService + routes 真实装 + OpenAPI x-deferred 删 + 14 单测 T1~T14 · FU-104-SYNC-PULL closed · 105 D2 defect resolved）· `history/2026-05-19-costra-154-r1-implement.md`
 - 2026-05-19 · **COSTRA-158 R1 backend 段**（8 项 server 改动 A~G' · /users/me GET+PATCH+POST K3 兜底 · has_completed_profile 严格判定 · 闸门 G1~G6+G8/G13/G14 全绿 · 等 miniapp-dev 段统一 commit）· `history/2026-05-19-COSTRA-158-r1-backend.md`
 - 2026-05-19 · **COSTRA-156 Human T1 APPROVED CLOSED**（联合 105 双卡终审 · D-022 v2.0 第 4 次实战 40/40 连续满分 · CI 对账族第 5 张规则 D 落地 · D-016 反例第 8 次首次预防成功）· `history/2026-05-19-COSTRA-156-final-approved.md`
@@ -58,6 +60,11 @@
 - COSTRA-104 切出去 3 件套铁律首次实战遗留（FU-104-ENTRIES-PATCH/DELETE/SYNC-PULL → COSTRA-152/153/154 Sprint-3 候选）
 - **SBAI 装扮档 7 点卡需在 R1 内分阶段 commit 议题**（Sprint-2 末 Retro 必处置 · COSTRA-104 5 次反例确认）
 - **D-016 反例第 8 次预防**（COSTRA-156 本卡 state/history 随 commit 同轮落盘 · 成功）
+- 🆕 **R1.x.2 v1.2 协议升级 Sprint-3 末 Retro 议题候选**（议入 4 项）：
+  1. 协议演化版本号变更条件（v1.x → v2.x 阈值 · 区别 doc-only sync 与破坏性 schema 升级）
+  2. 微秒精度 vs 自增序列号在分布式时序上的取舍范式（本卡 Human 追问 "watermark 靠精度就能完美解决吗" 产物）
+  3. pg-mem 测试基础设施补强（setval / timezone / to_char mock 沉淀公共 helper · 当前 `test/setup.ts` 内联）
+  4. 联合实测 = 真闭环最后一道闸新范式（D-024 §2.2 C1 立意首次得到协议升级级别证据）
 
 ## §7 最近更新时间戳
 
@@ -65,5 +72,6 @@
 - 2026-05-11T20:57:43+08:00 · COSTRA-104 R1.x 极窄修复收口（363efa1 · P1-1 T2 测 + P2-1 followup_id）
 - 2026-05-12T12:52:05+08:00 · COSTRA-104 R1.x.1 极窄修复收口（95e00c6 · dev WX mock 入口）
 - 2026-05-18T20:07:30+08:00 · COSTRA-105 R1.x.2 BUG-002 修复（sync/push payload UUID schema 校验补全）
-- **2026-05-19T10:18:00+08:00 · COSTRA-158 R1 backend 段完成**（8 项 server 改动 · 闸门全绿 · 等 miniapp-dev 段统一 commit）
+- 2026-05-19T10:18:00+08:00 · COSTRA-158 R1 backend 段完成（8 项 server 改动 · 闸门全绿 · 等 miniapp-dev 段统一 commit）
 - 2026-05-19T20:30:00+08:00 · COSTRA-154 R1 实装完成（9 项 scope · 49 测全绿 · 闸门 G1~G8+G15 全绿 · 等 review-tech R1）
+- **2026-05-22T17:30:00+08:00 · COSTRA-154 R1.x.2 v1.2 协议升级完成**（commit `31fb893` · ISO 时间戳 → BIGINT change_seq · migration 0006 + entryRepo 显式 nextval + syncPullService BIGINT + pg-mem setval mock + sync-pull.test +T18/T19/T20 + openapi int64 · server 56/56 PASS · 等 Human staging 重启 + 再次联合实测）

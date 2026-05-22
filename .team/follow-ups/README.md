@@ -23,12 +23,16 @@
 
 ---
 
-## 🟢 当前 open FU 速查表（24 条 · 按主题族 + 推动优先级 · 2026-05-19 20:50 Sprint-3 头部启动 + 8 张 follow-up 转正）
+## 🟢 当前 open FU 速查表（28 条 · 按主题族 + 推动优先级 · 2026-05-22 17:50 Sprint-3 头部 R1.x.2 v1.2 协议升级 + 4 条新议题登记）
 
 | 主题族 | FU-ID | 优先级 | 候选卡 / 归属 | 状态 |
 |---|---|---|---|---|
-| **Sprint-3 同步协议核心** | FU-104-SYNC-PULL | **P0** | COSTRA-154 | **closed @ COSTRA-154** `7e87bad` + R1.x.1 `8eecd4c`（R1 commit 替代 stub 501 · GET /sync/pull 增量拉取实装 · review-tech R1 PASS-WITH-FOLLOWUP 36/40 → R1.x.1 修订后 APPROVE 38/40 · 等 Human 联合 150 实测）|
-| **Sprint-3 同步协议核心** | FU-103-CLIENT-SYNC-SCHEDULER | P1 | COSTRA-150 | **closed @ COSTRA-150** `ee97a7a`（4 触发源调度器实装 · R1 卡审 APPROVE 29/30 · pushDelta+syncPull 复用 · mutex+debounce+periodic · 等 Human 联合 154 实测）|
+| **🆕 Sprint-3 末 Retro · 协议演化纪律** | **FU-PROTOCOL-VERSION-BUMP-CRITERIA** | **P1** | **Sprint-3 末 Retro 议题** | **open**（2026-05-22 · 触发：COSTRA-154 watermark 协议 v1.0 → v1.1 → v1.2 三连演化 · Sprint-3 末 Retro 议入：什么级别的 BUG 触发协议 v1.x → v2.x · 区别 doc-only sync（v1.x）与破坏性 schema 升级（v2.x）· 候选立规：协议字段类型变更 / 字段语义改写 / 时序模型替换 = v2.x · 仅文档同步 / 字段补全 / 注释澄清 = v1.x · 配套 sync-protocol.md §6 演化日志强制留 BREAKING/COMPAT 标记）|
+| **🆕 Sprint-3 末 Retro · 分布式时序范式** | **FU-MICROSEC-VS-AUTOSEQ-PARADIGM** | **P1** | **Sprint-3 末 Retro 议题** | **open**（2026-05-22 · 触发：COSTRA-154 联合实测发现 watermark 微秒精度截断 · Human 追问"watermark 靠精度就一定能完美解决吗" · 暴露 3 类风险（同微秒并发 / NTP 回拨 / 主从切换）· 选项 B 升 BIGINT change_seq 自增序列号承担一致性 · `updated_at` 保留语义 · Sprint-3 末 Retro 议入：分布式系统 watermark / cursor / change tracking 的取舍范式（精度 vs 自增序列号 vs LSN/WAL pos）· 候选写入 ADR-0003 时序模型选型）|
+| **🆕 Sprint-3 末 Retro · 测试基础设施** | **FU-PG-MEM-SHARED-HELPER** | **P2** | **Sprint-3 末 Retro 议题** | **open**（2026-05-22 · 触发：COSTRA-154 v1.2 实装时 `server/test/setup.ts` 内联 setval / timezone / to_char mock · 后续多卡复用需提取 · Sprint-3 末 Retro 议入：将 pg-mem 兼容层提取为公共 helper（`server/test/pg-mem-extensions.ts` 或类似）· 覆盖 SEQUENCE / setval / timezone 函数 / 字符串格式化函数 · 候选独立卡 P2 1pt）|
+| **🆕 Sprint-3 末 Retro · 联合实测立意兑现** | **FU-JOINT-SMOKE-LAST-GATE-PARADIGM** | **P1** | **Sprint-3 末 Retro 议题** | **open**（2026-05-22 · 触发：COSTRA-154+150 联合 staging 实测捕获 P0 outbox 死锁 + P1 watermark 精度 · 单测 + curl + server 单测 30+ 全绿都漏不出 · D-024 §2.2 C1 立意首次得到协议升级级别证据 · Sprint-3 末 Retro 议入：联合实测 = 真闭环最后一道闸新范式 + R1.x.2 协议破坏性升级范式（vs 以往 R1.x.1 review-tech 修订型）· 候选规约：T2 卡 staging 实测前禁止 approve · 联合实测前禁止 R1 close · 配套 SOP-REVIEW v2.x §11 强化）|
+| **Sprint-3 同步协议核心** | FU-104-SYNC-PULL | **P0** | COSTRA-154 | **R1.x.2-fixed-pending-verify**（**[预闭合纠正 2026-05-22]** R1+R1.x.1 commit `7e87bad`+`8eecd4c` APPROVE 38/40 → 联合 staging 实测发现 P1 watermark 精度截断 BUG → R1.x.2 v1.2 协议升级 commit `31fb893`+`2b28210`+`261c280` · 等 Human 再次联合实测 + 双卡 approve · FU 不真 closed 直至 Human approve）|
+| **Sprint-3 同步协议核心** | FU-103-CLIENT-SYNC-SCHEDULER | P1 | COSTRA-150 | **R1.x.2-fixed-pending-verify**（**[预闭合纠正 2026-05-22]** R1+R1.x.1 commit `ee97a7a`+`5ac8153` APPROVE 38/40 → 联合 staging 实测发现 P0 outbox 死锁 BUG-D（150-D · sync.ts catch 静默吞错 + drainBatch recover 仅捞 retries>0 + ackResults 字段错配）→ R1.x.2 commit `2b28210`（双修复 + v1.2 watermark 适配）· 等 Human 再次联合实测 + 双卡 approve · FU 不真 closed 直至 Human approve）|
 | **Sprint-3 同步协议核心** | FU-104-ENTRIES-PATCH | P1 | COSTRA-152 | **dispatch-ready @ 2026-05-19**（dispatch 已落档 · 等 Human `start:COSTRA-152` · 与 153 联合 approve 优选）|
 | **Sprint-3 同步协议核心** | FU-104-ENTRIES-DELETE | P1 | COSTRA-153 | **dispatch-ready @ 2026-05-19**（dispatch 已落档 · 等 Human `start:COSTRA-153` · K3/K1 决策延续 152 结果）|
 | **Sprint-3 同步协议核心** | FU-103-CONFLICT-MERGE-UI | P2 | COSTRA-151 | **dispatch-ready @ 2026-05-19**（Sprint-3 中后段 · 154+150 CLOSED 后启）|
