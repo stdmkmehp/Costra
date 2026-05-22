@@ -6,7 +6,20 @@
 >
 > **实测者**：Human
 > **预计时间**：~ 20 分钟
-> **修订版本**：v1.0 · 2026-05-22
+> **修订版本**：v1.3 · 2026-05-22（R1.x.2 修订 · 配套 3 个 BUG 修复）
+>
+> **v1.3 修订（选项 B 彻底修复）**：
+> - watermark 协议从 ISO 时间戳升级为 BIGINT change_seq（v1.2）· 完全消除 §3.5 残余风险
+> - §3.E 期望 watermark 为整数（不再 ISO 字符串）
+> - §3.E.5 PASS 判据更新（typeof watermark === 'number' + pulled=0）
+> - 配套 BUG 卡（追加 §11 升级声明）：
+>   - `qa/defects/2026-05-22-COSTRA-150-D-outbox-deadlock-on-push-failure.md`（client outbox 死锁）
+>   - `qa/defects/2026-05-22-COSTRA-154-watermark-microsecond-precision.md` §11 v1.2 升级声明
+>
+> **v1.1 修订**（保留）：
+> - §3.D.1 步骤 1：IDE Network 调试面板 Offline → 改为**模拟器面板网络类型切换**
+> - §3.A.2 PASS 判据：明确 IDE 内部错误不算 error/warn
+> - watermark storage key 修订：`sync:watermark:` → `watermark:`（事实源 `db.ts:86-88`）
 
 ---
 
@@ -262,11 +275,18 @@ console.log('family_id:', fam?.d);
 - ✅ 可出现 `[sync] network recover · trigger sync`
 - ❌ **不应出现** `[sync] fail · ...`（除手动断网恢复等极端场景）
 
+> **v1.1 排除项**（IDE 内部错误 · 不算 error/warn · 不影响断言 A 判定）：
+> - `Failed to load resource ... apihelper/assdk` / `__WORKER__/worker.js?libName=WAAccelerateWorker.js` → IDE 内部 XHR
+> - `Component is not found in path "wx://not-found"` → IDE 组件注入级联 fallback
+> - `[Costra] runtime error MiniProgramError ... 'send' on 'XMLHttpRequest'` → app.ts:97 onError 捕获的 IDE XHR 失败
+>
+> 上述 4 条均为开发者工具自身行为 · 不是项目代码缺陷 · 偶现 · 暂不处理（后续可立 P3 卡用 onError 过滤）
+
 > **事实源**：`miniprogram/services/syncScheduler.ts:84` `[sync] ok · pushed=${pushResult.pushed} pulled=${pulled} watermark=${pullResult.watermark} (trigger=${trigger})` · L57 `[sync] skip · already running (trigger=${trigger})` · L65 `[sync] skip · not logged in (trigger=${trigger})` · L72 `[sync] skip · no active family (trigger=${trigger})` · L94 `[sync] fail · ${e?.code || 'unknown'} ${e?.message || e} (trigger=${trigger})` · L122 `[sync] network recover · trigger sync` · L147 `[sync] skip page-show · debounced (page=${pageName})`
 
 #### §3.A.3 期望 Network
 
-- `GET http://localhost:8080/v1/sync/pull?family_id=00000000-...0F0&since=1970-01-01T00:00:00.000Z&limit=200` → 200
+- `GET http://localhost:8080/v1/sync/pull?family_id=00000000-...0F0&since=0&limit=200` → 200
 
 > **事实源**：`miniprogram/services/sync.ts:48-56` request 参数 `method: 'GET', path: '/sync/pull', query: {family_id, since, limit}` · `miniprogram/services/env.ts:17` `apiBaseUrl: 'http://localhost:8080/v1'` · URL 拼接 = `http://localhost:8080/v1/sync/pull?family_id=...&since=...&limit=200` · `miniprogram/services/db.ts:267-268` getWatermark 默认 epoch `'1970-01-01T00:00:00.000Z'`
 
@@ -281,7 +301,7 @@ console.log('family_id:', fam?.d);
 
 ---
 
-### 断言 B：冷启 500ms 后 Console 出现 `[sync] ok · pushed=N pulled=N watermark=ISO (trigger=launch)`
+### 断言 B：冷启 500ms 后 Console 出现 `[sync] ok · pushed=N pulled=N watermark=N (trigger=launch)`
 
 #### §3.B.1 操作步骤
 
@@ -295,7 +315,7 @@ console.log('family_id:', fam?.d);
 ```
 [Costra] onLaunch env= dev
 [auth] wx.login ok {codeLen: 32}
-[sync] ok · pushed=0 pulled=N watermark=2026-05-22T...Z (trigger=launch)
+[sync] ok · pushed=0 conflicts=0 rejected=0 failed=0 pulled=N watermark=N (trigger=launch)
 ```
 
 > **事实源**：`miniprogram/app.ts:51` `console.info('[Costra] onLaunch env=', this.globalData.env.name)` · `miniprogram/services/auth.ts:163` `console.info('[auth] wx.login ok', { codeLen: code.length })` · `miniprogram/services/syncScheduler.ts:117` `setTimeout(() => syncOnce('launch'), 500)` · L83-85 console.log 模板
@@ -314,7 +334,7 @@ console.log('family_id:', fam?.d);
 
 #### §3.B.3 期望 Network
 
-- `GET http://localhost:8080/v1/sync/pull?family_id=00000000-...0F0&since=1970-01-01T00:00:00.000Z&limit=200` → HTTP 200
+- `GET http://localhost:8080/v1/sync/pull?family_id=00000000-...0F0&since=0&limit=200` → HTTP 200
 - 响应 body 含 `watermark` + `changes.entries` 数组
 
 > **事实源**：`server/src/routes/sync.ts:174-196` GET /sync/pull handler · `server/src/services/syncPullService.ts:169-200` syncPull 函数
@@ -344,14 +364,14 @@ console.log('family_id:', fam?.d);
 #### §3.C.2 期望 Console
 
 ```
-[sync] ok · pushed=0 pulled=0 watermark=... (trigger=page-show)
+[sync] ok · pushed=0 conflicts=0 rejected=0 failed=0 pulled=0 watermark=... (trigger=page-show)
 [sync] skip page-show · debounced (page=home)
 ```
 
 或
 
 ```
-[sync] ok · pushed=0 pulled=0 watermark=... (trigger=page-show)
+[sync] ok · pushed=0 conflicts=0 rejected=0 failed=0 pulled=0 watermark=... (trigger=page-show)
 [sync] skip page-show · debounced (page=mine)
 ```
 
@@ -376,20 +396,36 @@ console.log('family_id:', fam?.d);
 
 #### §3.D.1 操作步骤
 
-1. 在微信开发者工具 Network 面板 → 切换为 **Offline**
+⚠️ **v1.1 关键修订（BUG-COSTRA-150-D 配套）**：
+
+**❌ 不要用 IDE Network 调试面板的 Offline**——那是 Chromium CDP 的 HTTP 请求拦截器，**不触发** `wx.onNetworkStatusChange`，会让断言 D 永远失败（Human 实测验证：监听 callback 在 IDE Network 面板 Offline/Online 切换时一次都不触发）。
+
+**✅ 必须用以下任一方式**：
+
+| 方式 | 操作 | 适用 |
+|---|---|---|
+| **A · 模拟器面板（推荐）** | 微信开发者工具**模拟器面板顶部**手机图标 → 网络类型切换为"无网络" | 最快 · 桌面验证 |
+| **B · 真机飞行模式** | 微信开发者工具"预览/真机调试"→ 真机 → 开飞行模式 | 最接近真实用户场景 |
+| **C · 停 dev server** | `Ctrl+C` 杀掉 `npm run dev` 终端 · 等价 ECONNREFUSED | 不验 network-recover · 仅验 outbox 入队 + push 失败重试 |
+
+**推荐方式 A**：
+
+1. 在微信开发者工具**模拟器面板**（左上角手机模型上方）→ 点"网络"或类似按钮 → 选择"**无网络**"
 2. 在小程序中记一笔：点击 `+` → 金额 `12.34` → 分类随意 → 保存
 3. 观察 Console：应有本地保存成功提示（outbox 入队）
-4. 切回 **Online**
+4. 切回**模拟器面板**网络 → 选择"WiFi"
 5. 等待 ~5 秒 · 观察 Console + Network
 
 #### §3.D.2 期望 Console
 
 ```
 [sync] network recover · trigger sync
-[sync] ok · pushed=1 pulled=0 watermark=... (trigger=network-recover)
+[sync] ok · pushed=1 conflicts=0 rejected=0 failed=0 pulled=0 watermark=... (trigger=network-recover)
 ```
 
-> **事实源**：`miniprogram/services/syncScheduler.ts:120-125` `wx.onNetworkStatusChange` → L122 `console.log('[sync] network recover · trigger sync')` → L123 `syncOnce('network-recover')`
+> **v1.1 修订**：R1.x.2 修复后 `[sync] ok` 日志包含 4 个计数字段（pushed/conflicts/rejected/failed）+ pulled · 修复前只有 pushed 字段且永远为 0（BUG-COSTRA-150-D §2.1 直接根因 A）
+>
+> **事实源**：`miniprogram/services/syncScheduler.ts:120-125` `wx.onNetworkStatusChange` → `console.log('[sync] network recover · trigger sync')` → `syncOnce('network-recover')` · L84 修复后日志模板
 
 #### §3.D.3 期望 Network
 
@@ -423,10 +459,11 @@ psql 'postgres://costra:costra_dev_pw@localhost:5432/costra' \
 1. 确认断言 D 已 PASS（DB 有 entry · watermark 已推进）
 2. 在 Console 执行验证当前 watermark：
    ```js
-   // watermark key 格式：sync:watermark:<family_id>
-   wx.getStorageSync('sync:watermark:00000000-0000-0000-0000-0000000000F0')
+   // watermark key 格式：watermark:<family_id>（注意：无 sync: 前缀）
+   // 事实源：miniprogram/services/db.ts:86-88 watermarkKey()
+   wx.getStorageSync('watermark:00000000-0000-0000-0000-0000000000F0')
    ```
-3. 记录返回的 envelope 中的 `d` 值（应为 ISO timestamp · 非 epoch）
+3. 记录返回的 envelope 中的 `d` 值（v1.2 后应为 BIGINT 整数 · 非 0）
 4. 在微信开发者工具中点击"编译"（冷启）
 5. 等 3 秒 · 在 Network 面板找 `GET /v1/sync/pull?...` 请求
 6. 检查请求 URL 中的 `since` 参数
@@ -435,15 +472,20 @@ psql 'postgres://costra:costra_dev_pw@localhost:5432/costra' \
 
 冷启后 Console 出现：
 ```
-[sync] ok · pushed=0 pulled=0 watermark=2026-05-22T...Z (trigger=launch)
+[sync] ok · pushed=0 conflicts=0 rejected=0 failed=0 pulled=0 watermark=N (trigger=launch)
 ```
 
-> **pulled=0 是关键**：因为 since 是上次 watermark · server 只返 updated_at > watermark 的行 · 无新行则 entries=[] · pulled=0
+> **pulled=0 是关键**：因为 since 是上次 watermark · server 只返 change_seq > since 的行 · 无新行则 entries=[] · pulled=0
+>
+> **v1.3 修订（BUG-COSTRA-154 v1.2 升级）**：watermark 字段是 **BIGINT 整数**（如 `watermark=12347`）· 不再是 ISO 字符串。
+> v1.0 是毫秒 ISO（`.921Z`）· v1.1 是微秒 ISO（`.921137Z`）· v1.2 直接整数（`12347`）· 完全消除时钟精度依赖。
+> 事实源协议 §6.3 v1.2 BIGINT change_seq。
 
 #### §3.E.3 期望 Network
 
-- `GET /v1/sync/pull?family_id=00000000-...0F0&since=2026-05-22T...Z&limit=200`
-- **`since` 参数 ≠ `1970-01-01T00:00:00.000Z`**（即不是全量拉取）
+- `GET /v1/sync/pull?family_id=00000000-...0F0&since=N&limit=200`（N 为非零整数）
+- **`since` 参数 ≠ `0`**（即不是全量拉取）
+- v1.3：`since` 必须是整数 · URL 形如 `since=12345`（非 ISO 字符串）
 
 > **事实源**：`miniprogram/services/sync.ts:47` `const since = await getWatermark(familyId)` · `miniprogram/services/db.ts:267-268` `getWatermark` 从 storage 读取 · 默认 epoch · `miniprogram/services/db.ts:271-273` `setWatermark` 写入 storage · `miniprogram/services/sync.ts:63` `await setWatermark(familyId, resp.watermark)` · `server/src/services/syncPullService.ts:186-188` watermark 推进逻辑
 
@@ -461,8 +503,11 @@ psql 'postgres://costra:costra_dev_pw@localhost:5432/costra' \
 
 #### §3.E.5 PASS / FAIL 判定
 
-- **PASS**：冷启后 Network 请求 `since=` 参数为非 epoch 的 ISO timestamp + Console `pulled=0`
-- **FAIL**：`since=1970-01-01T00:00:00.000Z`（watermark 未持久化 · 全量重拉）· 或 watermark key 不存在
+- **PASS**：冷启后 Network 请求 `since=` 参数为非零正整数 + Console `pulled=0` + watermark 类型为整数（v1.2）
+- **FAIL（场景 1）**：`since=0`（watermark 未持久化 · 全量重拉）· 或 watermark key 不存在
+- **FAIL（场景 2）**：`pulled` 持续 ≥ 1 不归零（同一条 entry 重传 · 修复未生效）
+- **FAIL（场景 3）**：watermark 仍是 ISO 字符串（如 `2026-05-22T...Z`）· 说明 server 未走 v1.2 · 或 client storage 未触发 legacy 重置
+- **FAIL（场景 4）**：watermark 类型不是 number · 协议 v1.2 BIGINT 契约违规
 
 ---
 
@@ -531,7 +576,7 @@ psql 'postgres://costra:costra_dev_pw@localhost:5432/costra' \
 **根因**：`setWatermark` 未写入 · 或 storage key 不对
 
 **排查**：
-1. Console 执行 `wx.getStorageSync('sync:watermark:00000000-0000-0000-0000-0000000000F0')` 检查值
+1. Console 执行 `wx.getStorageSync('watermark:00000000-0000-0000-0000-0000000000F0')` 检查值（**注意：无 `sync:` 前缀** · 事实源 `db.ts:86-88`）
 2. 如果返回空 → setWatermark 未被调用 · 可能 syncPull 返回了非 200
 3. 如果返回裸字符串 → envelope 被破坏 · 同 Q2 的 envelope 问题
 4. db.ts:267-268 `getWatermark` 默认返回 epoch `'1970-01-01T00:00:00.000Z'`

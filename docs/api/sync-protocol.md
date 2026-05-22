@@ -317,9 +317,37 @@ if has_more: retry pull immediately
 
 ### 6.3 水位线 `watermark`
 
-- 定义：服务端返回本批次数据中最大的 `updated_at`
-- 单调性：服务端保证同一 family 的 `updated_at` 不回退（所有写操作用 `NOW()`）
-- 客户端下次传 `since = watermark`；**不得自行推进**
+**v1.2 升级（2026-05-22 BUG-COSTRA-154 选项 B 彻底修复）**：watermark 从 ISO 时间戳改为 BIGINT change_seq。
+
+- **类型**：`integer`（int64 · BIGINT change_seq）· 0 表示首次全量拉取
+- **来源**：服务端 `entries.change_seq` 列（PG SEQUENCE `entries_change_seq` 严格单调）
+- **定义**：服务端返回本批次数据中最大的 `change_seq`（rows 已 ORDER BY ASC · 末位即最大）
+- **单调性**：PG SEQUENCE 保证严格单调递增 · 不依赖时钟 · 不受 NTP 回拨 / 主从切换影响
+- **客户端规则**：下次 pull 传 `since = watermark`（数字）· **不得自行推进**
+
+#### v1.2 设计动机（彻底消除 v1.1 残余风险）
+
+| 历史风险（v1.0/v1.1） | v1.2 是否解决 |
+|---|---|
+| ① 同微秒并发漏拉（`now()` 在同一 query 多次调用返回相同微秒） | ✅ 完全解决（sequence 原子分配 · 不会撞） |
+| ② NTP 时钟回拨破坏 `updated_at` 单调 | ✅ 完全解决（不依赖时钟） |
+| ③ PG 主从切换导致 `updated_at` 倒退 | ✅ 完全解决（sequence 跨主从复制安全） |
+
+#### v1.2 实现铁律
+
+- **Server 端**：
+  - migration `0006_entries_change_seq.sql` 加 `change_seq BIGINT NOT NULL DEFAULT nextval('entries_change_seq')` 列
+  - INSERT 走列 DEFAULT · UPDATE/softDelete 必须显式 `SET change_seq = nextval('entries_change_seq')`
+  - SQL `WHERE change_seq > $since ORDER BY change_seq ASC`（不再用 `updated_at` 比较）
+- **Client 端**：
+  - `getWatermark/setWatermark` 类型签名 `Promise<number>` / `(_, w: number)`
+  - 默认值 `0`（不再 ISO epoch）
+  - 检测 storage 残留 ISO 字符串时自动重置为 0（一次性全量重拉）
+- **Wire 字段**：
+  - `SyncPullResponse.watermark`: integer（替代 v1.0/v1.1 的 string）
+  - `SyncPullResponse.changes.entries[].change_seq`: integer 新增
+  - `SyncPullResponse.changes.entries[].updated_at`: 保留毫秒 ISO（仅展示语义 · 不再要求微秒精度）
+- **背景**：详见 `qa/defects/2026-05-22-COSTRA-154-watermark-microsecond-precision.md` §11 v1.2 升级声明
 
 ---
 

@@ -161,7 +161,7 @@
   1. 拿 family_id（Console：`wx.getStorageSync('__costra_family_id_v1')` 或 §0.4.6 seed 输出值）
   2. 模拟"换设备 / 重装小程序"场景 · 清 watermark + entry 索引：
      ```js
-     wx.removeStorageSync('sync:watermark:<family_id>')  // 替换实际 family_id
+     wx.removeStorageSync('watermark:<family_id>')  // 替换实际 family_id · 注意：无 sync: 前缀（事实源 db.ts:86-88）
      wx.removeStorageSync('entry:__index')
      ```
   3. **手动触发 pull**：Console 执行：
