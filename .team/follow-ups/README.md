@@ -56,6 +56,7 @@
 | **🆕 QA 实测发现（族 H）** | ~~BUG-105-D1-LEDGER-ID-DEFAULT~~ | ~~🔴 P0~~ → **closed** | ~~COSTRA-105 R1.x.1~~ | **closed @ commit 33dbdea** |
 | **🆕 QA 实测发现（族 H）** | ~~BUG-156-SYNC-PUSH-PAYLOAD-NO-UUID-VALIDATION~~ | ~~🔴 P0~~ → **closed** | ~~COSTRA-105 R1.x.2~~ | **closed @ commit db488b9** |
 | **🆕 QA 实测发现（族 H）** | FU-105-DEV-CONSOLE-HOOK | P3 | Sprint-3 头部 miniapp-dev（合 COSTRA-150 顺带 / 或独立小卡）| open |
+| **🆕 Orchestrator 自检** | **FU-ORCH-FACT-CHECK-DISCIPLINE** | **P1** | **Sprint-3 末 Retro 议题** | **open**（2026-05-22 · Orchestrator 给 Human 写实测手册时凭印象写命令导致 3 处事实错误：① healthz 路径加了 /v1（实际根路径 · app.ts:69 注释明示）② DB 名错为 costra_dev（实际 costra · .env:12）③ families INSERT 模板缺 owner_id 列（实际有 · 0001_init.sql:32）· **D-025 AP-001 字符串代理判定反例第 1 次 Orchestrator 自身命中**（之前 158 第 1 次正向规避 · 154 第 1 次正向兑现 AP-003 · 此次 AP-001 反例命中需立强约束）· Human 反馈批评 → spawn qa-planner 装扮档归口产出严谨手册（commit `95a9a11` · 707 行 · 每条命令均标 Read 验证事实源）· Retro 候选议题：Orchestrator 给 Human 写「执行类文档」（实测手册 / SQL 模板 / 命令清单等）必须 ≥ N 文件 Read 后再写 · 不能凭装扮档过往交付的印象代理 · 候选立强约束：Orchestrator 写 Human 操作类文档前强制走 spawn 装扮档归口产出 · 而非 Orchestrator 直写）|
 
 > **2026-05-19 20:50 Sprint-3 启动批量整理**：
 > - COSTRA-154 R1 实装完成（commit `7e87bad` + R1.x.1 修订 commit `8eecd4c` · review-tech APPROVE 38/40）· FU-104-SYNC-PULL 闭合
