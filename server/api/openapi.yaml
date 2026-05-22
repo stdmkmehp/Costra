@@ -640,8 +640,10 @@ paths:
         - name: since
           in: query
           required: true
-          description: 上次同步水位（ISO-8601 UTC）；首次 1970-01-01T00:00:00.000Z
-          schema: { type: string, format: date-time }
+          description: |
+            上次同步水位（BIGINT change_seq · v1.2 升级）；首次拉取传 0
+            v1.0/v1.1 用 ISO-8601 时间戳 · 已废弃 · 详见 sync-protocol.md §6.3 v1.2
+          schema: { type: integer, minimum: 0 }
         - name: limit
           in: query
           schema: { type: integer, minimum: 1, maximum: 500, default: 200 }
@@ -1092,6 +1094,14 @@ components:
         updated_at: { type: string, format: date-time }
         deleted_at: { type: string, format: date-time, nullable: true }
         version: { type: integer }
+        change_seq:
+          type: integer
+          format: int64
+          description: |
+            同步引擎一致性水位（v1.2 新增 · BUG-COSTRA-154）
+            PG SEQUENCE entries_change_seq 严格单调递增 · 不依赖时钟
+            sync/pull 用此字段推进 watermark · client 不直接使用（仅作调试）
+            详见 sync-protocol.md §6.3 v1.2
         client_ref_id:
           type: string
           nullable: true
@@ -1171,9 +1181,12 @@ components:
       required: [watermark, has_more, changes]
       properties:
         watermark:
-          type: string
-          format: date-time
-          description: 本次返回数据的最大 updated_at，客户端下次作为 since
+          type: integer
+          format: int64
+          description: |
+            本次返回数据的最大 change_seq · 客户端下次作为 since
+            v1.2 升级（BUG-COSTRA-154）：从 ISO 时间戳改为 BIGINT change_seq
+            PG SEQUENCE 严格单调 · 不依赖时钟 · 详见 sync-protocol.md §6.3 v1.2
         has_more: { type: boolean }
         changes:
           type: object

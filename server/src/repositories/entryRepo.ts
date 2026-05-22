@@ -31,6 +31,15 @@ export interface EntryEntity {
   deletedAt: Date | null;
   version: number;
   clientRefId: string | null;
+  /**
+   * 同步引擎一致性水位（BUG-COSTRA-154 v1.2 升级 · 2026-05-22）
+   * - PG SEQUENCE entries_change_seq 严格单调递增 · 不依赖时钟
+   * - 每次 INSERT/UPDATE/softDelete 都分配新 seq
+   * - sync pull 增量协议用此字段 · updated_at 仅展示语义
+   * - JS Number 安全整数上限 2^53-1 ≈ 9 × 10^15 · MVP 永远跑不到
+   * - 真 PG BIGINT 通过 pg 驱动返 string · pg-mem 返 number · rowToEntity 用 Number() 统一
+   */
+  changeSeq: number;
 }
 
 interface EntryRow {
@@ -50,6 +59,7 @@ interface EntryRow {
   deleted_at: Date | null;
   version: number;
   client_ref_id: string | null;
+  change_seq: string | number; // BIGINT · 真 PG 返 string · pg-mem 返 number
 }
 
 function rowToEntity(r: EntryRow): EntryEntity {
@@ -70,6 +80,7 @@ function rowToEntity(r: EntryRow): EntryEntity {
     deletedAt: r.deleted_at,
     version: r.version,
     clientRefId: r.client_ref_id,
+    changeSeq: Number(r.change_seq), // 同 amount 范式 · 跨驱动统一为 number
   };
 }
 
@@ -99,6 +110,10 @@ export interface CreateEntryInput {
 /**
  * 创建 entry。
  * client_ref_id 有值时走 UNIQUE (ledger_id, client_ref_id) 约束防重。
+ *
+ * change_seq（BUG-COSTRA-154 v1.2）：
+ *   INSERT 不显式传 change_seq · 走列 DEFAULT nextval('entries_change_seq')
+ *   事实源：migration 0006_entries_change_seq.sql §6 ALTER COLUMN ... SET DEFAULT
  */
 export async function insertEntry(input: CreateEntryInput, client?: Runner): Promise<EntryEntity> {
   const id = newId();
@@ -109,7 +124,7 @@ export async function insertEntry(input: CreateEntryInput, client?: Runner): Pro
           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         RETURNING id, ledger_id, amount, currency, type, category_id,
                   account_id, to_account_id, note, occurred_at,
-                  created_by, created_at, updated_at, deleted_at, version, client_ref_id`,
+                  created_by, created_at, updated_at, deleted_at, version, client_ref_id, change_seq`,
     [
       id,
       input.ledgerId,
@@ -169,6 +184,10 @@ export async function updateEntryByVersion(
   }
 
   // 乐观锁 WHERE version = baseVersion + 触发器自动 updated_at + version+1
+  // change_seq（BUG-COSTRA-154 v1.2）：UPDATE 必须显式 SET change_seq = nextval
+  //   事实源：pg-mem 不支持 plpgsql trigger · 应用层显式 nextval 是真 PG 与 pg-mem 共同行为
+  //   migration 0006 已为 INSERT 加 DEFAULT nextval · 但 UPDATE 不会自动调用 DEFAULT
+  fields.push(`change_seq = nextval('entries_change_seq')`);
   values.push(entryId, baseVersion);
   const res = await runner.query(
     `UPDATE entries
@@ -176,7 +195,7 @@ export async function updateEntryByVersion(
       WHERE id = $${idx++} AND version = $${idx} AND deleted_at IS NULL
         RETURNING id, ledger_id, amount, currency, type, category_id,
                   account_id, to_account_id, note, occurred_at,
-                  created_by, created_at, updated_at, deleted_at, version, client_ref_id`,
+                  created_by, created_at, updated_at, deleted_at, version, client_ref_id, change_seq`,
     values,
   );
   return res.rows[0] ? rowToEntity(res.rows[0]) : null;
@@ -185,16 +204,20 @@ export async function updateEntryByVersion(
 /**
  * 软删除 entry（SET deleted_at = now() + version+1）。
  * 乐观锁 WHERE version = baseVersion。
+ *
+ * change_seq（BUG-COSTRA-154 v1.2）：软删走 UPDATE 路径 · 必须显式 SET change_seq
+ *   client 通过 sync pull 增量收到软删行（协议 §3.5 软删行为）· 必须能感知到 change_seq 推进
  */
 export async function softDeleteEntry(entryId: string, baseVersion: number, client?: Runner): Promise<EntryEntity | null> {
   const runner = client ?? exec();
   const res = await runner.query(
     `UPDATE entries
-        SET deleted_at = now()
+        SET deleted_at = now(),
+            change_seq = nextval('entries_change_seq')
       WHERE id = $1 AND version = $2 AND deleted_at IS NULL
         RETURNING id, ledger_id, amount, currency, type, category_id,
                   account_id, to_account_id, note, occurred_at,
-                  created_by, created_at, updated_at, deleted_at, version, client_ref_id`,
+                  created_by, created_at, updated_at, deleted_at, version, client_ref_id, change_seq`,
     [entryId, baseVersion],
   );
   return res.rows[0] ? rowToEntity(res.rows[0]) : null;
@@ -242,7 +265,7 @@ export async function findEntriesByLedger(
   const res = await runner.query(
     `SELECT id, ledger_id, amount, currency, type, category_id,
             account_id, to_account_id, note, occurred_at,
-            created_by, created_at, updated_at, deleted_at, version, client_ref_id
+            created_by, created_at, updated_at, deleted_at, version, client_ref_id, change_seq
        FROM entries
       WHERE ${where}
       ORDER BY updated_at DESC, id DESC
@@ -264,10 +287,16 @@ export async function findEntriesByLedger(
 /**
  * 增量拉取游标参数
  * ⚠️ entries 表无 family_id 列 · 必须 JOIN ledgers · 参 findById L272-273 范式
+ *
+ * BUG-COSTRA-154 v1.2 升级（2026-05-22 选项 B 彻底修复 · 协议 v1.2）：
+ *   since 类型从 string（微秒 ISO） 改为 number（BIGINT change_seq）
+ *   - PG SEQUENCE 严格单调递增 · 不依赖时钟 · 完全消除 §3.5 残余风险
+ *   - 字符串字典序 → 数字大小比较 · 语义更清晰
+ *   - 协议契约：sync-protocol.md §6.3 watermark 铁律（v1.2+）
  */
 export interface PullCursor {
-  /** since watermark · ISO 8601 UTC */
-  since: Date;
+  /** since watermark · BIGINT change_seq · 0 表示首次全量拉取（默认值） */
+  since: number;
   /** family_id · 必须先校验属于当前 user · service 层用 isUserInFamily */
   familyId: string;
   /** 单批次最多返回 · 默认 200 · 上限 500 */
@@ -277,17 +306,25 @@ export interface PullCursor {
 /**
  * 增量拉取 entries 含 family_id（JOIN ledgers · 不直接读 entries 表 family_id 列）
  * 用于 sync/pull 行返回 · 与 EntryEntity 区别：附加 familyId 字段
+ *
+ * BUG-COSTRA-154 v1.2 升级：
+ *   PullEntryRow 直接含 changeSeq（继承自 EntryEntity）· 不再需要 updatedAtIso 微秒精度字段
+ *   updated_at 在 wire 层用 e.updatedAt.toISOString()（毫秒精度足够展示）
  */
-export type PullEntryRow = EntryEntity & { familyId: string };
+export type PullEntryRow = EntryEntity & {
+  familyId: string;
+};
 
 /**
- * 增量拉取 entries（按 ledgers.family_id + entries.updated_at 推进 watermark）
+ * 增量拉取 entries（按 ledgers.family_id + entries.change_seq 推进 watermark）
  *
- * 行为约定：
- *   - JOIN ledgers · WHERE l.family_id = $1 AND e.updated_at > $2 · ORDER BY e.updated_at ASC, e.id ASC
+ * 行为约定（BUG-COSTRA-154 v1.2）：
+ *   - JOIN ledgers · WHERE l.family_id = $1 AND e.change_seq > $2 · ORDER BY e.change_seq ASC
  *   - **不过滤 deleted_at**（协议 §3.5：软删行仍需在 since 窗口内返回 · client 据此本地软删）
  *   - LIMIT $3 + 1（多取一行用于 has_more 判定 · 实际返 LIMIT 行）
- *   - 复合排序保证同 updated_at 多行的稳定顺序（避免分页跳行）
+ *   - change_seq 严格唯一 · ORDER BY 不需要 id 兜底（消除 v1.1 同微秒漏拉风险）
+ *   - 索引：idx_entries_ledger_change_seq (ledger_id, change_seq) · 但 family_id 在 ledgers
+ *     PG 优化器会用 ledgers.family_id 索引 + entries.idx_entries_ledger_change_seq join
  *
  * 返回：{ rows: PullEntryRow[]（EntryEntity + familyId）, hasMore: boolean }
  */
@@ -300,14 +337,14 @@ export async function findEntriesByFamilySince(
   const res = await runner.query(
     `SELECT e.id, e.ledger_id, l.family_id, e.amount, e.currency, e.type, e.category_id,
             e.account_id, e.to_account_id, e.note, e.occurred_at,
-            e.created_by, e.created_at, e.updated_at, e.deleted_at, e.version, e.client_ref_id
+            e.created_by, e.created_at, e.updated_at, e.deleted_at, e.version, e.client_ref_id, e.change_seq
        FROM entries e
        JOIN ledgers l ON l.id = e.ledger_id
       WHERE l.family_id = $1
-        AND e.updated_at > $2
-      ORDER BY e.updated_at ASC, e.id ASC
+        AND e.change_seq > $2
+      ORDER BY e.change_seq ASC
       LIMIT $3`,
-    [cursor.familyId, cursor.since.toISOString(), limitPlusOne],
+    [cursor.familyId, cursor.since, limitPlusOne],
   );
   const rows = res.rows.slice(0, cursor.limit).map((row): PullEntryRow => ({
     ...rowToEntity(row),
@@ -324,7 +361,7 @@ export async function findById(entryId: string, client?: Runner): Promise<EntryE
   const res = await runner.query(
     `SELECT e.id, e.ledger_id, e.amount, e.currency, e.type, e.category_id,
             e.account_id, e.to_account_id, e.note, e.occurred_at,
-            e.created_by, e.created_at, e.updated_at, e.deleted_at, e.version, e.client_ref_id
+            e.created_by, e.created_at, e.updated_at, e.deleted_at, e.version, e.client_ref_id, e.change_seq
        FROM entries e
        JOIN ledgers l ON l.id = e.ledger_id
        JOIN family_members fm ON fm.family_id = l.family_id AND fm.left_at IS NULL
@@ -343,7 +380,7 @@ export async function findByLedgerAndClientRefId(ledgerId: string, clientRefId: 
   const res = await runner.query(
     `SELECT id, ledger_id, amount, currency, type, category_id,
             account_id, to_account_id, note, occurred_at,
-            created_by, created_at, updated_at, deleted_at, version, client_ref_id
+            created_by, created_at, updated_at, deleted_at, version, client_ref_id, change_seq
        FROM entries
       WHERE ledger_id = $1 AND client_ref_id = $2 AND deleted_at IS NULL
       LIMIT 1`,

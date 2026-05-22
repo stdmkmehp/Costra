@@ -15,7 +15,7 @@
 import { beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { newDb, type IMemoryDb } from 'pg-mem';
+import { newDb, DataType, type IMemoryDb } from 'pg-mem';
 import RedisMock from 'ioredis-mock';
 import type Redis from 'ioredis';
 import { setPoolForTests, closePool } from '../src/db/pool.js';
@@ -129,6 +129,11 @@ function applyMigrations(db: IMemoryDb): void {
       version         INTEGER NOT NULL DEFAULT 1,
       client_ref_id   TEXT
     );
+    -- BUG-COSTRA-154 v1.2 升级（2026-05-22）· migration 0006_entries_change_seq.sql
+    -- pg-mem 支持 CREATE SEQUENCE / nextval / ALTER TABLE ... DEFAULT nextval
+    -- 不支持 trigger · 应用层 entryRepo 显式 SET change_seq = nextval(...) for UPDATE
+    CREATE SEQUENCE IF NOT EXISTS entries_change_seq AS BIGINT START WITH 1 INCREMENT BY 1 NO CYCLE;
+    ALTER TABLE entries ADD COLUMN change_seq BIGINT NOT NULL DEFAULT nextval('entries_change_seq');
     CREATE TABLE idempotency_keys (
       key             TEXT NOT NULL,
       endpoint        TEXT NOT NULL,
@@ -154,10 +159,44 @@ function applyMigrations(db: IMemoryDb): void {
 
 function setupPgMem(): void {
   memDb = newDb({ autoCreateForeignKeyIndices: true });
+  registerPgMemFunctions(memDb);
   applyMigrations(memDb);
   const { Pool } = memDb.adapters.createPg();
   const pool = new Pool();
   setPoolForTests(pool);
+}
+
+/**
+ * 注入 pg-mem 默认不支持的 PostgreSQL 函数（mock 实现）
+ *
+ * 历史修订：
+ *   - R1.x.2（2026-05-22 BUG-154 v1.1）：注册 timezone() / to_char() 输出微秒精度 ISO
+ *   - R1.x.2（2026-05-22 BUG-154 v1.2）：移除 to_char/timezone（不再用 ISO 微秒）·
+ *     新增 setval() mock（pg-mem 不原生支持 · 但 nextval/CREATE SEQUENCE 都原生支持）
+ *
+ * 当前协议（v1.2）：watermark 用 BIGINT change_seq · 不再用 ISO 时间戳
+ *   pg-mem 实测能力：
+ *     ✅ CREATE SEQUENCE / nextval（原生）
+ *     ✅ ALTER TABLE ADD COLUMN ... DEFAULT nextval（原生）
+ *     ❌ setval（需 mock · 仅 return val 不真改 sequence 状态 · 测试场景够用）
+ *     ❌ CREATE TRIGGER / plpgsql（不支持 · 应用层显式 nextval 替代）
+ */
+function registerPgMemFunctions(db: IMemoryDb): void {
+  // setval('seq_name', val) → BIGINT
+  // setval('seq_name', val, called_bool) → BIGINT
+  // pg-mem 不原生支持 · mock 仅 return val（不改 sequence 内部状态 · 但测试场景够用）
+  db.public.registerFunction({
+    name: 'setval',
+    args: [DataType.text, DataType.bigint],
+    returns: DataType.bigint,
+    implementation: (_seq: string, val: number): number => val,
+  });
+  db.public.registerFunction({
+    name: 'setval',
+    args: [DataType.text, DataType.bigint, DataType.bool],
+    returns: DataType.bigint,
+    implementation: (_seq: string, val: number, _called: boolean): number => val,
+  });
 }
 
 function resetPgMem(): void {
@@ -168,7 +207,6 @@ function resetPgMem(): void {
   }
 }
 
-// -----------------------------------------------------------------------------
 // 3. ioredis-mock
 // -----------------------------------------------------------------------------
 let redisMock: Redis | null = null;

@@ -77,7 +77,10 @@ const pullQuerySchema = {
   required: ['family_id', 'since'],
   properties: {
     family_id: { type: 'string', format: 'uuid' },
-    since: { type: 'string', format: 'date-time' },
+    // BUG-COSTRA-154 v1.2 升级：since 从 ISO date-time 字符串改为 BIGINT change_seq
+    //   0 表示首次全量拉取 · 上限 2^53-1（JS Number 安全整数）
+    //   事实源：docs/api/sync-protocol.md §6.3 v1.2
+    since: { type: 'integer', minimum: 0 },
     limit: { type: 'integer', minimum: 1, maximum: 500, default: 200 },
   },
 } as const;
@@ -170,24 +173,20 @@ export async function registerSyncRoutes(app: FastifyInstance): Promise<void> {
   const SYNC_PUSH_ENDPOINT = '/sync/push';
   const SYNC_PULL_ENDPOINT = '/sync/pull';
 
-  // GET /sync/pull（COSTRA-154 · 替代 stub 501）
-  app.get<{ Querystring: { family_id: string; since: string; limit?: number } }>(
+  // GET /sync/pull（COSTRA-154 · 替代 stub 501 · v1.2 watermark = BIGINT change_seq）
+  app.get<{ Querystring: { family_id: string; since: number; limit?: number } }>(
     SYNC_PULL_ENDPOINT,
     { schema: { querystring: pullQuerySchema } },
     async (req, reply) => {
       const userId = await parseUserIdFromRequest(req);
       const { family_id, since, limit = 200 } = req.query;
 
-      // since ISO 解析 · 容错（fastify schema 已校验 format · 但 Date 解析仍可能 NaN）
-      const sinceDate = new Date(since);
-      if (Number.isNaN(sinceDate.getTime())) {
-        throw new AppError(ErrorCode.INVALID_ARGUMENT, { message: 'since not a valid ISO datetime' });
-      }
-
+      // BUG-COSTRA-154 v1.2 升级：since 是 BIGINT change_seq · fastify schema 已校验 integer + minimum=0
+      //   不需要额外解析 · 直接透传到 service 层
       const result = await syncPull({
         userId,
         familyId: family_id,
-        since: sinceDate,
+        since,
         limit,
       });
 

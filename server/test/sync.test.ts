@@ -262,7 +262,7 @@ describe('GET /sync/pull', () => {
   it('T7 pull 端点存在且需鉴权 → 401（替代原 stub 501 测 · COSTRA-154 实装后真实 handler 需 JWT）', async () => {
     const res = await app.inject({
       method: 'GET',
-      url: `/v1/sync/pull?family_id=00000000-0000-0000-0000-0000000000f1&since=${encodeURIComponent('1970-01-01T00:00:00.000Z')}`,
+      url: `/v1/sync/pull?family_id=00000000-0000-0000-0000-0000000000f1&since=0`,
     });
     expect(res.statusCode).toBe(401);
   });
