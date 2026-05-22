@@ -1,23 +1,24 @@
 /**
  * Costra · Server · entries 路由
  *
- * 卡号：COSTRA-104 · 事实源：server/api/openapi.yaml paths /entries | /entries/{entry_id}
+ * 卡号：COSTRA-104 / COSTRA-152 / COSTRA-153
+ * 事实源：server/api/openapi.yaml paths /entries | /entries/{entry_id}
  *
  * 契约约束：
  *   - POST   /entries       body: EntryCreate  → 201 Entry
  *   - GET    /entries       query: ledger_id/limit/cursor/... → 200 { entries, next_cursor }
  *   - GET    /entries/{id}  → 200 Entry | 404 NotFound
- *   - PATCH  /entries/{id}  stub 501 NOT_IMPLEMENTED（切出去 3 件套铁律）
- *   - DELETE /entries/{id}  stub 501 NOT_IMPLEMENTED（切出去 3 件套铁律）
+ *   - PATCH  /entries/{id}  body: EntryUpdate  → 200 Entry | 409 Conflict（COSTRA-152 R1）
+ *   - DELETE /entries/{id}  query: version=N    → 204 No Content | 409 Conflict（COSTRA-153 R1）
  *
  * 路由层只做 "HTTP 参数解析 / 响应装配"，业务编排统一交给 entryService。
  */
 
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { AppError } from '../errors/AppError.js';
 import { ErrorCode } from '../errors/ErrorCode.js';
 import { createEntryService } from '../services/entryService.js';
-import type { CreateEntryPayload } from '../services/entryService.js';
+import type { CreateEntryPayload, UpdateEntryPayload } from '../services/entryService.js';
 
 interface JwtPayload { sub: string; iat: number; exp: number }
 
@@ -64,6 +65,28 @@ const listEntriesQuerySchema = {
     to: { type: 'string', format: 'date-time' },
     cursor: { type: 'string' },
     limit: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+  },
+} as const;
+
+const entryIdParamsSchema = {
+  type: 'object',
+  required: ['entry_id'],
+  properties: {
+    entry_id: { type: 'string', format: 'uuid' },
+  },
+} as const;
+
+// COSTRA-152: PATCH /entries/{entry_id} body schema（参 EntryUpdate · required: ['version']）
+const patchEntryBodySchema = {
+  type: 'object',
+  required: ['version'],
+  additionalProperties: false,
+  properties: {
+    amount: { type: 'integer', minimum: 1 },
+    category_id: { type: 'string', format: 'uuid' },
+    note: { type: 'string', maxLength: 200 },
+    occurred_at: { type: 'string', format: 'date-time' },
+    version: { type: 'integer', minimum: 1 },
   },
 } as const;
 
@@ -162,18 +185,69 @@ export async function registerEntriesRoutes(app: FastifyInstance): Promise<void>
     },
   );
 
-  // PATCH /entries/{entry_id} stub（切出去 3 件套铁律）
-  app.patch<{ Params: { entry_id: string } }>(
-    '/entries/:entry_id',
-    async (_req, reply) => {
-      reply.code(501).send({
+  // PATCH /entries/{entry_id}（COSTRA-152 R1 · 替代 stub 501）
+  const PATCH_ENTRIES_ENDPOINT = '/entries/:entry_id';
+
+  async function handlePatchEntry(
+    req: FastifyRequest<{ Params: { entry_id: string }; Body: { version: number; amount?: number; category_id?: string; note?: string; occurred_at?: string } }>,
+    reply: FastifyReply,
+  ) {
+    const userId = await parseUserId(req);
+    const { entry_id: entryId } = req.params;
+    const { version: baseVersion, ...payload } = req.body;
+
+    const result = await entryService.updateWithVersion(userId, entryId, payload as UpdateEntryPayload, baseVersion);
+
+    if (result.status === 'ok') {
+      const entry = await entryService.findById(userId, result.serverId);
+      reply.code(200).send({
+        id: entry.id,
+        ledger_id: entry.ledgerId,
+        amount: entry.amount,
+        currency: entry.currency,
+        type: entry.type,
+        category_id: entry.categoryId,
+        account_id: entry.accountId,
+        to_account_id: entry.toAccountId,
+        note: entry.note,
+        occurred_at: entry.occurredAt.toISOString(),
+        created_by: entry.createdBy,
+        created_at: entry.createdAt.toISOString(),
+        updated_at: entry.updatedAt.toISOString(),
+        deleted_at: entry.deletedAt?.toISOString() ?? null,
+        version: entry.version,
+        client_ref_id: entry.clientRefId,
+      });
+      return;
+    }
+    if (result.status === 'conflict') {
+      throw new AppError(ErrorCode.VERSION_CONFLICT, {
+        message: 'version conflict',
+        details: { server_version: result.serverVersion },
+      });
+    }
+    throw new AppError(ErrorCode.INVALID_ARGUMENT, { message: result.error.message });
+  }
+
+  app.patch<{ Params: { entry_id: string }; Body: { version: number; amount?: number; category_id?: string; note?: string; occurred_at?: string } }>(
+    PATCH_ENTRIES_ENDPOINT,
+    { schema: { params: entryIdParamsSchema, body: patchEntryBodySchema } },
+    handlePatchEntry,
+  );
+
+  // POST /entries/{entry_id}（K3 method-override · COSTRA-152 §LINKAGE 决策 1）
+  app.post<{ Params: { entry_id: string }; Body: { version: number; amount?: number; category_id?: string; note?: string; occurred_at?: string } }>(
+    PATCH_ENTRIES_ENDPOINT,
+    { schema: { params: entryIdParamsSchema, body: patchEntryBodySchema } },
+    async (req, reply) => {
+      const override = req.headers['x-http-method-override'];
+      if (typeof override === 'string' && override.toUpperCase() === 'PATCH') {
+        return handlePatchEntry(req, reply);
+      }
+      reply.code(405).send({
         error: {
-          code: 'NOT_IMPLEMENTED',
-          message: 'PATCH /entries/{id} deferred to COSTRA-152',
-          details: {
-            deferred_card: 'COSTRA-152',
-            followup_id: 'FU-104-ENTRIES-PATCH',
-          },
+          code: 'METHOD_NOT_ALLOWED',
+          message: 'POST /entries/{id} requires X-HTTP-Method-Override: PATCH',
         },
       });
     },

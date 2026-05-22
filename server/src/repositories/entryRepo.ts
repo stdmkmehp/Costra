@@ -183,10 +183,12 @@ export async function updateEntryByVersion(
     return found;
   }
 
-  // 乐观锁 WHERE version = baseVersion + 触发器自动 updated_at + version+1
+  // 乐观锁 WHERE version = baseVersion + 触发器自动 updated_at
+  // version+1 必须应用层显式 SET（pg-mem 不支持 plpgsql trigger · 真 PG 同行为）
   // change_seq（BUG-COSTRA-154 v1.2）：UPDATE 必须显式 SET change_seq = nextval
   //   事实源：pg-mem 不支持 plpgsql trigger · 应用层显式 nextval 是真 PG 与 pg-mem 共同行为
   //   migration 0006 已为 INSERT 加 DEFAULT nextval · 但 UPDATE 不会自动调用 DEFAULT
+  fields.push(`version = version + 1`);
   fields.push(`change_seq = nextval('entries_change_seq')`);
   values.push(entryId, baseVersion);
   const res = await runner.query(
@@ -213,6 +215,7 @@ export async function softDeleteEntry(entryId: string, baseVersion: number, clie
   const res = await runner.query(
     `UPDATE entries
         SET deleted_at = now(),
+            version = version + 1,
             change_seq = nextval('entries_change_seq')
       WHERE id = $1 AND version = $2 AND deleted_at IS NULL
         RETURNING id, ledger_id, amount, currency, type, category_id,
@@ -354,10 +357,43 @@ export async function findEntriesByFamilySince(
 }
 
 /**
- * 按 id 查询 entry（含权限校验：ledger.family_id 属于 user）。
+ * 按 id 查询 entry（含权限校验：ledger.family_id 属于 user + userId 过滤防越权）。
+ *
+ * COSTRA-152 R1 跨 family 守门补丁（COSTRA-104 R1 漏 · 153 R2 卡审捕获）：
+ *   - entryRepo.findById 加 userId 参数 · JOIN family_members 增加 fm.user_id = $2 过滤
+ *   - 返 null 时即跨 family / 不存在 · 调用方统一抛 NOT_FOUND
+ *   - 影响 GET /entries/{id} + PATCH + DELETE 三处共享守门
  */
-export async function findById(entryId: string, client?: Runner): Promise<EntryEntity | null> {
-  const runner = client ?? exec();
+export async function findById(entryId: string, userIdOrClient?: string | Runner, client?: Runner): Promise<EntryEntity | null> {
+  // 兼容旧调用：findById(entryId, client?) → userId undefined · 不过滤 userId（仅内部 repo 调用）
+  let userId: string | undefined;
+  let runner: Runner;
+  if (typeof userIdOrClient === 'string') {
+    userId = userIdOrClient;
+    runner = client ?? exec();
+  } else {
+    userId = undefined;
+    runner = userIdOrClient ?? exec();
+  }
+
+  if (userId) {
+    const res = await runner.query(
+      `SELECT e.id, e.ledger_id, e.amount, e.currency, e.type, e.category_id,
+              e.account_id, e.to_account_id, e.note, e.occurred_at,
+              e.created_by, e.created_at, e.updated_at, e.deleted_at, e.version, e.client_ref_id, e.change_seq
+         FROM entries e
+         JOIN ledgers l ON l.id = e.ledger_id
+         JOIN family_members fm ON fm.family_id = l.family_id
+                                AND fm.user_id = $2
+                                AND fm.left_at IS NULL
+        WHERE e.id = $1 AND e.deleted_at IS NULL
+        LIMIT 1`,
+      [entryId, userId],
+    );
+    return res.rows[0] ? rowToEntity(res.rows[0]) : null;
+  }
+
+  // 无 userId 时走原始路径（内部 repo 调用 · 如 updateWithVersion/softDelete 冲突回查）
   const res = await runner.query(
     `SELECT e.id, e.ledger_id, e.amount, e.currency, e.type, e.category_id,
             e.account_id, e.to_account_id, e.note, e.occurred_at,

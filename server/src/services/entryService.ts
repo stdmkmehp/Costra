@@ -225,7 +225,7 @@ export function createEntryService(_deps: EntryServiceDeps = {}): EntryService {
   }
 
   async function findById(userId: string, entryId: string): Promise<EntryEntity> {
-    const entry = await entryRepo.findById(entryId);
+    const entry = await entryRepo.findById(entryId, userId);
     if (!entry) {
       throw new AppError(ErrorCode.NOT_FOUND, { message: `entry ${entryId} not found`, details: { entry_id: entryId } });
     }

@@ -557,14 +557,10 @@ paths:
               schema: { $ref: '#/components/schemas/Entry' }
         '404': { $ref: '#/components/responses/NotFound' }
     patch:
-      x-deferred:
-        owner_card: COSTRA-152
-        followup_id: FU-104-ENTRIES-PATCH
-        deferred_at: 2026-05-11
-        deferred_reason: COSTRA-104 范围切分（Q1 选项 b · 推荐方案 C 切出去 3 件套铁律）
-        sprint_target: sprint-3
       tags: [entries]
       summary: 修改流水（需带 version）
+      security:
+        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -576,6 +572,9 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Entry' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
     delete:
       x-deferred:

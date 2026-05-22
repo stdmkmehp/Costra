@@ -1,15 +1,15 @@
 /**
  * Costra · Server · entries 路由单测
  *
- * 卡号：COSTRA-104 · 事实源：dispatch §2.3 验证锚点 T7-T12
+ * 卡号：COSTRA-104 / COSTRA-152 / COSTRA-153
+ * 事实源：dispatch §2.3 验证锚点 T7-T12 + T-CROSS-FAMILY
  *
  * 覆盖：
  *   T7   POST /entries ok（直接创建 entry）
  *   T8   GET  /entries 游标分页（25 条 → next_cursor）
- *   T9   PATCH /entries/{id} stub（501 + deferred_card=COSTRA-152）
- *   T10  DELETE /entries/{id} stub（501 + deferred_card=COSTRA-153）
  *   T11  GET  /entries/{id} 鉴权失败（无 JWT → 401）
  *   T12  POST /entries invalid body（400 INVALID_ARGUMENT）
+ *   T-CROSS-FAMILY  GET /entries/{id} 跨 family 越权 → 404（守门补丁验证）
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -151,19 +151,48 @@ for (let i = 0; i < 25; i++) {
   });
 });
 
-describe('PATCH /entries/{entry_id} stub', () => {
-  it('T9 stub 返回 501 + deferred_card=COSTRA-152', async () => {
-    const res = await app.inject({
-      method: 'PATCH',
-      url: '/v1/entries/00000000-0000-0000-0000-0000000000ff',
+describe('CROSS-FAMILY guard', () => {
+  it('T-CROSS-FAMILY user A 查 user B family 的 entry → 404', async () => {
+    // 1. 用 user A（当前登录用户）创建 entry
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/v1/entries',
       headers: authHeader(),
-      payload: { amount: 999 },
+      payload: {
+        ledger_id: '00000000-0000-0000-0000-000000000001',
+        amount: 3000,
+        type: 'expense',
+        occurred_at: '2026-05-11T12:00:00.000Z',
+      },
     });
-    expect(res.statusCode).toBe(501);
-    const body = res.json() as { error: { code: string; details?: { deferred_card?: string; followup_id?: string } } };
-    expect(body.error.code).toBe('NOT_IMPLEMENTED');
-    expect(body.error.details?.deferred_card).toBe('COSTRA-152');
-    expect(body.error.details?.followup_id).toBe('FU-104-ENTRIES-PATCH');
+    expect(createRes.statusCode).toBe(201);
+    const entryId = (createRes.json() as Record<string, unknown>).id as string;
+
+    // 2. 登录 user B（不同 openid → 不同 user）
+    setWxFetchForTests(
+      (async () =>
+        new Response(
+          JSON.stringify({ openid: 'openid-user-b-cross-family', session_key: 'sk-b' }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )) as unknown as typeof fetch,
+    );
+    const loginB = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/wx-login',
+      payload: { code: 'user-b' },
+      headers: { 'content-type': 'application/json' },
+    });
+    const tokenB = (loginB.json() as { access_token: string }).access_token;
+
+    // 3. user B 尝试 GET user A 的 entry → 应 404（跨 family 守门生效）
+    const getRes = await app.inject({
+      method: 'GET',
+      url: `/v1/entries/${entryId}`,
+      headers: { authorization: `Bearer ${tokenB}` },
+    });
+    expect(getRes.statusCode).toBe(404);
+    const body = getRes.json() as { code: string };
+    expect(body.code).toBe('NOT_FOUND');
   });
 });
 

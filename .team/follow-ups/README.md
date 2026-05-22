@@ -33,8 +33,8 @@
 | **🆕 Sprint-3 末 Retro · 联合实测立意兑现** | **FU-JOINT-SMOKE-LAST-GATE-PARADIGM** | **P1** | **Sprint-3 末 Retro 议题** | **open**（2026-05-22 · 触发：COSTRA-154+150 联合 staging 实测捕获 P0 outbox 死锁 + P1 watermark 精度 · 单测 + curl + server 单测 30+ 全绿都漏不出 · D-024 §2.2 C1 立意首次得到协议升级级别证据 · Sprint-3 末 Retro 议入：联合实测 = 真闭环最后一道闸新范式 + R1.x.2 协议破坏性升级范式（vs 以往 R1.x.1 review-tech 修订型）· 候选规约：T2 卡 staging 实测前禁止 approve · 联合实测前禁止 R1 close · 配套 SOP-REVIEW v2.x §11 强化）|
 | **Sprint-3 同步协议核心** | FU-104-SYNC-PULL | **P0** | COSTRA-154 | **R1.x.2-fixed-pending-verify**（**[预闭合纠正 2026-05-22]** R1+R1.x.1 commit `7e87bad`+`8eecd4c` APPROVE 38/40 → 联合 staging 实测发现 P1 watermark 精度截断 BUG → R1.x.2 v1.2 协议升级 commit `31fb893`+`2b28210`+`261c280` · 等 Human 再次联合实测 + 双卡 approve · FU 不真 closed 直至 Human approve）|
 | **Sprint-3 同步协议核心** | FU-103-CLIENT-SYNC-SCHEDULER | P1 | COSTRA-150 | **R1.x.2-fixed-pending-verify**（**[预闭合纠正 2026-05-22]** R1+R1.x.1 commit `ee97a7a`+`5ac8153` APPROVE 38/40 → 联合 staging 实测发现 P0 outbox 死锁 BUG-D（150-D · sync.ts catch 静默吞错 + drainBatch recover 仅捞 retries>0 + ackResults 字段错配）→ R1.x.2 commit `2b28210`（双修复 + v1.2 watermark 适配）· 等 Human 再次联合实测 + 双卡 approve · FU 不真 closed 直至 Human approve）|
-| **Sprint-3 同步协议核心** | FU-104-ENTRIES-PATCH | P1 | COSTRA-152 | **dispatch-ready @ 2026-05-19**（dispatch 已落档 · 等 Human `start:COSTRA-152` · 与 153 联合 approve 优选）|
-| **Sprint-3 同步协议核心** | FU-104-ENTRIES-DELETE | P1 | COSTRA-153 | **dispatch-ready @ 2026-05-19**（dispatch 已落档 · 等 Human `start:COSTRA-153` · K3/K1 决策延续 152 结果）|
+| **Sprint-3 同步协议核心** | FU-104-ENTRIES-PATCH | ~~P1~~ → **closed** | ~~COSTRA-152~~ | **closed @ COSTRA-152 R1**（PATCH /entries/{id} 实装 + cross-family guard fix + K3 method-override）|
+| **Sprint-3 同步协议核心** | FU-104-ENTRIES-DELETE | ~~P1~~ → **closed** | ~~COSTRA-153~~ | **closed @ COSTRA-153 R1**（DELETE /entries/{id} 软删 + query ?version=N）|
 | **Sprint-3 同步协议核心** | FU-103-CONFLICT-MERGE-UI | P2 | COSTRA-151 | **dispatch-ready @ 2026-05-19**（Sprint-3 中后段 · 154+150 CLOSED 后启）|
 | **Epic-A 用户资料**（→ COSTRA-157 合卡）| FU-001 | P2 | COSTRA-157 | scoped |
 | **Epic-A 用户资料**（→ COSTRA-157 合卡）| FU-118-2 | P2 | COSTRA-157 | scoped |
@@ -53,7 +53,8 @@
 | **DevOps 基建** | **FU-DEV-MOCKLOGIN-RUNTIME-TOGGLE** | **P3** | **COSTRA-162** | **dispatch-ready @ 2026-05-19**（dev `mockLogin` runtime toggle · ~30min 单 commit）|
 | **DB 治理** | FU-DB-OPS-AUDIT | P3 | DAU>100 触发 | open |
 | **协议 / 规约残留** | FU-COMMON-MINIAPP-PATCH-LIMIT | ~~P2~~ → **closed** | ~~COSTRA-158~~ | **closed @ COSTRA-158** |
-| **协议 / 规约残留** | **FU-K3-TO-K1-UPGRADE** | **P2** | **COSTRA-152** | scoped（dispatch §1.3 阶段决策 · COSTRA-152 Card-Review 阶段拍板）|
+| **协议 / 规约残留** | **FU-K3-TO-K1-UPGRADE** | **P2** | **COSTRA-152** | scoped（dispatch §1.3 阶段决策 · COSTRA-152 Card-Review 阶段拍板 · R1 K3 已落地 · Sprint-4 评估 K1）|
+| **🆕 跨 family 守门补丁** | **FU-CROSS-FAMILY-GUARD-COSTRA-104** | ~~P0~~ → **closed** | **COSTRA-152 R1** | **closed @ COSTRA-152 R1**（entryRepo.findById +userId 参数 + entryService.findById 传入 userId · GET/PATCH/DELETE 三处共享守门 · review-tech 36/40 漏检反思议入 Sprint-3 末 Retro）|
 | **QA 自动化** | FU-105-AUTOMATION-FULL-COVERAGE | P2 | **COSTRA-155** | **dispatch-ready @ 2026-05-19**（154+150+152+153 全 CLOSED 后启 · 双装扮档 qa-planner+miniapp-dev）|
 | **QA 自动化** | FU-156-OUTBOX-FLAKY | P2 | **COSTRA-159** | **dispatch-ready @ 2026-05-19**（与 150 同链路顺手 · ~30min 单 commit）|
 | **外部触发** | FU-115-2 | O 观察 | Human ICP 下证日触发 | open |
@@ -124,10 +125,10 @@
 - **协议事实源**：`server/api/openapi.yaml` paths /entries/{entry_id} PATCH 完整定义 + EntryUpdate schema
 - **依赖**：COSTRA-104 R1 已实装 entryService（findById/optimisticUpdate 工具方法可复用）
 - **PRD 锚点**：用户记一笔后修改场景 · 高频
-- **阻断级别**：P1（不阻 MVP · 但用户体验缺口）
-- **认领建议**：Sprint-3 头部（COSTRA-152 · 估 3 点）
-- **状态**：`open`
-- **owner_card**：COSTRA-152（已在 backlog.json 占位）
+- **阻断级别**：~~P1~~ → **closed**
+- **认领建议**：✅ **已由 COSTRA-152 R1 闭环**（PATCH /entries/{id} 实装 + K3 method-override + cross-family guard fix）
+- **状态**：`closed @ COSTRA-152 R1`
+- **owner_card**：COSTRA-152（已实装）
 
 ### FU-104-ENTRIES-DELETE · DELETE /entries/{entry_id} 软删实装（替代 R1 stub 501）
 
@@ -135,10 +136,10 @@
 - **范围**：实装 `DELETE /entries/{entry_id}` 端点 · 软删（设 `deleted_at` 列）+ 触发 outbox 同步删除事件 · 客户端 syncPull 时收到 deleted_at 不为空的 entry 后从 db 移除
 - **协议事实源**：`server/api/openapi.yaml` paths /entries/{entry_id} DELETE
 - **依赖**：COSTRA-104 R1 已建表 entries.deleted_at 列 + entryService 已有 softDelete 工具方法（部分实装）
-- **阻断级别**：P1（同 PATCH）
-- **认领建议**：Sprint-3 头部（COSTRA-153 · 估 2 点 · 比 PATCH 简单）
-- **状态**：`open`
-- **owner_card**：COSTRA-153（已在 backlog.json 占位）
+- **阻断级别**：~~P1~~ → **closed**
+- **认领建议**：✅ **已由 COSTRA-153 R1 闭环**（DELETE /entries/{id} 软删 + query ?version=N）
+- **状态**：`closed @ COSTRA-153 R1`
+- **owner_card**：COSTRA-153（已实装）
 
 ### FU-103-CONFLICT-MERGE-UI · 真实 conflict 合并 UI（替代 R1 mergeIntoConflictQueue 桩）
 
