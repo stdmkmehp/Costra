@@ -1,9 +1,9 @@
 {
   "project": "Costra",
-  "version": "0.2.20",
-  "last_updated": "2026-05-22T20:45:00+08:00",
+  "version": "0.2.21",
+  "last_updated": "2026-05-23T16:20:00+08:00",
   "platform": "wechat-miniprogram",
-  "notes": "v0.2.20: 🚀 Sprint-3 头部双卡 152+153 R1 + R1.x.1 全闭环（D-014 同轮范式第 3 次实战完美收官 · 105+156 / 154+150 / 152+153 三连）· **R1 实装**：commit `513dd5a` (152 + P0 跨 family 守门补丁 · 13 files +1035/-138) + `ccd80b9` (153 · 6 files +272/-35) · server 70/70 全绿（含 entries-patch 9 测 + entries-delete 6 测 + entries.test.ts 5 测含 T-CROSS-FAMILY）· **守门反向验证铁证**：临时移除 fm.user_id = $2 → 3 测全 FAIL（PATCH T7 + DELETE T6 + GET T-CROSS-FAMILY）→ revert → 70/70 全绿 · COSTRA-104 R1 漏 + review-tech 36/40 漏检的真 P0 补完 · **review-tech R1 双卡同 spawn**：152 PASS-WITH-FOLLOWUP 37/40 + 153 PASS-WITH-FOLLOWUP 39/40（D-022 v2.0 第 9+10 次实战 · D-016 100% 修订率连续第 7~8 张 · D-025 AP-003 第 4+5 次正向兑现）· **R1.x.1 双胞胎 P1 同 commit `167bf17` 修订**（D-017 v3 §2.4 E1 极窄修复第 10+11 次实战）· OpenAPI PATCH+DELETE 双端点加 403 Forbidden 响应（doc-only 1 行 × 2 · 决策保留 404 优先不泄露 entry 存在性 · 403 仅契约扩展空间）· R1.x.1 修订后期望升 38+40 · 22 commits 已 push origin/dev · **下一步 = Human 联合 152+153 staging/curl 实测 + `approve:COSTRA-152 + COSTRA-153` 联合双卡同轮 approve（D-024 §2.2 C1 第 4 次实战 · 与 154+150 解耦不依赖 staging）· Sprint-3 头部累计 4/9 卡（CLOSED 后） · 估点累计 15/29 = 52%**。 v0.2.19: 🔍 双卡 Card-Review 闭环（152 R2 PASS 28/30 + 153 R2 PASS-WITH-FOLLOWUP 26/30 · §LINKAGE 决策双锚点全落地 · R2 暴露真 P0 跨 family 守门盲区议入 R1 必修）。",
+  "notes": "v0.2.21: 🏆🏆 **Sprint-3 头部双卡 152+153 APPROVED CLOSED · D-024 §2.2 C1 第 4 次实战完美收官**（105+156 / 157+158 / 154+150 / **152+153** 四连）· Human T1 curl 实测 5 硬断言 H1~H5 全 PASS @ 2026-05-23 16:15（实测手册 `docs/qa/costra-152-153-curl-verify.md` v1.0 746 行）· 不依赖 staging（本地 server + WX_MOCK_LOGIN=1）· 联合双卡同轮 approve 一次关 2 张卡（D-014 SOP）· **152 APPROVED**：R1 commit `513dd5a` + R1.x.1 `167bf17` · review-tech 37/40 → R1.x.1 后期望 ≥38 · FU-104-ENTRIES-PATCH closed + FU-CROSS-FAMILY-GUARD-COSTRA-104 closed + FU-152-001~005 + FU-152-R001 全 closed · **153 APPROVED**：R1 commit `ccd80b9` + R1.x.1 `167bf17` · review-tech 39/40 → R1.x.1 后期望 ≥40 满分趋势 · FU-104-ENTRIES-DELETE closed + FU-153-001~006 + FU-153-R001 全 closed · **跨 family 守门补丁三处共享**（GET/PATCH/DELETE · COSTRA-104 R1 漏 + review-tech 36/40 漏检的真 P0 · 153 R2 形式审捕获 · 152 R1 实装一并修补 · 反向验证铁证 + Human curl §7 真链路再次确认）· **范式累计**：D-014 第 3 次完美收官 / D-016 100% 修订率连续第 7~8 张 / D-017 v3 §2.4 E1 第 10+11 次实战 / D-022 v2.0 第 9+10 次实战（37+39 双高位）/ D-024 §2.2 C1 第 4 次实战 / D-025 AP-003 第 4+5 次正向兑现 · **Sprint-3 头部 4/9 卡 CLOSED · 估点累计 15/29 = 52%**（154+150 等 staging · 剩余 151+155+159+161+162+163 共 14 点）· 下一步 = ① Human 时间窗启 staging 154+150 重测 + 联合 approve（推 Sprint-3 头部 6/9 = 83%）② 任意时间 `start:159+162` 顺手批 / `start:161+163` devops 批 ③ Sprint-3 中后段启 151（conflict UI）+ 155（全量自动化）。 v0.2.20: 🚀 Sprint-3 头部双卡 152+153 R1+R1.x.1 全闭环（D-014 同轮范式第 3 次实战完美收官 · 单对话轮 ~3 小时 6 阶段）。",
   "epics": [
     {
       "id": "Epic-A",
@@ -227,12 +227,12 @@
         "priority": "P1",
         "sprint": "sprint-3",
         "epic": "Epic-C",
-        "status": "Doing",
+        "status": "Done",
         "dependencies": [
           "COSTRA-104"
         ],
         "description": "FU-104-ENTRIES-PATCH 转正 · 实装部分字段更新 + 乐观锁 + outbox 同步 · 协议事实源 server/api/openapi.yaml + sync-protocol.md",
-        "disposition": "Sprint-3 候选 · COSTRA-104 R1 切出去 3 件套铁律首次实战遗留 · Card-Review R1+R2 PASS 28/30 + R1 实装 commit 513dd5a + R1.x.1 OpenAPI 403 修订 commit 167bf17 · review-tech R1 PASS-WITH-FOLLOWUP 37/40 → R1.x.1 后期望 ≥38 · 含 P0 跨 family 守门补丁 · FU 11 项全 closed · 等 Human T1 终审（联合 153 同轮）",
+        "disposition": "Sprint-3 头部第 3 张 · CLOSED · Human T1 APPROVED 2026-05-23 16:15（联合 153 双卡同轮 D-014 SOP）· R1 commit 513dd5a + R1.x.1 167bf17 · review-tech 37/40 → R1.x.1 后 ≥38 · 含 P0 跨 family 守门补丁三处共享 · curl 实测 5 硬断言 H1~H5 全 PASS · FINAL.md 已落档",
         "card_review": {
           "round_1": { "verdict": "PASS-WITH-FOLLOWUP", "score": "25/30", "fu_count": 5 },
           "round_2": { "verdict": "PASS", "score": "28/30", "fu_landed": "5/5" },
@@ -242,7 +242,12 @@
           "round_1": { "verdict": "PASS-WITH-FOLLOWUP", "score": "37/40", "fu_count": 3, "commit": "513dd5a" },
           "round_1_x_1": { "fu_landed": "FU-152-R001", "commit": "167bf17", "expected_score": ">=38/40" }
         },
-        "updated_at": "2026-05-22T20:45:00+08:00"
+        "terminal_verdict": "APPROVED",
+        "human_final_decision": "approve",
+        "human_final_decision_at": "2026-05-23T16:15:00+08:00",
+        "human_final_decision_path": "联合 COSTRA-153 双卡同轮 approve（D-024 §2.2 C1 第 4 次实战 · 105+156 / 157+158 / 154+150 / 152+153 四连）",
+        "final_report": ".team/reviews/COSTRA-152/FINAL.md",
+        "updated_at": "2026-05-23T16:20:00+08:00"
       },
       {
         "id": "COSTRA-153",
@@ -253,24 +258,29 @@
         "priority": "P1",
         "sprint": "sprint-3",
         "epic": "Epic-C",
-        "status": "Doing",
+        "status": "Done",
         "dependencies": [
           "COSTRA-104",
           "COSTRA-152"
         ],
         "description": "FU-104-ENTRIES-DELETE 转正 · 实装软删（deleted_at 列）+ outbox 同步删除事件 · 客户端 syncPull 时移除",
-        "disposition": "Sprint-3 候选 · COSTRA-104 R1 切出去 3 件套铁律首次实战遗留 · Card-Review R1+R2 PASS-WITH-FOLLOWUP 26/30 + R1 实装 commit ccd80b9 + R1.x.1 OpenAPI 403 修订 commit 167bf17（与 152 同 commit 双胞胎修订）· review-tech R1 PASS-WITH-FOLLOWUP 39/40 → R1.x.1 后期望 ≥40 满分趋势 · §LINKAGE 决策 2 query `?version=N` 落地 · 跨 family 守门复用 152 补丁 · FU 8 项全 closed · 等 Human T1 终审（联合 152 同轮）",
+        "disposition": "Sprint-3 头部第 4 张 · CLOSED · Human T1 APPROVED 2026-05-23 16:15（联合 152 双卡同轮）· R1 commit ccd80b9 + R1.x.1 167bf17（与 152 双胞胎同 commit）· review-tech 39/40 → R1.x.1 后 ≥40 满分趋势 · §LINKAGE 决策 2 query `?version=N` 落地 · 跨 family 守门复用 152 补丁 · curl 实测 H4+H5 全 PASS · FINAL.md 已落档",
         "card_review": {
           "round_1": { "verdict": "REVISE", "score": "22/30", "fu_count": 6 },
           "round_2": { "verdict": "PASS-WITH-FOLLOWUP", "score": "26/30", "fu_landed": "6/6" },
           "final": "PASS-WITH-FOLLOWUP",
-          "carryover_observation": "跨 family T6 真 P0 守门盲区 · 已在 R1 实装 commit 513dd5a 修补完成（与 152 共享）"
+          "carryover_observation": "跨 family T6 真 P0 守门盲区 · 已在 R1 实装 commit 513dd5a 修补完成（与 152 共享）+ Human curl 实测 §7 真链路确认"
         },
         "review_tech": {
           "round_1": { "verdict": "PASS-WITH-FOLLOWUP", "score": "39/40", "fu_count": 2, "commit": "ccd80b9" },
           "round_1_x_1": { "fu_landed": "FU-153-R001", "commit": "167bf17", "expected_score": ">=40/40" }
         },
-        "updated_at": "2026-05-22T20:45:00+08:00"
+        "terminal_verdict": "APPROVED",
+        "human_final_decision": "approve",
+        "human_final_decision_at": "2026-05-23T16:15:00+08:00",
+        "human_final_decision_path": "联合 COSTRA-152 双卡同轮 approve（D-024 §2.2 C1 第 4 次实战）",
+        "final_report": ".team/reviews/COSTRA-153/FINAL.md",
+        "updated_at": "2026-05-23T16:20:00+08:00"
       },
       {
         "id": "COSTRA-154",
