@@ -1,4 +1,4 @@
-# Costra · prod 服务首次 bootstrap 手册（v1.1 · tlinux3.3 + 本地 PG/Redis）
+# Costra · prod 服务首次 bootstrap 手册（v1.2 · tlinux3.3 + 本地 PG/Redis · PGDG `$releasever` 修复）
 
 > **本手册为 Costra 项目首次生产服务部署交接单**。Agent 无生产 SSH 访问权 · Agent 出手册 + Human 跑命令 · 每步含验证 + 期望输出 · 高危段标 ⚠️ Human 拍板。
 >
@@ -7,6 +7,11 @@
 > **日期**：2026-05-23
 > **HEAD**：a2a3959（dev 分支 · 含 0001~0006 共 6 条 migration · entries_change_seq SEQUENCE 已就绪）
 > **目标读者**：Human（拥有 49.235.216.20 root SSH 访问权 + 腾讯云控制台 + 微信公众平台后台访问权）
+>
+> **v1.2 修订**（2026-05-23 22:07 · Human Phase-1 §1.1 步骤 2 实测踩坑后增补 · 见 §14 + §9 Q9）：
+> - **§1.1 步骤 2 PG 15 安装**：装 PGDG repo 后**立刻 sed 锁死 rhel-8**（绕过 tlinux3.3 `$releasever=3.3` 与 PGDG `rhel-$releasever` baseurl 拼接 404 的真踩坑）· `postgres --version` 改 `/usr/pgsql-15/bin/postgres --version`（PG 15 二进制不在 $PATH）
+> - **§1.1 步骤 3 Redis 装**：装 EPEL 后加**防御性 sed**（同款 `$releasever` 风险预防）
+> - **§9 FAQ 新增 Q9**：tlinux3.3 dnf 404 `rhel-3.3-x86_64` 完整根因链 + 修复 SOP + 复用范围（未来任何 tlinux3.x EL-8 三方仓部署的强制前置）
 >
 > **v1.1 修订**（2026-05-23 21:10 · Human 反馈 2 条调整后重写）：
 > - **OS 校准**：从 Debian/Ubuntu（apt）改为 **tlinux3.3**（腾讯定制 RHEL/CentOS Stream 8 系 · dnf/yum 包管理 · systemd 原生 · firewalld 默认）
@@ -76,16 +81,37 @@ npm --version
 # 添加 PGDG 仓
 dnf install -y https://download.postgresql.org/pub/repos/yum/reporpms/EL-8-x86_64/pgdg-redhat-repo-latest.noarch.rpm
 
+# 🚨 v1.2 关键修复（tlinux3.3 踩坑 · 见 §9 FAQ Q9）
+# tlinux3.3 的 $releasever=3.3 · 而 PGDG repo baseurl 用 rhel-$releasever-$basearch
+# → 解析成 rhel-3.3-x86_64 (PGDG 实际只有 rhel-8 / rhel-9 子目录) → 全部 404
+# 修复：把 .repo 文件里的 $releasever 全替换成 8（兼容性事实：rpm -E %{rhel} = 8）
+sed -i 's/\$releasever/8/g' /etc/yum.repos.d/pgdg-redhat-all.repo
+
+# 验证替换（应该看不到任何 rhel-$releasever 或 rhel-3.3 · 全部是 rhel-8）
+grep baseurl /etc/yum.repos.d/pgdg-redhat-all.repo | head -3
+# 期望：baseurl=https://download.postgresql.org/pub/repos/yum/common/redhat/rhel-8-x86_64
+
+dnf clean all
+dnf makecache
+
 # 禁用 tlinux 自带的 postgresql 模块（避免冲突）
 dnf -qy module disable postgresql
 
 # 装 PG 15 server + client + contrib（contrib 含 pgcrypto / citext 扩展 · 0001_init.sql 必需）
 dnf install -y postgresql15-server postgresql15 postgresql15-contrib
 
-postgres --version  # 期望 postgres (PostgreSQL) 15.x
+# 验证（PG 15 二进制不在 $PATH · 在 /usr/pgsql-15/bin/）
+/usr/pgsql-15/bin/postgres --version  # 期望 postgres (PostgreSQL) 15.x
 
 # 3. Redis 7（tlinux3.3 默认仓可能只有 redis 5/6 · 装 EPEL 后取最新）
 dnf install -y epel-release
+
+# 🛡 v1.2 防御性修复（EPEL 仓也可能踩 $releasever=3.3 同款坑 · 见 §9 FAQ Q9）
+if grep -l '\$releasever' /etc/yum.repos.d/epel*.repo >/dev/null 2>&1; then
+  sed -i 's/\$releasever/8/g' /etc/yum.repos.d/epel*.repo
+  dnf clean all && dnf makecache
+fi
+
 dnf install -y redis
 redis-server --version  # 期望 v=7.x.x
 
@@ -679,7 +705,7 @@ echo "Exit: $?"
 
 ---
 
-## §9 故障排查（FAQ · 8 条）
+## §9 故障排查（FAQ · 9 条）
 
 ### Q1 systemctl status 显示 Failed / Activating（restart loop）
 
@@ -793,6 +819,39 @@ firewall-cmd --reload
 
 ---
 
+### Q9 dnf 装 PG 15 / Redis 报 404 · `rhel-3.3-x86_64/repodata/repomd.xml not found`（tlinux3.3 特有 · 🚨 v1.2 真踩坑）
+
+**症状**：
+```
+Errors during downloading metadata for repository 'pgdg-common':
+  - Status code: 404 for https://download.postgresql.org/pub/repos/yum/common/redhat/rhel-3.3-x86_64/repodata/repomd.xml
+```
+
+**根因（事实链）**：
+1. tlinux3.3 的 `/etc/os-release` 里 `VERSION_ID="3.3"` · dnf 把这个值填到 `$releasever`
+2. PGDG / EPEL 仓的 `.repo` 文件里 baseurl 用 `rhel-$releasever-$basearch`
+3. `$releasever=3.3` 解析后 → `rhel-3.3-x86_64` · 但 PGDG 实际只有 `rhel-8` / `rhel-9` 子目录 → 全 404
+4. 系统其实是 RHEL 8 兼容的（`rpm -E %{rhel}` = `8`）· 只是 `$releasever` 变量映射错了
+
+**修复（已写入 §1.1 步骤 2/3 · 此处仅作 FAQ 留档）**：
+```bash
+# PGDG 仓
+sed -i 's/\$releasever/8/g' /etc/yum.repos.d/pgdg-redhat-all.repo
+
+# EPEL 仓（防御性 · 同款问题）
+if grep -l '\$releasever' /etc/yum.repos.d/epel*.repo >/dev/null 2>&1; then
+  sed -i 's/\$releasever/8/g' /etc/yum.repos.d/epel*.repo
+fi
+
+dnf clean all && dnf makecache
+```
+
+**为什么不改 `/etc/os-release`**：动 OS 元数据风险大（影响 dnf 升级、监控、合规审计）· 只改三方仓 `.repo` 文件最小爆破半径。
+
+**复用范围**：未来 prod-2 / staging-2 / 任何 tlinux3.x 机器装 EL-8 系第三方仓都会复发 · 此修复 SOP 是 tlinux3.3 部署的**强制前置**。
+
+---
+
 ## §10 后续加固清单（不在本次 bootstrap scope · 进 follow-ups）
 
 | FU-ID | 描述 | 优先级 | 预估卡 |
@@ -874,5 +933,20 @@ Orchestrator 收到后：
 
 ---
 
-> **手册版本**：v1.1 · 2026-05-23 21:10 · Orchestrator 兜底落档（D-026 §6.1 incident 备注）
-> **下次修订**：Phase-1 实测后根据 Human 反馈修订 v1.2（如发现命令错 / 期望不准 / 步骤遗漏）
+## §14 v1.1 → v1.2 变更日志
+
+> **触发**：2026-05-23 21:42 Human 实测 Phase-1 §1.1 步骤 2 装 PG 15 撞 `pgdg-common` 仓 404 · `rhel-3.3-x86_64/repodata/repomd.xml not found` · 根因：tlinux3.3 `$releasever=3.3` 与 PGDG/EPEL 仓 `rhel-$releasever` baseurl 拼接不兼容（PGDG 实际只有 rhel-8 / rhel-9 子目录）· Human 应用 sed 'g/$releasever/8/g' 修复后装通 PG 15.18
+
+| § | 变更 | 原因 |
+|---|---|---|
+| §1.1 步骤 2 | 装 PGDG repo 后**立刻 sed 锁死 rhel-8** + grep 验证 + dnf clean/makecache · postgres --version 改 `/usr/pgsql-15/bin/postgres --version`（PG 15 二进制不在 $PATH） | tlinux3.3 + PGDG 真踩坑修复 |
+| §1.1 步骤 3 | 装 EPEL 后加**防御性 sed**（grep 检测 `$releasever` · 有则 sed 修） | EPEL 同款风险预防 |
+| §9 FAQ Q9（新增） | 新增 Q9 dnf 404 · `rhel-3.3` 完整根因链 + 修复 SOP + 不改 os-release 的理由 + 复用范围 | 留档供未来 prod-2 / staging-2 / 任何 tlinux3.x EL-8 三方仓部署复用 |
+| §9 标题 | 8 条 → 9 条 | Q9 新增 |
+
+**v1.2 修订带来的额外操作**：~ 2 min（一次 sed + 一次 makecache）· 不影响 §11 总时间预估
+
+---
+
+> **手册版本**：v1.2 · 2026-05-23 22:07 · Orchestrator 同对话轮交付（基于 Human Phase-1 实测反馈 · Q9 真踩坑后立刻补丁）
+> **下次修订**：Phase-1 §1.1 步骤 3+ 后续步骤实测后根据 Human 反馈修订 v1.3（如再撞新坑）
