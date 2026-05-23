@@ -4,7 +4,7 @@
 > 公共契约：`.team/agents/COMMON-CONTRACT.md` §0 / §0-Bis / §8ter
 > Schema：`.team/members/README.md §2`
 > 初始化：2026-05-02 19:24
-> **上次更新**：2026-05-22（COSTRA-154+150 联合实测手册产出 · qa-planner 归口）
+> **上次更新**：2026-05-23（COSTRA-152+153 联合 curl 实测手册产出 · qa-planner 归口）
 
 ---
 
@@ -18,6 +18,7 @@
 
 ## §2 当前关注（active tasks）
 
+- 🔜 **COSTRA-152 + COSTRA-153 联合 curl 实测**：手册已落档 `docs/qa/costra-152-153-curl-verify.md`（~500 行 · v1.0）· 等 Human 执行 7 步 + 5 硬断言 H1~H5 + `approve:COSTRA-152 + COSTRA-153`
 - 🔜 **COSTRA-154 + COSTRA-150 联合 staging 实测**：手册已落档 `qa/costra-154-150-joint-smoke.md`（707 行 · v1.0）· 等 Human 执行 5 条断言 A~E + `approve:COSTRA-154 + COSTRA-150`
 - 🔴 **COSTRA-105 H6 BLOCKED-BY-COSTRA-154**：154+150 approve 后 H6 自动等效回归具备 PASS 条件
 - 🔜 **Sprint-3 候选**：FU-105-AUTOMATION-FULL-COVERAGE（5 点 · 14 用例全量自动化 + CI 集成）
@@ -27,6 +28,7 @@
 
 | 时间 | 卡号 | 交付 | 状态 |
 |---|---|---|---|
+| 2026-05-23 | **COSTRA-152+153 联合 curl 实测手册** | `docs/qa/costra-152-153-curl-verify.md` v1.0 · ~500 行 · 5 硬断言 + 跨 family 守门 + K3 + query version | COMMITED 待 commit |
 | 2026-05-22 | **COSTRA-154+150 联合实测手册** | `qa/costra-154-150-joint-smoke.md` v1.0 · 707 行 · 5 断言 + 10 FAQ + D-025 自检 | COMMITED 待 commit |
 | 2026-05-19 | **COSTRA-105 终审收官** | partial PASS · 5/7 Sprint-2 卡 CLOSED · 22 点 / 61% | ✅ **APPROVED-PARTIAL** |
 | 2026-05-12 | COSTRA-105 R1 实装 | strategy.md + cases + human-smoke.md v1.0 + automation + wechat-review + FU-105 | COMMITED `c046d25` |
@@ -54,6 +56,7 @@
 
 ## §7 最近更新时间戳
 
-- **2026-05-22T12:00:00+08:00 · COSTRA-154+150 联合实测手册产出**（qa-planner 归口 · D-025 AP-001 反例首次 Orchestrator 命中后的修正版 · 707 行 · 每条命令有事实源）
+- **2026-05-23T11:00:00+08:00 · COSTRA-152+153 联合 curl 实测手册产出**（qa-planner 归口 · ~500 行 · 5 硬断言 H1~H5 · 跨 family 守门验证 · K3 method-override · query version DELETE · 每条命令有事实源）
+- 2026-05-22T12:00:00+08:00 · COSTRA-154+150 联合实测手册产出（qa-planner 归口 · D-025 AP-001 反例首次 Orchestrator 命中后的修正版 · 707 行 · 每条命令有事实源）
 - 2026-05-19T09:27:00+08:00 · COSTRA-105 Human T1 APPROVED-PARTIAL CLOSED（联合 156 双卡终审 · partial PASS · H1~H5 全绿 · H6 BLOCKED-BY-COSTRA-154 自动等效回归）
 - 2026-05-12T14:55:00+08:00 · COSTRA-105 R1 实装完成（qa-planner 首次实装 · 40/40 满分 · D-022 v2.0 第 3 次实战）
