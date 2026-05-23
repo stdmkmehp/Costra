@@ -13,7 +13,57 @@
 
 ## §0 一句话断点（HEAD 之前 = 已兑现 · 之后 = 待做）
 
-> **2026-05-23 20:30 当前断点**：📋 **路径 α 完整版启动 · D-026 staging-prod 合并接受方案立档 + Phase-1 prod-bootstrap 手册落档**（同对话轮 7 文件交付 · Orchestrator 兜底落档 · subagent 装扮档工具白名单错配 incident 见 D-026 §6.1）· **等 Human SSH 49.235.216.20 跑 prod-bootstrap §1~§8 · 预计 60~90 min**
+> **2026-05-23 21:10 当前断点**：📋 **路径 α Phase-1 prod-bootstrap.md v1.0→v1.1 修订**（Human 反馈 2 条调整：① OS 是 tlinux3.3 不是 Debian/Ubuntu · ② PG + Redis 改本地原生安装不用 docker compose）· readiness-checklist v1.0→v1.1 闸门 4 同步从 1 个 service 改 4 个 systemd service · **等 Human SSH 49.235.216.20 跑 prod-bootstrap §1~§8 v1.1 · 预计 75~120 min**（比 v1.0 多 ~30 min · dnf 装 PG/Redis 多步骤）
+>
+> **v1.1 主要变化**（vs v1.0）：
+> - **OS 校准**：tlinux3.3 = 腾讯定制 RHEL/CentOS Stream 8 · dnf 包管理 / firewalld / SELinux / RHEL 系 nginx 目录
+> - **§1.1 工具补装**：apt → dnf · 加 PGDG-EL8 仓装 PG 15 + EPEL 仓装 Redis 7 + NodeSource 仓装 Node 20
+> - **§3 整段重写**：从 docker compose（4 服务）改 PG 15 本地原生 + Redis 7 本地原生 · 含 initdb + pg_hba 配 SCRAM + Redis bind 127.0.0.1 + AOF + 密码 + maxmemory · 加 §3.4 强密码生成统一指引（PG/Redis/JWT 三独立密码）
+> - **§4.1 修正**：DATABASE_URL 用 127.0.0.1（不是 localhost）· REDIS_URL 加密码 `redis://:PW@host`
+> - **§5.1 修正**：systemd After/Requires 从 docker.service 改 postgresql-15.service + redis.service（依赖链对齐）
+> - **§6.1 步骤 2 修正**：DATABASE_URL → DB_URL（migrate.sh:13 实际用此名 · 命名错配修复）
+> - **§7 修正**：nginx 配置路径从 sites-available/sites-enabled 改 conf.d/（RHEL 系标准）
+> - **§8 闸门 4 调整**：从 1 个 service（costra-server）改 4 个（postgresql-15 / redis / costra-server / nginx）
+> - **§9 FAQ**：6 条→8 条 · 加 Q6 Redis · Q8 SELinux/firewalld（tlinux 特有踩坑）
+> - **§10 FU**：7 条 13pt → 9 条 15pt · 加 FU-PROD-PG-TUNE + FU-PROD-SCHEMA-MIGRATIONS-TABLE
+> - **§11 时间**：65min → 95min（± 30min）
+>
+> **本对话轮路径 α 6 阶段切片**：
+> - **Phase-0**（已完成）：D-026 立档 + risks.md R-020 状态升 Accepted-Sprint-3-to-5 + domains.md §1.1 staging 注释扩展
+> - **Phase-1**（手册 v1.1 已交付 · 等 Human 跑）：`infra/prod-bootstrap.md` v1.1（**~700 行 · tlinux3.3 + 本地 PG/Redis**）+ `infra/wechat/prod-readiness-checklist.md` v1.1（~110 行 · Phase-2 闸门 5 条速查 · 闸门 4 改 4 svc）
+> - **Phase-2**（等 Phase-1 完成）：5 闸门验证（healthz / icp / 401 守门 / **4 svc systemd** / **C2 mock 红线 grep**）
+> - **Phase-3**（等 Phase-2 PASS）：154+150 真 prod 实测——派 qa-planner 改 `qa/costra-154-150-joint-smoke.md` v1.3→v1.4 prod 版（移除 WX_MOCK_LOGIN + 切真 wx.login + apiBaseUrl prod）
+> - **Phase-4**（等 Phase-3 完成）：152+153 prod 回归——派 qa-planner 改 `docs/qa/costra-152-153-curl-verify.md` v1.0→v1.1 prod 版
+> - **Phase-5**（等 Phase-3+4 全 PASS）：联合双卡 approve `approve:COSTRA-154 + COSTRA-150` · Sprint-3 头部 6/9 = 83% · 当对话轮 closure commit
+>
+> **D-026 §2.3 工程纪律 4 条**（Sprint-3~Sprint-5 期硬约束 · 违反 → R-020 升 🟡→🟠 强制重启子域）：
+> - **C1 灰度/实验隔离**：严禁 staging-only feature flag / 灰度名单（违反 → 触发 §2.4 (α)）
+> - **C2 mock 通道防护**（最严）：`WX_MOCK_LOGIN=0` 必须显式设 systemd EnvironmentFile + 启动日志验证 + CI 红灯（FU-PROD-CI-MOCK-GUARD P0 1pt 候选立卡）· 关联 R-008 极高红线
+> - **C3 prod DB 操作三件套**：dump → operate → verify · 任何 DELETE/TRUNCATE/DROP/migration 需 Human 拍板
+> - **C4 测试数据隔离**：用预留 family_id `00000000-...0F0` + ledger `...001` · 不污染真实用户数据
+>
+> **D-026 §2.4 重启硬触发 4 条**（αβγδ）：
+> - (α) P0 真实用户灰度名单需要分流
+> - (β) P1 prod entries > 10 万条
+> - (γ) P0 Sprint-6 公测准备（M5 观察期前必须）
+> - (δ) P0+ R-008 类安全事件
+>
+> **本轮事故记录**（议入 Sprint-3 末 Retro · 议题 #6 候选）：
+> - **SBAI v1.1 装扮档 spawn 工具白名单平台限制**：`task(subagent_name="code-explorer", prompt=...)` 路径 spawn 的 pm-writer / devops-ops 装扮档继承的是 code-explorer 的只读工具集（无 write_to_file / replace_in_file）· 与 COMMON-CONTRACT §0-Bis 装扮档授权口径错配 · 两 subagent final message 还被工具平台截断（>14k chars + >23k chars · 命中 HANDOFF v1.21 §0 已知教训）· 历史先例（D-019/D-021/D-022/D-023 落盘）支持 Orchestrator 兜底落档兼容路径 · 候选 D-027 平台升级触发条件 / D-018 §3.5 v1.0 既定事实加注
+>
+> **下一步推荐路径**（按 Human 时间窗）：
+> 1. **🟡 立即可做**：Human 启 Phase-1 SSH 49.235.216.20 跑 `infra/prod-bootstrap.md` v1.1 §1~§8（**75~120 min** · 含 §2.1 仓库 URL 拍板 + §3.4 三个独立强密码生成 + §4.2 WX_APP_SECRET 取得 + §7.3 Let's Encrypt 邮箱）
+> 2. **🟢 Phase-2 跑完后**：贴 5 条闸门 PASS/FAIL 反馈 → Orchestrator 同对话轮派 qa-planner 出 Phase-3 改造手册
+>
+> （上一断点归档）2026-05-23 20:30：📋 **路径 α 完整版启动 · D-026 立档 + Phase-1 prod-bootstrap.md v1.0 落档**（已被 v1.1 修订替代）
+
+---
+
+## §0-bis 历史断点归档（按时间倒序）
+
+> （v1.22 之前断点已迁移至本节归档区 · 保留全文不删）
+
+> **2026-05-23 16:20 历史断点**：🏆🏆 **COSTRA-152 + COSTRA-153 双卡 Human T1 APPROVED CLOSED · D-024 §2.2 C1 第 4 次实战完美收官**（105+156 / 157+158 / 154+150 / **152+153** 四连）· Sprint-3 头部 4/9 卡 CLOSED · 估点 15/29 = **52%**
 >
 > **本对话轮路径 α 6 阶段切片**：
 > - **Phase-0**（已完成）：D-026 立档 + risks.md R-020 状态升 Accepted-Sprint-3-to-5 + domains.md §1.1 staging 注释扩展
@@ -237,8 +287,8 @@
 
 ### §1.1 当前时间戳
 
-- **更新时间**：2026-05-23 20:30
-- **更新者**：Orchestrator（路径 α Phase-0+1 同对话轮交付 · D-026 立档 + prod-bootstrap 手册落档 · 待落 closure commit · 累计 26 commits push origin/dev · 本轮加 1 编排层 commit = 27）
+- **更新时间**：2026-05-23 21:10
+- **更新者**：Orchestrator（路径 α Phase-1 prod-bootstrap v1.0→v1.1 修订 · Human 反馈 OS 是 tlinux3.3 + PG/Redis 改本地原生 · 待落 v1.1 修订 commit · 累计 27 commits push origin/dev · 本轮加 1 编排层 commit = 28）
 - **Sprint**：✅ **Sprint-1 收官** / ✅ **Sprint-2 真闭环 7/7** / 🚀 **Sprint-3 头部 4/9 卡 CLOSED + 路径 α prod 验收启动**（D-026 接受 staging↔prod 合并 Sprint-3~Sprint-5 期 · 估点 15/29 = 52% · 等 154+150 prod 闭环推 6/9 = 83%）
 
 ### §1.2 当前在办卡
@@ -492,8 +542,9 @@ reviews + FU-LAUNCH + miniapp-dev state.md · 当前断点：COSTRA-124 R1 两�
 
 | 版本 | 日期 | 维护者 | 变更 |
 |---|---|---|---|
-| **v1.23** | **2026-05-23 20:30** | 同会话 Orchestrator | 📋 **路径 α 完整版启动 · D-026 staging-prod 合并接受方案立档 + Phase-1 prod-bootstrap 手册落档**（同对话轮 7 文件交付 · Orchestrator 兜底落档 · subagent 装扮档工具白名单错配 incident 见 D-026 §6.1）· **D-026 决议要点**：D-023 §2.2 现阶段语义化登记补丁（非 supersede · 决策不可变性守护）· staging↔prod Sprint-3~Sprint-5 期合并接受 · §2.3 工程纪律 4 条（C1 灰度隔离 / **C2 mock 防护最严关联 R-008** / C3 DB 操作三件套 / C4 测试数据隔离 family）· §2.4 重启硬触发 4 条（α 灰度 / β entries>10万 / γ Sprint-6 公测前 / δ 安全事件）· R-020 状态升 Open · Mitigated · Accepted-Sprint-3-to-5 · **Phase-1 prod-bootstrap.md v1.0**（~530 行 · 12 节 · §0 总览 + §1 前置 5 条 + §2 拉代码 + §3 docker compose + §3.1 强密码 + §4 .env.prod 字段清单 + §5 systemd unit + EnvironmentFile + §6 migrations 三件套 + §7 nginx + Let's Encrypt + §8 闸门 5 条 + §9 FAQ 6 条 + §10 后续 7 条 FU 13pt + §11 时间预估 65min ± 30min + §12 反馈格式）· **Phase-2 readiness checklist v1.0**（~85 行 · 5 闸门速查 ≤ 5 分钟）· **路径 α 6 阶段切片**：Phase-0 ✅完成（决议立档）/ Phase-1 ✅手册交付（等 Human SSH 跑）/ Phase-2 5 闸门验证 / Phase-3 154+150 真 prod 实测（qa-planner 改 v1.3→v1.4 prod 版）/ Phase-4 152+153 prod 回归（qa-planner 改 v1.0→v1.1 prod 版）/ Phase-5 双卡 approve · **本轮事故记录**（议入 Sprint-3 末 Retro 议题 #6 候选）：SBAI v1.1 装扮档 spawn 工具白名单平台限制 · `task(subagent_name="code-explorer")` 路径 spawn 出来的 pm-writer / devops-ops 继承的是 code-explorer 只读工具集 · 与 COMMON-CONTRACT §0-Bis 装扮档授权口径错配 · 两 subagent final message 被工具平台截断（>14k + >23k chars · 命中 v1.21 §0 已知教训）· 历史先例（D-019/D-021/D-022/D-023 落档）支持 Orchestrator 兜底落档兼容路径 · 候选 D-027 平台升级触发条件 / D-018 §3.5 v1.0 既定事实加注 · **本轮编排层 commit 含**：D-026 决议主体 220 行 + prod-bootstrap.md 530 行 + readiness-checklist.md 85 行 + risks.md R-020 mitigation 扩展 + domains.md §1.1 staging 行注释扩展 + devops-ops/state.md §2/§3/§4/§6/§7 增量（含 §10 后续 7 条 FU 候选 13pt 进 Sprint-4 头部专项加固 sprint）+ pm-writer/state.md §2/§3/§4/§7 增量 · §0/§0-bis(归档区新增)/§1.1/§1.3/§8 全刷新 · **下一步推荐 = ① Human 在对话回 "OK 接受 D-026 §2.3" → Orchestrator 进 Phase-1 等你 SSH ② Human SSH 49.235.216.20 跑 prod-bootstrap §1~§8（60~90 min 含 §2.1 仓库 URL 拍板 / §3.1 Postgres 强密码 / §4.2 WX_APP_SECRET / §7.3 Let's Encrypt 邮箱）③ 贴 Phase-2 闸门 5 条 PASS/FAIL 表 → 进 Phase-3** |
-| **v1.22** | **2026-05-23 16:20** | 同会话 Orchestrator | 🏆🏆 **COSTRA-152 + COSTRA-153 双卡 Human T1 APPROVED CLOSED · D-024 §2.2 C1 第 4 次实战完美收官**（105+156 / 157+158 / 154+150 / **152+153** 四连）· Sprint-3 头部 4/9 卡 CLOSED · 估点累计 **15/29 = 52%** · Human curl 实测 5 硬断言 H1~H5 全 PASS @ 16:15 · 实测手册 `docs/qa/costra-152-153-curl-verify.md` v1.0（746 行 · qa-planner 装扮档产出 commit `cfdb6e1`）· 不依赖 staging（本地 server + WX_MOCK_LOGIN=1 · 与 154+150 staging 重测路径解耦）· 联合双卡同轮 approve 一次关 2 张卡（D-014 SOP）· **152 APPROVED**：R1 commit `513dd5a` + R1.x.1 `167bf17` · review-tech 37/40 → R1.x.1 后期望 ≥38 · 含 P0 跨 family 守门补丁三处共享（GET/PATCH/DELETE）· 11 项 FU 全 closed · `.team/reviews/COSTRA-152/FINAL.md` · **153 APPROVED**：R1 commit `ccd80b9` + R1.x.1 `167bf17` · review-tech 39/40 → R1.x.1 后期望 ≥40 满分趋势 · §LINKAGE 决策 2 query `?version=N` 落地 · 8 项 FU 全 closed · `.team/reviews/COSTRA-153/FINAL.md` · 26 commits 已 push origin/dev |
+| **v1.24** | **2026-05-23 21:10** | 同会话 Orchestrator | 📋 **prod-bootstrap.md v1.0→v1.1 修订**（Human 反馈 2 条调整 · 同对话轮交付 · Orchestrator 直接落档）· **变更 1**：OS 校准 Debian/Ubuntu→**tlinux3.3**（腾讯定制 RHEL/CentOS Stream 8 · dnf/yum/firewalld/SELinux/conf.d 路径）· **变更 2**：PG + Redis 部署模式 docker compose→**本地原生 systemd**（PostgreSQL 15 + Redis 7 · initdb + pg_hba SCRAM + Redis bind 127.0.0.1 + AOF + maxmemory）· **配套修订**：§0 部署架构图 / §1.1 工具补装（apt→dnf + PGDG-EL8 + EPEL + NodeSource）/ §3 整段重写（含 §3.4 强密码生成统一指引 · PG/Redis/JWT 三独立密码）/ §4.1（DATABASE_URL 用 127.0.0.1 + REDIS_URL 加密码）/ §5.1（After/Requires 改 postgresql-15+redis）/ §6.1 步骤 2 修正（DATABASE_URL→DB_URL · 跟 migrate.sh:13 实际默认值对齐）/ §7（nginx conf.d/ 路径）/ §8 闸门 4（1 svc→4 svc）/ §9 FAQ（6→8 条 · 加 Q6 Redis + Q8 SELinux/firewalld）/ §10 FU（7 条 13pt→9 条 15pt · 加 FU-PROD-PG-TUNE + FU-PROD-SCHEMA-MIGRATIONS-TABLE）/ §11 时间预估（65min→95min）· **配套刷新**：`infra/wechat/prod-readiness-checklist.md` v1.0→v1.1（闸门 4 from 1 svc 改 4 svc · 反馈格式同步）· **本轮编排层 commit 含**：prod-bootstrap.md v1.1（~700 行）+ readiness-checklist.md v1.1（~110 行）+ §13 v1.0→v1.1 变更日志（手册末尾 · 13 行变更对照表）· §0/§0-bis(v1.0 段降归档)/§1.1/§8 全刷新 · **下一步推荐 = Human 启 Phase-1 SSH 49.235.216.20 跑 prod-bootstrap v1.1 §1~§8（75~120 min · 比 v1.0 多 ~30 min · dnf 装 PG/Redis 比 docker compose pull 多步骤）+ 贴 Phase-2 闸门 5 条 PASS/FAIL** |
+| **v1.23** | **2026-05-23 20:30** | 同会话 Orchestrator | 📋 **路径 α 完整版启动 · D-026 staging-prod 合并接受方案立档 + Phase-1 prod-bootstrap 手册 v1.0 落档**（同对话轮 7 文件交付 · Orchestrator 兜底落档 · subagent 装扮档工具白名单错配 incident 见 D-026 §6.1）· prod-bootstrap.md v1.0 已被 v1.24 修订替代成 v1.1 · 其余决议 / 风险登记 / SSOT 不变 |
+| **v1.22** | **2026-05-23 16:20** | 同会话 Orchestrator | 🏆🏆 **COSTRA-152 + COSTRA-153 双卡 Human T1 APPROVED CLOSED · D-024 §2.2 C1 第 4 次实战完美收官**（105+156 / 157+158 / 154+150 / **152+153** 四连）· Sprint-3 头部 4/9 卡 CLOSED · 估点累计 **15/29 = 52%** · Human curl 实测 5 硬断言 H1~H5 全 PASS @ 16:15 · 26 commits 已 push origin/dev |
 | v1.1 | 2026-05-03 20:32 | 本会话 Orchestrator | R1 假设 Human 第 7 次实测证伪 → R2 诊断定性翻转 v3 → Human 全按推荐 → COSTRA-125 立卡 + COSTRA-124 部分闭合 + FU-LAUNCH 分裂 A/B/C + libversion-upgrade §3 反模式 #4 追写 · §0/§1/§2.1/§6 全面刷新 |
 | v1.0 | 2026-05-03 12:41 | 本会话 Orchestrator | 立案 · 随 COSTRA-124 R1 Review 末端节点 · 会话 10 commits 末端（HEAD = 20b0e48） |
 | **v1.2** | **2026-05-04 08:30** | 本会话 Orchestrator | **COSTRA-125 Card-Review R1 PASS 31/35**（第 3 次 spawn 成功 · 前 2 次 Idle timeout 后 Human 选 P1 再试）· dispatch §0 补响应段 + 4 P2 记 state.md §6 · §0/§1.1/§1.2 刷新 · 下一步 spawn miniapp-dev R1 实装 |
