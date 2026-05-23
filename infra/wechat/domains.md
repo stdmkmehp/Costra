@@ -56,7 +56,7 @@
 |---|---|---|
 | local | `http://localhost:8080/v1` | 本机 loopback · 无 DNS |
 | dev-ip | `http://49.235.216.20:8080/v1` | 直连 IP · ICP 下证前过渡 · OpenAPI 保留 · env.ts 不暴露 |
-| staging | `https://costra.cloud/v1` | ⚪ D-023 临时复用 prod URL · 子域 api-staging 启用时切回 |
+| staging | `https://costra.cloud/v1` | ⚪ D-023 临时复用 prod URL · 子域 api-staging 启用时切回 · D-026 §2.1 现阶段语义化登记接受方案（Sprint-3~Sprint-5）|
 | prod | `https://costra.cloud/v1` | 主域 A 记录已生效（49.235.216.20） |
 
 > ⚪ 标记表示 D-023 决策搁置 · 不影响当前 CI 三方对账

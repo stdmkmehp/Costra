@@ -19,12 +19,14 @@
 - **COSTRA-106（R1 实装）**：✅ R1 全量交付完成（9 文件落盘 + D-020/D-021/D-022 三决议 + metrics 重写 + board 更新 + backlog 流转 + state/history 收尾）· 等待 Human T2 终审
   - 交付物：sprint-1-retro.md（主报告）+ D-020/D-021/D-022 + metrics.json 重写 + board.md Sprint-2 段 + backlog.json COSTRA-106 重写 + 5 卡流转 + 160 占位
   - 下一动作：等 Human T2 终审 approve:COSTRA-106
+- **2026-05-23**：D-026 staging-prod merged acceptance 立档（路径 α Phase-0 · Orchestrator 兜底落档 · 见 D-026 §6.1 incident 备注 · 候选 Sprint-3 末 Retro 议题 #6 SBAI 装扮档工具白名单平台限制）
 
 ## §3 交付历史索引
 
 | # | 日期 | 卡号 | 交付内容 | 备注 |
 |---|---|---|---|---|
 | 1 | **2026-05-09** | **COSTRA-106** | Sprint-1 Retro 主报告 + 3 决议 + metrics 重写 + board 更新 + backlog 流转 + state/history 收尾 | **SBAI v1.1 第 6 次冒烟 · pm-writer 首次实战** |
+| 2 | **2026-05-23** | **D-026** | staging-prod 合并验收决议 + risks.md R-020 mitigation 扩展 + domains.md §1.1 staging 行注释扩展 | Orchestrator 兜底落档（装扮档工具白名单错配 incident · D-026 §6.1）|
 
 ## §4 最近决策影响
 
@@ -35,6 +37,8 @@
 - **`D-020 D-016 升定稿规约`**（2026-05-09 · COSTRA-106 产出）· 观察期标签废止 · 12 次实战 0 异步反模式
 - **`D-021 D-017 v3 升级`**（2026-05-09 · COSTRA-106 产出）· git 三证 + runtime 实测 + 跨版本对照前置
 - **`D-022 review-tech 评分表 v2.0`**（2026-05-09 · COSTRA-106 产出）· 35→40 分 · C8 runtime 加载性新增
+- **`D-023 prod 入口回归根域`**（2026-05-18 · pm-writer 落档）
+- **`D-026 staging-prod 合并接受方案`**（2026-05-23 · Orchestrator 兜底落档 · D-023 §2.2 现阶段语义化登记补丁 · 工程纪律 4 条 C1~C4 + 重启硬触发条件 4 条 αβγδ）
 
 ## §5 工作区 + 权限
 
@@ -44,10 +48,15 @@
 - `.team/backlog.json`
 - `.team/risks.md`
 - `.team/cards/`
-- `.team/decisions/`（D-020/D-021/D-022 新建）
+- `.team/decisions/`（D-020/D-021/D-022/D-026 新建）
 - `.team/members/pm-writer/`
 
 禁写目录：其他任何目录 · 特别是 `server/` `miniprogram/` `design/` `infra/` `qa/` `scripts/`。
+
+## §7 最近更新时间戳
+
+- 2026-05-23T20:30:00+08:00 · D-026 立档 + 路径 α Phase-0 落账（Orchestrator 兜底）
+- 2026-05-09T10:39:00+08:00 · COSTRA-106 Sprint-1 Retro 收官
 
 ## §6 遗留问题 / FU / 债务
 
