@@ -1,12 +1,19 @@
-# Costra · prod 服务首次 bootstrap 手册（v1.2 · tlinux3.3 + 本地 PG/Redis · PGDG `$releasever` 修复）
+# Costra · prod 服务首次 bootstrap 手册（v1.3 · tlinux3.3 + Plan A 宿主机 systemd / Plan B docker 容器内）
 
 > **本手册为 Costra 项目首次生产服务部署交接单**。Agent 无生产 SSH 访问权 · Agent 出手册 + Human 跑命令 · 每步含验证 + 期望输出 · 高危段标 ⚠️ Human 拍板。
 >
 > **母决策**：D-009（域名 + 安全基线）/ D-023（prod 入口回归根域）/ **D-026（staging↔prod 合并 · 工程纪律 4 条 · 同对话轮交付）**
 > **交付者**：Orchestrator（devops-ops 装扮档工具白名单错配兜底落档 · D-026 §6.1 incident 备注）
-> **日期**：2026-05-23
-> **HEAD**：a2a3959（dev 分支 · 含 0001~0006 共 6 条 migration · entries_change_seq SEQUENCE 已就绪）
+> **日期**：2026-05-23 立案 · 2026-05-24 v1.3 修订
+> **HEAD**：a2a3959+（dev 分支 · 含 0001~0006 共 6 条 migration · entries_change_seq SEQUENCE 已就绪 · 含 v1.2 PGDG 修复 commit 330a204 + CVE 修复 commit 8ed63ab）
 > **目标读者**：Human（拥有 49.235.216.20 root SSH 访问权 + 腾讯云控制台 + 微信公众平台后台访问权）
+>
+> **v1.3 修订**（2026-05-24 14:20 · Phase-1 实测沉淀 · Costra prod 实际走 docker 容器内部署 · 见 §15）：
+> - **§3 加 Plan A / Plan B 双形态**：Plan A（§3.1~§3.4 · 宿主机 systemd · 原版未变）+ **Plan B（§3.5 新增 · docker 容器内手动启停）**
+> - **§3.5 Plan B 完整路径**：§3.5.0 容器启动（docker run 完整命令记录）· §3.5.1 PG init+pg_ctl 启动 · §3.5.2 Redis 配置（含密码 sed 顺序修复 · 卷权限 chmod 644）· §3.5.3 全栈验证 · §3.5.4 容器重启自启（systemd 替代方案 · 候选 FU-PROD-CONTAINER-AUTOSTART P0）
+> - **§3.5.2 Redis 版本漂移登记**：实际装到 Redis 5.0.3（EPEL 仓 EL-8 不出 redis 7）· 代码兼容性✅ · Sprint-4 Remi 仓升级 7.2 LTS（候选 FU-PROD-REDIS-VERSION-ALIGN）· D-026 §2.1 一致性偏差明示登记
+> - **§9 FAQ 加 Q10 + Q11**：Q10（docker systemd 反模式 · 强制走 Plan B）· Q11（挂载卷 640 vs 644 权限）· 9→11 条
+> - **CVE 修复同对话轮捎带**（commit 8ed63ab）：fast-jwt 6.2.2→6.2.4（CVSS 9.1 critical · JWT auth bypass · R-008 红线）+ fast-uri 3.1.0→3.1.2（CVSS 7.5 high · path traversal）· 0 vulnerabilities · server vitest 70/70 PASS
 >
 > **v1.2 修订**（2026-05-23 22:07 · Human Phase-1 §1.1 步骤 2 实测踩坑后增补 · 见 §14 + §9 Q9）：
 > - **§1.1 步骤 2 PG 15 安装**：装 PGDG repo 后**立刻 sed 锁死 rhel-8**（绕过 tlinux3.3 `$releasever=3.3` 与 PGDG `rhel-$releasever` baseurl 拼接 404 的真踩坑）· `postgres --version` 改 `/usr/pgsql-15/bin/postgres --version`（PG 15 二进制不在 $PATH）
@@ -169,11 +176,20 @@ npm install
 
 ---
 
-## §3 本地装 PostgreSQL 15 + Redis 7（systemd 直管）
+## §3 本地装 PostgreSQL 15 + Redis 7（**两种部署形态 · 任选其一**）
 
 > 📌 **v1.1 重大修订**：本节从 docker compose 改为**本地原生安装** · tlinux3.3 + systemd 是 prod 单机部署最佳实践（减少容器层 · 监控/备份/升级路径更标准）。
+>
+> 🚨 **v1.3 重大补充**（2026-05-24 14:20 · Human Phase-1 实测）：实际部署可能不在宿主机直接装 · 而是先起一个 docker 容器再在容器内装。本节给**两种形态平行手册**：
+> - **Plan A · 宿主机 systemd 直管**（§3.1~§3.4 · v1.1 原版 · 未变）：宿主机直装 + systemctl 管 · 适合 dedicated 宿主机
+> - **Plan B · docker 容器内手动启停**（§3.5 · v1.3 新增 · 基于 Phase-1 实测）：docker 容器（`tail -f /dev/null` 长驻 · `--restart always` 兜底 · `--privileged --network host`）内装 + pg_ctl/redis-server 直起 · 适合宿主机要保持干净 / 多项目隔离场景
+>
+> **如何选**：
+> - 整台机器只跑 Costra 一个项目 · 且 root 可控 → Plan A（手册 §3.1~§3.4 · 跳过 §3.5）
+> - 宿主机要保持包管理干净 / 多项目共宿主机 / 已经起好 docker 容器 → Plan B（手册 §3.5 · 跳过 §3.1~§3.4）
+> - **本次 Costra prod 49.235.216.20 走 Plan B**（事实记录 · 见 §3.5 头部）
 
-### §3.1 PostgreSQL 15 初始化 + 启动
+### §3.1 [Plan A] PostgreSQL 15 初始化 + 启动（宿主机 systemd 模式）
 
 #### 步骤 1：初始化数据目录（首次启动前必做 · 否则 systemd 起不来）
 
@@ -263,7 +279,7 @@ PGPASSWORD='<§3.4 强密码>' psql -h 127.0.0.1 -U costra -d costra -c '\dx'
 > - 在 psql 里重置密码：`sudo -iu postgres psql -c "ALTER USER costra WITH PASSWORD '<新密码>'"`
 > - 确认 pg_hba.conf 改的是 scram-sha-256 不是 md5
 
-### §3.2 Redis 7 配置 + 启动
+### §3.2 [Plan A] Redis 7 配置 + 启动（宿主机 systemd 模式）
 
 #### 步骤 1：配置（/etc/redis.conf · tlinux3.3 路径）
 
@@ -315,7 +331,7 @@ redis-cli -a "$REDIS_PW" ping
 unset REDIS_PW
 ```
 
-### §3.3 验证 PG + Redis 全栈
+### §3.3 [Plan A] 验证 PG + Redis 全栈
 
 ```bash
 # 1. PG 表查询（应为空 · 表 §6 才建）
@@ -351,6 +367,242 @@ openssl rand -base64 32 | tr -d '/+='
 ```
 
 > 🚨 **D-026 §2.3 C2 关联 + R-008 红线**：以上 3 个密码任一泄漏 → 立即触发安全事件 · 走 D-026 §2.4 (δ) 重启子域 + 全密钥轮换。
+
+---
+
+### §3.5 [Plan B] docker 容器内手动启停（v1.3 新增 · Costra prod 49.235.216.20 实际路径）
+
+> 🚨 **本节由 Phase-1 实测沉淀**（2026-05-24 14:00~14:20 · Human 在容器内跑通 PG 15.18 + Redis 5.0.3）。Plan A（§3.1~§3.4）若不适用 · 走本节。
+>
+> **架构**：
+> ```
+> 宿主机 49.235.216.20（腾讯云 VM · tencentos）
+>     └─ docker 容器 costra-prod（tencentos/tencentos3:3.3-v20260326）
+>         ├─ --privileged --network host（端口直通宿主机）
+>         ├─ --restart always（容器级自启 · 替代 systemd enable）
+>         ├─ -v /data/logs:/data/logs（日志卷）
+>         ├─ -v /data/conf:/data/conf（配置卷）
+>         ├─ -v /root/release/Costra:/root/Costra（代码卷）
+>         └─ /bin/bash -c "tail -f /dev/null"（PID 1 长驻 · 不是 systemd）
+> ```
+>
+> **关键限制**：容器 PID 1 不是 systemd · `systemctl` / `systemd-tmpfiles` 全部不可用 · 必须用进程层工具直起（pg_ctl / redis-server --daemonize / pm2 / nohup）。
+
+#### §3.5.0 容器启动（宿主机跑 · 仅首次部署 · 已起的跳过）
+
+```bash
+# 在宿主机 49.235.216.20 上（不是容器内）
+docker run -d \
+  --name costra-prod \
+  --restart always \
+  --privileged \
+  --network host \
+  --hostname costra-prod \
+  --memory 4g \
+  --memory-swap 4g \
+  --cpus 2 \
+  --ulimit nofile=65536:65536 \
+  --ulimit nproc=65536:65536 \
+  --log-driver json-file \
+  --log-opt max-size=100m \
+  --log-opt max-file=5 \
+  -v /data/logs:/data/logs \
+  -v /data/conf:/data/conf \
+  -v /root/release/Costra:/root/Costra \
+  -v /etc/localtime:/etc/localtime:ro \
+  -e TZ=Asia/Shanghai \
+  tencentos/tencentos3:3.3-v20260326 \
+  /bin/bash -c "tail -f /dev/null"
+
+# 验证容器起来
+docker ps | grep costra-prod
+# 期望：Up X seconds/minutes ... costra-prod
+
+# 进入容器后续操作（所有后续命令在容器内跑）
+docker exec -it costra-prod /bin/bash
+```
+
+> ⚠️ **挂载卷权限注意**：`/data/conf/`、`/data/logs/`、`/root/Costra/` 都是宿主机挂载卷 · 文件 owner UID 用宿主机的（容器内 redis 用户 UID=996 · postgres 用户 UID 也不一定与宿主一致）· 配置文件默认 644 才能保证容器内 redis/postgres 用户可读。
+
+#### §3.5.1 [Plan B] PostgreSQL 15 init + 启动（容器内 · pg_ctl 直管）
+
+```bash
+# 容器内 root 跑
+
+# §1.1 步骤 2 已装好 PG 15（PGDG repo + sed $releasever 修复 + dnf install postgresql15-server postgresql15 postgresql15-contrib · 见 §1.1）
+
+# 步骤 1：建数据目录 + 改权限（不能用 postgresql-15-setup · 那个依赖 systemd）
+mkdir -p /var/lib/pgsql/15/data
+chown -R postgres:postgres /var/lib/pgsql/15
+chmod 700 /var/lib/pgsql/15/data
+
+# 步骤 2：initdb（不走 systemd setup 脚本 · 直接调 initdb 二进制）
+sudo -iu postgres /usr/pgsql-15/bin/initdb \
+  -D /var/lib/pgsql/15/data \
+  --encoding=UTF8 \
+  --locale=C
+# 期望：Success. You can now start the database server using: ...
+
+# 步骤 3：启 PG（pg_ctl · 后台 + 日志写到挂载卷）
+mkdir -p /data/logs
+chown postgres:postgres /data/logs
+sudo -iu postgres /usr/pgsql-15/bin/pg_ctl \
+  -D /var/lib/pgsql/15/data \
+  -l /data/logs/postgres.log \
+  start
+# 期望：server started
+
+# 步骤 4：验证（端口 + 日志）
+ss -tlnp | grep 5432
+# 期望：LISTEN ... 127.0.0.1:5432 ...
+tail -10 /data/logs/postgres.log
+# 期望末尾：database system is ready to accept connections
+
+# 步骤 5：建 costra 用户 + DB（同 §3.1 步骤 3 · 但密码生成走 §3.4）
+sudo -iu postgres psql <<'EOF'
+CREATE USER costra WITH PASSWORD '<§3.4 生成的 PG_COSTRA_PW · 替换此占位>';
+CREATE DATABASE costra OWNER costra ENCODING 'UTF8' TEMPLATE template0;
+GRANT ALL PRIVILEGES ON DATABASE costra TO costra;
+\c costra
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+CREATE EXTENSION IF NOT EXISTS "citext";
+\dx
+EOF
+# 期望：plpgsql / pgcrypto / citext 三行
+
+# 步骤 6：配 pg_hba.conf SCRAM 认证（同 §3.1 步骤 4 · 路径不变）
+PGHBA=/var/lib/pgsql/15/data/pg_hba.conf
+cp $PGHBA $PGHBA.bak-$(date +%Y%m%d)
+# 改：把 local/host 行的 ident/peer/md5 全改 scram-sha-256（参见 §3.1 步骤 4 推荐 4 行）
+vim $PGHBA
+
+# 启用 scram
+PGCONF=/var/lib/pgsql/15/data/postgresql.conf
+sed -i "s/^#\?password_encryption.*/password_encryption = scram-sha-256/" $PGCONF
+
+# reload（pg_ctl 反映 · 不重启）
+sudo -iu postgres /usr/pgsql-15/bin/pg_ctl -D /var/lib/pgsql/15/data reload
+# 期望：server signaled
+
+# 验证密码连接
+PGPASSWORD='<§3.4 PG 强密码>' psql -h 127.0.0.1 -U costra -d costra -c '\dx'
+# 期望：plpgsql / pgcrypto / citext 三行
+```
+
+#### §3.5.2 [Plan B] Redis 配置 + 启动（容器内 · redis-server --daemonize 直管）
+
+> ⚠️ **版本漂移登记**（v1.3 实测发现 · 候选 FU-PROD-REDIS-VERSION-ALIGN 进 Sprint-4）：
+> - 期望版本：Redis 7（与 staging `redis:7-alpine` 同 major）
+> - **实际装到**：Redis 5.0.3（EPEL 仓 EL-8 上的 redis 包就是 5.0.3 · EPEL 不出 redis 7）
+> - **代码兼容性**：✅ Costra 只用 `set/get/del/quit` 4 个基础命令（authService.ts）· redis 2.6+ 都支持 · 实际无影响
+> - **后续路径**：Sprint-4 时通过 Remi 仓升级到 Redis 7.2 LTS（FU 立件）· 当前 Phase-1 接受 5.0.3 不阻塞
+> - **D-026 §2.1 一致性偏差**：明示登记 · 不视为违反 D-026（无功能/安全影响）· 进 Sprint-3 末 Retro 议题 #7
+
+```bash
+# 容器内 root 跑
+
+# §1.1 步骤 3 已装好 redis（dnf install epel-release + EPEL 防御性 sed + dnf install redis · 见 §1.1）
+
+# 步骤 1：拷贝默认配置到挂载卷（保证容器重建后配置不丢）
+mkdir -p /data/conf
+cp /etc/redis.conf /data/conf/redis.conf
+
+# ⚠️ 关键：放开权限到 644（默认 cp 后是 640 · redis 用户读不到 · 见 §9 Q11）
+chmod 644 /data/conf/redis.conf
+
+# 步骤 2：先生成 Redis 强密码（必须先生成 · 否则 sed 不知道替换什么）
+REDIS_PW=$(openssl rand -base64 32 | tr -d '/+=')
+echo "Redis 密码（立刻记到密码管理器 · 然后 unset）：$REDIS_PW"
+
+# 步骤 3：sed 改 5 处关键配置
+REDIS_CONF=/data/conf/redis.conf
+
+# (a) bind 仅 localhost
+sed -i 's|^bind .*|bind 127.0.0.1|' $REDIS_CONF
+
+# (b) 设密码（兼容两种状态：注释的 / 空的）
+sed -i "s|^# *requirepass .*|requirepass $REDIS_PW|" $REDIS_CONF
+
+# (c) 启用 AOF
+sed -i 's|^appendonly no|appendonly yes|' $REDIS_CONF
+
+# (d) 日志路径到挂载卷
+sed -i 's|^logfile .*|logfile /data/logs/redis.log|' $REDIS_CONF
+
+# (e) 数据目录
+sed -i 's|^dir .*|dir /var/lib/redis|' $REDIS_CONF
+
+# 验证关键配置
+grep -E "^(bind|requirepass|appendonly|logfile|dir)" $REDIS_CONF
+# 期望 5 行 · requirepass 是你生成的串（不是占位符 · 不带 #）
+
+# 步骤 4：建数据/日志目录（用 redis 用户）
+mkdir -p /var/lib/redis /data/logs
+chown redis:redis /var/lib/redis /data/logs
+
+# 步骤 5：启 redis（redis 用户 + daemonize 后台）
+sudo -u redis redis-server $REDIS_CONF --daemonize yes
+
+# 步骤 6：验证（端口 + ping）
+ss -tlnp | grep 6379
+# 期望：LISTEN ... 127.0.0.1:6379 ...
+
+redis-cli -a "$REDIS_PW" ping
+# 期望：PONG
+
+# 步骤 7：unset 密码变量（防 shell history 泄漏）
+unset REDIS_PW
+```
+
+#### §3.5.3 [Plan B] 验证 PG + Redis 全栈
+
+```bash
+# 同 §3.3 · 用 §3.4 生成的真实强密码
+
+PGPASSWORD='<§3.4 PG 强密码>' psql -h 127.0.0.1 -U costra -d costra -c '\dt'
+# 期望：Did not find any relations.
+
+redis-cli -a '<§3.4 Redis 强密码>' SET costra:bootstrap:test ok
+redis-cli -a '<§3.4 Redis 强密码>' GET costra:bootstrap:test
+# 期望：OK / "ok"
+redis-cli -a '<§3.4 Redis 强密码>' DEL costra:bootstrap:test
+```
+
+#### §3.5.4 [Plan B] 容器重启自启（**Phase-2 之前必须完成 · 否则容器重启服务全没**）
+
+> ⚠️ **关键陷阱**：Plan B 容器是 `tail -f /dev/null` 起的 · 容器重启时 PG / Redis / costra-server / nginx **都不会自动起来**（systemd 不可用 · `--restart always` 只重启容器 · 不管容器内进程）· 必须做 entrypoint 替代方案。
+
+**Phase-2 闸门 4 之前必须做**（候选 FU-PROD-CONTAINER-AUTOSTART P0 · 进 §10 后续加固清单）：
+
+**方案 A · 写 startup 脚本 + commit 镜像 + 重建容器**（推荐 · 但要重建容器 · 暂缓到 Phase-2 闸门通过后做）：
+
+```bash
+# 容器内创建启动脚本
+cat > /usr/local/bin/costra-startup.sh <<'EOF'
+#!/bin/bash
+# Costra prod 容器启动脚本（systemd 替代）
+sudo -iu postgres /usr/pgsql-15/bin/pg_ctl -D /var/lib/pgsql/15/data -l /data/logs/postgres.log start || true
+sleep 2
+sudo -u redis redis-server /data/conf/redis.conf --daemonize yes || true
+sleep 1
+nginx || true
+pm2 resurrect || true
+tail -f /dev/null
+EOF
+chmod +x /usr/local/bin/costra-startup.sh
+
+# 退出容器 · 在宿主机 commit 当前状态 + 用新 entrypoint 重启
+exit
+docker commit costra-prod costra-prod:phase-1-baseline
+docker stop costra-prod && docker rm costra-prod
+docker run -d --name costra-prod ... [同 §3.5.0 全部参数] \
+  costra-prod:phase-1-baseline \
+  /usr/local/bin/costra-startup.sh
+```
+
+**方案 B · 暂时手动**（Phase-1 + Phase-2 验证期接受 · 容器重启后 SSH 进去手动跑 PG/Redis/server 启动命令 · 不推荐长期）
+
+**当前选择**：Phase-1 / Phase-2 用方案 B（手动）· Phase-2 闸门 5 条全 PASS 后做方案 A 重建（不影响 Phase-2 验证 · 因为验证期容器不会重启）。
 
 ---
 
@@ -705,7 +957,7 @@ echo "Exit: $?"
 
 ---
 
-## §9 故障排查（FAQ · 9 条）
+## §9 故障排查（FAQ · 11 条）
 
 ### Q1 systemctl status 显示 Failed / Activating（restart loop）
 
@@ -852,6 +1104,64 @@ dnf clean all && dnf makecache
 
 ---
 
+### Q10 docker 容器内 `systemctl` 报 `Failed to connect to bus: Host is down`（v1.3 真踩坑 · §3.5 路径强制前置）
+
+**症状**：
+```
+[root@costra-prod ~]# /usr/pgsql-15/bin/postgresql-15-setup initdb
+System has not been booted with systemd as init system (PID 1). Can't operate.
+Failed to connect to bus: Host is down
+```
+
+或：
+```
+[root@costra-prod ~]# systemctl enable --now postgresql-15
+Failed to get D-Bus connection: Operation not permitted
+```
+
+**根因（事实链）**：
+1. docker 容器启动命令是 `tail -f /dev/null` · PID 1 = `bash -c "tail -f /dev/null"`
+2. 不是 systemd · 所以容器内根本没 systemd bus 可连
+3. 任何依赖 systemctl / systemd-tmpfiles / journalctl 的命令都会失败
+4. `postgresql-15-setup` 是个 wrapper · 内部用 systemd 找 PGDATA 配置 · 撞同款问题
+
+**修复（强制走 §3.5 Plan B）**：
+- ❌ **不要尝试**：在容器内装 systemd / 改 PID 1 / `--privileged + /sys/fs/cgroup` 等容器圈反模式
+- ✅ **正确做法**：用进程层工具直起服务 · `pg_ctl` / `redis-server --daemonize` / `pm2` / `nohup`
+- ✅ **容器自启**：靠 `docker run --restart always` + 写 startup 脚本 commit 进镜像 + 容器 entrypoint 改 startup（见 §3.5.4）
+
+**复用范围**：所有 docker 容器内部署的项目（不仅 Costra · 整个公司部署的容器化项目都该走 §3.5 Plan B 范式）· 议入 D-027 候选。
+
+---
+
+### Q11 docker 挂载卷文件 redis 用户读不到 · `Permission denied`（v1.3 真踩坑）
+
+**症状**：
+```
+[root@costra-prod conf]# sudo -u redis cat /data/conf/redis.conf | head -3
+cat: /data/conf/redis.conf: Permission denied
+[root@costra-prod conf]# ls -la /data/conf/redis.conf
+-rw-r----- 1 root root 62202 May 24 14:02 /data/conf/redis.conf
+```
+
+**根因**：
+1. `cp /etc/redis.conf /data/conf/redis.conf` 默认权限 640（`-rw-r-----`）
+2. owner = root · group = root · redis 用户既不是 owner 也不在 root 组 · 没读权限
+3. `/data/conf/` 是宿主机挂载卷（`-v /data/conf:/data/conf`）· 卷权限受宿主机 umask 决定 · 默认 640 而非 644
+4. **不要 chown 到容器内 redis 用户** · 因为容器内 redis UID（996）跟宿主机 UID 不一致 · chown 会污染宿主机文件 owner
+
+**修复**：
+```bash
+chmod 644 /data/conf/redis.conf
+sudo -u redis cat /data/conf/redis.conf | head -3   # 验证可读
+```
+
+**预防（已写入 §3.5.2 步骤 1）**：cp 后立刻 `chmod 644`。
+
+**复用范围**：所有 docker 挂载卷下的配置文件 · 都要确认 644（配置）或 755（脚本）· **不要**用 chown 到容器内用户。
+
+---
+
 ## §10 后续加固清单（不在本次 bootstrap scope · 进 follow-ups）
 
 | FU-ID | 描述 | 优先级 | 预估卡 |
@@ -948,5 +1258,39 @@ Orchestrator 收到后：
 
 ---
 
-> **手册版本**：v1.2 · 2026-05-23 22:07 · Orchestrator 同对话轮交付（基于 Human Phase-1 实测反馈 · Q9 真踩坑后立刻补丁）
-> **下次修订**：Phase-1 §1.1 步骤 3+ 后续步骤实测后根据 Human 反馈修订 v1.3（如再撞新坑）
+## §15 v1.2 → v1.3 变更日志
+
+> **触发**：2026-05-24 14:00~14:20 · Phase-1 实测沉淀（4 个真踩坑 + 2 个架构事实登记）
+>
+> **真踩坑事故链**（按时间）：
+> 1. 14:00 · `postgresql-15-setup initdb` 报 `System has not been booted with systemd` → 暴露架构事实：实际部署在 docker 容器内 · 不在宿主机 systemd
+> 2. 14:13 · `sudo -u redis cat /data/conf/redis.conf` Permission denied → 卷权限 640 vs redis 用户读不到（cp 默认权限漂移）
+> 3. 14:14 · Orchestrator 在改写 docker 路径命令时**漏掉 §3.4 强密码生成步骤** · Human 误用字面占位符 `YOUR_REDIS_STRONG_PASSWORD` 启动 redis（议入 Sprint-3 末 Retro 议题 #6 候选）
+> 4. 14:00 · `redis-server --version` 是 5.0.3 不是 7.x（EPEL 仓 EL-8 不出 redis 7 · 议入候选 FU-PROD-REDIS-VERSION-ALIGN）
+
+| § | 变更 | 原因 |
+|---|---|---|
+| 头部 | 副标题加 "Plan A 宿主机 systemd / Plan B docker 容器内" · 加 v1.3 修订说明段（含 CVE 修复 commit 8ed63ab 链接） | 双形态平行手册 |
+| §3 标题 + 引言 | 改为 "本地装 PostgreSQL 15 + Redis 7（**两种部署形态 · 任选其一**）" · 加 v1.3 重大补充段 + Plan A/B 选择指南（哪种场景用哪个） | 双形态主纲 |
+| §3.1~§3.3 标题 | 加 "[Plan A]" 前缀（标识为宿主机 systemd 模式） | 与 Plan B 区分 |
+| **§3.5 Plan B（新增 · 核心）** | docker 容器内手动启停完整路径 · §3.5.0 容器启动（docker run 完整命令存档）· §3.5.1 PG init+pg_ctl 启动 · §3.5.2 Redis 配置（含密码 sed 顺序修复 + 卷权限 chmod 644）· §3.5.3 全栈验证 · §3.5.4 容器重启自启（systemd 替代方案 · FU-PROD-CONTAINER-AUTOSTART P0 候选） | Phase-1 实测沉淀 |
+| §3.5.2 Redis 版本漂移登记 | 实际装到 Redis 5.0.3（EPEL 仓 EL-8 不出 redis 7）· 代码兼容性✅（authService 仅用 set/get/del/quit）· Sprint-4 Remi 仓升级 7.2 LTS（FU-PROD-REDIS-VERSION-ALIGN）· D-026 §2.1 一致性偏差明示登记不视为违反 | 透明登记 |
+| §9 FAQ Q10（新增） | docker 容器 systemctl `Failed to connect to bus` · 根因（PID 1 = bash 不是 systemd）· 修复（强制走 §3.5 Plan B · 不要尝试容器内装 systemd 反模式）· 复用范围（所有公司容器化项目） | 议入 D-027 候选 |
+| §9 FAQ Q11（新增） | docker 挂载卷 640 vs 644 权限 · cp 默认权限污染 · 不要 chown 到容器内用户（UID 不一致）· 修复（chmod 644）· 预防（cp 后立即 chmod） | 卷权限治理范式 |
+| §9 标题 | 9 条 → 11 条 | Q10 + Q11 新增 |
+| 同对话轮 CVE 修复 | server/package-lock.json: fast-jwt 6.2.2→6.2.4（CVSS 9.1 critical · JWT auth bypass · R-008 红线）+ fast-uri 3.1.0→3.1.2（CVSS 7.5 high · path traversal）· npm audit 0 vulnerabilities · server vitest 70/70 PASS · commit 8ed63ab | prod 部署前置闸 · D-026 §2.3 C2 关联 |
+
+**v1.3 修订带来的额外操作**：
+- Plan B 路径用户：~ 30 min 额外（docker run + 6 步 PG initdb/启动/建用户 + 7 步 Redis 配置）
+- Plan A 路径用户：0 min（§3.1~§3.4 未变）
+
+**新增议题 / FU**（议入 Sprint-3 末 Retro · 候选）：
+- **议题 #6**：Orchestrator 对话内改写命令时漏掉密码生成步骤 · 候选 SOP 规约："Orchestrator 改写涉及密码的命令时 · 必须保留 §3.4 强密码生成段引用 · 不删 · 不简化"
+- **议题 #7**：Redis 7 vs 5 版本漂移 · 候选 FU-PROD-REDIS-VERSION-ALIGN P2 进 Sprint-4
+- **议题 #8**：npm audit 应该是 prod 部署前置闸门 · 候选 FU-CI-NPM-AUDIT-GUARD P0 + prod-bootstrap §1 加 npm audit 前置闸
+- **议题 #9**：docker 容器内部署模式应抽象成独立决策（D-027 候选） · 涵盖："不是所有 prod 都跑宿主机 systemd · 多项目共宿主机时 docker 容器隔离是合法范式"
+
+---
+
+> **手册版本**：v1.3 · 2026-05-24 14:20 · Orchestrator 同对话轮交付（基于 Human Phase-1 docker 路径实测反馈 · 4 个真踩坑后批量补丁）
+> **下次修订**：Phase-1 §3.5.4 容器自启 / §4 .env / §5 systemd（Plan A）or pm2（Plan B）/ §6 migration 后续步骤实测后修订 v1.4
