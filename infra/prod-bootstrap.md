@@ -1175,8 +1175,11 @@ sudo -u redis cat /data/conf/redis.conf | head -3   # 验证可读
 | **FU-PROD-FW-AUDIT** | D-009 §2.4 防火墙 + fail2ban + SSH 改非 22 端口 + 登录失败告警一次性补齐审计 | P0 | 2 pt |
 | **FU-PROD-PG-TUNE** | PG 15 prod 配置调优（shared_buffers / effective_cache_size / max_connections / WAL · 默认值不适合 prod） | P2 | 1 pt |
 | **FU-PROD-SCHEMA-MIGRATIONS-TABLE** | migrate.sh 加 schema_migrations 跟踪表 + 防重复跑（v1.1 §6 步骤 2 备注议题） | P1 | 1 pt |
+| **🔴 FU-PROD-PG-AUTH-SCRAM** | **pg_hba.conf 6 行全 trust → scram-sha-256 + costra 用户密码 ALTER 重 hash + reload**（initdb 默认 trust 反模式 · 2026-05-25 11:15 Phase-1 实测发现 · Human 决策暂缓不阻塞 Phase-2 但**Phase-3 真 prod 验收前必须修**）· 一行 sed 修复：`sed -i 's/\btrust\b/scram-sha-256/g' /var/lib/pgsql/15/data/pg_hba.conf` · 关联 R-008 红线 + D-026 §2.3 C2 安全语义 | **P0** | 1 pt |
 
-> 上述 9 条 FU 累计 15 pt · 不进 Sprint-3（避免推迟 154+150 真 prod 验收）· 候选 Sprint-4 头部专项加固 sprint。
+> 上述 10 条 FU 累计 17 pt · 不进 Sprint-3（避免推迟 154+150 真 prod 验收）· 候选 Sprint-4 头部专项加固 sprint。
+>
+> ⚠️ **FU-PROD-PG-AUTH-SCRAM 特别提示**：当前 prod PG `pg_hba.conf` 是 6 行全 trust（initdb 默认）· 容器内任何进程拿到 PG 连接都不验证密码 · D-026 §2.3 C2 安全语义边界 · **必须在 Phase-3 真 prod 验收前修**（不阻塞 Phase-2 内部闸门验证 · 但任何"对外宣称 prod 已上线"的节点之前必须修）· 议入 D-027 候选范围（"prod 部署默认不安全行为必须显式覆盖"通用规约）。
 
 ---
 
