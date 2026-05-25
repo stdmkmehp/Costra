@@ -32,6 +32,51 @@
 
 首次 prod 服务部署 · 在 49.235.216.20（**tlinux3.3**）上跑 PostgreSQL 15 + Redis 7（**本地原生 systemd**）+ Node.js Fastify server + nginx 反代 + Let's Encrypt + systemd · 预计 Human 操作时间 75~120 分钟 · 产出 prod 入口 `https://costra.cloud/v1` 可达 + Phase-2 闸门 5 条全 PASS。
 
+---
+
+## §0-bis 阅读约定 · 占位符语法（**v1.4 强制前置 · 必读 30 秒**）
+
+> 🚨 本手册命令含**占位符** · 不能直接复制粘贴跑 · 必须先把占位符替换成真实值才能跑。
+
+### 三种占位符语法
+
+| 语法 | 含义 | 替换方式 | 示例 |
+|---|---|---|---|
+| `<§N.M XXX>` | 引用 §N.M 节定义的某个值 · 自己生成 / 取得 | 翻到 §N.M 节看生成方法 · 把 `<...>` 整段（含尖括号）替换成你生成的真实值 | `<§3.4 PG 强密码>` → 翻到 §3.4 跑 `openssl rand -base64 32 \| tr -d '/+='` 取输出 |
+| `<XXX 输出>` | 跑某条命令 · 输出值替换此占位 | 跑命令 · 复制输出 · 替换 `<...>` | `<openssl rand -base64 64 输出>` |
+| `<Human XXX>` | Human 手动操作（浏览器 / 控制台 / 邮件等）取得 | 按段落指引操作 · 把取得的值替换 `<...>` | `<Human 从微信公众平台拿 AppSecret>` |
+
+### 真实操作示例
+
+❌ **不要直接跑**（这样跑会撞 `password authentication failed`）：
+```bash
+PGPASSWORD='<§3.4 PG 强密码>' psql -h 127.0.0.1 -U costra -d costra -c '\dx'
+```
+
+✅ **正确**（假设你 §3.4 生成的密码是 `K8mP9xQ2vR5tN6wL3jH7yE0aZbF4gC1d`）：
+```bash
+PGPASSWORD='K8mP9xQ2vR5tN6wL3jH7yE0aZbF4gC1d' psql -h 127.0.0.1 -U costra -d costra -c '\dx'
+```
+
+### 三个独立强密码总表（**先生成 · 再跑后续步骤**）
+
+> ⚠️ §3.4 要求三个**独立**强密码 · **互相不能相同** · 都要记到本机密码管理器。
+
+| 占位符 | 生成方式 | 用在哪里 | 密码管理器记录名 |
+|---|---|---|---|
+| `<§3.4 PG 强密码>` | `openssl rand -base64 32 \| tr -d '/+='` | §3.1/§3.5.1 建 costra 用户 / §4.1 DATABASE_URL / §6 migration / §8 闸门 | `Costra · prod · PG · costra 用户` |
+| `<§3.4 Redis 强密码>` | `openssl rand -base64 32 \| tr -d '/+='` | §3.2/§3.5.2 redis.conf requirepass / §4.1 REDIS_URL | `Costra · prod · Redis · requirepass` |
+| `<§3.4 JWT_SECRET>` | `openssl rand -base64 64`（**注意是 64 不是 32**） | §4.1 JWT_SECRET（用于签发 access_token / refresh_token） | `Costra · prod · JWT_SECRET` |
+
+### 推荐操作流程
+
+1. **先**到 §3.4 看一眼 · 跑 3 次 openssl 命令 · 把 3 个密码记到本机密码管理器（30 秒）
+2. **后**回来按 §3.5 / §4 / §5 / §6 顺序跑 · 命令里的占位符**都从你密码管理器粘贴真实值替换**
+3. 命令历史里**绝对不要保留**含明文密码的命令 · 跑完后 `history -c && history -w` 清掉（或开启 `HISTCONTROL=ignorespace` · 命令前加空格不进 history）
+
+---
+
+
 **部署架构（运行后）**：
 
 ```
