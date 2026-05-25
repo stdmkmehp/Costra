@@ -47,5 +47,6 @@ EXPOSE 8080
 # tini 作 PID 1 · 优雅传递 SIGTERM 给 node（容器 stop 时干净退出）
 ENTRYPOINT ["/sbin/tini", "--"]
 
-# 启动命令（与 v1.4 §5-A.1 + §5-B.2 一致）
-CMD ["node", "--import", "tsx/esm", "src/server.ts"]
+# 启动命令（用 tsx CLI · 与 dev: "tsx watch src/server.ts" 一致 · 不用 --import tsx/esm
+# 因为 tsconfig module=CommonJS 但代码用 ESM 风格 .js import · tsx CLI 能正确处理这种混合）
+CMD ["node_modules/.bin/tsx", "src/server.ts"]

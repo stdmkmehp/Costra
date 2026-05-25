@@ -181,12 +181,15 @@ services:
       redis:
         condition: service_healthy
 
+    # 用 node 内置 http 模块做 healthcheck · 不依赖 wget/curl（alpine 默认没装 curl · BusyBox wget 行为不一致）
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
+      test:
+        - CMD-SHELL
+        - node -e "require('http').get('http://127.0.0.1:8080/healthz',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 30s
+      start_period: 60s
 
     deploy:
       resources:
@@ -230,7 +233,8 @@ services:
         condition: service_healthy
 
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost/healthz || exit 1"]
+      # 用 127.0.0.1 而非 localhost · alpine 容器 BusyBox wget 解析 localhost 优先 IPv6 · nginx 只 bind IPv4 会 refused
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/healthz || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3

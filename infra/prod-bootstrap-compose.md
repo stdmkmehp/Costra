@@ -1,10 +1,11 @@
-# Costra · prod 服务首次 bootstrap 手册（v1.5 · Plan C · docker compose 多容器）
+# Costra · prod 服务首次 bootstrap 手册（v1.5.1 · Plan C · docker compose 多容器）
 
 > **本手册取代 v1.4 `infra/prod-bootstrap.md` · 作为 Costra prod 部署当前推荐路径**。
 >
 > **母决策**：D-009（域名 + 安全基线）/ D-023（prod 入口回归根域）/ **D-026（staging↔prod 合并 · 工程纪律 4 条）**
 > **决策落档**：2026-05-25 11:57 Human 选 Plan D（4 服务 docker compose）→ 升级为 v1.5 Plan C
-> **日期**：2026-05-25 立案
+> **首次实测落地**：2026-05-25 17:34（v1.5.1 · 实测踩 6 坑 · 已沉淀 §8 Q7~Q13 + §3.3 chown + §4.1 跨机构建 + §4.3 拆 nginx + §6 重写）
+> **日期**：2026-05-25 立案 · 2026-05-25 实测修订
 > **HEAD**：a2a3959+（dev 分支 · 含 0001~0006 共 6 条 migration）
 > **目标读者**：Human（拥有 49.235.216.20 root SSH 访问权 + 腾讯云控制台 + 微信公众平台后台访问权）
 > **预计 Human 操作时间**：60~90 分钟（首次 docker compose pull 镜像 + nginx 签证书较慢）
@@ -29,11 +30,15 @@
     ├─ costra-server     (自构建 · expose 8080 · 容器内部网络)
     └─ costra-nginx      (nginx:1.27-alpine  · port 80/443 公网)
 
-数据持久化 → 宿主机 /data/
-├─ pgsql/        (PG 数据)
-├─ redis/        (Redis AOF/RDB)
-├─ conf/         (server.env · postgres.env · 见 §3)
+数据持久化 → 宿主机 /data/  (⚠️ owner 必须 §3.3 预先 chown · 否则 redis 启动 fatal · 见 §8 Q8)
+├─ pgsql/        (PG 数据 · 999:999 · PG 镜像会自己 chown · 可不动)
+├─ redis/        (Redis AOF/RDB · 必须 chown 999:999)
+├─ conf/         (server.env · 0700 · root)
 ├─ logs/         (各服务日志)
+│  ├─ postgres/  (必须 chown 999:999)
+│  ├─ redis/     (必须 chown 999:999 · ⚠️ 漏 chown 这里 redis 启动会 fatal)
+│  ├─ server/    (必须 chown 1000:1000 · server node 用户)
+│  └─ nginx/     (root · 不用 chown)
 ├─ certbot/www/  (ACME challenge)
 └─ backups/      (FU-PROD-PG-BACKUP)
 ```
@@ -157,13 +162,56 @@ grep -E '"fast-jwt"|"fast-uri"' package-lock.json | head -5
 
 ⚠️ **D-026 §2.3 C2 + R-008 红线**：AppSecret **绝对不能**进 git / IM / 邮件 / 对话历史。
 
-### §3.3 写 `/data/conf/server.env`（**关键**）
+### §3.3 建持久化目录 + 关键 chown（**漏一步 redis 起不来 · v1.5.1 实测踩坑**）
+
+> 🚨 **必读**：本节是 v1.5.1 第 3 坑（实测 Phase-1 撞过）。如果跳过 chown 直接 `up -d` · **redis 容器会反复重启 fatal exit** · 错误日志：`*** FATAL CONFIG FILE ERROR (Redis 7.4.9) *** Can't open the log file: Permission denied`。
+>
+> **根因**：宿主机 root 创建的目录 owner 是 root · 但 redis 容器内进程是 `redis` 用户（uid=999）· 没权限写日志/AOF · 立即 fatal · `restart: unless-stopped` 反复重启。
+>
+> **为什么 PG 不踩？**：PG 镜像 entrypoint 主动 chown 数据目录；redis 镜像不会，挂载目录权限必须人工准备。
+
+#### Step 1 · 建目录
 
 ```bash
-# 建目录
 mkdir -p /data/conf /data/pgsql /data/redis /data/logs/{postgres,redis,server,nginx} /data/certbot/www /data/backups
 chmod 0700 /data/conf /data/backups
+```
 
+#### Step 2 · chown（**关键 · 不可跳过**）
+
+容器内进程 uid 与宿主机不一致，必须预先 chown：
+
+| 路径 | 期望 owner | 容器内进程 | 可否跳过 |
+|---|---|---|---|
+| `/data/redis` | 999:999 | redis 用户（uid=999） | ❌ **必做** · 跳过 redis 启动 fatal |
+| `/data/logs/redis` | 999:999 | redis 写日志 | ❌ **必做** · 跳过 redis 启动 fatal（v1.5.1 真踩坑点） |
+| `/data/logs/postgres` | 999:999 | postgres 用户（uid=999） | ⚠️ 建议做 · PG 自己不会 chown 日志目录 |
+| `/data/logs/server` | 1000:1000 | node 用户（uid=1000 · Dockerfile §43） | ⚠️ 建议做 · server 写 audit log |
+| `/data/pgsql` | (任意) | PG entrypoint 自动 chown | ✅ 可不动 |
+| `/data/logs/nginx` | (任意) | nginx 容器跑 root | ✅ 可不动 |
+
+```bash
+# 一键 chown（精确对应上表 · 不要省略）
+chown -R 999:999  /data/redis /data/logs/redis /data/logs/postgres
+chown -R 1000:1000 /data/logs/server
+```
+
+#### Step 3 · 验证 owner
+
+```bash
+ls -ld /data/redis /data/logs/{redis,postgres,server}
+# 期望 owner 全部对齐（前两个是 redis 必坑点）：
+#   drwxr-xr-x ... 999  999  /data/redis
+#   drwxr-xr-x ... 999  999  /data/logs/redis
+#   drwxr-xr-x ... 999  999  /data/logs/postgres
+#   drwxr-xr-x ... 1000 1000 /data/logs/server
+```
+
+如果你看到任何一行 owner 是 `root root` → 回到 Step 2 重 chown，否则后面 §4.3 起 redis 必 fatal。
+
+### §3.4 写 `/data/conf/server.env`（**关键**）
+
+```bash
 # 写 server.env（heredoc · 占位符稍后用 vim 替换）
  cat > /data/conf/server.env <<'EOF'
 # Costra prod 环境变量（v1.5 · 由 docker compose env_file 注入）
@@ -230,10 +278,83 @@ grep '\[' /data/conf/server.env || echo "✅ 所有占位符已替换"
 
 ### §4.1 build server 镜像
 
+> ⚠️ **小机器警告（v1.5.1 实测踩坑 · 见 §8 Q9）**：腾讯云 prod 机器是 **2 核 2G**，本地直接 `docker compose build server` 实测 4000+ 秒未完成（卡在 `npm ci` + native 模块编译，2G 内存触发 swap 雪崩）。
+>
+> **推荐路径（任选其一）**：
+> - **方式 A · 同架构高性能机器构建 + scp 镜像** → §4.1-A（适合 prod 机器同样是 x86_64 amd64 · 比如内网另一台 tlinux 3.3）
+> - **方式 B · Docker Hub 推送** → §4.1-B（标准做法 · 后续接 CI/CD 也用同一套）
+> - **方式 C · 直接在 prod build**（仅当机器 ≥4 核 4G 时考虑）→ §4.1-C
+>
+> ⚠️ **CPU 架构必须匹配**：prod 是 x86_64 (amd64)。如果在 **Apple Silicon Mac (M1/M2/M3/M4)** 上构建，必须显式 `--platform linux/amd64`，否则 push 上去无法运行。
+
+#### §4.1-A 跨机器构建 + scp 传镜像（最快上手）
+
+```bash
+# === build 机器（同架构高性能机器 · 比如另一台 tlinux 3.3 · 4核8G+）===
+cd /root/release/Costra/infra
+docker compose -f docker-compose.prod.yml build server
+
+# 验证镜像
+docker images | grep costra-server
+# 期望：costra-server   latest   ...   ~250MB
+
+# 导出为 tar.gz（gzip 压缩省 50%+ 体积）
+docker save costra-server:latest | gzip > /tmp/costra-server.tar.gz
+ls -lh /tmp/costra-server.tar.gz
+
+# scp 到 prod 机器
+scp /tmp/costra-server.tar.gz root@49.235.216.20:/root/release/
+
+# === prod 机器 ===
+cd /root/release
+gunzip -c costra-server.tar.gz | docker load
+# 期望：Loaded image: costra-server:latest
+
+docker images | grep costra-server   # 验证
+rm /root/release/costra-server.tar.gz # 清理
+```
+
+#### §4.1-B 推到 Docker Hub（标准做法 · 后续 CI/CD 用）
+
+```bash
+# === build 机器 · 一次性配置 ===
+docker login
+# Username: <your-dockerhub-username>
+# Password: <Docker Hub Access Token · 推荐用 token 不用密码>
+# Token 生成：https://hub.docker.com → Account Settings → Security → New Access Token (Read & Write)
+
+# 打 tag（双 tag · latest 给开发用 · 版本 tag 方便回滚）
+DOCKERHUB_USER="<your-dockerhub-username>"
+VERSION="v1.5.1-$(date +%Y%m%d)"
+docker tag costra-server:latest ${DOCKERHUB_USER}/costra-server:latest
+docker tag costra-server:latest ${DOCKERHUB_USER}/costra-server:${VERSION}
+
+# 推送（首次 200~400MB · 国内可能慢 · 后续增量 push 快）
+docker push ${DOCKERHUB_USER}/costra-server:latest
+docker push ${DOCKERHUB_USER}/costra-server:${VERSION}
+
+# ⚠️ 第一次 push 后立刻去网页改成 Private（默认 Public）：
+#   https://hub.docker.com/repositories → 找到 costra-server → Settings → Visibility → Private
+
+# === prod 机器 · 一次性 docker login（拉私有仓库必须）===
+docker login   # 推荐单独建 Read-only token 给 prod 用 · 更安全
+
+# 修改 docker-compose.prod.yml · 把 server 的 image 改成线上路径：
+#   image: costra-server:latest
+# 改为：
+#   image: <your-dockerhub-username>/costra-server:latest
+
+cd /root/release/Costra/infra
+docker compose -f docker-compose.prod.yml pull server
+```
+
+> 💡 **国内拉取慢的备选**：换腾讯云 TCR（容器镜像服务）个人版 · 免费 · 国内极快 · 同样支持 private · 用法类似 Docker Hub · 登录地址变成 `ccr.ccs.tencentyun.com`。
+
+#### §4.1-C 直接在 prod build（机器规格 ≥4 核 4G 才考虑）
+
 ```bash
 cd /root/release/Costra/infra
-
-# build server image（首次 ~5-10 min · 后续增量 ~30s）
+# build server image（首次 ~5-10 min · 后续增量 ~30s · ⚠️ 2核2G 机器实测 4000s+ 不会完成）
 docker compose -f docker-compose.prod.yml build server
 
 # 验证镜像
@@ -249,31 +370,48 @@ docker compose -f docker-compose.prod.yml pull postgres redis nginx
 # 期望：3 个镜像全部 Pulled successfully
 ```
 
-### §4.3 启动 stack
+### §4.3 启动 stack（**先不起 nginx · 见 v1.5.1 实测踩坑**）
+
+> ⚠️ **v1.5.1 实测踩坑（§8 Q13）**：如果一把 `up -d` 把 nginx 也起来 · 而 §6 的 TLS 证书还没签 + nginx conf 第 41-49 行 `ssl_certificate` 还在注释状态 → **nginx 启动报 `no "ssl_certificate" is defined for the "listen ... ssl" directive` · 反复 restart（实测 17 次）**。
+>
+> **正确顺序**：先起 postgres/redis/server 三个 → 跑 §5 migrations → §6 签证书 + 改 conf → 最后才 up nginx。
 
 ```bash
 cd /root/release/Costra/infra
 
-# 用 server.env 作为 compose 的 ${VAR} 来源 + 各容器 env_file
-docker compose -f docker-compose.prod.yml --env-file /data/conf/server.env up -d
+# ⚠️ 显式只起 3 服务 · 不起 nginx（避免无证书 restart 循环）
+docker compose -f docker-compose.prod.yml --env-file /data/conf/server.env up -d \
+  postgres redis server
 
 # 看启动日志（首次 PG initdb · 自动跑 01-extensions.sql 装 pgcrypto + citext · ~30s）
 docker compose -f docker-compose.prod.yml logs -f postgres | head -40
 # 期望末尾：database system is ready to accept connections
 
 # Ctrl+C 停止 logs（容器还在跑）
+
+# 验证 3 容器都 healthy（nginx 此时不在列表中是预期的）
+docker compose -f docker-compose.prod.yml ps
+# 期望：
+#   costra-postgres   ... Up X seconds (healthy)   127.0.0.1:5432->5432/tcp
+#   costra-redis      ... Up X seconds (healthy)   127.0.0.1:6379->6379/tcp
+#   costra-server     ... Up X seconds (healthy)   8080/tcp
 ```
 
 ### §4.4 验证 stack 全栈
 
 ```bash
-# 1. 4 容器全部 healthy
+# 1. 3 容器全部 healthy（nginx 在 §6 签完证书后才启动 · 此时不在列表）
 docker compose -f docker-compose.prod.yml ps
-# 期望：4 行全部 Up X seconds (healthy)
+# 期望：3 行全部 Up X seconds (healthy)
 #   costra-postgres   ... Up X seconds (healthy)   127.0.0.1:5432->5432/tcp
 #   costra-redis      ... Up X seconds (healthy)   127.0.0.1:6379->6379/tcp
 #   costra-server     ... Up X seconds (healthy)   8080/tcp
-#   costra-nginx      ... Up X seconds (healthy)   0.0.0.0:80->80/tcp, 0.0.0.0:443->443/tcp
+
+# ⚠️ 如果 redis 状态是 Restarting · 99% 是 §3.3 chown 漏做（v1.5.1 实测踩坑）
+#   立刻确认：
+#   docker logs costra-redis --tail 5
+#   如果看到 "*** FATAL CONFIG FILE ERROR *** Can't open the log file: Permission denied"
+#   → 跳到 §8 Q8 救火步骤（chown 999:999 /data/redis /data/logs/redis · 重启）
 
 # 2. PG 连接（宿主机用 psql client 测 · 容器内 5432 已映射 127.0.0.1）
 # 安装 psql client（如果没装 · 一次性命令）：
@@ -354,17 +492,24 @@ docker exec costra-postgres psql -U costra -d costra -c "SELECT last_value FROM 
 
 ## §6 nginx + TLS 证书
 
+> ⚠️ **v1.5.1 注意**：本节执行前 nginx 容器**应该不存在**（§4.3 已改成只起 3 服务）· 80 端口空闲 · certbot standalone 可直接占用。如果你按旧版手册或一时手快把 nginx 也起来了 → 它会反复 restart（见 §8 Q13）· 跑 §6.1 之前先 `docker compose -f docker-compose.prod.yml rm -sf nginx` 干掉它。
+
 ### §6.1 首次签 cert（用 standalone · nginx 还没绑 443）
 
 ```bash
-# 1. 临时停 nginx 容器（让 80 端口空出 · certbot standalone 用）
-docker compose -f docker-compose.prod.yml stop nginx
+cd /root/release/Costra/infra
 
-# 2. 装 certbot（宿主机 · 一次性）
-dnf install -y certbot
+# 0. 防御性确认 nginx 没在跑（§4.3 已不起 · 这里再次确认）
+docker ps -a --filter name=costra-nginx --format '{{.Names}} {{.Status}}'
+# 期望：空输出 · 或显示 Created/Exited 状态
+# 如果在 Restarting：docker compose -f docker-compose.prod.yml rm -sf nginx
+
+# 1. 装 certbot（宿主机 · 一次性）
+which certbot || dnf install -y certbot
 certbot --version
 
-# 3. 签 cert（standalone 模式 · certbot 临时起 80）
+# 2. 签 cert（standalone 模式 · certbot 临时起 80）
+# ⚠️ 替换 <Human 邮箱> 为真实邮箱（用于证书到期提醒）
 certbot certonly --standalone \
   -d costra.cloud \
   --email <Human 邮箱> \
@@ -373,27 +518,62 @@ certbot certonly --standalone \
 # 期望：Successfully received certificate.
 # 文件：/etc/letsencrypt/live/costra.cloud/fullchain.pem + privkey.pem
 
-# 4. 验证证书
+# 3. 验证证书
 ls -la /etc/letsencrypt/live/costra.cloud/
+# 期望看到 fullchain.pem / privkey.pem / cert.pem / chain.pem
 ```
 
-### §6.2 启用 nginx TLS + 重启
+### §6.2 取消 nginx conf 里的 SSL 注释（用 sed 一把梭 · v1.5.1 实测路径）
+
+> nginx conf 第 41-49 行 9 个 SSL 指令原本注释 · 签完证书后必须取消注释 · 否则启动报 `no "ssl_certificate" is defined for the "listen ... ssl" directive` 反复 restart（v1.5.1 实测踩坑 17 次）。
 
 ```bash
-# 编辑 nginx conf · 取消 ssl_certificate / ssl_certificate_key 两行注释
-vim /root/release/Costra/infra/nginx/conf.d/costra.cloud.conf
-# 找到这两行 · 去掉 # 前缀：
-#   # ssl_certificate /etc/letsencrypt/live/costra.cloud/fullchain.pem;
-#   # ssl_certificate_key /etc/letsencrypt/live/costra.cloud/privkey.pem;
-#   # ssl_protocols ... (整段去 #)
+cd /root/release/Costra/infra
 
-# 重启 nginx 容器（重新加载 conf · /etc/letsencrypt 已 read-only mount）
-docker compose -f docker-compose.prod.yml up -d nginx
-docker compose -f docker-compose.prod.yml logs nginx | tail -20
-# 期望：start worker process · 无 SSL_CTX_use_certificate error
+# 用 sed 一把梭取消注释（精确匹配 9 行 SSL 配置）
+sed -i \
+  -e 's|^    # ssl_certificate /etc/letsencrypt|    ssl_certificate /etc/letsencrypt|' \
+  -e 's|^    # ssl_certificate_key /etc/letsencrypt|    ssl_certificate_key /etc/letsencrypt|' \
+  -e 's|^    # ssl_protocols TLSv|    ssl_protocols TLSv|' \
+  -e 's|^    # ssl_ciphers |    ssl_ciphers |' \
+  -e 's|^    # ssl_prefer_server_ciphers |    ssl_prefer_server_ciphers |' \
+  -e 's|^    # ssl_session_cache |    ssl_session_cache |' \
+  -e 's|^    # ssl_session_timeout |    ssl_session_timeout |' \
+  -e 's|^    # ssl_stapling on|    ssl_stapling on|' \
+  -e 's|^    # ssl_stapling_verify |    ssl_stapling_verify |' \
+  nginx/conf.d/costra.cloud.conf
+
+# 验证（应看到 9 行不带 # 的 ssl_xxx 配置）
+grep -n "^    ssl_" nginx/conf.d/costra.cloud.conf
+# 期望 9 行匹配
+
+# 备选验证：原 9 行注释应该已经没有了
+grep -n "^    # ssl_" nginx/conf.d/costra.cloud.conf
+# 期望：无输出
 ```
 
-### §6.3 自动续期（cron · 宿主机）
+### §6.3 nginx -t 测语法 + 启动 nginx
+
+```bash
+# 1. 容器内测 nginx conf 语法（不真正启动 · 防 ssl_certificate 路径错）
+docker run --rm \
+  -v /root/release/Costra/infra/nginx/conf.d:/etc/nginx/conf.d:ro \
+  -v /etc/letsencrypt:/etc/letsencrypt:ro \
+  nginx:1.27-alpine nginx -t
+# 期望：nginx: configuration file /etc/nginx/nginx.conf test is successful
+
+# 2. 启动 nginx 容器（4 个容器全栈正式 up）
+docker compose -f docker-compose.prod.yml --env-file /data/conf/server.env up -d nginx
+
+# 3. 等 5 秒看状态
+sleep 5
+docker compose -f docker-compose.prod.yml ps
+docker logs costra-nginx --tail 20
+# 期望：start worker process · 无 SSL_CTX_use_certificate error
+# 4 容器全部 Up X (healthy)
+```
+
+### §6.4 自动续期（cron · 宿主机）
 
 ```bash
 # certbot 默认 90 天到期 · 每 60 天自动续 · 续完通知 nginx 容器 reload
@@ -469,6 +649,111 @@ docker compose -f /root/release/Costra/infra/docker-compose.prod.yml logs server
 
 **事实**：`-v` 只删 named volume · bind mount 不动。这是设计预期 · 不是 bug。
 
+### Q7 `openssl rand -base64 64 | tr -d '/+='` 输出有两行（v1.5.1 实测）
+
+**根因**：base64 编码每 64 字符自动插入 `\n` · `tr -d '/+='` 没删换行符。
+**修复**：把 `\n` 也删掉：
+```bash
+openssl rand -base64 64 | tr -d '/+=\n'
+```
+（推荐写法：`openssl rand -base64 64 | tr -d '/+=\n'; echo` · 末尾 echo 仅供终端显示换行 · 不进入复制内容）
+
+### Q8 redis 容器 unhealthy · logs 报 `Can't open the log file: Permission denied`（v1.5.1 实测）
+
+**根因**：宿主机 `/data/logs/redis` owner 是 root · 但 redis 容器内进程是 `redis` 用户（uid=999）· 写不进日志 → 进程 fatal exit · `restart: unless-stopped` 反复重启。
+**修复**：§3.3 已加 `chown -R 999:999 /data/redis /data/logs/redis /data/logs/postgres` 和 `chown -R 1000:1000 /data/logs/server`。如果已踩坑：
+```bash
+docker compose -f docker-compose.prod.yml down
+chown -R 999:999  /data/redis /data/logs/redis /data/logs/postgres
+chown -R 1000:1000 /data/logs/server
+docker compose -f docker-compose.prod.yml --env-file /data/conf/server.env up -d
+```
+**对照**：postgres 容器没踩坑是因为 PG 镜像 entrypoint 主动 chown 数据目录；redis 镜像 entrypoint 不会，所以挂载目录权限必须人工准备好。
+
+### Q9 server 容器启动报 `Cannot find module './app.js'`（v1.5.1 实测）
+
+**根因**：`server/tsconfig.json` 是 `module: "CommonJS"`，但 `src/server.ts` 用 ESM 风格 `.js` 后缀 import（如 `import { buildApp } from './app.js'`）；Dockerfile CMD 用 `node --import tsx/esm src/server.ts`，ESM loader 在 CJS tsconfig 下不能解析这种混合写法。
+**为什么 dev 没事**：`npm run dev` 用 `tsx watch src/server.ts`（直接 tsx CLI），CLI 模式能正确处理这种混合 import。
+**修复**：`server/Dockerfile` 最后一行 CMD 改成 tsx CLI（v1.5.1 已修）：
+```dockerfile
+# 原（错误）：CMD ["node", "--import", "tsx/esm", "src/server.ts"]
+# 改为：
+CMD ["node_modules/.bin/tsx", "src/server.ts"]
+```
+
+### Q10 server / nginx healthcheck 报 `Connection refused` · 但手动 curl 能通（v1.5.1 实测）
+
+**根因**：alpine 容器 `/etc/hosts` 里 `localhost` 同时映射 IPv4 `127.0.0.1` 和 IPv6 `::1`。BusyBox wget 解析 `localhost` 时**优先走 IPv6**，但 Fastify / nginx 默认只 bind IPv4，于是 `[::1]:8080` 被拒连。
+**修复**：`infra/docker-compose.prod.yml` 所有 healthcheck 把 `localhost` 替换成 `127.0.0.1`（v1.5.1 已修）：
+```yaml
+# server
+test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz || exit 1"]
+# nginx
+test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/healthz || exit 1"]
+```
+**更稳的备选**（不依赖 wget · 用 node 内置 http）：
+```yaml
+test:
+  - CMD-SHELL
+  - node -e "require('http').get('http://127.0.0.1:8080/healthz',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
+```
+**顺便**：server 的 `start_period` 从 30s 提到 60s（tsx 启动 + Fastify 注册路由 + 等 PG/Redis 慢于 tsc 编译版）。
+
+### Q11 `docker exec -it costra-server /bin/bash` 报 `no such file or directory`
+
+**根因**：alpine 镜像极简，**默认不带 bash**，只有 `/bin/sh`（BusyBox ash）。
+**修复**：alpine 容器一律用 sh：
+```bash
+docker exec -it costra-server sh
+```
+基本调试命令（cd / ls / cat / ps / wget / vi）都可用，但是 BusyBox 阉割版，部分参数与 GNU 版不同。如果非要 bash，可在 Dockerfile 加 `RUN apk add --no-cache bash`，但徒增 5MB 镜像体积，**不推荐**。
+
+### Q12 docker compose `--env-file` 给的密码没替换 · yaml 里 `${REDIS_PW}` 解析为空（防御性提醒）
+
+**根因**：compose 的 `${VAR}` 解析依赖 shell 环境变量 + `--env-file` 文件；如果 `/data/conf/server.env` 里没有该变量名，会被替换为空字符串，redis 等于 `--requirepass ""`，启动可能拒绝或健康检查用空密码连不上。
+**验证**：
+```bash
+docker compose -f docker-compose.prod.yml --env-file /data/conf/server.env config | grep -A 30 "redis:"
+# 看 --requirepass 后面是不是真实密码
+```
+**修复**：确保 server.env 包含 `PG_COSTRA_PW=xxx` 和 `REDIS_PW=xxx` 两行（§3.3 已含）。
+
+### Q13 nginx 容器反复 restart · `no "ssl_certificate" is defined for the "listen ... ssl" directive`（v1.5.1 实测）
+
+**根因**：手册 §4.3 旧版让 `up -d` 一把梭起所有 4 容器，但此时 §6 的 TLS 证书还没签 + nginx conf 第 41-49 行 `ssl_certificate` 还在注释状态。nginx 启动时因 `listen 443 ssl` 没有对应证书指令立即 fatal exit · `restart: unless-stopped` 反复重启（实测 RestartCount=17）。
+**修复（v1.5.1 已落地）**：§4.3 改为只起 3 服务（postgres/redis/server）· §6 完整路径：①签证书 → ②sed 取消注释 → ③`nginx -t` 测语法 → ④`up -d nginx`。
+**踩坑后救火**：
+```bash
+cd /root/release/Costra/infra
+
+# 1. 干掉反复 restart 的 nginx
+docker compose -f docker-compose.prod.yml rm -sf nginx
+
+# 2. 按 §6.1 签证书
+which certbot || dnf install -y certbot
+certbot certonly --standalone -d costra.cloud \
+  --email <你的邮箱> --agree-tos --no-eff-email --non-interactive
+ls /etc/letsencrypt/live/costra.cloud/   # 验证证书已签
+
+# 3. 按 §6.2 sed 取消 SSL 注释（9 行）
+sed -i \
+  -e 's|^    # ssl_certificate /etc/letsencrypt|    ssl_certificate /etc/letsencrypt|' \
+  -e 's|^    # ssl_certificate_key /etc/letsencrypt|    ssl_certificate_key /etc/letsencrypt|' \
+  -e 's|^    # ssl_protocols TLSv|    ssl_protocols TLSv|' \
+  -e 's|^    # ssl_ciphers |    ssl_ciphers |' \
+  -e 's|^    # ssl_prefer_server_ciphers |    ssl_prefer_server_ciphers |' \
+  -e 's|^    # ssl_session_cache |    ssl_session_cache |' \
+  -e 's|^    # ssl_session_timeout |    ssl_session_timeout |' \
+  -e 's|^    # ssl_stapling on|    ssl_stapling on|' \
+  -e 's|^    # ssl_stapling_verify |    ssl_stapling_verify |' \
+  nginx/conf.d/costra.cloud.conf
+
+# 4. 重新 up nginx
+docker compose -f docker-compose.prod.yml --env-file /data/conf/server.env up -d nginx
+sleep 5
+docker compose -f docker-compose.prod.yml ps
+```
+
 ---
 
 ## §9 后续加固清单（FU 进 Sprint-4）
@@ -509,5 +794,49 @@ docker compose -f /root/release/Costra/infra/docker-compose.prod.yml logs server
 
 ---
 
-> **手册版本**：v1.5 · 2026-05-25 12:04 · Orchestrator 同对话轮交付（Plan D 决策落档 · 4 配套文件 + 1 新手册）
-> **下次修订**：Phase-1 实测后修订 v1.6（如再撞新坑）· Phase-2 闸门 5 条 PASS 后由 Orchestrator 派 qa-planner 出 Phase-3 改造手册
+## §11 v1.5.1 实测修订日志（2026-05-25 17:11 立 · 17:34 增订）
+
+> 首次按 v1.5 手册在腾讯云 prod（49.235.216.20 · tlinux 3.3 · 2核2G）实测落地，撞到 6 个新坑，已沉淀进对应章节。
+
+| 坑序号 | 现象 | 沉淀位置 | 修复 |
+|---|---|---|---|
+| 1 | `openssl rand -base64 64 \| tr -d '/+='` 输出有两行 | §8 Q7 | tr -d 加 `\n` |
+| 2 | 2核2G prod 机器 `docker compose build` 4000s+ 不完成 | §4.1（重写）+ §8 Q9 提示 | 跨机构建（§4.1-A scp）/ Docker Hub（§4.1-B）/ 直接 prod build 仅限 ≥4 核 4G（§4.1-C） |
+| 3 | redis 容器 unhealthy · `Can't open the log file: Permission denied` | §0 总览（owner 标注）+ **§3.3 拆出独立章节 3 步式 + chown 表** + §4.4 预警 + §8 Q8 救火 | §3.3 Step 2 强制 chown：`chown 999:999 /data/redis /data/logs/redis /data/logs/postgres` 和 `chown 1000:1000 /data/logs/server` |
+| 4 | server 容器启动 `Cannot find module './app.js'` | §8 Q9 | `server/Dockerfile` CMD 从 `node --import tsx/esm` 改为 `node_modules/.bin/tsx`（已落地） |
+| 5 | server / nginx healthcheck `Connection refused` 但手动 curl 通 | §8 Q10 | `infra/docker-compose.prod.yml` healthcheck 把 `localhost` 全部换成 `127.0.0.1`，server `start_period` 从 30s 提到 60s（已落地） |
+| 6 | nginx 反复 restart 17 次 · `no "ssl_certificate" is defined for the "listen ... ssl"` | §4.3 改造 + §6 重写 + §8 Q13 | §4.3 改为只起 3 服务（postgres/redis/server）· §6 加 sed 取消 9 行 SSL 注释 + `nginx -t` 测语法 + 最后才 up nginx |
+| bonus | `docker exec -it ... /bin/bash` 报 not found | §8 Q11 | alpine 没有 bash · 用 `sh` |
+
+**v1.5.1 已落地的代码改动**（已在 dev 分支）：
+- `server/Dockerfile` line 50-52：CMD 改为 `tsx` CLI（修坑 4）
+- `infra/docker-compose.prod.yml` line 184-200：server healthcheck 改用 node http + `127.0.0.1` + `start_period: 60s`（修坑 5）
+- `infra/docker-compose.prod.yml` line 235-240：nginx healthcheck `localhost` → `127.0.0.1`（修坑 5）
+- `infra/prod-bootstrap-compose.md`（本文件）多处：
+  - §0 总览：目录树加 owner 标注（修坑 3 醒目度）
+  - §3.3（**新拆**）：建目录 + chown（3 步式 · 强制不可跳过 · 含 owner 表）
+  - §3.4（**原 §3.3 重命名**）：写 server.env
+  - §4.1：跨机构建三方案（修坑 2）
+  - §4.3：拆 nginx 不一起起（修坑 6）
+  - §4.4：redis Restarting 预警提示（修坑 3 救火链路）
+  - §6（重写）：sed 取消 SSL 注释 + nginx -t（修坑 6）
+  - §8 Q7~Q13：7 条 FAQ
+  - §11：本节
+
+**正确部署顺序（v1.5.1 验证版）**：
+1. §1 前置确认 → §2 拉代码
+2. §3.1 生密码 → §3.2 取 WX_APP_SECRET → **§3.3 建目录 + chown（漏做 redis fatal）** → §3.4 写 server.env
+3. §4.1 build server 镜像（**不在 2核2G 机器上 build**）→ §4.2 pull 官方镜像
+4. §4.3 **只起 3 服务**（postgres/redis/server）→ §4.4 验证 3 healthy
+5. §5 跑 migrations
+6. §6.1 certbot 签证书 → §6.2 sed 取消 SSL 注释 → §6.3 `nginx -t` + up nginx → §6.4 cron 续期
+7. §7 闸门 5 条全 PASS
+
+**Phase-1 实际耗时**（v1.5.1 实测）：
+- v1.5 预估 60~90 min
+- 实测 ~5h（含 6 坑排查 · 但每个坑都已沉淀 · 后续重跑应在 60 min 内）
+
+---
+
+> **手册版本**：v1.5.1 · 2026-05-25 17:11 立 · 17:34 增订（nginx 顺序坑） · 17:58 增订（redis 权限坑强化 §0/§3.3 拆分/§4.4 预警）· Orchestrator 同对话轮交付（v1.5 立案 12:04 · v1.5.1 实测修订 · Plan D 决策落档 + 6 坑沉淀 + Dockerfile/compose 已修）
+> **下次修订**：Phase-2 闸门 5 条全 PASS 后由 Orchestrator 派 qa-planner 出 Phase-3 改造手册
