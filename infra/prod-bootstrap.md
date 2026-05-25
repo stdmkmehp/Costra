@@ -1,4 +1,16 @@
-# Costra · prod 服务首次 bootstrap 手册（v1.4 · §0-bis 占位符语法 + §4 §5 双路径整段重写）
+# Costra · prod 服务首次 bootstrap 手册（v1.4 · 历史参考 · Plan A 宿主机 systemd / Plan B docker 容器内手动启停）
+
+> 🚨 **2026-05-25 12:04 状态变更 · v1.5 推荐路径已分流**：
+>
+> - 🟢 **当前推荐**：[`infra/prod-bootstrap-compose.md`](./prod-bootstrap-compose.md)（**v1.5 · Plan C · docker compose 4 容器**）
+> - 🟡 **历史参考**：本文件（v1.4 · Plan A 宿主机 systemd / Plan B 单容器内手动启停 · 已知 4 个真踩坑 + Redis 5.0.3 漂移 + PG initdb trust 等问题）· 仍保留作为知识沉淀（Plan A 在某些场景仍可用 · 比如 dedicated 单机 + 无 Docker Engine 的环境）
+>
+> **决策落档**：2026-05-25 11:57 Human 选 Plan D（4 服务 docker compose · Q1=bridge / Q2=alpine / Q3=重做 / Q4=立即）→ 升级为 v1.5 Plan C
+>
+> **不要在本文件继续推进 Phase-1** · 走 v1.5 新手册。本文件以下内容作为历史档案保留 · 不再维护。
+
+---
+
 
 > **本手册为 Costra 项目首次生产服务部署交接单**。Agent 无生产 SSH 访问权 · Agent 出手册 + Human 跑命令 · 每步含验证 + 期望输出 · 高危段标 ⚠️ Human 拍板。
 >

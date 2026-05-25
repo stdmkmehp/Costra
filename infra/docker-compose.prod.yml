@@ -1,0 +1,255 @@
+# =============================================================================
+# Costra · prod docker compose 编排（v1.5 · 2026-05-25）
+# =============================================================================
+# 4 服务架构（Plan C · 决策见 prod-bootstrap.md §0 + §3-C）：
+#   - postgres : PG 15 · 数据持久化 /data/pgsql
+#   - redis    : Redis 7 · 数据持久化 /data/redis
+#   - server   : Costra Fastify Node 20 · 自构建镜像
+#   - nginx    : 反代 + TLS · 80/443
+#
+# 网络：默认 bridge（compose 自动建 costra-prod_default 网络）
+#       容器间用 service name 互通（server → postgres:5432 / redis:6379）
+#       端口策略：DB/Redis 仅 127.0.0.1 暴露 · server 仅 8080 内部 · nginx 80/443 公网
+#
+# 数据持久化：bind mount 到宿主机 /data/* · 容器删了数据不丢
+#
+# 启动：cd /root/release/Costra/infra && docker compose -f docker-compose.prod.yml --env-file /data/conf/server.env up -d
+# 停止：docker compose -f docker-compose.prod.yml down       # 不删卷
+# 完全清理：docker compose -f docker-compose.prod.yml down -v  # ⚠️ 删命名卷（bind mount 仍在）
+#
+# 关联：
+#   - server/Dockerfile（自构建 server 镜像）
+#   - infra/nginx/conf.d/costra.cloud.conf（nginx 容器配置）
+#   - /data/conf/server.env（DATABASE_URL / REDIS_URL / JWT_SECRET / WX_APP_SECRET / WX_MOCK_LOGIN=0）
+#   - /data/conf/postgres.env（仅 PG 用 · POSTGRES_PASSWORD）
+#   - prod-bootstrap.md §3-C（部署手册）
+# =============================================================================
+
+# Compose v3.9 · 兼容 docker compose v2.x（推荐）
+# 不写 version 字段 · 现代 docker compose 自动识别（避免 deprecated 警告）
+
+services:
+  # ===========================================================================
+  # PostgreSQL 15 · 有状态 · 数据 bind mount 到 /data/pgsql
+  # ===========================================================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: costra-postgres
+    restart: unless-stopped
+
+    # 仅 127.0.0.1 暴露 · 不进公网（D-009 §2.4 安全基线）
+    ports:
+      - "127.0.0.1:5432:5432"
+
+    environment:
+      # POSTGRES_PASSWORD 从宿主机 /data/conf/server.env 注入（避免硬编码）
+      POSTGRES_USER: costra
+      POSTGRES_PASSWORD: ${PG_COSTRA_PW}
+      POSTGRES_DB: costra
+      # 触发 initdb 时执行的额外 SQL · 装 pgcrypto + citext 扩展（0001_init.sql 必需）
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+      TZ: Asia/Shanghai
+
+    volumes:
+      # 数据目录 → 宿主机（容器删了数据不丢）
+      - /data/pgsql:/var/lib/postgresql/data
+      # 日志目录
+      - /data/logs/postgres:/var/log/postgresql
+      # 首次 initdb 自动跑 .sql 文件（postgres 镜像约定）
+      # 仅首次启动 · 数据目录非空时跳过 · 我们用 docker-entrypoint-initdb.d 装扩展 + 跑 migration
+      - ./postgres/initdb.d:/docker-entrypoint-initdb.d:ro
+
+    # 健康检查（让 server 等 PG ready 再启）
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U costra -d costra"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
+
+    # PG 调优（小型 prod 推荐起步值 · FU-PROD-PG-TUNE 后续优化）
+    command:
+      - "postgres"
+      - "-c"
+      - "log_destination=stderr"
+      - "-c"
+      - "logging_collector=off"
+      - "-c"
+      - "max_connections=100"
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "effective_cache_size=1GB"
+      - "-c"
+      - "work_mem=4MB"
+      - "-c"
+      - "password_encryption=scram-sha-256"
+
+    # 资源限制（compose 单机部署）
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+
+  # ===========================================================================
+  # Redis 7 · 有状态 · AOF 持久化到 /data/redis
+  # ===========================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: costra-redis
+    restart: unless-stopped
+
+    ports:
+      - "127.0.0.1:6379:6379"
+
+    environment:
+      TZ: Asia/Shanghai
+
+    volumes:
+      - /data/redis:/data
+      - /data/logs/redis:/var/log/redis
+
+    # Redis 启动命令（密码从 env 注入 · AOF 开启 · maxmemory 限制）
+    command:
+      - "redis-server"
+      - "--requirepass"
+      - "${REDIS_PW}"
+      - "--appendonly"
+      - "yes"
+      - "--appendfsync"
+      - "everysec"
+      - "--maxmemory"
+      - "512mb"
+      - "--maxmemory-policy"
+      - "allkeys-lru"
+      - "--bind"
+      - "0.0.0.0"
+      - "--protected-mode"
+      - "yes"
+      - "--logfile"
+      - "/var/log/redis/redis.log"
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PW}", "--no-auth-warning", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+          cpus: '0.5'
+
+  # ===========================================================================
+  # Costra Server · 无状态 · 自构建镜像（server/Dockerfile）
+  # ===========================================================================
+  server:
+    build:
+      context: ../server
+      dockerfile: Dockerfile
+    image: costra-server:latest
+    container_name: costra-server
+    restart: unless-stopped
+
+    # 端口仅暴露给 nginx（同 compose 网络内）· 不暴露公网（也不暴露 127.0.0.1）
+    expose:
+      - "8080"
+
+    # 环境变量（从 server.env 注入 · 注意 DATABASE_URL/REDIS_URL host 用 service name）
+    env_file:
+      - /data/conf/server.env
+
+    # 覆盖 server.env 里的 host 字段（容器间用 service name · 不能用 127.0.0.1）
+    environment:
+      DATABASE_URL: postgres://costra:${PG_COSTRA_PW}@postgres:5432/costra
+      REDIS_URL: redis://:${REDIS_PW}@redis:6379
+      NODE_ENV: production
+      TZ: Asia/Shanghai
+      # WX_MOCK_LOGIN=0 必须显式 · D-026 §2.3 C2 强制
+      WX_MOCK_LOGIN: "0"
+
+    volumes:
+      # 日志（pino stdout 已重定向到 docker logs · 此卷供 audit log / 临时文件用）
+      - /data/logs/server:/var/log/costra
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+
+    # 日志轮转（防止 docker logs 撑爆磁盘）
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "5"
+
+  # ===========================================================================
+  # nginx · 反代 + TLS · 80/443 公网
+  # ===========================================================================
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: costra-nginx
+    restart: unless-stopped
+
+    ports:
+      - "80:80"
+      - "443:443"
+
+    volumes:
+      # 配置文件（read-only · 避免容器内误改）
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      # certbot 签的 TLS 证书（在宿主机用 certbot 签 · 容器只读挂载）
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      # webroot（certbot http-01 challenge 用 · ACME 续期）
+      - /data/certbot/www:/var/www/certbot:ro
+      - /data/logs/nginx:/var/log/nginx
+
+    environment:
+      TZ: Asia/Shanghai
+
+    depends_on:
+      server:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "5"
+
+# =============================================================================
+# 网络（默认 bridge · compose 自动建 · 不需手写）
+# =============================================================================
+# 自动创建：costra-prod_default 网络（bridge driver）
+# 容器间互通：通过 service name DNS（postgres / redis / server / nginx）
+# 不暴露的 expose: 端口仅在内部网络可达 · 公网不可达
