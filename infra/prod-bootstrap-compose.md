@@ -4,7 +4,7 @@
 >
 > **母决策**：D-009（域名 + 安全基线）/ D-023（prod 入口回归根域）/ **D-026（staging↔prod 合并 · 工程纪律 4 条）**
 > **决策落档**：2026-05-25 11:57 Human 选 Plan D（4 服务 docker compose）→ 升级为 v1.5 Plan C
-> **首次实测落地**：2026-05-25 17:34（v1.5.1 · 实测踩 6 坑 · 已沉淀 §8 Q7~Q13 + §3.3 chown + §4.1 跨机构建 + §4.3 拆 nginx + §6 重写）
+> **首次实测落地**：2026-05-25 19:50（v1.5.1 · 实测踩 7 坑 · 已沉淀 §6.0 webroot 模式 + §6.4 cron `-T` + §8 Q7~Q14 + §3.3 chown + §4.1 跨机构建 + §4.3 拆 nginx + §6 重写）
 > **日期**：2026-05-25 立案 · 2026-05-25 实测修订
 > **HEAD**：a2a3959+（dev 分支 · 含 0001~0006 共 6 条 migration）
 > **目标读者**：Human（拥有 49.235.216.20 root SSH 访问权 + 腾讯云控制台 + 微信公众平台后台访问权）
@@ -494,7 +494,33 @@ docker exec costra-postgres psql -U costra -d costra -c "SELECT last_value FROM 
 
 > ⚠️ **v1.5.1 注意**：本节执行前 nginx 容器**应该不存在**（§4.3 已改成只起 3 服务）· 80 端口空闲 · certbot standalone 可直接占用。如果你按旧版手册或一时手快把 nginx 也起来了 → 它会反复 restart（见 §8 Q13）· 跑 §6.1 之前先 `docker compose -f docker-compose.prod.yml rm -sf nginx` 干掉它。
 
-### §6.1 首次签 cert（用 standalone · nginx 还没绑 443）
+### §6.0 ACME challenge 模式说明（webroot vs standalone · v1.5.1 重要决策）
+
+> Let's Encrypt 签 / 续证书前要验证你拥有这个域名 · 通过 **HTTP-01 challenge** 让你在 `http://costra.cloud/.well-known/acme-challenge/<随机串>` 返回它指定的内容。`certbot` 提供两种"完成挑战"的实现方式：
+
+| 模式 | 工作方式 | 80 端口 | 续期是否需停 nginx | 推荐 |
+|---|---|---|---|---|
+| **standalone** | certbot 自己启动一个临时 web server 占用 80 端口响应挑战 | 必须独占 | ✅ 必须停 · 续期 prod 入口 503 几十秒 | ❌ |
+| **webroot** | certbot 把挑战文件写到磁盘 · 让已有 nginx 帮忙返回 | 共享给 nginx | ✅ nginx 一直跑 · 业务零中断 | ✅ |
+
+**Costra 部署策略（v1.5.1 决策）**：
+- **首次签证（§6.1）** → 用 **standalone**（此时 nginx 还没起 · 80 端口空 · 最简单）
+- **签完后立刻切 renewal 配置为 webroot**（§6.1 末尾 `--reuse-key` 重签触发自动切换）
+- **续期 cron（§6.4）** → 用 webroot · nginx 不停
+
+**链路示意**（webroot 续期时）：
+```
+certbot 续期 → 写挑战文件到 /data/certbot/www/.well-known/acme-challenge/<随机串>
+                                ↑ 宿主机
+                                ↓ 通过 docker volume mount /var/www/certbot:ro
+nginx 容器收到 LE 访问 → location /.well-known/acme-challenge/ { root /var/www/certbot; }
+                       → 读到文件 → 返回 → LE 验证通过 → 签发新证书
+                       → certbot 跑 deploy-hook → docker compose exec -T nginx nginx -s reload
+```
+
+这一切的前提：**`infra/nginx/conf.d/costra.cloud.conf` 里 `location /.well-known/acme-challenge/` + `docker-compose.prod.yml` 里 `/data/certbot/www:/var/www/certbot:ro` 卷挂载已经在 v1.5 提前就位**，不用改。
+
+### §6.1 首次签 cert（用 standalone · nginx 还没绑 443）+ 切 webroot renewal
 
 ```bash
 cd /root/release/Costra/infra
@@ -521,6 +547,30 @@ certbot certonly --standalone \
 # 3. 验证证书
 ls -la /etc/letsencrypt/live/costra.cloud/
 # 期望看到 fullchain.pem / privkey.pem / cert.pem / chain.pem
+
+# 4. 立刻把 renewal 配置切成 webroot（关键 · 后续 cron 续期不用停 nginx）
+#    注意：webroot 路径 /data/certbot/www 必须存在 · §3.3 mkdir 已含 · 但再次确认
+mkdir -p /data/certbot/www
+
+# sed 改 renewal 配置：authenticator standalone → webroot + 加 webroot_path
+RENEWAL_CONF=/etc/letsencrypt/renewal/costra.cloud.conf
+
+# 备份
+cp ${RENEWAL_CONF} ${RENEWAL_CONF}.bak.$(date +%Y%m%d-%H%M%S)
+
+sed -i \
+  -e 's|^authenticator = standalone$|authenticator = webroot|' \
+  ${RENEWAL_CONF}
+
+# 加 webroot_path 字段（如果没有）
+grep -q "^webroot_path" ${RENEWAL_CONF} || \
+  sed -i '/^authenticator = webroot$/a webroot_path = /data/certbot/www,\n[[webroot_map]]\ncostra.cloud = /data/certbot/www' ${RENEWAL_CONF}
+
+# 验证切换成功
+grep -E "^authenticator|^webroot" ${RENEWAL_CONF}
+# 期望：
+#   authenticator = webroot
+#   webroot_path = /data/certbot/www,
 ```
 
 ### §6.2 取消 nginx conf 里的 SSL 注释（用 sed 一把梭 · v1.5.1 实测路径）
@@ -573,15 +623,39 @@ docker logs costra-nginx --tail 20
 # 4 容器全部 Up X (healthy)
 ```
 
-### §6.4 自动续期（cron · 宿主机）
+### §6.4 自动续期（cron · 用 webroot · nginx 不停 · v1.5.1 加 -T 修 TTY 坑）
+
+> ⚠️ **v1.5.1 修复**：旧版命令缺 `-T` · cron 跑 `docker compose exec` 会报 `the input device is not a TTY`（cron 没分配 TTY）。详见 §8 Q14。
 
 ```bash
-# certbot 默认 90 天到期 · 每 60 天自动续 · 续完通知 nginx 容器 reload
 cat > /etc/cron.d/costra-certbot <<'EOF'
-0 3 * * * root certbot renew --quiet --deploy-hook "docker compose -f /root/release/Costra/infra/docker-compose.prod.yml exec nginx nginx -s reload"
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# 每天凌晨 03:17 检查续期（错峰 · LE 官方推荐避开整点）
+# certbot 自己判断是否到期（默认到期前 30 天才真续）· 没到期会静默跳过
+# --deploy-hook 只在真续到新证书后才 reload nginx · 避免每天空 reload
+# -T 关闭 TTY 分配（cron 没 TTY · 不加报错）
+17 3 * * * root certbot renew --quiet --deploy-hook "docker compose -f /root/release/Costra/infra/docker-compose.prod.yml exec -T nginx nginx -s reload" >> /var/log/certbot-renew.log 2>&1
 EOF
 
+# 让 crond 重载
 systemctl restart crond
+
+# 验证 cron 已生效
+cat /etc/cron.d/costra-certbot
+systemctl status crond --no-pager | head -5
+
+# 验证续期能跑通（dry-run · 不真签 · 走完整流程）
+certbot renew --dry-run
+# 期望末尾：Congratulations, all simulated renewals succeeded.
+# 如果报错 "Could not bind to IPv4..." → 说明 §6.1 第 4 步切换 webroot 没成功 · 回去重做
+
+# 验证 deploy-hook 命令本身能跑（手动模拟）
+docker compose -f /root/release/Costra/infra/docker-compose.prod.yml exec -T nginx nginx -s reload
+# 期望：无输出（success）
+docker logs costra-nginx --tail 5
+# 期望：... signal process started 或 reloading configuration
 ```
 
 ---
@@ -754,6 +828,33 @@ sleep 5
 docker compose -f docker-compose.prod.yml ps
 ```
 
+### Q14 cron 跑 `docker compose exec` 报 `the input device is not a TTY`（v1.5.1 实测）
+
+**根因**：`docker compose exec` 默认带 `-it`（交互式 + 分配 TTY）· 但 cron 没有 TTY → 命令直接失败 · 续期 hook 无效 · nginx 不会 reload 新证书。
+**修复（v1.5.1 已落地 §6.4）**：加 `-T`（关闭 TTY 分配）：
+```bash
+# ❌ 旧版（cron 跑会失败）
+0 3 * * * root certbot renew --quiet --deploy-hook "docker compose -f /root/release/Costra/infra/docker-compose.prod.yml exec nginx nginx -s reload"
+
+# ✅ v1.5.1 新版（加 -T + PATH + 日志 + 错峰 17 分）
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+17 3 * * * root certbot renew --quiet --deploy-hook "docker compose -f /root/release/Costra/infra/docker-compose.prod.yml exec -T nginx nginx -s reload" >> /var/log/certbot-renew.log 2>&1
+```
+
+**配套修复**：v1.5 旧版 §6.1 用 `--standalone` · 续期时会撞 nginx 的 80 端口 → v1.5.1 §6.1 末尾把 renewal 配置切到 `webroot` · 续期不需停 nginx（业务零中断）· 详见 §6.0 模式说明。
+
+**验证**：
+```bash
+# dry-run 测续期能跑通（不真签）
+certbot renew --dry-run
+# 期望末尾：Congratulations, all simulated renewals succeeded.
+
+# 手动测 deploy-hook 命令本身
+docker compose -f /root/release/Costra/infra/docker-compose.prod.yml exec -T nginx nginx -s reload
+# 期望：无输出 + nginx logs 显示 reloading configuration
+```
+
 ---
 
 ## §9 后续加固清单（FU 进 Sprint-4）
@@ -794,9 +895,9 @@ docker compose -f docker-compose.prod.yml ps
 
 ---
 
-## §11 v1.5.1 实测修订日志（2026-05-25 17:11 立 · 17:34 增订）
+## §11 v1.5.1 实测修订日志（2026-05-25 17:11 立 · 17:34 / 17:58 / 19:50 三轮增订）
 
-> 首次按 v1.5 手册在腾讯云 prod（49.235.216.20 · tlinux 3.3 · 2核2G）实测落地，撞到 6 个新坑，已沉淀进对应章节。
+> 首次按 v1.5 手册在腾讯云 prod（49.235.216.20 · tlinux 3.3 · 2核2G）实测落地，撞到 7 个坑，已沉淀进对应章节。
 
 | 坑序号 | 现象 | 沉淀位置 | 修复 |
 |---|---|---|---|
@@ -806,6 +907,7 @@ docker compose -f docker-compose.prod.yml ps
 | 4 | server 容器启动 `Cannot find module './app.js'` | §8 Q9 | `server/Dockerfile` CMD 从 `node --import tsx/esm` 改为 `node_modules/.bin/tsx`（已落地） |
 | 5 | server / nginx healthcheck `Connection refused` 但手动 curl 通 | §8 Q10 | `infra/docker-compose.prod.yml` healthcheck 把 `localhost` 全部换成 `127.0.0.1`，server `start_period` 从 30s 提到 60s（已落地） |
 | 6 | nginx 反复 restart 17 次 · `no "ssl_certificate" is defined for the "listen ... ssl"` | §4.3 改造 + §6 重写 + §8 Q13 | §4.3 改为只起 3 服务（postgres/redis/server）· §6 加 sed 取消 9 行 SSL 注释 + `nginx -t` 测语法 + 最后才 up nginx |
+| 7 | cron 续期命令缺 `-T` · 跑会报 `the input device is not a TTY` · 旧版 standalone 续期还会撞 nginx 80 端口 | §6.0 新增 + §6.1 第 4 步 + §6.4 重写 + §8 Q14 | §6.0 解释 webroot vs standalone · §6.1 末尾 sed 切 renewal 配置到 webroot · §6.4 cron 加 `-T` + PATH + 日志 + 错峰 17 分 + `--deploy-hook` |
 | bonus | `docker exec -it ... /bin/bash` 报 not found | §8 Q11 | alpine 没有 bash · 用 `sh` |
 
 **v1.5.1 已落地的代码改动**（已在 dev 分支）：
@@ -819,8 +921,11 @@ docker compose -f docker-compose.prod.yml ps
   - §4.1：跨机构建三方案（修坑 2）
   - §4.3：拆 nginx 不一起起（修坑 6）
   - §4.4：redis Restarting 预警提示（修坑 3 救火链路）
+  - §6.0（**新增**）：webroot vs standalone 模式说明 + 链路示意（修坑 7 设计文档化）
+  - §6.1 末尾：sed 切 renewal 配置到 webroot（修坑 7 续期不停 nginx）
   - §6（重写）：sed 取消 SSL 注释 + nginx -t（修坑 6）
-  - §8 Q7~Q13：7 条 FAQ
+  - §6.4（重写）：cron 加 `-T` + PATH + 日志 + 错峰 + dry-run 验证（修坑 7）
+  - §8 Q7~Q14：8 条 FAQ
   - §11：本节
 
 **正确部署顺序（v1.5.1 验证版）**：
@@ -829,14 +934,14 @@ docker compose -f docker-compose.prod.yml ps
 3. §4.1 build server 镜像（**不在 2核2G 机器上 build**）→ §4.2 pull 官方镜像
 4. §4.3 **只起 3 服务**（postgres/redis/server）→ §4.4 验证 3 healthy
 5. §5 跑 migrations
-6. §6.1 certbot 签证书 → §6.2 sed 取消 SSL 注释 → §6.3 `nginx -t` + up nginx → §6.4 cron 续期
+6. §6.0 看模式说明 → §6.1 standalone 签证书 + 立刻切 webroot renewal → §6.2 sed 取消 SSL 注释 → §6.3 `nginx -t` + up nginx → §6.4 cron 续期（dry-run 验证）
 7. §7 闸门 5 条全 PASS
 
 **Phase-1 实际耗时**（v1.5.1 实测）：
 - v1.5 预估 60~90 min
-- 实测 ~5h（含 6 坑排查 · 但每个坑都已沉淀 · 后续重跑应在 60 min 内）
+- 实测 ~5h（含 7 坑排查 · 但每个坑都已沉淀 · 后续重跑应在 60 min 内）
 
 ---
 
-> **手册版本**：v1.5.1 · 2026-05-25 17:11 立 · 17:34 增订（nginx 顺序坑） · 17:58 增订（redis 权限坑强化 §0/§3.3 拆分/§4.4 预警）· Orchestrator 同对话轮交付（v1.5 立案 12:04 · v1.5.1 实测修订 · Plan D 决策落档 + 6 坑沉淀 + Dockerfile/compose 已修）
+> **手册版本**：v1.5.1 · 2026-05-25 17:11 立 · 17:34 增订（nginx 顺序坑） · 17:58 增订（redis 权限坑强化 §0/§3.3 拆分/§4.4 预警）· 19:50 增订（cert renewal webroot 化 §6.0 新增 / §6.1 切 renewal / §6.4 cron 加 -T / §8 Q14）· Orchestrator 同对话轮交付（v1.5 立案 12:04 · v1.5.1 实测修订 · Plan D 决策落档 + 7 坑沉淀 + Dockerfile/compose 已修）
 > **下次修订**：Phase-2 闸门 5 条全 PASS 后由 Orchestrator 派 qa-planner 出 Phase-3 改造手册
