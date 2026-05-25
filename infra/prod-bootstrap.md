@@ -1,30 +1,35 @@
-# Costra · prod 服务首次 bootstrap 手册（v1.3 · tlinux3.3 + Plan A 宿主机 systemd / Plan B docker 容器内）
+# Costra · prod 服务首次 bootstrap 手册（v1.4 · §0-bis 占位符语法 + §4 §5 双路径整段重写）
 
 > **本手册为 Costra 项目首次生产服务部署交接单**。Agent 无生产 SSH 访问权 · Agent 出手册 + Human 跑命令 · 每步含验证 + 期望输出 · 高危段标 ⚠️ Human 拍板。
 >
 > **母决策**：D-009（域名 + 安全基线）/ D-023（prod 入口回归根域）/ **D-026（staging↔prod 合并 · 工程纪律 4 条 · 同对话轮交付）**
 > **交付者**：Orchestrator（devops-ops 装扮档工具白名单错配兜底落档 · D-026 §6.1 incident 备注）
-> **日期**：2026-05-23 立案 · 2026-05-24 v1.3 修订
-> **HEAD**：a2a3959+（dev 分支 · 含 0001~0006 共 6 条 migration · entries_change_seq SEQUENCE 已就绪 · 含 v1.2 PGDG 修复 commit 330a204 + CVE 修复 commit 8ed63ab）
+> **日期**：2026-05-23 立案 · 2026-05-25 v1.4 修订
+> **HEAD**：a2a3959+（dev 分支 · 含 0001~0006 共 6 条 migration · entries_change_seq SEQUENCE 已就绪 · 含 v1.2 PGDG 修复 commit 330a204 + CVE 修复 commit 8ed63ab + v1.3 Plan B commit 0e4bf89 + 8a0598c FU-PROD-PG-AUTH-SCRAM 登记）
 > **目标读者**：Human（拥有 49.235.216.20 root SSH 访问权 + 腾讯云控制台 + 微信公众平台后台访问权）
+>
+> **v1.4 修订**（2026-05-25 11:22 · Phase-1 Human 反馈 §4/§5 模糊 + line 488 占位符不直观）：
+> - **§0-bis 阅读约定**（新增于 v1.4 早段 commit 8dfbce5）：占位符语法 `<§N.M XXX>` / `<XXX 输出>` / `<Human XXX>` 三种 · 错误 vs 正确对比示例 · 三密码总表 · 推荐操作流程
+> - **§4 整段重写**：原版仅给字段表 · 用户看不懂如何落盘。新版分 §4.0（前置准备 4 机密值 · 含状态 checkbox）+ §4.1（字段清单参考表）+ §4.2（**[Plan A]** 完整 here-doc 命令）+ §4.3（**[Plan B]** 完整 here-doc 命令 · 路径 /data/conf/server.env · 权限 0640）+ §4.4（WX_APP_SECRET 浏览器步骤 · 移到末尾）
+> - **§5 整段重写 + 双路径并列**：原版仅 systemd 路径（Plan B 走不通）。新版分 §5-A（systemd · §5-A.1 unit / §5-A.2 启动验证）+ §5-B（pm2 · §5-B.1 装 / §5-B.2 启 / §5-B.3 mock 校验 / §5-B.4 容器自启）
+> - **§5-B.2 启动命令修正**：v1.4 早稿误写 `npm run start:prod`（不存在）· 修正为 `node --import tsx/esm src/server.ts`（与 §5-A unit + §2.3 注释一致 · 不预编译）· 给出 3 种 server.env 加载方式（ecosystem.config.cjs / wrapper 脚本 / source）
 >
 > **v1.3 修订**（2026-05-24 14:20 · Phase-1 实测沉淀 · Costra prod 实际走 docker 容器内部署 · 见 §15）：
 > - **§3 加 Plan A / Plan B 双形态**：Plan A（§3.1~§3.4 · 宿主机 systemd · 原版未变）+ **Plan B（§3.5 新增 · docker 容器内手动启停）**
-> - **§3.5 Plan B 完整路径**：§3.5.0 容器启动（docker run 完整命令记录）· §3.5.1 PG init+pg_ctl 启动 · §3.5.2 Redis 配置（含密码 sed 顺序修复 · 卷权限 chmod 644）· §3.5.3 全栈验证 · §3.5.4 容器重启自启（systemd 替代方案 · 候选 FU-PROD-CONTAINER-AUTOSTART P0）
-> - **§3.5.2 Redis 版本漂移登记**：实际装到 Redis 5.0.3（EPEL 仓 EL-8 不出 redis 7）· 代码兼容性✅ · Sprint-4 Remi 仓升级 7.2 LTS（候选 FU-PROD-REDIS-VERSION-ALIGN）· D-026 §2.1 一致性偏差明示登记
-> - **§9 FAQ 加 Q10 + Q11**：Q10（docker systemd 反模式 · 强制走 Plan B）· Q11（挂载卷 640 vs 644 权限）· 9→11 条
-> - **CVE 修复同对话轮捎带**（commit 8ed63ab）：fast-jwt 6.2.2→6.2.4（CVSS 9.1 critical · JWT auth bypass · R-008 红线）+ fast-uri 3.1.0→3.1.2（CVSS 7.5 high · path traversal）· 0 vulnerabilities · server vitest 70/70 PASS
+> - **§3.5 Plan B 完整路径**：§3.5.0 容器启动 · §3.5.1 PG init+pg_ctl 启动 · §3.5.2 Redis 配置 · §3.5.3 全栈验证 · §3.5.4 容器重启自启
+> - **§3.5.2 Redis 版本漂移登记**：实际装到 Redis 5.0.3（EPEL 仓 EL-8 不出 redis 7）· 代码兼容性✅
+> - **§9 FAQ 加 Q10 + Q11**：Q10（docker systemd 反模式）· Q11（挂载卷 640 vs 644 权限）· 9→11 条
+> - **CVE 修复同对话轮捎带**（commit 8ed63ab）：fast-jwt 6.2.2→6.2.4（CVSS 9.1 critical）+ fast-uri 3.1.0→3.1.2（CVSS 7.5 high）· 0 vulnerabilities · server vitest 70/70 PASS
 >
 > **v1.2 修订**（2026-05-23 22:07 · Human Phase-1 §1.1 步骤 2 实测踩坑后增补 · 见 §14 + §9 Q9）：
-> - **§1.1 步骤 2 PG 15 安装**：装 PGDG repo 后**立刻 sed 锁死 rhel-8**（绕过 tlinux3.3 `$releasever=3.3` 与 PGDG `rhel-$releasever` baseurl 拼接 404 的真踩坑）· `postgres --version` 改 `/usr/pgsql-15/bin/postgres --version`（PG 15 二进制不在 $PATH）
-> - **§1.1 步骤 3 Redis 装**：装 EPEL 后加**防御性 sed**（同款 `$releasever` 风险预防）
-> - **§9 FAQ 新增 Q9**：tlinux3.3 dnf 404 `rhel-3.3-x86_64` 完整根因链 + 修复 SOP + 复用范围（未来任何 tlinux3.x EL-8 三方仓部署的强制前置）
+> - **§1.1 步骤 2 PG 15 安装**：装 PGDG repo 后**立刻 sed 锁死 rhel-8**
+> - **§1.1 步骤 3 Redis 装**：装 EPEL 后加**防御性 sed**
+> - **§9 FAQ 新增 Q9**：tlinux3.3 dnf 404 `rhel-3.3-x86_64` 完整根因链
 >
 > **v1.1 修订**（2026-05-23 21:10 · Human 反馈 2 条调整后重写）：
-> - **OS 校准**：从 Debian/Ubuntu（apt）改为 **tlinux3.3**（腾讯定制 RHEL/CentOS Stream 8 系 · dnf/yum 包管理 · systemd 原生 · firewalld 默认）
-> - **DB/Redis 部署模式**：从 docker compose 改为**本地原生安装 PostgreSQL 15 + Redis 7**（systemd 直管 · 减少容器层 · 更贴 prod 单机部署最佳实践）
-> - **配套修订**：§1.1 工具补装命令换 dnf · §3 全段重写 · §6 migrate 命令调整（DB_URL 而非 DATABASE_URL · 跟 server/scripts/dev/migrate.sh:13 实际默认值对齐）· §9 故障排查同步换 PG/Redis 本地排查命令
-> - **pgcrypto + citext 扩展**：本地装时需 `postgresql15-contrib` 包 + 在 DB 内 `CREATE EXTENSION`（事实源：`server/db/migrations/0001_init.sql:10-11`）
+> - **OS 校准**：从 Debian/Ubuntu（apt）改为 **tlinux3.3**（dnf 包管理）
+> - **DB/Redis 部署模式**：从 docker compose 改为**本地原生安装 PostgreSQL 15 + Redis 7**
+> - **配套修订**：§1.1 工具补装命令换 dnf · §3 全段重写 · §6 migrate 命令调整 · §9 故障排查同步换
 
 ---
 
@@ -657,23 +662,141 @@ docker run -d --name costra-prod ... [同 §3.5.0 全部参数] \
 
 > ⚠️ **重要**：本节为字段清单 · 实际值通过 §5.2 systemd EnvironmentFile 注入 · **不要在 server/ 目录创建 .env.prod 文件**（避免误进仓 · 即使 .gitignore 覆盖）
 
-| 字段 | 值 | 来源 / 取得方式 |
+## §4 server 环境变量配置（**不进仓库**）
+
+> 🚨 **v1.4 重大改写**：原 §4 仅给字段表 · 没给"如何把字段写到机器上"的具体命令 · Phase-1 实测发现 Human 看不懂。本节改为：**§4.0 前置（先生成 3 密码 + WX_APP_SECRET）→ §4.1 字段清单 → §4.2 落盘命令（Plan A / Plan B 各一段完整 here-doc）→ §4.3 验证**
+
+### §4.0 ⚠️ 前置 · 准备 4 个机密值（**先做完这步 · 否则 §4.2 没法跑**）
+
+按 §3.4 + §0-bis 三密码总表 · 在密码管理器里准备好以下 4 个值（**先全部准备好 · 再跑 §4.2**）：
+
+| 占位符 | 生成方式 | 长度 | 状态 |
+|---|---|---|---|
+| `[PG_COSTRA_PW]` | `openssl rand -base64 32 \| tr -d '/+='` | ~32 字符 | ☐ 已生成并存密码管理器 |
+| `[REDIS_PW]` | `openssl rand -base64 32 \| tr -d '/+='` | ~32 字符 | ☐ 已生成并存密码管理器 |
+| `[JWT_SECRET]` | `openssl rand -base64 64 \| tr -d '/+='` | ~64 字符（**注意 64 不是 32**） | ☐ 已生成并存密码管理器 |
+| `[WX_APP_SECRET]` | 见 §4.4 浏览器步骤 | 32 字符 | ☐ 已从微信公众平台取得并存密码管理器 |
+
+> 💡 **生成命令一次性给** · 跑完手抄到密码管理器 · 然后立刻关掉 SSH 终端 / `history -c`：
+> ```bash
+> echo "PG    : $(openssl rand -base64 32 | tr -d '/+=')"
+> echo "REDIS : $(openssl rand -base64 32 | tr -d '/+=')"
+> echo "JWT   : $(openssl rand -base64 64 | tr -d '/+=')"
+> ```
+
+### §4.1 必填字段清单（参考表 · 不是 .env 文件本身）
+
+| 字段 | 值（替换 `[...]` 为真实值） | 来源 |
 |---|---|---|
 | `NODE_ENV` | `production` | 强制 |
 | `PORT` | `8080` | 默认（nginx 反代到此端口） |
-| `DATABASE_URL` | `postgres://costra:<§3.4 PG 强密码>@127.0.0.1:5432/costra` | §3.1 + §3.4 |
-| `REDIS_URL` | `redis://:<§3.4 Redis 强密码>@127.0.0.1:6379` | §3.2 + §3.4（**注意**：Redis 密码用法 `redis://:PASSWORD@host` · 冒号前空 user） |
-| `JWT_SECRET` | `openssl rand -base64 64` 生成 | **本机生成** · 记录到密码管理器 · 不进任何文件 |
+| `DATABASE_URL` | `postgres://costra:[PG_COSTRA_PW]@127.0.0.1:5432/costra` | §3.4 + §3.5.1 |
+| `REDIS_URL` | `redis://:[REDIS_PW]@127.0.0.1:6379` | §3.4 + §3.5.2（**注意冒号前留空 · `:[PW]@host`**） |
+| `JWT_SECRET` | `[JWT_SECRET]` | §3.4 + §4.0（64 字符版本） |
 | `JWT_ISSUER` | `https://costra.cloud` | D-009 |
 | `JWT_AUDIENCE` | `costra-miniapp` | 既有 |
 | `WX_APP_ID` | `wxf8b0d3e3a83f9941` | infra/wechat/domains.md §0 |
-| `WX_APP_SECRET` | `<Human 从微信公众平台拿>` | **D-026 §2.3 C2 红线** · 微信公众平台 → 开发 → 开发管理 → 开发设置 → AppSecret（重置 / 显示） |
-| **`WX_MOCK_LOGIN`** | **`0`（必须显式写 0）** | **D-026 §2.3 C2 强制 · 不能省略 / 不能注释 / 不能空** |
-| `ICP_FILING_NUMBER` | `沪ICP备2026017253号-2` | infra/wechat/domains.md §0（如 server/src/config/icp.ts 已硬编码可省） |
+| `WX_APP_SECRET` | `[WX_APP_SECRET]` | §4.4 浏览器取得 |
+| **`WX_MOCK_LOGIN`** | **`0`（必须显式写 0 · D-026 §2.3 C2 强制 · 不能省略 / 不能空）** | **R-008 红线** |
+| `ICP_FILING_NUMBER` | `沪ICP备2026017253号-2` | infra/wechat/domains.md §0 |
 
-> 📌 **JWT_SECRET 与本地 dev 不一样**：dev 环境 JWT_SECRET 在 server/.env 是 dev 值；prod 必须用 `openssl rand -base64 64` 全新生成 · 与 dev 隔离 · 一旦泄漏需要轮换全部 user token。
+### §4.2 [Plan A] 落盘到 `/etc/costra/server.env`（systemd EnvironmentFile · Plan A 用）
 
-### §4.2 ⚠️ WX_APP_SECRET 取得操作步骤（Human 浏览器跑）
+> ⚠️ **Plan A 路径**：宿主机 systemd 模式（§3.1~§3.4）。Plan B 走 §4.3 跳过本节。
+
+```bash
+# 1. 建目录 + 权限
+mkdir -p /etc/costra /var/log/costra
+chmod 0700 /etc/costra
+chmod 0755 /var/log/costra
+
+# 2. 写文件（heredoc 模式 · 比 vim 更明确）
+# ⚠️ 把 [PG_COSTRA_PW] / [REDIS_PW] / [JWT_SECRET] / [WX_APP_SECRET] 4 个占位符替换成你 §4.0 生成的真实值
+# ⚠️ 命令前面加一个空格（不进 history · 防泄漏 · 需要 HISTCONTROL=ignorespace 或 set -o ignoreeof）
+
+ cat > /etc/costra/server.env <<'EOF'
+NODE_ENV=production
+PORT=8080
+DATABASE_URL=postgres://costra:[PG_COSTRA_PW]@127.0.0.1:5432/costra
+REDIS_URL=redis://:[REDIS_PW]@127.0.0.1:6379
+JWT_SECRET=[JWT_SECRET]
+JWT_ISSUER=https://costra.cloud
+JWT_AUDIENCE=costra-miniapp
+WX_APP_ID=wxf8b0d3e3a83f9941
+WX_APP_SECRET=[WX_APP_SECRET]
+WX_MOCK_LOGIN=0
+ICP_FILING_NUMBER=沪ICP备2026017253号-2
+EOF
+
+# 3. 严格权限（仅 root 可读）
+chmod 0600 /etc/costra/server.env
+ls -la /etc/costra/server.env
+# 期望：-rw------- 1 root root ... server.env
+
+# 4. ⚠️ 替换占位符（heredoc 用了 'EOF' 单引号 · 内部 [...] 不会被 shell 替换 · 现在用 vim 把 4 个占位符替换成真实值）
+vim /etc/costra/server.env
+# 在 vim 内：用 :%s/\[PG_COSTRA_PW\]/真实密码/g 替换（注意特殊字符转义）
+# 或者直接 i 进入插入模式手改 4 行
+
+# 5. 验证（不打印值 · 仅看 key 数量 + WX_MOCK_LOGIN=0）
+grep -c '^[A-Z_]\+=' /etc/costra/server.env
+# 期望：11
+
+grep '^WX_MOCK_LOGIN=' /etc/costra/server.env
+# 期望：WX_MOCK_LOGIN=0（D-026 §2.3 C2 强制）
+
+# 6. 防 history 泄漏（如果你 vim 编辑过程中复制了密码到 :registers）
+unset HISTFILE 2>/dev/null  # 当前 shell 不再写 history
+```
+
+### §4.3 [Plan B] 落盘到 `/data/conf/server.env`（pm2 用 · Plan B docker 容器内）
+
+> ⚠️ **Plan B 路径**：docker 容器内手动启停（§3.5）。Plan A 用户跳过本节走 §4.2。
+>
+> **Plan B 路径与 A 的差异**：
+> - 文件路径：`/etc/costra/server.env` → `/data/conf/server.env`（挂载卷 · 容器重建后保留）
+> - 注入方式：systemd EnvironmentFile → pm2 `--env-file` 或 dotenv 读取
+> - 权限：0600 → 0640（卷文件不能 chown 到容器内 root · 0640 + group readable 较稳妥）
+
+```bash
+# 容器内 root 跑
+
+# 1. 建目录（/data/conf 已挂载 · 只需建子文件）
+mkdir -p /data/conf /data/logs
+chmod 0755 /data/conf /data/logs
+
+# 2. 写文件（heredoc · 占位符稍后用 vim 替换）
+ cat > /data/conf/server.env <<'EOF'
+NODE_ENV=production
+PORT=8080
+DATABASE_URL=postgres://costra:[PG_COSTRA_PW]@127.0.0.1:5432/costra
+REDIS_URL=redis://:[REDIS_PW]@127.0.0.1:6379
+JWT_SECRET=[JWT_SECRET]
+JWT_ISSUER=https://costra.cloud
+JWT_AUDIENCE=costra-miniapp
+WX_APP_ID=wxf8b0d3e3a83f9941
+WX_APP_SECRET=[WX_APP_SECRET]
+WX_MOCK_LOGIN=0
+ICP_FILING_NUMBER=沪ICP备2026017253号-2
+EOF
+
+# 3. 替换占位符（vim 或 sed · 注意特殊字符）
+vim /data/conf/server.env
+# 把 [PG_COSTRA_PW] / [REDIS_PW] / [JWT_SECRET] / [WX_APP_SECRET] 4 个替换成真实值
+
+# 4. 权限（容器卷限制 · 0640 比 0600 更稳）
+chmod 0640 /data/conf/server.env
+ls -la /data/conf/server.env
+
+# 5. 验证（同 §4.2 步骤 5）
+grep -c '^[A-Z_]\+=' /data/conf/server.env
+# 期望：11
+
+grep '^WX_MOCK_LOGIN=' /data/conf/server.env
+# 期望：WX_MOCK_LOGIN=0
+```
+
+### §4.4 ⚠️ WX_APP_SECRET 取得操作步骤（Human 浏览器跑 · §4.0 之前做）
 
 1. 登录 https://mp.weixin.qq.com（Costra 小程序管理员账号）
 2. 左侧菜单 → 开发 → 开发管理 → 开发设置
@@ -685,9 +808,13 @@ docker run -d --name costra-prod ... [同 §3.5.0 全部参数] \
 
 ---
 
-## §5 systemd service unit 落盘
+## §5 server 进程管理 · Plan A 用 systemd / Plan B 用 pm2
 
-### §5.1 `/etc/systemd/system/costra-server.service`
+> 🚨 **v1.4 重大改写**：原 §5 只写 systemd 路径 · Plan B（docker 容器内 PID 1 不是 systemd）走不通。本节分 §5-A（systemd）+ §5-B（pm2）两套并行。
+
+### §5-A [Plan A] systemd service unit（宿主机 systemd 模式）
+
+#### §5-A.1 写 unit 文件 `/etc/systemd/system/costra-server.service`
 
 ```bash
 cat > /etc/systemd/system/costra-server.service <<'EOF'
@@ -714,37 +841,9 @@ WantedBy=multi-user.target
 EOF
 ```
 
-> 📌 **v1.1 修订**：`After=docker.service` 改为 `After=postgresql-15.service redis.service` · `Requires=postgresql-15.service redis.service`（PG 或 Redis 挂掉 · costra-server 也跟着停 · 避免连接错误风暴）
+> 📌 **v1.1 修订**：`After=docker.service` 改为 `After=postgresql-15.service redis.service` · `Requires=...`（PG 或 Redis 挂掉 · costra-server 也跟着停 · 避免连接错误风暴）
 
-### §5.2 `/etc/costra/server.env`（EnvironmentFile · 0600 权限）
-
-```bash
-mkdir -p /etc/costra /var/log/costra
-chmod 0700 /etc/costra
-
-# 编辑 /etc/costra/server.env（按 §4.1 清单字段填）
-# 推荐用 vim · 不要用 echo 链式（防 shell history 残留）
-vim /etc/costra/server.env
-
-# 文件内容（一行一字段 · KEY=VALUE 格式 · 末行无空格 · 无引号 · 注意 # 不可作为行内注释）：
-# NODE_ENV=production
-# PORT=8080
-# DATABASE_URL=postgres://costra:<§3.4 PG 强密码>@127.0.0.1:5432/costra
-# REDIS_URL=redis://:<§3.4 Redis 强密码>@127.0.0.1:6379
-# JWT_SECRET=<openssl rand -base64 64 输出>
-# JWT_ISSUER=https://costra.cloud
-# JWT_AUDIENCE=costra-miniapp
-# WX_APP_ID=wxf8b0d3e3a83f9941
-# WX_APP_SECRET=<微信公众平台取得>
-# WX_MOCK_LOGIN=0
-
-# 设置严格权限
-chmod 0600 /etc/costra/server.env
-ls -la /etc/costra/server.env
-# 期望：-rw------- 1 root root ... server.env
-```
-
-### §5.3 启动 service + 验证启动日志（关键 D-026 §2.3 C2）
+#### §5-A.2 启动 service + 验证
 
 ```bash
 systemctl daemon-reload
@@ -765,16 +864,138 @@ tail -n 50 /var/log/costra/server.log
 # - "wxMockLogin":true
 # - "WX_MOCK_LOGIN enabled"
 # - 任何 "mock" 字样
-```
 
-```bash
 # 自动化校验（D-026 §2.3 C2 落地）
 grep -i 'mockLogin\|WX_MOCK_LOGIN enabled\|"mock"' /var/log/costra/server.log
 # 期望：无任何输出（grep 退出码 1）
 
 # 如果 grep 有输出 → 立即停服
 # systemctl stop costra-server
-# 检查 /etc/costra/server.env 是否漏写 WX_MOCK_LOGIN=0 · systemctl show costra-server | grep WX_MOCK
+# 检查 /etc/costra/server.env 是否漏写 WX_MOCK_LOGIN=0
+# systemctl show costra-server | grep WX_MOCK
+```
+
+---
+
+### §5-B [Plan B] pm2 进程管理（docker 容器内 · Costra prod 实际路径）
+
+> ⚠️ **Plan B 路径**：docker 容器 PID 1 = `tail -f /dev/null` · 不是 systemd · 必须用进程层工具。pm2 是 Node 生态首选（vs nohup / forever / supervisord）。
+
+#### §5-B.1 装 pm2
+
+```bash
+# 容器内 root 跑（npm 全局装）
+npm install -g pm2
+pm2 --version
+# 期望：6.x.x 或更高
+```
+
+#### §5-B.2 启 server（用 §4.3 的 `/data/conf/server.env`）
+
+> 📌 **server 启动命令事实**：Costra server 用 `tsx` 直接跑 TS 源码（不预编译 · 见 §2.3）· 启动命令是 `node --import tsx/esm src/server.ts`（与 §5-A systemd unit 一致）。`package.json` 的 `npm start` 跑的是 `node dist/server.js` 需要 `npm run build` 预编译 · prod 我们走 tsx 路径不预编译。
+
+```bash
+# 容器内 root 跑
+cd /root/Costra/server   # 你 docker run -v /root/release/Costra:/root/Costra 挂载的路径
+
+# pm2 启动命令（用 --interpreter node + --interpreter-args + 脚本路径）
+# 关键：server 用 tsx loader · 必须 --import tsx/esm 才能跑 TS
+pm2 start src/server.ts \
+  --name costra-server \
+  --interpreter node \
+  --node-args="--import tsx/esm" \
+  --log /data/logs/costra-server.log \
+  --error /data/logs/costra-server.err.log \
+  --time
+
+# ⚠️ 如果上面命令 pm2 不识别 .ts 入口 · 改用 wrapper 脚本：
+#   cat > /root/Costra/server/start-prod.sh <<'EOF'
+#   #!/bin/bash
+#   set -a && source /data/conf/server.env && set +a
+#   exec node --import tsx/esm src/server.ts
+#   EOF
+#   chmod +x /root/Costra/server/start-prod.sh
+#   pm2 start /root/Costra/server/start-prod.sh --name costra-server --log /data/logs/costra-server.log
+
+# ⚠️ pm2 加载 server.env 的方式（任选其一）：
+#
+# 方式 1 · pm2 ecosystem.config.cjs（推荐 · 长期方案）：
+#   cat > /root/Costra/server/ecosystem.config.cjs <<'EOF'
+#   const dotenv = require('dotenv');
+#   const env = dotenv.parse(require('fs').readFileSync('/data/conf/server.env'));
+#   module.exports = {
+#     apps: [{
+#       name: 'costra-server',
+#       script: 'src/server.ts',
+#       interpreter: 'node',
+#       node_args: '--import tsx/esm',
+#       env,
+#       out_file: '/data/logs/costra-server.log',
+#       error_file: '/data/logs/costra-server.err.log',
+#       time: true,
+#     }]
+#   };
+#   EOF
+#   pm2 start /root/Costra/server/ecosystem.config.cjs
+#
+# 方式 2 · 启动前 source（简单 · 但要 wrapper 脚本）：
+#   见上面 start-prod.sh 那段
+#
+# 方式 3 · server.ts 自己读（如果 src/server.ts 头部已有 import 'dotenv/config' · 让它自己加载）：
+#   set -a && source /data/conf/server.env && set +a   # 临时方法 · 不持久
+
+# 验证 pm2 进程
+pm2 list
+# 期望：│ costra-server │ ... │ online │ ...
+
+pm2 logs costra-server --lines 50
+# 期望：{"level":30,"time":...,"msg":"Server listening at http://0.0.0.0:8080"}
+```
+
+#### §5-B.3 关键验证（D-026 §2.3 C2 mock 防护）
+
+```bash
+# 自动化校验（同 §5-A.2）
+grep -i 'mockLogin\|WX_MOCK_LOGIN enabled\|"mock"' /data/logs/costra-server.log
+# 期望：无任何输出（grep 退出码 1）
+
+# 如果 grep 有输出 → 立即停服
+# pm2 stop costra-server
+# 检查 /data/conf/server.env 是否漏写 WX_MOCK_LOGIN=0
+# pm2 env <id> | grep WX_MOCK   # 看 pm2 实际加载的环境变量
+```
+
+#### §5-B.4 容器重启自启（**Phase-2 闸门 4 必须**）
+
+> ⚠️ pm2 startup 在容器内可能不生效（容器 PID 1 不是 systemd / init）· 必须做 startup 脚本 + commit 镜像（详见 §3.5.4）。
+
+**当前 Phase-1 / Phase-2 接受手动重启**：容器重启后 SSH 进去手动 `pm2 resurrect` 或重跑 §5-B.2 命令。
+
+**Phase-2 闸门通过后做**（FU-PROD-CONTAINER-AUTOSTART）：
+```bash
+# 容器内
+pm2 save   # 保存当前进程列表到 ~/.pm2/dump.pm2
+
+# 写 startup 脚本（覆盖 §3.5.4 草案）
+cat > /usr/local/bin/costra-startup.sh <<'EOF'
+#!/bin/bash
+sudo -iu postgres /usr/pgsql-15/bin/pg_ctl -D /var/lib/pgsql/15/data -l /data/logs/postgres.log start || true
+sleep 2
+sudo -u redis redis-server /data/conf/redis.conf --daemonize yes || true
+sleep 1
+nginx || true
+pm2 resurrect || true
+tail -f /dev/null
+EOF
+chmod +x /usr/local/bin/costra-startup.sh
+
+# 退出容器 · 宿主机 commit + 重建容器
+exit
+docker commit costra-prod costra-prod:phase-2-baseline
+docker stop costra-prod && docker rm costra-prod
+docker run -d --name costra-prod ... [§3.5.0 全部参数] \
+  costra-prod:phase-2-baseline \
+  /usr/local/bin/costra-startup.sh
 ```
 
 ---
@@ -1340,5 +1561,35 @@ Orchestrator 收到后：
 
 ---
 
-> **手册版本**：v1.3 · 2026-05-24 14:20 · Orchestrator 同对话轮交付（基于 Human Phase-1 docker 路径实测反馈 · 4 个真踩坑后批量补丁）
-> **下次修订**：Phase-1 §3.5.4 容器自启 / §4 .env / §5 systemd（Plan A）or pm2（Plan B）/ §6 migration 后续步骤实测后修订 v1.4
+## §16 v1.3 → v1.4 变更日志
+
+> **触发**：2026-05-25 11:15~11:22 · Phase-1 实测反馈：① §4/§5 模糊不可执行 ② line 488 `<§3.4 PG 强密码>` 占位符语法不直观（Human 不知道要替换）③ pg_hba 默认 trust 登记
+>
+> **真踩坑/认知盲区**（按时间）：
+> 1. 11:15 · `psql -h 127.0.0.1 -U costra -d costra -c '\dx'` 不要密码也连得上 → 暴露 PG initdb 默认 trust 反模式 → 立 FU-PROD-PG-AUTH-SCRAM P0（Phase-3 真 prod 验收前修）
+> 2. 11:18 · Human 决策当前阶段不修 trust（P0 但暂缓）· 议入 D-027 候选范围
+> 3. 11:20 · Human 反馈 §4/§5 太模糊 + 占位符 `<§3.4 PG 强密码>` 看不懂
+
+| § | 变更 | 原因 |
+|---|---|---|
+| 头部 | 副标题改 "v1.4 · §0-bis 占位符语法 + §4 §5 双路径整段重写" · 加 v1.4 修订说明段 | 可读性 |
+| **§0-bis（新增）** | 占位符语法约定（30 秒必读）· 三种语法 `<§N.M XXX>` / `<XXX 输出>` / `<Human XXX>` · 错误 vs 正确对比 · 三密码总表 · 推荐操作流程 · HISTCONTROL 防泄漏 | 解决 line 488 类问题 |
+| **§4 整段重写** | §4.0 前置准备 4 机密值（含 checkbox 状态）+ §4.1 字段清单参考表（占位符改 `[XXX]` 易识别）+ **§4.2 [Plan A] 完整 here-doc** + **§4.3 [Plan B] 完整 here-doc** + §4.4 WX_APP_SECRET 浏览器步骤（移末尾 · 因为 §4.0 前置已引用） | 给"如何把字段表落盘到机器"的具体命令 |
+| **§5 整段重写 + 双路径** | 原版仅 systemd（Plan B 走不通）· 新版分 §5-A（systemd · A.1 unit / A.2 启动验证）+ §5-B（pm2 · B.1 装 / B.2 启 / B.3 mock 校验 / B.4 容器自启） | Plan B 用户必须 |
+| §5-B.2 启动命令修正 | 早稿误写 `npm run start:prod`（package.json 不存在）· 修正为 `node --import tsx/esm src/server.ts`（与 §5-A unit + §2.3 注释一致 · 不预编译）· 给 3 种 server.env 加载方式 | 真 bug 修复 |
+| §10 加 FU-PROD-PG-AUTH-SCRAM | initdb 默认 trust 反模式登记（Phase-3 验收前必须修 · 一行 sed 修复）· FU 9→10 / 15pt→17pt | 安全债务透明登记 |
+
+**v1.4 修订带来的额外操作**：
+- Plan B 路径用户：~5 min 额外（§4.0 准备 4 机密值 · 之前 §4 没说要做）
+- Plan A 路径用户：~2 min 额外（§4.0 同款 + here-doc 替代 vim · 比原版更清晰）
+- 占位符替换：用 `[PG_COSTRA_PW]` `[REDIS_PW]` `[JWT_SECRET]` `[WX_APP_SECRET]` 4 个明显占位 · vim `:%s/\[XXX\]/真实值/g` 一次替换
+
+**新增议题 / FU**（议入 Sprint-3 末 Retro · 候选）：
+- **议题 #10（新增）**：手册占位符语法应作为 SOP 强约束 · 无论 prod-bootstrap / qa/curl-verify / 其他执行类手册都该加 §0-bis 阅读约定段
+- **议题 #11（新增）**：手册"分路径"模式作为通用范式 · 当一份手册支持多种部署形态时（systemd vs pm2 / dedicated vs 容器内 / k8s vs 单机）· 必须 §X-A / §X-B 并列展开 · 不写"如果 X 走 Y 否则走 Z"含糊话
+- **议题 #12（新增）**：手册命令应"复制即跑"不应"看完再编辑" · 占位符必须明显（不用 `<...>` 含糊语法 · 改用 `[XXX]` 带 vim 替换提示）
+
+---
+
+> **手册版本**：v1.4 · 2026-05-25 11:22 · Orchestrator 同对话轮交付（基于 Human Phase-1 §4/§5 模糊反馈 + 占位符不直观反馈 · 3 个改进点同对话轮整段重写）
+> **下次修订**：Phase-1 §6 migration / §7 nginx + certbot / §8 闸门 5 条 实测后修订 v1.5（如再撞新坑）
