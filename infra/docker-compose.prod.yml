@@ -19,10 +19,11 @@
 #
 # 关联：
 #   - server/Dockerfile（自构建 server 镜像）
-#   - infra/nginx/conf.d/costra.cloud.conf（nginx 容器配置）
+#   - infra/nginx/conf.d/costra.cloud.conf（nginx 配置模板 · SSL 注释状态 · git 安全）
+#   - /data/conf/nginx/costra.cloud.conf（live 运行时配置 · SSL 已启用 · 容器挂载此目录）
 #   - /data/conf/server.env（DATABASE_URL / REDIS_URL / JWT_SECRET / WX_APP_SECRET / WX_MOCK_LOGIN=0）
 #   - /data/conf/postgres.env（仅 PG 用 · POSTGRES_PASSWORD）
-#   - prod-bootstrap.md §3-C（部署手册）
+#   - prod-bootstrap-compose.md §3-C（部署手册）
 # =============================================================================
 
 # Compose v3.9 · 兼容 docker compose v2.x（推荐）
@@ -220,8 +221,10 @@ services:
       - "443:443"
 
     volumes:
-      # 配置文件（read-only · 避免容器内误改）
-      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      # 配置文件 · 使用 live 路径（/data/conf/nginx）而非 repo 模板（./nginx/conf.d）
+      # 这样 git pull 不会覆盖已启用 SSL 的运行时配置
+      # 模板 → live 的复制由 05-start-stack.sh 负责
+      - /data/conf/nginx:/etc/nginx/conf.d:ro
       # certbot 签的 TLS 证书（在宿主机用 certbot 签 · 容器只读挂载）
       - /etc/letsencrypt:/etc/letsencrypt:ro
       # webroot（certbot http-01 challenge 用 · ACME 续期）

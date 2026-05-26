@@ -50,25 +50,44 @@ require_file "${COSTRA_ENV_FILE}"
 # =============================================================================
 print_section_header "05 · 起 3 服务 stack（§4.2~§4.4）"
 
-# --- Step 1: 拉官方镜像（postgres/redis/nginx）---
-if [[ "${SKIP_PULL}" == "1" ]]; then
-  log_step "[1/3] 拉镜像 → 已 --no-pull · 跳过"
+# --- Step 1: 同步 nginx 模板 → live（/data/conf/nginx）---
+log_step "[1/4] 同步 nginx 配置模板 → live（/data/conf/nginx）"
+
+NGINX_TMPL_DIR="${COSTRA_INFRA}/nginx/conf.d"
+NGINX_LIVE_DIR="${COSTRA_DATA}/conf/nginx"
+
+mkdir -p "${NGINX_LIVE_DIR}"
+
+# 策略：如果 live 目录已有配置（非首次部署）· 不覆盖（保护已启用 SSL 的运行时配置）
+# 只在 live 目录为空时（首次部署）才从模板复制
+if [[ -z "$(ls -A "${NGINX_LIVE_DIR}" 2>/dev/null)" ]]; then
+  log_info "live 目录为空（首次部署）· 从模板复制"
+  run_cmd cp -a "${NGINX_TMPL_DIR}/." "${NGINX_LIVE_DIR}/"
+  log_success "模板已复制到 ${NGINX_LIVE_DIR}"
 else
-  log_step "[1/3] 拉 postgres/redis/nginx 官方镜像"
+  log_info "live 目录已有配置 · 跳过覆盖（git pull 安全）"
+  log_info "如需强制更新 live 配置 · 手动: cp ${NGINX_TMPL_DIR}/* ${NGINX_LIVE_DIR}/"
+fi
+
+# --- Step 2: 拉官方镜像（postgres/redis/nginx）---
+if [[ "${SKIP_PULL}" == "1" ]]; then
+  log_step "[2/4] 拉镜像 → 已 --no-pull · 跳过"
+else
+  log_step "[2/4] 拉 postgres/redis/nginx 官方镜像"
   cd "${COSTRA_INFRA}"
   run_cmd docker compose -f "${COSTRA_COMPOSE_FILE}" pull postgres redis nginx
   log_success "官方镜像就绪"
 fi
 
-# --- Step 2: 起 3 服务（不起 nginx · §4.3 改造）---
-log_step "[2/3] 起 postgres + redis + server（不起 nginx · 见 §4.3）"
+# --- Step 3: 起 3 服务（不起 nginx · §4.3 改造）---
+log_step "[3/4] 起 postgres + redis + server（不起 nginx · 见 §4.3）"
 
 cd "${COSTRA_INFRA}"
 run_cmd docker compose -f "${COSTRA_COMPOSE_FILE}" --env-file "${COSTRA_ENV_FILE}" \
   up -d postgres redis server
 
-# --- Step 3: 等 healthy（最长 ${HEALTHY_TIMEOUT} 秒）---
-log_step "[3/3] 等待 3 容器 healthy（超时 ${HEALTHY_TIMEOUT}s）"
+# --- Step 4: 等 healthy（最长 ${HEALTHY_TIMEOUT} 秒）---
+log_step "[4/4] 等待 3 容器 healthy（超时 ${HEALTHY_TIMEOUT}s）"
 
 if [[ "${DRY_RUN}" == "1" ]]; then
   log_dry "（dry-run 跳过 healthy 检查）"

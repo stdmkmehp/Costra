@@ -44,7 +44,10 @@ DOMAIN="${COSTRA_DOMAIN}"
 USE_EXISTING=0
 IMPORT_TAR=""
 SKIP_SSL_UNCOMMENT=0
-NGINX_CONF="${COSTRA_INFRA}/nginx/conf.d/costra.cloud.conf"
+# live 配置路径（/data/conf/nginx）· 不是 repo 模板（./nginx/conf.d）
+# 模板 → live 复制由 05-start-stack.sh 在起容器前完成
+NGINX_CONF="${COSTRA_DATA}/conf/nginx/costra.cloud.conf"
+NGINX_CONF_TEMPLATE="${COSTRA_INFRA}/nginx/conf.d/costra.cloud.conf"
 
 # --- 临时 nginx 容器名（签证专用 · 用完即弃）---
 CERT_NGINX_NAME="costra-certbot-nginx"
@@ -231,6 +234,14 @@ if [[ "${SKIP_SSL_UNCOMMENT}" == "1" ]]; then
   log_step "nginx SSL 注释 → 已 --skip-ssl-uncomment · 跳过"
 else
   log_step "取消 nginx conf 里的 SSL 注释（${NGINX_CONF}）"
+
+  # 如果 live conf 不存在 · 从模板复制一份（防御：05 没跑就直接跑 07 的场景）
+  if [[ ! -f "${NGINX_CONF}" ]]; then
+    log_info "live conf 不存在 · 从模板复制: ${NGINX_CONF_TEMPLATE} → ${NGINX_CONF}"
+    require_file "${NGINX_CONF_TEMPLATE}"
+    mkdir -p "$(dirname "${NGINX_CONF}")"
+    cp "${NGINX_CONF_TEMPLATE}" "${NGINX_CONF}"
+  fi
 
   require_file "${NGINX_CONF}"
 

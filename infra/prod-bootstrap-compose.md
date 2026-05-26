@@ -34,6 +34,7 @@
 ├─ pgsql/        (PG 数据 · 999:999 · PG 镜像会自己 chown · 可不动)
 ├─ redis/        (Redis AOF/RDB · 必须 chown 999:999)
 ├─ conf/         (server.env · 0700 · root)
+│  └─ nginx/     (nginx live 运行时配置 · 首次由 05 脚本从模板复制 · git pull 不影响)
 ├─ logs/         (各服务日志)
 │  ├─ postgres/  (必须 chown 999:999)
 │  ├─ redis/     (必须 chown 999:999 · ⚠️ 漏 chown 这里 redis 启动会 fatal)
@@ -41,6 +42,13 @@
 │  └─ nginx/     (root · 不用 chown)
 ├─ certbot/www/  (ACME challenge)
 └─ backups/      (FU-PROD-PG-BACKUP)
+
+nginx 配置架构（模板 vs live 分离 · v1.7 新增）：
+├─ repo:  infra/nginx/conf.d/costra.cloud.conf   ← 模板（SSL 注释 · git 安全）
+└─ live:  /data/conf/nginx/costra.cloud.conf     ← 运行时（SSL 已启用 · docker 挂载此目录）
+    → git pull 只更新模板 · 不影响正在运行的 nginx
+    → 首次部署：05-start-stack.sh 自动复制模板 → live
+    → 后续更新模板：需手动 cp 或删除 live 后重跑 05
 ```
 
 ---
@@ -576,8 +584,11 @@ nginx（临时 or compose）收到 LE 访问 → location /.well-known/acme-chal
 
 相关配置文件：
 - `infra/nginx/certbot-only.conf` — 极简签证专用 nginx 配置（仅 80 + ACME）
-- `infra/nginx/conf.d/costra.cloud.conf` — 正式业务配置（80 重定向 + 443 SSL 反代）
-- `docker-compose.prod.yml` nginx service — `/data/certbot/www:/var/www/certbot:ro` 卷挂载
+- `infra/nginx/conf.d/costra.cloud.conf` — **模板**（repo 内 · SSL 行始终注释 · git pull 安全）
+- `/data/conf/nginx/costra.cloud.conf` — **live 运行时配置**（由 05-start-stack.sh 首次从模板复制 · 07 脚本在此取消 SSL 注释）
+- `docker-compose.prod.yml` nginx service — 挂载 `/data/conf/nginx:/etc/nginx/conf.d:ro`（挂 live · 不挂 repo 模板）
+
+> ⚠️ **模板 vs live 分离设计**：repo 里的 `infra/nginx/conf.d/` 是模板源（SSL 注释状态），`/data/conf/nginx/` 是运行时 live 配置（SSL 已启用）。`git pull` 只更新模板，不影响正在运行的 nginx。如需将模板变更同步到 live，需手动 `cp` 或重跑 `05-start-stack.sh`（非空 live 目录不会自动覆盖）。
 
 ### §6.1 首次签 cert（webroot 模式 · 临时 nginx 容器）
 
@@ -647,6 +658,7 @@ ss -tlnp | grep :80 || echo "80 端口已释放 ✓"
 cd /root/release/Costra/infra
 
 # 用 sed 一把梭取消注释（精确匹配 9 行 SSL 配置）
+# ⚠️ 操作对象是 live 配置（/data/conf/nginx）· 不是 repo 模板
 sed -i \
   -e 's|^    # ssl_certificate /etc/letsencrypt|    ssl_certificate /etc/letsencrypt|' \
   -e 's|^    # ssl_certificate_key /etc/letsencrypt|    ssl_certificate_key /etc/letsencrypt|' \
@@ -657,14 +669,14 @@ sed -i \
   -e 's|^    # ssl_session_timeout |    ssl_session_timeout |' \
   -e 's|^    # ssl_stapling on|    ssl_stapling on|' \
   -e 's|^    # ssl_stapling_verify |    ssl_stapling_verify |' \
-  nginx/conf.d/costra.cloud.conf
+  /data/conf/nginx/costra.cloud.conf
 
 # 验证（应看到 9 行不带 # 的 ssl_xxx 配置）
-grep -n "^    ssl_" nginx/conf.d/costra.cloud.conf
+grep -n "^    ssl_" /data/conf/nginx/costra.cloud.conf
 # 期望 9 行匹配
 
 # 备选验证：原 9 行注释应该已经没有了
-grep -n "^    # ssl_" nginx/conf.d/costra.cloud.conf
+grep -n "^    # ssl_" /data/conf/nginx/costra.cloud.conf
 # 期望：无输出
 ```
 
@@ -673,9 +685,10 @@ grep -n "^    # ssl_" nginx/conf.d/costra.cloud.conf
 ```bash
 # 1. 容器内测 nginx conf 语法（不真正启动 · 防 ssl_certificate 路径错）
 #    注意：需要连 compose 网络才能解析 upstream "server" DNS
+#    使用 live 配置路径（/data/conf/nginx）· 不是 repo 模板
 docker run --rm \
   --network costra_default \
-  -v /root/release/Costra/infra/nginx/conf.d:/etc/nginx/conf.d:ro \
+  -v /data/conf/nginx:/etc/nginx/conf.d:ro \
   -v /etc/letsencrypt:/etc/letsencrypt:ro \
   nginx:1.27-alpine nginx -t
 # 期望：nginx: configuration file /etc/nginx/nginx.conf test is successful
@@ -758,6 +771,62 @@ docker compose -f /root/release/Costra/infra/docker-compose.prod.yml logs server
 ```
 
 **5 条全 PASS** → 反馈 PASS 表给 Orchestrator → Phase-3 由 Orchestrator 派 qa-planner 出 154+150 真 prod 测试手册。
+
+---
+
+## §7-bis 日常运维操作（restart / git pull / 更新配置）
+
+> 本节面向 deploy-all.sh 首次部署完成后的日常操作场景。
+
+### 场景 A：`docker compose down` 后重新启动
+
+数据/配置/镜像都在宿主机，直接 `up -d` 即可：
+
+```bash
+cd /root/release/Costra/infra
+docker compose -f docker-compose.prod.yml --env-file /data/conf/server.env up -d
+# 等 ~30s 全部 healthy
+docker compose -f docker-compose.prod.yml ps
+```
+
+**不需要**重跑 deploy-all.sh、migration、certbot。
+
+### 场景 B：`git pull` 更新代码后重启服务
+
+```bash
+cd /root/release/Costra
+git pull origin dev
+
+# 如果只改了 server 代码（需重新 build 镜像）：
+cd infra
+docker compose -f docker-compose.prod.yml build server
+docker compose -f docker-compose.prod.yml --env-file /data/conf/server.env up -d server
+# nginx 不需要动 · 它挂的是 /data/conf/nginx（live）· 不是 repo 里的模板
+
+# 如果改了 nginx 模板（infra/nginx/conf.d/costra.cloud.conf）且需要同步到 live：
+cp infra/nginx/conf.d/costra.cloud.conf /data/conf/nginx/costra.cloud.conf
+# ⚠️ 模板中 SSL 是注释状态 · 复制后需重新取消注释：
+sed -i 's|^    # \(ssl_\)|    \1|' /data/conf/nginx/costra.cloud.conf
+# 验证 + reload：
+docker exec costra-nginx nginx -t && docker exec costra-nginx nginx -s reload
+```
+
+### 场景 C：只重启某个容器
+
+```bash
+cd /root/release/Costra/infra
+# 例如重启 server：
+docker compose -f docker-compose.prod.yml --env-file /data/conf/server.env restart server
+# 例如重启 nginx：
+docker compose -f docker-compose.prod.yml restart nginx
+```
+
+### 为什么 git pull 不会影响运行中的 nginx？
+
+| 目录 | 用途 | 谁写入 | docker 挂载？ |
+|------|------|--------|---------------|
+| `infra/nginx/conf.d/` | 模板（SSL 注释） | git pull | ❌ 不挂载 |
+| `/data/conf/nginx/` | live（SSL 已启用） | 05 脚本首次复制 + 07 脚本 sed | ✅ 挂载给 nginx 容器 |
 
 ---
 
@@ -878,7 +947,7 @@ certbot certonly --standalone -d costra.cloud \
   --email <你的邮箱> --agree-tos --no-eff-email --non-interactive
 ls /etc/letsencrypt/live/costra.cloud/   # 验证证书已签
 
-# 3. 按 §6.2 sed 取消 SSL 注释（9 行）
+# 3. 按 §6.2 sed 取消 SSL 注释（9 行）· 操作 live 配置
 sed -i \
   -e 's|^    # ssl_certificate /etc/letsencrypt|    ssl_certificate /etc/letsencrypt|' \
   -e 's|^    # ssl_certificate_key /etc/letsencrypt|    ssl_certificate_key /etc/letsencrypt|' \
@@ -889,7 +958,7 @@ sed -i \
   -e 's|^    # ssl_session_timeout |    ssl_session_timeout |' \
   -e 's|^    # ssl_stapling on|    ssl_stapling on|' \
   -e 's|^    # ssl_stapling_verify |    ssl_stapling_verify |' \
-  nginx/conf.d/costra.cloud.conf
+  /data/conf/nginx/costra.cloud.conf
 
 # 4. 重新 up nginx
 docker compose -f docker-compose.prod.yml --env-file /data/conf/server.env up -d nginx

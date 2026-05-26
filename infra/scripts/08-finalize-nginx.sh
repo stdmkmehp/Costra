@@ -63,7 +63,7 @@ fi
 
 run_cmd docker run --rm \
   --network "${COMPOSE_NET}" \
-  -v "${COSTRA_INFRA}/nginx/conf.d:/etc/nginx/conf.d:ro" \
+  -v "${COSTRA_DATA}/conf/nginx:/etc/nginx/conf.d:ro" \
   -v "/etc/letsencrypt:/etc/letsencrypt:ro" \
   nginx:1.27-alpine nginx -t
 
