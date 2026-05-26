@@ -62,20 +62,20 @@ if [[ "${SKIP_HTTPS}" == "1" ]]; then
   log_warn "已 --skip-https · 跳过 https 测试 · 改测容器内"
   if docker exec costra-server node -e "require('http').get('http://127.0.0.1:8080/healthz',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))" 2>/dev/null; then
     log_success "  闸门 1 PASS（容器内 /healthz 200）"
-    ((PASS_COUNT++))
+    ((++PASS_COUNT))
   else
     log_error "  闸门 1 FAIL"
-    ((FAIL_COUNT++))
+    ((++FAIL_COUNT))
   fi
 else
   HTTP_CODE=$(curl -fsS -o /tmp/healthz.json -w "%{http_code}" "https://${DOMAIN}/healthz" 2>/dev/null || echo "000")
   if [[ "${HTTP_CODE}" == "200" ]]; then
     log_success "  闸门 1 PASS（200）"
     log_info "  body: $(cat /tmp/healthz.json | head -c 200)"
-    ((PASS_COUNT++))
+    ((++PASS_COUNT))
   else
     log_error "  闸门 1 FAIL（http_code=${HTTP_CODE}）"
-    ((FAIL_COUNT++))
+    ((++FAIL_COUNT))
   fi
   rm -f /tmp/healthz.json
 fi
@@ -88,25 +88,26 @@ else
   ICP_HEADER=$(curl -sI "https://${DOMAIN}/healthz" 2>/dev/null | grep -i '^x-icp-filing:' | sed 's/[\r\n]//g' || true)
   if echo "${ICP_HEADER}" | grep -qF "${EXPECTED_ICP}"; then
     log_success "  闸门 2 PASS（${ICP_HEADER}）"
-    ((PASS_COUNT++))
+    ((++PASS_COUNT))
   else
     log_error "  闸门 2 FAIL · 期望含 '${EXPECTED_ICP}' · 实际: '${ICP_HEADER}'"
-    ((FAIL_COUNT++))
+    ((++FAIL_COUNT))
   fi
 fi
 
 # --- 闸门 3: HTTP→HTTPS 重定向 ---
+# 注意：测 / 路径而非 /healthz · 因为 80 端口 /healthz 特意留给 Docker healthcheck 不重定向
 log_step "[3/5] HTTP → HTTPS 重定向"
 if [[ "${SKIP_HTTPS}" == "1" ]]; then
   log_warn "已 --skip-https · 跳过"
 else
-  REDIRECT=$(curl -sI "http://${DOMAIN}/healthz" 2>/dev/null | grep -iE '^(HTTP/|location:)' | tr -d '\r\n')
+  REDIRECT=$(curl -sI "http://${DOMAIN}/" 2>/dev/null | grep -iE '^(HTTP/|location:)' | tr -d '\r\n')
   if echo "${REDIRECT}" | grep -qE "301|302" && echo "${REDIRECT}" | grep -qE "https://${DOMAIN}"; then
     log_success "  闸门 3 PASS（${REDIRECT}）"
-    ((PASS_COUNT++))
+    ((++PASS_COUNT))
   else
     log_error "  闸门 3 FAIL · 实际: ${REDIRECT}"
-    ((FAIL_COUNT++))
+    ((++FAIL_COUNT))
   fi
 fi
 
@@ -126,33 +127,37 @@ done
 
 if [[ "${ALL_HEALTHY}" == "1" ]]; then
   log_success "  闸门 4 PASS（4 容器全 healthy）"
-  ((PASS_COUNT++))
+  ((++PASS_COUNT))
 else
   log_error "  闸门 4 FAIL"
-  ((FAIL_COUNT++))
+  ((++FAIL_COUNT))
 fi
 
 # --- 闸门 5: D-026 §2.3 C2 mock 红线 ---
-log_step "[5/5] D-026 §2.3 C2 mock 红线（log 不应有 mockLogin=true）"
-MOCK_HITS=$(docker compose -f "${COSTRA_COMPOSE_FILE}" logs server 2>/dev/null | \
-  grep -iE 'mockLogin.*true|WX_MOCK_LOGIN enabled|"mock"' || true)
+# 策略：直接读容器环境变量 WX_MOCK_LOGIN + NODE_ENV · 确定性 100% · 不依赖日志
+log_step "[5/5] D-026 §2.3 C2 mock 红线（WX_MOCK_LOGIN 必须 =0 + NODE_ENV=production）"
 
-if [[ -z "${MOCK_HITS}" ]]; then
-  # 反向验证：应该有 wxMockLogin=false 的日志
-  REVERSE_HITS=$(docker compose -f "${COSTRA_COMPOSE_FILE}" logs server 2>/dev/null | \
-    grep -iE 'wxMockLogin.*false' | head -1 || true)
-  if [[ -n "${REVERSE_HITS}" ]]; then
-    log_success "  闸门 5 PASS（无 mock 启用 · wxMockLogin=false 已记录）"
-    ((PASS_COUNT++))
+WX_MOCK_VAL=$(docker exec costra-server printenv WX_MOCK_LOGIN 2>/dev/null || echo "__UNSET__")
+NODE_ENV_VAL=$(docker exec costra-server printenv NODE_ENV 2>/dev/null || echo "__UNSET__")
+
+if [[ "${WX_MOCK_VAL}" == "__UNSET__" ]]; then
+  # 容器未运行或变量未设置
+  log_error "  闸门 5 FAIL · 无法读取容器环境变量（容器未运行？）"
+  ((++FAIL_COUNT))
+elif [[ "${WX_MOCK_VAL}" == "0" || "${WX_MOCK_VAL}" == "false" || "${WX_MOCK_VAL}" == "" ]]; then
+  # mock 关闭 · 再确认 NODE_ENV
+  if [[ "${NODE_ENV_VAL}" == "production" ]]; then
+    log_success "  闸门 5 PASS（WX_MOCK_LOGIN=${WX_MOCK_VAL} · NODE_ENV=production）"
+    ((++PASS_COUNT))
   else
-    log_warn "  闸门 5 弱通过：无 mock 红线命中 · 但也无 wxMockLogin=false 反向证据"
-    log_warn "  → server 可能还没记录第一条 wx 相关日志 · 业务跑起来后再验证"
-    ((PASS_COUNT++))
+    log_warn "  闸门 5 弱通过（WX_MOCK_LOGIN=${WX_MOCK_VAL} · 但 NODE_ENV=${NODE_ENV_VAL} 非 production）"
+    log_warn "  → env.ts 防线保证 mock 不会在非 development 环境启用 · 不阻断"
+    ((++PASS_COUNT))
   fi
 else
-  log_error "  闸门 5 FAIL · 命中红线："
-  echo "${MOCK_HITS}" | head -5 >&2
-  ((FAIL_COUNT++))
+  log_error "  闸门 5 FAIL · WX_MOCK_LOGIN=${WX_MOCK_VAL}（必须 =0）"
+  log_error "  → D-026 §2.3 C2 红线：prod 严禁 mock login"
+  ((++FAIL_COUNT))
 fi
 
 # =============================================================================
