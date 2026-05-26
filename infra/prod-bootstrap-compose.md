@@ -1,10 +1,10 @@
-# Costra · prod 服务首次 bootstrap 手册（v1.5.1 · Plan C · docker compose 多容器）
+# Costra · prod 服务首次 bootstrap 手册（v1.6 · Plan C · docker compose 多容器）
 
 > **本手册取代 v1.4 `infra/prod-bootstrap.md` · 作为 Costra prod 部署当前推荐路径**。
 >
 > **母决策**：D-009（域名 + 安全基线）/ D-023（prod 入口回归根域）/ **D-026（staging↔prod 合并 · 工程纪律 4 条）**
 > **决策落档**：2026-05-25 11:57 Human 选 Plan D（4 服务 docker compose）→ 升级为 v1.5 Plan C
-> **首次实测落地**：2026-05-25 19:50 · **2026-05-26 10:30 全流程脚本化**（v1.5.1 · 实测踩 7 坑 · 已沉淀 §6.0 webroot 模式 + §6.4 cron `-T` + §8 Q7~Q14 + §3.3 chown + §4.1 跨机构建 + §4.3 拆 nginx + §6 重写 + **§0-ter 快速路径**）
+> **首次实测落地**：2026-05-25 19:50 · **2026-05-26 10:30 全流程脚本化**（v1.5.1 · 实测踩 7 坑）· **2026-05-26 15:20 v1.6**（§6 首次签证改 webroot + 临时 nginx · 根除 standalone→webroot 手改 renewal.conf 风险源）
 > **日期**：2026-05-25 立案 · 2026-05-25 实测修订
 > **HEAD**：a2a3959+（dev 分支 · 含 0001~0006 共 6 条 migration）
 > **目标读者**：Human（拥有 49.235.216.20 root SSH 访问权 + 腾讯云控制台 + 微信公众平台后台访问权）
@@ -548,40 +548,43 @@ docker exec costra-postgres psql -U costra -d costra -c "SELECT last_value FROM 
 
 ## §6 nginx + TLS 证书
 
-> ⚠️ **v1.5.1 注意**：本节执行前 nginx 容器**应该不存在**（§4.3 已改成只起 3 服务）· 80 端口空闲 · certbot standalone 可直接占用。如果你按旧版手册或一时手快把 nginx 也起来了 → 它会反复 restart（见 §8 Q13）· 跑 §6.1 之前先 `docker compose -f docker-compose.prod.yml rm -sf nginx` 干掉它。
+> ⚠️ **v1.6 注意**：本节执行前 compose 版 nginx 容器**应该不存在**（§4.3 已改成只起 3 服务）。§6.1 会用一个**独立的临时 nginx 容器**（脱离 compose）跑 80 端口完成 webroot 签证 · 签完即停 · 然后 §6.3 才启动正式 compose nginx。
 
-### §6.0 ACME challenge 模式说明（webroot vs standalone · v1.5.1 重要决策）
+### §6.0 ACME challenge 模式说明（webroot 全程 · v1.6 简化）
 
-> Let's Encrypt 签 / 续证书前要验证你拥有这个域名 · 通过 **HTTP-01 challenge** 让你在 `http://costra.cloud/.well-known/acme-challenge/<随机串>` 返回它指定的内容。`certbot` 提供两种"完成挑战"的实现方式：
+> Let's Encrypt 签 / 续证书前要验证你拥有这个域名 · 通过 **HTTP-01 challenge** 让你在 `http://costra.cloud/.well-known/acme-challenge/<随机串>` 返回它指定的内容。
 
-| 模式 | 工作方式 | 80 端口 | 续期是否需停 nginx | 推荐 |
-|---|---|---|---|---|
-| **standalone** | certbot 自己启动一个临时 web server 占用 80 端口响应挑战 | 必须独占 | ✅ 必须停 · 续期 prod 入口 503 几十秒 | ❌ |
-| **webroot** | certbot 把挑战文件写到磁盘 · 让已有 nginx 帮忙返回 | 共享给 nginx | ✅ nginx 一直跑 · 业务零中断 | ✅ |
+**Costra 部署策略（v1.6 决策 · 简化 v1.5.1）**：
+- **首次签证 + 续期** → 统一用 **webroot**（renewal.conf 天然正确 · 无需任何手动修改）
+- **首次签证时 nginx 还没起** → 用一个极简临时 nginx 容器（`infra/nginx/certbot-only.conf`）仅跑 80 端口 + ACME location · 签完即停
+- **续期 cron（§6.4）** → 用 webroot · compose nginx 一直跑 · 业务零中断
 
-**Costra 部署策略（v1.5.1 决策）**：
-- **首次签证（§6.1）** → 用 **standalone**（此时 nginx 还没起 · 80 端口空 · 最简单）
-- **签完后立刻切 renewal 配置为 webroot**（§6.1 末尾 `--reuse-key` 重签触发自动切换）
-- **续期 cron（§6.4）** → 用 webroot · nginx 不停
+**优势 vs v1.5.1（standalone → 手改 renewal.conf → webroot）**：
+- ❌ ~~不再需要 sed 改 renewal.conf（根除 authenticator/webroot_path 格式踩坑风险源）~~
+- certbot 生成的 renewal.conf **天然** `authenticator = webroot` + `webroot_path = /data/certbot/www` · 零人工干预
+- 临时 nginx 与 compose 完全隔离 · 不碰依赖链 · 签完 `docker stop` 干净释放端口
 
-**链路示意**（webroot 续期时）：
+**链路示意**（首次签证 + 续期 · 统一 webroot）：
 ```
-certbot 续期 → 写挑战文件到 /data/certbot/www/.well-known/acme-challenge/<随机串>
+certbot → 写挑战文件到 /data/certbot/www/.well-known/acme-challenge/<随机串>
                                 ↑ 宿主机
-                                ↓ 通过 docker volume mount /var/www/certbot:ro
-nginx 容器收到 LE 访问 → location /.well-known/acme-challenge/ { root /var/www/certbot; }
-                       → 读到文件 → 返回 → LE 验证通过 → 签发新证书
-                       → certbot 跑 deploy-hook → docker compose exec -T nginx nginx -s reload
+                                ↓ 通过 docker volume mount → /var/www/certbot
+nginx（临时 or compose）收到 LE 访问 → location /.well-known/acme-challenge/ { root /var/www/certbot; }
+                       → 读到文件 → 返回 → LE 验证通过 → 签发证书
+                       → (续期时) certbot 跑 deploy-hook → docker compose exec -T nginx nginx -s reload
 ```
 
-这一切的前提：**`infra/nginx/conf.d/costra.cloud.conf` 里 `location /.well-known/acme-challenge/` + `docker-compose.prod.yml` 里 `/data/certbot/www:/var/www/certbot:ro` 卷挂载已经在 v1.5 提前就位**，不用改。
+相关配置文件：
+- `infra/nginx/certbot-only.conf` — 极简签证专用 nginx 配置（仅 80 + ACME）
+- `infra/nginx/conf.d/costra.cloud.conf` — 正式业务配置（80 重定向 + 443 SSL 反代）
+- `docker-compose.prod.yml` nginx service — `/data/certbot/www:/var/www/certbot:ro` 卷挂载
 
-### §6.1 首次签 cert（用 standalone · nginx 还没绑 443）+ 切 webroot renewal
+### §6.1 首次签 cert（webroot 模式 · 临时 nginx 容器）
 
 ```bash
 cd /root/release/Costra/infra
 
-# 0. 防御性确认 nginx 没在跑（§4.3 已不起 · 这里再次确认）
+# 0. 防御性确认 80 端口空闲（compose nginx 没在跑）
 docker ps -a --filter name=costra-nginx --format '{{.Names}} {{.Status}}'
 # 期望：空输出 · 或显示 Created/Exited 状态
 # 如果在 Restarting：docker compose -f docker-compose.prod.yml rm -sf nginx
@@ -590,48 +593,55 @@ docker ps -a --filter name=costra-nginx --format '{{.Names}} {{.Status}}'
 which certbot || dnf install -y certbot
 certbot --version
 
-# 2. 签 cert（standalone 模式 · certbot 临时起 80）
+# 2. 确保 webroot 目录存在
+mkdir -p /data/certbot/www
+
+# 3. 启动临时签证 nginx（极简 80-only · 仅为 ACME challenge 服务）
+docker run -d --rm \
+  --name costra-certbot-nginx \
+  -p 80:80 \
+  -v $(pwd)/nginx/certbot-only.conf:/etc/nginx/conf.d/default.conf:ro \
+  -v /data/certbot/www:/var/www/certbot \
+  nginx:1.27-alpine
+
+# 验证临时 nginx 在跑
+sleep 2
+docker ps --filter name=costra-certbot-nginx
+# 期望：1 行 · STATUS = Up
+
+# 4. certbot webroot 签证
 # ⚠️ 替换 <Human 邮箱> 为真实邮箱（用于证书到期提醒）
-certbot certonly --standalone \
+certbot certonly --webroot \
+  -w /data/certbot/www \
   -d costra.cloud \
   --email <Human 邮箱> \
   --agree-tos --no-eff-email --non-interactive
 
 # 期望：Successfully received certificate.
 # 文件：/etc/letsencrypt/live/costra.cloud/fullchain.pem + privkey.pem
+# renewal.conf 天然: authenticator = webroot · webroot_path = /data/certbot/www ✅
 
-# 3. 验证证书
+# 5. 验证证书
 ls -la /etc/letsencrypt/live/costra.cloud/
 # 期望看到 fullchain.pem / privkey.pem / cert.pem / chain.pem
 
-# 4. 立刻把 renewal 配置切成 webroot（关键 · 后续 cron 续期不用停 nginx）
-#    注意：webroot 路径 /data/certbot/www 必须存在 · §3.3 mkdir 已含 · 但再次确认
-mkdir -p /data/certbot/www
-
-# sed 改 renewal 配置：authenticator standalone → webroot + 加 webroot_path
-RENEWAL_CONF=/etc/letsencrypt/renewal/costra.cloud.conf
-
-# 备份
-cp ${RENEWAL_CONF} ${RENEWAL_CONF}.bak.$(date +%Y%m%d-%H%M%S)
-
-sed -i \
-  -e 's|^authenticator = standalone$|authenticator = webroot|' \
-  ${RENEWAL_CONF}
-
-# 加 webroot_path 字段（如果没有）
-grep -q "^webroot_path" ${RENEWAL_CONF} || \
-  sed -i '/^authenticator = webroot$/a webroot_path = /data/certbot/www,\n[[webroot_map]]\ncostra.cloud = /data/certbot/www' ${RENEWAL_CONF}
-
-# 验证切换成功
-grep -E "^authenticator|^webroot" ${RENEWAL_CONF}
+# 6. 验证 renewal.conf 天然 webroot（无需手改 · 仅确认）
+grep -E "^authenticator|^webroot" /etc/letsencrypt/renewal/costra.cloud.conf
 # 期望：
 #   authenticator = webroot
-#   webroot_path = /data/certbot/www,
+#   webroot_path = /data/certbot/www
+
+# 7. 停掉临时签证 nginx（释放 80 端口给后续 compose nginx）
+docker stop costra-certbot-nginx
+# 期望：容器停掉（--rm 已设 · 自动删除）
+
+# 验证 80 端口已释放
+ss -tlnp | grep :80 || echo "80 端口已释放 ✓"
 ```
 
-### §6.2 取消 nginx conf 里的 SSL 注释（用 sed 一把梭 · v1.5.1 实测路径）
+### §6.2 取消 nginx conf 里的 SSL 注释（用 sed 一把梭）
 
-> nginx conf 第 41-49 行 9 个 SSL 指令原本注释 · 签完证书后必须取消注释 · 否则启动报 `no "ssl_certificate" is defined for the "listen ... ssl" directive` 反复 restart（v1.5.1 实测踩坑 17 次）。
+> nginx conf 第 49-57 行 9 个 SSL 指令原本注释 · 签完证书后必须取消注释 · 否则启动报 `no "ssl_certificate" is defined for the "listen ... ssl" directive` 反复 restart。
 
 ```bash
 cd /root/release/Costra/infra
@@ -662,13 +672,16 @@ grep -n "^    # ssl_" nginx/conf.d/costra.cloud.conf
 
 ```bash
 # 1. 容器内测 nginx conf 语法（不真正启动 · 防 ssl_certificate 路径错）
+#    注意：需要连 compose 网络才能解析 upstream "server" DNS
 docker run --rm \
+  --network infra_default \
   -v /root/release/Costra/infra/nginx/conf.d:/etc/nginx/conf.d:ro \
   -v /etc/letsencrypt:/etc/letsencrypt:ro \
   nginx:1.27-alpine nginx -t
 # 期望：nginx: configuration file /etc/nginx/nginx.conf test is successful
+# 如果网络不存在：docker network create infra_default（08 脚本会自动处理）
 
-# 2. 启动 nginx 容器（4 个容器全栈正式 up）
+# 2. 启动 nginx 容器（4 个容器全栈正式 up · 80 端口此时空闲 ✓）
 docker compose -f docker-compose.prod.yml --env-file /data/conf/server.env up -d nginx
 
 # 3. 等 5 秒看状态
@@ -679,9 +692,9 @@ docker logs costra-nginx --tail 20
 # 4 容器全部 Up X (healthy)
 ```
 
-### §6.4 自动续期（cron · 用 webroot · nginx 不停 · v1.5.1 加 -T 修 TTY 坑）
+### §6.4 自动续期（cron · 用 webroot · nginx 不停 · 加 -T 修 TTY 坑）
 
-> ⚠️ **v1.5.1 修复**：旧版命令缺 `-T` · cron 跑 `docker compose exec` 会报 `the input device is not a TTY`（cron 没分配 TTY）。详见 §8 Q14。
+> ⚠️ **注意**：cron 跑 `docker compose exec` 必须加 `-T`（cron 没 TTY · 不加报 `the input device is not a TTY`）。
 
 ```bash
 cat > /etc/cron.d/costra-certbot <<'EOF'
@@ -705,7 +718,7 @@ systemctl status crond --no-pager | head -5
 # 验证续期能跑通（dry-run · 不真签 · 走完整流程）
 certbot renew --dry-run
 # 期望末尾：Congratulations, all simulated renewals succeeded.
-# 如果报错 "Could not bind to IPv4..." → 说明 §6.1 第 4 步切换 webroot 没成功 · 回去重做
+# ✅ v1.6 天然 webroot · 不会报 "Could not bind to IPv4" 错误
 
 # 验证 deploy-hook 命令本身能跑（手动模拟）
 docker compose -f /root/release/Costra/infra/docker-compose.prod.yml exec -T nginx nginx -s reload
@@ -898,7 +911,7 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 17 3 * * * root certbot renew --quiet --deploy-hook "docker compose -f /root/release/Costra/infra/docker-compose.prod.yml exec -T nginx nginx -s reload" >> /var/log/certbot-renew.log 2>&1
 ```
 
-**配套修复**：v1.5 旧版 §6.1 用 `--standalone` · 续期时会撞 nginx 的 80 端口 → v1.5.1 §6.1 末尾把 renewal 配置切到 `webroot` · 续期不需停 nginx（业务零中断）· 详见 §6.0 模式说明。
+**配套修复**：v1.5 旧版 §6.1 用 `--standalone` · 续期时会撞 nginx 的 80 端口 → **v1.6 §6.1 已统一用 webroot 模式**（临时 nginx 容器 + certbot --webroot）· renewal.conf 天然 webroot · 续期不需停 nginx（业务零中断）· 详见 §6.0 模式说明。
 
 **验证**：
 ```bash

@@ -51,7 +51,18 @@ print_section_header "08 · 启动 nginx + 配 cron 续期（§6.3+§6.4）"
 # --- Step 1: nginx -t 测语法 ---
 log_step "[1/4] 容器内测 nginx conf 语法"
 
+# 需要连 Compose 网络 · 否则解析不了 upstream "server"（service name DNS）
+# 网络名格式：<project>_default · compose 文件目录名作为 project
+COMPOSE_NET="$(basename "$(dirname "${COSTRA_COMPOSE_FILE}")")_default"
+
+# 若网络还不存在（首次部署 · 其他容器还没 up），先创建
+if ! docker network inspect "${COMPOSE_NET}" >/dev/null 2>&1; then
+  log_info "Compose 网络 ${COMPOSE_NET} 不存在 · 先创建"
+  run_cmd docker network create "${COMPOSE_NET}"
+fi
+
 run_cmd docker run --rm \
+  --network "${COMPOSE_NET}" \
   -v "${COSTRA_INFRA}/nginx/conf.d:/etc/nginx/conf.d:ro" \
   -v "/etc/letsencrypt:/etc/letsencrypt:ro" \
   nginx:1.27-alpine nginx -t
@@ -142,9 +153,10 @@ else
       log_success "续期链路验证通过 · 90 天后会自动续 · nginx 不会停"
     else
       log_error "续期 dry-run 失败 · 检查："
-      log_error "  1. /etc/letsencrypt/renewal/${COSTRA_DOMAIN}.conf 里 authenticator=webroot ?"
-      log_error "  2. /data/certbot/www 目录可写 ?"
-      log_error "  3. nginx 容器在跑 + 80 端口可达 ?"
+      log_error "  1. /etc/letsencrypt/renewal/${COSTRA_DOMAIN}.conf 里 authenticator=webroot + webroot_path 正确 ?"
+      log_error "     （07-issue-cert.sh webroot 签证后天然正确 · 若是 import-tar 需确认 tar 内配置）"
+      log_error "  2. ${COSTRA_DATA}/certbot/www 目录存在且可写 ?"
+      log_error "  3. nginx 容器在跑 + 80 端口可达 + /.well-known/acme-challenge/ location 配置正确 ?"
       exit 1
     fi
   fi

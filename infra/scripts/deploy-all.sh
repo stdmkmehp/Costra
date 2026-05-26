@@ -2,7 +2,7 @@
 # =============================================================================
 # Costra prod bootstrap · 主部署入口（编排 9 个步骤脚本）
 # =============================================================================
-# 对应手册：infra/prod-bootstrap-compose.md（v1.5.1 全流程）
+# 对应手册：infra/prod-bootstrap-compose.md（v1.6 全流程）
 #
 # 9 个步骤：
 #   01 preflight     · 前置检查（OS / Docker / 端口 / DNS）
@@ -11,7 +11,7 @@
 #   04 build-server  · build server 镜像（local / load / registry）
 #   05 start-stack   · 起 3 服务 + 等 healthy
 #   06 migrate       · 跑 migrations（dump → migrate → verify）
-#   07 issue-cert    · 签证书 + sed 取消 SSL 注释（支持 --use-existing）
+#   07 issue-cert    · 签证书（webroot + 临时 nginx） + sed 取消 SSL 注释
 #   08 finalize-nginx · nginx -t + up nginx + cron 续期
 #   09 verify-gates  · 闸门 5 条验证
 #
@@ -143,7 +143,7 @@ COMMON_FLAGS=()
 # =============================================================================
 # 主流程
 # =============================================================================
-print_section_header "Costra prod 部署主入口（v1.5.1 · 9 步全流程）"
+print_section_header "Costra prod 部署主入口（v1.6 · 9 步全流程）"
 
 log_info "domain         = ${DOMAIN}"
 log_info "build mode     = ${BUILD_MODE}"

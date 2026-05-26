@@ -6,9 +6,10 @@
 #
 # 三种使用模式：
 #
-#   1. 全新签证（默认）：
+#   1. 全新签证（默认 · webroot 模式）：
 #      ./07-issue-cert.sh --email you@example.com
-#      → standalone 模式签新证书 + 切 renewal 配置到 webroot
+#      → 临时 nginx 80-only + certbot webroot 签新证书
+#      → renewal.conf 天然 webroot · 不需要手改
 #
 #   2. 复用现有证书（机器迁移 / 备机部署）：
 #      ./07-issue-cert.sh --use-existing
@@ -16,7 +17,7 @@
 #
 #   3. 复用 + 从其他机器导入：
 #      ./07-issue-cert.sh --use-existing --import-tar /tmp/letsencrypt.tar.gz
-#      → 解压 tar 到 /etc/letsencrypt + 切 webroot renewal
+#      → 解压 tar 到 /etc/letsencrypt
 #
 # 用法：
 #   ./07-issue-cert.sh [选项]
@@ -45,6 +46,11 @@ IMPORT_TAR=""
 SKIP_SSL_UNCOMMENT=0
 NGINX_CONF="${COSTRA_INFRA}/nginx/conf.d/costra.cloud.conf"
 
+# --- 临时 nginx 容器名（签证专用 · 用完即弃）---
+CERT_NGINX_NAME="costra-certbot-nginx"
+CERT_NGINX_CONF="${COSTRA_INFRA}/nginx/certbot-only.conf"
+WEBROOT_DIR="${COSTRA_DATA}/certbot/www"
+
 # --- 解析参数 ---
 parse_common_args "$@"
 while [[ $# -gt 0 ]]; do
@@ -68,15 +74,30 @@ require_root
 CERT_DIR="/etc/letsencrypt/live/${DOMAIN}"
 
 # =============================================================================
+# 清理函数（确保临时 nginx 被停掉 · 即使脚本中途失败）
+# =============================================================================
+cleanup_cert_nginx() {
+  if docker ps --filter "name=${CERT_NGINX_NAME}" --format '{{.Names}}' 2>/dev/null | grep -q "${CERT_NGINX_NAME}"; then
+    log_warn "清理：停掉临时签证 nginx（${CERT_NGINX_NAME}）"
+    docker stop "${CERT_NGINX_NAME}" >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup_cert_nginx EXIT
+
+# =============================================================================
 # 主流程
 # =============================================================================
 print_section_header "07 · 签证书 + 取消 SSL 注释（§6.1+§6.2）· domain=${DOMAIN}"
 
-# --- 防御：nginx 容器在 Restarting 会占 80 端口 ---
+# --- 防御：nginx 容器（compose 版 或 临时版）占 80 端口 ---
 if docker ps --filter name=costra-nginx --format '{{.Status}}' 2>/dev/null | grep -q 'Restarting\|Up'; then
-  log_warn "costra-nginx 容器在跑 · standalone 签证会撞 80 端口"
+  log_warn "costra-nginx 容器在跑 · 签证需要 80 端口"
   log_info "  → 临时停 nginx："
   run_cmd docker compose -f "${COSTRA_COMPOSE_FILE}" rm -sf nginx 2>/dev/null || true
+fi
+if docker ps --filter "name=${CERT_NGINX_NAME}" --format '{{.Names}}' 2>/dev/null | grep -q "${CERT_NGINX_NAME}"; then
+  log_warn "临时签证 nginx 仍在跑 · 先停掉"
+  run_cmd docker stop "${CERT_NGINX_NAME}" 2>/dev/null || true
 fi
 
 # ============================================================
@@ -130,14 +151,14 @@ if [[ "${USE_EXISTING}" == "1" && -z "${IMPORT_TAR}" ]]; then
 fi
 
 # ============================================================
-# 模式 C: 全新签证（standalone）
+# 模式 C: 全新签证（webroot · 临时 nginx 容器）
 # ============================================================
 if [[ "${USE_EXISTING}" != "1" ]]; then
   [[ -n "${EMAIL}" ]] || die "全新签证必须 --email <addr>（用于证书到期提醒）"
 
-  log_step "[新签模式] standalone 签 ${DOMAIN}"
+  log_step "[新签模式] webroot 签 ${DOMAIN}"
 
-  # 装 certbot
+  # --- 装 certbot ---
   if ! command -v certbot >/dev/null 2>&1; then
     log_info "未装 certbot · 自动安装"
     if command -v dnf >/dev/null 2>&1; then
@@ -153,12 +174,40 @@ if [[ "${USE_EXISTING}" != "1" ]]; then
 
   log_info "certbot $(certbot --version 2>&1 | head -1)"
 
-  # 验证 80 端口空闲
-  if [[ "${DRY_RUN}" != "1" ]] && ss -tlnp 2>/dev/null | grep -E ':80\b' | grep -qE 'LISTEN'; then
-    die "80 端口仍被占用 · standalone 签证需要独占 80 端口"
+  # --- 准备 webroot 目录 ---
+  log_info "确保 webroot 目录存在: ${WEBROOT_DIR}"
+  run_cmd mkdir -p "${WEBROOT_DIR}"
+
+  # --- 确认极简 nginx 配置存在 ---
+  require_file "${CERT_NGINX_CONF}"
+
+  # --- 启动临时 nginx 容器（仅 80 端口 + ACME location）---
+  log_info "启动临时签证 nginx（${CERT_NGINX_NAME}）· 仅 80 端口 + ACME"
+
+  run_cmd docker run -d --rm \
+    --name "${CERT_NGINX_NAME}" \
+    -p 80:80 \
+    -v "${CERT_NGINX_CONF}:/etc/nginx/conf.d/default.conf:ro" \
+    -v "${WEBROOT_DIR}:/var/www/certbot" \
+    nginx:1.27-alpine
+
+  # 等临时 nginx 就绪（最多 10s）
+  if [[ "${DRY_RUN}" != "1" ]]; then
+    log_info "等待临时 nginx 就绪..."
+    for i in $(seq 1 10); do
+      if docker ps --filter "name=${CERT_NGINX_NAME}" --filter "status=running" --format '{{.Names}}' | grep -q "${CERT_NGINX_NAME}"; then
+        log_success "临时签证 nginx 已启动"
+        break
+      fi
+      [[ $i -eq 10 ]] && die "临时 nginx 启动超时"
+      sleep 1
+    done
   fi
 
-  run_cmd certbot certonly --standalone \
+  # --- certbot webroot 签证 ---
+  log_info "开始 certbot webroot 签证..."
+  run_cmd certbot certonly --webroot \
+    -w "${WEBROOT_DIR}" \
     -d "${DOMAIN}" \
     --email "${EMAIL}" \
     --agree-tos --no-eff-email --non-interactive
@@ -167,43 +216,16 @@ if [[ "${USE_EXISTING}" != "1" ]]; then
     [[ -d "${CERT_DIR}" ]] || die "签证后 ${CERT_DIR} 仍不存在"
     log_success "证书已签: ${CERT_DIR}"
   fi
+
+  # --- 停掉临时 nginx（释放 80 端口给后续 compose nginx）---
+  log_info "停掉临时签证 nginx（释放 80 端口）"
+  run_cmd docker stop "${CERT_NGINX_NAME}" 2>/dev/null || true
+
+  log_success "webroot 签证完成 · renewal.conf 天然 authenticator=webroot · 无需手改"
 fi
 
 # ============================================================
-# 切 renewal 配置到 webroot（v1.5.1 决策 · 续期不停 nginx）
-# ============================================================
-log_step "切 renewal 配置 standalone → webroot（v1.5.1 决策）"
-
-RENEWAL_CONF="/etc/letsencrypt/renewal/${DOMAIN}.conf"
-
-if [[ "${DRY_RUN}" != "1" ]]; then
-  if [[ ! -f "${RENEWAL_CONF}" ]]; then
-    log_warn "${RENEWAL_CONF} 不存在 · 跳过 webroot 切换（可能是 import-tar 模式 · 已自带 renewal 配置）"
-  else
-    backup_file "${RENEWAL_CONF}"
-
-    # 切 authenticator
-    if grep -q '^authenticator = standalone' "${RENEWAL_CONF}"; then
-      sed -i 's|^authenticator = standalone$|authenticator = webroot|' "${RENEWAL_CONF}"
-      log_info "  authenticator: standalone → webroot"
-    elif grep -q '^authenticator = webroot' "${RENEWAL_CONF}"; then
-      log_info "  authenticator: 已是 webroot ✓"
-    fi
-
-    # 加 webroot_path（如无）
-    if ! grep -q '^webroot_path' "${RENEWAL_CONF}"; then
-      sed -i "/^authenticator = webroot$/a webroot_path = ${COSTRA_DATA}/certbot/www,\\n[[webroot_map]]\\n${DOMAIN} = ${COSTRA_DATA}/certbot/www" "${RENEWAL_CONF}"
-      log_info "  已加 webroot_path = ${COSTRA_DATA}/certbot/www"
-    fi
-
-    # 校验
-    grep -E '^authenticator|^webroot_path' "${RENEWAL_CONF}" || true
-    log_success "renewal 配置已切到 webroot"
-  fi
-fi
-
-# ============================================================
-# 取消 nginx conf 里 SSL 注释（v1.5.1 修坑 6）
+# 取消 nginx conf 里 SSL 注释（§6.2）
 # ============================================================
 if [[ "${SKIP_SSL_UNCOMMENT}" == "1" ]]; then
   log_step "nginx SSL 注释 → 已 --skip-ssl-uncomment · 跳过"
