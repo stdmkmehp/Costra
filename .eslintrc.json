@@ -30,5 +30,5 @@
     "@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],
     "no-console": "off"
   },
-  "ignorePatterns": ["dist", "node_modules", "scripts", "miniprogram/miniprogram_npm"]
+  "ignorePatterns": ["dist", "node_modules", "scripts", "miniprogram/miniprogram_npm", "miniprogram/utils/vendor"]
 }

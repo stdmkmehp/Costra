@@ -3,7 +3,7 @@
 // ADR-0002 硬约束: 金额计算必须走 decimal.js
 // 承接 COSTRA-118 路径 A: E.P1-1 / FU-118-6（decimal.js 切入 · yuan 入口彻底防 0.1+0.2）
 
-import Decimal from 'decimal.js';
+import Decimal from './vendor/decimal';
 
 /**
  * 元 → 分（分为整数 · 向零截断到 2 位小数再放大）
