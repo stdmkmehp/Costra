@@ -52,6 +52,7 @@
 | **DevOps 基建** | **FU-DEVOPS-OPENAPI-IMPL-COVERAGE** | **P2** | **COSTRA-161** | **dispatch-ready @ 2026-05-19**（D-025 AP-003 自动检测 · CI 对账族第 6 张规则 E）|
 | **DevOps 基建** | **FU-DEV-MOCKLOGIN-RUNTIME-TOGGLE** | **P3** | **COSTRA-162** | **dispatch-ready @ 2026-05-19**（dev `mockLogin` runtime toggle · ~30min 单 commit）|
 | **DB 治理** | FU-DB-OPS-AUDIT | P3 | DAU>100 触发 | open |
+| **🆕 Auth / 安全** | **FU-AUTH-ROTATING-REFRESH** | **P2** | **Sprint-4+ 认领** | **open**（2026-05-25 · 触发：Human 与 Orchestrator 复盘 JWT 双 token 方案时确认当前 MVP 为「不轮换」refresh · 见 `server/src/services/authService.ts:172` 注释 + `0003_user_sessions.sql:13`「MVP 不换发」+ `docs/api/ttl-policy.md §7` 已列入调优空间 · 范围：① refresh 时签新 refresh + 原子吊销旧 jti（UPDATE…RETURNING + 同事务 INSERT）② 重用检测（已 revoked 的 refresh 再次出现 → revokeAllByUser + 审计告警 · OAuth 2.1 §6.1）③ 可选 `version` / `rotated_from` 列防双花 · 主改面：`server/src/services/authService.ts` refresh() + `server/src/repositories/sessionRepo.ts` 新增原子轮换 SQL · DB 视方案需新加一列 · 测试要覆盖：并发 refresh 仅一份成功 / 旧 refresh 重用触发全量吊销 / logout-vs-refresh 竞态 · 触发立卡的考虑阈值：用户量级上来 / 安全审计要求 / Sprint-4+ 认证强化批 · 不阻当前任何卡）|
 | **协议 / 规约残留** | FU-COMMON-MINIAPP-PATCH-LIMIT | ~~P2~~ → **closed** | ~~COSTRA-158~~ | **closed @ COSTRA-158** |
 | **协议 / 规约残留** | **FU-K3-TO-K1-UPGRADE** | **P2** | **COSTRA-152** | scoped（dispatch §1.3 阶段决策 · COSTRA-152 Card-Review 阶段拍板 · R1 K3 已落地 · Sprint-4 评估 K1）|
 | **🆕 跨 family 守门补丁** | **FU-CROSS-FAMILY-GUARD-COSTRA-104** | ~~P0~~ → **closed** | **COSTRA-152 R1** | **closed @ COSTRA-152 R1**（entryRepo.findById +userId 参数 + entryService.findById 传入 userId · GET/PATCH/DELETE 三处共享守门 · review-tech 36/40 漏检反思议入 Sprint-3 末 Retro）|
@@ -548,6 +549,45 @@
 ## 🌐 族 I · QA 流程治理（占位 · 当前空 · 留 Sprint-2 末 Retro 议题落地）
 
 > **族说明**（占位）：本次实测会话暴露 4 项跨族议题（手册写作 dry-run 强制 / scope gap 跨卡 fall-through / server 单测 fuzz 缺失 / CI schema 对账 E 规则候选）· 待 Sprint-2 末 Retro 决议落地后转 FU 入此族 · 详见 `qa/defects/2026-05-18-COSTRA-105-D1-real-test-findings.md` §6。
+
+---
+
+## 🔐 族 J · Auth / 安全（Sprint-4+ 候选）
+
+### FU-AUTH-ROTATING-REFRESH · refresh_token 轮换 + 重用检测
+
+- **来源**：2026-05-25 Human 与 Orchestrator 复盘 JWT 双 token 方案 · 确认当前 MVP 为「不轮换」refresh
+- **登记时间**：2026-05-25
+- **现状事实源**：
+  - `server/src/services/authService.ts:172` 注释 `// MVP 策略：只签新 access_token，refresh_token 保持原值（不滑动续期，见 ttl-policy.md §7）`
+  - `server/db/migrations/0003_user_sessions.sql:13` 注释 `刷新 = 查有效 → 签新 access_token；refresh_token 沿用旧值（MVP 不换发）`
+  - `docs/api/ttl-policy.md §7` 已列入「调优空间（非 MVP）」，明示 Sprint-2+ 评估
+- **范围**：
+  1. **轮换原子化**：`/auth/refresh` 时签发新 refresh + 同事务吊销旧 jti（`UPDATE user_sessions SET revoked_at=now() WHERE jti=$old AND revoked_at IS NULL RETURNING *` + `INSERT $new`，用 RETURNING 行数判断是否抢到锁，防双花）
+  2. **重用检测**（OAuth 2.1 §6.1 标准做法）：已 `revoked_at` 的 refresh 再次出现 → 立即 `revokeAllByUser` + 写审计日志告警，作为「token 泄漏」信号
+  3. **DB schema**（视方案选型）：可选给 `user_sessions` 加 `version` 列做乐观锁，或加 `rotated_from` 列存上一代 jti 形成血缘链
+  4. Redis 同步轮换（DEL 旧 key + SET 新 key）
+- **主要改动面**：
+  - `server/src/services/authService.ts` `refresh()` 函数体重写（含原子轮换 + 重用检测分支）
+  - `server/src/repositories/sessionRepo.ts` 新增 `rotate(oldJti, newSession)` 方法
+  - `server/db/migrations/00xx_user_sessions_rotating.sql`（如需新列）
+  - `docs/api/ttl-policy.md §7` → 升级为 §4.x 正式实装段
+  - `server/test/auth.test.ts` 新增 case
+- **必带测试用例**：
+  - 串行：refresh 一次后旧 refresh 立即作废、新 refresh 可用
+  - 并发：同 refresh 并发调 2 次 → 仅 1 份成功、另 1 份返回 `REFRESH_TOKEN_INVALID`（验原子性）
+  - 重用：用旧 refresh 再次调 refresh → 该用户全部 session 被吊销 + 审计日志写入
+  - 兼容：access TTL 内未 refresh 的客户端不受影响
+- **客户端联动**：MiniApp `request.ts` 续期拦截器需更新「拿到新 refresh 后必须覆盖 storage」的逻辑（当前因不轮换可省略，轮换后强制）
+- **依赖**：无强依赖；建议在 Sprint-3 sync 协议族全部收口、auth 链路稳定后启动
+- **阻断级别**：**P2**（当前 MVP 安全可接受 · 30 天 refresh 泄漏窗口属可控风险 · 用户量级上来或安全审计要求时升 P1）
+- **认领建议**：Sprint-4+ Backend-Agent 主驾 · Card-Review 阶段确认 schema 选型（`version` vs `rotated_from`）· QA-Agent 协同设计并发用例（pg-mem 可能不足以模拟 SERIALIZABLE 隔离 · 需考虑 Postgres 真容器测）
+- **触发立卡的可观察阈值**：
+  - DAU 上来或对外开放注册 → refresh 泄漏面扩大
+  - 安全审计 / 合规审查要求
+  - Sprint-4+ 认证强化批（如同时做多端 session 管理 / `/auth/sessions` 列表，可合卡）
+- **状态**：`open`
+- **owner_card**：未定
 
 ---
 

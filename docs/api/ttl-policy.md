@@ -178,7 +178,7 @@ export const TTL = {
 
 ## 7. 调优空间（非 MVP）
 
-- **滑动刷新**：refresh_token 每次 refresh 同时换发新的（当前方案为固定 30d，不换发）
+- **滑动刷新 / 轮换 refresh**：refresh_token 每次 refresh 同时换发新的 + 重用检测（OAuth 2.1 §6.1）— 当前方案为固定 30d，不换发 · **关联 FU**：`FU-AUTH-ROTATING-REFRESH`（见 `.team/follow-ups/README.md` 族 J · P2 · Sprint-4+ 候选）
 - **多端 session 管理**：`/auth/sessions` 列出 / 吊销（未立项）
 - **短 TTL + 黑名单**：把 access 降到 15min + 服务端黑名单 —— 安全收益高但实现成本高，Sprint-2+ 评估
 
