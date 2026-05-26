@@ -674,12 +674,12 @@ grep -n "^    # ssl_" nginx/conf.d/costra.cloud.conf
 # 1. 容器内测 nginx conf 语法（不真正启动 · 防 ssl_certificate 路径错）
 #    注意：需要连 compose 网络才能解析 upstream "server" DNS
 docker run --rm \
-  --network infra_default \
+  --network costra_default \
   -v /root/release/Costra/infra/nginx/conf.d:/etc/nginx/conf.d:ro \
   -v /etc/letsencrypt:/etc/letsencrypt:ro \
   nginx:1.27-alpine nginx -t
 # 期望：nginx: configuration file /etc/nginx/nginx.conf test is successful
-# 如果网络不存在：docker network create infra_default（08 脚本会自动处理）
+# 如果网络不存在：docker network create costra_default（08 脚本会自动处理）
 
 # 2. 启动 nginx 容器（4 个容器全栈正式 up · 80 端口此时空闲 ✓）
 docker compose -f docker-compose.prod.yml --env-file /data/conf/server.env up -d nginx

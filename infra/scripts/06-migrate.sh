@@ -23,7 +23,7 @@ source "${SCRIPT_DIR}/lib/common.sh"
 # --- 默认参数 ---
 SKIP_DUMP=0
 MIGRATIONS_DIR="${COSTRA_ROOT}/server/db/migrations"
-COMPOSE_NETWORK="infra_default"   # docker compose 自动建的网络名
+COMPOSE_NETWORK="${COSTRA_COMPOSE_NET}"   # 来自 common.sh · 默认 costra_default
 PG_CONTAINER="costra-postgres"
 
 # --- 解析参数 ---

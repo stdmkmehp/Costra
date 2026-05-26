@@ -42,6 +42,7 @@ fi
 : "${COSTRA_CONF_DIR:=${COSTRA_DATA}/conf}"
 : "${COSTRA_ENV_FILE:=${COSTRA_CONF_DIR}/server.env}"
 : "${COSTRA_COMPOSE_FILE:=${COSTRA_INFRA}/docker-compose.prod.yml}"
+: "${COSTRA_COMPOSE_NET:=costra_default}"
 : "${COSTRA_DOMAIN:=costra.cloud}"
 
 # --- 容器内进程 uid（修 redis 权限坑用）---

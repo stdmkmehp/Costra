@@ -7,7 +7,7 @@
 #   - server   : Costra Fastify Node 20 · 自构建镜像
 #   - nginx    : 反代 + TLS · 80/443
 #
-# 网络：默认 bridge（compose 自动建 costra-prod_default 网络）
+# 网络：默认 bridge（顶层 name: costra → 网络名 costra_default）
 #       容器间用 service name 互通（server → postgres:5432 / redis:6379）
 #       端口策略：DB/Redis 仅 127.0.0.1 暴露 · server 仅 8080 内部 · nginx 80/443 公网
 #
@@ -27,6 +27,9 @@
 
 # Compose v3.9 · 兼容 docker compose v2.x（推荐）
 # 不写 version 字段 · 现代 docker compose 自动识别（避免 deprecated 警告）
+
+# 显式 project name → 网络名锁定为 costra_default · 不随目录名变化
+name: costra
 
 services:
   # ===========================================================================
@@ -254,6 +257,6 @@ services:
 # =============================================================================
 # 网络（默认 bridge · compose 自动建 · 不需手写）
 # =============================================================================
-# 自动创建：costra-prod_default 网络（bridge driver）
+# 顶层 name: costra → 自动创建 costra_default 网络（bridge driver）
 # 容器间互通：通过 service name DNS（postgres / redis / server / nginx）
 # 不暴露的 expose: 端口仅在内部网络可达 · 公网不可达

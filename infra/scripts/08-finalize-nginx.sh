@@ -52,8 +52,8 @@ print_section_header "08 · 启动 nginx + 配 cron 续期（§6.3+§6.4）"
 log_step "[1/4] 容器内测 nginx conf 语法"
 
 # 需要连 Compose 网络 · 否则解析不了 upstream "server"（service name DNS）
-# 网络名格式：<project>_default · compose 文件目录名作为 project
-COMPOSE_NET="$(basename "$(dirname "${COSTRA_COMPOSE_FILE}")")_default"
+# 网络名由 docker-compose.prod.yml 顶层 name: costra 决定 → costra_default
+COMPOSE_NET="${COSTRA_COMPOSE_NET}"
 
 # 若网络还不存在（首次部署 · 其他容器还没 up），先创建
 if ! docker network inspect "${COMPOSE_NET}" >/dev/null 2>&1; then
