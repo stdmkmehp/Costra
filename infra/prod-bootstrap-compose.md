@@ -4,7 +4,7 @@
 >
 > **母决策**：D-009（域名 + 安全基线）/ D-023（prod 入口回归根域）/ **D-026（staging↔prod 合并 · 工程纪律 4 条）**
 > **决策落档**：2026-05-25 11:57 Human 选 Plan D（4 服务 docker compose）→ 升级为 v1.5 Plan C
-> **首次实测落地**：2026-05-25 19:50（v1.5.1 · 实测踩 7 坑 · 已沉淀 §6.0 webroot 模式 + §6.4 cron `-T` + §8 Q7~Q14 + §3.3 chown + §4.1 跨机构建 + §4.3 拆 nginx + §6 重写）
+> **首次实测落地**：2026-05-25 19:50 · **2026-05-26 10:30 全流程脚本化**（v1.5.1 · 实测踩 7 坑 · 已沉淀 §6.0 webroot 模式 + §6.4 cron `-T` + §8 Q7~Q14 + §3.3 chown + §4.1 跨机构建 + §4.3 拆 nginx + §6 重写 + **§0-ter 快速路径**）
 > **日期**：2026-05-25 立案 · 2026-05-25 实测修订
 > **HEAD**：a2a3959+（dev 分支 · 含 0001~0006 共 6 条 migration）
 > **目标读者**：Human（拥有 49.235.216.20 root SSH 访问权 + 腾讯云控制台 + 微信公众平台后台访问权）
@@ -67,6 +67,62 @@ PGPASSWORD='[PG_COSTRA_PW]' psql -h 127.0.0.1 -U costra -d costra
 ```
 
 > 💡 **防 history 泄漏**：命令前留一个空格（`HISTCONTROL=ignorespace` 默认开启）· 含明文密码的命令不会进 `~/.bash_history`。
+
+---
+
+## §0-ter 快速路径（脚本化部署 · v1.5.1 新增）
+
+> 嫌手动操作慢？整个 §1~§7 已经脚本化在 [`infra/scripts/`](./scripts/) · 5-10 min 完成（不含 build server 镜像 · 见 §4.1）。
+>
+> **手册 vs 脚本**：手册是权威文档（含决策背景 + 7 坑 FAQ）· 脚本是快速路径。两者步骤一一对应 · 失败时脚本会指向手册对应章节。
+
+### 一键全新部署（首台机器）
+
+```bash
+ssh root@<prod-ip>
+cd /root/release/Costra/infra/scripts
+chmod +x *.sh lib/*.sh
+
+./deploy-all.sh \
+    --email you@example.com \
+    --build-mode local \
+    --wx-app-secret '<32 字符微信 AppSecret>' \
+    -y
+```
+
+### 备机迁移（复用现有 server.env + 证书 + 镜像）
+
+```bash
+# 旧机器导出（一次性）：
+tar czf /tmp/letsencrypt.tar.gz -C /etc letsencrypt/
+docker save costra-server:latest | gzip > /tmp/costra-server.tar.gz
+scp /tmp/{letsencrypt.tar.gz,costra-server.tar.gz} root@<新机器>:/tmp/
+scp /data/conf/server.env root@<新机器>:/data/conf/
+
+# 新机器一键：
+cd /root/release/Costra/infra/scripts
+./deploy-all.sh \
+    --reuse-secrets \
+    --import-cert /tmp/letsencrypt.tar.gz \
+    --build-mode load \
+    --image-tar /tmp/costra-server.tar.gz \
+    --skip 06 \
+    -y
+```
+
+### 单步执行（调试 / 部分重做）
+
+每个脚本独立可跑：
+
+```bash
+./01-preflight.sh                  # §1 前置检查
+./02-prepare-dirs.sh               # §3.3 建目录 + chown
+./03-generate-env.sh --reuse-secrets   # §3.1+§3.4 复用现有密码
+./07-issue-cert.sh --use-existing  # §6.1+§6.2 仅校验现有证书
+./09-verify-gates.sh               # §7 闸门 5 条
+```
+
+详细文档见 [`infra/scripts/README.md`](./scripts/README.md)。
 
 ---
 
@@ -926,7 +982,13 @@ docker compose -f /root/release/Costra/infra/docker-compose.prod.yml exec -T ngi
   - §6（重写）：sed 取消 SSL 注释 + nginx -t（修坑 6）
   - §6.4（重写）：cron 加 `-T` + PATH + 日志 + 错峰 + dry-run 验证（修坑 7）
   - §8 Q7~Q14：8 条 FAQ
+  - §0-ter（**新增 · 2026-05-26**）：快速路径入口 → `infra/scripts/`
   - §11：本节
+- `infra/scripts/`（**新增 · 2026-05-26**）：v1.5.1 全流程脚本化
+  - `lib/common.sh`：日志 / 交互 / 密码生成 / 校验
+  - `01-preflight.sh` ~ `09-verify-gates.sh`：9 个独立步骤脚本
+  - `deploy-all.sh`：主入口 · 编排 9 步 · 支持 `--reuse-secrets` / `--use-existing-cert` / `--from` / `--skip`
+  - `README.md`：脚本使用文档（覆盖全新部署 / 备机迁移 / CI/CD 三场景）
 
 **正确部署顺序（v1.5.1 验证版）**：
 1. §1 前置确认 → §2 拉代码
@@ -943,5 +1005,5 @@ docker compose -f /root/release/Costra/infra/docker-compose.prod.yml exec -T ngi
 
 ---
 
-> **手册版本**：v1.5.1 · 2026-05-25 17:11 立 · 17:34 增订（nginx 顺序坑） · 17:58 增订（redis 权限坑强化 §0/§3.3 拆分/§4.4 预警）· 19:50 增订（cert renewal webroot 化 §6.0 新增 / §6.1 切 renewal / §6.4 cron 加 -T / §8 Q14）· Orchestrator 同对话轮交付（v1.5 立案 12:04 · v1.5.1 实测修订 · Plan D 决策落档 + 7 坑沉淀 + Dockerfile/compose 已修）
+> **手册版本**：v1.5.1 · 2026-05-25 17:11 立 · 17:34 增订（nginx 顺序坑） · 17:58 增订（redis 权限坑强化 §0/§3.3 拆分/§4.4 预警）· 19:50 增订（cert renewal webroot 化 §6.0 新增 / §6.1 切 renewal / §6.4 cron 加 -T / §8 Q14）· 2026-05-26 10:30 增订（§0-ter 快速路径 + infra/scripts/ 全流程脚本化）· Orchestrator 同对话轮交付（v1.5 立案 12:04 · v1.5.1 实测修订 · Plan D 决策落档 + 7 坑沉淀 + 9 步脚本化）
 > **下次修订**：Phase-2 闸门 5 条全 PASS 后由 Orchestrator 派 qa-planner 出 Phase-3 改造手册
