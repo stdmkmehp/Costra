@@ -1,0 +1,204 @@
+/**
+ * Costra · Server · families DAO
+ *
+ * 卡号：COSTRA-164 · 事实源：server/db/migrations/0001_init.sql + 0007_families_kind.sql
+ * 决策锚定：ADR-0007 family-ledger 关系模型 v1.1 §4.1 + §5.7
+ *
+ * 职责：封装 families 表 + family_members 表的 SQL 访问；业务层禁止直接写 SQL。
+ *
+ * 设计原则：
+ *   - 参数化查询；严禁字符串拼接
+ *   - 返回领域实体接口（FamilyEntity），不暴露 pg 行对象
+ *   - 不处理业务语义（如 "family 不存在要不要抛错"），由 service 层判定
+ *   - Runner 透传模式（与 userRepo.ts L65/L114/L141 同构）· 单测可注入 mock
+ */
+
+import { getPool } from '../db/pool.js';
+import { newId } from '../id/idGen.js';
+
+/** family_kind ENUM（与 0007 migration 同步）· ADR-0007 §5.7.2 创建路径铁律 */
+export type FamilyKind = 'personal' | 'shared';
+
+export interface FamilyEntity {
+  id: string;
+  name: string;
+  ownerId: string;
+  kind: FamilyKind;
+  createdAt: Date;
+  updatedAt: Date;
+  deletedAt: Date | null;
+  version: number;
+}
+
+interface FamilyRow {
+  id: string;
+  name: string;
+  owner_id: string;
+  kind: FamilyKind;
+  created_at: Date;
+  updated_at: Date;
+  deleted_at: Date | null;
+  version: number;
+}
+
+function rowToEntity(r: FamilyRow): FamilyEntity {
+  return {
+    id: r.id,
+    name: r.name,
+    ownerId: r.owner_id,
+    kind: r.kind,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+    deletedAt: r.deleted_at,
+    version: r.version,
+  };
+}
+
+/**
+ * 执行器抽象：允许 repo 在 Pool 或 tx PoolClient 上运行。
+ * 与 userRepo.ts 的 Runner 保持同构。
+ */
+type Runner = { query: (sql: string, params?: unknown[]) => Promise<{ rows: FamilyRow[]; rowCount?: number | null }> };
+
+function exec(): Runner {
+  return getPool() as unknown as Runner;
+}
+
+/**
+ * 创建个人 family + family_members(owner) · 单事务 · kind 强制 'personal'
+ *
+ * 调用方不传 kind · 内部硬编码（防漂移 · ADR-0007 §5.7.2 创建路径铁律）
+ * 防御层：partial unique index uq_families_one_personal_per_owner 兜底
+ *   · 若 race condition 重复 INSERT 会触发 unique violation · service 层应捕获并 fallback findPersonal
+ */
+export async function createPersonalFamily(
+  input: { ownerId: string; name: string },
+  client?: Runner,
+): Promise<FamilyEntity> {
+  const id = newId();
+  const runner = client ?? exec();
+
+  // ① INSERT family（kind 硬编码 'personal' · 不允许调用方传参）
+  const res = await runner.query(
+    `INSERT INTO families (id, name, owner_id, kind)
+          VALUES ($1, $2, $3, 'personal')
+        RETURNING id, name, owner_id, kind, created_at, updated_at, deleted_at, version`,
+    [id, input.name, input.ownerId],
+  );
+  if (!res.rows[0]) {
+    throw new Error('[familyRepo] INSERT family returned no row');
+  }
+  const family = rowToEntity(res.rows[0]);
+
+  // ② INSERT family_members(owner) · 同事务
+  await runner.query(
+    `INSERT INTO family_members (family_id, user_id, role)
+          VALUES ($1, $2, 'owner')`,
+    [family.id, input.ownerId],
+  );
+
+  return family;
+}
+
+/**
+ * 查 user 的所有 active families（left_at IS NULL · 排序 created_at ASC）
+ * 可选 filter by kind（Sprint-4 切换器 UI 用）
+ */
+export async function listActiveFamiliesByUser(
+  userId: string,
+  filter?: { kind?: FamilyKind },
+  client?: Runner,
+): Promise<FamilyEntity[]> {
+  const runner = client ?? exec();
+  const params: unknown[] = [userId];
+  let kindFilter = '';
+  if (filter?.kind) {
+    kindFilter = ' AND f.kind = $2';
+    params.push(filter.kind);
+  }
+  const res = await runner.query(
+    `SELECT f.id, f.name, f.owner_id, f.kind, f.created_at, f.updated_at, f.deleted_at, f.version
+       FROM families f
+       JOIN family_members fm ON fm.family_id = f.id
+      WHERE fm.user_id = $1 AND fm.left_at IS NULL AND f.deleted_at IS NULL${kindFilter}
+      ORDER BY f.created_at ASC`,
+    params,
+  );
+  return res.rows.map(rowToEntity);
+}
+
+/**
+ * 查 user 的"个人 family"（kind='personal' AND owner_id=user_id · 至多 1 个 · partial unique index 保证）
+ *
+ * v1.1：必须用 WHERE kind='personal' · 不再用 created_at ASC 取第一个
+ * （partial unique index uq_families_one_personal_per_owner 保证唯一）
+ */
+export async function findPersonalFamily(
+  userId: string,
+  client?: Runner,
+): Promise<FamilyEntity | null> {
+  const runner = client ?? exec();
+  const res = await runner.query(
+    `SELECT id, name, owner_id, kind, created_at, updated_at, deleted_at, version
+       FROM families
+      WHERE owner_id = $1 AND kind = 'personal' AND deleted_at IS NULL
+      LIMIT 1`,
+    [userId],
+  );
+  return res.rows[0] ? rowToEntity(res.rows[0]) : null;
+}
+
+/**
+ * 软删 family · kind='personal' 守门（ADR-0007 §5.7.3 早期防御 · v2.0 FU-164-004）
+ *
+ * 实现：先 findById 查 kind · kind === 'personal' 时抛 AppError(FAMILY_PERSONAL_NOT_DELETABLE)
+ *       否则 UPDATE families SET deleted_at=now(), version=version+1 WHERE id=$1 AND version=$2
+ * 本卡不暴露 REST 端点（DELETE /families 推 Sprint-4 COSTRA-201）· 但 service 层接口已就位
+ */
+export async function softDelete(
+  input: { familyId: string; version: number },
+  client?: Runner,
+): Promise<FamilyEntity> {
+  const runner = client ?? exec();
+
+  // 先查 kind
+  const findRes = await runner.query(
+    `SELECT id, name, owner_id, kind, created_at, updated_at, deleted_at, version
+       FROM families
+      WHERE id = $1 AND deleted_at IS NULL
+      LIMIT 1`,
+    [input.familyId],
+  );
+  if (!findRes.rows[0]) {
+    const { AppError } = await import('../errors/AppError.js');
+    const { ErrorCode } = await import('../errors/ErrorCode.js');
+    throw new AppError(ErrorCode.NOT_FOUND, { message: 'family not found' });
+  }
+  const family = rowToEntity(findRes.rows[0]);
+
+  // kind 守门：personal family 不可删除
+  if (family.kind === 'personal') {
+    const { AppError } = await import('../errors/AppError.js');
+    const { ErrorCode } = await import('../errors/ErrorCode.js');
+    throw new AppError(ErrorCode.FAMILY_PERSONAL_NOT_DELETABLE, {
+      message: 'personal family cannot be deleted',
+    });
+  }
+
+  // 乐观锁软删
+  const res = await runner.query(
+    `UPDATE families
+        SET deleted_at = now(), version = version + 1
+      WHERE id = $1 AND version = $2 AND deleted_at IS NULL
+      RETURNING id, name, owner_id, kind, created_at, updated_at, deleted_at, version`,
+    [input.familyId, input.version],
+  );
+  if (!res.rows[0]) {
+    const { AppError } = await import('../errors/AppError.js');
+    const { ErrorCode } = await import('../errors/ErrorCode.js');
+    throw new AppError(ErrorCode.VERSION_CONFLICT, {
+      message: 'family version conflict or already deleted',
+    });
+  }
+  return rowToEntity(res.rows[0]);
+}

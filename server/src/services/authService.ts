@@ -29,8 +29,11 @@ import { newJti } from '../id/idGen.js';
 import { defaultNickname } from '../config/defaults.js';
 import { ttl } from '../config/ttl.js';
 import { getRedis } from '../db/redis.js';
+import { withTx } from '../db/pool.js';
 import * as userRepo from '../repositories/userRepo.js';
 import * as sessionRepo from '../repositories/sessionRepo.js';
+import * as familyRepo from '../repositories/familyRepo.js';
+import * as ledgerRepo from '../repositories/ledgerRepo.js';
 
 /** 响应体形状（与 openapi.yaml components.schemas.AuthTokenPair 严格对齐）。 */
 export interface AuthTokenPair {
@@ -49,6 +52,10 @@ export interface AuthTokenPair {
     created_at: string;
     updated_at: string;
   };
+  /** COSTRA-164: bootstrap 创建的个人 family id（永远非空）· 客户端 active_family_id 兜底 */
+  default_family_id: string;
+  /** COSTRA-164: 个人 family 的默认 ledger id（永远非空）· 客户端记账时默认填充 */
+  default_ledger_id: string;
 }
 
 export interface AuthServiceDeps {
@@ -115,14 +122,77 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
     await redis.set(redisKeyForRefresh(jti), userId, 'EX', refreshTtl + 60);
   }
 
+  /**
+   * PG unique violation 判定（pg lib error · code === '23505'）
+   * 项目无现成工具 · 本卡内联（避免新建工具增加 scope · 参 errorHandler.ts L95 fastify err.code 范式）
+   * 双校验 code + constraint · 防误捕其他 unique 约束
+   */
+  function isUniqueViolation(err: unknown, constraint: string): boolean {
+    return (
+      typeof err === 'object' && err !== null &&
+      (err as { code?: string }).code === '23505' &&
+      (err as { constraint?: string }).constraint === constraint
+    );
+  }
+
   async function wxLogin(code: string): Promise<AuthTokenPair> {
     const { openid, unionid } = await wxCode2Session(code);
 
-    const user = await userRepo.upsertByOpenid({
-      wxOpenid: openid,
-      wxUnionid: unionid ?? null,
-      // 首登用户昵称先占位；后续 PATCH /users/me 由客户端补全
-      nickname: defaultNickname,
+    // 单事务包住 user upsert + family/ledger bootstrap · 防数据漂移
+    const { user, defaultFamilyId, defaultLedgerId } = await withTx(async (client) => {
+      const user = await userRepo.upsertByOpenid(
+        { wxOpenid: openid, wxUnionid: unionid ?? null, nickname: defaultNickname },
+        client,
+      );
+
+      // ① 先查个人 family（v1.1 强 WHERE：kind='personal' · partial unique index 保证至多 1 行）
+      let personalFamily = await familyRepo.findPersonalFamily(user.id, client);
+      let defaultLedger;
+
+      if (!personalFamily) {
+        // ② 首登 / 边缘自愈：尝试 bootstrap · race condition 时由 catch 兜底
+        try {
+          personalFamily = await familyRepo.createPersonalFamily(
+            { ownerId: user.id, name: '我的账本' },
+            client,
+          );
+        } catch (err) {
+          if (isUniqueViolation(err, 'uq_families_one_personal_per_owner')) {
+            // race condition：另一并发请求已 INSERT 成功 · 重读即可
+            personalFamily = await familyRepo.findPersonalFamily(user.id, client);
+            if (!personalFamily) {
+              // 极边缘：catch unique violation 但 findPersonal 仍返 null（应不可能 · DB 层异常）
+              throw new AppError(ErrorCode.UNAVAILABLE, {
+                message: 'family bootstrap raced and lost',
+                cause: err,
+              });
+            }
+          } else {
+            throw err;
+          }
+        }
+        // 同事务内建 ledger（family 已存在）
+        defaultLedger = await ledgerRepo.createDefaultLedger(
+          { familyId: personalFamily.id, name: '日常账本', currency: 'CNY' },
+          client,
+        );
+      } else {
+        // ③ 重登：取个人 family 的 ledger
+        defaultLedger = await ledgerRepo.findFirstByFamilyId(personalFamily.id, client);
+        if (!defaultLedger) {
+          // 防御性：个人 family 存在但 ledger 缺失（数据异常 · 历史脏数据）→ 自愈补建
+          defaultLedger = await ledgerRepo.createDefaultLedger(
+            { familyId: personalFamily.id, name: '日常账本', currency: 'CNY' },
+            client,
+          );
+        }
+      }
+
+      return {
+        user,
+        defaultFamilyId: personalFamily.id,
+        defaultLedgerId: defaultLedger.id,
+      };
     });
 
     const pair = await signPair(user.id);
@@ -135,6 +205,8 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
       refresh_token_ttl_sec: pair.refreshTtl,
       expires_in: pair.accessTtl,
       user: toUserView(user),
+      default_family_id: defaultFamilyId,
+      default_ledger_id: defaultLedgerId,
     };
   }
 
@@ -181,6 +253,18 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
       });
     }
 
+    // refresh 时也返回 default family/ledger（客户端可能用 refresh 响应初始化 storage）
+    const personalFamily = await familyRepo.findPersonalFamily(claims.sub);
+    let defaultFamilyId = '';
+    let defaultLedgerId = '';
+    if (personalFamily) {
+      defaultFamilyId = personalFamily.id;
+      const ledger = await ledgerRepo.findFirstByFamilyId(personalFamily.id);
+      if (ledger) {
+        defaultLedgerId = ledger.id;
+      }
+    }
+
     return {
       access_token: accessToken,
       refresh_token: refreshToken,
@@ -188,6 +272,8 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
       refresh_token_ttl_sec: ttl().refreshTokenSec,
       expires_in: accessTtl,
       user: toUserView(user),
+      default_family_id: defaultFamilyId,
+      default_ledger_id: defaultLedgerId,
     };
   }
 

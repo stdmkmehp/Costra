@@ -36,7 +36,7 @@
 | **Sprint-3 同步协议核心** | FU-104-ENTRIES-PATCH | ~~P1~~ → **closed** | ~~COSTRA-152~~ | **closed @ COSTRA-152 R1**（PATCH /entries/{id} 实装 + cross-family guard fix + K3 method-override）|
 | **Sprint-3 同步协议核心** | FU-104-ENTRIES-DELETE | ~~P1~~ → **closed** | ~~COSTRA-153~~ | **closed @ COSTRA-153 R1**（DELETE /entries/{id} 软删 + query ?version=N）|
 | **Sprint-3 同步协议核心** | FU-103-CONFLICT-MERGE-UI | P2 | COSTRA-151 | **dispatch-ready @ 2026-05-19**（Sprint-3 中后段 · 154+150 CLOSED 后启）|
-| **🆕 Sprint-3 family-context** | **FU-150-FAMILY-CONTEXT-SERVICE** | **P0** | **COSTRA-164 + COSTRA-165**（双卡联立 · ADR-0007 锚定）| **dispatch-ready @ 2026-05-27**（COSTRA-150 R1 卡审 P0-1 留 · 根因：syncScheduler.ts:43-50 显式注释"miniprogram 全局当前无 active_family_id 概念" · 实测阻塞 Phase-3 真机验证 · 决策走方案 R "user 多 family · family:ledger=1:1 · 加入即复制"· COSTRA-164 server family bootstrap MVP（3pt · login flow atomic 建个人 family+ledger · response 加 default_family_id/ledger_id）+ COSTRA-165 miniapp family-context service（2pt · family.ts service · auth 接入 · syncScheduler 替换 · entry 页 FALLBACK 处置）· 联合 approve 后此 FU closed · D-024 §2.2 C1 攒批第 N 次实战）|
+| **🆕 Sprint-3 family-context** | **FU-150-FAMILY-CONTEXT-SERVICE** | **P0** | **COSTRA-164 + COSTRA-165**（双卡联立 · ADR-0007 锚定）| **partial-closed @ COSTRA-164 (server 侧)**（COSTRA-164 R1 实装完成 · server wxLogin bootstrap + response 加 default_family_id/ledger_id · 等 COSTRA-165 miniapp family-context service 联合 close）|
 | **Epic-A 用户资料**（→ COSTRA-157 合卡）| FU-001 | P2 | COSTRA-157 | scoped |
 | **Epic-A 用户资料**（→ COSTRA-157 合卡）| FU-118-2 | P2 | COSTRA-157 | scoped |
 | **Epic-A 用户资料** | FU-102-PROFILE-REFUSE-UI | ~~P1~~ → **closed** | ~~COSTRA-158~~ | **closed @ COSTRA-158** |

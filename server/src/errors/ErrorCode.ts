@@ -28,6 +28,7 @@ export enum ErrorCode {
   // --- 403 权限 ---
   PERMISSION_DENIED = 'PERMISSION_DENIED',
   FAMILY_NOT_MEMBER = 'FAMILY_NOT_MEMBER',
+  FAMILY_PERSONAL_NOT_DELETABLE = 'FAMILY_PERSONAL_NOT_DELETABLE',
 
   // --- 404 资源 ---
   NOT_FOUND = 'NOT_FOUND',
@@ -70,6 +71,7 @@ export const ErrorHttpStatus: Readonly<Record<ErrorCode, number>> = Object.freez
 
   [ErrorCode.PERMISSION_DENIED]: 403,
   [ErrorCode.FAMILY_NOT_MEMBER]: 403,
+  [ErrorCode.FAMILY_PERSONAL_NOT_DELETABLE]: 403,
 
   [ErrorCode.NOT_FOUND]: 404,
 
@@ -113,6 +115,7 @@ export const ErrorRetryStrategy: Readonly<Record<ErrorCode, RetryStrategy>> = Ob
 
   [ErrorCode.PERMISSION_DENIED]: 'none',
   [ErrorCode.FAMILY_NOT_MEMBER]: 'none',
+  [ErrorCode.FAMILY_PERSONAL_NOT_DELETABLE]: 'none',
 
   [ErrorCode.NOT_FOUND]: 'none',
 

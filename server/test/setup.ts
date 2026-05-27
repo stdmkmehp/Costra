@@ -83,15 +83,20 @@ function applyMigrations(db: IMemoryDb): void {
       last_refresh_at TIMESTAMPTZ
     );
     -- COSTRA-104: entries 测试需补充的表（简化版 · 兼容 pg-mem）
+    CREATE TYPE family_kind AS ENUM ('personal', 'shared');
     CREATE TABLE families (
       id              UUID PRIMARY KEY,
       name            TEXT NOT NULL,
       owner_id        UUID NOT NULL,
+      kind            family_kind NOT NULL DEFAULT 'shared',
       created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
       updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
       deleted_at      TIMESTAMPTZ,
       version         INTEGER NOT NULL DEFAULT 1
     );
+    -- COSTRA-164: partial unique index · 每用户最多 1 个 personal family
+    CREATE UNIQUE INDEX uq_families_one_personal_per_owner
+      ON families (owner_id) WHERE kind = 'personal' AND deleted_at IS NULL;
     CREATE TABLE ledgers (
       id              UUID PRIMARY KEY,
       family_id       UUID NOT NULL,
@@ -202,7 +207,7 @@ function registerPgMemFunctions(db: IMemoryDb): void {
 function resetPgMem(): void {
   if (memDb) {
     memDb.public.none(
-      'DELETE FROM user_sessions; DELETE FROM users; DELETE FROM entries; DELETE FROM idempotency_keys;',
+      'DELETE FROM family_members; DELETE FROM entries; DELETE FROM ledgers; DELETE FROM families; DELETE FROM user_sessions; DELETE FROM users; DELETE FROM idempotency_keys;',
     );
   }
 }

@@ -47,6 +47,11 @@ export interface AppEnv {
 
   /** 构建版本号（CI 注入；本地可为空串） */
   buildSha: string;
+
+  /** COSTRA-164: 后端硬上限 · 每用户最多可创建/加入的 family 数量 · 防恶意创建 */
+  maxFamiliesPerUser: number;
+  /** COSTRA-164: 应用层校验上限 · MVP 限制用户可见 family 数量 · 可调 · 校验逻辑推 COSTRA-201 */
+  userVisibleFamilyLimit: number;
 }
 
 function required(env: NodeJS.ProcessEnv, key: string): string {
@@ -88,6 +93,15 @@ function parseLogLevel(v: string): AppEnv['logLevel'] {
   throw new Error(`[env] LOG_LEVEL must be one of ${allowed.join('|')}, got: ${v}`);
 }
 
+function parseIntOrDefault(v: string | undefined, fallback: number): number {
+  if (v == null || v === '') return fallback;
+  const n = Number(v);
+  if (!Number.isInteger(n) || n < 1) {
+    throw new Error(`[env] expected positive integer, got: ${v}`);
+  }
+  return n;
+}
+
 /**
  * 从给定的 env（默认 process.env）构造 AppEnv。
  * 测试注入：loadEnv({ NODE_ENV: 'test', ... })。
@@ -121,6 +135,9 @@ export function loadEnv(env: NodeJS.ProcessEnv = process.env): Readonly<AppEnv> 
     wxMockLogin: parseBool(env['WX_MOCK_LOGIN'], false),
 
     buildSha: optional(env, 'BUILD_SHA', ''),
+
+    maxFamiliesPerUser: parseIntOrDefault(env['MAX_FAMILIES_PER_USER'], 20),
+    userVisibleFamilyLimit: parseIntOrDefault(env['USER_VISIBLE_FAMILY_LIMIT'], 3),
   };
   if (cfg.wxMockLogin && cfg.nodeEnv !== 'development') {
     throw new Error('[env] WX_MOCK_LOGIN can only be enabled in NODE_ENV=development');
