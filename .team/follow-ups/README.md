@@ -36,6 +36,7 @@
 | **Sprint-3 同步协议核心** | FU-104-ENTRIES-PATCH | ~~P1~~ → **closed** | ~~COSTRA-152~~ | **closed @ COSTRA-152 R1**（PATCH /entries/{id} 实装 + cross-family guard fix + K3 method-override）|
 | **Sprint-3 同步协议核心** | FU-104-ENTRIES-DELETE | ~~P1~~ → **closed** | ~~COSTRA-153~~ | **closed @ COSTRA-153 R1**（DELETE /entries/{id} 软删 + query ?version=N）|
 | **Sprint-3 同步协议核心** | FU-103-CONFLICT-MERGE-UI | P2 | COSTRA-151 | **dispatch-ready @ 2026-05-19**（Sprint-3 中后段 · 154+150 CLOSED 后启）|
+| **🆕 Sprint-3 family-context** | **FU-150-FAMILY-CONTEXT-SERVICE** | **P0** | **COSTRA-164 + COSTRA-165**（双卡联立 · ADR-0007 锚定）| **dispatch-ready @ 2026-05-27**（COSTRA-150 R1 卡审 P0-1 留 · 根因：syncScheduler.ts:43-50 显式注释"miniprogram 全局当前无 active_family_id 概念" · 实测阻塞 Phase-3 真机验证 · 决策走方案 R "user 多 family · family:ledger=1:1 · 加入即复制"· COSTRA-164 server family bootstrap MVP（3pt · login flow atomic 建个人 family+ledger · response 加 default_family_id/ledger_id）+ COSTRA-165 miniapp family-context service（2pt · family.ts service · auth 接入 · syncScheduler 替换 · entry 页 FALLBACK 处置）· 联合 approve 后此 FU closed · D-024 §2.2 C1 攒批第 N 次实战）|
 | **Epic-A 用户资料**（→ COSTRA-157 合卡）| FU-001 | P2 | COSTRA-157 | scoped |
 | **Epic-A 用户资料**（→ COSTRA-157 合卡）| FU-118-2 | P2 | COSTRA-157 | scoped |
 | **Epic-A 用户资料** | FU-102-PROFILE-REFUSE-UI | ~~P1~~ → **closed** | ~~COSTRA-158~~ | **closed @ COSTRA-158** |
@@ -63,6 +64,14 @@
 | **🆕 QA 实测发现（族 H）** | ~~BUG-156-SYNC-PUSH-PAYLOAD-NO-UUID-VALIDATION~~ | ~~🔴 P0~~ → **closed** | ~~COSTRA-105 R1.x.2~~ | **closed @ commit db488b9** |
 | **🆕 QA 实测发现（族 H）** | FU-105-DEV-CONSOLE-HOOK | P3 | Sprint-3 头部 miniapp-dev（合 COSTRA-150 顺带 / 或独立小卡）| open |
 | **🆕 Orchestrator 自检** | **FU-ORCH-FACT-CHECK-DISCIPLINE** | **P1** | **Sprint-3 末 Retro 议题** | **open**（2026-05-22 · Orchestrator 给 Human 写实测手册时凭印象写命令导致 3 处事实错误：① healthz 路径加了 /v1（实际根路径 · app.ts:69 注释明示）② DB 名错为 costra_dev（实际 costra · .env:12）③ families INSERT 模板缺 owner_id 列（实际有 · 0001_init.sql:32）· **D-025 AP-001 字符串代理判定反例第 1 次 Orchestrator 自身命中**（之前 158 第 1 次正向规避 · 154 第 1 次正向兑现 AP-003 · 此次 AP-001 反例命中需立强约束）· Human 反馈批评 → spawn qa-planner 装扮档归口产出严谨手册（commit `95a9a11` · 707 行 · 每条命令均标 Read 验证事实源）· Retro 候选议题：Orchestrator 给 Human 写「执行类文档」（实测手册 / SQL 模板 / 命令清单等）必须 ≥ N 文件 Read 后再写 · 不能凭装扮档过往交付的印象代理 · 候选立强约束：Orchestrator 写 Human 操作类文档前强制走 spawn 装扮档归口产出 · 而非 Orchestrator 直写）|
+
+> **2026-05-27 family-context 决策落档（ADR-0007 + 双卡）**：
+> - **根因**：COSTRA-150 R1 卡审 P0-1 留下的 FU-150-FAMILY-CONTEXT-SERVICE · 是 Phase-3 真机实测阻塞的根本原因（client 拿不到 family_id/ledger_id · 实测手册让 Human 手动 SSH+Console 注入是临时绕过非产品形态）
+> - **决策方法**：Human + Orchestrator 4 轮选项收敛（X 单容器 → P ledger 共享开关 → Q 汇总层 → R user 多 family）· 最终采纳 Human 提议的方案 R · 落档 [`ADR-0007 family-ledger 关系模型`](../decisions/ADR-0007-family-ledger-relation-model.md) v1.0
+> - **方案 R 核心**：user 多 family（应用层上限默认 3 · 后端硬上限 20 · 配置可调）· family:ledger=1:1 产品语义（schema 物理 1:N 保留扩展空间）· 单人时透明建"我的账本"个人 family · 加入家庭=新建 family + 可选复制旧数据（INSERT...SELECT · 同步 + 进度条 · 用户接受延迟）· 个人 family 永远独立保留（解决退出 / 隐私 / 撤回三大痛点）
+> - **R1 双卡 dispatch 落档**：COSTRA-164 server family bootstrap MVP（3pt · backend-dev）+ COSTRA-165 miniapp family-context service（2pt · miniapp-dev · 强依赖 164 R1 APPROVE）· 联立攒批 D-024 §2.2 C1 联合 approve 范式
+> - **R2/Sprint-4 锚定**：COSTRA-201/202/204 邀请流程 + 加入向导（含复制选项）· R3/Sprint-5+ 选择性导入 / 异步 / 私密 ledger
+> - **schema 改动量**：R1 = 0（ADR-0007 §4.1 锚定 · 现有 schema families/ledgers/family_members 已天然支持方案 R）
 
 > **2026-05-19 20:50 Sprint-3 启动批量整理**：
 > - COSTRA-154 R1 实装完成（commit `7e87bad` + R1.x.1 修订 commit `8eecd4c` · review-tech APPROVE 38/40）· FU-104-SYNC-PULL 闭合
