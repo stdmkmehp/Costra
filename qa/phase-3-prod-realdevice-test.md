@@ -1,32 +1,48 @@
-# Phase-3 真机 Prod 验证手册 · COSTRA-154 + COSTRA-150
+# Phase-3 双卡联合实测手册 · COSTRA-164 + COSTRA-165 + COSTRA-154 + COSTRA-150
 
-> **任务**：Phase-2 部署闸门 5/5 PASS 后，验证真机→prod 后端全链路  
-> **卡号**：COSTRA-154（wx.login 全链路）· COSTRA-150（数据同步）  
-> **目标环境**：`https://costra.cloud`（49.235.216.20）  
-> **关键差异**：无 mock · `WX_MOCK_LOGIN=0` · 真实微信 code → 微信上游 code2Session → 真 openid  
-> **实测者**：Human  
-> **预计时间**：~30 分钟  
-> **版本**：v1.0 · 2026-05-26
+> **任务**：Phase-3 真机 Prod 双卡联合实测（COSTRA-164 family bootstrap + COSTRA-165 family-context service + COSTRA-154 wx.login 全链路 + COSTRA-150 数据同步）
+> **触发**：COSTRA-164 R1.x APPROVE 38/40 + COSTRA-165 R1 APPROVE 38/40 · 双卡联立 R1 APPROVE-pending-joint-test
+> **核心变化**：v1.0 §3.1 让 Human 手动 SSH 注入 family_id 的临时绕过**完全废弃**——164+165 实装后 client 登录响应即透明拿到 default_family_id/default_ledger_id
+> **目标环境**：`https://costra.cloud`（49.235.216.20）
+> **关键差异**：无 mock · `WX_MOCK_LOGIN=0` · 真实微信 code → 微信上游 code2Session → 真 openid · client 自动获取 family-context
+> **实测者**：Human
+> **预计时间**：~45 分钟（v1.0 30min + 4 场景 family-context 验证）
+> **版本**：v2.0 · 2026-05-27 · 替代 v1.0（2026-05-26）
+> **D-025 议题 25 强约束已贯彻**：每条命令写入前均 Read 验证源码/配置 · 每个事实陈述标注 file:line 锚点
 
 ---
 
-## §0 Phase-3 与 staging 联合实测的关键区别
+## §0 版本与变更说明
 
-| 维度 | staging 联合实测（已有手册） | Phase-3 prod 真机验证（本手册） |
-|------|--------------------------|-------------------------------|
-| 后端地址 | `http://localhost:8080/v1` | `https://costra.cloud/v1` |
-| 微信登录 | server `WX_MOCK_LOGIN=1` mock | server `WX_MOCK_LOGIN=0` 真实 |
-| code2Session | 返回 mock-openid-xxx | 真调微信上游，返回真 openid |
-| 小程序运行环境 | 开发者工具模拟器 | **真机预览/真机调试** |
-| `CURRENT_ENV` | `'dev'` | `'prod'`（需构建前修改） |
-| HTTPS | 不校验 | 必须有效证书（Let's Encrypt） |
-| 请求域名校验 | 关闭 | **开启**（微信后台需配置） |
+### v2.0 替代 v1.0
+
+| 维度 | v1.0（已废弃） | v2.0（当前） |
+|------|---------------|-------------|
+| family_id 来源 | §3.1 SSH SQL 手动建 family/ledger + §3.2 Console setStorageSync 注入 | 登录响应自动返回 + client 透明写入 storage（COSTRA-164+165 实装） |
+| 测试覆盖 | 仅 wx.login + 数据同步 | 新增 4 大 family-context 场景（全新登录 / 旧 token 升级 / logout 清理 / entry 实际写入） |
+| storage key | `__costra_family_id_v1`（旧 key · 仅存 family_id 字符串） | `__costra_family_context_v1`（新 key · 含 family_id + ledger_id 结构体） |
+| 旧 key 清理 | 无 | `family.ts:23` setActiveFamily 自动 removeItem 旧 key |
+| 预计时间 | 30 min | 45 min |
+
+### v1.0 已废弃章节
+
+- **§3.1 数据准备：服务端建 family + ledger（SSH SQL 方案 A）** → 完全废弃 · COSTRA-164 server bootstrap 已在 wx.login 时为新用户透明创建
+- **§3.2 注入 family_id 到小程序 storage** → 完全废弃 · COSTRA-165 client 已透明接收并写入 `__costra_family_context_v1`
+
+### v2.0 新增章节
+
+- **§3 COSTRA-165：family-context 4 场景实测**（全新登录 / 旧 token 升级 / logout 清理 / entry 写入）
+- **§2 Step 5 验证 Token 持久化**：新增 default_family_id / default_ledger_id / family-context / globalData 断言
+- **§6 排查指南**：新增 family-context 相关排查项
+- **§7 联动 D-024 §2.2 C1 双卡 approve 流程**
 
 ---
 
 ## §1 前置条件检查
 
 ### §1.1 服务端确认（已在 Phase-2 完成）
+
+> 事实源：`infra/prod-bootstrap-compose.md` §7 闸门验证 + §4.4 stack 验证
 
 以下由 Phase-2 deploy-all.sh + 09-verify-gates.sh 保证，仅需快速复验：
 
@@ -37,22 +53,27 @@ ssh root@49.235.216.20
 # 1. 容器全部运行
 docker ps --format '{{.Names}} {{.Status}}' | grep -E 'costra-(server|nginx|postgres|redis)'
 # 期望：4 个容器 Up
+# 事实源：infra/prod-bootstrap-compose.md §4.4 4 容器架构
 
 # 2. healthz 探活
 curl -s https://costra.cloud/healthz | jq .status
 # 期望："ok"
+# 事实源：infra/docker-compose.prod.yml server healthcheck 路径 /healthz（非 /v1/healthz · v1.0 历史错误已修正）
 
 # 3. WX_MOCK_LOGIN 确认为 0
 docker exec costra-server printenv WX_MOCK_LOGIN
 # 期望：0（或空值 = 默认关闭）
+# 事实源：infra/prod-bootstrap-compose.md §3.4 server.env WX_MOCK_LOGIN=0 · D-026 §2.3 C2 强制
 
 # 4. NODE_ENV 确认为 production
 docker exec costra-server printenv NODE_ENV
 # 期望：production
+# 事实源：infra/prod-bootstrap-compose.md §3.4 server.env NODE_ENV=production
 
 # 5. 证书有效期
 echo | openssl s_client -connect costra.cloud:443 -servername costra.cloud 2>/dev/null | openssl x509 -noout -dates
 # 期望：notAfter 在当前日期之后
+# 事实源：infra/prod-bootstrap-compose.md §6.1 certbot webroot 签证
 ```
 
 **如果任一步失败**：回到 Phase-2 闸门排查，不进入后续步骤。
@@ -68,9 +89,9 @@ echo | openssl s_client -connect costra.cloud:443 -servername costra.cloud 2>/de
 2. **开发管理 → 开发设置 → 服务器域名**：
    - 确认无 `http://localhost` 相关域名残留（prod 不需要）
 
-> **事实源**：微信小程序在真机运行时强制校验请求域名白名单；不在白名单内的请求直接被 block（不经过网络）
+> **事实源**：微信小程序在真机运行时强制校验请求域名白名单；不在白名单内的请求直接被 block
 
-### §1.3 小程序环境切换
+### §1.3 小程序环境切换 prod
 
 #### §1.3.1 修改 `CURRENT_ENV` 为 `'prod'`
 
@@ -80,13 +101,16 @@ cd /Users/weizhao/Desktop/Costra/miniprogram/services
 
 编辑 `env.ts` 第 50 行：
 
+> 事实源：`miniprogram/services/env.ts:50` 当前值为 `const CURRENT_ENV: EnvName = 'prod'`
+
+**验证当前值**：如果 env.ts:50 已经是 `'prod'`，则无需修改。
+
 ```diff
 - const CURRENT_ENV: EnvName = 'dev';
 + const CURRENT_ENV: EnvName = 'prod';
 ```
 
-> **事实源**：`miniprogram/services/env.ts:50`  
-> 切换后 `getEnv().apiBaseUrl` → `https://costra.cloud/v1`，`mockLogin` → `false`
+> **事实源**：`miniprogram/services/env.ts:50` · 切换后 `getEnv().apiBaseUrl` → `https://costra.cloud/v1`（env.ts:39），`mockLogin` → `false`（env.ts:40）
 
 #### §1.3.2 验证切换生效
 
@@ -105,16 +129,16 @@ cd /Users/weizhao/Desktop/Costra/miniprogram/services
 3. 确认 PC 端出现 **"真机调试窗口"**：左侧模拟器 + 右侧 Console/Network 面板
 4. **关键**：真机调试模式下**不会**跳过域名校验——如果请求被 block 说明 §1.2 未配好
 
-> **备选方案**：如真机调试不稳定，可用 **"预览"** 模式 + 手机端"打开调试"（vConsole）  
+> **备选方案**：如真机调试不稳定，可用 **"预览"** 模式 + 手机端"打开调试"（vConsole）
 > 操作：预览 → 扫码 → 手机小程序右上角 ··· → 打开调试 → vConsole 面板出现
 
 ---
 
-## §2 COSTRA-154：wx.login 全链路验证
+## §2 COSTRA-154：wx.login 全链路验证（更新 · 含 family-context 字段验证）
 
 ### 测试目标
 
-验证：真机 `wx.login()` → `POST /v1/auth/wx-login {code}` → prod server 调微信上游 code2Session → 返回真 JWT → 小程序存储 token → 后续请求鉴权通过。
+验证：真机 `wx.login()` → `POST /v1/auth/wx-login {code}` → prod server 调微信上游 code2Session → 返回真 JWT（**含 default_family_id + default_ledger_id**）→ 小程序存储 token + 写入 family-context storage + 同步 globalData → 后续请求鉴权通过。
 
 ---
 
@@ -133,12 +157,12 @@ cd /Users/weizhao/Desktop/Costra/miniprogram/services
 ```
 [Costra] onLaunch env= prod
 [auth] wx.login ok {codeLen: 32}
-[auth] login success {userId: "0197xxxx-...", nickname: "微信用户"}
+[auth] login success {userId: "0197xxxx-...", familyId: "0197xxxx-..."}
 ```
 
 > **事实源**：
-> - `miniprogram/services/auth.ts:163` → `[auth] wx.login ok`
-> - `miniprogram/services/auth.ts:178-180` → login success（POST 成功后）
+> - `miniprogram/services/auth.ts:205` → `[auth] wx.login ok`
+> - `miniprogram/services/auth.ts:249` → `[auth] login success`（POST 成功后 · 含 userId + familyId）
 > - code 长度 = 32 是微信标准（真机 + 开发者工具均如此）
 
 #### Step 3：观察 Network
@@ -146,7 +170,9 @@ cd /Users/weizhao/Desktop/Costra/miniprogram/services
 | 请求 | 期望 |
 |------|------|
 | `POST https://costra.cloud/v1/auth/wx-login` | Status 200 |
-| Response body | `{"access_token":"ey...","refresh_token":"ey...","access_token_ttl_sec":7200,"refresh_token_ttl_sec":2592000,"user":{...}}` |
+| Response body | `{"access_token":"ey...","refresh_token":"ey...","access_token_ttl_sec":7200,"refresh_token_ttl_sec":2592000,"user":{...},"default_family_id":"0197xxxx-...","default_ledger_id":"0197xxxx-..."}` |
+
+> **事实源**：`server/src/routes/auth.ts:56` 路由路径 `/auth/wx-login` · `server/src/services/authService.ts:201-210` wxLogin 返回 AuthTokenPair 含 default_family_id + default_ledger_id
 
 **FAIL 场景**：
 
@@ -161,21 +187,62 @@ cd /Users/weizhao/Desktop/Costra/miniprogram/services
 - 登录成功后自动跳转到 **home 页**
 - home 页应正常渲染（无白屏/错误提示）
 
-#### Step 5：验证 Token 持久化
+#### Step 5：验证 Token 持久化 + family-context（**v2.0 核心更新**）
 
 在调试 Console 执行：
 
 ```js
+// 验证 Token envelope（含 default_family_id / default_ledger_id）
 const t = wx.getStorageSync('__costra_token_v1');
-console.log('envelope:', JSON.stringify(Object.keys(t)));
+console.log('envelope keys:', JSON.stringify(Object.keys(t)));
 console.log('user.id:', t?.d?.raw?.user?.id);
 console.log('access_token prefix:', t?.d?.raw?.access_token?.substring(0, 20));
+console.log('default_family_id:', t?.d?.raw?.default_family_id);   // 必须 UUID 格式 · 非空
+console.log('default_ledger_id:', t?.d?.raw?.default_ledger_id);   // 必须 UUID 格式 · 非空
 ```
 
+> **事实源**：
+> - `miniprogram/services/storage.ts:10,13-18` envelope 格式 `{v:1, t:timestamp, d:data}`
+> - `miniprogram/services/auth.ts:13` TOKEN_KEY = `__costra_token_v1`
+> - `miniprogram/services/auth.ts:40-41` TokenRaw 含 default_family_id / default_ledger_id
+
 **期望**：
-- `envelope: ["v","t","d"]`
+- `envelope keys: ["v","t","d"]`
 - `user.id`: UUID v7 格式
 - `access_token prefix`: `eyJ...`（JWT 格式）
+- `default_family_id`: **UUID 格式 · 非空**（如 `0197xxxx-xxxx-7xxx-xxxx-xxxxxxxxxxxx`）
+- `default_ledger_id`: **UUID 格式 · 非空**
+
+然后验证 family-context storage + globalData：
+
+```js
+// 验证 __costra_family_context_v1 已写入
+const fc = wx.getStorageSync('__costra_family_context_v1');
+console.log('family_context envelope:', JSON.stringify(Object.keys(fc)));
+console.log('family_context.d:', JSON.stringify(fc?.d));  // { family_id, ledger_id }
+
+// 验证 globalData.activeLedgerId 已同步
+console.log('globalData.activeLedgerId:', getApp().globalData.activeLedgerId);
+```
+
+> **事实源**：
+> - `miniprogram/services/family.ts:12` FAMILY_CONTEXT_KEY = `__costra_family_context_v1`
+> - `miniprogram/services/auth.ts:239-247` doWxLogin 真实链路写 setActiveFamily + 同步 globalData.activeLedgerId
+> - `miniprogram/app.ts:22` globalData.activeLedgerId 字段声明
+
+**期望**：
+- `family_context.d`: `{ family_id: "UUID", ledger_id: "UUID" }` · 两值均非空
+- `globalData.activeLedgerId`: 等于 `default_ledger_id`（与 token 中的值一致）
+
+**同时验证旧 key 已清理**：
+
+```js
+// 旧 key 应不存在（family.ts:23 setActiveFamily 自动 removeItem）
+const oldKey = wx.getStorageSync('__costra_family_id_v1');
+console.log('legacy family_id key:', oldKey);  // 期望: 空或 undefined
+```
+
+> **事实源**：`miniprogram/services/family.ts:14` LEGACY_FAMILY_ID_KEY = `__costra_family_id_v1` · `family.ts:23` setActiveFamily 内 removeItem(LEGACY_FAMILY_ID_KEY)
 
 ---
 
@@ -204,13 +271,16 @@ console.log('Token valid:', !!accessToken);
 
 ### §2.3 测试步骤：Token 续签（可选 · 加分项）
 
-> 此项需等 access_token 接近过期（2h TTL）或手动缩短 server 端 TTL 测试。  
+> 此项需等 access_token 接近过期（2h TTL）或手动缩短 server 端 TTL 测试。
 > Phase-3 基础验证可跳过，记录为 "未测" 状态。
 
 **方法**（如需测试）：
 1. 修改 token storage 中 `access_expires_at` 为当前时间 - 1min
 2. 触发任意请求
 3. 观察是否自动调用 `POST /v1/auth/refresh` 并获得新 token
+4. 验证 refresh response 也含 `default_family_id` + `default_ledger_id`（authService.ts:275-276）
+
+> **事实源**：`miniprogram/services/auth.ts:262-304` refreshToken 函数 · `server/src/services/authService.ts:268-277` refresh 也返回 default_family_id/default_ledger_id
 
 ---
 
@@ -219,107 +289,269 @@ console.log('Token valid:', !!accessToken);
 | 检查项 | PASS 条件 |
 |--------|-----------|
 | P1 · wx.login 获取 code | Console 出现 `[auth] wx.login ok {codeLen: 32}` |
-| P2 · POST /auth/wx-login 成功 | Network 200 + response 含 access_token |
-| P3 · Token 本地持久化 | storage `__costra_token_v1` 为合规 envelope |
-| P4 · 后续请求带 Authorization | 任意业务请求 header 含 `Bearer ey...` |
-| P5 · 页面正常跳转 | 登录后 home 页正常渲染 |
+| P2 · POST /auth/wx-login 成功 | Network 200 + response 含 access_token + default_family_id + default_ledger_id |
+| P3 · Token 本地持久化 | storage `__costra_token_v1` 为合规 envelope + default_family_id/ledger_id 非空 UUID |
+| P4 · family-context storage 写入 | storage `__costra_family_context_v1` 为合规 envelope + d 含 family_id + ledger_id |
+| P5 · globalData 同步 | `getApp().globalData.activeLedgerId` === token 中 default_ledger_id |
+| P6 · 旧 key 已清理 | storage `__costra_family_id_v1` 为空 |
+| P7 · 后续请求带 Authorization | 任意业务请求 header 含 `Bearer ey...` |
+| P8 · 页面正常跳转 | 登录后 home 页正常渲染 |
 
-**5/5 全 PASS** → COSTRA-154 ✅  
-**任一 FAIL** → 记录故障现象，进入 §5 排查
-
----
-
-## §3 COSTRA-150：数据同步全链路验证
-
-### 前置：确保 COSTRA-154 已 PASS（有有效登录态）
+**8/8 全 PASS** → COSTRA-154 ✅
+**任一 FAIL** → 记录故障现象，进入 §6 排查
 
 ---
 
-### §3.1 数据准备：服务端建 family + ledger
+## §3 COSTRA-165：family-context 4 场景实测（核心新章节）
 
-> 真机 prod 环境无法用 seed 脚本（脚本连本地 DB）。需要通过以下方式之一准备数据：
+> **前置**：确保 §2 wx.login 全链路已 PASS（有有效登录态）
 
-#### 方案 A：SSH 到服务器执行 SQL（推荐）
+### 场景 1：全新登录场景（C1）
+
+**目标**：验证从零状态登录 → family-context 全链路写入
+
+#### 操作
+
+1. **清 storage**：在 Console 执行 `wx.clearStorageSync()` · 或卸载小程序重装
+2. 关闭小程序 → 重新打开
+3. 触发登录 → 点击"一键微信登录"
+4. 等待登录完成
+
+#### 验证
+
+在 Console 执行：
+
+```js
+// A. Token 含 default_family_id / default_ledger_id
+const t = wx.getStorageSync('__costra_token_v1');
+console.log('C1-A default_family_id:', t?.d?.raw?.default_family_id);  // UUID · 非空
+console.log('C1-A default_ledger_id:', t?.d?.raw?.default_ledger_id);  // UUID · 非空
+
+// B. family-context storage 立即写入
+const fc = wx.getStorageSync('__costra_family_context_v1');
+console.log('C1-B family_context:', JSON.stringify(fc?.d));  // { family_id, ledger_id }
+
+// C. globalData.activeLedgerId 同步
+console.log('C1-C activeLedgerId:', getApp().globalData.activeLedgerId);  // === default_ledger_id
+```
+
+> **事实源**：
+> - `miniprogram/services/auth.ts:239-247` doWxLogin 真实链路：setActiveFamily → 同步 globalData
+> - `miniprogram/services/family.ts:20-24` setActiveFamily 写 FAMILY_CONTEXT_KEY + 清 LEGACY
+
+#### PASS 判定
+
+- `default_family_id` 非空 UUID ✓
+- `default_ledger_id` 非空 UUID ✓
+- `family_context.d` 含 family_id + ledger_id ✓
+- `globalData.activeLedgerId` === `default_ledger_id` ✓
+
+---
+
+### 场景 2：旧 token 升级场景（C2 · **最关键 · COSTRA-165 P1-1 修订对应**）
+
+**目标**：验证旧版 token（不含 default_family_id）升级后 → initAuth 自动 refresh → family-context 透明写入 · **用户不需要重新登录**
+
+#### 准备
+
+模拟升级前旧 token（不含 default_family_id / 无 family-context storage）：
+
+```js
+// 1. 读取当前 token
+const t = wx.getStorageSync('__costra_token_v1');
+
+// 2. 构造旧版 token（去掉 default_family_id / default_ledger_id）
+const oldRaw = { ...t.d.raw };
+delete oldRaw.default_family_id;
+delete oldRaw.default_ledger_id;
+const oldToken = { v: t.v, t: t.t, d: { ...t.d, raw: oldRaw } };
+
+// 3. 覆盖 token storage（模拟旧版）
+wx.setStorageSync('__costra_token_v1', oldToken);
+
+// 4. 清除 family-context storage（模拟旧版没有此 key）
+wx.removeStorageSync('__costra_family_context_v1');
+
+// 5. 验证准备完成
+console.log('C2-prep family_context:', wx.getStorageSync('__costra_family_context_v1'));  // 空
+console.log('C2-prep token has default_family_id:', !!wx.getStorageSync('__costra_token_v1')?.d?.raw?.default_family_id);  // false
+```
+
+#### 操作
+
+1. **关闭小程序**（真机上滑退出 / 开发者工具重编译）
+2. **重新打开小程序**
+3. 观察 Console · **不需要重新点击登录按钮**
+
+#### 期望 Console
+
+```
+[Costra] onLaunch env= prod
+```
+
+**不应出现**：`[auth] initAuth fallback refresh failed`
+
+**应该出现**（可能不显式打出，但通过后续验证确认 refresh 成功路径走了）：
+
+> 事实源：`miniprogram/services/auth.ts:92-103` initAuth 检测到 storage 无 family-context（`getActiveFamilyId()` 返回 null）→ 自动调 `refreshToken()` → refresh response 含 default_family_id/default_ledger_id → 写入 storage + globalData · 用户不需要重新登录
+
+#### 验证
+
+在 Console 执行：
+
+```js
+// A. Token 已更新 · 现含 default_family_id / default_ledger_id
+const t2 = wx.getStorageSync('__costra_token_v1');
+console.log('C2-A default_family_id:', t2?.d?.raw?.default_family_id);  // UUID · 非空（refresh 返的）
+console.log('C2-A default_ledger_id:', t2?.d?.raw?.default_ledger_id);  // UUID · 非空
+
+// B. family-context storage 已写入
+const fc2 = wx.getStorageSync('__costra_family_context_v1');
+console.log('C2-B family_context:', JSON.stringify(fc2?.d));  // { family_id, ledger_id }
+
+// C. globalData.activeLedgerId 已同步
+console.log('C2-C activeLedgerId:', getApp().globalData.activeLedgerId);  // === default_ledger_id
+```
+
+> **事实源**：
+> - `miniprogram/services/auth.ts:93-97` initAuth fallback：`if (!familyId) { await refreshToken(); }` · refreshToken 内部已调 setActiveFamily
+> - `miniprogram/services/auth.ts:292-303` refreshToken 真实链路：if (resp.default_family_id && resp.default_ledger_id) → setActiveFamily + 同步 globalData
+> - `server/src/services/authService.ts:256-277` refresh 也返回 default_family_id + default_ledger_id
+
+#### 反向验证：refresh_token 非法 → 应清 token + family-context（不弹强制 toast）
+
+```js
+// 1. 把 refresh_token 改非法值
+const t3 = wx.getStorageSync('__costra_token_v1');
+const badRaw = { ...t3.d.raw, refresh_token: 'invalid-token-xxx' };
+const badToken = { v: t3.v, t: t3.t, d: { ...t3.d, raw: badRaw } };
+wx.setStorageSync('__costra_token_v1', badToken);
+
+// 2. 清 family-context（模拟 initAuth 需 refresh 但 refresh 会失败）
+wx.removeStorageSync('__costra_family_context_v1');
+
+// 3. 关闭并重新打开小程序
+// 4. 观察 Console
+```
+
+**期望**：
+- Console 出现 `[auth] initAuth fallback refresh failed`（auth.ts:100）
+- **不应出现强制错误 toast / 弹窗**（initAuth 静默清 token + 跳登录页）
+- 跳转到登录页（正常 UX · 用户重新登录即可）
+
+> **事实源**：`miniprogram/services/auth.ts:98-103` refresh 失败兜底：console.warn → clearToken + clearActiveFamily → return（不 throw · 不弹 toast）
+
+#### PASS 判定
+
+- 旧 token 升级后 family-context 透明写入 ✓
+- 用户不需要重新登录 ✓
+- `[auth] initAuth fallback refresh failed` 不出现（成功路径）✓
+- refresh_token 非法时：清 token + 跳登录页（不弹 toast）✓
+
+---
+
+### 场景 3：logout 清理路径（C3）
+
+**目标**：验证登出后 family-context + token + globalData 完整清理
+
+#### 操作
+
+1. 先完成场景 1 或场景 2（确保已登录 + family-context 已写入）
+2. 在小程序中点击 **退出登录**（mine 页 → 退出按钮）
+
+#### 验证
+
+在 Console 执行：
+
+```js
+// A. __costra_family_context_v1 已清除
+const fc3 = wx.getStorageSync('__costra_family_context_v1');
+console.log('C3-A family_context after logout:', fc3);  // 期望: 空或 undefined
+
+// B. __costra_token_v1 已清除
+const t4 = wx.getStorageSync('__costra_token_v1');
+console.log('C3-B token after logout:', t4);  // 期望: 空或 undefined
+
+// C. globalData.activeLedgerId 变 undefined
+console.log('C3-C activeLedgerId after logout:', getApp().globalData.activeLedgerId);  // 期望: undefined
+```
+
+> **事实源**：
+> - `miniprogram/services/auth.ts:181-188` logout 顺序：先 clearActiveFamily（L182）→ 设置 globalData.activeLedgerId = undefined（L185）→ 最后 clearToken（L188）
+> - `miniprogram/services/family.ts:48-51` clearActiveFamily → removeItem(FAMILY_CONTEXT_KEY) + removeItem(LEGACY_FAMILY_ID_KEY)
+
+#### PASS 判定
+
+- `__costra_family_context_v1` 已清除 ✓
+- `__costra_token_v1` 已清除 ✓
+- `globalData.activeLedgerId` === undefined ✓
+- 页面跳转到登录页 ✓
+
+---
+
+### 场景 4：entry 页 ledger_id 实际写入（C4）
+
+**目标**：验证记账时 entry payload 中 ledger_id 为真实 UUID（非 `'default'` 字面量 · 非 FALLBACK_LEDGER_ID）
+
+#### 操作
+
+1. 先完成场景 1（确保已登录 + family-context 已写入）
+2. 跳到 **记一笔** 页面
+3. 输入金额 `0.01`
+4. 点保存
+
+#### 验证
+
+**Console 验证**：不应出现 `[entry] activeLedgerId missing in globalData` 警告
+
+> **事实源**：`miniprogram/pages/entry/index.ts:61-63` if (!ledgerId) → console.warn · 正常路径不应触发
+
+**Network 验证**：
+
+观察 `POST https://costra.cloud/v1/sync/push` 请求：
+
+- Request body 中 `ledger_id` 应为真实 UUID（等于 default_ledger_id）
+- **不应**为 `'default'` 字面量
+- **不应**为 `00000000-0000-0000-0000-000000000001`（FALLBACK_LEDGER_ID）
+
+> **事实源**：
+> - `miniprogram/pages/entry/index.ts:60` `const ledgerId = getApp().globalData.activeLedgerId`
+> - `miniprogram/pages/entry/index.ts:67` `ledger_id: ledgerId || FALLBACK_LEDGER_ID`
+> - `miniprogram/pages/entry/index.ts:15` FALLBACK_LEDGER_ID = `'00000000-0000-0000-0000-000000000001'`
+
+**Server 端验证**（SSH 到服务器）：
 
 ```bash
 ssh root@49.235.216.20
 
-# 1. 获取刚登录的 user_id
 docker exec costra-postgres psql -U costra -d costra \
-  -c "SELECT id, wx_openid, nickname FROM users ORDER BY created_at DESC LIMIT 3"
-# 找到你的真实 openid 对应的 user（不是 mock-openid-xxx）
-# 记录 USER_ID
-
-# 2. 创建 family + ledger + member（如尚未存在）
-# ⚠️ 注意：必须用 `cat <<'SQL' | docker exec -i` 方式（不能用 docker exec ... <<'SQL'，heredoc 不会被正确传入容器）
-cat <<'SQL' | docker exec -i costra-postgres psql -U costra -d costra
-DO $$
-DECLARE
-  uid UUID := '019e6395-9baf-7fa3-8660-62252088d64c';
-  fid UUID;
-  lid UUID;
-BEGIN
-  -- 创建 family
-  INSERT INTO families (id, name, owner_id, created_at, updated_at)
-  VALUES (gen_random_uuid(), '我的家庭', uid, now(), now())
-  RETURNING id INTO fid;
-
-  -- 如果已存在，取现有的
-  IF fid IS NULL THEN
-    SELECT id INTO fid FROM families WHERE owner_id = uid LIMIT 1;
-  END IF;
-
-  -- 创建 ledger
-  INSERT INTO ledgers (id, family_id, name, currency, created_at, updated_at)
-  VALUES (gen_random_uuid(), fid, '日常账本', 'CNY', now(), now())
-  RETURNING id INTO lid;
-
-  IF lid IS NULL THEN
-    SELECT id INTO lid FROM ledgers WHERE family_id = fid LIMIT 1;
-  END IF;
-
-  -- 加入 family_members
-  INSERT INTO family_members (family_id, user_id, role, joined_at)
-  VALUES (fid, uid, 'owner', now())
-  ON CONFLICT DO NOTHING;
-
-  RAISE NOTICE 'family_id=%, ledger_id=%, user_id=%', fid, lid, uid;
-END $$;
-SQL
+  -c "SELECT id, ledger_id, amount, note, version FROM entries ORDER BY created_at DESC LIMIT 1"
 ```
 
-> **⚠️ 常见坑**：`docker exec container psql <<'SQL'` 不生效（heredoc 不会通过 stdin 传入容器）。  
-> 正确方式是 `cat <<'SQL' | docker exec -i container psql`（管道 + `-i` 参数保持 stdin 打开）。
+> **事实源**：`infra/prod-bootstrap-compose.md` §4.4 DB 连接方式 `docker exec costra-postgres psql -U costra -d costra`（DB 名为 `costra` · 非 `costra_dev`）
 
-记录输出的 `family_id` 和 `ledger_id`。
+**期望**：
+- 有一行 `amount=1`（0.01 元 = 1 分）+ 真实 `ledger_id`（UUID 格式 · 与 default_ledger_id 一致）
+- `ledger_id` 不是 FALLBACK_LEDGER_ID `00000000-0000-0000-0000-000000000001`
 
-#### 方案 B：通过小程序 UI 触发（如业务流程已实现家庭创建）
+#### PASS 判定
 
-如果小程序已有创建家庭/账本的入口，直接在真机上操作即可。
+- Console 无 `[entry] activeLedgerId missing` 警告 ✓
+- Network push payload 中 `ledger_id` 为真实 UUID ✓
+- DB 中 entry 的 `ledger_id` 为真实 UUID（与 default_ledger_id 一致）✓
 
 ---
 
-### §3.2 注入 family_id 到小程序 storage
+## §4 COSTRA-150：数据同步全链路验证（更新）
 
-在真机调试 Console 执行：
+### 前置：确保 §2 + §3 场景 1 已 PASS（有有效登录态 + family-context 已写入）
 
-```js
-// 替换为 §3.1 中获取的 family_id
-const FAMILY_ID = 'c8da95ab-f645-49c6-8341-e31b14d6c94b';
-wx.setStorageSync('__costra_family_id_v1', {
-  v: 1,
-  t: Date.now(),
-  d: FAMILY_ID
-});
-// 验证
-console.log('family_id set:', wx.getStorageSync('__costra_family_id_v1'));
-```
-
-> **事实源**：`miniprogram/services/storage.ts:10,48-56` envelope 格式 `{v:1, t:timestamp, d:data}`
+> **v2.0 核心变更**：v1.0 §3.1 SSH SQL 注入 family_id **完全废弃** · 删除整段。
+> 无需手动建 family/ledger · COSTRA-164 server bootstrap 已在 wx.login 时为新用户透明创建（`server/src/services/authService.ts:138-210` · wxLogin 函数内单事务包住 user upsert + family/ledger bootstrap）· COSTRA-165 client 已透明接收并写入 storage/globalData。
 
 ---
 
-### §3.3 断言 A：冷启后 sync pull 成功
+### §4.1 断言 A：冷启后 sync pull 成功
 
 #### 操作
 
@@ -331,7 +563,6 @@ console.log('family_id set:', wx.getStorageSync('__costra_family_id_v1'));
 
 ```
 [Costra] onLaunch env= prod
-[auth] initAuth · restored session
 [sync] ok · pushed=0 conflicts=0 rejected=0 failed=0 pulled=N watermark=N (trigger=launch)
 ```
 
@@ -349,6 +580,8 @@ console.log('family_id set:', wx.getStorageSync('__costra_family_id_v1'));
 | `GET https://costra.cloud/v1/sync/pull?family_id=<fid>&since=0&limit=200` | 200 |
 | Response | `{"watermark":<integer>,"has_more":false,"changes":{...}}` |
 
+> **事实源**：family_id 来源从 storage `__costra_family_context_v1` 自动获取（`miniprogram/services/family.ts:32-35` getActiveFamilyId）· 不再需要手动注入
+
 #### PASS 判定
 
 - Console 出现 `[sync] ok` 日志（trigger 为 launch 或 page-show）
@@ -357,7 +590,7 @@ console.log('family_id set:', wx.getStorageSync('__costra_family_id_v1'));
 
 ---
 
-### §3.4 断言 B：记一笔 → push 上行成功
+### §4.2 断言 B：记一笔 → push 上行成功
 
 #### 操作
 
@@ -379,27 +612,31 @@ console.log('family_id set:', wx.getStorageSync('__costra_family_id_v1'));
 |------|------|
 | `POST https://costra.cloud/v1/sync/push` | 200 |
 | Request headers | `Authorization: Bearer ey...` + `Idempotency-Key: <uuid>` |
-| Request body | `{"ops":[{"op":"create","entity":"entry",...,"payload":{"amount":8888,...}}]}` |
+| Request body | `{"ops":[{"op":"create","entity":"entry",...,"payload":{"ledger_id":"<真实UUID>","amount":8888,...}}]}` |
 | Response body | `{"results":[{"status":"ok","server_id":"...","server_version":1}]}` |
+
+> **事实源**：push payload 中 `ledger_id` 应为真实 UUID（来自 globalData.activeLedgerId · 由 auth.ts:246 设置）· 非 `'default'` 字面量 · 非 FALLBACK
 
 #### 验证 DB 持久化（SSH 到服务器）
 
 ```bash
 docker exec costra-postgres psql -U costra -d costra \
-  -c "SELECT id, amount, note, version, change_seq FROM entries ORDER BY created_at DESC LIMIT 3"
+  -c "SELECT id, ledger_id, amount, note, version, change_seq FROM entries ORDER BY created_at DESC LIMIT 3"
 ```
 
-**期望**：有一行 `amount=8888, note='Phase3真机测试', version=1`
+> **事实源**：`infra/prod-bootstrap-compose.md` §4.4 DB 连接方式
+
+**期望**：有一行 `amount=8888, note='Phase3真机测试', version=1` + `ledger_id` 为真实 UUID
 
 #### PASS 判定
 
 - Network POST /sync/push 返回 200
 - results[0].status = "ok"
-- DB 中有对应 entry 记录
+- DB 中有对应 entry 记录 + ledger_id 为真实 UUID
 
 ---
 
-### §3.5 断言 C：watermark 持久化 + 增量 pull
+### §4.3 断言 C：watermark 持久化 + 增量 pull
 
 #### 操作
 
@@ -416,14 +653,6 @@ GET https://costra.cloud/v1/sync/pull?family_id=<fid>&since=<非零整数>&limit
 
 **关键**：`since` 参数 ≠ 0（说明 watermark 已持久化，走增量拉取）
 
-#### 期望 Console
-
-```
-[sync] ok · pushed=0 ... pulled=0 watermark=N (trigger=launch|page-show)
-```
-
-`pulled=0` 说明无新增数据（上次 push 的 entry 已在本地）
-
 #### 验证 watermark storage
 
 ```js
@@ -434,6 +663,8 @@ console.log('watermark value:', wm?.d);
 console.log('is number:', typeof wm?.d === 'number');
 ```
 
+> **事实源**：`miniprogram/services/db.ts` watermark key 格式 `watermark:<family_id>`
+
 #### PASS 判定
 
 - since 参数为非零正整数
@@ -442,7 +673,7 @@ console.log('is number:', typeof wm?.d === 'number');
 
 ---
 
-### §3.6 断言 D：离线记账 → 恢复网络 → 自动 push
+### §4.4 断言 D：离线记账 → 恢复网络 → 自动 push
 
 #### 操作
 
@@ -459,22 +690,16 @@ console.log('is number:', typeof wm?.d === 'number');
 [sync] ok · pushed=1 conflicts=0 rejected=0 failed=0 pulled=0 watermark=N (trigger=network-recover)
 ```
 
-> **事实源**：`miniprogram/services/syncScheduler.ts:120-125` `wx.onNetworkStatusChange` → 恢复后触发 syncOnce
-
-#### 期望 Network
-
-恢复网络后：
-1. `POST https://costra.cloud/v1/sync/push` → 200（push 离线 entry）
-2. `GET https://costra.cloud/v1/sync/pull?...` → 200（pull 确认）
+> **事实源**：`miniprogram/services/syncScheduler.ts` `wx.onNetworkStatusChange` → 恢复后触发 syncOnce
 
 #### 验证 DB（SSH）
 
 ```bash
 docker exec costra-postgres psql -U costra -d costra \
-  -c "SELECT id, amount, note, version FROM entries WHERE note = '离线测试'"
+  -c "SELECT id, ledger_id, amount, note, version FROM entries WHERE note = '离线测试'"
 ```
 
-**期望**：有一行 `amount=666, note='离线测试', version=1`
+**期望**：有一行 `amount=666, note='离线测试', version=1` + ledger_id 为真实 UUID
 
 #### PASS 判定
 
@@ -484,7 +709,7 @@ docker exec costra-postgres psql -U costra -d costra \
 
 ---
 
-### §3.7 断言 E：5 分钟稳定性观察
+### §4.5 断言 E：5 分钟稳定性观察
 
 #### 操作
 
@@ -507,10 +732,12 @@ docker exec costra-postgres psql -U costra -d costra \
 
 ---
 
-## §4 综合 PASS 判定表
+## §5 PASS 判定（双卡联合）
+
+### 综合判定表
 
 ```
-## Phase-3 Prod 真机验证结果
+## Phase-3 双卡联合 Prod 真机验证结果
 
 日期：2026-05-__
 实测者：__
@@ -521,30 +748,42 @@ docker exec costra-postgres psql -U costra -d costra \
 | # | 检查项 | 结果 | 证据 |
 |---|--------|------|------|
 | P1 | wx.login 获取 code（len=32） | PASS / FAIL | |
-| P2 | POST /auth/wx-login → 200 | PASS / FAIL | |
-| P3 | Token envelope 持久化 | PASS / FAIL | |
-| P4 | 后续请求带 Authorization | PASS / FAIL | |
-| P5 | 登录后 home 页正常渲染 | PASS / FAIL | |
+| P2 | POST /auth/wx-login → 200 + default_family_id/ledger_id | PASS / FAIL | |
+| P3 | Token envelope 持久化 + family IDs | PASS / FAIL | |
+| P4 | family-context storage 写入 | PASS / FAIL | |
+| P5 | globalData.activeLedgerId 同步 | PASS / FAIL | |
+| P6 | 旧 family_id key 已清理 | PASS / FAIL | |
+| P7 | 后续请求带 Authorization | PASS / FAIL | |
+| P8 | 登录后 home 页正常渲染 | PASS / FAIL | |
+
+### COSTRA-165 family-context 4 场景
+
+| # | 场景 | 结果 | 证据 |
+|---|------|------|------|
+| C1 | 全新登录 → family-context 全写入 | PASS / FAIL | |
+| C2 | 旧 token 升级 → refresh 透明写入 | PASS / FAIL | |
+| C3 | logout → family-context + token 全清除 | PASS / FAIL | |
+| C4 | entry 记账 → ledger_id 为真实 UUID | PASS / FAIL | |
 
 ### COSTRA-150 数据同步
 
 | # | 检查项 | 结果 | 证据 |
 |---|--------|------|------|
 | S1 | 冷启 sync pull 成功（200） | PASS / FAIL | |
-| S2 | 记一笔 → push 上行 → DB 有记录 | PASS / FAIL | |
+| S2 | 记一笔 → push 上行 → DB 有记录 + ledger_id 正确 | PASS / FAIL | |
 | S3 | watermark 持久化 · since≠0 | PASS / FAIL | |
 | S4 | 离线 → 恢复 → network-recover push | PASS / FAIL | |
 | S5 | 5 分钟无 [sync] fail | PASS / FAIL | |
 
 ### 整体结论
 
-- ✅ P1~P5 + S1~S5 全 PASS → Phase-3 通过 → 可提审
-- ❌ 任一 FAIL → 见 §5 排查 → 修复后重测
+- ✅ P1~P8 + C1~C4 + S1~S5 全 PASS → Phase-3 双卡联合通过 → §7 双卡 approve
+- ❌ 任一 FAIL → 见 §6 排查 → 修复后重测
 ```
 
 ---
 
-## §5 故障排查
+## §6 排查指南（更新 · 含 family-context 排查）
 
 ### Q1：POST /auth/wx-login 返回 500 `WX_CODE_INVALID`
 
@@ -588,36 +827,79 @@ docker exec costra-server wget -qO- 'https://api.weixin.qq.com/cgi-bin/token?gra
 2. 确认 `request 合法域名` 包含 `https://costra.cloud`
 3. 修改后需等待 ~5 分钟生效 + 重启小程序
 
-### Q4：`[sync] skip · no active family`
+### Q4：storage `__costra_family_context_v1` 为空
 
-**含义**：`getActiveFamilyId()` 返回 null
+**含义**：family-context 未写入 · 可能 server 未返回字段 或 client 写入失败
+
+**排查**：
+
+```js
+// Console 执行
+const t = wx.getStorageSync('__costra_token_v1');
+console.log('token default_family_id:', t?.d?.raw?.default_family_id);
+console.log('token default_ledger_id:', t?.d?.raw?.default_ledger_id);
+```
+
+- 如果 token 中 `default_family_id` 也为空 → **server 端问题**
+  ```bash
+  # 检查 server 日志
+  docker logs costra-server --tail 100 | grep -i "family\|bootstrap\|ledger"
+  ```
+  检查 authService.ts:148-196 wxLogin bootstrap 路径是否正常执行
+
+- 如果 token 中 `default_family_id` 有值但 family-context storage 为空 → **client 端问题**
+  检查 auth.ts:239-247 doWxLogin 是否调了 setActiveFamily
+
+> **事实源**：`miniprogram/services/auth.ts:239-242` doWxLogin 真实链路 setActiveFamily 调用 · `server/src/services/authService.ts:148-196` bootstrap 逻辑
+
+### Q5：globalData.activeLedgerId 为 undefined
+
+**含义**：auth.ts 中 doWxLogin/refreshToken 未同步 globalData
+
+**排查**：
+
+```js
+// Console 执行
+const fc = wx.getStorageSync('__costra_family_context_v1');
+console.log('family_context:', JSON.stringify(fc?.d));
+console.log('activeLedgerId:', getApp().globalData.activeLedgerId);
+```
+
+- 如果 family-context storage 有值但 globalData 为 undefined → 检查 auth.ts:244-247 doWxLogin 是否执行了 `app.globalData.activeLedgerId = resp.default_ledger_id`
+- 如果 family-context storage 也为空 → 先按 Q4 排查
+
+> **事实源**：`miniprogram/services/auth.ts:244-247` doWxLogin 同步 globalData · `miniprogram/services/auth.ts:106-111` initAuth 正常路径也同步 globalData
+
+### Q6：旧 token 升级场景没走 refresh
+
+**含义**：initAuth fallback 路径未触发
+
+**排查**：
+1. 检查 initAuth 是否正常执行：Console 有无 `[Costra] bootstrap failed`
+2. 检查 storage 中 `__costra_family_context_v1` 是否真的为空（initAuth 条件 `!familyId`）
+3. 检查 refresh_token 是否有效（过期则 refresh 失败 → clearToken → 跳登录页）
+
+> **事实源**：`miniprogram/services/auth.ts:92-103` initAuth fallback 路径
+
+### Q7：`[sync] skip · no active family`
+
+**含义**：`getActiveFamilyId()` 返回 null · 但 COSTRA-165 实装后不应出现
 
 **排查**：
 ```js
 // Console 执行
-const f = wx.getStorageSync('__costra_family_id_v1');
-console.log('raw storage:', f);
-console.log('d value:', f?.d);
+const fc = wx.getStorageSync('__costra_family_context_v1');
+console.log('raw storage:', fc);
+console.log('d value:', fc?.d);
 ```
 
-- 如果 `f` 为空 → 未执行 §3.2 注入
-- 如果 `f` 是裸字符串 → envelope 格式错误（必须是 `{v:1,t:...,d:"uuid"}`）
-- 如果 `f.d` 有值但仍 skip → 检查 `getItem` 是否正常解析（storage.ts TTL 是否过期）
+- 如果 `fc` 为空 → family-context 未写入（回 Q4 排查）
+- 如果 `fc` 是裸字符串 → envelope 格式错误（必须是 `{v:1,t:...,d:{family_id:...,ledger_id:...}}`）
+- 如果 `fc.d` 有值但仍 skip → 检查 `getItem` 是否正常解析（storage.ts TTL 是否过期）
 
-### Q5：POST /sync/push 返回 403
+> **事实源**：`miniprogram/services/family.ts:32-35` getActiveFamilyId 读 FAMILY_CONTEXT_KEY · `miniprogram/services/storage.ts:58-76` getItem 解析 envelope
 
-**含义**：user 不在 family_members 中
-
-**排查**：
-```bash
-docker exec costra-postgres psql -U costra -d costra \
-  -c "SELECT * FROM family_members WHERE family_id = '<family_id>'"
-```
-
-- 如无记录 → §3.1 SQL 未执行成功
-- 如 user_id 不匹配 → 重新查 users 表确认当前登录用户 ID
-
-### Q6：HTTPS 证书错误
+### Q8：HTTPS 证书错误
 
 **排查**：
 ```bash
@@ -630,21 +912,21 @@ certbot renew
 docker exec costra-nginx nginx -s reload
 ```
 
-### Q7：登录成功但 home 页白屏
+### Q9：登录成功但 home 页白屏
 
 **可能原因**：
 1. JS 运行时错误 → 查 Console 红色报错
 2. 接口 404 → 检查 API 路由是否都注册了
 3. 网络超时 → 检查服务器响应时间
 
-### Q8：`wx.onNetworkStatusChange` 不触发（断言 D 失败）
+### Q10：`wx.onNetworkStatusChange` 不触发（断言 D 失败）
 
 **已知限制**：
 - 微信开发者工具的 Network 面板 Offline 按钮**不会**触发此回调
 - 必须用**真机飞行模式** / **真实断网**
 - 在真机调试模式下，飞行模式切换应能正常触发
 
-### Q9：watermark 为 ISO 字符串而非整数
+### Q11：watermark 为 ISO 字符串而非整数
 
 **含义**：server 可能未部署 v1.2 升级（0006_entries_change_seq.sql）
 
@@ -657,16 +939,72 @@ docker exec costra-postgres psql -U costra -d costra \
 - 如果无 `change_seq` 列 → migration 0006 未执行
 - 解决：重新跑 migration
 
-### Q10：push 后 DB 无记录但返回 200 ok
+### Q12：entry 的 ledger_id 为 FALLBACK_LEDGER_ID
+
+**含义**：globalData.activeLedgerId 为 undefined · entry 页走了 fallback
 
 **排查**：
-1. 检查 response 中 `results[0].server_id` 是否有值
-2. 用该 server_id 查 entries 表
-3. 可能 ledger_id 不对应 → 检查 push payload 中的 ledger_id 是否在 ledgers 表中存在
+1. 回 Q5 排查 globalData.activeLedgerId 为 undefined 原因
+2. 检查 auth 链路是否完整（doWxLogin 是否调了 setActiveFamily + 同步 globalData）
+
+> **事实源**：`miniprogram/pages/entry/index.ts:60-67` `ledgerId = getApp().globalData.activeLedgerId` · `ledger_id: ledgerId || FALLBACK_LEDGER_ID`
 
 ---
 
-## §6 收尾
+## §7 联动 D-024 §2.2 C1 双卡 approve 流程
+
+### 前置
+
+- §2 P1~P8 全 PASS（COSTRA-154 wx.login 全链路）
+- §3 C1~C4 全 PASS（COSTRA-165 family-context 4 场景）
+- §4 S1~S5 全 PASS（COSTRA-150 数据同步）
+
+### 双卡联合 approve 操作
+
+4 场景 + §2/§4 全 PASS → Human 同时发：
+
+```
+approve:COSTRA-164
+approve:COSTRA-165
+```
+
+### FU-150-FAMILY-CONTEXT-SERVICE 真 closed 条件
+
+双卡 joint approve 后 → FU-150-FAMILY-CONTEXT-SERVICE 真 closed @ 双卡 joint approve
+
+> **D-024 §2.2 C1**：联合 staging/prod 实测前置不可省 · Human approve 后 FU-150-FAMILY-CONTEXT-SERVICE 真 closed
+
+---
+
+## §8 操作 Checklist（快速参考）
+
+```
+□ §1.1 服务端 4 容器运行 + healthz ok + WX_MOCK_LOGIN=0
+□ §1.2 微信后台 request 域名含 https://costra.cloud
+□ §1.3 env.ts CURRENT_ENV = 'prod'
+□ §1.4 真机调试连接成功
+□ §2.1 首次登录 → code → token → home 页
+□ §2.1 Step5 default_family_id/ledger_id 非空 UUID
+□ §2.1 Step5 family-context storage 已写入
+□ §2.1 Step5 globalData.activeLedgerId 同步
+□ §2.1 Step5 旧 family_id key 已清理
+□ §2.2 后续请求带 Authorization
+□ §3-C1 全新登录 → family-context 全写入
+□ §3-C2 旧 token 升级 → refresh 透明写入（不重新登录）
+□ §3-C2 反向：refresh 失败 → 清 token + 跳登录页（不弹 toast）
+□ §3-C3 logout → family-context + token + globalData 全清
+□ §3-C4 entry 记账 → ledger_id 为真实 UUID（非 FALLBACK）
+□ §4.1 冷启 sync pull 成功
+□ §4.2 记一笔 → push 成功 → DB 有记录 + ledger_id 正确
+□ §4.3 watermark 持久化 · since≠0
+□ §4.4 飞行模式 → 记账 → 恢复 → network-recover push
+□ §4.5 5 分钟稳定运行无 fail
+□ §7 双卡 joint approve
+```
+
+---
+
+## §9 收尾
 
 ### Phase-3 PASS 后
 
@@ -675,6 +1013,7 @@ docker exec costra-postgres psql -U costra -d costra \
    - const CURRENT_ENV: EnvName = 'prod';
    + const CURRENT_ENV: EnvName = 'dev';
    ```
+   > 事实源：`miniprogram/services/env.ts:50`
 
 2. **记录测试结果**到 `qa/results/` 目录
 
@@ -693,42 +1032,37 @@ docker exec costra-postgres psql -U costra -d costra \
 
 ---
 
-## §7 操作 Checklist（快速参考）
-
-```
-□ §1.1 服务端 4 容器运行 + healthz ok + WX_MOCK_LOGIN=0
-□ §1.2 微信后台 request 域名含 https://costra.cloud
-□ §1.3 env.ts CURRENT_ENV = 'prod'
-□ §1.4 真机调试连接成功
-□ §2.1 首次登录 → code → token → home 页
-□ §2.2 后续请求带 Authorization
-□ §3.1 服务端有 family + ledger + member 数据
-□ §3.2 family_id 注入 storage（envelope 格式）
-□ §3.3 冷启 sync pull 成功
-□ §3.4 记一笔 → push 成功 → DB 有记录
-□ §3.5 watermark 持久化 · since≠0
-□ §3.6 飞行模式 → 记账 → 恢复 → network-recover push
-□ §3.7 5 分钟稳定运行无 fail
-```
-
----
-
-## §8 事实源索引
+## §10 事实源索引
 
 | 引用 | 文件路径 | 关键行/说明 |
 |------|---------|------------|
-| CURRENT_ENV 切换 | miniprogram/services/env.ts | L50 |
-| apiBaseUrl prod | miniprogram/services/env.ts | L39 `https://costra.cloud/v1` |
-| wx.login 日志 | miniprogram/services/auth.ts | L163 |
-| Token 结构 | miniprogram/services/auth.ts | L10-20 TokenRaw/TokenStored |
-| Storage envelope | miniprogram/services/storage.ts | L10, L48-56 |
-| syncScheduler 日志模板 | miniprogram/services/syncScheduler.ts | L57, L65, L72, L83-85, L94, L117, L122, L147 |
-| network-recover 触发 | miniprogram/services/syncScheduler.ts | L120-125 |
-| watermark key | miniprogram/services/db.ts | L86-88 `watermark:<family_id>` |
-| code2Session 错误码 | server/src/wx/code2Session.ts | 40029/40163 映射 |
-| JWT 配置 | server/src/config/env.ts | JWT_SECRET/ISSUER/AUDIENCE |
-| sync push 路由 | server/src/routes/sync.ts | L85-114 |
-| sync pull 路由 | server/src/routes/sync.ts | L174-196 |
-| change_seq migration | server/db/migrations/0006_entries_change_seq.sql | BIGINT SEQUENCE |
+| TOKEN_KEY | miniprogram/services/auth.ts | L13 `__costra_token_v1` |
+| TokenRaw default_family_id | miniprogram/services/auth.ts | L40-41 |
+| doWxLogin setActiveFamily | miniprogram/services/auth.ts | L239-247 |
+| doWxLogin globalData sync | miniprogram/services/auth.ts | L244-247 |
+| initAuth fallback refresh | miniprogram/services/auth.ts | L92-103 |
+| logout clearActiveFamily 顺序 | miniprogram/services/auth.ts | L181-188 |
+| refreshToken family-context | miniprogram/services/auth.ts | L292-303 |
+| refreshToken 空字符串保护 | miniprogram/services/auth.ts | L294 |
+| mockExchange family IDs | miniprogram/services/auth.ts | L344-345 |
+| FAMILY_CONTEXT_KEY | miniprogram/services/family.ts | L12 `__costra_family_context_v1` |
+| LEGACY_FAMILY_ID_KEY | miniprogram/services/family.ts | L14 `__costra_family_id_v1` |
+| setActiveFamily 清旧 key | miniprogram/services/family.ts | L23 |
+| clearActiveFamily | miniprogram/services/family.ts | L48-51 |
+| getActiveFamilyId | miniprogram/services/family.ts | L32-35 |
+| CURRENT_ENV | miniprogram/services/env.ts | L50 |
+| prod apiBaseUrl | miniprogram/services/env.ts | L39 `https://costra.cloud/v1` |
+| globalData.activeLedgerId | miniprogram/app.ts | L22 |
+| onLaunch bootstrap | miniprogram/app.ts | L49-67 |
+| FALLBACK_LEDGER_ID | miniprogram/pages/entry/index.ts | L15 |
+| entry ledgerId 来源 | miniprogram/pages/entry/index.ts | L60-67 |
+| Storage envelope | miniprogram/services/storage.ts | L10, L13-18 |
+| AuthTokenPair server | server/src/services/authService.ts | L39-59 |
+| wxLogin bootstrap | server/src/services/authService.ts | L138-210 |
+| refresh default IDs | server/src/services/authService.ts | L256-277 |
+| auth routes | server/src/routes/auth.ts | L56 `/auth/wx-login`, L68 `/auth/refresh` |
+| OpenAPI AuthTokenPair | server/api/openapi.yaml | L865-897 |
+| request auto auth | miniprogram/services/request.ts | L7 Token 注入 |
+| syncScheduler | miniprogram/services/syncScheduler.ts | network-recover 触发 |
 | prod docker compose | infra/docker-compose.prod.yml | 4 容器架构 |
-| 部署手册 | infra/prod-bootstrap-compose.md | v1.6 |
+| 部署手册 | infra/prod-bootstrap-compose.md | v1.6 · healthz 路径 / DB 名 / docker exec 命令 |
