@@ -1,13 +1,14 @@
 # COSTRA-165 · miniapp family-context service（active_family_id / active_ledger_id 全链路接入）
 
 > **派单时间**：2026-05-27（Orchestrator · Sprint-3 头部第 4 张 · 与 164 联立攒批）
-> **状态**：dispatch 草稿 · 等 Human 拍板 → 等 COSTRA-164 R1 APPROVE 才能启动 Card-Review（强依赖）
-> **依赖**：
-> - **COSTRA-164 R1 APPROVE**（强依赖 · server response 含 default_family_id/ledger_id）· 不可在 164 之前启动
-> - COSTRA-103（services/db.ts · entry CRUD 已实装）
-> - COSTRA-150（syncScheduler.ts · 接入点 L43-50）
-> - COSTRA-125（storage async envelope 范式）
-> - COSTRA-105（FALLBACK_LEDGER_ID 占位 · 本卡 supersede）
+> **当前版本**：v1.1（2026-05-27 16:00 · Card-Review R1 修订 · 25/30 → 期望 ≥ 27 APPROVE · 落 3 P1 + 3 P2 全 6 项）
+> **状态**：v1.1 修订完成 · 等 Card-Review R2 形式审 · 期望 ≥ 27 APPROVE
+> **强依赖**（已就位）：
+> - ✅ **COSTRA-164 R1.x APPROVE 38/40**（commit `2e71dc8` + `8c8cdce` · server response 含 default_family_id/ledger_id · refresh 路径同样返）
+> - ✅ COSTRA-103（services/db.ts · entry CRUD 已实装）
+> - ✅ COSTRA-150（syncScheduler.ts · 接入点 L30/L43-50/L73）
+> - ✅ COSTRA-125（storage async envelope 范式 · L48-78）
+> - ✅ COSTRA-105（FALLBACK_LEDGER_ID 占位 · 本卡 supersede）
 > **下游解锁**：
 > - FU-150-FAMILY-CONTEXT-SERVICE 完整闭合（与 164 联合 closed @ R1 联合 approve）
 > - FU-EPIC-FAMILY-LEDGER-CRUD 部分兑现（active_ledger_id 真实流转 · entry/home 接入）
@@ -50,13 +51,18 @@
 
 ### 1.3 上下文：miniapp 当前 family-related 现状摘要
 
+> **v1.1 修订**：行号已与 commit `8c8cdce` 后的源码物理对齐（Card-Review R1 P1-3）
+
 | 文件 | 状态 |
 |---|---|
 | `miniprogram/services/family.ts` | **不存在** · 本卡新建 |
-| `miniprogram/services/auth.ts` L173-185 | 登录成功后只存 token · **不写 family/ledger storage** · 本卡补 |
-| `miniprogram/services/syncScheduler.ts` L30 | `FAMILY_ID_KEY = '__costra_family_id_v1'` · L47-50 helper 直接 getItem · 本卡迁移到 family.ts 接口 |
-| `miniprogram/app.ts` L22 | `globalData.activeLedgerId?: string` 已声明但未赋值 · 本卡 onLaunch 时填充 |
-| `miniprogram/pages/entry/index.ts` L14 / L61 / L77 | FALLBACK_LEDGER_ID + `activeLedgerId \|\| FALLBACK` · 本卡确保 activeLedgerId 永远有值 → 移除 fallback 或保留作为防御 |
+| `miniprogram/services/auth.ts` L18-29（TokenRaw）| **缺 expires_in + user 子字段** · 本卡补齐与 server `AuthTokenPair` 对齐（COSTRA-118 P0-2 红线 · 见 §2.1 B）|
+| `miniprogram/services/auth.ts` L72-82（initAuth）| 仅 restore stored token · **不写 family/ledger storage** · 本卡补 fallback：family-context 缺失 → refresh 触发刷新（v1.1 修订 · 见 P1-1）|
+| `miniprogram/services/auth.ts` L158-184（doWxLogin）| 登录成功后只存 token · **不写 family/ledger storage** · 本卡补 |
+| `miniprogram/services/auth.ts` L195-214（refreshToken）| 续签后只存 token · **不写 family/ledger storage** · 本卡补 fallback 路径（v1.1 修订）|
+| `miniprogram/services/syncScheduler.ts` L30 | `FAMILY_ID_KEY = '__costra_family_id_v1'` · L47-50 helper 直接 getItem · L73 调用点 · 本卡迁移到 family.ts 接口 |
+| `miniprogram/app.ts` L22 | `globalData.activeLedgerId?: string` 已声明但未赋值 · 本卡 onLaunch / 登录 / 续签时填充 |
+| `miniprogram/pages/entry/index.ts` L14 / L61 / L77 | FALLBACK_LEDGER_ID + `activeLedgerId \|\| FALLBACK` · 本卡确保 activeLedgerId 永远有值（保留 FALLBACK 作为防御 · v1.1 修订采用方案 1 · 见 §2.1 D）|
 
 ---
 
@@ -127,9 +133,13 @@ export async function clearActiveFamily(): Promise<void> {
 
 #### B · `miniprogram/services/auth.ts` 登录成功流程接入
 
+> **v1.1 修订**（Card-Review R1 P1-1 + P1-3）：
+> 1. P1-3：TokenRaw 字段与 server AuthTokenPair 1:1 对齐（COSTRA-118 P0-2 红线）· `expires_in` 改 required · user 子对象补 timezone/created_at/updated_at
+> 2. P1-1：initAuth + refreshToken 路径补 family-context fallback（旧 token 升级场景走 refresh 触发刷新而非 toast 重登）
+
 修改点：
 
-1. **TokenRaw 接口扩展**（auth.ts L18-30）：
+1. **TokenRaw 接口扩展**（auth.ts L18-29 · 与 server `authService.ts:39-59` AuthTokenPair 1:1 对齐）：
 
 ```typescript
 export interface TokenRaw {
@@ -137,16 +147,28 @@ export interface TokenRaw {
   refresh_token: string;
   access_token_ttl_sec: number;
   refresh_token_ttl_sec: number;
-  expires_in?: number;
-  user: { ... };
+  // P1-3 新增（与 server required 对齐 · OpenAPI deprecated 兼容字段）：
+  expires_in: number;
+  user: {
+    id: string;
+    nickname: string;
+    avatar_url: string | null;
+    has_completed_profile: boolean;  // COSTRA-158
+    // P1-3 新增（v1.1 · 与 server toUserView() 返回 1:1 对齐 · COSTRA-118 P0-2 红线）：
+    timezone: string;
+    created_at: string;  // ISO-8601 UTC
+    updated_at: string;  // ISO-8601 UTC
+  };
 
-  // 新增（COSTRA-164 协议）：
+  // 新增（COSTRA-164 协议 · 已稳定 · authService.ts L207-208 + L275-276）：
   default_family_id: string;
   default_ledger_id: string;
 }
 ```
 
-2. **doWxLogin 成功后**（auth.ts L173-185 附近 · `await setItem(TOKEN_KEY, stored)` 之后）：
+**注**：`expires_in` 当前 `buildStored()`（L63-69）不消费（用 ttl_sec 计算），但接口对齐铁律要求声明。timezone/created_at/updated_at 同理（miniapp 当前不消费 · 仅契约对齐）。
+
+2. **doWxLogin 成功后**（auth.ts L158-184 · `await setItem(TOKEN_KEY, stored)` 之后 · L182 之后）：
 
 ```typescript
 import { setActiveFamily } from './family';
@@ -166,28 +188,105 @@ if (app?.globalData) {
   app.globalData.activeLedgerId = resp.default_ledger_id;
 }
 
-console.info('[auth] login success', { userId: ..., familyId: resp.default_family_id });
+console.info('[auth] login success', { userId: resp.user.id, familyId: resp.default_family_id });
 ```
 
-3. **logout 流程**（如存在）：调 `clearActiveFamily()` 清理 storage
-
-4. **initAuth 流程**（auth.ts L75 附近 · restored session 路径）：
+3. **logout 流程**（auth.ts L127-152 已存在）：在 `await clearToken()` 之前调 `await clearActiveFamily()` 清理 storage 与 globalData
 
 ```typescript
-// COSTRA-165: restored session · 同步 globalData（storage 已存在 family-context）
-import { getActiveLedgerId } from './family';
-
-// ... initAuth 内 saved token 还原后 ...
-const ledgerId = await getActiveLedgerId();
+// L146 附近 ·  await clearToken() 之前
+await clearActiveFamily();
 const app = getApp();
-if (app?.globalData && ledgerId) {
-  app.globalData.activeLedgerId = ledgerId;
+if (app?.globalData) {
+  app.globalData.activeLedgerId = undefined;
+}
+await clearToken();
+```
+
+4. **initAuth 流程**（auth.ts L72-82 · restored session 路径）：
+
+> **P1-1 修订（v1.1）**：旧 token 升级场景策略从"toast 重登"改为"refresh 触发刷新"。理由：
+> - 已登录用户升级后 storage 中无 family-context 是 P1 概率事件（100% 升级用户必触发）
+> - server refresh 路径（authService.ts L256-277）已实装返回 default_family_id/default_ledger_id
+> - 走 refresh 路径对用户透明 · 无 UX 退化 · 避免强制重登
+> - 修订后 D-025 AP-002 不再命中（见 §3）
+
+```typescript
+// COSTRA-165 v1.1: initAuth restored session 路径补 family-context fallback
+import { setActiveFamily, getActiveFamilyId, getActiveLedgerId, clearActiveFamily } from './family';
+
+export async function initAuth(): Promise<void> {
+  const saved = await getItem<TokenStored>(TOKEN_KEY);
+  if (saved && saved.access_expires_at > Date.now()) {
+    current = wrap(saved);
+
+    // v1.1 P1-1: 旧 token 升级场景 · storage 中无 family-context → 走 refresh 触发刷新（透明无 UX 退化）
+    const familyId = await getActiveFamilyId();
+    if (!familyId) {
+      try {
+        await refreshToken();  // refresh response 含 default_family_id/default_ledger_id（authService.ts:275-276）
+        // refreshToken 内部已调 setActiveFamily（见下文 5）
+      } catch (e) {
+        // refresh 失败兜底：清 token + 跳登录页（极边缘 · refresh_token 也过期）
+        console.warn('[auth] initAuth fallback refresh failed', e);
+        await clearToken();
+        await clearActiveFamily();
+        return;
+      }
+    } else {
+      // 正常路径：family-context 已存在 · 同步 globalData
+      const ledgerId = await getActiveLedgerId();
+      const app = getApp();
+      if (app?.globalData && ledgerId) {
+        app.globalData.activeLedgerId = ledgerId;
+      }
+    }
+    return;
+  }
+  current = null;
 }
 ```
 
-**禁项**：
-- ❌ 不在 refresh / 续签流程内重写 family-context（refresh response 不含 family/ledger · 协议层 COSTRA-164 决议 refresh 不返这两字段）
-- ❌ 不在 family.ts 内做 wx.request 调用（service 层只读 storage · 网络由 caller 负责）
+5. **refreshToken 流程**（auth.ts L195-214 · v1.1 修订）：
+
+> **P1-1 修订（v1.1）**：refresh response 含 default_family_id/default_ledger_id（已 server 实装）· 写入 family-context 是必须路径（initAuth fallback 依赖此行为）· 而非"禁项"。
+
+```typescript
+export async function refreshToken(): Promise<void> {
+  if (!current) throw new Error('NO_TOKEN');
+  const env = getEnv();
+  if (env.mockLogin) {
+    // ... mock 路径（保持 v1.0 不变）...
+  }
+  const resp = await request<TokenRaw>({
+    method: 'POST',
+    path: '/auth/refresh',
+    body: { refresh_token: current.raw.refresh_token },
+    auth: false
+  });
+  const stored = buildStored(resp);
+  current = wrap(stored);
+  await setItem(TOKEN_KEY, stored);
+
+  // v1.1 P1-1: refresh response 含 default_family_id/default_ledger_id · 写入 family-context
+  // 极边缘场景：server 返空字符串（FU-164-REFRESH-DEFAULT-IDS-NULL · personal family 缺失）→ 跳过写入 · 保持现有 family-context
+  if (resp.default_family_id && resp.default_ledger_id) {
+    await setActiveFamily({
+      family_id: resp.default_family_id,
+      ledger_id: resp.default_ledger_id,
+    });
+    const app = getApp();
+    if (app?.globalData) {
+      app.globalData.activeLedgerId = resp.default_ledger_id;
+    }
+  }
+}
+```
+
+**关键规则**：
+- ✅ refresh 路径写 family-context（initAuth 升级场景必须）
+- ✅ 空字符串保护（FU-164-REFRESH-DEFAULT-IDS-NULL 极边缘自我兜底 · 保持现有 family-context 不被空值覆盖）
+- ❌ 不在 doWxLogin 之外调用 setActiveFamily 直接覆盖用户主动选择的 family（R2 切 family 时由 UI 调）
 
 #### C · `miniprogram/services/syncScheduler.ts` 接入点替换
 
@@ -216,14 +315,33 @@ const familyId = await familyContextGetActiveFamilyId();
 
 #### D · `miniprogram/pages/entry/index.ts` FALLBACK_LEDGER_ID 处置
 
-修改点：
+> **v1.1 修订**（Card-Review R1 P2-2）：方案 1（保留 FALLBACK 作为最后防御）取代 v1.0 推荐的方案 2（删除 FALLBACK + toast）· 决策权由 miniapp-dev（本卡 owner）实装期拍板
 
-1. **保留 FALLBACK_LEDGER_ID 作为防御**（避免 globalData 异常时崩溃）· 但加注释明确"正常路径下 globalData.activeLedgerId 由 auth.ts 填充"
-2. **alternative**：删除 FALLBACK · 改为 `if (!ledgerId) { wx.showToast({title: '请先登录', icon: 'none'}); return; }` —— **本卡推荐此方案**（强一致性 · 防 BUG-001 类隐性数据）
+**v1.1 选定方案**：保留 FALLBACK_LEDGER_ID 作为防御层（避免 BUG-001 类回归 · 用户记账自救路径不被切断）· 但增加诊断日志：
 
-实装选项 §3.5 R1 实装期由 backend-dev 拍板 · 优先选 alternative（更严谨）。
+```typescript
+// pages/entry/index.ts L14（保留 · 加注释）
+const FALLBACK_LEDGER_ID = '00000000-0000-0000-0000-000000000001';
+// COSTRA-165 v1.1：保留为最后防御层 · 正常路径下 globalData.activeLedgerId 由 auth.ts 填充
+// 仅在 initAuth/refresh 双重失败的极边缘场景兜底（BUG-001 应急遗产 · FU-165-LEDGER-FALLBACK-CLEANUP 等 R2 切 family UI 后彻底删除）
 
-#### E · 单测 ≥ 6 测
+// L61 附近调用点（保留 · 加日志）
+const ledgerId = getApp().globalData.activeLedgerId;
+if (!ledgerId) {
+  // 极边缘：诊断日志 · 用户仍可记账（走 FALLBACK · 服务端会拒绝非法 ledger_id 但本地不阻断 UI）
+  console.warn('[entry] activeLedgerId missing in globalData · using FALLBACK · auth chain may be broken');
+}
+const finalLedgerId = ledgerId || FALLBACK_LEDGER_ID;
+```
+
+**理由**：
+1. 方案 2（删 FALLBACK · toast 阻断 · v1.0 推荐）会导致用户在 auth 链路异常时完全无法记账 → BUG-001 类回归
+2. 方案 1（保留 FALLBACK · v1.1 推荐）保留自救路径 + 诊断日志 · 服务端会因非法 ledger_id 返 400 但本地 UI 不卡死
+3. R1 范围内不试图根除 FALLBACK · 等 R2 切 family UI 落地后通过 FU-165-LEDGER-FALLBACK-CLEANUP 一并清除
+
+**实装决策权**：miniapp-dev（本卡 owner · v1.0 误写 backend-dev 已修正）
+
+#### E · 单测 ≥ 7 测（v1.1 加 T7 双源一致性）
 
 新建 `miniprogram/services/family.spec.ts`：
 
@@ -236,8 +354,22 @@ const familyId = await familyContextGetActiveFamilyId();
 | T5 | clearActiveFamily 后再读 | family/ledger 都返 null |
 | T6 | storage envelope 一致性（与 storage.ts L48-56 范式对齐）| envelope `{v:1, t:..., d:{family_id, ledger_id}}` 结构 |
 
+**v1.1 新增（Card-Review R1 P2-1）**：
+
+补 `miniprogram/services/auth.spec.ts`（已存在 · 加 case · 参考现有测试范式）：
+
+| 编号 | 测试点 | 期望 |
+|---|---|---|
+| **T7（v1.1 P2-1）** | 双源一致性：doWxLogin 后 storage family-context + globalData.activeLedgerId 必同步写入 | 二者均等于 resp.default_ledger_id |
+| **T8（v1.1 P1-1）** | initAuth 旧 token 升级场景：saved token 有效 + storage 无 family-context → 触发 refreshToken → 写入 family-context | mock refresh response 含 default_family_id/ledger_id · 调用后 storage 与 globalData 均同步 |
+| **T9（v1.1 P1-1）** | initAuth 升级 + refresh 失败兜底：mock refresh 抛错 → clearToken + clearActiveFamily | current === null + storage family-context 被清 |
+| **T10（v1.1 P1-1）** | refreshToken 极边缘：response 含空字符串 default_family_id → 跳过写入（保护 FU-164-REFRESH-DEFAULT-IDS-NULL）| storage 中已存在的 family-context 不被空值覆盖 |
+| **T11（v1.1 P1-3）** | TokenRaw 接口契约对齐：mock buildStored 输入含 expires_in/timezone/created_at/updated_at → typecheck pass | TS 类型断言通过 |
+
 补 `miniprogram/services/syncScheduler.spec.ts`（已有 T2 测试场景调整）：
 - T2 mock family.ts service 而非 storage.getItem · 验证 syncScheduler 调用 family.getActiveFamilyId 接口
+
+**测试覆盖矩阵**（v1.1 共 ≥ 11 测）：T1~T6（family.ts core）+ T7~T11（auth.ts 集成 · 双源 + 旧 token 升级 + refresh 边界 + 协议契约）
 
 ---
 
@@ -253,25 +385,26 @@ const familyId = await familyContextGetActiveFamilyId();
 
 ---
 
-## §3 DoD（17 项）
+## §3 DoD（22 项 · v1.1 +5：T7~T11 + 反向验证 ④）
 
 ### G1~G6 + G15 标准闸门（7 项）
 
 - **G1** TypeScript typecheck 全绿（`cd miniprogram && tsc --noEmit` · 通过项目根 typecheck）
 - **G2** ESLint 全绿（`npm run lint` · miniprogram 范围）
-- **G3** miniprogram unit test 全绿（`npm test` · vitest · 含本卡新增 T1~T6）
+- **G3** miniprogram unit test 全绿（`npm test` · vitest · 含本卡新增 T1~T11）
 - **G4** 项目根 typecheck 全绿（不引入跨包破坏）
 - **G5** whitelist-check 全绿（含路径白名单）
 - **G6** miniprogram 编译通过（开发者工具或 vitest 模拟环境）
 - **G15** D-016 反例预防（commit 前 `git status -s | grep '.team/members/' | wc -l` = 0）
 
-### T1~T6 单测（6 项 · 见 §2.1 E）
+### T1~T11 单测（11 项 · v1.1 共增 5 测 · 见 §2.1 E）
 
-### 反向验证（3 项）
+### 反向验证（4 项 · v1.1 P1-1 升级 ③ + 新增 ④）
 
 - ① 临时让 setActiveFamily 不调 setItem → T1 应 FAIL（getActiveFamilyId 返 null）→ revert
 - ② 临时让 syncScheduler 走旧 FAMILY_ID_KEY 字面量 → T3 LEGACY 清理后该测应 FAIL（read 不到旧 key）→ revert
-- ③ 临时不在 doWxLogin 后调 setActiveFamily → 集成测试（如有 e2e）应 FAIL · 无 e2e 时改测 mock auth.ts 调用 family service 的次数 → revert
+- ③ **（v1.1 升级 · 判定标准明确化）** 临时移除 doWxLogin 中 setActiveFamily 调用 → T7 双源一致性测试应 FAIL（storage 中无 family-context · `await getActiveFamilyId()` 返 null）→ revert · 不再走"如有 e2e"模糊降级
+- ④ **（v1.1 新增 P1-1）** 临时移除 initAuth 中 family-context fallback 路径（保留 saved token 但不调 refreshToken）→ T8 旧 token 升级测试应 FAIL（升级后 storage 无 family-context · 但代码不触发 refresh）→ revert
 
 ### D-022 §4.1 runtime 类 T2 卡 Human 实测前置铁律
 
@@ -279,12 +412,16 @@ const familyId = await familyContextGetActiveFamilyId();
 
 - ✅ 单测 + Card-Review + R1 Review 不可单独 approve
 - ✅ Human 联合 staging / staging-prod 实测前置不可省（D-024 §2.2 C1 与 164 联合 approve）
+- ✅ 实测必覆盖：① 全新登录场景 · ② 旧 token 升级场景（升级前已登录 + 升级后重启 → 应自动走 refresh 不弹 toast）· ③ logout 清理路径 · ④ entry 页 ledger_id 实际写入
 
-### D-025 反模式扫描（无命中 · 仅声明）
+### D-025 反模式扫描（v1.1 修订 · P1-2）
 
-- AP-001 不命中（INVEST small 单装扮档单 commit）
-- AP-002 不命中（family.ts 全新建 · 不复制其他文件代码）
-- AP-003 不命中（不引入新 deferred · 也不动旧 deferred · 仅清理 LEGACY_FAMILY_ID_KEY 字面量）
+- **AP-001 不命中**：family.ts FamilyContext 接口是显式类型定义 · storage key 常量不作为状态判定依据 · 无业务字段字符串硬比较推断语义
+- **AP-002 修正后不命中**（v1.1 P1-1 修订生效后）：
+  - **v1.0 命中诊断**：dispatch v1.0 §7 风险条目把"已登录用户升级后 storage 无 family-context"的处理写成"toast 提示重新登录"——是 P1 概率事件（100% 升级用户必触发）的不当接受
+  - **v1.1 修正路径**：改为"refresh 触发刷新 → 写入 family-context"（authService.ts L256-277 实测已返这两字段 · 路径对用户透明无 UX 退化）
+  - 修正后 AP-002 不再命中（不是不当接受 · 是走了正确路径）
+- **AP-003 不命中**：本卡不引入新 deferred · TokenRaw 加字段是对齐 server 已有字段（不是漂移）· 不动 openapi.yaml（164 范围）
 
 ---
 
@@ -292,14 +429,16 @@ const familyId = await familyContextGetActiveFamilyId();
 
 1. 本派单档全文
 2. **ADR-0007** family-ledger 关系模型 · §3.1/§5.2/§6.2 锚定
-3. **COSTRA-164 dispatch**（同时立档）：理解 server response 协议形态
-4. **现有 auth.ts 流程**：`miniprogram/services/auth.ts:18-30, 75, 169, 173-185, 268-269`
-5. **现有 syncScheduler 接入点**：`miniprogram/services/syncScheduler.ts:30, 43-50`
-6. **storage envelope 范式**：`miniprogram/services/storage.ts:48-78`
-7. **entry 页 FALLBACK 占位**：`miniprogram/pages/entry/index.ts:12-14, 61, 77`
-8. **app globalData**：`miniprogram/app.ts:22`
-9. **D-022 v2.0 review-tech runtime 维度**
-10. **D-025 反模式清单**
+3. **COSTRA-164 dispatch**（v2.1 已 R1.x APPROVE）：理解 server response 协议形态（含 refresh 路径返 default_family_id）
+4. **COSTRA-164 R1.x review-tech 报告**：`.team/reviews/COSTRA-164/round-1.x-tech.md`（理解 P2-2 refresh 空字符串风险 → §2.1 B refreshToken 极边缘保护）
+5. **现有 auth.ts 流程**（v1.1 行号已对齐 commit `8c8cdce` 后源码）：`miniprogram/services/auth.ts:18-29`（TokenRaw）/ `:72-82`（initAuth）/ `:127-152`（logout）/ `:158-184`（doWxLogin）/ `:195-214`（refreshToken）
+6. **server authService.ts 协议事实源**：`server/src/services/authService.ts:39-99`（AuthTokenPair + toUserView）/ `:201-210`（wxLogin response）/ `:256-277`（refresh response）
+7. **现有 syncScheduler 接入点**：`miniprogram/services/syncScheduler.ts:30, 47-50, 73`
+8. **storage envelope 范式**：`miniprogram/services/storage.ts:48-78`
+9. **entry 页 FALLBACK 占位**：`miniprogram/pages/entry/index.ts:12-14, 61, 77`
+10. **app globalData**：`miniprogram/app.ts:22`
+11. **D-022 v2.0 review-tech runtime 维度**
+12. **D-025 反模式清单**
 
 ---
 
@@ -310,10 +449,11 @@ const familyId = await familyContextGetActiveFamilyId();
 - ✅ 可写：
   - `miniprogram/services/family.ts`（**新建**）
   - `miniprogram/services/family.spec.ts`（**新建**）
-  - `miniprogram/services/auth.ts`（TokenRaw 加字段 + login/initAuth 接入）
-  - `miniprogram/services/syncScheduler.ts`（L30 / L43-50 替换）
+  - `miniprogram/services/auth.ts`（TokenRaw 加字段 + initAuth/login/refresh/logout 接入 · v1.1 +refresh 路径）
+  - `miniprogram/services/auth.spec.ts`（v1.1 加 T7~T11 case · 已存在文件）
+  - `miniprogram/services/syncScheduler.ts`（L30 / L47-50 / L73 替换）
   - `miniprogram/services/syncScheduler.spec.ts`（T2 mock 重构）
-  - `miniprogram/pages/entry/index.ts`（FALLBACK_LEDGER_ID 处置）
+  - `miniprogram/pages/entry/index.ts`（FALLBACK_LEDGER_ID 处置 · v1.1 选方案 1 保留+诊断日志）
   - `miniprogram/app.ts`（如需 onLaunch 内 initAuth 后填 globalData.activeLedgerId · 视实装）
   - `.team/members/miniapp-dev/state.md` + history
   - `.team/follow-ups/README.md`（FU-150-FAMILY-CONTEXT-SERVICE 状态 → closed @ COSTRA-164+165 联合 approve）
@@ -329,38 +469,49 @@ const familyId = await familyContextGetActiveFamilyId();
 
 ### §5.2 INVEST small（2 点）
 
-- 时间盒 R1 实装 ≤ 100 分钟（含 family.ts 新建 + auth.ts 接入 + syncScheduler 替换 + entry 页处置 + 6 测）
+- 时间盒 R1 实装 ≤ 120 分钟（v1.1 +20min · 含 family.ts 新建 + auth.ts 接入（含 initAuth/refresh fallback）+ syncScheduler 替换 + entry 页处置 + 11 测）
 - 5 项 scope 单点修改密度可控 · 现有 storage envelope 范式 + auth.ts 流程清晰
 
 ### §5.3 已知未知 / follow-up 候选
 
 - **FU-165-FAMILY-SWITCHER-UI** · P2 · Sprint-4 R2 落地 · home 顶部 family 切换器 · 与 COSTRA-201 邀请流程联动
-- **FU-165-LEDGER-FALLBACK-CLEANUP**（如选 §2.1 D 方案 1 保留 FALLBACK）· P3 · 等 family 切换 UI 后彻底删除 FALLBACK_LEDGER_ID 常量
+- **FU-165-LEDGER-FALLBACK-CLEANUP**（v1.1 选方案 1 保留 FALLBACK）· P3 · 等 family 切换 UI 后彻底删除 FALLBACK_LEDGER_ID 常量
+- ~~FU-165-LEGACY-TOKEN-UPGRADE-PATH~~（v1.1 P1-1 已在 §2.1 B initAuth fallback 落地实装 · 不需独立 FU 占位）
 
 ### §5.4 D-016 同轮兑现 · D-018 单装扮档单 commit
 
 - commit footer：`Co-Authored-By: miniapp-dev <subagent>` · `closes: FU-150-FAMILY-CONTEXT-SERVICE (with COSTRA-164)`
 - commit subject 全小写（commitlint）· `Refs: COSTRA-165` 大写在 footer
 - commit 前 final message 含 `git status -s | grep '.team/members/' | wc -l` = 0
+- **commit 粒度合理性**（v1.1 P2-3）：8 文件单 commit（family.ts/spec + auth.ts/spec + syncScheduler.ts/spec + entry/index.ts + app.ts）· 5 项 scope 各 1~2 文件 · 单点修改密度可控 · 与 COSTRA-164 R1 6 文件 + R1.x 4 文件范式对齐 · 不触发"提交粒度过大"
 
 ---
 
 ## §6 估点 / 时间盒
 
 - **估点**：2 点
-- **AI 时间盒**：~~1.5~2 小时~~（含 Card-Review + R1 实装 + R1 Review）
+- **AI 时间盒**：~~1.5~2 小时~~（v1.1 含 Card-Review R1+R2 + R1 实装 + R1 Review）· R1 实装 ≤ 120 min
 - **Human 实测**：与 164 联合 staging 实测（D-024 §2.2 C1 第 N 次实战）· 复用 staging 环境
 
 ---
 
-## §7 已知风险
+## §7 已知风险（v1.1 修订）
 
-- **登录链路时序**：auth.ts L75 initAuth 是 onLaunch 同步链路 · L173 doWxLogin 是用户点击触发 · 两个时机都要写 globalData · R1 实装期需绘制完整时序图防漏点
-- **storage 与 globalData 双源**：family.ts 是 storage（持久化）· globalData.activeLedgerId 是 runtime cache（页面切换不丢）· 写时双写 · 读时读 globalData 优先 · 如不一致按 storage 为准（initAuth 时同步）
-- **TokenRaw 协议加字段非破坏性兼容**：旧 stored token 没 default_family_id（升级前 cache 命中）→ 重启后 initAuth 走 restored session · 此时 storage 中 family-context 也可能不存在 · **必须**走 fallback：initAuth 时如 `getActiveFamilyId` 返 null · 触发一次显式 refresh / re-login（参 D-022 P1 类风险 · 本卡需明示）
-  - **缓解策略**：initAuth 内 if (!await getActiveFamilyId()) → 提示重新登录（toast）· 简化版 · R1 实装期细化
+- **登录链路时序**：auth.ts L72-82 initAuth 是 onLaunch 同步链路 · L158-184 doWxLogin 是用户点击触发 · L195-214 refreshToken 是 access 即将过期或 initAuth fallback 触发 · 三个时机都要写 globalData · R1 实装期需绘制完整时序图防漏点
+- **storage 与 globalData 双源**：family.ts 是 storage（持久化）· globalData.activeLedgerId 是 runtime cache（页面切换不丢）· 写时双写 · 读时读 globalData 优先 · 如不一致按 storage 为准（initAuth 时同步）· **T7 测试覆盖**（v1.1 P2-1）
+- **TokenRaw 协议加字段非破坏性兼容**（v1.1 P1-1 修订 · 缓解策略改为 refresh 触发刷新）：
+  - **场景**：旧 stored token 没 default_family_id（升级前 cache 命中）→ 重启后 initAuth 走 restored session · 此时 storage 中 family-context 也不存在
+  - **概率事件性质**：P1（100% 已登录用户升级时必触发）· 不是 P3 极低概率
+  - **v1.1 修正缓解策略**：initAuth 内 `if (!await getActiveFamilyId() && isLoggedIn())` → 走 `refreshToken()` → 从 refresh response 取 default_family_id/default_ledger_id → setActiveFamily（透明 · 无 UX 退化）
+  - **依据**：server authService.ts L256-277 实测 refresh response 含 default_family_id/default_ledger_id（COSTRA-164 R1 实装 + R1.x APPROVE）
+  - **极边缘失败兜底**：refresh 抛错（refresh_token 也过期）→ clearToken + clearActiveFamily → 等用户主动点登录（不弹 toast 强制）
+  - **v1.0 ❌ 已废弃策略**：~~"提示重新登录 toast"~~（P1-1/P1-2 双 P1 论证 · D-025 AP-002 不当接受 · 强制 100% 升级用户重登 = UX 严重退化）
 - **wx 模拟器 vs 真机行为差异**：storage envelope async / globalData 共享 · D-022 §4.1 runtime 类铁律 · Human 必须真机实测覆盖
 - **联合实测协议依赖**：本卡测试 e2e 必须 164 已部署到 staging · 否则 mock 协议返字段 · 真链路 P0 验证延后到联合实测
+- **FU-164-REFRESH-DEFAULT-IDS-NULL 联动**（v1.1 P1-1 关联）：
+  - **现状**：server refresh 极边缘场景下（personal family 缺失数据异常）返空字符串 default_family_id/default_ledger_id（COSTRA-164 R1.x P2-2）
+  - **client 兜底**：refreshToken 内部空字符串保护（§2.1 B 5）· `if (resp.default_family_id && resp.default_ledger_id)` 才写入 family-context · 否则保持现有不被覆盖
+  - **测试覆盖**：T10（v1.1 P1-1）
 
 ---
 
@@ -373,7 +524,7 @@ const familyId = await familyContextGetActiveFamilyId();
 
 ---
 
-**派单档结束 · Orchestrator 等 Human 拍板 + COSTRA-164 R1 APPROVE 后 spawn Card-Review。**
+**派单档结束 · v1.1 修订完成 · 等 Card-Review R2 形式审 → R1 实装。**
 
 ---
 
@@ -382,3 +533,4 @@ const familyId = await familyContextGetActiveFamilyId();
 | 版本 | 时间 | 变更 |
 |---|---|---|
 | v1.0 | 2026-05-27 | 首版立档（基于 ADR-0007 v1.0 §6.2 实装锚点 · Sprint-3 头部第 4 张派单 · 与 COSTRA-164 联立攒批） |
+| **v1.1** | **2026-05-27 16:00** | **Card-Review R1 修订（25/30 PASS-WITH-FOLLOWUP → 期望 ≥27 APPROVE · 落 3 P1 + 3 P2 全 6 项）**：① P1-1 initAuth 旧 token 升级策略改 refresh 触发刷新（废"toast 重登"）· §2.1 B 加 refreshToken 路径写 family-context（含空字符串保护 FU-164-REFRESH-DEFAULT-IDS-NULL）· §7 风险条目重写 · ② P1-2 D-025 AP-002 扫描结论从"不命中"修正为"v1.0 命中 · v1.1 修正后不命中" · ③ P1-3 TokenRaw 接口 expires_in 从可选改 required + user 子对象补 timezone/created_at/updated_at（COSTRA-118 P0-2 红线对齐）· §1.3 行号对齐 commit `8c8cdce` 后源码 · ④ P2-1 加 T7~T11 共 5 测（双源 + 旧 token 升级 + refresh 边界 + 协议契约）+ 反向验证 ④ · ⑤ P2-2 §2.1 D 选方案 1 保留 FALLBACK + 诊断日志 · 决策权改 miniapp-dev · ⑥ P2-3 §5.4 加 commit 粒度合理性说明（8 文件单 commit）· DoD 17→22 项 · 时间盒 100→120 min |
