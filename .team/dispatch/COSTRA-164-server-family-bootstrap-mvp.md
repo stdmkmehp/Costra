@@ -1,8 +1,8 @@
 # COSTRA-164 · server family bootstrap MVP（首登 atomic 建个人 family + ledger）
 
 > **派单时间**：2026-05-27（Orchestrator · Sprint-3 头部第 3 张 · 接续 154/150 联合 approve 阻塞链）
-> **dispatch 修订**：v1.0 → v1.1（Human 追加 kind 区分需求）→ **v2.0 @ 2026-05-27 14:30**（Card-Review R1 PASS-WITH-FOLLOWUP 25/30 · 6 项 FU 全落地修订 · D-016 100% 修订率兑现）
-> **状态**：Card-Review R1 已审 → dispatch v2.0 已修订 → 等 **Card-Review R2 形式审** → R1 实装
+> **dispatch 修订**：v1.0 → v1.1（Human 追加 kind 区分需求）→ v2.0 @ 2026-05-27 14:30（Card-Review R1 PASS-WITH-FOLLOWUP 25/30 · 6 项 FU 全落地修订）→ **v2.1 @ 2026-05-27 15:00**（Card-Review R2 PASS-WITH-FOLLOWUP 28/30 · 1 项 P1 残留 + 1 项 P2 修订兑现）
+> **状态**：Card-Review R1 + R2 已审 → dispatch v2.1 已修订 → **等 R1 实装 spawn**（backend-dev 装扮）
 > **依赖**：COSTRA-101（authService.wxLogin 流程）· COSTRA-021（families/ledgers/family_members schema 0001_init.sql 已全备）
 > **下游解锁**：
 > - COSTRA-165 miniapp family-context（强依赖本卡 R1 APPROVE 才能启 · 否则 client 拿不到 default_family_id）
@@ -402,7 +402,7 @@ USER_VISIBLE_FAMILY_LIMIT: number;    // 默认 3 · 应用层校验 · MVP 限�
 
 ---
 
-## §3 DoD（22 项 · v2.0 +T10 softDelete kind 守门）
+## §3 DoD（23 项 · v2.1 计数修正：G 闸门 10 项 + 单测 T1~T10 + 反向验证 3 项）
 
 ### G1~G8 + G15 + G16 标准闸门（10 项）
 
@@ -457,7 +457,6 @@ USER_VISIBLE_FAMILY_LIMIT: number;    // 默认 3 · 应用层校验 · MVP 限�
   - `server/src/repositories/familyRepo.ts`（**新建**）
   - `server/src/repositories/ledgerRepo.ts`（**新建**）
   - `server/src/errors/ErrorCode.ts`（**v2.0 新增** · 加 `FAMILY_PERSONAL_NOT_DELETABLE` enum + http status 403 + retry 'none' · ADR-0007 §5.7.3 锚定 · familyRepo.softDelete 抛此码）
-  - `server/src/db/transaction.ts`（如需新建 withTransaction 工具 · 视现状）
   - `server/src/config/env.ts`（添加 2 个配置项）
   - `server/api/openapi.yaml`（AuthTokenPair schema 加字段）
   - `server/test/auth-family-bootstrap.test.ts`（新建）
@@ -479,7 +478,7 @@ USER_VISIBLE_FAMILY_LIMIT: number;    // 默认 3 · 应用层校验 · MVP 限�
 
 ### §5.3 已知未知 / follow-up 候选
 
-- **FU-164-WITH-TRANSACTION-UTIL**（如本卡新建 withTransaction 工具）：评估是否抽出独立 plugin / utility 供其他 service 复用 · 留 Sprint-4 评估
+- **FU-164-WITH-TX-UTIL**（v2.1 修正 · 已确认复用 pool.ts:withTx · 不新建）：评估未来是否抽出独立 plugin / utility 供其他 service 复用（withTx 当前在 pool.ts · 视为合适位置）· 留 Sprint-4 评估
 - **FU-164-AUTH-RESPONSE-VERSIONING**：response 加字段是非破坏性扩展 · 但客户端旧版本会忽略新字段 · 留 D-026 staging-prod-merged-acceptance 时核验老 client 兼容性
 - **FU-164-FAMILY-KIND-CHECK-MIDDLEWARE**（v1.1 新增）：Sprint-4 COSTRA-201 落 `DELETE /families/{id}` 时 · 评估抽出 `requireKind('shared')` 中间件统一守门 · 当前由 service 层判定即可
 
@@ -501,7 +500,7 @@ USER_VISIBLE_FAMILY_LIMIT: number;    // 默认 3 · 应用层校验 · MVP 限�
 
 ## §7 已知风险
 
-- **withTransaction 工具是否已存在**：本卡需先核查 `server/src/db/` · 若无需新建 · 若有则复用 · R1 实装期评估
+- **withTx 工具已确认复用**（v2.1 修正 · 原 v1.1 风险条目消除）：`server/src/db/pool.ts:L45-62` 已实装 `withTx<T>` · 签名完全满足本卡需求 · **无需新建 transaction.ts** · §2.1 B 已复用 + 显式 import
 - **AuthTokenPair 加字段非破坏性兼容**：旧 client 会忽略新字段 · 但旧 client 仍走 `__costra_family_id_v1` 旧 key · 需 165 一并清除迁移（COSTRA-165 §2.1 锚定）
 - **bootstrap 事务时延**（v2.0 修正 · 落地 FU-164-006 · D-022 §2.2 C8-3 `[未经验测]` 范式）：
   - **[未经验测]** 单事务 < 30ms 为纸面预期 · PG 索引扫描 + 3 INSERT（family + family_members + ledger · 命中 idx_families_owner + uq_families_one_personal_per_owner）实际时延需 staging 实测确认
@@ -531,3 +530,4 @@ USER_VISIBLE_FAMILY_LIMIT: number;    // 默认 3 · 应用层校验 · MVP 限�
 | v1.0 | 2026-05-27 | 首版立档（基于 ADR-0007 v1.0 §6.1 实装锚点 · Sprint-3 头部第 3 张派单） |
 | **v1.1** | **2026-05-27 11:13** | Human 追加需求 "默认家庭需区别于用户手动创建的家庭 · 默认家庭不可删除"（ADR-0007 v1.1 §4.1 + §5.7 落地）。变更：① §2 scope 5项 → 6项 · 新增 §2.1 A0 migration 0007（family_kind ENUM + kind 列 + uq_families_one_personal_per_owner partial unique index + 历史回填）；② §2.1 A familyRepo 加 kind 参数 + FamilyKind 类型 + listActiveFamiliesByUser filter；③ §2.1 E 单测 8 测 → 9 测（T6 重写为 partial unique index 行为校验 · T9 新增 kind 持久化校验）；④ §3 DoD 19 项 → 21 项（+G16 migration 幂等性 · +反向验证 ③）；⑤ §5.1 工作区开放 0007 migration 写权限；⑥ §5.2 时间盒 150min → 180min（仍在 small 范围）；⑦ §5.3 +FU-164-FAMILY-KIND-CHECK-MIDDLEWARE；⑧ §7 风险删除多个 personal family 条目（partial unique index 解决）+ 新增 migration 在 prod 部署风险条目 |
 | **v2.0** | **2026-05-27 14:30** | Card-Review R1 PASS-WITH-FOLLOWUP 25/30 · 6 项 FU 全部 R1 修订兑现（D-016 100% 修订率铁律）。变更：① **FU-164-001** 落地：§2.1 B 复用 `withTx`（pool.ts L45-62 已实装）· 删除 transaction.ts 新建条目 · import 路径显式 · §7 风险条目相应清理；② **FU-164-002** 落地：§2.1 B wxLogin 代码补 `try-catch isUniqueViolation('uq_families_one_personal_per_owner') + fallback findPersonalFamily` 路径 · `isUniqueViolation` 工具就地内联（pg err.code='23505' + constraint 双校验）· T6 期望与代码完全对齐 · 极边缘 throw `UNAVAILABLE`；③ **FU-164-003** 落地：§1.1 + §2.1 C + §3 G8 + §3 AP-003 四处虚假 deferred 声明全部修正 · /families/* 行号 L161-308 → L161-319 · AP-003 改为"命中（已知隐性漂移 · 不阻塞）" · 标记补齐推 COSTRA-161 或 COSTRA-201；④ **FU-164-004** 落地：§2.1 A familyRepo 加 `softDelete(input,client)` kind 守门接口 · §5.1 工作区加 ErrorCode.ts 写权限（加 FAMILY_PERSONAL_NOT_DELETABLE enum）· §2.1 E 加 T10 守门测试；⑤ **FU-164-005** 落地：§2.1 A0 migration 排序键 `created_at ASC, id ASC` 选择理由补充注释（vs 0006 用 updated_at ASC）；⑥ **FU-164-006** 落地：§7 bootstrap 时延 < 30ms 加 `[未经验测]` 标注（D-022 §2.2 C8-3 范式）· 实测节点显式（与 165 联合 staging 实测）。DoD 21 项 → 22 项（+T10）· 单测 9 测 → 10 测 · scope 仍 6 项 · 估点保持 3pt · 时间盒保持 180min（softDelete 接口轻量 + isUniqueViolation 内联 + 注释修正零成本） |
+| **v2.1** | **2026-05-27 15:00** | Card-Review R2 PASS-WITH-FOLLOWUP 28/30 形式审 · 5/6 FU 完全兑现 + 1 项 P1 残留（FU-164-001 §5.1/§7/§5.3 三处旧文未清）+ 1 项 P2（DoD 计数 22 vs 实际 23）· R2 修订全落地：① §5.1 L460 删除 `server/src/db/transaction.ts` 条目（保留 `errors/ErrorCode.ts`）；② §5.3 `FU-164-WITH-TRANSACTION-UTIL` → `FU-164-WITH-TX-UTIL`（已确认复用 pool.ts:withTx · 不新建）；③ §7 "withTransaction 工具是否已存在"风险条目 → 改为"withTx 工具已确认复用"事实陈述；④ §3 DoD 标题计数 22 → 23（10 G + 10 T + 3 反向 = 23）。变更不影响实装 · 仅文档一致性清理 · 估点 / 时间盒 / scope 均不变 |
