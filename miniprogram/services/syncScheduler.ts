@@ -9,7 +9,7 @@
 
 import { syncPull, pushDelta } from './sync';
 import { isLoggedIn } from './auth';
-import { getItem } from './storage';
+import { getActiveFamilyId as familyContextGetActiveFamilyId } from './family';
 
 // ─── 类型 ─────────────────────────────────────────────────────────────────────
 
@@ -27,7 +27,6 @@ export interface SyncResult {
 
 // ─── 常量 ─────────────────────────────────────────────────────────────────────
 
-const FAMILY_ID_KEY = '__costra_family_id_v1';
 const SHOW_DEBOUNCE_MS = 5000;
 const PERIODIC_INTERVAL_MS = 60_000;
 
@@ -36,18 +35,6 @@ const PERIODIC_INTERVAL_MS = 60_000;
 let isRunning = false;
 let lastShowTriggerAt = 0;
 let periodicTimer: ReturnType<typeof setInterval> | null = null;
-
-// ─── helpers ──────────────────────────────────────────────────────────────────
-
-/**
- * 取当前 active family_id · MVP 阶段从 storage 读
- * ⚠️ miniprogram 全局当前无 active_family_id 概念（auth.user 仅含 user_id）
- * R1 卡审 P0-1 修订 · 留 FU-150-FAMILY-CONTEXT-SERVICE Sprint-3+ 抽 family.ts service
- */
-async function getActiveFamilyId(): Promise<string | null> {
-  const familyId = await getItem<string>(FAMILY_ID_KEY);
-  return familyId || null;
-}
 
 // ─── 核心：syncOnce ──────────────────────────────────────────────────────────
 
@@ -69,8 +56,8 @@ export async function syncOnce(trigger: TriggerSource): Promise<SyncResult | nul
       return null;
     }
 
-    // 2. family_id 检查
-    const familyId = await getActiveFamilyId();
+    // 2. family_id 检查（COSTRA-165: 委托 family.ts service · 不再持有旧 FAMILY_ID_KEY 字面量）
+    const familyId = await familyContextGetActiveFamilyId();
     if (!familyId) {
       console.log(`[sync] skip · no active family (trigger=${trigger})`);
       return null;

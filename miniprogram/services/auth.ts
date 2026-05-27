@@ -1,12 +1,14 @@
 // services/auth.ts · 登录闭环（真实链路 + Mock 降级）
 // 卡号: COSTRA-102（重写）· 原骨架: COSTRA-030
 // COSTRA-125: storage async 迁移 · R1 漏网点 auth.ts:70 `getItem(TOKEN_KEY)` 改 await · initAuth/doWxLogin/refreshToken/clearToken 全链 async 对齐
+// COSTRA-165: TokenRaw 协议对齐（expires_in required + user 子字段 + default_family_id/ledger_id）+ login/logout/initAuth/refresh 接入 family-context
 // 契约事实源: server/api/openapi.yaml #/components/schemas/AuthTokenPair
 // 上游派单: .team/dispatch/COSTRA-102-miniapp-login-e2e.md §D2.2 · .team/dispatch/COSTRA-125-miniapp-storage-async-migration.md §3 (b)
 // 承接 COSTRA-118 路径 A: E.P0-1（code 日志脱敏）/ E.P0-2（TokenRaw 字段对齐）/ E.P0-3（refresh body 字段名）
 import { getEnv } from './env';
 import { setItem, getItem, removeItem } from './storage';
 import { request } from './request';
+import { setActiveFamily, getActiveFamilyId, getActiveLedgerId, clearActiveFamily } from './family';
 
 const TOKEN_KEY = '__costra_token_v1';
 const REFRESH_WINDOW_MS = 5 * 60 * 1000; // 距过期 < 5 分钟触发续签
@@ -14,18 +16,29 @@ const REFRESH_WINDOW_MS = 5 * 60 * 1000; // 距过期 < 5 分钟触发续签
 /**
  * 服务端返回的 Token 结构（OpenAPI AuthTokenPair）
  * P0-2：字段名与 snake_case 事实源 1:1 对齐；不再使用 access/refresh/expiresAt 别名
+ * COSTRA-165 P1-3：expires_in required + user 子字段补齐 + default_family_id/ledger_id
  */
 export interface TokenRaw {
   access_token: string;
   refresh_token: string;
   access_token_ttl_sec: number;
   refresh_token_ttl_sec: number;
+  // P1-3 新增（与 server required 对齐 · OpenAPI deprecated 兼容字段）：
+  expires_in: number;
   user: {
     id: string;
     nickname: string;
     avatar_url: string | null;
     has_completed_profile: boolean;   // COSTRA-158: 严格资料判定字段
+    // P1-3 新增（v1.1 · 与 server toUserView() 返回 1:1 对齐 · COSTRA-118 P0-2 红线）：
+    timezone: string;
+    created_at: string;  // ISO-8601 UTC
+    updated_at: string;  // ISO-8601 UTC
   };
+
+  // COSTRA-164 协议 · 已稳定 · authService.ts L207-208 + L275-276
+  default_family_id: string;
+  default_ledger_id: string;
 }
 
 /**
@@ -75,6 +88,28 @@ export async function initAuth(): Promise<void> {
   const saved = await getItem<TokenStored>(TOKEN_KEY);
   if (saved && saved.access_expires_at > Date.now()) {
     current = wrap(saved);
+
+    // COSTRA-165 v1.1 P1-1: 旧 token 升级场景 · storage 中无 family-context → 走 refresh 触发刷新（透明无 UX 退化）
+    const familyId = await getActiveFamilyId();
+    if (!familyId) {
+      try {
+        await refreshToken();  // refresh response 含 default_family_id/default_ledger_id（authService.ts:275-276）
+        // refreshToken 内部已调 setActiveFamily
+      } catch (e) {
+        // refresh 失败兜底：清 token + 跳登录页（极边缘 · refresh_token 也过期）
+        console.warn('[auth] initAuth fallback refresh failed', e);
+        await clearToken();
+        await clearActiveFamily();
+        return;
+      }
+    } else {
+      // 正常路径：family-context 已存在 · 同步 globalData
+      const ledgerId = await getActiveLedgerId();
+      const app = getApp();
+      if (app?.globalData && ledgerId) {
+        app.globalData.activeLedgerId = ledgerId;
+      }
+    }
     return;
   }
   // 无 token 或已过期 → 待页面层触发 wx.login（见 pages/login）
@@ -143,6 +178,13 @@ export async function logout(): Promise<void> {
     }
   }
 
+  // COSTRA-165: 清 family-context + globalData（在 clearToken 之前）
+  await clearActiveFamily();
+  const app = getApp();
+  if (app?.globalData) {
+    app.globalData.activeLedgerId = undefined;
+  }
+
   await clearToken();
   try {
     wx.reLaunch({ url: '/pages/login/index' });
@@ -167,6 +209,18 @@ export async function doWxLogin(): Promise<Token> {
     const stored = buildStored(mock);
     current = wrap(stored);
     await setItem(TOKEN_KEY, stored);  // COSTRA-125: async
+
+    // COSTRA-165: mock 路径也写 family-context（让 T7/T8 在 mock 环境可跑 · R2 P2-2 实装期处理）
+    await setActiveFamily({
+      family_id: mock.default_family_id,
+      ledger_id: mock.default_ledger_id,
+    });
+    const appMock = getApp();
+    if (appMock?.globalData) {
+      appMock.globalData.activeLedgerId = mock.default_ledger_id;
+    }
+
+    console.info('[auth] login success', { userId: mock.user.id, familyId: mock.default_family_id });
     return current;
   }
 
@@ -180,6 +234,19 @@ export async function doWxLogin(): Promise<Token> {
   const stored = buildStored(resp);
   current = wrap(stored);
   await setItem(TOKEN_KEY, stored);  // COSTRA-125: async
+
+  // COSTRA-165: 写 family-context（首登 default_family_id 一定非空 · 后续切 family 时由 R2 UI 覆盖）
+  await setActiveFamily({
+    family_id: resp.default_family_id,
+    ledger_id: resp.default_ledger_id,
+  });
+  // 同步 globalData.activeLedgerId（pages/entry 直接读 · app.ts L22 字段已声明）
+  const app = getApp();
+  if (app?.globalData) {
+    app.globalData.activeLedgerId = resp.default_ledger_id;
+  }
+
+  console.info('[auth] login success', { userId: resp.user.id, familyId: resp.default_family_id });
   return current;
 }
 
@@ -200,6 +267,16 @@ export async function refreshToken(): Promise<void> {
     const stored = buildStored(refreshed);
     current = wrap(stored);
     await setItem(TOKEN_KEY, stored);  // COSTRA-125: async
+
+    // COSTRA-165: mock 路径也写 family-context（R2 P2-2 实装期处理 · 让 T8 在 mock 环境可跑）
+    await setActiveFamily({
+      family_id: refreshed.default_family_id,
+      ledger_id: refreshed.default_ledger_id,
+    });
+    const appMock = getApp();
+    if (appMock?.globalData) {
+      appMock.globalData.activeLedgerId = refreshed.default_ledger_id;
+    }
     return;
   }
   const resp = await request<TokenRaw>({
@@ -211,6 +288,19 @@ export async function refreshToken(): Promise<void> {
   const stored = buildStored(resp);
   current = wrap(stored);
   await setItem(TOKEN_KEY, stored);  // COSTRA-125: async
+
+  // COSTRA-165 v1.1 P1-1: refresh response 含 default_family_id/default_ledger_id · 写入 family-context
+  // 极边缘场景：server 返空字符串（FU-164-REFRESH-DEFAULT-IDS-NULL · personal family 缺失）→ 跳过写入 · 保持现有 family-context
+  if (resp.default_family_id && resp.default_ledger_id) {
+    await setActiveFamily({
+      family_id: resp.default_family_id,
+      ledger_id: resp.default_ledger_id,
+    });
+    const app = getApp();
+    if (app?.globalData) {
+      app.globalData.activeLedgerId = resp.default_ledger_id;
+    }
+  }
 }
 
 // ---- helpers ----
@@ -227,6 +317,7 @@ function wxLoginAsync(): Promise<{ code: string }> {
 /**
  * 单测 / dev mockLogin 下的假 TokenRaw
  * 不对外导出；签名对齐 TokenRaw 以保证切换真实链路零类型改动
+ * COSTRA-165: mockExchange 同步补 default_family_id/default_ledger_id + user 新字段（T11 覆盖）
  */
 function mockExchange(_code: string, oldRefresh?: string): TokenRaw {
   const seed = Date.now().toString(36);
@@ -235,6 +326,7 @@ function mockExchange(_code: string, oldRefresh?: string): TokenRaw {
     refresh_token: oldRefresh || `mock.refresh.${seed}`,
     access_token_ttl_sec: 60 * 60,      // 1h
     refresh_token_ttl_sec: 30 * 24 * 3600, // 30d
+    expires_in: 60 * 60,  // COSTRA-165 P1-3: 与 access_token_ttl_sec 一致
     user: {
       id: `mock-user-${seed.slice(0, 4)}`,
       nickname: '测试用户',
@@ -243,7 +335,14 @@ function mockExchange(_code: string, oldRefresh?: string): TokenRaw {
       // 该路径由 §9 步骤 2（has_completed_profile=false 首登场景）Human 实测覆盖
       // Card-Review P2-3 修订（2026-05-19 10:15）
       has_completed_profile: true,
-    }
+      // COSTRA-165 P1-3: 与 server toUserView() 1:1 对齐
+      timezone: 'Asia/Shanghai',
+      created_at: '2026-01-01T00:00:00.000Z',
+      updated_at: '2026-01-01T00:00:00.000Z',
+    },
+    // COSTRA-165: mock 路径也提供 default_family_id/default_ledger_id
+    default_family_id: `mock-family-${seed.slice(0, 4)}`,
+    default_ledger_id: `mock-ledger-${seed.slice(0, 4)}`,
   };
 }
 

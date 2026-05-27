@@ -1,5 +1,6 @@
 // services/syncScheduler.spec.ts · 同步调度器单测
 // 卡号: COSTRA-150（Sprint-3 头部第 2 张 · R1 实装）
+// COSTRA-165: T2 重构 · mock family.ts service 而非 storage.getItem
 // Refs: .team/dispatch/COSTRA-150-client-sync-scheduler.md §2.1 E 项
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { syncOnce, startScheduler, stopScheduler, triggerOnPageShow, __test__ } from './syncScheduler';
@@ -15,19 +16,20 @@ vi.mock('./auth', () => ({
   isLoggedIn: vi.fn(),
 }));
 
-vi.mock('./storage', () => ({
-  getItem: vi.fn(),
+// COSTRA-165: mock family.ts 而非 storage.getItem（syncScheduler 不再直接依赖 storage）
+vi.mock('./family', () => ({
+  getActiveFamilyId: vi.fn(),
 }));
 
 import { pushDelta } from './sync';
 import { syncPull } from './sync';
 import { isLoggedIn } from './auth';
-import { getItem } from './storage';
+import { getActiveFamilyId as familyContextGetActiveFamilyId } from './family';
 
 const mockedPushDelta = vi.mocked(pushDelta);
 const mockedSyncPull = vi.mocked(syncPull);
 const mockedIsLoggedIn = vi.mocked(isLoggedIn);
-const mockedGetItem = vi.mocked(getItem);
+const mockedGetActiveFamilyId = vi.mocked(familyContextGetActiveFamilyId);
 
 // ─── 测 ───────────────────────────────────────────────────────────────────────
 
@@ -56,7 +58,7 @@ describe('services/syncScheduler', () => {
   // T2: syncOnce 无 family_id 跳过 → 返 null
   it('T2: syncOnce skips when no family_id', async () => {
     mockedIsLoggedIn.mockReturnValue(true);
-    mockedGetItem.mockResolvedValue(null);
+    mockedGetActiveFamilyId.mockResolvedValue(null);
 
     const result = await syncOnce('launch');
 
@@ -69,7 +71,7 @@ describe('services/syncScheduler', () => {
   //   修复前 sync.ts pushDelta 永远返回 pushed=0 · 此测试会捕获回归
   it('T3: syncOnce normal path calls pushDelta then syncPull · 三态真值传递', async () => {
     mockedIsLoggedIn.mockReturnValue(true);
-    mockedGetItem.mockResolvedValue('family-123');
+    mockedGetActiveFamilyId.mockResolvedValue('family-123');
     mockedPushDelta.mockResolvedValue({ pushed: 2, conflicts: 1, rejected: 1, failed: 0 });
     mockedSyncPull.mockResolvedValue({
       watermark: 100,
@@ -98,7 +100,7 @@ describe('services/syncScheduler', () => {
   // T4: syncOnce 并发触发第 2 次 mutex 跳过 → 返 null（第 2 次）
   it('T4: syncOnce mutex skips concurrent call', async () => {
     mockedIsLoggedIn.mockReturnValue(true);
-    mockedGetItem.mockResolvedValue('family-123');
+    mockedGetActiveFamilyId.mockResolvedValue('family-123');
 
     // 让 pushDelta 永远 pending · 使第一次 syncOnce 不结束
     let resolveFirst!: () => void;
@@ -127,7 +129,7 @@ describe('services/syncScheduler', () => {
   // T5: syncOnce 5xx 静默失败 → 返 null · 不抛 · console.warn
   it('T5: syncOnce 5xx silent failure returns null', async () => {
     mockedIsLoggedIn.mockReturnValue(true);
-    mockedGetItem.mockResolvedValue('family-123');
+    mockedGetActiveFamilyId.mockResolvedValue('family-123');
     mockedPushDelta.mockRejectedValue({ code: 'SERVER_ERROR', message: 'Internal Server Error' });
 
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -145,7 +147,7 @@ describe('services/syncScheduler', () => {
   // T6: triggerOnPageShow debounce 5s → 第 2 次 5s 内跳过
   it('T6: triggerOnPageShow debounces within 5s', async () => {
     mockedIsLoggedIn.mockReturnValue(true);
-    mockedGetItem.mockResolvedValue('family-123');
+    mockedGetActiveFamilyId.mockResolvedValue('family-123');
     mockedPushDelta.mockResolvedValue({ pushed: 0, conflicts: 0, rejected: 0, failed: 0 });
     mockedSyncPull.mockResolvedValue({
       watermark: 100,
@@ -176,7 +178,7 @@ describe('services/syncScheduler', () => {
   // T7: startScheduler / stopScheduler 周期 timer 启停
   it('T7: startScheduler creates periodic timer, stopScheduler clears it', async () => {
     mockedIsLoggedIn.mockReturnValue(true);
-    mockedGetItem.mockResolvedValue('family-123');
+    mockedGetActiveFamilyId.mockResolvedValue('family-123');
     mockedPushDelta.mockResolvedValue({ pushed: 0, conflicts: 0, rejected: 0, failed: 0 });
     mockedSyncPull.mockResolvedValue({
       watermark: 100,
@@ -216,7 +218,7 @@ describe('services/syncScheduler', () => {
   // T8: syncOnce trigger 字段透传
   it('T8: syncOnce trigger field passes through', async () => {
     mockedIsLoggedIn.mockReturnValue(true);
-    mockedGetItem.mockResolvedValue('family-456');
+    mockedGetActiveFamilyId.mockResolvedValue('family-456');
     mockedPushDelta.mockResolvedValue({ pushed: 0, conflicts: 0, rejected: 0, failed: 0 });
     mockedSyncPull.mockResolvedValue({
       watermark: 100,

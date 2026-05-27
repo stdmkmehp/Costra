@@ -1,8 +1,9 @@
 // services/auth.spec.ts · TokenPair 字段对齐 + shouldRefresh 边界
 // 卡号: COSTRA-102 · D2.10 · COSTRA-158 §2.4 G' 扩展 updateLocalUserProfile 测
 // COSTRA-158 R1.x.1: updateLocalUserProfile 改 async + setItem · 测适配 + 重启回读单测
+// COSTRA-165: T7~T11 family-context 接入测试（双源一致性 / initAuth 升级 / refresh 边界 / TokenRaw 契约对齐）
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { __test__ as authTest, getToken, getSession, updateLocalUserProfile, initAuth } from './auth';
+import { __test__ as authTest, getToken, getSession, updateLocalUserProfile, initAuth, doWxLogin, refreshToken } from './auth';
 import type { TokenRaw, TokenStored } from './auth';
 
 // R1.x.1: mock storage.ts · 让 setItem/getItem 操作共享 Map（模拟真实 envelope 行为）
@@ -24,6 +25,34 @@ vi.mock('./storage', () => ({
   }),
 }));
 
+// COSTRA-165: mock family.ts · 追踪 setActiveFamily/clearActiveFamily 调用
+const familyState: { ctx: { family_id: string; ledger_id: string } | null } = { ctx: null };
+vi.mock('./family', () => ({
+  setActiveFamily: vi.fn(async (ctx: { family_id: string; ledger_id: string }) => {
+    familyState.ctx = ctx;
+    // 同步写入 storageMap 让 getActiveFamilyId/getActiveLedgerId 可读
+    storageMap.set('__costra_family_context_v1', { v: 1, t: Date.now(), d: ctx });
+  }),
+  getActiveFamilyId: vi.fn(async () => {
+    if (!storageMap.has('__costra_family_context_v1')) return null;
+    const env = storageMap.get('__costra_family_context_v1');
+    if (!env || typeof env !== 'object') return null;
+    const d = (env as { d: unknown }).d;
+    return (d as { family_id: string } | null)?.family_id ?? null;
+  }),
+  getActiveLedgerId: vi.fn(async () => {
+    if (!storageMap.has('__costra_family_context_v1')) return null;
+    const env = storageMap.get('__costra_family_context_v1');
+    if (!env || typeof env !== 'object') return null;
+    const d = (env as { d: unknown }).d;
+    return (d as { ledger_id: string } | null)?.ledger_id ?? null;
+  }),
+  clearActiveFamily: vi.fn(async () => {
+    familyState.ctx = null;
+    storageMap.delete('__costra_family_context_v1');
+  }),
+}));
+
 // wx 运行时在单测环境不存在 · 仅 buildStored 与 wrap 逻辑不依赖 wx，直接测即可
 
 const mockRaw: TokenRaw = {
@@ -31,7 +60,19 @@ const mockRaw: TokenRaw = {
   refresh_token: 'r.s.t',
   access_token_ttl_sec: 7200,
   refresh_token_ttl_sec: 2592000,
-  user: { id: 'u-1', nickname: '测试昵称', avatar_url: 'https://x.png', has_completed_profile: false },
+  // COSTRA-165 P1-3: 与 server AuthTokenPair 1:1 对齐
+  expires_in: 7200,
+  user: {
+    id: 'u-1',
+    nickname: '测试昵称',
+    avatar_url: 'https://x.png',
+    has_completed_profile: false,
+    timezone: 'Asia/Shanghai',
+    created_at: '2026-01-01T00:00:00.000Z',
+    updated_at: '2026-01-01T00:00:00.000Z',
+  },
+  default_family_id: 'f-default-001',
+  default_ledger_id: 'l-default-001',
 };
 
 describe('services/auth · TokenPair 字段 + 续签窗口', () => {
@@ -138,6 +179,12 @@ describe('services/auth · updateLocalUserProfile（COSTRA-158 §2.4）', () => 
     authTest.reset();
 
     // 4. 调 initAuth() 模拟重启 · storage mock 已配好 envelope 回读
+    //    需要先写入 family-context 让 initAuth 正常路径走通
+    storageMap.set('__costra_family_context_v1', { v: 1, t: Date.now(), d: { family_id: 'f-default-001', ledger_id: 'l-default-001' } });
+    // mock getApp（initAuth 正常路径需要读 globalData）
+    const mockGD = { activeLedgerId: undefined as string | undefined };
+    vi.stubGlobal('getApp', vi.fn(() => ({ globalData: mockGD })));
+
     await initAuth();
 
     // 5. 期望 current 被恢复 · user.nickname='张三' has_completed_profile=true
@@ -145,5 +192,205 @@ describe('services/auth · updateLocalUserProfile（COSTRA-158 §2.4）', () => 
     expect(tk).not.toBeNull();
     expect(tk!.raw.user.nickname).toBe('张三');
     expect(tk!.raw.user.has_completed_profile).toBe(true);
+
+    vi.unstubAllGlobals();
+  });
+});
+
+// ─── COSTRA-165: T7~T11 family-context 接入测试 ──────────────────────────────
+
+describe('services/auth · COSTRA-165 family-context integration', () => {
+  // mock env.ts 让 mockLogin=true · doWxLogin 走 mock 路径
+  vi.mock('./env', () => ({
+    getEnv: vi.fn(() => ({
+      name: 'dev',
+      apiBaseUrl: 'http://localhost:8080/v1',
+      mockLogin: true,
+      flags: {},
+    })),
+  }));
+
+  // mock request.ts（真链路不需要 · 但 import 不报错）
+  vi.mock('./request', () => ({
+    request: vi.fn(),
+  }));
+
+  // mock wx.login
+  const mockWxLogin = vi.fn(({ success }: { success: (res: { code: string }) => void }) => {
+    success({ code: 'mock-wx-code-1234' });
+  });
+
+  // 共享 globalData 对象 · 确保 auth.ts 写入和测试读取是同一引用
+  const sharedGlobalData = { activeLedgerId: undefined as string | undefined };
+  const mockGetAppFn = vi.fn(() => ({ globalData: sharedGlobalData }));
+
+  beforeEach(() => {
+    authTest.reset();
+    storageMap.clear();
+    familyState.ctx = null;
+    sharedGlobalData.activeLedgerId = undefined;
+    vi.clearAllMocks();
+    vi.stubGlobal('wx', { login: mockWxLogin, reLaunch: vi.fn() });
+    vi.stubGlobal('getApp', mockGetAppFn);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    authTest.reset();
+    storageMap.clear();
+    familyState.ctx = null;
+  });
+
+  // T7: 双源一致性（doWxLogin 后 storage + globalData 同步）
+  it('T7: doWxLogin 后 storage family-context + globalData.activeLedgerId 同步写入', async () => {
+    const token = await doWxLogin();
+
+    // 验证 token 存在
+    expect(token).not.toBeNull();
+
+    // 验证 family-context 在 storage 中被写入（通过 family mock 的 familyState）
+    expect(familyState.ctx).not.toBeNull();
+    expect(familyState.ctx!.family_id).toBe(token.raw.default_family_id);
+    expect(familyState.ctx!.ledger_id).toBe(token.raw.default_ledger_id);
+
+    // 验证 globalData.activeLedgerId 同步（sharedGlobalData 是同一引用）
+    expect(sharedGlobalData.activeLedgerId).toBe(token.raw.default_ledger_id);
+  });
+
+  // T8: initAuth 旧 token 升级 → refreshToken → 写入 family-context
+  it('T8: initAuth 旧 token 升级场景 · storage 无 family-context → refreshToken → 写入', async () => {
+    // 1. 先 doWxLogin 建立 token
+    const token = await doWxLogin();
+    expect(token).not.toBeNull();
+
+    // 2. 清 family-context（模拟旧 token 升级场景：token 存在但无 family-context）
+    storageMap.delete('__costra_family_context_v1');
+    familyState.ctx = null;
+
+    // 3. 重置内存 + 再 initAuth（模拟重启）
+    authTest.reset();
+    await initAuth();
+
+    // 4. 期望 initAuth 检测到 familyId=null → 走 refreshToken → 写入 family-context
+    expect(familyState.ctx).not.toBeNull();
+    expect(familyState.ctx!.family_id).toBeTruthy();
+    expect(familyState.ctx!.ledger_id).toBeTruthy();
+
+    // 5. globalData 也同步（sharedGlobalData 是同一引用）
+    expect(sharedGlobalData.activeLedgerId).toBeTruthy();
+  });
+
+  // T9: initAuth 升级 + refresh 失败 → clearToken + clearActiveFamily
+  it('T9: initAuth 升级 + refresh 失败 → clearToken + clearActiveFamily', async () => {
+    // 1. 先 doWxLogin 建立 token
+    await doWxLogin();
+
+    // 2. 清 family-context
+    storageMap.delete('__costra_family_context_v1');
+    familyState.ctx = null;
+
+    // 3. 让 refreshToken 抛错（通过临时让 current 的 refresh_token 为空触发 NO_TOKEN 或其他错误）
+    //    更好的方式：让 mock 的 refreshToken 抛错。但 refreshToken 依赖 current
+    //    所以：设置 current 有 token 但 mock env 让 refreshToken 走 mock 路径（正常不会抛错）
+    //    要让 refresh 失败，需要让 mockExchange 不可达——最简单的办法是临时设 current=null
+    //    但 initAuth 内部会先 wrap(saved) 再调 refreshToken，所以 current 不会是 null
+    //    折中：通过 mock request 让 refreshToken 在"真链路"下抛错
+    //    但当前 env mockLogin=true 所以走 mock 路径不会抛错
+    //    解决方案：直接 mock env 返回 mockLogin=false · 再 mock request 抛错
+    const { getEnv } = await import('./env');
+    vi.mocked(getEnv).mockReturnValueOnce({
+      name: 'staging',
+      apiBaseUrl: 'https://costra.cloud/v1',
+      mockLogin: false,  // 强制走真链路
+      flags: {},
+    });
+
+    // mock request 抛错
+    const { request } = await import('./request');
+    vi.mocked(request).mockRejectedValueOnce(new Error('network error'));
+
+    // 4. 重置内存 + 再 initAuth
+    authTest.reset();
+    await initAuth();
+
+    // 5. 期望 current=null（clearToken 被调）+ family-context 被清
+    expect(getToken()).toBeNull();
+    expect(familyState.ctx).toBeNull();
+  });
+
+  // T10: refreshToken 空字符串保护
+  it('T10: refreshToken 极边缘 · response 含空字符串 default_family_id → 跳过写入', async () => {
+    // 1. 先 doWxLogin 建立 token + family-context
+    await doWxLogin();
+    const originalFamilyCtx = { ...familyState.ctx! };
+    expect(originalFamilyCtx.family_id).toBeTruthy();
+
+    // 2. 让 refreshToken 走真链路 · 返回空字符串 default_family_id
+    const { getEnv } = await import('./env');
+    vi.mocked(getEnv).mockReturnValueOnce({
+      name: 'staging',
+      apiBaseUrl: 'https://costra.cloud/v1',
+      mockLogin: false,  // 强制走真链路
+      flags: {},
+    });
+
+    const { request } = await import('./request');
+    vi.mocked(request).mockResolvedValueOnce({
+      access_token: 'refreshed.access',
+      refresh_token: 'refreshed.refresh',
+      access_token_ttl_sec: 3600,
+      refresh_token_ttl_sec: 2592000,
+      expires_in: 3600,
+      user: {
+        id: 'u-1',
+        nickname: '测试昵称',
+        avatar_url: null,
+        has_completed_profile: true,
+        timezone: 'Asia/Shanghai',
+        created_at: '2026-01-01T00:00:00.000Z',
+        updated_at: '2026-01-01T00:00:00.000Z',
+      },
+      default_family_id: '',  // 空字符串 · FU-164-REFRESH-DEFAULT-IDS-NULL
+      default_ledger_id: '',
+    });
+
+    // 3. 调 refreshToken
+    await refreshToken();
+
+    // 4. 期望 family-context 不被空值覆盖 · 仍为原值
+    expect(familyState.ctx).not.toBeNull();
+    expect(familyState.ctx!.family_id).toBe(originalFamilyCtx.family_id);
+    expect(familyState.ctx!.ledger_id).toBe(originalFamilyCtx.ledger_id);
+  });
+
+  // T11: TokenRaw 契约对齐 typecheck
+  it('T11: TokenRaw 接口契约对齐 · mock buildStored 输入含 expires_in/timezone/created_at/updated_at → typecheck pass', () => {
+    // 纯类型断言测试 · 若 TokenRaw 接口定义缺字段则 TS 编译失败
+    const fullRaw: TokenRaw = {
+      access_token: 'test.access',
+      refresh_token: 'test.refresh',
+      access_token_ttl_sec: 3600,
+      refresh_token_ttl_sec: 2592000,
+      expires_in: 3600,
+      user: {
+        id: 'u-typecheck',
+        nickname: '类型检查用户',
+        avatar_url: null,
+        has_completed_profile: true,
+        timezone: 'Asia/Shanghai',
+        created_at: '2026-05-27T00:00:00.000Z',
+        updated_at: '2026-05-27T00:00:00.000Z',
+      },
+      default_family_id: 'f-typecheck',
+      default_ledger_id: 'l-typecheck',
+    };
+
+    // buildStored 应能正常消费
+    const stored = authTest.buildStored(fullRaw);
+    expect(stored.raw.expires_in).toBe(3600);
+    expect(stored.raw.user.timezone).toBe('Asia/Shanghai');
+    expect(stored.raw.user.created_at).toBe('2026-05-27T00:00:00.000Z');
+    expect(stored.raw.default_family_id).toBe('f-typecheck');
+    expect(stored.raw.default_ledger_id).toBe('l-typecheck');
   });
 });

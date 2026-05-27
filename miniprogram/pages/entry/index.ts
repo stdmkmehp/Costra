@@ -10,7 +10,8 @@ import { newClientRefId } from '../../utils/id';
 import { parseAmountInputToCents, formatMoney } from '../../utils/money';
 
 // COSTRA-105 R1.x.1 BUG-001: 替换 ledger_id 'default' 字面量为 fallback UUID
-// FU-EPIC-FAMILY-LEDGER-CRUD（COSTRA-155）实装真账本切换 UI 后 supersede 此 fallback
+// COSTRA-165 v1.1：保留为最后防御层 · 正常路径下 globalData.activeLedgerId 由 auth.ts 填充
+// 仅在 initAuth/refresh 双重失败的极边缘场景兜底（BUG-001 应急遗产 · FU-165-LEDGER-FALLBACK-CLEANUP 等 R2 切 family UI 后彻底删除）
 const FALLBACK_LEDGER_ID = '00000000-0000-0000-0000-000000000001'; // §0.4.6 seed 默认 ledger
 
 Page({
@@ -56,9 +57,14 @@ Page({
       const clientRefId = newClientRefId();
       const now = new Date().toISOString();
       // 构造 Entry（snake_case payload · 对齐 sync-protocol.md §2.1）
+      const ledgerId = getApp().globalData.activeLedgerId;
+      if (!ledgerId) {
+        // COSTRA-165 v1.1：极边缘诊断日志 · 用户仍可记账（走 FALLBACK · 服务端会拒绝非法 ledger_id 但本地不阻断 UI）
+        console.warn('[entry] activeLedgerId missing in globalData · using FALLBACK · auth chain may be broken');
+      }
       await putEntry({
         client_ref_id: clientRefId,
-        ledger_id: getApp().globalData.activeLedgerId || FALLBACK_LEDGER_ID,
+        ledger_id: ledgerId || FALLBACK_LEDGER_ID,
         amount: cents,
         currency: 'CNY',
         type: this.data.type,
@@ -74,7 +80,7 @@ Page({
         client_ref_id: clientRefId,
         base_version: null,
         payload: {
-          ledger_id: getApp().globalData.activeLedgerId || FALLBACK_LEDGER_ID,
+          ledger_id: ledgerId || FALLBACK_LEDGER_ID,
           amount: cents,
           currency: 'CNY',
           type: this.data.type,
