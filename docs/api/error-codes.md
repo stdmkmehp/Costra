@@ -54,7 +54,7 @@
 
 ---
 
-## 2. 错误码完整字典（共 21 条）
+## 2. 错误码完整字典（共 22 条）
 
 > **字段说明**：
 > - `HTTP`：对应 HTTP 状态码  
@@ -87,6 +87,7 @@
 |---|---|---|---|---|---|
 | 9 | `PERMISSION_DENIED` | permission | ❌ | ✅ 提示"权限不足" | 有身份但无权限（如 `viewer` 尝试写 / 非 owner 改家庭） |
 | 10 | `FAMILY_NOT_MEMBER` | permission | ❌ | ✅ 跳回家庭首页 | 访问非自己家庭的资源 |
+| 10b | `FAMILY_PERSONAL_NOT_DELETABLE` | permission | ❌ | ✅ 提示"不可删除" | 尝试删除个人 family（kind='personal' · ADR-0007 §5.7.3 · COSTRA-164 R1）|
 
 ### 2.4 404 · 资源
 
@@ -162,6 +163,7 @@
 | `TOKEN_EXPIRED` | （静默） | — | — |
 | `PERMISSION_DENIED` | 权限不足 | 仅家庭创建者可执行此操作 | — |
 | `FAMILY_NOT_MEMBER` | 无法访问 | 该家庭已移除你的身份 | 返回首页 |
+| `FAMILY_PERSONAL_NOT_DELETABLE` | 不可删除 | 个人账本是默认账本 · 不可删除 | — |
 | `NOT_FOUND` | 记录不存在 | 可能已被删除 | 刷新 |
 | `VERSION_CONFLICT` | 数据冲突 | 该条记录已被其他成员修改 | 查看差异 |
 | `DUPLICATE_RESOURCE` | 已存在 | 该名称已被使用，请换一个 | — |

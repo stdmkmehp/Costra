@@ -149,27 +149,36 @@ export async function findPersonalFamily(
 }
 
 /**
- * 软删 family · kind='personal' 守门（ADR-0007 §5.7.3 早期防御 · v2.0 FU-164-004）
+ * 软删 family · kind='personal' 守门 + owner_id 守门（ADR-0007 §5.7.3 早期防御 · v2.0 FU-164-004）
  *
- * 实现：先 findById 查 kind · kind === 'personal' 时抛 AppError(FAMILY_PERSONAL_NOT_DELETABLE)
- *       否则 UPDATE families SET deleted_at=now(), version=version+1 WHERE id=$1 AND version=$2
+ * 实现：
+ *   1) 先查 kind + owner_id（同时定位资源 + 校验所有权 · O(1) 索引扫描 idx_families_owner）
+ *   2) 不存在 / 不是当前 user 拥有 → throw NOT_FOUND（与 entryRepo.findById 范式一致 · 不暴露存在性）
+ *   3) kind === 'personal' → throw AppError(FAMILY_PERSONAL_NOT_DELETABLE)
+ *   4) UPDATE families SET deleted_at=now(), version=version+1 WHERE id=$1 AND version=$2 AND owner_id=$3
+ *
+ * ⚠️ ownerId 守门：Sprint-2 retro 议题候选 5 实战兑现（review-tech R1 P1-3）·
+ *    防 152 R1 时 entryService.findById 漏写 userId 过滤的同款盲区 ·
+ *    任何 caller 必须传 ownerId · 不接受 null 或 fallback 跳过校验
+ *
  * 本卡不暴露 REST 端点（DELETE /families 推 Sprint-4 COSTRA-201）· 但 service 层接口已就位
  */
 export async function softDelete(
-  input: { familyId: string; version: number },
+  input: { familyId: string; version: number; ownerId: string },
   client?: Runner,
 ): Promise<FamilyEntity> {
   const runner = client ?? exec();
 
-  // 先查 kind
+  // 先查 kind + 校验 owner_id（一次 SELECT 同时做存在性 + 所有权校验）
   const findRes = await runner.query(
     `SELECT id, name, owner_id, kind, created_at, updated_at, deleted_at, version
        FROM families
-      WHERE id = $1 AND deleted_at IS NULL
+      WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL
       LIMIT 1`,
-    [input.familyId],
+    [input.familyId, input.ownerId],
   );
   if (!findRes.rows[0]) {
+    // 不存在 OR 不属于当前 user · 都返 NOT_FOUND（不暴露存在性 · 范式参 entryService.findById）
     const { AppError } = await import('../errors/AppError.js');
     const { ErrorCode } = await import('../errors/ErrorCode.js');
     throw new AppError(ErrorCode.NOT_FOUND, { message: 'family not found' });
@@ -185,13 +194,13 @@ export async function softDelete(
     });
   }
 
-  // 乐观锁软删
+  // 乐观锁软删 · WHERE 同时校验 owner_id（双重防御 · 防 race condition 中途换 owner）
   const res = await runner.query(
     `UPDATE families
         SET deleted_at = now(), version = version + 1
-      WHERE id = $1 AND version = $2 AND deleted_at IS NULL
+      WHERE id = $1 AND version = $2 AND owner_id = $3 AND deleted_at IS NULL
       RETURNING id, name, owner_id, kind, created_at, updated_at, deleted_at, version`,
-    [input.familyId, input.version],
+    [input.familyId, input.version, input.ownerId],
   );
   if (!res.rows[0]) {
     const { AppError } = await import('../errors/AppError.js');
