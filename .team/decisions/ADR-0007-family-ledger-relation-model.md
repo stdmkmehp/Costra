@@ -74,11 +74,13 @@ families ── 1:N ── categories（家庭共享分类）
 
 **核心约定**：
 - 每个 user 可属于 **N 个 family**（schema 上 family_members 已支持 M:N）
-- 每个 user **登录后 server 自动 bootstrap 1 个"个人 family"**（UI 上称"我的账本"，避免"家庭"字样困惑单人用户）
+- 每个 family 有 **kind** 区分（`personal` / `shared` · v1.1 加入 · 见 §4.1 + §5.7）
+- 每个 user **登录后 server 自动 bootstrap 1 个 personal family**（UI 上称"我的账本"，避免"家庭"字样困惑单人用户）
+- **personal family 不可删除**（DB 防御性约束 + server 层 DELETE handler 拒绝 · §5.7 锚定）
 - 每个 family 对应**恰好 1 本账**（ledger） · 产品语义 1:1，schema 物理 1:N（保留扩展空间）
-- 用户**加入新家庭** = 新建 family + family_members(member) + 新 ledger · 旧的"个人 family" **完全保留不动**
+- 用户**加入新家庭 / 创建新家庭** = 新建 `kind='shared'` family + family_members + 新 ledger · 旧的 personal family **完全保留不动**
 - 加入家庭时**可选复制**个人 family 数据到新 family 的 ledger（用户操作 · UI 转圈进度展示 · 见 §5.3）
-- 退出家庭 = `UPDATE family_members SET left_at=now()` · 新 family 的 entries 留在原 family · 个人 family 永远独立
+- 退出 shared family = `UPDATE family_members SET left_at=now()` · 该 family 的 entries 留在原 family · personal family 永远独立
 
 ### 3.2 业界对照
 
@@ -101,9 +103,11 @@ families ── 1:N ── categories（家庭共享分类）
 
 ## 4. 与现有 schema 的关系（关键）
 
-### 4.1 R1 阶段 schema 改动量 = **0**
+### 4.1 R1 阶段 schema 改动 · 1 列 + 1 索引（**v1.1 修订 · 2026-05-27**）
 
-现有 schema 已天然支持方案 R 的全部需求（COSTRA-021 设计前瞻性 + 0001_init.sql L29-78）：
+> **v1.0 → v1.1 修订原因**：Human 追加需求（2026-05-27 11:13）："单人用户的默认家庭需要区别于用户手动创建的家庭，默认家庭用户不可删除，未来可能也会针对默认家庭有一些区别逻辑。" → 必须从数据层面区分两种 family · v1.0 §4.1 "改动量 = 0" 升级为"加 1 列 1 索引"。
+
+现有 schema 已天然支持方案 R 的**关系拓扑**（COSTRA-021 设计前瞻性 + 0001_init.sql L29-78）：
 
 | 关系 | schema 现状 | 方案 R 是否需要 |
 |---|---|---|
@@ -112,14 +116,39 @@ families ── 1:N ── categories（家庭共享分类）
 | `categories : families` | family_id NOT NULL（除系统分类 NULL）· 全家共享 | ✅ 不动 |
 | `entries.client_ref_id` | UNIQUE (ledger_id, client_ref_id) | ✅ 复制时加 `imported:` 前缀防撞 |
 
-**唯一可能要加的列**：
+**新增（v1.1）：family kind 区分**：
 
 ```sql
--- migration 0007（可选 · 也可由 client storage 承担）
-ALTER TABLE users ADD COLUMN active_family_id UUID REFERENCES families(id);
+-- migration 0007（COSTRA-164 范围）
+CREATE TYPE family_kind AS ENUM ('personal', 'shared');
+
+ALTER TABLE families
+  ADD COLUMN kind family_kind NOT NULL DEFAULT 'shared';
+
+-- 防御性约束：每用户最多 1 个 personal family（即使代码 bug 重复 bootstrap 也会被 DB 拦截）
+-- 范式参照 0001_init.sql:99-101 uq_categories_family_name_type
+CREATE UNIQUE INDEX uq_families_one_personal_per_owner
+  ON families (owner_id)
+  WHERE kind = 'personal' AND deleted_at IS NULL;
+
+-- 历史数据回填（dev/staging/prod 表小 · 一次 UPDATE）：
+-- 每个 user 的"第一个自己 owner 的 family"标记为 personal · 其余保持 shared 默认
+WITH ranked AS (
+  SELECT id, owner_id, ROW_NUMBER() OVER (PARTITION BY owner_id ORDER BY created_at ASC, id ASC) AS rn
+  FROM families WHERE deleted_at IS NULL
+)
+UPDATE families SET kind = 'personal' FROM ranked
+WHERE families.id = ranked.id AND ranked.rn = 1;
 ```
 
-**约定**：active_family_id 由 **客户端 storage** 承担（key=`__costra_active_family_id_v1`），server 不持久化 —— 减小 R1 改动面、避免登录串台风险（同一用户两台手机切不同 family）。
+**两种 kind 的语义对照**：
+
+| kind | 创建时机 | 用户可删除 | 用户可改名 | UI 暴露"家庭"字样 | 邀请加入 |
+|---|---|---|---|---|---|
+| `personal` | 首登 server bootstrap | ❌ 拒绝（DB 层无强制 · server 层 DELETE handler 拒）| ✅ 可（R2+ UI）| ❌ R1 完全隐藏 · R2 显示为 "我的账本"或类似中性表述 | ❌ 不允许（产品语义 = 个人空间）|
+| `shared` | 用户主动创建（COSTRA-201）/ 接受邀请加入 | ✅ owner 可解散 | ✅ owner 可改 | ✅ 显示为家庭名（如"小王家"）| ✅ owner 可邀请 |
+
+**约定**：active_family_id 仍由 **客户端 storage** 承担（key=`__costra_active_family_context_v1`），server 不持久化 —— 减小 R1 改动面、避免登录串台风险。
 
 ### 4.2 R2 阶段 schema 改动量 = **极小**
 
@@ -226,6 +255,58 @@ export interface AuthTokenPair {
 
 **OpenAPI 同步修订**：`server/api/openapi.yaml#components.schemas.AuthTokenPair` 加两个字段（COSTRA-164 §2.1 落地）。
 
+### 5.7 family kind 区分规约（v1.1 新增 · 2026-05-27）
+
+#### 5.7.1 数据层（DB schema）
+
+见 §4.1 · ENUM `family_kind ('personal','shared')` + partial unique index `uq_families_one_personal_per_owner`。
+
+#### 5.7.2 创建路径
+
+| 路径 | 触发 | 强制 kind |
+|---|---|---|
+| `wxLogin` bootstrap（首登）| server | `'personal'` · 强制 · 永远只有这一处建 personal · partial unique index 兜底 |
+| `POST /families`（Sprint-4 COSTRA-201）| 用户主动 | `'shared'` · 强制 · 不允许 client 传 kind 参数（DB DEFAULT + server 层强写） |
+| `POST /invites/accept`（Sprint-4 COSTRA-202）| 用户接受邀请 | 加入已有 `'shared'` family · 不创建新 family |
+
+#### 5.7.3 删除 / 解散 路径
+
+| 操作 | personal | shared |
+|---|---|---|
+| `DELETE /families/{id}` | ❌ **拒绝**（错误码 `FAMILY_PERSONAL_NOT_DELETABLE`）| ✅ owner 可解散（CASCADE 软删 · 触发 audit_logs）|
+| `POST /families/{id}/leave`（成员退出）| N/A（personal 只有 owner 自己 · 不存在 leave 语义）| ✅ member 可调（family_members.left_at = now）|
+
+**实装范围**：
+- COSTRA-164：DELETE handler 不在本卡范围（无 /families REST · Sprint-4 落）· 但 **familyRepo.softDelete 接口加 kind 检查**（早期防御）
+- COSTRA-201（Sprint-4）：`DELETE /families/{id}` handler 调 service 层先校验 `kind != 'personal'` · 否则抛 `FAMILY_PERSONAL_NOT_DELETABLE`
+
+#### 5.7.4 改名路径
+
+| 操作 | personal | shared |
+|---|---|---|
+| `PATCH /families/{id}` 改 name | ✅ 允许（用户可改自己个人账本名 · 但不能改 kind） | ✅ owner 可改 |
+
+`kind` 字段**永远不可更新**（server 层强禁 · 防 personal → shared 漂移）· 实装时白名单字段 `['name']`。
+
+#### 5.7.5 邀请路径
+
+| 操作 | personal | shared |
+|---|---|---|
+| `POST /families/{id}/invites` | ❌ **拒绝**（错误码 `FAMILY_PERSONAL_NO_INVITE` · 个人空间不允许邀请他人）| ✅ owner 可发起邀请 |
+
+#### 5.7.6 UI 暴露规约
+
+- **R1**（Sprint-3 · COSTRA-165）：用户只见唯一 personal family（"我的账本"）· UI 不出现"家庭"字样 · 不出现切换器
+- **R2**（Sprint-4 · COSTRA-201/202/204）：mine 页"邀请家人"入口仅当 `当前 active family.kind == 'personal' || 用户是某 shared family 的 owner` 时显示（产品决策点 · 后续讨论）· home 顶部 family 切换器列出全部 active family · personal family 显示为"我的账本"图标差异化
+- **R3**（Sprint-5+）：可选私密 ledger 标记（personal family 内多 ledger） · 不在本 ADR 范围
+
+#### 5.7.7 未来扩展（不在 R1/R2 范围）
+
+`family_kind` ENUM 设计为可扩展：
+- 候选未来 kind：`'work'`（工作账户分离 · 个人记账常见需求）· `'project'`（一次性项目临时账 · 装修 / 婚礼 / 旅行）· `'shared_external'`（与非家人成员共享 · 如室友合租分账）
+- 添加新 kind 仅需 `ALTER TYPE family_kind ADD VALUE 'xxx'` · 应用层逐步接入即可
+- partial unique index `uq_families_one_personal_per_owner` 仅约束 personal · 不影响其他 kind 数量
+
 ---
 
 ## 6. R1 实装锚点（Sprint-3 双卡）
@@ -323,6 +404,7 @@ export interface AuthTokenPair {
 | 版本 | 日期 | 变更 |
 |---|---|---|
 | v1.0 | 2026-05-27 | 首版。Human + Orchestrator 4 轮选项收敛（X 单容器 → P ledger 共享开关 → Q 汇总层 → R user 多 family/family 1:1 ledger）· 最终采纳方案 R · 同步起草 COSTRA-164/165 双卡 dispatch |
+| **v1.1** | **2026-05-27 11:13** | Human 追加需求 "默认家庭需区别于用户手动创建的家庭 · 默认家庭不可删除 · 未来可能针对默认家庭有区别逻辑"。修订内容：① §3.1 核心约定段加 `kind` 概念 + personal 不可删铁律；② §4.1 R1 schema 改动量从 0 → 加 `family_kind` ENUM + `kind` 列 + `uq_families_one_personal_per_owner` partial unique index + 历史回填策略；③ 新增 §5.7 family kind 区分规约（数据层 / 创建 / 删除 / 改名 / 邀请 / UI / 未来扩展）；④ 联动修订：COSTRA-164 dispatch §2.1 加 migration 0007 + familyRepo kind-aware · COSTRA-165 dispatch 不变（client 不感知 kind · UI 暴露差异留 R2） |
 
 ---
 

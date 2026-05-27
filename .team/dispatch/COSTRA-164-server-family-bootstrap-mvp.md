@@ -55,35 +55,115 @@ async function wxLogin(code: string): Promise<AuthTokenPair> {
 
 ---
 
-## §2 Scope（5 项 · 估点 3 · INVEST small）
+## §2 Scope（6 项 · 估点 3 · INVEST small）
 
-### 2.1 主交付（5 项 · 必交）
+> **v1.1 修订**（2026-05-27 11:13）：Human 追加需求 "默认家庭需区别于用户手动创建的家庭 · 默认家庭不可删除"。新增 §2.1 A0 migration · §2.1 A familyRepo 加 kind 参数 · §2.1 E 单测 +T9 kind 区分。估点保持 3pt（小幅 schema 改动 · 无回归风险）· 时间盒 +30min ≤ 180min。
 
-#### A · 新建 familyRepo + ledgerRepo
+### 2.1 主交付（6 项 · 必交）
+
+#### A0 · migration 0007 · family_kind ENUM + kind 列 + partial unique index（**v1.1 新增**）
+
+新建 `server/db/migrations/0007_families_kind.sql`：
+
+```sql
+-- =========================================================================
+-- Costra · 0007 families 表加 kind 列（个人家庭 vs 共享家庭区分）
+-- =========================================================================
+-- 卡号：COSTRA-164 · ADR-0007 v1.1 §4.1 + §5.7
+-- 触发：Human 2026-05-27 追加需求 · 个人 family 与用户主动创建 family 在产品行为上有差异
+--   （不可删 / 不可邀请 / UI 暴露差异 / 未来可能更多差异逻辑）· 必须从数据层区分
+--
+-- 设计决策：
+--   ① ENUM 不用 BOOLEAN：未来可能扩展 'work'/'project'/'shared_external' · ENUM ALTER TYPE ADD VALUE 比加列轻
+--   ② DEFAULT 'shared'：用户主动创建走 DEFAULT · personal 由 server 显式赋值（authService bootstrap）
+--   ③ partial unique index 防御性：每用户最多 1 个 personal · 即使代码 bug 重复 INSERT 也被 DB 拦截
+--   ④ 历史回填：dev/staging/prod 表小（家庭记账数据量极低）· 一次 UPDATE 安全
+-- =========================================================================
+
+BEGIN;
+
+-- ─── 1. 创建 ENUM 类型 ───────────────────────────────────────────────────
+-- 'personal'：server bootstrap 创建的个人 family · 不可删 · 不可邀请
+-- 'shared'：用户主动创建（POST /families · COSTRA-201 Sprint-4）/ 接受邀请加入
+DO $$ BEGIN
+  CREATE TYPE family_kind AS ENUM ('personal', 'shared');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- ─── 2. 加列（默认 shared 兼容存量数据语义）───────────────────────────────
+ALTER TABLE families
+  ADD COLUMN IF NOT EXISTS kind family_kind NOT NULL DEFAULT 'shared';
+
+-- ─── 3. 历史回填 · 每用户第一个自己 owner 的 family 标记为 personal ────────
+-- 范式参 0006_entries_change_seq.sql §3 ROW_NUMBER 回填
+WITH ranked AS (
+  SELECT id, owner_id,
+    ROW_NUMBER() OVER (PARTITION BY owner_id ORDER BY created_at ASC, id ASC) AS rn
+  FROM families
+  WHERE deleted_at IS NULL
+)
+UPDATE families
+SET kind = 'personal'
+FROM ranked
+WHERE families.id = ranked.id AND ranked.rn = 1;
+
+-- ─── 4. 防御性约束：每用户最多 1 个 personal family ─────────────────────
+-- 范式参 0001_init.sql:99-101 uq_categories_family_name_type partial unique index
+CREATE UNIQUE INDEX IF NOT EXISTS uq_families_one_personal_per_owner
+  ON families (owner_id)
+  WHERE kind = 'personal' AND deleted_at IS NULL;
+
+COMMIT;
+```
+
+**回填风险**：
+- 当前 dev/staging/prod 数据库 `families` 表行数：dev 测试数据 ~5 行 / staging 联合实测数据 ~3 行 / prod 0 行（部署后无真实业务）· UPDATE 全表毫秒级
+- 反向兼容：`kind` 字段对老 client 不可见（OpenAPI 不暴露 · server 内部用）· 不破坏任何现有调用
+
+#### A · 新建 familyRepo + ledgerRepo（**v1.1 加 kind 参数**）
 
 新建 `server/src/repositories/familyRepo.ts`：
 
 ```typescript
+export type FamilyKind = 'personal' | 'shared';
+
 export interface FamilyEntity {
   id: string;
   name: string;
   ownerId: string;
+  kind: FamilyKind;        // v1.1 新增
   createdAt: Date;
   updatedAt: Date;
   version: number;
 }
 
-// 创建个人 family + family_members(owner) · 单事务（事务由调用方传入 client?: Runner）
+// 创建个人 family + family_members(owner) · 单事务 · kind 强制 'personal'
+// 调用方不传 kind · 内部硬编码（防漂移 · 见 ADR-0007 §5.7.2 创建路径铁律）
+// 防御层：partial unique index uq_families_one_personal_per_owner 兜底
+//   · 若 race condition 重复 INSERT 会触发 unique violation · service 层应捕获并 fallback findPersonal
 export async function createPersonalFamily(input: { ownerId: string; name: string }, client?: Runner): Promise<FamilyEntity>;
 
-// 查 user 的所有 active families（left_at IS NULL · 排序 created_at ASC）
-export async function listActiveFamiliesByUser(userId: string, client?: Runner): Promise<FamilyEntity[]>;
+// 创建共享 family（Sprint-4 COSTRA-201 用 · 本卡声明接口 · 不导出）
+// 故意不在本卡导出 · 防止误用 · 待 COSTRA-201 时启用
+// export async function createSharedFamily(...): Promise<FamilyEntity>;
 
-// 查 user 的"个人 family"（owner_id = user_id · created_at ASC 第一个）
+// 查 user 的所有 active families（left_at IS NULL · 排序 created_at ASC）
+// 可选 filter by kind（Sprint-4 切换器 UI 用）
+export async function listActiveFamiliesByUser(
+  userId: string,
+  filter?: { kind?: FamilyKind },
+  client?: Runner
+): Promise<FamilyEntity[]>;
+
+// 查 user 的"个人 family"（kind='personal' AND owner_id=user_id · 至多 1 个 · partial unique index 保证）
 export async function findPersonalFamily(userId: string, client?: Runner): Promise<FamilyEntity | null>;
 ```
 
-新建 `server/src/repositories/ledgerRepo.ts`：
+**注意**：
+- `findPersonalFamily` 必须用 `WHERE owner_id=$1 AND kind='personal' AND deleted_at IS NULL` 查询 · **不再用 created_at ASC 取第一个**（v1.0 的 fallback 逻辑废弃 · partial unique index 保证唯一）
+- v1.0 的 §7 风险条目 "多个个人 family 边缘场景（T6）" 在 v1.1 不复存在 · DB 层强约束兜底 · 测试 T6 改为校验 partial unique index 行为
+
+新建 `server/src/repositories/ledgerRepo.ts`（**与 v1.0 保持不变**）：
 
 ```typescript
 export interface LedgerEntity {
@@ -154,7 +234,7 @@ async function wxLogin(code: string): Promise<AuthTokenPair> {
 - 整个 user upsert + family bootstrap 在**同一事务**内（确保 user 创建成功但 family/ledger 失败时回滚 · 防数据漂移）
 - `withTransaction` 工具如未存在需在本卡新建（参 `server/src/db/index.ts` 现有 pg client · 包装成 `BEGIN ... COMMIT/ROLLBACK`）
 - 重登场景检查 family 存在性 · O(1) 索引扫描（`idx_families_owner` 已在 0001_init.sql L38）
-- "个人 family" 判定标准：`owner_id = user_id` AND `deleted_at IS NULL` · `created_at ASC` 第一个（防多个个人 family 边缘场景）
+- "个人 family" 判定标准（v1.1）：`kind='personal' AND deleted_at IS NULL AND owner_id=user_id` · partial unique index `uq_families_one_personal_per_owner` 保证至多 1 行 · 不再用 created_at ASC fallback
 
 #### C · AuthTokenPair 接口 + OpenAPI schema 同步
 
@@ -219,20 +299,23 @@ USER_VISIBLE_FAMILY_LIMIT: number;    // 默认 3 · 应用层校验 · MVP 限�
 
 **本卡仅添加配置 + 加载逻辑**（占位 · 不做强校验逻辑）· 校验逻辑由 Sprint-4 COSTRA-201 `POST /families` 实装时落地。
 
-#### E · 单测 ≥ 8 测
+#### E · 单测 ≥ 9 测（**v1.1 +T9 · T6 重写为 partial unique index 行为校验**）
 
 新建 `server/test/auth-family-bootstrap.test.ts`：
 
 | 编号 | 测试点 | 期望 |
 |---|---|---|
-| T1 | 首登触发 bootstrap | response 含 default_family_id + default_ledger_id（非空 UUID）· DB families 表 +1 行（owner_id=user_id, name='我的账本'）· family_members 表 +1 行（role='owner', left_at IS NULL）· ledgers 表 +1 行（family_id=新 family id, name='日常账本', currency='CNY'）|
-| T2 | 重登命中已有 family | response 含的 default_family_id === 首登的 id · DB 不新增 family/ledger 行 |
+| T1 | 首登触发 bootstrap | response 含 default_family_id + default_ledger_id（非空 UUID）· DB families 表 +1 行（owner_id=user_id, name='我的账本', **kind='personal'**）· family_members 表 +1 行（role='owner', left_at IS NULL）· ledgers 表 +1 行（family_id=新 family id, name='日常账本', currency='CNY'）|
+| T2 | 重登命中已有 family | response 含的 default_family_id === 首登的 id · DB 不新增 family/ledger 行 · familyRepo.findPersonalFamily 走 `kind='personal'` WHERE 子句 |
 | T3 | 重登 · 个人 family 存在但 ledger 缺失（数据异常） | 自愈补建 ledger · response 返回新建的 ledger_id |
 | T4 | bootstrap 事务回滚（mock ledger create 失败） | user 也回滚 · DB 无任何残留行 |
 | T5 | upsert 复用现有 user（已有 wx_openid） | 不创建新 user · 但 family bootstrap 正常按"重登命中"分支走 |
-| T6 | 多个个人 family 边缘场景（手工注入两个 owner_id=user_id 的 families） | findPersonalFamily 取 created_at ASC 第一个 · 行为确定可重现 |
+| **T6** | **partial unique index 拦截重复 personal 创建**（v1.1 重写）| 直接调 `familyRepo.createPersonalFamily` 两次同一 owner · **第二次抛 unique violation** · service 层应捕获并 fallback `findPersonalFamily` 返回首次创建的 family（race condition 自愈）|
 | T7 | response schema 校验（OpenAPI 一致性）| AuthTokenPair fixture 含 default_family_id + default_ledger_id required · @fastify/swagger 或手测脚本 |
 | T8 | 整体 wxLogin happy path（含微信 mock + Redis mock + DB pg-mem） | 端到端首登成功 · 含 access_token + family/ledger 两 id |
+| **T9** | **kind 字段持久化校验**（v1.1 新增）| 首登后查 DB：`SELECT kind FROM families WHERE owner_id=:user_id` 返 `'personal'` · 用户主动创建 family（mock）走 DEFAULT 'shared' 分支 · 校验两条创建路径 kind 严格区分 · 同时校验 `kind` 不可被 PATCH（白名单字段不含 kind）|
+
+**pg-mem 兼容性提醒**：pg-mem 支持 ENUM type + partial unique index · 已在 0006 migration 实战验证（ADR-0006 §2.1 说明）· T6 应能复现 unique violation。
 
 ### 2.2 不在本卡范围
 
@@ -246,26 +329,28 @@ USER_VISIBLE_FAMILY_LIMIT: number;    // 默认 3 · 应用层校验 · MVP 限�
 
 ---
 
-## §3 DoD（19 项）
+## §3 DoD（21 项 · v1.1 +G16 + T9 + 反向验证 ③）
 
-### G1~G8 + G15 标准闸门（9 项）
+### G1~G8 + G15 + G16 标准闸门（10 项）
 
 - **G1** TypeScript typecheck 全绿（`cd server && npm run typecheck`）
 - **G2** ESLint 全绿（`cd server && npm run lint`）
 - **G3** OpenAPI lint 全绿（`cd server && npm run openapi:lint`）+ AuthTokenPair 新增字段 schema 合法
-- **G4** server 单测全绿（`cd server && npm test` · 含本卡新增 T1~T8）
-- **G5** schema-check 全绿（无 schema migration · 应通过）
+- **G4** server 单测全绿（`cd server && npm test` · 含本卡新增 T1~T9）
+- **G5** schema-check 全绿（含本卡 0007 migration · 校验 ENUM + partial unique index 在 pg-mem 与真 PG 行为一致）
 - **G6** whitelist-check 全绿（路径白名单 + 规则 D OpenAPI vs fastify prefix）
 - **G7** OpenAPI 实装齐全（AuthTokenPair 新字段 server 实装一致）
 - **G8** x-deferred 不新增（本卡不引入新 deferred · /families REST 仍是 deferred 但不动它）
 - **G15** D-016 反例预防（commit 前 `git status -s | grep '.team/members/' | wc -l` = 0）
+- **G16**（v1.1 新增）migration 0007 幂等性 · 在已迁移过的 DB 上重跑应无副作用：`DO $$ BEGIN ... EXCEPTION WHEN duplicate_object THEN NULL; END $$` 包裹 ENUM 创建 · `IF NOT EXISTS` 包裹索引和列
 
-### T1~T8 单测（8 项 · 见 §2.1 E）
+### T1~T9 单测（9 项 · 见 §2.1 E）
 
-### 反向验证（2 项）
+### 反向验证（3 项 · v1.1 +③）
 
 - ① 临时关闭事务包裹（user upsert 与 family bootstrap 分两个事务） → T4 应 FAIL（mock ledger create 失败时 user 残留）→ revert
 - ② 临时让 findPersonalFamily 总返 null → T2 应 FAIL（重登也会重复 bootstrap）→ revert
+- **③**（v1.1 新增）临时移除 partial unique index `uq_families_one_personal_per_owner` → T6 应 FAIL（重复 INSERT 不抛 unique violation）→ revert
 
 ### D-025 反模式扫描（无命中 · 仅声明）
 
@@ -294,6 +379,7 @@ USER_VISIBLE_FAMILY_LIMIT: number;    // 默认 3 · 应用层校验 · MVP 限�
 ### §5.1 工作区铁律
 
 - ✅ 可写：
+  - `server/db/migrations/0007_families_kind.sql`（**新建** · v1.1 加入 · ADR-0007 §4.1 锚定）
   - `server/src/services/authService.ts`（wxLogin 扩展）
   - `server/src/repositories/familyRepo.ts`（**新建**）
   - `server/src/repositories/ledgerRepo.ts`（**新建**）
@@ -308,19 +394,20 @@ USER_VISIBLE_FAMILY_LIMIT: number;    // 默认 3 · 应用层校验 · MVP 限�
   - `server/src/routes/sync.ts`（同上）
   - `server/src/routes/entries.ts`（152/153 已稳定 · 本卡不动）
   - `miniprogram/`（COSTRA-165 范围）
-  - `server/db/migrations/`（ADR-0007 §4.1 锚定 R1 改动量 = 0）
+  - `server/db/migrations/0001_init.sql ~ 0006_*.sql`（仅允许新建 0007 · 旧 migration 不可改）
   - `infra/`
   - 其他 `.team/members/{other-role}/`
 
 ### §5.2 INVEST small（3 点）
 
-- 时间盒 R1 实装 ≤ 150 分钟（含 familyRepo + ledgerRepo 新建 · withTransaction 工具评估 · authService 改造 · 8 测）
-- 5 项 scope 单点修改密度可控 · 现有范式齐全（userRepo 模板 + authService 当前清晰）
+- 时间盒 R1 实装 ≤ 180 分钟（v1.1 +30min · 含 0007 migration + familyRepo kind 参数 + 9 测 + 反向验证 ③ · 仍在 small 范围）
+- 6 项 scope 单点修改密度可控 · 现有范式齐全（userRepo 模板 + 0006 migration 模板 + authService 当前清晰）
 
 ### §5.3 已知未知 / follow-up 候选
 
 - **FU-164-WITH-TRANSACTION-UTIL**（如本卡新建 withTransaction 工具）：评估是否抽出独立 plugin / utility 供其他 service 复用 · 留 Sprint-4 评估
 - **FU-164-AUTH-RESPONSE-VERSIONING**：response 加字段是非破坏性扩展 · 但客户端旧版本会忽略新字段 · 留 D-026 staging-prod-merged-acceptance 时核验老 client 兼容性
+- **FU-164-FAMILY-KIND-CHECK-MIDDLEWARE**（v1.1 新增）：Sprint-4 COSTRA-201 落 `DELETE /families/{id}` 时 · 评估抽出 `requireKind('shared')` 中间件统一守门 · 当前由 service 层判定即可
 
 ### §5.4 D-016 同轮兑现 · D-018 单装扮档单 commit
 
@@ -343,7 +430,8 @@ USER_VISIBLE_FAMILY_LIMIT: number;    // 默认 3 · 应用层校验 · MVP 限�
 - **withTransaction 工具是否已存在**：本卡需先核查 `server/src/db/` · 若无需新建 · 若有则复用 · R1 实装期评估
 - **AuthTokenPair 加字段非破坏性兼容**：旧 client 会忽略新字段 · 但旧 client 仍走 `__costra_family_id_v1` 旧 key · 需 165 一并清除迁移（COSTRA-165 §2.1 锚定）
 - **bootstrap 事务时延**：单事务 < 30ms 预期 · 若实测 > 100ms（如 PG 慢）需评估异步化（不在本卡 · 留观察）
-- **多个个人 family 边缘场景（T6）**：当前 schema 不限制同 user 创建多个 owner=self 的 family · 取 created_at ASC 第一个是确定行为 · 若未来出现 SaaS 漂移需新加 unique 约束（留 Sprint-4+ Retro）
+- **多个个人 family 边缘场景**（v1.0 风险 → v1.1 已消除）：partial unique index `uq_families_one_personal_per_owner` DB 层强约束兜底 · 已不复存在
+- **migration 0007 在 prod 部署后跑**（v1.1 新增）：当前 prod 已部署但无业务数据 · 跑 migration 0007 安全（历史回填 UPDATE 0 行）· 但流程上必须**先在 staging 跑过 + COSTRA-164 R1 APPROVE + 再走 deploy-all.sh §6 06-migrate.sh** · 不可在 prod 直接跑未审 migration · 范式参 0006 v1.2 升级流程（commit 31fb893）
 
 ---
 
@@ -364,3 +452,4 @@ USER_VISIBLE_FAMILY_LIMIT: number;    // 默认 3 · 应用层校验 · MVP 限�
 | 版本 | 时间 | 变更 |
 |---|---|---|
 | v1.0 | 2026-05-27 | 首版立档（基于 ADR-0007 v1.0 §6.1 实装锚点 · Sprint-3 头部第 3 张派单） |
+| **v1.1** | **2026-05-27 11:13** | Human 追加需求 "默认家庭需区别于用户手动创建的家庭 · 默认家庭不可删除"（ADR-0007 v1.1 §4.1 + §5.7 落地）。变更：① §2 scope 5项 → 6项 · 新增 §2.1 A0 migration 0007（family_kind ENUM + kind 列 + uq_families_one_personal_per_owner partial unique index + 历史回填）；② §2.1 A familyRepo 加 kind 参数 + FamilyKind 类型 + listActiveFamiliesByUser filter；③ §2.1 E 单测 8 测 → 9 测（T6 重写为 partial unique index 行为校验 · T9 新增 kind 持久化校验）；④ §3 DoD 19 项 → 21 项（+G16 migration 幂等性 · +反向验证 ③）；⑤ §5.1 工作区开放 0007 migration 写权限；⑥ §5.2 时间盒 150min → 180min（仍在 small 范围）；⑦ §5.3 +FU-164-FAMILY-KIND-CHECK-MIDDLEWARE；⑧ §7 风险删除多个 personal family 条目（partial unique index 解决）+ 新增 migration 在 prod 部署风险条目 |
