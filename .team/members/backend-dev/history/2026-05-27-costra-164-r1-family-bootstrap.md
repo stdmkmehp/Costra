@@ -4,7 +4,7 @@
 > **dispatch**：v2.1 · `.team/dispatch/COSTRA-164-server-family-bootstrap-mvp.md`
 > **决策锚定**：ADR-0007 v1.1 family-ledger 关系模型（方案 R）
 > **Card-Review**：R1 25/30 PASS-WITH-FOLLOWUP（6 项 FU 全落地修订到 v2.0）→ R2 28/30 PASS-WITH-FOLLOWUP（v2.1 残留清理）
-> **commit**：`<待 Orchestrator 收尾时填入>`
+> **commit**：`2e71dc8`
 > **耗时**：~158min（subagent 81 工具调用 · ≤ 180min 时间盒）
 > **D-016 反例**：第 N 次（subagent 完成代码但未做 commit + state/history 归档 · Orchestrator 接管收尾 · Sprint-2 末 retro 议题"SBAI 装扮档 7 点卡需在 R1 内分阶段 commit"实战预警）
 
