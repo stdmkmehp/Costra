@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Costra prod bootstrap · §5 跑 migrations（dump → migrate → verify 三件套）
+# Costra prod bootstrap · §5 跑 migrations（幂等 · dump → migrate → verify）
 # =============================================================================
 # 对应手册：infra/prod-bootstrap-compose.md §5
 #
 # D-026 §2.3 C3 三件套：每次跑 migration 前都先 pg_dump（即使首次为空）
+#
+# 幂等机制：
+#   每个 SQL 文件自身保证幂等（IF NOT EXISTS / ON CONFLICT / DO $$ EXCEPTION 等）。
+#   无需跟踪表，直接顺序执行所有 migration 文件即可安全重跑。
 #
 # 用法：
 #   ./06-migrate.sh                # 标准跑（dump → migrate → verify）
@@ -34,7 +38,7 @@ while [[ $# -gt 0 ]]; do
     --network)          COMPOSE_NETWORK=$2; shift 2 ;;
     --dry-run|-y|--yes) shift ;;
     -h|--help)
-      grep '^#' "$0" | head -16
+      grep '^#' "$0" | head -20
       exit 0
       ;;
     *) die "未知参数: $1" ;;
@@ -58,7 +62,7 @@ PG_COSTRA_PW=$(grep '^PG_COSTRA_PW=' "${COSTRA_ENV_FILE}" | cut -d= -f2-)
 # =============================================================================
 # 主流程
 # =============================================================================
-print_section_header "06 · 跑 migrations（§5）"
+print_section_header "06 · 跑 migrations（§5 · SQL 自身幂等）"
 
 # --- Step 1: dump（D-026 §2.3 C3 三件套）---
 if [[ "${SKIP_DUMP}" == "1" ]]; then
@@ -66,7 +70,9 @@ if [[ "${SKIP_DUMP}" == "1" ]]; then
 else
   log_step "[1/3] pg_dump 备份当前 schema + 数据"
 
-  DUMP_FILE="${COSTRA_DATA}/backups/pre-migrate-$(date +%Y%m%d-%H%M%S).sql"
+  DUMP_DIR="${COSTRA_DATA}/backups"
+  mkdir -p "${DUMP_DIR}"
+  DUMP_FILE="${DUMP_DIR}/pre-migrate-$(date +%Y%m%d-%H%M%S).sql"
   run_cmd bash -c "docker exec '${PG_CONTAINER}' pg_dump -U costra -d costra > '${DUMP_FILE}'"
 
   if [[ "${DRY_RUN}" != "1" ]]; then
@@ -75,8 +81,8 @@ else
   fi
 fi
 
-# --- Step 2: migrate ---
-log_step "[2/3] 跑 migrations（${MIGRATIONS_DIR}/*.sql）"
+# --- Step 2: migrate（顺序执行所有 SQL · 每个文件自身幂等）---
+log_step "[2/3] 顺序执行 migrations（${MIGRATIONS_DIR}/*.sql）"
 
 if [[ ! -d "${MIGRATIONS_DIR}" ]]; then
   die "migrations 目录不存在：${MIGRATIONS_DIR}"
@@ -88,23 +94,27 @@ if [[ -z "${MIGRATION_FILES}" ]]; then
 fi
 
 MIGRATION_COUNT=$(echo "${MIGRATION_FILES}" | wc -l | tr -d ' ')
-log_info "找到 ${MIGRATION_COUNT} 个 migration 文件"
+log_info "找到 ${MIGRATION_COUNT} 个 migration 文件（全部顺序执行 · SQL 自身保证幂等）"
 
-# 用 postgres:15-alpine 临时容器跑 psql · 通过 compose 网络连 costra-postgres
+# 生成执行脚本
+MIGRATE_SCRIPT='set -e
+'
+while IFS= read -r filepath; do
+  [[ -z "${filepath}" ]] && continue
+  fname=$(basename "${filepath}")
+  MIGRATE_SCRIPT+="echo \"=== ${fname} ===\"
+psql -v ON_ERROR_STOP=1 -h postgres -U costra -d costra -f \"/migrations/${fname}\"
+"
+done <<< "${MIGRATION_FILES}"
+
 run_cmd docker run --rm \
   --network "${COMPOSE_NETWORK}" \
   -v "${MIGRATIONS_DIR}:/migrations:ro" \
   -e PGPASSWORD="${PG_COSTRA_PW}" \
   postgres:15-alpine \
-  bash -c '
-    set -e
-    for f in /migrations/*.sql; do
-      echo "=== $(basename $f) ==="
-      psql -v ON_ERROR_STOP=1 -h postgres -U costra -d costra -f "$f"
-    done
-  '
+  bash -c "${MIGRATE_SCRIPT}"
 
-log_success "${MIGRATION_COUNT} 个 migration 全部 successfully"
+log_success "${MIGRATION_COUNT} 个 migration 执行完成"
 
 # --- Step 3: verify ---
 log_step "[3/3] 验证表 + 序列（0006 entries_change_seq 是关键）"
@@ -140,5 +150,5 @@ fi
 # 总结
 # =============================================================================
 echo ""
-log_success "migrations 完成 · 可以进入 §6 (07-issue-cert.sh)"
+log_success "migrations 完成（SQL 自身幂等 · 可安全重跑）· 可以进入 §6 (07-issue-cert.sh)"
 exit 0

@@ -45,3 +45,5 @@ key/
 minitest/
 
 .steve/
+
+.agent

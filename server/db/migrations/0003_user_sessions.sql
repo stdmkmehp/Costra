@@ -1,5 +1,5 @@
 -- =========================================================================
--- Costra DB Schema · 0003 · user_sessions (refresh_token 登记)
+-- Costra DB Schema · 0003 · user_sessions (refresh_token 登记)（幂等 · 可安全重跑）
 -- Owner: Backend-Agent · 卡号: COSTRA-101 · 日期: 2026-04-23
 -- 约束来源: ADR-0004 §3 Token · docs/api/ttl-policy.md §4.2 JWT 签发
 -- 补齐 0001_init.sql 未创建的 refresh_token 持久化层
@@ -17,7 +17,7 @@
 
 BEGIN;
 
-CREATE TABLE user_sessions (
+CREATE TABLE IF NOT EXISTS user_sessions (
     jti             UUID PRIMARY KEY,
     user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     issued_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -28,11 +28,11 @@ CREATE TABLE user_sessions (
 );
 
 -- 热路径：按 user_id 查所有未吊销 session（登出全部用 / 管理端查看在线）
-CREATE INDEX idx_user_sessions_user_active
+CREATE INDEX IF NOT EXISTS idx_user_sessions_user_active
     ON user_sessions (user_id) WHERE revoked_at IS NULL;
 
 -- 运维清理：按 expires_at 批量清理过期 session
-CREATE INDEX idx_user_sessions_expires
+CREATE INDEX IF NOT EXISTS idx_user_sessions_expires
     ON user_sessions (expires_at) WHERE revoked_at IS NULL;
 
 COMMIT;

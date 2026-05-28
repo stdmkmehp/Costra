@@ -1,5 +1,5 @@
 -- =========================================================================
--- Costra DB Schema v1 · 初始化迁移
+-- Costra DB Schema v1 · 初始化迁移（幂等 · 可安全重跑）
 -- Owner: Backend-Agent · 卡号: COSTRA-021 · 日期: 2026-04-21
 -- 约束来源: ADR-0004 (金额分/UTC时间/软删/乐观锁/审计)
 -- Postgres >= 15
@@ -11,7 +11,7 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";    -- gen_random_uuid()
 CREATE EXTENSION IF NOT EXISTS "citext";       -- 大小写不敏感邮箱/昵称
 
 -- ---------------- users ----------------
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     wx_openid       TEXT UNIQUE NOT NULL,
     wx_unionid      TEXT UNIQUE,
@@ -23,10 +23,10 @@ CREATE TABLE users (
     deleted_at      TIMESTAMPTZ,
     version         INTEGER NOT NULL DEFAULT 1
 );
-CREATE INDEX idx_users_updated_at ON users (updated_at);
+CREATE INDEX IF NOT EXISTS idx_users_updated_at ON users (updated_at);
 
 -- ---------------- families ----------------
-CREATE TABLE families (
+CREATE TABLE IF NOT EXISTS families (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name            TEXT NOT NULL CHECK (char_length(name) BETWEEN 1 AND 32),
     owner_id        UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
@@ -35,13 +35,16 @@ CREATE TABLE families (
     deleted_at      TIMESTAMPTZ,
     version         INTEGER NOT NULL DEFAULT 1
 );
-CREATE INDEX idx_families_owner ON families (owner_id);
-CREATE INDEX idx_families_updated_at ON families (updated_at);
+CREATE INDEX IF NOT EXISTS idx_families_owner ON families (owner_id);
+CREATE INDEX IF NOT EXISTS idx_families_updated_at ON families (updated_at);
 
 -- ---------------- family_members ----------------
-CREATE TYPE family_role AS ENUM ('owner', 'member', 'viewer');
+DO $$ BEGIN
+  CREATE TYPE family_role AS ENUM ('owner', 'member', 'viewer');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
-CREATE TABLE family_members (
+CREATE TABLE IF NOT EXISTS family_members (
     family_id       UUID NOT NULL REFERENCES families(id) ON DELETE CASCADE,
     user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     role            family_role NOT NULL,
@@ -49,10 +52,10 @@ CREATE TABLE family_members (
     left_at         TIMESTAMPTZ,
     PRIMARY KEY (family_id, user_id)
 );
-CREATE INDEX idx_family_members_user ON family_members (user_id) WHERE left_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_family_members_user ON family_members (user_id) WHERE left_at IS NULL;
 
 -- ---------------- family_invites ----------------
-CREATE TABLE family_invites (
+CREATE TABLE IF NOT EXISTS family_invites (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     family_id       UUID NOT NULL REFERENCES families(id) ON DELETE CASCADE,
     inviter_id      UUID NOT NULL REFERENCES users(id),
@@ -63,10 +66,10 @@ CREATE TABLE family_invites (
     used_by         UUID REFERENCES users(id),
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_family_invites_family ON family_invites (family_id);
+CREATE INDEX IF NOT EXISTS idx_family_invites_family ON family_invites (family_id);
 
 -- ---------------- ledgers ----------------
-CREATE TABLE ledgers (
+CREATE TABLE IF NOT EXISTS ledgers (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     family_id       UUID NOT NULL REFERENCES families(id) ON DELETE CASCADE,
     name            TEXT NOT NULL CHECK (char_length(name) BETWEEN 1 AND 32),
@@ -76,13 +79,16 @@ CREATE TABLE ledgers (
     deleted_at      TIMESTAMPTZ,
     version         INTEGER NOT NULL DEFAULT 1
 );
-CREATE INDEX idx_ledgers_family ON ledgers (family_id);
-CREATE INDEX idx_ledgers_updated_at ON ledgers (updated_at);
+CREATE INDEX IF NOT EXISTS idx_ledgers_family ON ledgers (family_id);
+CREATE INDEX IF NOT EXISTS idx_ledgers_updated_at ON ledgers (updated_at);
 
 -- ---------------- categories ----------------
-CREATE TYPE category_type AS ENUM ('income', 'expense');
+DO $$ BEGIN
+  CREATE TYPE category_type AS ENUM ('income', 'expense');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
-CREATE TABLE categories (
+CREATE TABLE IF NOT EXISTS categories (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     family_id       UUID REFERENCES families(id) ON DELETE CASCADE,  -- NULL = 系统预设
     name            TEXT NOT NULL CHECK (char_length(name) BETWEEN 1 AND 16),
@@ -96,16 +102,19 @@ CREATE TABLE categories (
     deleted_at      TIMESTAMPTZ,
     version         INTEGER NOT NULL DEFAULT 1
 );
-CREATE UNIQUE INDEX uq_categories_family_name_type
+CREATE UNIQUE INDEX IF NOT EXISTS uq_categories_family_name_type
     ON categories (COALESCE(family_id, '00000000-0000-0000-0000-000000000000'), name, type)
     WHERE deleted_at IS NULL;
-CREATE INDEX idx_categories_family ON categories (family_id);
-CREATE INDEX idx_categories_updated_at ON categories (updated_at);
+CREATE INDEX IF NOT EXISTS idx_categories_family ON categories (family_id);
+CREATE INDEX IF NOT EXISTS idx_categories_updated_at ON categories (updated_at);
 
 -- ---------------- entries ----------------
-CREATE TYPE entry_type AS ENUM ('income', 'expense', 'transfer');
+DO $$ BEGIN
+  CREATE TYPE entry_type AS ENUM ('income', 'expense', 'transfer');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
-CREATE TABLE entries (
+CREATE TABLE IF NOT EXISTS entries (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     ledger_id       UUID NOT NULL REFERENCES ledgers(id) ON DELETE CASCADE,
     amount          BIGINT NOT NULL CHECK (amount > 0),              -- 单位: 分
@@ -122,15 +131,18 @@ CREATE TABLE entries (
     client_ref_id   TEXT,                                             -- 客户端离线本地 id，去重用
     CONSTRAINT uq_entries_ledger_client_ref UNIQUE (ledger_id, client_ref_id)
 );
-CREATE INDEX idx_entries_ledger_occurred ON entries (ledger_id, occurred_at DESC) WHERE deleted_at IS NULL;
-CREATE INDEX idx_entries_updated_at ON entries (updated_at);
-CREATE INDEX idx_entries_category ON entries (category_id) WHERE deleted_at IS NULL;
-CREATE INDEX idx_entries_created_by ON entries (created_by);
+CREATE INDEX IF NOT EXISTS idx_entries_ledger_occurred ON entries (ledger_id, occurred_at DESC) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_entries_updated_at ON entries (updated_at);
+CREATE INDEX IF NOT EXISTS idx_entries_category ON entries (category_id) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_entries_created_by ON entries (created_by);
 
 -- ---------------- budgets ----------------
-CREATE TYPE budget_period AS ENUM ('monthly');
+DO $$ BEGIN
+  CREATE TYPE budget_period AS ENUM ('monthly');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
-CREATE TABLE budgets (
+CREATE TABLE IF NOT EXISTS budgets (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     ledger_id       UUID NOT NULL REFERENCES ledgers(id) ON DELETE CASCADE,
     category_id     UUID REFERENCES categories(id),                   -- NULL = 总预算
@@ -145,14 +157,14 @@ CREATE TABLE budgets (
     deleted_at      TIMESTAMPTZ,
     version         INTEGER NOT NULL DEFAULT 1
 );
-CREATE UNIQUE INDEX uq_budgets_ledger_scope_month
+CREATE UNIQUE INDEX IF NOT EXISTS uq_budgets_ledger_scope_month
     ON budgets (ledger_id, COALESCE(category_id, '00000000-0000-0000-0000-000000000000'), month)
     WHERE deleted_at IS NULL;
-CREATE INDEX idx_budgets_ledger_month ON budgets (ledger_id, month);
-CREATE INDEX idx_budgets_updated_at ON budgets (updated_at);
+CREATE INDEX IF NOT EXISTS idx_budgets_ledger_month ON budgets (ledger_id, month);
+CREATE INDEX IF NOT EXISTS idx_budgets_updated_at ON budgets (updated_at);
 
 -- ---------------- idempotency_keys ----------------
-CREATE TABLE idempotency_keys (
+CREATE TABLE IF NOT EXISTS idempotency_keys (
     key             TEXT NOT NULL,
     endpoint        TEXT NOT NULL,
     actor_user_id   UUID REFERENCES users(id),
@@ -163,10 +175,10 @@ CREATE TABLE idempotency_keys (
     expires_at      TIMESTAMPTZ NOT NULL,
     PRIMARY KEY (key, endpoint)
 );
-CREATE INDEX idx_idempotency_expires ON idempotency_keys (expires_at);
+CREATE INDEX IF NOT EXISTS idx_idempotency_expires ON idempotency_keys (expires_at);
 
 -- ---------------- audit_logs ----------------
-CREATE TABLE audit_logs (
+CREATE TABLE IF NOT EXISTS audit_logs (
     id              UUID NOT NULL DEFAULT gen_random_uuid(),
     occurred_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     actor_user_id   UUID NOT NULL,
@@ -183,20 +195,29 @@ CREATE TABLE audit_logs (
     PRIMARY KEY (id, occurred_at)
 ) PARTITION BY RANGE (occurred_at);
 
--- 初始分区（2026-04 / 2026-05 / 2026-06），实际运维按月滚动创建
-CREATE TABLE audit_logs_y2026m04 PARTITION OF audit_logs
-    FOR VALUES FROM ('2026-04-01') TO ('2026-05-01');
-CREATE TABLE audit_logs_y2026m05 PARTITION OF audit_logs
-    FOR VALUES FROM ('2026-05-01') TO ('2026-06-01');
-CREATE TABLE audit_logs_y2026m06 PARTITION OF audit_logs
-    FOR VALUES FROM ('2026-06-01') TO ('2026-07-01');
+-- 初始分区（幂等：用 IF NOT EXISTS 等效 — PG 分区表不支持 IF NOT EXISTS，用 DO 块）
+DO $$ BEGIN
+  CREATE TABLE audit_logs_y2026m04 PARTITION OF audit_logs
+      FOR VALUES FROM ('2026-04-01') TO ('2026-05-01');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE TABLE audit_logs_y2026m05 PARTITION OF audit_logs
+      FOR VALUES FROM ('2026-05-01') TO ('2026-06-01');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE TABLE audit_logs_y2026m06 PARTITION OF audit_logs
+      FOR VALUES FROM ('2026-06-01') TO ('2026-07-01');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
-CREATE INDEX idx_audit_family_time ON audit_logs (family_id, occurred_at DESC);
-CREATE INDEX idx_audit_entity ON audit_logs (entity, entity_id, occurred_at DESC);
-CREATE INDEX idx_audit_actor ON audit_logs (actor_user_id, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_family_time ON audit_logs (family_id, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_logs (entity, entity_id, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_logs (actor_user_id, occurred_at DESC);
 
 -- ---------------- subscription_messages ----------------
-CREATE TABLE subscription_messages (
+CREATE TABLE IF NOT EXISTS subscription_messages (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     template_id     TEXT NOT NULL,
@@ -205,7 +226,7 @@ CREATE TABLE subscription_messages (
     used_at         TIMESTAMPTZ,
     UNIQUE (user_id, template_id, scene, authorized_at)
 );
-CREATE INDEX idx_subs_user_scene ON subscription_messages (user_id, scene);
+CREATE INDEX IF NOT EXISTS idx_subs_user_scene ON subscription_messages (user_id, scene);
 
 -- ---------------- updated_at 自动维护 ----------------
 CREATE OR REPLACE FUNCTION touch_updated_at()
@@ -216,6 +237,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- 幂等创建 trigger（先 DROP IF EXISTS 再 CREATE）
 DO $$
 DECLARE t TEXT;
 BEGIN
@@ -223,6 +245,10 @@ BEGIN
         'users','families','ledgers','categories','entries','budgets'
     ])
     LOOP
+        EXECUTE format(
+          'DROP TRIGGER IF EXISTS trg_%s_updated_at ON %s;',
+          t, t
+        );
         EXECUTE format(
           'CREATE TRIGGER trg_%s_updated_at BEFORE UPDATE ON %s FOR EACH ROW EXECUTE FUNCTION touch_updated_at();',
           t, t
