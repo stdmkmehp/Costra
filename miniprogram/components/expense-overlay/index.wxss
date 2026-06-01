@@ -1,149 +1,142 @@
-/* components/expense-overlay/index.wxss · 全屏记账覆盖层 */
-/* 卡号: COSTRA-204/206/207 · 设计源: design/ui/design_spec.md §6.3 */
-/* COSTRA-206: 修复底部绿色残留+全屏分类初始态+文字指示器+关闭按钮避让胶囊 */
-/* COSTRA-207: 移除swiper根治分类网格空白(改用flex panel+scroll-view) */
+/* components/expense-overlay/index.wxss · 全屏记账覆盖层（COSTRA-208 完全重写） */
+/* 卡号: COSTRA-208 · 从需求出发重新实现 · flex scroll 布局 */
+/* 设计源: design/ui/design_spec.md §6.3 + design/ui/interaction_flow.md §2/§3 */
 
-/* ─── 覆盖层容器 ────────────────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════
+   覆盖层容器
+   ═══════════════════════════════════════════════════════════════ */
 
-.overlay {
+.expense-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  /* 暖灰白背景 · 对齐 tokens role.bg.app */
-  background: #f1f2ec;
-  /* COSTRA-205/206: z-index 必须高于 TabBar(999) + 确保完全遮盖底部绿色 [+] 按钮 */
+  inset: 0;
   z-index: 9999;
+  background: #f1f2ec;
   transform: translateY(100%);
-  transition: transform var(--animation-slow, 350ms) var(--easing-default, cubic-bezier(0.25, 0.1, 0.25, 1));
-  /* 问题1修复：确保背景完全不透明，彻底遮盖底层 tab-bar 的任何残留 */
-  opacity: 1;
+  transition: transform 350ms cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
-.overlay--visible {
+.expense-overlay.is-visible {
   transform: translateY(0);
 }
 
-.overlay__content {
+/* ═══════════════════════════════════════════════════════════════
+   Shell：flex column 主容器（100vh 高度锚定）
+   ═══════════════════════════════════════════════════════════════ */
+
+.expense-shell {
   display: flex;
   flex-direction: column;
-  height: 100%;
-  /* 关键：确保内容区域延伸到安全区最底部（修复问题1：底部绿色残留） */
-  padding-bottom: 0;
-  box-sizing: border-box;
+  height: 100vh;
+  background: #f1f2ec;
 }
 
-/* ─── 顶部 header：三栏布局（取消按钮 | 支出·收入指示器 | 占位） ──────── */
+/* ═══════════════════════════════════════════════════════════════
+   顶部 Header：取消按钮 | 支出·收入指示器 | 占位
+   ═══════════════════════════════════════════════════════════════ */
 
-.overlay__header {
+.expense-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  /* 使用 getMenuButtonBoundingClientRect 动态设置 padding-top */
+  flex-shrink: 0;
   padding: 16rpx 32rpx;
   padding-top: calc(env(safe-area-inset-top) + 8rpx);
-  flex-shrink: 0;
-  /* 问题4修复：不再右对齐关闭按钮，改为左对齐"取消"，避开右侧胶囊 */
 }
 
-.overlay__close {
-  /* 问题4修复："取消" 文字替代 ✕ 符号，左上角显示 */
+.expense-header__close {
   color: rgba(28, 27, 26, 0.48);
   font-size: 28rpx;
   line-height: 1;
   padding: 12rpx 8rpx;
-  margin-left: -8rpx; /* 抵消 padding 使文字位置精确 */
+  margin-left: -8rpx;
 }
 
-/* ─── 收支文字指示器（替换原来的两个圆点）──────────────────────────────── */
-
-.overlay__tab-indicator {
+.expense-header__tabs {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 20rpx;
 }
 
-.tab-indicator__text {
+.expense-header__tab {
   font-size: 28rpx;
   color: rgba(28, 27, 26, 0.28);
   font-weight: 400;
-  transition: color var(--animation-fast, 150ms) var(--easing-default, cubic-bezier(0.25, 0.1, 0.25, 1)),
-              font-weight var(--animation-fast, 150ms) var(--easing-default, cubic-bezier(0.25, 0.1, 0.25, 1));
+  transition: color 150ms cubic-bezier(0.25, 0.1, 0.25, 1),
+              font-weight 150ms cubic-bezier(0.25, 0.1, 0.25, 1);
   padding: 4rpx 0;
 }
 
-.tab-indicator__text--active {
+.expense-header__tab.is-active {
   color: #1c1b1a;
   font-weight: 600;
 }
 
-.tab-indicator__sep {
+.expense-header__sep {
   font-size: 28rpx;
   color: rgba(28, 27, 26, 0.18);
   line-height: 1;
   margin-top: 2rpx;
 }
 
-/* 右侧占位：保持 header 三栏布局平衡 */
-.overlay__header-placeholder {
-  width: 80rpx; /* 与左侧 "取消" 按钮大致等宽 */
+.expense-header__placeholder {
+  width: 80rpx;
 }
 
-/* ─── 分类面板（COSTRA-207: flex:1 填满 header 下方全部空间） ───────────────── */
-
-.category-panel {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
+/* ═══════════════════════════════════════════════════════════════
+   分类滚动区（flex:1 自动填满剩余空间 · 禁止 JS 计算高度）
+   ═══════════════════════════════════════════════════════════════ */
 
 .category-scroll {
-  height: 100%;
-  padding: 0 24rpx;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
   box-sizing: border-box;
+  padding: 0 28rpx;
 }
 
-/* 底部安全区占位（无键盘时让分类内容可以滚动到屏幕最底端） */
-.category-scroll__padding-bottom {
-  height: env(safe-area-inset-bottom);
-  min-height: 40rpx; /* 即使无 safe-area 也保留一点呼吸空间 */
-}
+/* ═══════════════════════════════════════════════════════════════
+   分类 Section 容器
+   ═══════════════════════════════════════════════════════════════ */
 
-/* ─── 一级分类网格 ──────────────────────────────────────────────────────────── */
-
-.tier1-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 16rpx 0;
+.category-section {
   padding: 8rpx 0;
 }
 
-.tier1-item {
+.category-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16rpx 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   一级分类项
+   ═══════════════════════════════════════════════════════════════ */
+
+.category-tier1 {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 8rpx;
   padding: 16rpx 8rpx;
-  transition: opacity var(--animation-normal, 250ms) var(--easing-default, cubic-bezier(0.25, 0.1, 0.25, 1));
+  transition: opacity 250ms cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
-.tier1-item--dimmed {
+.category-tier1.is-dimmed {
   opacity: 0.2;
 }
 
-.tier1-item--selected .tier1-icon {
+.category-tier1.is-selected .category-tier1__icon {
   background: #1c1b1a;
   color: #ffffff;
 }
 
-.tier1-item--selected .tier1-name {
+.category-tier1.is-selected .category-tier1__name {
   color: #1c1b1a;
   font-weight: 600;
 }
 
-.tier1-icon {
+.category-tier1__icon {
   width: 96rpx;
   height: 96rpx;
   border-radius: 50%;
@@ -154,47 +147,40 @@
   justify-content: center;
   font-size: 32rpx;
   font-weight: 500;
-  transition: background var(--animation-fast, 150ms) var(--easing-default, cubic-bezier(0.25, 0.1, 0.25, 1)),
-              color var(--animation-fast, 150ms) var(--easing-default, cubic-bezier(0.25, 0.1, 0.25, 1));
+  transition: background 150ms cubic-bezier(0.25, 0.1, 0.25, 1),
+              color 150ms cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
-.tier1-name {
+.category-tier1__name {
   font-size: 22rpx;
   color: rgba(28, 27, 26, 0.6);
   text-align: center;
   line-height: 1.2;
-  transition: color var(--animation-fast, 150ms) var(--easing-default, cubic-bezier(0.25, 0.1, 0.25, 1));
+  transition: color 150ms cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
-/* ─── 分隔线 ────────────────────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════
+   分隔线
+   ═══════════════════════════════════════════════════════════════ */
 
-.tier-divider {
+.category-divider {
   height: 1rpx;
   background: rgba(28, 27, 26, 0.05);
   margin: 16rpx 0;
 }
 
-/* ─── 二级分类网格（去重全局列表）────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════
+   二级分类项（去重全局列表 / 展开的子分类 共用）
+   ═══════════════════════════════════════════════════════════════ */
 
-.sub-grid {
+.category-section--tier2 {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 12rpx 0;
   padding: 8rpx 0 32rpx;
 }
 
-/* ─── 展开的子分类 ──────────────────────────────────────────────────────────── */
-
-.expanded-children {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12rpx 0;
-  padding: 8rpx 0 32rpx;
-}
-
-/* ─── 二级分类项 ────────────────────────────────────────────────────────────── */
-
-.sub-item {
+.category-item {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -202,17 +188,17 @@
   padding: 12rpx 8rpx;
 }
 
-.sub-item--selected .sub-icon {
+.category-item.is-selected .category-item__icon {
   background: #07C160;
   color: #ffffff;
 }
 
-.sub-item--selected .sub-name {
+.category-item.is-selected .category-item__name {
   color: #07C160;
   font-weight: 600;
 }
 
-.sub-icon {
+.category-item__icon {
   width: 80rpx;
   height: 80rpx;
   border-radius: 50%;
@@ -223,54 +209,60 @@
   justify-content: center;
   font-size: 26rpx;
   font-weight: 500;
-  transition: background var(--animation-fast, 150ms) var(--easing-default, cubic-bezier(0.25, 0.1, 0.25, 1)),
-              color var(--animation-fast, 150ms) var(--easing-default, cubic-bezier(0.25, 0.1, 0.25, 1));
+  transition: background 150ms cubic-bezier(0.25, 0.1, 0.25, 1),
+              color 150ms cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
-.sub-name {
+.category-item__name {
   font-size: 20rpx;
   color: rgba(28, 27, 26, 0.5);
   text-align: center;
   line-height: 1.2;
-  transition: color var(--animation-fast, 150ms) var(--easing-default, cubic-bezier(0.25, 0.1, 0.25, 1));
+  transition: color 150ms cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
-/* ─── 计算器面板 ────────────────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════
+   底部安全区占位（无键盘时让分类内容可以滚动到屏幕最底端）
+   ═══════════════════════════════════════════════════════════════ */
 
-.keypad-panel {
+.category-bottom-spacer {
+  height: env(safe-area-inset-bottom);
+  min-height: 40rpx;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   键盘面板（作为 shell 最后一个 flex 子项，出现时 scroll-view 自动变矮）
+   ═══════════════════════════════════════════════════════════════ */
+
+.keypad-sheet {
   flex-shrink: 0;
   background: #ffffff;
   border-top-left-radius: 24rpx;
   border-top-right-radius: 24rpx;
-  transform: translateY(100%);
-  transition: transform var(--animation-slow, 350ms) var(--easing-default, cubic-bezier(0.25, 0.1, 0.25, 1));
-  /* 问题1修复：keypad-panel 自身包含 safe-area padding-bottom */
   padding-bottom: env(safe-area-inset-bottom);
   max-height: 70vh;
   overflow: hidden;
 }
 
-.keypad-panel--visible {
-  transform: translateY(0);
-}
+/* ═══════════════════════════════════════════════════════════════
+   金额显示区
+   ═══════════════════════════════════════════════════════════════ */
 
-/* ─── 金额显示区 ────────────────────────────────────────────────────────────── */
-
-.amount-display {
+.keypad-sheet__amount {
   display: flex;
   align-items: baseline;
   padding: 24rpx 32rpx 16rpx;
   min-height: 80rpx;
 }
 
-.amount-prefix {
+.keypad-sheet__prefix {
   font-size: 32rpx;
   color: rgba(28, 27, 26, 0.48);
   margin-right: 8rpx;
   font-weight: 500;
 }
 
-.amount-value {
+.keypad-sheet__value {
   font-size: 56rpx;
   font-weight: 600;
   color: #1c1b1a;
@@ -279,13 +271,15 @@
   word-break: break-all;
 }
 
-.amount-value--result {
+.keypad-sheet__value.is-result {
   color: #07C160;
 }
 
-/* ─── 操作行 ────────────────────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════
+   操作行
+   ═══════════════════════════════════════════════════════════════ */
 
-.action-row {
+.keypad-sheet__actions {
   display: flex;
   align-items: center;
   padding: 0 32rpx 16rpx;
@@ -294,17 +288,17 @@
 }
 
 /* 账本切换 */
-.action-ledger {
+.keypad-ledger {
   flex-shrink: 0;
 }
 
-.action-ledger__text {
+.keypad-ledger__text {
   font-size: 22rpx;
   color: rgba(28, 27, 26, 0.36);
 }
 
 /* 费用性质开关 */
-.action-shared {
+.keypad-shared {
   display: flex;
   align-items: center;
   gap: 8rpx;
@@ -312,38 +306,38 @@
   opacity: 0;
   height: 0;
   overflow: hidden;
-  transition: opacity var(--animation-normal, 250ms) var(--easing-default, cubic-bezier(0.25, 0.1, 0.25, 1)),
-              height var(--animation-normal, 250ms) var(--easing-default, cubic-bezier(0.25, 0.1, 0.25, 1));
+  transition: opacity 250ms cubic-bezier(0.25, 0.1, 0.25, 1),
+              height 250ms cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
-.action-shared--visible {
+.keypad-shared.is-visible {
   opacity: 1;
   height: 40rpx;
 }
 
-.action-shared__text {
+.keypad-shared__text {
   font-size: 22rpx;
   color: rgba(28, 27, 26, 0.36);
-  transition: color var(--animation-fast, 150ms) var(--easing-default, cubic-bezier(0.25, 0.1, 0.25, 1));
+  transition: color 150ms cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
-.action-shared__text--active {
+.keypad-shared__text.is-active {
   color: #1c1b1a;
   font-weight: 600;
 }
 
-.action-shared__divider {
+.keypad-shared__sep {
   font-size: 22rpx;
   color: rgba(28, 27, 26, 0.12);
 }
 
 /* 备注 */
-.action-note {
+.keypad-note {
   flex: 1;
   min-width: 0;
 }
 
-.action-note__placeholder {
+.keypad-note__placeholder {
   font-size: 22rpx;
   color: rgba(28, 27, 26, 0.28);
   overflow: hidden;
@@ -351,14 +345,16 @@
   white-space: nowrap;
 }
 
-.action-note__input {
+.keypad-note__input {
   flex: 1;
   font-size: 22rpx;
   color: #1c1b1a;
   min-height: 40rpx;
 }
 
-/* ─── 数字键盘 ──────────────────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════
+   数字键盘
+   ═══════════════════════════════════════════════════════════════ */
 
 .keypad {
   padding: 0 8rpx 8rpx;
@@ -381,7 +377,7 @@
   font-size: 36rpx;
   color: #1c1b1a;
   font-weight: 500;
-  transition: background var(--animation-fast, 150ms) var(--easing-default, cubic-bezier(0.25, 0.1, 0.25, 1));
+  transition: background 150ms cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
 .keypad__key:active {

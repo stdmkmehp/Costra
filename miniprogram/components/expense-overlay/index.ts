@@ -1,7 +1,12 @@
-// components/expense-overlay/index.ts · 全屏记账覆盖层（分类网格+计算器+算式+账本切换+保存）
-// 卡号: COSTRA-204/206/207 · 整体重写占位组件 + COSTRA-206 UI 修复 + COSTRA-207 移除swiper根治空白
+// components/expense-overlay/index.ts · 全屏记账覆盖层（COSTRA-208 完全重写）
+// 卡号: COSTRA-208 · 从需求出发重新实现 · 不沿用旧布局
 // 设计源: design/ui/design_spec.md §6.3 + design/ui/interaction_flow.md §2/§3
 // 金额 ADR-0002: 全部走 decimal.js（utils/money.ts）
+//
+// 架构决策：
+//   - overlay → shell(flex-column:100vh) → header + scroll-view(flex:1) + keypad-sheet
+//   - 禁止 swiper，禁止 JS 动态计算 scroll-view 高度
+//   - 高度完全由 CSS flex 布局负责
 
 import { newClientRefId } from '../../utils/id';
 import { putEntry, type Entry } from '../../services/db';
@@ -40,10 +45,8 @@ Component({
     // ─── 显隐 ───
     visible: false,
 
-    // ─── swiper 当前面板 0=支出 1=收入 ───
-    currentTab: 0,
-    /** 顶部指示器 */
-    tabIndicator: 'expense' as 'expense' | 'income',
+    // ─── 收支类型 ───
+    entryType: 'expense' as 'expense' | 'income',
 
     // ─── 分类网格 ───
     tier1Categories: EXPENSE_CATEGORIES as readonly CategoryTier1[],
@@ -58,8 +61,6 @@ Component({
     selectedTier2Id: '' as string,
     /** 未选中一级分类的 id 列表（用于弱化效果） */
     dimmedTier1Ids: [] as string[],
-    /** scroll-into-view 目标 */
-    scrollIntoView: '' as string,
 
     // ─── 计算器 ───
     keypadVisible: false,
@@ -79,18 +80,13 @@ Component({
     /** 是否正在输入备注（显示系统键盘） */
     noteFocused: false as boolean,
 
-    // ─── 类型 ───
-    entryType: 'expense' as 'expense' | 'income',
-
     // ─── 保存中 ───
     saving: false,
   },
 
   lifetimes: {
     attached() {
-      // COSTRA-207: 不再需要动态计算swiper高度，category-panel 使用 flex:1 自动填满
-      type ShowHandler = () => void;
-      const handler: ShowHandler = () => { this._show(); };
+      const handler = () => { this._show(); };
       (this as unknown as Record<string, unknown>)._showHandler = handler;
       eventBus.on(EventNames.SHOW_EXPENSE_OVERLAY, handler);
     },
@@ -119,8 +115,6 @@ Component({
         isMultiMemberLedger: false,
         ledgerOptions,
         showSharedToggle: false,
-        currentTab: 0,
-        tabIndicator: 'expense',
         entryType: 'expense',
         tier1Categories: EXPENSE_CATEGORIES,
         dedupedSubCategories: EXPENSE_DEDUPED_SUBS,
@@ -129,7 +123,6 @@ Component({
         selectedTier1Id: '',
         selectedTier2Id: '',
         dimmedTier1Ids: [],
-        scrollIntoView: '',
         keypadVisible: false,
         calc: { ...INITIAL_CALC_STATE },
         sharedType: 'shared',
@@ -149,68 +142,64 @@ Component({
       // intentionally empty
     },
 
-    // ─── 收支切换（轻量横滑手势 + 文字指示器）─────────────────────────────
+    // ─── 收支切换（轻量横滑手势 + 文字指示器点击）────────────────────────────
 
-    /** COSTRA-207: 轻量横滑手势 — 记录触摸起点 */
-    onPanelTouchStart(e: WechatMiniprogram.TouchEvent) {
+    /** 记录触摸起点（轻量横滑手势） */
+    onTouchStart(e: WechatMiniprogram.TouchEvent) {
       const touch = e.touches[0];
       if (touch) {
-        (this as unknown as Record<string, number>)._panelTouchStartX = touch.pageX;
-        (this as unknown as Record<string, number>)._panelTouchStartY = touch.pageY;
+        (this as unknown as Record<string, number>)._touchStartX = touch.pageX;
+        (this as unknown as Record<string, number>)._touchStartY = touch.pageY;
       }
     },
 
-    /** COSTRA-207: 轻量横滑手势 — 判断是否切换面板 */
-    onPanelTouchEnd(e: WechatMiniprogram.TouchEvent) {
+    /** 判断是否切换收支面板（轻量横滑手势） */
+    onTouchEnd(e: WechatMiniprogram.TouchEvent) {
       const touch = e.changedTouches[0];
       if (!touch) return;
 
-      const startX = (this as unknown as Record<string, number>)._panelTouchStartX;
-      const startY = (this as unknown as Record<string, number>)._panelTouchStartY;
+      const startX = (this as unknown as Record<string, number>)._touchStartX;
+      const startY = (this as unknown as Record<string, number>)._touchStartY;
       if (startX == null || startY == null) return;
 
       const deltaX = touch.pageX - startX;
       const deltaY = touch.pageY - startY;
 
-      // 横滑判定：水平位移 > 60px 且 水平 > 垂直 * 1.5（避免误触纵向滚动）
+      // 横滑判定：水平位移 > 60px 且 水平明显大于纵向（避免误触纵向滚动）
       if (Math.abs(deltaX) > 60 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
-        const next = deltaX < 0 ? 1 : 0; // 左滑→收入(1)，右滑→支出(0)
-        if (next !== this.data.currentTab) {
-          this._switchTab(next);
+        // 左滑→收入，右滑→支出
+        const nextType = deltaX < 0 ? 'income' : 'expense';
+        if (nextType !== this.data.entryType) {
+          this._switchEntryType(nextType);
         }
       }
 
       // 清理
-      (this as unknown as Record<string, number>)._panelTouchStartX = 0;
-      (this as unknown as Record<string, number>)._panelTouchStartY = 0;
+      (this as unknown as Record<string, number>)._touchStartX = 0;
+      (this as unknown as Record<string, number>)._touchStartY = 0;
     },
 
-    /** 点击文字指示器切换收支面板（COSTRA-206） */
-    onTapTabIndicator(e: WechatMiniprogram.TouchEvent) {
-      const tab = e.currentTarget.dataset.tab as number;
-      if (tab === this.data.currentTab) return; // 已是当前面板，忽略
-      this._switchTab(tab);
+    /** 点击顶部文字指示器切换收支 */
+    onTapTab(e: WechatMiniprogram.TouchEvent) {
+      const type = e.currentTarget.dataset.type as 'expense' | 'income';
+      if (type === this.data.entryType) return;
+      this._switchEntryType(type);
     },
 
     /**
-     * 收支面板切换核心逻辑（横滑手势 + 文字指示器点击共用）
+     * 收支切换核心逻辑（横滑手势 + 文字指示器共用）
      */
-    _switchTab(current: number) {
-      const tabIndicator = current === 0 ? 'expense' : 'income';
-      const entryType = current === 0 ? 'expense' : 'income';
+    _switchEntryType(type: 'expense' | 'income') {
+      const tier1Categories = type === 'expense' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
+      const dedupedSubCategories = type === 'expense' ? EXPENSE_DEDUPED_SUBS : INCOME_DEDUPED_SUBS;
 
-      const tier1Categories = current === 0 ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
-      const dedupedSubCategories = current === 0 ? EXPENSE_DEDUPED_SUBS : INCOME_DEDUPED_SUBS;
-
-      // 收入面板时隐藏费用性质开关
-      const showSharedToggle = current === 1
+      // 收入时隐藏费用性质开关
+      const showSharedToggle = type === 'income'
         ? false
         : this.data.isMultiMemberLedger;
 
       this.setData({
-        currentTab: current,
-        tabIndicator,
-        entryType,
+        entryType: type,
         tier1Categories,
         dedupedSubCategories,
         expandedTier1Id: null,
@@ -218,12 +207,11 @@ Component({
         selectedTier1Id: '',
         selectedTier2Id: '',
         dimmedTier1Ids: [],
-        scrollIntoView: '',
         showSharedToggle,
       });
     },
 
-    // ─── 场景 A：点击一级分类 ──────────────────────────────────────────────────
+    // ─── 场景 A：点击一级分类 → 展开子分类 + 弱化其他 + 弹出键盘 ─────────
 
     onTapTier1(e: WechatMiniprogram.TouchEvent) {
       const tier1Id = e.currentTarget.dataset.id as string;
@@ -244,12 +232,12 @@ Component({
         return;
       }
 
-      // 未选中一级分类 → 弱化
+      // 未选中一级分类 → 弱化其他
       const dimmedTier1Ids = this.data.tier1Categories
         .filter(c => c.id !== tier1Id)
         .map(c => c.id);
 
-      // 默认选中第一个同名二级分类
+      // 默认选中第一个子分类
       const firstChild = tier1.children[0];
 
       this.setData({
@@ -258,15 +246,15 @@ Component({
         selectedTier1Id: tier1Id,
         selectedTier2Id: firstChild.id,
         dimmedTier1Ids,
-        scrollIntoView: `tier1-${tier1Id}`,
       });
 
+      // 弹出键盘
       if (!this.data.keypadVisible) {
         this.setData({ keypadVisible: true });
       }
     },
 
-    // ─── 场景 B：直选二级分类 ──────────────────────────────────────────────────
+    // ─── 场景 B：直选二级分类 → 不展开一级 + 弹出键盘 ──────────────────────
 
     onTapSubCategory(e: WechatMiniprogram.TouchEvent) {
       const subId = e.currentTarget.dataset.id as string;
@@ -290,9 +278,7 @@ Component({
         selectedTier2Id: subId,
       });
 
-      // 防遮挡：滚动到该二级分类
-      this.setData({ scrollIntoView: `sub-${subId}` });
-
+      // 弹出键盘
       if (!this.data.keypadVisible) {
         this.setData({ keypadVisible: true });
       }
@@ -345,7 +331,7 @@ Component({
       this.setData({ calc: newCalc });
     },
 
-    /** 右下角按钮动作 */
+    /** 右下角按钮动作：= 计算 / 完成 保存 */
     _onAction() {
       const calc = this.data.calc;
 
