@@ -1,5 +1,5 @@
-// components/expense-overlay/index.ts · 全屏记账覆盖层（COSTRA-208 完全重写）
-// 卡号: COSTRA-208 · 从需求出发重新实现 · 不沿用旧布局
+// components/expense-overlay/index.ts · 全屏记账覆盖层（COSTRA-208 完全重写 · COSTRA-209 防遮挡滚动）
+// 卡号: COSTRA-208 / COSTRA-209 · 分类防键盘遮挡滚动 + 打开重置
 // 设计源: design/ui/design_spec.md §6.3 + design/ui/interaction_flow.md §2/§3
 // 金额 ADR-0002: 全部走 decimal.js（utils/money.ts）
 //
@@ -33,6 +33,22 @@ interface LedgerOption {
   name: string;
   isMultiMember: boolean;
 }
+
+// ─── 防遮挡滚动常量 ────────────────────────────────────────────────────────────
+
+/**
+ * 键盘面板估算高度（px）。
+ * 键盘弹出前无法 query .keypad-sheet 实际高度，故用估算值。
+ * 该值基于 4 行键盘(96rpx/行) + 金额区 + 操作行 + 安全区 ≈ 300px（iPhone 标准屏）。
+ * 实际键盘弹出后 scroll-view 会因 flex:1 自动缩小，此估算仅用于预判遮挡。
+ */
+const KEYPAD_SHEET_ESTIMATED_HEIGHT_PX = 300;
+
+/**
+ * 安全间距（px）：选中分类底部与键盘顶部之间至少留出的间距。
+ * 对应设计稿 24rpx ≈ 12px（375pt 屏宽），此处用 16px 略宽以保安全。
+ */
+const SAFE_MARGIN_PX = 16;
 
 // ─── Component ─────────────────────────────────────────────────────────────────
 
@@ -82,6 +98,10 @@ Component({
 
     // ─── 保存中 ───
     saving: false,
+
+    // ─── 分类滚动控制（COSTRA-209） ───
+    /** scroll-view 的 scroll-top 绑定值 */
+    categoryScrollTop: 0,
   },
 
   lifetimes: {
@@ -108,6 +128,10 @@ Component({
         { id: ledgerId || 'default', name: '我的账本', isMultiMember: false },
       ];
 
+      // COSTRA-209: 重置滚动位置到顶部
+      // 小程序 scroll-view 不会响应同值赋值，先设 1 再 nextTick 设 0
+      (this as unknown as Record<string, number>)._currentScrollTop = 0;
+
       this.setData({
         visible: true,
         ledgerId: ledgerId || 'default',
@@ -129,7 +153,13 @@ Component({
         note: '',
         noteFocused: false,
         saving: false,
+        categoryScrollTop: 1,
       });
+
+      // nextTick 确保先渲染 categoryScrollTop:1，再设为 0 触发实际滚动
+      setTimeout(() => {
+        this.setData({ categoryScrollTop: 0 });
+      }, 50);
     },
 
     onClose() {
@@ -140,6 +170,49 @@ Component({
     /** 阻止触摸穿透 */
     noop() {
       // intentionally empty
+    },
+
+    // ─── 分类滚动控制（COSTRA-209）─────────────────────────────────────────────
+
+    /** scroll-view 滚动事件：实时记录 scrollTop 到实例属性 */
+    onCategoryScroll(e: WechatMiniprogram.ScrollViewScroll) {
+      (this as unknown as Record<string, number>)._currentScrollTop = e.detail.scrollTop;
+    },
+
+    /**
+     * 防遮挡滚动：确保选中分类元素在键盘弹出后仍可见。
+     *
+     * 逻辑：
+     * 1. 查询目标元素和 scroll-view 的 bounding rect
+     * 2. 估算键盘弹出后的安全底线 = scrollRect.bottom - keypadHeight - safeMargin
+     * 3. 如果目标元素底部超过安全底线，计算需要滚动的距离
+     * 4. 使用 scroll-top + scroll-with-animation 平滑滚动
+     *
+     * @param selector 目标元素的 CSS selector（如 '#cat-sub-xxx'）
+     */
+    _ensureCategoryVisibleAboveKeypad(selector: string) {
+      const query = wx.createSelectorQuery().in(this);
+      query.select(selector).boundingClientRect();
+      query.select('.category-scroll').boundingClientRect();
+      query.exec((res) => {
+        const targetRect = res[0] as WechatMiniprogram.BoundingClientRectCallbackResult | null;
+        const scrollRect = res[1] as WechatMiniprogram.BoundingClientRectCallbackResult | null;
+
+        if (!targetRect || !scrollRect) return;
+
+        // 安全底线：scroll-view 底部 - 键盘高度 - 安全间距
+        const safeBottom = scrollRect.bottom - KEYPAD_SHEET_ESTIMATED_HEIGHT_PX - SAFE_MARGIN_PX;
+
+        // 如果目标元素底部在安全区内，不需要滚动
+        if (targetRect.bottom <= safeBottom) return;
+
+        // 需要滚动的距离 = 目标底部超出安全底线的量
+        const delta = targetRect.bottom - safeBottom;
+        const currentScrollTop = (this as unknown as Record<string, number>)._currentScrollTop || 0;
+        const nextScrollTop = currentScrollTop + delta;
+
+        this.setData({ categoryScrollTop: nextScrollTop });
+      });
     },
 
     // ─── 收支切换（轻量横滑手势 + 文字指示器点击）────────────────────────────
@@ -248,6 +321,12 @@ Component({
         dimmedTier1Ids,
       });
 
+      // COSTRA-209: setData 完成后 nextTick 判断默认子分类是否被键盘遮挡
+      // 此时 keypad 尚未弹出，scroll-view 高度未缩小，用估算键盘高度预判
+      setTimeout(() => {
+        this._ensureCategoryVisibleAboveKeypad(`#cat-sub-${firstChild.id}`);
+      }, 50);
+
       // 弹出键盘
       if (!this.data.keypadVisible) {
         this.setData({ keypadVisible: true });
@@ -278,6 +357,11 @@ Component({
         selectedTier2Id: subId,
       });
 
+      // COSTRA-209: 场景 B 直选二级分类，判断是否会被键盘遮挡
+      setTimeout(() => {
+        this._ensureCategoryVisibleAboveKeypad(`#cat-sub-${subId}`);
+      }, 50);
+
       // 弹出键盘
       if (!this.data.keypadVisible) {
         this.setData({ keypadVisible: true });
@@ -290,6 +374,12 @@ Component({
       const subId = e.currentTarget.dataset.id as string;
       if (!subId) return;
       this.setData({ selectedTier2Id: subId });
+
+      // COSTRA-209: 展开面板中切换子分类，判断是否被键盘遮挡
+      // 此时键盘已弹出，scroll-view 已缩小，可更精确判断
+      setTimeout(() => {
+        this._ensureCategoryVisibleAboveKeypad(`#cat-sub-${subId}`);
+      }, 50);
     },
 
     // ─── 计算器键盘 ───────────────────────────────────────────────────────────

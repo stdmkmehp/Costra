@@ -1,5 +1,5 @@
-<!-- components/expense-overlay/index.wxml · 全屏记账覆盖层（COSTRA-208 完全重写） -->
-<!-- 卡号: COSTRA-208 · 从需求出发重新实现 · 不沿用旧布局 -->
+<!-- components/expense-overlay/index.wxml · 全屏记账覆盖层（COSTRA-208 完全重写 · COSTRA-209 防遮挡滚动） -->
+<!-- 卡号: COSTRA-208 / COSTRA-209 · 分类防键盘遮挡滚动 + 打开重置 -->
 <!-- 设计源: design/ui/design_spec.md §6.3 + design/ui/interaction_flow.md §2/§3 -->
 <!-- 架构: overlay → shell(flex-column) → header + scroll-view(flex:1) + keypad-sheet -->
 
@@ -32,6 +32,9 @@
       scroll-y
       enhanced="{{true}}"
       show-scrollbar="{{false}}"
+      scroll-top="{{categoryScrollTop}}"
+      scroll-with-animation="{{true}}"
+      bindscroll="onCategoryScroll"
       bindtouchstart="onTouchStart"
       bindtouchend="onTouchEnd"
     >
@@ -41,6 +44,7 @@
         <view
           wx:for="{{tier1Categories}}"
           wx:key="id"
+          id="cat-tier1-{{item.id}}"
           class="category-tier1 {{selectedTier1Id === item.id ? 'is-selected' : ''}} {{dimmedTier1Ids.indexOf(item.id) >= 0 ? 'is-dimmed' : ''}}"
           data-id="{{item.id}}"
           bindtap="onTapTier1"
@@ -61,6 +65,7 @@
         <view
           wx:for="{{expandedChildren}}"
           wx:key="id"
+          id="cat-sub-{{item.id}}"
           class="category-item {{selectedTier2Id === item.id ? 'is-selected' : ''}}"
           data-id="{{item.id}}"
           bindtap="onTapExpandedChild"
@@ -78,6 +83,7 @@
         <view
           wx:for="{{dedupedSubCategories}}"
           wx:key="id"
+          id="cat-sub-{{item.id}}"
           class="category-item {{selectedTier2Id === item.id ? 'is-selected' : ''}}"
           data-id="{{item.id}}"
           data-name="{{item.name}}"
