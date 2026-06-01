@@ -211,9 +211,12 @@ export async function doWxLogin(): Promise<Token> {
     await setItem(TOKEN_KEY, stored);  // COSTRA-125: async
 
     // COSTRA-165: mock 路径也写 family-context（让 T7/T8 在 mock 环境可跑 · R2 P2-2 实装期处理）
+    // COSTRA-220: 附带 family_kind + ledger_name（mock 路径默认 personal + '我的账本'）
     await setActiveFamily({
       family_id: mock.default_family_id,
       ledger_id: mock.default_ledger_id,
+      family_kind: 'personal',
+      ledger_name: '我的账本',
     });
     const appMock = getApp();
     if (appMock?.globalData) {
@@ -236,9 +239,12 @@ export async function doWxLogin(): Promise<Token> {
   await setItem(TOKEN_KEY, stored);  // COSTRA-125: async
 
   // COSTRA-165: 写 family-context（首登 default_family_id 一定非空 · 后续切 family 时由 R2 UI 覆盖）
+  // COSTRA-220: 附带 family_kind + ledger_name（wx-login 首登走 personal family · server bootstrap 名 '日常账本'）
   await setActiveFamily({
     family_id: resp.default_family_id,
     ledger_id: resp.default_ledger_id,
+    family_kind: 'personal',
+    ledger_name: '日常账本',
   });
   // 同步 globalData.activeLedgerId（pages/entry 直接读 · app.ts L22 字段已声明）
   const app = getApp();
@@ -269,9 +275,12 @@ export async function refreshToken(): Promise<void> {
     await setItem(TOKEN_KEY, stored);  // COSTRA-125: async
 
     // COSTRA-165: mock 路径也写 family-context（R2 P2-2 实装期处理 · 让 T8 在 mock 环境可跑）
+    // COSTRA-220: 附带 family_kind + ledger_name
     await setActiveFamily({
       family_id: refreshed.default_family_id,
       ledger_id: refreshed.default_ledger_id,
+      family_kind: 'personal',
+      ledger_name: '我的账本',
     });
     const appMock = getApp();
     if (appMock?.globalData) {
@@ -295,6 +304,9 @@ export async function refreshToken(): Promise<void> {
     await setActiveFamily({
       family_id: resp.default_family_id,
       ledger_id: resp.default_ledger_id,
+      // COSTRA-220: refresh 返 default 个人 family · kind=personal · name 用 storage 残留或降级
+      family_kind: 'personal',
+      ledger_name: '日常账本',
     });
     const app = getApp();
     if (app?.globalData) {

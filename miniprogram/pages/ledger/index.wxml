@@ -1,5 +1,5 @@
 <!-- pages/ledger/index.wxml · 明细页（首屏 Tab1） -->
-<!-- 卡号: COSTRA-203 · 明细首屏巨大月支出+日期分组吸顶流水列表+左滑删除+账本切换 -->
+<!-- 卡号: COSTRA-203 / COSTRA-220 · 明细首屏巨大月支出+日期分组吸顶流水列表+左滑删除+账本切换+真实数据对接 -->
 <!-- 设计源: design/ui/design_spec.md §6.2 + design/ui/interaction_flow.md §4 -->
 
 <view class="ledger">
@@ -44,6 +44,7 @@
     scroll-y
     enhanced
     show-scrollbar="{{false}}"
+    scroll-top="{{listScrollTop}}"
     bindscroll="onListScroll"
   >
     <block wx:if="{{!isEmpty}}">
@@ -86,10 +87,8 @@
             <view class="entry-label grow">
               <text class="entry-label__text">{{entry.label}}</text>
             </view>
-            <!-- 金额 · 42rpx tnum · 收入绿色带+号 -->
-            <text class="entry-amount tnum {{entry.type === 'income' ? 'entry-amount--income' : ''}}">
-              {{entry.amountText}}
-            </text>
+            <!-- 金额 · tnum · 收入绿色带+号（保持单行，避免 text 保留换行导致视觉中心下沉） -->
+            <text class="entry-amount tnum {{entry.type === 'income' ? 'entry-amount--income' : ''}}">{{entry.amountText}}</text>
           </view>
           <!-- 左滑删除按钮 · 160rpx · 红底白字 -->
           <view
@@ -103,9 +102,10 @@
       </block>
     </block>
 
-    <!-- ─── 空状态 ─────────────────────────────────────────────────────────── -->
+    <!-- ─── 空状态 ──────────────────── -->
     <view class="empty-state" wx:if="{{isEmpty}}">
-      <text class="empty-state__text">本月暂无收支记录</text>
+      <text class="empty-state__title">暂无记录</text>
+      <text class="empty-state__hint">点击下方 + 开始记账</text>
     </view>
   </scroll-view>
 

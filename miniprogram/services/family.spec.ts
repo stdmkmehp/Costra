@@ -1,7 +1,7 @@
 // services/family.spec.ts · family-context service 单测
-// 卡号: COSTRA-165 · Refs: dispatch §2.1 E 项 T1~T6
+// 卡号: COSTRA-165 / COSTRA-220 · Refs: dispatch §2.1 E 项 T1~T6 + T7~T9
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { setActiveFamily, getActiveFamilyId, getActiveLedgerId, clearActiveFamily } from './family';
+import { setActiveFamily, getActiveFamilyId, getActiveLedgerId, clearActiveFamily, getActiveFamilyKind, getActiveLedgerName } from './family';
 import type { FamilyContext } from './family';
 
 // 模拟 storage.ts envelope 行为（与 auth.spec.ts 同范式）
@@ -90,5 +90,40 @@ describe('services/family · family-context core', () => {
     expect(envelope.v).toBe(1);
     expect(typeof envelope.t).toBe('number');
     expect(envelope.d).toEqual({ family_id: 'f-001', ledger_id: 'l-001' });
+  });
+
+  // T7: getActiveFamilyKind 返回写入的 kind（COSTRA-220）
+  it('T7: getActiveFamilyKind 返回写入的 family_kind', async () => {
+    await setActiveFamily({ family_id: 'f-002', ledger_id: 'l-002', family_kind: 'shared', ledger_name: '家庭账本' });
+    const kind = await getActiveFamilyKind();
+    expect(kind).toBe('shared');
+  });
+
+  // T8: getActiveFamilyKind 无 kind 返 null（COSTRA-220 降级）
+  it('T8: getActiveFamilyKind 无 kind 字段返 null（降级）', async () => {
+    await setActiveFamily(testCtx); // 不含 family_kind
+    const kind = await getActiveFamilyKind();
+    expect(kind).toBeNull();
+  });
+
+  // T9: getActiveLedgerName 返回真实名称 + 降级兜底（COSTRA-220）
+  it('T9: getActiveLedgerName 返回真实名称 + 无名称降级兜底', async () => {
+    await setActiveFamily({ family_id: 'f-003', ledger_id: 'l-003', ledger_name: '日常账本' });
+    const name = await getActiveLedgerName();
+    expect(name).toBe('日常账本');
+
+    // 无 ledger_name → 降级 '我的账本'
+    await setActiveFamily(testCtx);
+    const fallback = await getActiveLedgerName();
+    expect(fallback).toBe('我的账本');
+  });
+
+  // T10: getActiveFamilyKind/LedgerName 无 storage 返降级值
+  it('T10: getActiveFamilyKind/LedgerName 无 storage 返降级值', async () => {
+    const kind = await getActiveFamilyKind();
+    expect(kind).toBeNull();
+
+    const name = await getActiveLedgerName();
+    expect(name).toBe('我的账本');
   });
 });

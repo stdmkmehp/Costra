@@ -16,6 +16,7 @@ import { getSafeAreaMetrics } from '../../utils/safeArea';
 import { putEntry, type Entry } from '../../services/db';
 import { enqueue } from '../../services/outbox';
 import { getActiveLedgerId, getActiveFamilyId } from '../../services/family';
+import { getToken } from '../../services/auth';
 import { eventBus, EventNames } from '../../services/eventBus';
 import {
   loadCategories,
@@ -671,6 +672,9 @@ Component({
         const clientRefId = newClientRefId();
         const now = new Date().toISOString();
 
+        // COSTRA-220: 本地创建的 entry 写入当前用户 ID（用于成员筛选）
+        const currentUserId = getToken()?.raw.user.id || null;
+
         const entry: Entry = {
           client_ref_id: clientRefId,
           ledger_id: this.data.ledgerId,
@@ -683,6 +687,7 @@ Component({
           created_at: now,
           updated_at: now,
           dirty: true,
+          created_by: currentUserId,
         };
 
         await putEntry(entry);
@@ -697,6 +702,8 @@ Component({
         // 关闭覆盖层
         this.setData({ visible: false, keypadVisible: false, saving: false });
         eventBus.emit(EventNames.HIDE_EXPENSE_OVERLAY);
+        // COSTRA-220: 通知明细页刷新数据（响应式刷新替代 onShow 轮询）
+        eventBus.emit(EventNames.ENTRY_SAVED);
 
         wx.showToast({ title: '记账成功', icon: 'success' });
       } catch (err) {

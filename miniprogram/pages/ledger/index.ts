@@ -1,5 +1,5 @@
 // pages/ledger/index.ts · 明细页（首屏 Tab1）
-// 卡号: COSTRA-203 / COSTRA-214 · 明细首屏巨大月支出+日期分组吸顶流水列表+左滑删除+账本切换+统一安全区
+// 卡号: COSTRA-203 / COSTRA-214 / COSTRA-220 · 明细首屏巨大月支出+日期分组吸顶流水列表+左滑删除+账本切换+统一安全区+真实数据对接
 // 设计源: design/ui/design_spec.md §6.2 + design/ui/interaction_flow.md §4
 // 金额 ADR-0002: 全部走 decimal.js（utils/money.ts）
 
@@ -7,8 +7,16 @@ import Decimal from '../../utils/vendor/decimal';
 import { toYuan } from '../../utils/money';
 import { getSafeAreaMetrics } from '../../utils/safeArea';
 import { listEntries, deleteEntry, type Entry } from '../../services/db';
-import { getActiveLedgerId, getActiveFamilyId } from '../../services/family';
+import {
+  getActiveLedgerId,
+  getActiveFamilyId,
+  getActiveFamilyKind,
+  getActiveLedgerName,
+  setActiveFamily,
+} from '../../services/family';
 import { enqueue } from '../../services/outbox';
+import { getToken } from '../../services/auth';
+import { eventBus, EventNames } from '../../services/eventBus';
 import {
   getCategories,
   warmUpMemoryCache,
@@ -53,14 +61,17 @@ interface DisplayEntry {
   translateX: number;
 }
 
+/** 成员筛选状态（COSTRA-220 MVP: 仅全部/仅看自己） */
+type MemberFilter = 'all' | 'self';
+
 // ─── 辅助函数 ────────────────────────────────────────────────────────────────────
 
-/** 格式化金额为 ¥X,XXX.XX（带千分位） */
+/** 格式化金额为 -¥X,XXX.XX（带千分位 + 负号暗示支出） */
 function formatAmountDisplay(cents: number): string {
   const yuanStr = toYuan(Math.abs(cents));
   const parts = yuanStr.split('.');
   const intPart = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return `¥${intPart}.${parts[1]}`;
+  return `-¥${intPart}.${parts[1]}`;
 }
 
 /** 格式化金额（不含¥，带千分位） */
@@ -169,6 +180,9 @@ Page({
 
     // ─── 左滑 ───
     swipingRefId: '',
+
+    // ─── 列表滚动位置（COSTRA-220: 月份切换后滚动到顶部） ───
+    listScrollTop: 0,
   },
 
   // 内部状态
@@ -179,6 +193,12 @@ Page({
   _touchStartY: 0 as number,
   _touchRefId: '' as string,
   _swipeStarted: false as boolean,
+  /** 成员筛选状态（COSTRA-220: 'all' | 'self'） */
+  _memberFilter: 'all' as MemberFilter,
+  /** 当前用户 ID（COSTRA-220: 从 auth token 获取 · 用于成员筛选） */
+  _currentUserId: '' as string,
+  /** eventBus 订阅 handler（COSTRA-220: 防内存泄漏） */
+  _entrySavedHandler: null as (() => void) | null,
 
   // ─── 生命周期 ────────────────────────────────────────────────────────────────
 
@@ -191,6 +211,17 @@ Page({
       navBarTotalHeight,
       monthDisplay: formatMonthDisplay(this.data.currentMonth),
     });
+
+    // COSTRA-220: 获取当前 userId（用于成员筛选）
+    const token = getToken();
+    if (token?.raw?.user?.id) {
+      this._currentUserId = token.raw.user.id;
+    }
+
+    // COSTRA-220: 订阅 ENTRY_SAVED 事件 → 响应式刷新明细页
+    const handler = () => { this._onEntrySaved(); };
+    this._entrySavedHandler = handler;
+    eventBus.on(EventNames.ENTRY_SAVED, handler);
   },
 
   async onShow() {
@@ -199,21 +230,39 @@ Page({
     await this._loadEntries();
   },
 
+  onUnload() {
+    // COSTRA-220: 取消订阅 ENTRY_SAVED 事件（防内存泄漏）
+    if (this._entrySavedHandler) {
+      eventBus.off(EventNames.ENTRY_SAVED, this._entrySavedHandler);
+      this._entrySavedHandler = null;
+    }
+  },
+
   // ─── 数据加载 ────────────────────────────────────────────────────────────────
 
   async _loadContext() {
-    const [ledgerId, familyId] = await Promise.all([
+    const [ledgerId, familyId, familyKind, ledgerName] = await Promise.all([
       getActiveLedgerId(),
       getActiveFamilyId(),
+      getActiveFamilyKind(),
+      getActiveLedgerName(),
     ]);
     this._ledgerId = ledgerId || '';
     this._familyId = familyId || '';
 
-    const isMultiMember = !!familyId && familyId !== 'solo';
+    // COSTRA-220: 用 family_kind 替代 !== 'solo' 硬编码判断
+    const isMultiMember = familyKind === 'shared';
     this.setData({
       showMemberFilter: isMultiMember,
-      ledgerName: '我的账本',
+      // COSTRA-220: 从 FamilyContext 获取真实账本名称
+      ledgerName: ledgerName || '我的账本',
     });
+
+    // 切换到非共享账本时重置成员筛选
+    if (!isMultiMember && this._memberFilter !== 'all') {
+      this._memberFilter = 'all';
+      this.setData({ memberFilterText: '全部成员' });
+    }
 
     // COSTRA-219: 预加载分类数据到内存缓存（供 getCategoryIconById/getCategoryNameById 查找）
     if (familyId) {
@@ -251,7 +300,11 @@ Page({
 
   /** 从 _allEntries 构建 dateGroups + 汇总 */
   _buildDisplay() {
-    const entries = this._allEntries;
+    // COSTRA-220: 成员筛选 · 按 _memberFilter 过滤 entries
+    let entries = this._allEntries;
+    if (this._memberFilter === 'self' && this._currentUserId) {
+      entries = entries.filter(e => e.created_by === this._currentUserId);
+    }
 
     // 按日期分组
     const groupMap = new Map<string, Entry[]>();
@@ -328,17 +381,37 @@ Page({
 
   // ─── 交互：账本切换 ──────────────────────────────────────────────────────────
 
-  onTapLedgerName() {
-    const items = ['我的账本'];
-    if (this._familyId && this._familyId !== 'solo') {
-      items.push('家庭账本');
+  async onTapLedgerName() {
+    // COSTRA-220: 从 FamilyContext 获取真实账本名称
+    const currentName = this.data.ledgerName;
+    const items = [currentName];
+    // TODO: D2 阶段接入家庭列表 API 后动态填充多账本选项
+    // if (this._familyId && familyKind === 'shared') {
+    //   items.push('家庭账本');
+    // }
+
+    // MVP 阶段只有个人账本，无需 ActionSheet
+    if (items.length <= 1) {
+      wx.showToast({ title: '当前只有一个账本', icon: 'none' });
+      return;
     }
 
     wx.showActionSheet({
       itemList: items,
-      success: (res) => {
+      success: async (res) => {
         const selected = items[res.tapIndex];
+        if (selected === currentName) return;
+
+        // COSTRA-220: 切换后更新 _ledgerId + 持久化 + 刷新数据
         this.setData({ ledgerName: selected });
+        await setActiveFamily({
+          family_id: this._familyId,
+          ledger_id: this._ledgerId,
+          // 保留 kind，更新 name
+          family_kind: (await getActiveFamilyKind()) ?? undefined,
+          ledger_name: selected,
+        });
+        await this._loadEntries();
       },
     });
   },
@@ -352,18 +425,42 @@ Page({
       monthDisplay: formatMonthDisplay(value),
     });
     this._loadEntries();
+    // COSTRA-220: 月份切换后滚动到顶部
+    this._scrollTopToTop();
   },
 
   // ─── 交互：成员筛选 ──────────────────────────────────────────────────────────
 
   onTapMemberFilter() {
+    // COSTRA-220: 真实过滤逻辑 · 选择后记录 _memberFilter 状态 + 重建显示
     const items = ['全部成员', '仅看自己'];
     wx.showActionSheet({
       itemList: items,
       success: (res) => {
+        const filter: MemberFilter = res.tapIndex === 0 ? 'all' : 'self';
+        this._memberFilter = filter;
         this.setData({ memberFilterText: items[res.tapIndex] });
+        this._buildDisplay();
       },
     });
+  },
+
+  // ─── eventBus 响应式刷新（COSTRA-220）─────────────────────────────────────────
+
+  async _onEntrySaved() {
+    // 记账保存成功后刷新明细页数据
+    await this._loadEntries();
+  },
+
+  // ─── UX 增强（COSTRA-220）────────────────────────────────────────────────────
+
+  /** 滚动列表到顶部（月份切换后） */
+  _scrollTopToTop() {
+    // 小程序 scroll-view 不响应同值赋值 · 先设 1 再 nextTick 设 0
+    this.setData({ listScrollTop: 1 });
+    setTimeout(() => {
+      this.setData({ listScrollTop: 0 });
+    }, 50);
   },
 
   // ─── 交互：左滑删除 ──────────────────────────────────────────────────────────

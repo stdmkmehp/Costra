@@ -155,15 +155,17 @@
 建议新对话从数据层开始，而不是继续 UI 局部打磨：
 
 ```text
-B1/B2（DB migration）
-  → B3（后端分类 API）
-  → B4（前端分类数据模型，替换 hardcode categories）
-  → C2 明细页真实数据完善
+B1/B2（DB migration）✅
+  → B3（后端分类 API）✅
+  → B4（前端分类数据模型，替换 hardcode categories）✅
+  → C2 明细页真实数据完善 ✅
+  → D2/D3 + C5 家庭页（Family First · 优先于统计页）
   → D1 + C4 统计页
-  → D2/D3 + C5 家庭页
   → C6 我的页
   → E1/E2 联调与清理
 ```
+
+> 2026-06-01 Human 更新优先级：统计页、家庭页、我的页需结合当前和未来 Sprint 规划；**家庭页优先级高于统计页**。详细留档见 `.team/HANDOFF-2026-06-01-next-sprints-family-first.md`。
 
 新对话建议开场指令：
 

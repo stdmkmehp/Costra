@@ -20,6 +20,8 @@ export interface Entry {
   version?: number;             // 服务端乐观锁版本
   deleted_at?: string | null;   // 软删
   dirty?: boolean;              // 本地标记 · 未 push
+  /** 创建者用户 ID（COSTRA-220: 从 sync wire user_id 字段写入 · 本地创建时写入当前 userId） */
+  created_by?: string | null;
 }
 
 export interface Category {

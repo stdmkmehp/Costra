@@ -16,6 +16,7 @@
 
 ## §2 当前关注（active tasks）
 
+- 🆕 **COSTRA-218 R1 实装完成**（2026-06-09 · GET /v1/categories + POST /v1/categories 端点实装 · categoryRepo + categoryService + categories routes + app.ts 注册 + T1~T8 单测 · 权限守门 isUserInFamily · 层级校验禁止三层 · 同名去重应用层+DB双保险 · children_count 内存计算 · 108/108 测全绿 · typecheck ✅ · 等 review-tech R1 + Human T1 approve）
 - 🆕 **COSTRA-217 R1.x clean rebuild 重构完成**（2026-06-08 · Human 新准则：开发期 DB clean rebuild 不兼容旧数据 · 0008 migration 重写：删除旧 ID 保留/__migrate__* 临时重命名/中断态恢复逻辑 · 改为 DELETE 旧系统分类 + 全量 INSERT 11 一级 + 62 二级 · docs/db/schema.md 删除"旧 12 条 ID 保留迁移"改为 clean rebuild · entries.test.ts console.error 清理 · typecheck ✅ · 100/100 测全绿 · 等 review-tech R3 + Human T1 approve）
 - ✅ **COSTRA-217 R1.x 收尾完成**（2026-06-01 · R1 实装 + R1.x 补齐：删除 5 个 debug 临时测试文件 · docs/db/schema.md v1.2 同步 categories parent_id/is_direct_default + entries shared_type + migration 0008/0009 · api/CHANGELOG.md 新建记录 v0.3~v0.9 · pg-mem ON CONFLICT DO NOTHING bug 修复（4 个测试文件改用不带 ON CONFLICT 的 INSERT）· shared_type 默认规则已在 R1.x 实装（resolveDefaultSharedType via ledger→family kind）· typecheck ✅ · 100/100 测全绿 · review-tech R1 PASS-WITH-FOLLOWUP 29/35 · 已修 P1-1/P1-2/P2-2/P2-3）
 - 🆕 **COSTRA-164 R1 实装完成**（2026-05-27 · server family bootstrap MVP · wxLogin atomic 建个人 family+ledger · AuthTokenPair 加 default_family_id/ledger_id · migration 0007 family_kind ENUM + partial unique index · familyRepo + ledgerRepo 新建 · ErrorCode FAMILY_PERSONAL_NOT_DELETABLE · env.ts 加 MAX_FAMILIES_PER_USER/USER_VISIBLE_FAMILY_LIMIT · T1~T10 单测全绿 · 80/80 全绿 · 等 review-tech R1 + Human T1 approve + 165 联合实测）
@@ -29,6 +30,7 @@
 
 ## §3 交付历史索引
 
+- **2026-06-09** · **COSTRA-218 R1 实装**（GET/POST /v1/categories 端点实装 · categoryRepo + categoryService + categories routes · T1~T8 单测全绿 · 108/108 全绿）· `history/2026-06-09-costra-218-categories-api.md`
 - **2026-06-08** · **COSTRA-217 R1.x clean rebuild 重构**（Human 新准则：开发期 DB clean rebuild · 0008 migration 重写删除旧 ID 保留/__migrate__* 逻辑 · 全量 INSERT 11+62 分类 · schema.md 同步 · entries.test.ts console.error 清理 · typecheck ✅ · 100/100 测全绿）· `history/2026-06-08-costra-217-clean-rebuild-refactor.md`
 - **2026-06-08** · **COSTRA-217 R1.x review-tech Round-1 fixes**（P1-1 updateWithVersion shared_type 非 expense 校验 · P1-2 0008 migration 中断态风险注释 · P2-2 sync/push payload schema 显式声明 shared_type · P2-3 移除 console.log 残留 · typecheck ✅ · 100/100 测全绿）· `history/2026-06-08-costra-217-review-tech-r1-fixes.md`
 - **2026-06-01** · **COSTRA-217 R1.x 收尾**（删除 5 debug 文件 · schema.md v1.2 同步 · api/CHANGELOG.md 新建 · pg-mem ON CONFLICT bug 修复 4 文件 · shared_type 默认规则已实装 · 100/100 测全绿）· `history/2026-06-01-costra-217-category-shared-type.md`
@@ -92,3 +94,4 @@
 - **2026-05-27T15:30:00+08:00 · COSTRA-164 R1 实装完成**（dispatch v2.1 全 6 项 scope 落地 · 80/80 测全绿 · DoD 22/23 通过 · G15 反例命中：subagent 完成代码但漏 commit/state/history 归档 · Orchestrator 接管收尾 · Sprint-2 末 retro 议题"SBAI 装扮档 7 点卡需在 R1 内分阶段 commit"实战预警第 N 次 · 落 ADR-0007 v1.1 方案 R · migration 0007 family_kind ENUM + partial unique index · familyRepo + ledgerRepo 新建 + softDelete kind 守门 · authService withTx + isUniqueViolation + race fallback · AuthTokenPair +2 字段 · ErrorCode FAMILY_PERSONAL_NOT_DELETABLE · 等 review-tech R1 / 与 165 联合 approve）
 - **2026-06-08T17:14:00+08:00 · COSTRA-217 R1.x clean rebuild 重构完成**（0008 migration 重写 · schema.md 同步 · entries.test.ts console.error 清理 · typecheck ✅ · 100/100 测全绿 · 等 review-tech R3 + Human T1 approve）
 - **2026-06-01T16:30:00+08:00 · COSTRA-217 R1.x 收尾完成**（删除 5 debug 文件 · schema.md v1.2 同步 · api/CHANGELOG.md 新建 · pg-mem ON CONFLICT bug 修复 4 文件 · shared_type 默认规则已实装 · 100/100 测全绿 · 等 review-tech R1 + Human T1 approve）
+- **2026-06-09T17:55:00+08:00 · COSTRA-218 R1 实装完成**（GET/POST /v1/categories + categoryRepo + categoryService + categories routes + T1~T8 · 108/108 全绿 · typecheck ✅ · 等 review-tech R1 + Human T1 approve）
