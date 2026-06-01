@@ -81,25 +81,25 @@ beforeEach(async () => {
   // 插入测试基础数据
   const pool = (await import('../src/db/pool.js')).getPool();
   await pool.query(
-    `INSERT INTO families (id, name, owner_id) VALUES ($1, 'TestFamily', $2) ON CONFLICT DO NOTHING`,
+    `INSERT INTO families (id, name, owner_id, kind) VALUES ($1, 'TestFamily', $2, 'shared')`,
     [FAMILY_ID, userId],
   );
   await pool.query(
-    `INSERT INTO ledgers (id, family_id, name) VALUES ($1, $2, 'Main') ON CONFLICT DO NOTHING`,
+    `INSERT INTO ledgers (id, family_id, name) VALUES ($1, $2, 'Main')`,
     [LEDGER_ID, FAMILY_ID],
   );
   await pool.query(
-    `INSERT INTO family_members (family_id, user_id, role) VALUES ($1, $2, 'owner') ON CONFLICT DO NOTHING`,
+    `INSERT INTO family_members (family_id, user_id, role) VALUES ($1, $2, 'owner')`,
     [FAMILY_ID, userId],
   );
 
   // 插入另一个 family（越权测试用）
   await pool.query(
-    `INSERT INTO families (id, name, owner_id) VALUES ($1, 'OtherFamily', $2) ON CONFLICT DO NOTHING`,
+    `INSERT INTO families (id, name, owner_id) VALUES ($1, 'OtherFamily', $2)`,
     [OTHER_FAMILY_ID, userId],
   );
   await pool.query(
-    `INSERT INTO ledgers (id, family_id, name) VALUES ($1, $2, 'Other') ON CONFLICT DO NOTHING`,
+    `INSERT INTO ledgers (id, family_id, name) VALUES ($1, $2, 'Other')`,
     [OTHER_LEDGER_ID, OTHER_FAMILY_ID],
   );
   // 注意：不把 user 加入 OTHER_FAMILY 的 family_members（越权测试用）

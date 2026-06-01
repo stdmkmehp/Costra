@@ -108,6 +108,7 @@ const syncPushBodySchema = {
             properties: {
               ledger_id: { type: 'string', format: 'uuid' },
               category_id: { type: ['string', 'null'], format: 'uuid' },
+              shared_type: { type: ['string', 'null'], enum: ['personal', 'shared', null] }, // COSTRA-217 B2
             },
           },
         },

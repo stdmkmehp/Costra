@@ -1050,7 +1050,7 @@ components:
 
     Category:
       type: object
-      required: [id, name, type, icon, sort_order]
+      required: [id, name, type, icon, sort_order, parent_id, is_direct_default, children_count]
       properties:
         id: { type: string, format: uuid }
         family_id:
@@ -1064,6 +1064,26 @@ components:
         color: { type: string, description: 色值 key }
         sort_order: { type: integer }
         is_system: { type: boolean }
+        parent_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: |
+            父分类 ID；NULL 表示一级分类。
+            COSTRA-217 B1：二级分类体系，最多两层。
+        is_direct_default:
+          type: boolean
+          description: |
+            全局二级展示区直选默认归属标记。
+            仅二级分类有意义（一级分类恒为 false）。
+            同名二级分类在不同一级下时，只有最日常/最高频的那个为 true。
+            COSTRA-217 B1：对齐 design/ui/category_dictionary.md §默认直选归属映射表。
+        children_count:
+          type: integer
+          minimum: 0
+          description: |
+            一级分类下二级数量；二级分类为 0。
+            客户端据此判断是否展示展开箭头。
 
     CategoryCreate:
       type: object
@@ -1074,6 +1094,14 @@ components:
         type: { type: string, enum: [income, expense] }
         icon: { type: string }
         color: { type: string }
+        parent_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: |
+            父分类 ID；不传表示创建一级分类，传入表示创建二级分类。
+            COSTRA-217 B1：家庭自定义分类不得绕过二级约束（最多两层）。
+            is_direct_default 与 children_count 为服务端只读字段，不允许客户端在 Create/Update 中传入。
 
     Entry:
       type: object
@@ -1125,6 +1153,18 @@ components:
           type: string
           nullable: true
           description: 客户端离线本地 id，用于 sync/push 去重
+        shared_type:
+          type: string
+          nullable: true
+          enum: [personal, shared]
+          description: |
+            公共/个人支出标记（COSTRA-217 B2）。
+            - expense: 允许 personal / shared；未传时由服务端默认
+              - 单人 personal family 账本默认 personal
+              - 多人 shared family 账本默认 shared
+            - income: 不适用公共收入概念，必须为 NULL
+            - transfer: 暂不进入公共/个人统计，必须为 NULL
+            非法组合（如 type=income 且 shared_type=shared）服务端返回 BUSINESS_RULE_VIOLATION。
 
     EntryCreate:
       type: object
@@ -1148,6 +1188,13 @@ components:
         note: { type: string, maxLength: 200 }
         occurred_at: { type: string, format: date-time }
         client_ref_id: { type: string }
+        shared_type:
+          type: string
+          nullable: true
+          enum: [personal, shared]
+          description: |
+            公共/个人支出标记（COSTRA-217 B2）。可选；缺省走服务端默认规则。
+            仅 type=expense 时有效；income/transfer 时传入非 NULL 将被拒绝。
 
     EntryUpdate:
       type: object
@@ -1161,6 +1208,12 @@ components:
         category_id: { type: string, format: uuid }
         note: { type: string, maxLength: 200 }
         occurred_at: { type: string, format: date-time }
+        shared_type:
+          type: string
+          nullable: true
+          enum: [personal, shared]
+          description: |
+            公共/个人支出标记（COSTRA-217 B2）。仅 type=expense 时可修改。
         version: { type: integer, description: 当前服务端版本号 }
 
     Budget:
@@ -1245,6 +1298,10 @@ components:
               payload:
                 type: object
                 additionalProperties: true
+                description: |
+                  实体 payload。entry payload 含 shared_type 可选字段（COSTRA-217 B2）：
+                  - shared_type 缺省时走服务端默认规则
+                  - 非法组合（type=income 且 shared_type=shared）服务端返回 BUSINESS_RULE_VIOLATION
 
     SyncPushResponse:
       type: object

@@ -101,6 +101,24 @@ export async function createPersonalFamily(
 }
 
 /**
+ * 按 id 查 family（COSTRA-217 R1.x：entryService 需查 family kind 判定 shared_type 默认值）
+ */
+export async function findById(
+  familyId: string,
+  client?: Runner,
+): Promise<FamilyEntity | null> {
+  const runner = client ?? exec();
+  const res = await runner.query(
+    `SELECT id, name, owner_id, kind, created_at, updated_at, deleted_at, version
+       FROM families
+      WHERE id = $1 AND deleted_at IS NULL
+      LIMIT 1`,
+    [familyId],
+  );
+  return res.rows[0] ? rowToEntity(res.rows[0]) : null;
+}
+
+/**
  * 查 user 的所有 active families（left_at IS NULL · 排序 created_at ASC）
  * 可选 filter by kind（Sprint-4 切换器 UI 用）
  */

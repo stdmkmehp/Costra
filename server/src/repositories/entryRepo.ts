@@ -40,6 +40,13 @@ export interface EntryEntity {
    * - 真 PG BIGINT 通过 pg 驱动返 string · pg-mem 返 number · rowToEntity 用 Number() 统一
    */
   changeSeq: number;
+  /**
+   * 公共/个人支出标记（COSTRA-217 B2 · 2026-06-01）
+   * - expense: 允许 'personal' / 'shared'; 未传时由服务端默认
+   * - income / transfer: 必须为 null
+   * - DB CHECK 约束: shared_type IS NULL OR type = 'expense'
+   */
+  sharedType: 'personal' | 'shared' | null;
 }
 
 interface EntryRow {
@@ -60,6 +67,7 @@ interface EntryRow {
   version: number;
   client_ref_id: string | null;
   change_seq: string | number; // BIGINT · 真 PG 返 string · pg-mem 返 number
+  shared_type: 'personal' | 'shared' | null; // COSTRA-217 B2
 }
 
 function rowToEntity(r: EntryRow): EntryEntity {
@@ -81,6 +89,7 @@ function rowToEntity(r: EntryRow): EntryEntity {
     version: r.version,
     clientRefId: r.client_ref_id,
     changeSeq: Number(r.change_seq), // 同 amount 范式 · 跨驱动统一为 number
+    sharedType: r.shared_type, // COSTRA-217 B2
   };
 }
 
@@ -105,6 +114,8 @@ export interface CreateEntryInput {
   occurredAt: string; // ISO-8601
   createdBy: string;
   clientRefId?: string | null;
+  /** COSTRA-217 B2: 公共/个人支出标记 · 仅 expense 有值 · income/transfer 必须为 null */
+  sharedType?: 'personal' | 'shared' | null;
 }
 
 /**
@@ -120,11 +131,11 @@ export async function insertEntry(input: CreateEntryInput, client?: Runner): Pro
   const runner = client ?? exec();
   const res = await runner.query(
     `INSERT INTO entries (id, ledger_id, amount, currency, type, category_id,
-                          account_id, to_account_id, note, occurred_at, created_by, client_ref_id)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                          account_id, to_account_id, note, occurred_at, created_by, client_ref_id, shared_type)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         RETURNING id, ledger_id, amount, currency, type, category_id,
                   account_id, to_account_id, note, occurred_at,
-                  created_by, created_at, updated_at, deleted_at, version, client_ref_id, change_seq`,
+                  created_by, created_at, updated_at, deleted_at, version, client_ref_id, change_seq, shared_type`,
     [
       id,
       input.ledgerId,
@@ -138,6 +149,7 @@ export async function insertEntry(input: CreateEntryInput, client?: Runner): Pro
       input.occurredAt,
       input.createdBy,
       input.clientRefId ?? null,
+      input.sharedType ?? null, // COSTRA-217 B2
     ],
   );
   if (!res.rows[0]) {
@@ -157,6 +169,8 @@ export interface UpdateEntryInput {
   toAccountId?: string | null;
   note?: string | null;
   occurredAt?: string;
+  /** COSTRA-217 B2: 公共/个人支出标记 · 仅 expense 可修改 */
+  sharedType?: 'personal' | 'shared' | null;
 }
 
 export async function updateEntryByVersion(
@@ -176,6 +190,7 @@ export async function updateEntryByVersion(
   if (input.toAccountId !== undefined) { fields.push(`to_account_id = $${idx++}`); values.push(input.toAccountId); }
   if (input.note !== undefined) { fields.push(`note = $${idx++}`); values.push(input.note); }
   if (input.occurredAt !== undefined) { fields.push(`occurred_at = $${idx++}`); values.push(input.occurredAt); }
+  if (input.sharedType !== undefined) { fields.push(`shared_type = $${idx++}`); values.push(input.sharedType); } // COSTRA-217 B2
 
   if (fields.length === 0) {
     // 无字段更新 → 直接查当前 entry（不抛错，走 caller 逻辑）
@@ -197,7 +212,7 @@ export async function updateEntryByVersion(
       WHERE id = $${idx++} AND version = $${idx} AND deleted_at IS NULL
         RETURNING id, ledger_id, amount, currency, type, category_id,
                   account_id, to_account_id, note, occurred_at,
-                  created_by, created_at, updated_at, deleted_at, version, client_ref_id, change_seq`,
+                  created_by, created_at, updated_at, deleted_at, version, client_ref_id, change_seq, shared_type`,
     values,
   );
   return res.rows[0] ? rowToEntity(res.rows[0]) : null;
@@ -220,7 +235,7 @@ export async function softDeleteEntry(entryId: string, baseVersion: number, clie
       WHERE id = $1 AND version = $2 AND deleted_at IS NULL
         RETURNING id, ledger_id, amount, currency, type, category_id,
                   account_id, to_account_id, note, occurred_at,
-                  created_by, created_at, updated_at, deleted_at, version, client_ref_id, change_seq`,
+                  created_by, created_at, updated_at, deleted_at, version, client_ref_id, change_seq, shared_type`,
     [entryId, baseVersion],
   );
   return res.rows[0] ? rowToEntity(res.rows[0]) : null;
@@ -268,7 +283,7 @@ export async function findEntriesByLedger(
   const res = await runner.query(
     `SELECT id, ledger_id, amount, currency, type, category_id,
             account_id, to_account_id, note, occurred_at,
-            created_by, created_at, updated_at, deleted_at, version, client_ref_id, change_seq
+            created_by, created_at, updated_at, deleted_at, version, client_ref_id, change_seq, shared_type
        FROM entries
       WHERE ${where}
       ORDER BY updated_at DESC, id DESC
@@ -340,7 +355,7 @@ export async function findEntriesByFamilySince(
   const res = await runner.query(
     `SELECT e.id, e.ledger_id, l.family_id, e.amount, e.currency, e.type, e.category_id,
             e.account_id, e.to_account_id, e.note, e.occurred_at,
-            e.created_by, e.created_at, e.updated_at, e.deleted_at, e.version, e.client_ref_id, e.change_seq
+            e.created_by, e.created_at, e.updated_at, e.deleted_at, e.version, e.client_ref_id, e.change_seq, e.shared_type
        FROM entries e
        JOIN ledgers l ON l.id = e.ledger_id
       WHERE l.family_id = $1
@@ -380,7 +395,7 @@ export async function findById(entryId: string, userIdOrClient?: string | Runner
     const res = await runner.query(
       `SELECT e.id, e.ledger_id, e.amount, e.currency, e.type, e.category_id,
               e.account_id, e.to_account_id, e.note, e.occurred_at,
-              e.created_by, e.created_at, e.updated_at, e.deleted_at, e.version, e.client_ref_id, e.change_seq
+              e.created_by, e.created_at, e.updated_at, e.deleted_at, e.version, e.client_ref_id, e.change_seq, e.shared_type
          FROM entries e
          JOIN ledgers l ON l.id = e.ledger_id
          JOIN family_members fm ON fm.family_id = l.family_id
@@ -397,7 +412,7 @@ export async function findById(entryId: string, userIdOrClient?: string | Runner
   const res = await runner.query(
     `SELECT e.id, e.ledger_id, e.amount, e.currency, e.type, e.category_id,
             e.account_id, e.to_account_id, e.note, e.occurred_at,
-            e.created_by, e.created_at, e.updated_at, e.deleted_at, e.version, e.client_ref_id, e.change_seq
+            e.created_by, e.created_at, e.updated_at, e.deleted_at, e.version, e.client_ref_id, e.change_seq, e.shared_type
        FROM entries e
        JOIN ledgers l ON l.id = e.ledger_id
        JOIN family_members fm ON fm.family_id = l.family_id AND fm.left_at IS NULL
@@ -416,7 +431,7 @@ export async function findByLedgerAndClientRefId(ledgerId: string, clientRefId: 
   const res = await runner.query(
     `SELECT id, ledger_id, amount, currency, type, category_id,
             account_id, to_account_id, note, occurred_at,
-            created_by, created_at, updated_at, deleted_at, version, client_ref_id, change_seq
+            created_by, created_at, updated_at, deleted_at, version, client_ref_id, change_seq, shared_type
        FROM entries
       WHERE ledger_id = $1 AND client_ref_id = $2 AND deleted_at IS NULL
       LIMIT 1`,

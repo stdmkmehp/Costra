@@ -19,8 +19,35 @@ import { AppError } from '../errors/AppError.js';
 import { ErrorCode } from '../errors/ErrorCode.js';
 import { createEntryService } from '../services/entryService.js';
 import type { CreateEntryPayload, UpdateEntryPayload } from '../services/entryService.js';
+import type { EntryEntity } from '../repositories/entryRepo.js';
 
 interface JwtPayload { sub: string; iat: number; exp: number }
+
+/**
+ * COSTRA-217: 统一 Entry → wire 响应映射
+ * 含 shared_type 字段（B2）
+ */
+function entryToResponse(e: EntryEntity) {
+  return {
+    id: e.id,
+    ledger_id: e.ledgerId,
+    amount: e.amount,
+    currency: e.currency,
+    type: e.type,
+    category_id: e.categoryId,
+    account_id: e.accountId,
+    to_account_id: e.toAccountId,
+    note: e.note,
+    occurred_at: e.occurredAt.toISOString(),
+    created_by: e.createdBy,
+    created_at: e.createdAt.toISOString(),
+    updated_at: e.updatedAt.toISOString(),
+    deleted_at: e.deletedAt?.toISOString() ?? null,
+    version: e.version,
+    client_ref_id: e.clientRefId,
+    shared_type: e.sharedType, // COSTRA-217 B2
+  };
+}
 
 async function parseUserId(request: FastifyRequest): Promise<string> {
   try {
@@ -51,6 +78,7 @@ const createEntryBodySchema = {
     note: { type: 'string', maxLength: 200 },
     occurred_at: { type: 'string', format: 'date-time' },
     client_ref_id: { type: 'string' },
+    shared_type: { type: 'string', enum: ['personal', 'shared'], nullable: true }, // COSTRA-217 B2
   },
 } as const;
 
@@ -86,6 +114,7 @@ const patchEntryBodySchema = {
     category_id: { type: 'string', format: 'uuid' },
     note: { type: 'string', maxLength: 200 },
     occurred_at: { type: 'string', format: 'date-time' },
+    shared_type: { type: 'string', enum: ['personal', 'shared'], nullable: true }, // COSTRA-217 B2
     version: { type: 'integer', minimum: 1 },
   },
 } as const;
@@ -119,24 +148,7 @@ export async function registerEntriesRoutes(app: FastifyInstance): Promise<void>
       );
       if (result.status === 'ok') {
         const entry = await entryService.findById(userId, result.serverId);
-        reply.code(201).send({
-          id: entry.id,
-          ledger_id: entry.ledgerId,
-          amount: entry.amount,
-          currency: entry.currency,
-          type: entry.type,
-          category_id: entry.categoryId,
-          account_id: entry.accountId,
-          to_account_id: entry.toAccountId,
-          note: entry.note,
-          occurred_at: entry.occurredAt.toISOString(),
-          created_by: entry.createdBy,
-          created_at: entry.createdAt.toISOString(),
-          updated_at: entry.updatedAt.toISOString(),
-          deleted_at: entry.deletedAt?.toISOString() ?? null,
-          version: entry.version,
-          client_ref_id: entry.clientRefId,
-        });
+        reply.code(201).send(entryToResponse(entry));
         return;
       }
       if (result.status === 'conflict') {
@@ -173,24 +185,7 @@ export async function registerEntriesRoutes(app: FastifyInstance): Promise<void>
     async (req, reply) => {
       const userId = await parseUserId(req);
       const entry = await entryService.findById(userId, req.params.entry_id);
-      reply.code(200).send({
-        id: entry.id,
-        ledger_id: entry.ledgerId,
-        amount: entry.amount,
-        currency: entry.currency,
-        type: entry.type,
-        category_id: entry.categoryId,
-        account_id: entry.accountId,
-        to_account_id: entry.toAccountId,
-        note: entry.note,
-        occurred_at: entry.occurredAt.toISOString(),
-        created_by: entry.createdBy,
-        created_at: entry.createdAt.toISOString(),
-        updated_at: entry.updatedAt.toISOString(),
-        deleted_at: entry.deletedAt?.toISOString() ?? null,
-        version: entry.version,
-        client_ref_id: entry.clientRefId,
-      });
+      reply.code(200).send(entryToResponse(entry));
     },
   );
 
@@ -209,24 +204,7 @@ export async function registerEntriesRoutes(app: FastifyInstance): Promise<void>
 
     if (result.status === 'ok') {
       const entry = await entryService.findById(userId, result.serverId);
-      reply.code(200).send({
-        id: entry.id,
-        ledger_id: entry.ledgerId,
-        amount: entry.amount,
-        currency: entry.currency,
-        type: entry.type,
-        category_id: entry.categoryId,
-        account_id: entry.accountId,
-        to_account_id: entry.toAccountId,
-        note: entry.note,
-        occurred_at: entry.occurredAt.toISOString(),
-        created_by: entry.createdBy,
-        created_at: entry.createdAt.toISOString(),
-        updated_at: entry.updatedAt.toISOString(),
-        deleted_at: entry.deletedAt?.toISOString() ?? null,
-        version: entry.version,
-        client_ref_id: entry.clientRefId,
-      });
+      reply.code(200).send(entryToResponse(entry));
       return;
     }
     if (result.status === 'conflict') {

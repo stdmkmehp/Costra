@@ -83,6 +83,24 @@ export async function createDefaultLedger(
 }
 
 /**
+ * 按 id 查 ledger（COSTRA-217 R1.x：entryService 需通过 ledger→family 判定 shared_type 默认值）
+ */
+export async function findById(
+  ledgerId: string,
+  client?: Runner,
+): Promise<LedgerEntity | null> {
+  const runner = client ?? exec();
+  const res = await runner.query(
+    `SELECT id, family_id, name, currency, created_at, updated_at, deleted_at, version
+       FROM ledgers
+      WHERE id = $1 AND deleted_at IS NULL
+      LIMIT 1`,
+    [ledgerId],
+  );
+  return res.rows[0] ? rowToEntity(res.rows[0]) : null;
+}
+
+/**
  * 查 family 的第一个 active ledger（产品语义 1:1 · 取第一个即可）
  * 返回 null 表示该 family 无 ledger（数据异常 · service 层自愈补建）
  */

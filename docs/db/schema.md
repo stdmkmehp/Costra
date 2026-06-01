@@ -1,10 +1,15 @@
-# Costra DB Schema v1.1
+# Costra DB Schema v1.2
 
-> **卡号**: COSTRA-021 · **Owner**: Backend-Agent · **更新**: 2026-04-23（Sprint-0 补审 · Round-2 修复 P0-1/P1 全集）
+> **卡号**: COSTRA-021 · **Owner**: Backend-Agent · **更新**: 2026-06-01（COSTRA-217 二级分类 + shared_type · Sprint-3）
 > **约束来源**: `ADR-0004` §8 金额 / §10 时区 / §12 审计；`docs/charter.md` §13 工程约束；`../api/id-strategy.md`（UUID v7 事实源）
-> **迁移脚本**: `server/db/migrations/0001_init.sql` + `0002_seed_system_categories.sql`
+> **迁移脚本**: `server/db/migrations/0001_init.sql` + `0002_seed_system_categories.sql` + `0008_categories_hierarchy_seed.sql` + `0009_entries_shared_type.sql`
 > **运行环境**: PostgreSQL 15，`TIMESTAMPTZ` 强制 UTC 存储；主键 UUID v7 由应用层 `newId()` 生成（见 [`ADR-0006`](../../.team/decisions/ADR-0006-backend-runtime-and-primary-store.md)）
 > **docker-compose**: 仓库根 `/docker-compose.yml`（MVP 基线 `postgres:15-alpine` + `redis:7-alpine`，端点 `5432/6379`；本地一键起: `docker compose up -d pg redis`）
+>
+> **v1.2 变更**（2026-06-01 COSTRA-217）：
+> - categories 加 `parent_id`（二级树）+ `is_direct_default`（直选默认归属）+ CONSTRAINT TRIGGER 禁止三级/自引用 + 替换唯一索引含 parent_id + partial unique index is_direct_default
+> - entries 加 `shared_type` ENUM('personal','shared') + CHECK 约束（仅 expense 允许）+ 索引 idx_entries_shared_type
+> - 系统分类 seed 升级为二级体系（11 一级 + 62 二级 = 73 条 · clean rebuild：清空旧系统分类后全量插入）
 >
 > **v1.1 变更**（2026-04-23 Round-2）：
 > - P0-1 · `categories.kind` → `categories.type`、`ledger_entries.kind` → `ledger_entries.type`，CHECK 枚举统一 `('income','expense','transfer')`（与 OpenAPI `Category.type` / `Entry.type` 对齐；API 同轮补 `transfer`）
@@ -143,15 +148,24 @@
 | `user_id` | UUID | 用户自定义 |
 | `family_id` | UUID | 家庭自定义 |
 | `is_system` | BOOLEAN NOT NULL DEFAULT false | 系统预置（owner 为空） |
-| `parent_id` | UUID REFERENCES `categories(id)` | 两级分类（最多 2 级） |
+| `parent_id` | UUID REFERENCES `categories(id)` ON DELETE RESTRICT | **COSTRA-217 新增**：二级分类父级（最多 2 级）；CONSTRAINT TRIGGER 禁止三级 + 禁止自引用 |
 | `name` | TEXT NOT NULL | — |
 | `icon` | TEXT | 图标键（对齐 `docs/design/design-system.md`） |
+| `color` | TEXT | 颜色键（COSTRA-217 seed 使用） |
 | `type` | TEXT NOT NULL CHECK (type IN ('income','expense','transfer')) | v1.1 P0-1：原 `kind` 改名 `type` 与 OpenAPI `Category.type` 对齐；同步补 `transfer` 枚举 |
 | `sort_order` | INTEGER NOT NULL DEFAULT 0 | — |
+| `is_direct_default` | BOOLEAN NOT NULL DEFAULT false | **COSTRA-217 新增**：全局二级展示区直选默认归属标记；同名二级中只有最日常/最高频的设 true |
 | `created_at / updated_at / deleted_at / version` | 标准字段 | — |
 
-约束：系统分类 `is_system=true AND user_id IS NULL AND family_id IS NULL`；否则 P5 互斥。
-索引（v1.1 P1-1 扩展）：`idx_categories_scope` on `(COALESCE(user_id, family_id), type, sort_order)` — 一次覆盖"按归属 + 类型筛选 + sort_order 排序"的分类列表主路径。
+约束：
+- 系统分类 `is_system=true AND user_id IS NULL AND family_id IS NULL`；否则 P5 互斥
+- CONSTRAINT TRIGGER `chk_categories_max_two_levels`：最多两层 + 禁止自引用（DEFERRABLE INITIALLY DEFERRED）
+- Partial unique index `uq_categories_direct_default`：同一 scope 下同名二级分类只有一个 `is_direct_default=true`
+
+索引（COSTRA-217 更新）：
+- `uq_categories_family_name_type_parent` on `(COALESCE(family_id, '00000000…'), name, type, COALESCE(parent_id, '00000000…'))` WHERE `deleted_at IS NULL` — 替代旧 `uq_categories_family_name_type`，含 parent_id 维度
+- `idx_categories_type_parent_sort` on `(type, parent_id, sort_order)` WHERE `deleted_at IS NULL` — 按 type+parent 拉取分类主路径
+- `idx_categories_scope` on `(COALESCE(user_id, family_id), type, sort_order)` — v1.1 P1-1 扩展
 
 ---
 
@@ -174,20 +188,27 @@
 | `tags` | TEXT[] | 标签（≤5 个） |
 | `media_keys` | TEXT[] | 附件对象存储 key |
 | `transfer_peer_entry_id` | UUID REFERENCES `ledger_entries(id)` ON DELETE SET NULL | 转账配对（`type='transfer'` 时必填）；v1.1 P1-3：明确 `ON DELETE SET NULL`；应用层必须把"转账组两条流水"放在同一事务内一起软删 |
+| `shared_type` | entry_shared_type ENUM ('personal','shared') NULL | **COSTRA-217 新增**：公共/个人支出标记；仅 expense 允许有值；income/transfer 必须为 NULL；DB 无 DEFAULT，服务层必须显式写入 |
 | `created_at / updated_at / deleted_at / version` | 标准字段 | — |
 
 约束：
 - `CHECK ((user_id IS NOT NULL) <> (family_id IS NOT NULL))` — 私有/家庭互斥
 - `CHECK (type <> 'transfer' OR (to_account_id IS NOT NULL AND to_account_id <> account_id))` — transfer 必带不同对端账户
 - `CHECK (type = 'transfer' OR to_account_id IS NULL)` — 非 transfer 必须 to_account_id 为 NULL
+- `CHECK (shared_type IS NULL OR type = 'expense')` — **COSTRA-217 新增**：仅 expense 允许 shared_type
 
-**关键索引**（AC-1 明确要求 + v1.1 新增）：
+**shared_type 默认规则**（COSTRA-217 §2.B.3 · 服务层判定 · DB 无 DEFAULT）：
+- expense 未传 shared_type 时：personal family → `'personal'`；shared family → `'shared'`
+- 无法判定 family kind 时：返回标准错误且不写 DB（dispatch §2.B.3 硬约束：不得静默猜测）
+
+**关键索引**（AC-1 明确要求 + v1.1 新增 + COSTRA-217 新增）：
 - `idx_ledger_user_occurred` on `(user_id, occurred_at DESC)` WHERE `deleted_at IS NULL`
 - `idx_ledger_family_occurred` on `(family_id, occurred_at DESC)` WHERE `deleted_at IS NULL`
 - `idx_ledger_account` on `account_id`
 - `idx_ledger_to_account` on `to_account_id` WHERE `to_account_id IS NOT NULL` —— **v1.1 新增**，支撑按"转入账户"筛选与余额聚合
 - `idx_ledger_category` on `category_id`
 - `idx_ledger_updated` on `updated_at`（增量同步用）
+- `idx_entries_shared_type` on `(ledger_id, shared_type)` WHERE `shared_type IS NOT NULL AND deleted_at IS NULL` —— **COSTRA-217 新增**，家庭页公共/个人支出拆解查询
 
 ---
 
@@ -253,12 +274,22 @@
 
 ---
 
-## 4. 预置数据（`0002_seed_system_categories.sql`）
+## 4. 预置数据
 
-系统预置分类（`is_system=true`）：
-- **支出**：餐饮、交通、购物、居家、娱乐、医疗、教育、人情、其他
-- **收入**：工资、奖金、理财、红包、报销、其他
-- **转账**：账户互转（单独一条）
+### 4.1 旧预置分类（`0002_seed_system_categories.sql` · 已被 0008 清空）
+
+旧 12 条扁平系统分类（`is_system=true`）已被 `0008_categories_hierarchy_seed.sql` 开头 `DELETE FROM categories WHERE is_system = true AND family_id IS NULL` 清空，不再保留。开发阶段 clean rebuild，不考虑旧数据兼容。
+
+### 4.2 二级分类体系（`0008_categories_hierarchy_seed.sql` · COSTRA-217）
+
+系统预置分类升级为二级树结构（11 一级 + 62 二级 = 73 条 · 55 条 `is_direct_default=true`）：
+
+**支出一级**：餐饮、交通、购物、生活、旅行、文娱、汽车、其他
+**收入一级**：职业收入、投资与资产、意外所得
+
+Clean rebuild 策略：0008 开头清空旧系统分类，全量插入新二级分类体系，所有分类使用新 ID，不保留旧分类 ID。
+
+直选默认归属映射（`is_direct_default=true` 的同名二级）：餐饮→餐饮-餐饮、机票→交通-机票、零食→餐饮-零食、买菜→餐饮-买菜、饮料→餐饮-饮料
 
 ---
 
@@ -271,6 +302,8 @@
 | `0001_init.down.sql` | down（v0.2 交付） | `DROP TABLE ... CASCADE` 全量回滚 |
 | **`0003_v1_1_rename_kind_to_type.sql`** | up | **v1.1 补丁**：若 Sprint-0 开发库曾基于 v1 建表，使用此脚本做 `ALTER TABLE ... RENAME COLUMN kind TO type` 并重建 `idx_categories_scope`、加 `ledger_entries.to_account_id` 与对应索引、改 `subscribe_tokens.scene` CHECK、`feature_flags.rollout_percent` CHECK |
 | `0003_v1_1_rename_kind_to_type.down.sql` | down | 反向 RENAME 回滚（仅用于紧急回退） |
+| **`0008_categories_hierarchy_seed.sql`** | up | **COSTRA-217**：categories 加 `parent_id` + `is_direct_default` + CONSTRAINT TRIGGER 二级约束 + 替换唯一索引含 parent_id + partial unique index is_direct_default + 清空旧系统分类 + 全量插入二级分类 seed（11 一级 + 62 二级 = 73 条 · clean rebuild） |
+| **`0009_entries_shared_type.sql`** | up | **COSTRA-217**：创建 `entry_shared_type` ENUM + entries 加 `shared_type` 列 + CHECK 约束 `shared_type IS NULL OR type = 'expense'` + 索引 `idx_entries_shared_type` |
 
 **命名约定**：`NNNN_<slug>.sql` / `NNNN_<slug>.down.sql`，编号幂等可重跑。
 

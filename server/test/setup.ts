@@ -139,6 +139,26 @@ function applyMigrations(db: IMemoryDb): void {
     -- 不支持 trigger · 应用层 entryRepo 显式 SET change_seq = nextval(...) for UPDATE
     CREATE SEQUENCE IF NOT EXISTS entries_change_seq AS BIGINT START WITH 1 INCREMENT BY 1 NO CYCLE;
     ALTER TABLE entries ADD COLUMN change_seq BIGINT NOT NULL DEFAULT nextval('entries_change_seq');
+    -- COSTRA-217 B2: entries.shared_type 公共/个人支出标记
+    ALTER TABLE entries ADD COLUMN shared_type TEXT;
+    -- pg-mem 不支持 CHECK 约束含列引用 · 改为应用层校验（entryService validateCreatePayload）
+    -- COSTRA-217 B1: categories 二级分类体系
+    CREATE TABLE categories (
+      id              UUID PRIMARY KEY,
+      family_id       UUID,
+      name            TEXT NOT NULL,
+      type            TEXT NOT NULL,
+      icon            TEXT NOT NULL,
+      color           TEXT,
+      sort_order      INTEGER NOT NULL DEFAULT 0,
+      is_system       BOOLEAN NOT NULL DEFAULT false,
+      parent_id       UUID,
+      is_direct_default BOOLEAN NOT NULL DEFAULT false,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+      deleted_at      TIMESTAMPTZ,
+      version         INTEGER NOT NULL DEFAULT 1
+    );
     CREATE TABLE idempotency_keys (
       key             TEXT NOT NULL,
       endpoint        TEXT NOT NULL,
@@ -207,7 +227,7 @@ function registerPgMemFunctions(db: IMemoryDb): void {
 function resetPgMem(): void {
   if (memDb) {
     memDb.public.none(
-      'DELETE FROM family_members; DELETE FROM entries; DELETE FROM ledgers; DELETE FROM families; DELETE FROM user_sessions; DELETE FROM users; DELETE FROM idempotency_keys;',
+      'DELETE FROM entries; DELETE FROM categories; DELETE FROM family_members; DELETE FROM ledgers; DELETE FROM families; DELETE FROM user_sessions; DELETE FROM users; DELETE FROM idempotency_keys;',
     );
   }
 }

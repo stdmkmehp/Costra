@@ -17,8 +17,17 @@ import { AppError } from '../errors/AppError.js';
 import { ErrorCode } from '../errors/ErrorCode.js';
 import * as entryRepo from '../repositories/entryRepo.js';
 import type { EntryEntity } from '../repositories/entryRepo.js';
+import * as ledgerRepo from '../repositories/ledgerRepo.js';
+import * as familyRepo from '../repositories/familyRepo.js';
 
-export interface EntryServiceDeps {}
+/**
+ * 依赖注入接口（COSTRA-217 R1.x：新增 ledgerRepo/familyRepo 查询能力）
+ * 默认使用真实 repo · 单测可注入 mock
+ */
+export interface EntryServiceDeps {
+  findLedgerById?: (ledgerId: string) => Promise<{ familyId: string } | null>;
+  findFamilyById?: (familyId: string) => Promise<{ kind: string } | null>;
+}
 
 export interface EntryService {
   createWithIdempotency(userId: string, payload: CreateEntryPayload, clientRefId?: string): Promise<EntryResult>;
@@ -46,6 +55,8 @@ export interface CreateEntryPayload {
   note?: string | null;
   occurred_at: string;
   client_ref_id?: string;
+  /** COSTRA-217 B2: 公共/个人支出标记 · 仅 expense 有值 */
+  shared_type?: 'personal' | 'shared' | null;
 }
 
 export interface UpdateEntryPayload {
@@ -54,6 +65,8 @@ export interface UpdateEntryPayload {
   account_id?: string | null;
   note?: string | null;
   occurred_at?: string;
+  /** COSTRA-217 B2: 公共/个人支出标记 · 仅 expense 可修改 */
+  shared_type?: 'personal' | 'shared' | null;
 }
 
 export interface ListEntryFilter {
@@ -90,6 +103,8 @@ export interface EntryView {
   deleted_at: string | null;
   version: number;
   client_ref_id: string | null;
+  /** COSTRA-217 B2: 公共/个人支出标记 */
+  shared_type: 'personal' | 'shared' | null;
 }
 
 function entityToView(e: EntryEntity): EntryView {
@@ -110,6 +125,7 @@ function entityToView(e: EntryEntity): EntryView {
     deleted_at: e.deletedAt?.toISOString() ?? null,
     version: e.version,
     client_ref_id: e.clientRefId,
+    shared_type: e.sharedType, // COSTRA-217 B2
   };
 }
 
@@ -128,11 +144,42 @@ function validateCreatePayload(p: CreateEntryPayload): void {
   if (!p.occurred_at) {
     throw new AppError(ErrorCode.INVALID_ARGUMENT, { message: 'occurred_at required', details: { field: 'occurred_at' } });
   }
+  // COSTRA-217 B2: shared_type 校验
+  if (p.shared_type != null && p.type !== 'expense') {
+    throw new AppError(ErrorCode.BUSINESS_RULE_VIOLATION, {
+      message: 'shared_type is only allowed for expense entries',
+      details: { rule: 'shared_type_requires_expense', type: p.type, shared_type: p.shared_type },
+    });
+  }
 }
 
 // --- 工厂函数 ---
 
-export function createEntryService(_deps: EntryServiceDeps = {}): EntryService {
+export function createEntryService(deps: EntryServiceDeps = {}): EntryService {
+  const findLedgerById = deps.findLedgerById ?? (async (id: string) => ledgerRepo.findById(id));
+  const findFamilyById = deps.findFamilyById ?? (async (id: string) => familyRepo.findById(id));
+
+  /**
+   * COSTRA-217 R1.x: expense 未传 shared_type 时，按 ledger→family kind 判定默认值
+   *   - personal family → 'personal'
+   *   - shared family   → 'shared'
+   *   - 无法判定时返回 null（调用方必须抛标准错误且不写 DB）
+   *
+   * dispatch §2.B.3 硬约束：无法可靠判定 family kind 时，不得静默猜测
+   */
+  async function resolveDefaultSharedType(
+    ledgerId: string,
+  ): Promise<'personal' | 'shared' | null> {
+    const ledger = await findLedgerById(ledgerId);
+    if (!ledger) return null;
+
+    const family = await findFamilyById(ledger.familyId);
+    if (!family) return null;
+
+    if (family.kind === 'personal') return 'personal';
+    if (family.kind === 'shared') return 'shared';
+    return null; // 未知 kind · 不猜测
+  }
 
   async function createWithIdempotency(
     userId: string,
@@ -149,6 +196,23 @@ export function createEntryService(_deps: EntryServiceDeps = {}): EntryService {
       }
     }
 
+    // COSTRA-217 R1.x: expense 未传 shared_type 时按 family kind 判定默认值
+    let sharedType: 'personal' | 'shared' | null = payload.shared_type ?? null;
+    if (payload.type === 'expense' && sharedType === null) {
+      const resolved = await resolveDefaultSharedType(payload.ledger_id);
+      if (resolved === null) {
+        // 无法判定 family kind → 返回标准错误且不写 DB（dispatch §2.B.3）
+        return {
+          status: 'rejected',
+          error: {
+            code: 'BUSINESS_RULE_VIOLATION',
+            message: 'cannot determine default shared_type: family kind unknown',
+          },
+        };
+      }
+      sharedType = resolved;
+    }
+
     try {
       const entry = await entryRepo.insertEntry({
         ledgerId: payload.ledger_id,
@@ -162,6 +226,7 @@ export function createEntryService(_deps: EntryServiceDeps = {}): EntryService {
         occurredAt: payload.occurred_at,
         createdBy: userId,
         clientRefId: clientRefId ?? null,
+        sharedType, // COSTRA-217 B2 + R1.x 默认规则
       });
       return { status: 'ok', serverId: entry.id, serverVersion: entry.version };
     } catch (err: unknown) {
@@ -179,7 +244,19 @@ export function createEntryService(_deps: EntryServiceDeps = {}): EntryService {
     payload: UpdateEntryPayload,
     baseVersion: number,
   ): Promise<EntryResult> {
-    await findById(userId, entryId);
+    const existing = await findById(userId, entryId);
+
+    // COSTRA-217 R1.x review-tech P1-1: shared_type 仅允许 expense 类型修改
+    // dispatch §2.B.5 硬约束：服务端返回标准错误，不得写入 DB 让 CHECK 拦截
+    if (payload.shared_type !== undefined && existing.type !== 'expense') {
+      return {
+        status: 'rejected',
+        error: {
+          code: 'BUSINESS_RULE_VIOLATION',
+          message: 'shared_type is only allowed for expense entries',
+        },
+      };
+    }
 
     const repoInput: entryRepo.UpdateEntryInput = {};
     if (payload.amount !== undefined) repoInput.amount = payload.amount;
@@ -187,6 +264,7 @@ export function createEntryService(_deps: EntryServiceDeps = {}): EntryService {
     if (payload.account_id !== undefined) repoInput.accountId = payload.account_id;
     if (payload.note !== undefined) repoInput.note = payload.note;
     if (payload.occurred_at !== undefined) repoInput.occurredAt = payload.occurred_at;
+    if (payload.shared_type !== undefined) repoInput.sharedType = payload.shared_type; // COSTRA-217 B2
 
     const updated = await entryRepo.updateEntryByVersion(entryId, repoInput, baseVersion);
     if (!updated) {

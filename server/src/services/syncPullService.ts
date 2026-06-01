@@ -138,5 +138,6 @@ function entryToWire(e: PullEntryRow) {
     created_at: e.createdAt.toISOString(),
     updated_at: e.updatedAt.toISOString(),          // 毫秒精度展示用 · 不再参与 watermark
     deleted_at: e.deletedAt ? e.deletedAt.toISOString() : null,
+    shared_type: e.sharedType,                      // COSTRA-217 B2: 公共/个人支出标记
   };
 }

@@ -54,15 +54,15 @@ beforeEach(async () => {
 
   const pool = (await import('../src/db/pool.js')).getPool();
   await pool.query(
-    `INSERT INTO families (id, name, owner_id) VALUES ($1, 'DeleteFamily', $2) ON CONFLICT DO NOTHING`,
+    `INSERT INTO families (id, name, owner_id, kind) VALUES ($1, 'DeleteFamily', $2, 'shared')`,
     [familyId, userId],
   );
   await pool.query(
-    `INSERT INTO ledgers (id, family_id, name) VALUES ($1, $2, 'Main') ON CONFLICT DO NOTHING`,
+    `INSERT INTO ledgers (id, family_id, name) VALUES ($1, $2, 'Main')`,
     [ledgerId, familyId],
   );
   await pool.query(
-    `INSERT INTO family_members (family_id, user_id, role) VALUES ($1, $2, 'owner') ON CONFLICT DO NOTHING`,
+    `INSERT INTO family_members (family_id, user_id, role) VALUES ($1, $2, 'owner')`,
     [familyId, userId],
   );
 

@@ -32,9 +32,6 @@ async function login(app: FastifyInstance): Promise<string> {
     headers: { 'content-type': 'application/json' },
   });
   const body = res.json() as { access_token: string; user: { id: string } };
-  if (res.statusCode !== 200) {
-    console.error('[DEBUG entries login fail]', res.statusCode, body);
-  }
   return body.access_token;
 }
 
@@ -58,15 +55,15 @@ beforeEach(async () => {
   const ledgerId = '00000000-0000-0000-0000-000000000001';
   const pool = (await import('../src/db/pool.js')).getPool();
   await pool.query(
-    `INSERT INTO families (id, name, owner_id) VALUES ($1, 'TestFamily', $2) ON CONFLICT DO NOTHING`,
+    `INSERT INTO families (id, name, owner_id, kind) VALUES ($1, 'TestFamily', $2, 'shared')`,
     [familyId, userId],
   );
   await pool.query(
-    `INSERT INTO ledgers (id, family_id, name) VALUES ($1, $2, 'Main') ON CONFLICT DO NOTHING`,
+    `INSERT INTO ledgers (id, family_id, name) VALUES ($1, $2, 'Main')`,
     [ledgerId, familyId],
   );
   await pool.query(
-    `INSERT INTO family_members (family_id, user_id, role) VALUES ($1, $2, 'owner') ON CONFLICT DO NOTHING`,
+    `INSERT INTO family_members (family_id, user_id, role) VALUES ($1, $2, 'owner')`,
     [familyId, userId],
   );
 });
