@@ -1,0 +1,54 @@
+/* components/expense-overlay/index.wxss · 记账覆盖层 */
+/* 卡号: COSTRA-201 · 设计源: design/ui/design_spec.md §6.3 */
+
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  /* 暖灰白背景 · 对齐 tokens role.bg.app */
+  background: #f1f2ec;
+  z-index: 1000;
+  transform: translateY(100%);
+  transition: transform var(--animation-slow, 350ms) var(--easing-default, cubic-bezier(0.25, 0.1, 0.25, 1));
+}
+
+.overlay--visible {
+  transform: translateY(0);
+}
+
+.overlay__content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.overlay__header {
+  display: flex;
+  justify-content: flex-end;
+  padding: 24rpx 32rpx;
+  /* 安全区顶部适配 */
+  padding-top: calc(env(safe-area-inset-top) + 24rpx);
+}
+
+.overlay__close {
+  /* 对齐 tokens role.text.secondary */
+  color: rgba(28, 27, 26, 0.48);
+  font-size: 40rpx;
+  line-height: 1;
+  padding: 12rpx;
+}
+
+.overlay__body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.overlay__placeholder {
+  /* 对齐 tokens role.text.tertiary */
+  color: rgba(28, 27, 26, 0.28);
+  font-size: 28rpx;
+}

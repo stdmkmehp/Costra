@@ -1,0 +1,14 @@
+<!-- components/expense-overlay/index.wxml · 记账覆盖层占位 -->
+<!-- 卡号: COSTRA-201 · 由 custom-tab-bar [+] 按钮通过 eventBus 触发显示 -->
+<!-- 交互规范: interaction_flow.md §2 — 不发生路由跳转 · 全屏覆盖层 -->
+
+<view class="overlay {{visible ? 'overlay--visible' : ''}}" catchtouchmove="noop">
+  <view class="overlay__content">
+    <view class="overlay__header">
+      <text class="overlay__close" bindtap="onClose">✕</text>
+    </view>
+    <view class="overlay__body">
+      <text class="overlay__placeholder">记账功能开发中</text>
+    </view>
+  </view>
+</view>

@@ -1,0 +1,13 @@
+/* pages/ledger/index.wxss · 明细页骨架 */
+/* 卡号: COSTRA-201 */
+
+.ledger {
+  padding: 32rpx;
+  min-height: 100vh;
+}
+
+.ledger__title {
+  font-size: 42rpx;
+  font-weight: 600;
+  color: var(--color-role-text-primary, #1c1b1a);
+}

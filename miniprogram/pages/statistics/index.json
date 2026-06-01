@@ -1,0 +1,6 @@
+{
+  "navigationBarTitleText": "统计",
+  "usingComponents": {
+    "expense-overlay": "/components/expense-overlay/index"
+  }
+}

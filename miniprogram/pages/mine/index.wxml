@@ -31,3 +31,6 @@
     <view class="footer__text footer__hint">点击复制备案号，前往 beian.miit.gov.cn 查询</view>
   </view>
 </view>
+
+<!-- COSTRA-201: 记账覆盖层 · 由 custom-tab-bar [+] 按钮触发 -->
+<expense-overlay />

@@ -1,0 +1,13 @@
+/* pages/family/index.wxss · 家庭页骨架 */
+/* 卡号: COSTRA-201 */
+
+.family {
+  padding: 32rpx;
+  min-height: 100vh;
+}
+
+.family__title {
+  font-size: 42rpx;
+  font-weight: 600;
+  color: var(--color-role-text-primary, #1c1b1a);
+}

@@ -1,0 +1,8 @@
+<!-- pages/ledger/index.wxml · 明细页（首屏 Tab1） -->
+<!-- 卡号: COSTRA-201 · 骨架 · 后续 COSTRA-20x 逐步实装 -->
+
+<view class="ledger">
+  <text class="ledger__title">明细</text>
+</view>
+
+<expense-overlay />

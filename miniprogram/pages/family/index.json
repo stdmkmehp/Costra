@@ -1,0 +1,6 @@
+{
+  "navigationBarTitleText": "家庭",
+  "usingComponents": {
+    "expense-overlay": "/components/expense-overlay/index"
+  }
+}

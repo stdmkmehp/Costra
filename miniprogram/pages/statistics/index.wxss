@@ -1,0 +1,13 @@
+/* pages/statistics/index.wxss · 统计页骨架 */
+/* 卡号: COSTRA-201 */
+
+.statistics {
+  padding: 32rpx;
+  min-height: 100vh;
+}
+
+.statistics__title {
+  font-size: 42rpx;
+  font-weight: 600;
+  color: var(--color-role-text-primary, #1c1b1a);
+}

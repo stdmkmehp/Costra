@@ -1,7 +1,8 @@
 // pages/mine/index.ts
-// 我的页（tabBar #3）：用户信息 + 家庭入口 + 统计入口 + 设置。
+// 我的页（Tab5 / selected 4）：用户信息 + 家庭入口 + 统计入口 + 设置。
 // COSTRA-125: onLoad 加 bootstrapPromise gate
 // COSTRA-127: onShow 加 bootstrapPromise gate · 避免与 onLoad gate 形成 race
+// COSTRA-201: 适配 custom-tab-bar selected: 4 + 引入 expense-overlay
 // Refs: COSTRA-030, docs/design/ia.md §我的 · .team/dispatch/COSTRA-125-miniapp-storage-async-migration.md §3 (e)
 import { hasValidSession, getSession, logout } from '../../services/auth';
 import { defaultNickname } from '../../config/defaults';
@@ -43,6 +44,9 @@ Page({
       });
       // COSTRA-150: 页面 onShow 触发同步调度（debounce 5s）
       triggerOnPageShow('mine');
+
+      // COSTRA-201: 更新 custom-tab-bar 选中态为 index 4（我的）
+      this.getTabBar?.()?.setData?.({ selected: 4 });
     });
   },
 

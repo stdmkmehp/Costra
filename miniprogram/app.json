@@ -1,11 +1,15 @@
 {
   "pages": [
+    "pages/ledger/index",
+    "pages/statistics/index",
+    "pages/add-placeholder/index",
+    "pages/family/index",
+    "pages/mine/index",
     "pages/login/index",
     "pages/home/index",
     "pages/family-dashboard/index",
     "pages/stat-overview/index",
-    "pages/entry/index",
-    "pages/mine/index"
+    "pages/entry/index"
   ],
   "subpackages": [
     {
@@ -26,7 +30,7 @@
     }
   ],
   "preloadRule": {
-    "pages/home/index": {
+    "pages/ledger/index": {
       "network": "all",
       "packages": ["stat", "family"]
     }
@@ -39,15 +43,17 @@
     "enablePullDownRefresh": false
   },
   "tabBar": {
+    "custom": true,
     "color": "#9E9E9E",
-    "selectedColor": "#2F7A78",
-    "backgroundColor": "#FFFFFF",
+    "selectedColor": "#1c1b1a",
+    "backgroundColor": "#f1f2ec",
     "borderStyle": "black",
     "list": [
-      { "pagePath": "pages/home/index",             "text": "记账" },
-      { "pagePath": "pages/family-dashboard/index", "text": "家庭" },
-      { "pagePath": "pages/stat-overview/index",    "text": "统计" },
-      { "pagePath": "pages/mine/index",             "text": "我的" }
+      { "pagePath": "pages/ledger/index",        "text": "明细" },
+      { "pagePath": "pages/statistics/index",     "text": "统计" },
+      { "pagePath": "pages/add-placeholder/index", "text": "记账" },
+      { "pagePath": "pages/family/index",         "text": "家庭" },
+      { "pagePath": "pages/mine/index",           "text": "我的" }
     ]
   },
   "style": "v2",
