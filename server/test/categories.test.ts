@@ -76,17 +76,17 @@ beforeEach(async () => {
   await pool.query(
     `INSERT INTO categories (id, family_id, name, type, icon, color, sort_order, is_system, parent_id, is_direct_default)
      VALUES
-       ('a0000000-0000-0000-0000-000000000001', NULL, '餐饮', 'expense', 'icon.category.food', 'color.category.food', 1, true, NULL, false),
-       ('a0000000-0000-0000-0000-000000000002', NULL, '交通', 'expense', 'icon.category.transport', 'color.category.transport', 2, true, NULL, false),
-       ('a0000000-0000-0000-0000-000000000003', NULL, '购物', 'expense', 'icon.category.shopping', 'color.category.shopping', 3, true, NULL, false),
-       ('a0000000-0000-0000-0000-000000000010', NULL, '职业收入', 'income', 'icon.category.salary', 'color.category.salary', 1, true, NULL, false),
+       ('a0000000-0000-0000-0000-000000000001', NULL, '餐饮', 'expense', '餐', 'color.category.food', 1, true, NULL, false),
+       ('a0000000-0000-0000-0000-000000000002', NULL, '交通', 'expense', '行', 'color.category.transport', 2, true, NULL, false),
+       ('a0000000-0000-0000-0000-000000000003', NULL, '购物', 'expense', '购', 'color.category.shopping', 3, true, NULL, false),
+       ('a0000000-0000-0000-0000-000000000010', NULL, '职业收入', 'income', '薪', 'color.category.salary', 1, true, NULL, false),
        -- 餐饮 二级
-       ('a0000000-0000-0000-0000-000000000101', NULL, '餐饮', 'expense', 'icon.category.food.dining', 'color.category.food', 1, true, 'a0000000-0000-0000-0000-000000000001', true),
-       ('a0000000-0000-0000-0000-000000000102', NULL, '外卖', 'expense', 'icon.category.food.delivery', 'color.category.food', 2, true, 'a0000000-0000-0000-0000-000000000001', true),
-       ('a0000000-0000-0000-0000-000000000103', NULL, '零食', 'expense', 'icon.category.food.snacks', 'color.category.food', 3, true, 'a0000000-0000-0000-0000-000000000001', true),
+       ('a0000000-0000-0000-0000-000000000101', NULL, '餐饮', 'expense', '餐', 'color.category.food', 1, true, 'a0000000-0000-0000-0000-000000000001', true),
+       ('a0000000-0000-0000-0000-000000000102', NULL, '外卖', 'expense', '餐', 'color.category.food', 2, true, 'a0000000-0000-0000-0000-000000000001', true),
+       ('a0000000-0000-0000-0000-000000000103', NULL, '零食', 'expense', '餐', 'color.category.food', 3, true, 'a0000000-0000-0000-0000-000000000001', true),
        -- 交通 二级
-       ('a0000000-0000-0000-0000-000000000201', NULL, '交通', 'expense', 'icon.category.transport.transit', 'color.category.transport', 1, true, 'a0000000-0000-0000-0000-000000000002', true),
-       ('a0000000-0000-0000-0000-000000000202', NULL, '打车', 'expense', 'icon.category.transport.taxi', 'color.category.transport', 2, true, 'a0000000-0000-0000-0000-000000000002', true)
+       ('a0000000-0000-0000-0000-000000000201', NULL, '交通', 'expense', '行', 'color.category.transport', 1, true, 'a0000000-0000-0000-0000-000000000002', true),
+       ('a0000000-0000-0000-0000-000000000202', NULL, '打车', 'expense', '行', 'color.category.transport', 2, true, 'a0000000-0000-0000-0000-000000000002', true)
     `,
   );
 });
