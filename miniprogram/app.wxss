@@ -1,62 +1,110 @@
-/* app.wxss · Costra 全局样式
- * 卡号: COSTRA-102（P0-9 方案 A 别名补齐）· 原骨架: COSTRA-030
- * 通过 `tokens/index.ts` 导出的常量在页面内联写；这里只承担全局基线。
+/* app.wxss · Costra 全局样式 v2.0.0
+ * 卡号: COSTRA-200 · 全面重写：对齐 design/ui/design_spec.md §2 色彩体系
  *
- * E.P0-9 修复：补齐使用方期望的变量名作为别名映射（方案 A · 低风险快修）。
- * 彻底方案 B（tokens/index.ts → app.wxss 构建脚本）登记 FU-118-3 延到 Sprint-2 COSTRA-160。
+ * - 旧变量（--color-brand-primary 等）已全部移除
+ * - 深色模式 @media (prefers-color-scheme: dark) 已移除（设计文档明确抛弃暗黑模式，采用单一暖灰白背景）
+ * - 新增排版原子类（.text-display ~ .text-caption）
+ * - .btn-primary 改用微信绿 #07C160，圆角 8rpx
+ * - page 基线：background #f1f2ec，color #1c1b1a
  */
 
 page {
-  /* ---- 基线定义（COSTRA-030 原值 · 保留） ---- */
-  --color-brand-primary: #2F7A78;
-  --color-text-primary: #212121;
-  --color-text-secondary: #616161;
-  --color-bg-app: #FAFAFA;
-  --color-bg-surface: #FFFFFF;
-  --color-border-default: #E0E0E0;
+  /* ---- 基础色 · CSS 变量对齐 tokens/index.ts v2.0.0 ---- */
 
-  --radius-md: 8rpx;
-  --radius-lg: 12rpx;
+  /* 基础色 */
+  --color-base-warm-ink: #1c1b1a;
+  --color-base-bone-white: #f1f2ec;
 
+  /* 强调色 */
+  --color-accent-wx-green: #07C160;
+  --color-accent-wx-blue: #576B95;
+
+  /* 语义色 */
+  --color-semantic-success: #07C160;
+  --color-semantic-warning: #FA9D3B;
+  --color-semantic-danger: #FA5151;
+  --color-semantic-info: #576B95;
+
+  /* 角色色 · 背景 */
+  --color-role-bg-app: #f1f2ec;
+  --color-role-bg-surface: #ffffff;
+  --color-role-bg-elevated: #ffffff;
+  --color-role-bg-nav-bar: rgba(255,255,255,0.85);
+  --color-role-bg-tab-bar: rgba(255,255,255,0.85);
+  --color-role-bg-overlay: rgba(28,27,26,0.4);
+
+  /* 角色色 · 文字 */
+  --color-role-text-primary: #1c1b1a;
+  --color-role-text-secondary: rgba(28,27,26,0.48);
+  --color-role-text-tertiary: rgba(28,27,26,0.28);
+  --color-role-text-on-green: #ffffff;
+  --color-role-text-on-dark: rgba(255,255,255,0.48);
+
+  /* 角色色 · 边框 */
+  --color-role-border-default: rgba(28,27,26,0.08);
+  --color-role-border-subtle: rgba(28,27,26,0.05);
+
+  /* 角色色 · 金额 */
+  --color-role-amount-expense: #1c1b1a;
+  --color-role-amount-income: #07C160;
+
+  /* 角色色 · 图标 */
+  --color-role-icon-default: rgba(28,27,26,0.36);
+  --color-role-icon-selected: #1c1b1a;
+  --color-role-icon-tab-default: rgba(28,27,26,0.28);
+  --color-role-icon-tab-selected: #1c1b1a;
+
+  /* 间距 */
+  --spacing-1: 4rpx;
   --spacing-2: 8rpx;
+  --spacing-3: 12rpx;
   --spacing-4: 16rpx;
   --spacing-6: 24rpx;
+  --spacing-8: 32rpx;
 
-  /* ---- P0-9 别名层：对齐页面 wxss / 使用方期望的变量名 ----
-   * 映射原则：仅创建别名，不新增值；同名写法 = var(既有变量)。
-   * 使用方文档：docs/design/tokens.json 约定的 `--color-*` / `--shadow-*` 语义
-   */
-  --color-bg: var(--color-bg-app);
-  --color-surface: var(--color-bg-surface);
-  --color-text: var(--color-text-primary);
-  --color-text-muted: var(--color-text-secondary);
-  --color-divider: var(--color-border-default);
-  --color-primary: var(--color-brand-primary);
-  --color-danger: #D83A3A;   /* 与 tokens.color.semantic.danger 对齐 */
-  --color-success: #2E8B57;  /* 与 tokens.color.semantic.success 对齐 */
+  /* 圆角 */
+  --radius-sm: 4rpx;
+  --radius-md: 8rpx;
+  --radius-lg: 12rpx;
+  --radius-pill: 9999rpx;
 
+  /* 阴影 */
+  --shadow-subtle: rgba(0,0,0,0.22) 3px 5px 30px 0px;
+
+  /* 毛玻璃 */
+  --blur-nav-bar: 20px;
+  --blur-tab-bar: 20px;
+
+  /* 动画 */
+  --animation-fast: 150ms;
+  --animation-normal: 250ms;
+  --animation-slow: 350ms;
+  --easing-default: cubic-bezier(0.25, 0.1, 0.25, 1);
+
+  /* ---- 旧变量兼容别名 · DEPRECATED · 后续 COSTRA-20x 逐页迁移后删除 ---- */
+  --color-brand-primary: var(--color-accent-wx-green);
+  --color-text-primary: var(--color-role-text-primary);
+  --color-text-secondary: var(--color-role-text-secondary);
+  --color-bg-app: var(--color-role-bg-app);
+  --color-bg-surface: var(--color-role-bg-surface);
+  --color-border-default: var(--color-role-border-default);
+  --color-bg: var(--color-role-bg-app);
+  --color-surface: var(--color-role-bg-surface);
+  --color-text: var(--color-role-text-primary);
+  --color-text-muted: var(--color-role-text-secondary);
+  --color-divider: var(--color-role-border-default);
+  --color-primary: var(--color-accent-wx-green);
+  --color-danger: var(--color-semantic-danger);
+  --color-success: var(--color-semantic-success);
   --shadow-sm: 0 2rpx 4rpx rgba(0, 0, 0, 0.06);
   --shadow-lg: 0 6rpx 16rpx rgba(0, 0, 0, 0.12);
 
-  background-color: var(--color-bg-app);
-  color: var(--color-text-primary);
+  /* ---- page 基线 ---- */
+  background-color: var(--color-role-bg-app);
+  color: var(--color-role-text-primary);
   font-size: 28rpx;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
-}
-
-/* 深色模式（系统），由 tokens.color.role.*.dark 承接 */
-@media (prefers-color-scheme: dark) {
-  page {
-    --color-bg-app: #0A0A0A;
-    --color-bg-surface: #121212;
-    --color-text-primary: #F5F5F5;
-    --color-text-secondary: #BDBDBD;
-    --color-border-default: #2A2A2A;
-    /* 别名层不需要重写（var 引用自动跟随） */
-    --color-danger: #FF6B6B;
-    --color-success: #4CAF50;
-  }
 }
 
 /* 数字等宽：金额强制 tnum */
@@ -65,35 +113,94 @@ page {
   font-feature-settings: "tnum";
 }
 
-/* 通用原子 */
+/* ---- 排版原子类 ---- */
+.text-display {
+  font-size: 112rpx;
+  font-weight: 600;
+  line-height: 1.07;
+  letter-spacing: -2rpx;
+}
+
+.text-headline {
+  font-size: 56rpx;
+  font-weight: 600;
+  line-height: 1.07;
+  letter-spacing: -1rpx;
+}
+
+.text-title {
+  font-size: 42rpx;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.text-body {
+  font-size: 28rpx;
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: 0;
+}
+
+.text-caption {
+  font-size: 24rpx;
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: 0;
+}
+
+.text-mini {
+  font-size: 20rpx;
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: 0;
+}
+
+/* ---- 布局原子类 ---- */
 .flex { display: flex; }
 .row { flex-direction: row; }
 .col { flex-direction: column; }
 .center { align-items: center; justify-content: center; }
 .between { justify-content: space-between; }
+.start { justify-content: flex-start; }
+.end { justify-content: flex-end; }
+.wrap { flex-wrap: wrap; }
+.grow { flex: 1; }
+.shrink-0 { flex-shrink: 0; }
 
+.p-1 { padding: 4rpx; }
+.p-2 { padding: 8rpx; }
+.p-3 { padding: 12rpx; }
 .p-4 { padding: 16rpx; }
 .p-6 { padding: 24rpx; }
-.mt-4 { margin-top: 16rpx; }
-.mb-4 { margin-bottom: 16rpx; }
+.p-8 { padding: 32rpx; }
 
+.mt-2 { margin-top: 8rpx; }
+.mt-4 { margin-top: 16rpx; }
+.mt-6 { margin-top: 24rpx; }
+.mb-2 { margin-bottom: 8rpx; }
+.mb-4 { margin-bottom: 16rpx; }
+.mb-6 { margin-bottom: 24rpx; }
+
+/* ---- 通用组件 ---- */
 .btn-primary {
-  background: var(--color-primary);
-  color: #fff;
+  background: var(--color-accent-wx-green);
+  color: var(--color-role-text-on-green);
   border-radius: var(--radius-md);
   padding: 20rpx 32rpx;
   text-align: center;
   font-weight: 600;
+  border: none;
+  transition: opacity var(--animation-fast) var(--easing-default);
 }
 
 .btn-primary[disabled] {
-  background: #BDBDBD;
-  color: #F5F5F5;
+  opacity: 0.4;
 }
 
 .card {
-  background: var(--color-surface);
+  background: var(--color-role-bg-surface);
   border-radius: var(--radius-lg);
   padding: 24rpx;
-  box-shadow: var(--shadow-sm);
+  border: 1rpx solid var(--color-role-border-subtle);
 }

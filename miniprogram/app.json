@@ -33,9 +33,9 @@
   },
   "window": {
     "navigationBarTitleText": "Costra",
-    "navigationBarBackgroundColor": "#2F7A78",
-    "navigationBarTextStyle": "white",
-    "backgroundColor": "#FAFAFA",
+    "navigationBarBackgroundColor": "#f1f2ec",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#f1f2ec",
     "enablePullDownRefresh": false
   },
   "tabBar": {
