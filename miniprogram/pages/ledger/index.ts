@@ -1,10 +1,11 @@
 // pages/ledger/index.ts · 明细页（首屏 Tab1）
-// 卡号: COSTRA-203 · 明细首屏巨大月支出+日期分组吸顶流水列表+左滑删除+账本切换
+// 卡号: COSTRA-203 / COSTRA-214 · 明细首屏巨大月支出+日期分组吸顶流水列表+左滑删除+账本切换+统一安全区
 // 设计源: design/ui/design_spec.md §6.2 + design/ui/interaction_flow.md §4
 // 金额 ADR-0002: 全部走 decimal.js（utils/money.ts）
 
 import Decimal from '../../utils/vendor/decimal';
 import { toYuan } from '../../utils/money';
+import { getSafeAreaMetrics } from '../../utils/safeArea';
 import { listEntries, deleteEntry, type Entry } from '../../services/db';
 import { getActiveLedgerId, getActiveFamilyId } from '../../services/family';
 import { enqueue } from '../../services/outbox';
@@ -202,12 +203,12 @@ Page({
   // ─── 生命周期 ────────────────────────────────────────────────────────────────
 
   onLoad() {
-    const sysInfo = wx.getWindowInfo();
-    const totalHeight = sysInfo.statusBarHeight + 44;
+    // COSTRA-214: 使用统一安全区服务替代直接调用 wx.getWindowInfo()
+    const { statusBarHeight, navBarHeight, navBarTotalHeight } = getSafeAreaMetrics();
     this.setData({
-      statusBarHeight: sysInfo.statusBarHeight,
-      navBarHeight: 44,
-      navBarTotalHeight: totalHeight,
+      statusBarHeight,
+      navBarHeight,
+      navBarTotalHeight,
       monthDisplay: formatMonthDisplay(this.data.currentMonth),
     });
   },

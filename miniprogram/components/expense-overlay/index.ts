@@ -1,5 +1,5 @@
-// components/expense-overlay/index.ts · 全屏记账覆盖层（COSTRA-208 完全重写 · COSTRA-209 防遮挡滚动 · COSTRA-211 最小位移优化 · COSTRA-212 滚动插值动画+备注可重复编辑+计算器算式修复）
-// 卡号: COSTRA-208 / COSTRA-209 / COSTRA-210 / COSTRA-211 / COSTRA-212 · 分类防键盘遮挡滚动(真实布局最小位移+插值动画) + 打开重置 + 多实例状态同步关闭
+// components/expense-overlay/index.ts · 全屏记账覆盖层（COSTRA-208 完全重写 · COSTRA-209 防遮挡滚动 · COSTRA-211 最小位移优化 · COSTRA-212 滚动插值动画+备注可重复编辑+计算器算式修复 · COSTRA-214 安全区标准化）
+// 卡号: COSTRA-208 / COSTRA-209 / COSTRA-210 / COSTRA-211 / COSTRA-212 / COSTRA-214 · 分类防键盘遮挡滚动(真实布局最小位移+插值动画) + 打开重置 + 多实例状态同步关闭 + 统一安全区
 // 设计源: design/ui/design_spec.md §6.3 + design/ui/interaction_flow.md §2/§3
 // 金额 ADR-0002: 全部走 decimal.js（utils/money.ts）
 //
@@ -9,8 +9,10 @@
 //   - 高度完全由 CSS flex 布局负责
 //   - COSTRA-211: 防遮挡滚动采用二阶段真实布局算法，不再依赖固定键盘高度估算
 //   - COSTRA-212: 滚动动画改为 JS 分段插值（easeOutCubic 220ms），替代 scroll-with-animation
+//   - COSTRA-214: 顶部安全区由 getSafeAreaMetrics() 统一驱动，不再依赖 CSS env(safe-area-inset-top)
 
 import { newClientRefId } from '../../utils/id';
+import { getSafeAreaMetrics } from '../../utils/safeArea';
 import { putEntry, type Entry } from '../../services/db';
 import { enqueue } from '../../services/outbox';
 import { getActiveLedgerId } from '../../services/family';
@@ -73,6 +75,10 @@ Component({
   data: {
     // ─── 显隐 ───
     visible: false,
+
+    // ─── 安全区（COSTRA-214: 统一由 getSafeAreaMetrics() 驱动） ───
+    safeAreaTop: 0,
+    safeAreaBottom: 0,
 
     // ─── 收支类型 ───
     entryType: 'expense' as 'expense' | 'income',
@@ -156,12 +162,17 @@ Component({
         { id: ledgerId || 'default', name: '我的账本', isMultiMember: false },
       ];
 
+      // COSTRA-214: 读取统一安全区指标
+      const { safeAreaTop, safeAreaBottom } = getSafeAreaMetrics();
+
       // COSTRA-209: 重置滚动位置到顶部
       // 小程序 scroll-view 不会响应同值赋值，先设 1 再 nextTick 设 0
       (this as unknown as Record<string, number>)._currentScrollTop = 0;
 
       this.setData({
         visible: true,
+        safeAreaTop,
+        safeAreaBottom,
         ledgerId: ledgerId || 'default',
         ledgerName: '我的账本',
         isMultiMemberLedger: false,

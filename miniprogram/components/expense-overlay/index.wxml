@@ -1,13 +1,15 @@
-<!-- components/expense-overlay/index.wxml · 全屏记账覆盖层（COSTRA-208 完全重写 · COSTRA-209 防遮挡滚动） -->
-<!-- 卡号: COSTRA-208 / COSTRA-209 · 分类防键盘遮挡滚动 + 打开重置 -->
+<!-- components/expense-overlay/index.wxml · 全屏记账覆盖层（COSTRA-208 完全重写 · COSTRA-209 防遮挡滚动 · COSTRA-214 安全区标准化） -->
+<!-- 卡号: COSTRA-208 / COSTRA-209 / COSTRA-214 · 分类防键盘遮挡滚动 + 打开重置 + 统一安全区 -->
 <!-- 设计源: design/ui/design_spec.md §6.3 + design/ui/interaction_flow.md §2/§3 -->
 <!-- 架构: overlay → shell(flex-column) → header + scroll-view(flex:1) + keypad-sheet -->
+<!-- COSTRA-214: 顶部安全区由 getSafeAreaMetrics() 驱动，不再依赖 CSS env(safe-area-inset-top) -->
 
 <view class="expense-overlay {{visible ? 'is-visible' : ''}}">
   <view class="expense-shell">
 
     <!-- ═══ 顶部区域：取消 + 支出/收入指示器 ═══ -->
-    <view class="expense-header" catchtouchmove="noop">
+    <!-- COSTRA-214: padding-top 由 JS safeAreaTop 驱动，不再用 CSS env(safe-area-inset-top) -->
+    <view class="expense-header" style="padding-top: {{safeAreaTop + 4}}px;" catchtouchmove="noop">
       <text class="expense-header__close" bindtap="onClose">取消</text>
       <view class="expense-header__tabs">
         <text
@@ -94,11 +96,13 @@
       </view>
 
       <!-- 底部安全区占位：确保无键盘时内容可滚动到底部 -->
-      <view class="category-bottom-spacer"></view>
+      <!-- COSTRA-214: 高度由 JS safeAreaBottom 驱动 -->
+      <view class="category-bottom-spacer" style="height: {{safeAreaBottom || 20}}px;"></view>
     </scroll-view>
 
     <!-- ═══ 数字键盘面板（键盘出现时作为 shell 最后一个 flex 子项） ═══ -->
-    <view wx:if="{{keypadVisible}}" class="keypad-sheet" catchtouchmove="noop">
+    <!-- COSTRA-214: 底部安全区由 JS safeAreaBottom 驱动 -->
+    <view wx:if="{{keypadVisible}}" class="keypad-sheet" style="padding-bottom: {{safeAreaBottom}}px;" catchtouchmove="noop">
 
       <!-- 金额显示区 -->
       <view class="keypad-sheet__amount">
