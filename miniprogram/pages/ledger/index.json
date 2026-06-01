@@ -1,5 +1,5 @@
 {
-  "navigationBarTitleText": "明细",
+  "navigationStyle": "custom",
   "usingComponents": {
     "expense-overlay": "/components/expense-overlay/index"
   }
