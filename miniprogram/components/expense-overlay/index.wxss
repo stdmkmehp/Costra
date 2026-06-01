@@ -11,7 +11,7 @@
   bottom: 0;
   /* 暖灰白背景 · 对齐 tokens role.bg.app */
   background: #f1f2ec;
-  z-index: 1000;
+  z-index: 9999;  /* COSTRA-205: 确保 TabBar(z-index:999) 之上 */
   transform: translateY(100%);
   transition: transform var(--animation-slow, 350ms) var(--easing-default, cubic-bezier(0.25, 0.1, 0.25, 1));
 }

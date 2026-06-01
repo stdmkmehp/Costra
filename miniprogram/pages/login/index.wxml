@@ -4,7 +4,7 @@
 <view class="login">
   <!-- 中心视觉区 -->
   <view class="login__center">
-    <text class="login__wordmark">Costra</text>
+    <text class="login__wordmark">COSTRA</text>
     <text class="login__slogan">{{slogan}}</text>
   </view>
 

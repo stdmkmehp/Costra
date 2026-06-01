@@ -18,6 +18,15 @@
   padding-bottom: env(safe-area-inset-bottom);
   z-index: 999;
   border-top: 1rpx solid rgba(28, 27, 26, 0.05);
+  /* COSTRA-205: 覆盖层显示时平滑隐藏 */
+  transform: translateY(0);
+  transition: transform var(--animation-fast, 150ms) var(--easing-default, cubic-bezier(0.25, 0.1, 0.25, 1));
+}
+
+/* 覆盖层显示时隐藏 TabBar（COSTRA-205） */
+.tab-bar--hidden {
+  transform: translateY(100%);
+  pointer-events: none;
 }
 
 /* 降级：不支持 backdrop-filter 的设备 */

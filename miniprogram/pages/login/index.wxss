@@ -14,27 +14,23 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: space-between;
   background: var(--color-role-bg-app);
   padding: 0 48rpx;
-  /* 安全区域：底部留足空间 */
-  padding-bottom: calc(200rpx + env(safe-area-inset-bottom));
 }
 
-/* ---- 中心视觉区 ---- */
+/* ---- 中心视觉区（上移到页面上 1/3 处）---- */
 .login__center {
-  flex: 1;
+  margin-top: 30vh;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
 }
 
 .login__wordmark {
   font-size: 80rpx;
-  font-weight: 700;
+  font-weight: 300;
   color: var(--color-role-text-primary);
-  letter-spacing: -2rpx;
+  letter-spacing: 8rpx;
   line-height: 1.07;
 }
 
@@ -46,14 +42,14 @@
   text-align: center;
 }
 
-/* ---- 底部操作区 ---- */
+/* ---- 底部操作区（推到下部 1/4 处）---- */
 .login__bottom {
   width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
-  /* 距底部约 200rpx（由父 padding-bottom 控制） */
-  margin-bottom: 0;
+  margin-top: auto;
+  padding-bottom: 60rpx;
 }
 
 .login__btn {

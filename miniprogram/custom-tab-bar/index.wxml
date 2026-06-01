@@ -2,7 +2,7 @@
 <!-- 卡号: COSTRA-201 · 中间 [+] 凸起按钮触发记账覆盖层（不跳路由） -->
 <!-- 设计源: design/ui/design_spec.md §3 -->
 
-<view class="tab-bar">
+<view class="tab-bar {{hidden ? 'tab-bar--hidden' : ''}}">
   <view
     class="tab-item {{selected === 0 ? 'tab-item--active' : ''}}"
     data-index="0"

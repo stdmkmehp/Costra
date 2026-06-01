@@ -81,6 +81,10 @@ page {
   --animation-slow: 350ms;
   --easing-default: cubic-bezier(0.25, 0.1, 0.25, 1);
 
+  /* 安全区域 + TabBar 标准变量（COSTRA-205） */
+  --safe-area-bottom: env(safe-area-inset-bottom);
+  --tabbar-height: 120rpx;
+
   /* ---- 旧变量兼容别名 · DEPRECATED · 后续 COSTRA-20x 逐页迁移后删除 ---- */
   --color-brand-primary: var(--color-accent-wx-green);
   --color-text-primary: var(--color-role-text-primary);

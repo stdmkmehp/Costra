@@ -1,5 +1,6 @@
 // custom-tab-bar/index.ts · 5 Tab 中置式自定义 TabBar
 // 卡号: COSTRA-201 · 中间 [+] 按钮通过 eventBus 触发记账覆盖层（不跳路由）
+// COSTRA-205: 覆盖层显隐时同步隐藏/显示 TabBar（解决键盘底部被遮挡）
 // 设计源: design/ui/design_spec.md §3 + design/ui/interaction_flow.md §2
 // 微信文档: https://developers.weixin.qq.com/miniprogram/dev/framework/ability/custom-tabbar.html
 
@@ -18,6 +19,39 @@ Component({
   data: {
     /** 当前选中 index（0-4）· index 2 是 [+] 不会被 selected */
     selected: 0,
+    /** 是否隐藏 TabBar（覆盖层显示时隐藏，避免遮挡键盘） */
+    hidden: false,
+  },
+
+  lifetimes: {
+    attached() {
+      // 订阅覆盖层显示事件 → 隐藏 TabBar
+      type ShowHandler = () => void;
+      const showHandler: ShowHandler = () => {
+        this.setData({ hidden: true });
+      };
+      (this as unknown as Record<string, unknown>)._overlayShowHandler = showHandler;
+      eventBus.on(EventNames.SHOW_EXPENSE_OVERLAY, showHandler);
+
+      // 订阅覆盖层隐藏事件 → 恢复 TabBar
+      type HideHandler = () => void;
+      const hideHandler: HideHandler = () => {
+        this.setData({ hidden: false });
+      };
+      (this as unknown as Record<string, unknown>)._overlayHideHandler = hideHandler;
+      eventBus.on(EventNames.HIDE_EXPENSE_OVERLAY, hideHandler);
+    },
+
+    detached() {
+      const showHandler = (this as unknown as Record<string, unknown>)._overlayShowHandler as (() => void) | undefined;
+      if (showHandler) {
+        eventBus.off(EventNames.SHOW_EXPENSE_OVERLAY, showHandler);
+      }
+      const hideHandler = (this as unknown as Record<string, unknown>)._overlayHideHandler as (() => void) | undefined;
+      if (hideHandler) {
+        eventBus.off(EventNames.HIDE_EXPENSE_OVERLAY, hideHandler);
+      }
+    },
   },
 
   methods: {
