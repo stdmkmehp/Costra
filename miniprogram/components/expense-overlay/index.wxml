@@ -3,11 +3,14 @@
 <!-- 设计源: design/ui/design_spec.md §6.3 + design/ui/interaction_flow.md §2/§3 -->
 <!-- COSTRA-206: 修复底部绿色残留+全屏分类初始态+支出收入文字指示器+关闭按钮避让胶囊 -->
 
-<view class="overlay {{visible ? 'overlay--visible' : ''}}" catchtouchmove="noop">
+<!-- 修改前: catchtouchmove 阻止了内部 scroll-view 的滚动 -->
+<!-- <view class="overlay {{visible ? 'overlay--visible' : ''}}" catchtouchmove="noop"> -->
+<!-- COSTRA-206 补丁2: 移除外层 catchtouchmove，改到 header/keypad-panel 上防穿透 -->
+<view class="overlay {{visible ? 'overlay--visible' : ''}}">
   <view class="overlay__content">
 
     <!-- 顶部区域：左侧取消按钮 + 居中收支指示器 -->
-    <view class="overlay__header">
+    <view class="overlay__header" catchtouchmove="noop">
       <text class="overlay__close" bindtap="onClose">取消</text>
       <view class="overlay__tab-indicator">
         <text
@@ -39,6 +42,7 @@
         <scroll-view
           class="category-scroll"
           scroll-y
+          style="height: {{swiperHeight}}px;"
           scroll-into-view="{{scrollIntoView}}"
           scroll-with-animation
           enhanced="{{true}}"
@@ -102,6 +106,7 @@
         <scroll-view
           class="category-scroll"
           scroll-y
+          style="height: {{swiperHeight}}px;"
           scroll-into-view="{{scrollIntoView}}"
           scroll-with-animation
           enhanced="{{true}}"
@@ -162,7 +167,7 @@
     </swiper>
 
     <!-- 计算器面板（从底部升起） -->
-    <view class="keypad-panel {{keypadVisible ? 'keypad-panel--visible' : ''}}">
+    <view class="keypad-panel {{keypadVisible ? 'keypad-panel--visible' : ''}}" catchtouchmove="noop">
 
       <!-- 金额显示区 -->
       <view class="amount-display">
