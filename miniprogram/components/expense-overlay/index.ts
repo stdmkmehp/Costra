@@ -82,12 +82,24 @@ Component({
     // ─── 类型 ───
     entryType: 'expense' as 'expense' | 'income',
 
+    // ─── 动态布局高度（COSTRA-206: swiper 不响应 flex，必须显式设置 height） ───
+    /** swiper 高度 = windowHeight - headerBottom（px 单位） */
+    swiperHeight: 0 as number,
+
     // ─── 保存中 ───
     saving: false,
   },
 
   lifetimes: {
     attached() {
+      // COSTRA-206: 动态计算 swiper 高度（swiper 不响应 CSS flex:1）
+      const sysInfo = wx.getSystemInfoSync();
+      const menuBtn = wx.getMenuButtonBoundingClientRect();
+      // header 底边 ≈ 胶囊按钮 bottom + 下方间距
+      const headerBottom = menuBtn.bottom + 8;
+      const swiperHeight = sysInfo.windowHeight - headerBottom;
+      this.setData({ swiperHeight });
+
       type ShowHandler = () => void;
       const handler: ShowHandler = () => { this._show(); };
       (this as unknown as Record<string, unknown>)._showHandler = handler;

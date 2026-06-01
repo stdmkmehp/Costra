@@ -90,12 +90,10 @@
   width: 80rpx; /* 与左侧 "取消" 按钮大致等宽 */
 }
 
-/* ─── Swiper 分类区域 ──────────────────────────────────────────────────────── */
+/* ─── Swiper 分类区域（COSTRA-206: swiper 不响应 flex:1，高度由 JS 动态计算） ─── */
 
 .overlay__swiper {
-  flex: 1;
-  min-height: 0;
-  /* 问题2修复：确保 swiper 占满剩余全部空间，分类网格全屏展示 */
+  /* 高度通过 style="height: {{swiperHeight}}px;" 动态设置 */
   overflow: hidden;
 }
 
