@@ -1,5 +1,6 @@
 // components/expense-overlay/calc.spec.ts · 计算器逻辑单测
-// 卡号: COSTRA-212 · 验证算式拼接修复（1+11=12 等）
+// 卡号: COSTRA-213 · 修复 amountCents 单位错误（= 和链式计算返回元而非分）
+// 承接 COSTRA-212 算式拼接修复验证
 import { describe, it, expect } from 'vitest';
 import {
   INITIAL_CALC_STATE,
@@ -7,38 +8,35 @@ import {
 } from './calc';
 
 describe('components/expense-overlay/calc', () => {
-  describe('COSTRA-212: 算式拼接修复', () => {
-    it('1 + 11 = → 12', () => {
+  describe('COSTRA-213: amountCents 始终为分（cents）', () => {
+    it('直接输入 9 → amountCents = 900（分）', () => {
+      const calc = inputDigit(INITIAL_CALC_STATE, '9');
+      expect(calc.display).toBe('9');
+      expect(calc.amountCents).toBe(900); // toCents('9') = 900
+    });
+
+    it('9 + 9 - 9 = → amountCents = 900（分）', () => {
+      let calc = inputDigit(INITIAL_CALC_STATE, '9');
+      calc = inputOperator(calc, '+');
+      calc = inputDigit(calc, '9');
+      calc = inputOperator(calc, '-');
+      calc = inputDigit(calc, '9');
+      calc = pressEquals(calc);
+      expect(calc.display).toBe('9');
+      expect(calc.amountCents).toBe(900); // toCents('9') = 900，不是 9
+    });
+
+    it('1 + 11 = → amountCents = 1200（分）', () => {
       let calc = inputDigit(INITIAL_CALC_STATE, '1');
       calc = inputOperator(calc, '+');
       calc = inputDigit(calc, '1');
       calc = inputDigit(calc, '1');
       calc = pressEquals(calc);
       expect(calc.display).toBe('12');
-      expect(calc.amountCents).toBe(12);
+      expect(calc.amountCents).toBe(1200); // toCents('12') = 1200
     });
 
-    it('12 + 8 = → 20', () => {
-      let calc = inputDigit(INITIAL_CALC_STATE, '1');
-      calc = inputDigit(calc, '2');
-      calc = inputOperator(calc, '+');
-      calc = inputDigit(calc, '8');
-      calc = pressEquals(calc);
-      expect(calc.display).toBe('20');
-      expect(calc.amountCents).toBe(20);
-    });
-
-    it('20 - 5 = → 15', () => {
-      let calc = inputDigit(INITIAL_CALC_STATE, '2');
-      calc = inputDigit(calc, '0');
-      calc = inputOperator(calc, '-');
-      calc = inputDigit(calc, '5');
-      calc = pressEquals(calc);
-      expect(calc.display).toBe('15');
-      expect(calc.amountCents).toBe(15);
-    });
-
-    it('1.2 + 3.4 = → 4.6', () => {
+    it('1.2 + 3.4 = → amountCents = 460（分）', () => {
       let calc = inputDigit(INITIAL_CALC_STATE, '1');
       calc = inputDot(calc);
       calc = inputDigit(calc, '2');
@@ -48,7 +46,65 @@ describe('components/expense-overlay/calc', () => {
       calc = inputDigit(calc, '4');
       calc = pressEquals(calc);
       expect(calc.display).toBe('4.6');
-      expect(calc.amountCents).toBe(4.6);
+      expect(calc.amountCents).toBe(460); // toCents('4.6') = 460
+    });
+
+    it('12 + 8 + 10 = → 链式计算 amountCents = 3000（分）', () => {
+      let calc = inputDigit(INITIAL_CALC_STATE, '1');
+      calc = inputDigit(calc, '2');
+      calc = inputOperator(calc, '+');
+      calc = inputDigit(calc, '8');
+      // 链式：输入第二个 + 时触发前序 12+8 计算
+      calc = inputOperator(calc, '+');
+      // 链式中途 amountCents 也必须是分
+      expect(calc.amountCents).toBe(2000); // toCents('20') = 2000
+      calc = inputDigit(calc, '1');
+      calc = inputDigit(calc, '0');
+      calc = pressEquals(calc);
+      expect(calc.display).toBe('30');
+      expect(calc.amountCents).toBe(3000); // toCents('30') = 3000
+    });
+
+    it('20 - 5 = → amountCents = 1500（分）', () => {
+      let calc = inputDigit(INITIAL_CALC_STATE, '2');
+      calc = inputDigit(calc, '0');
+      calc = inputOperator(calc, '-');
+      calc = inputDigit(calc, '5');
+      calc = pressEquals(calc);
+      expect(calc.display).toBe('15');
+      expect(calc.amountCents).toBe(1500); // toCents('15') = 1500
+    });
+  });
+
+  describe('COSTRA-212: 算式拼接 display 正确性', () => {
+    it('1 + 11 = → display "12"', () => {
+      let calc = inputDigit(INITIAL_CALC_STATE, '1');
+      calc = inputOperator(calc, '+');
+      calc = inputDigit(calc, '1');
+      calc = inputDigit(calc, '1');
+      calc = pressEquals(calc);
+      expect(calc.display).toBe('12');
+    });
+
+    it('12 + 8 = → display "20"', () => {
+      let calc = inputDigit(INITIAL_CALC_STATE, '1');
+      calc = inputDigit(calc, '2');
+      calc = inputOperator(calc, '+');
+      calc = inputDigit(calc, '8');
+      calc = pressEquals(calc);
+      expect(calc.display).toBe('20');
+    });
+
+    it('1.2 + 3.4 = → display "4.6"', () => {
+      let calc = inputDigit(INITIAL_CALC_STATE, '1');
+      calc = inputDot(calc);
+      calc = inputDigit(calc, '2');
+      calc = inputOperator(calc, '+');
+      calc = inputDigit(calc, '3');
+      calc = inputDot(calc);
+      calc = inputDigit(calc, '4');
+      calc = pressEquals(calc);
+      expect(calc.display).toBe('4.6');
     });
   });
 
@@ -73,7 +129,7 @@ describe('components/expense-overlay/calc', () => {
   });
 
   describe('运算符输入', () => {
-    it('1 + 2 + 3 = → 6（链式计算）', () => {
+    it('1 + 2 + 3 = → 6（链式计算 display）', () => {
       let calc = inputDigit(INITIAL_CALC_STATE, '1');
       calc = inputOperator(calc, '+');
       calc = inputDigit(calc, '2');
@@ -114,12 +170,11 @@ describe('components/expense-overlay/calc', () => {
 
     it('= 结果后退格 → 回到初始状态', () => {
       let calc = inputDigit(INITIAL_CALC_STATE, '5');
-      calc = pressEquals(calc);
-      // pressEquals 不改变状态（actionState=done），需要先走运算符路径
       calc = inputOperator(calc, '+');
       calc = inputDigit(calc, '3');
       calc = pressEquals(calc);
       expect(calc.display).toBe('8');
+      expect(calc.amountCents).toBe(800); // toCents('8') = 800
       calc = inputBackspace(calc);
       expect(calc.display).toBe('0');
     });

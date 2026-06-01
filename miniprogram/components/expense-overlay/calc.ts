@@ -1,6 +1,7 @@
 // components/expense-overlay/calc.ts · 记账覆盖层计算器逻辑（状态机 + decimal.js 精算）
-// 卡号: COSTRA-204 / COSTRA-212 · 交互规范: interaction_flow.md §2 Step 3~5
+// 卡号: COSTRA-204 / COSTRA-212 / COSTRA-213 · 交互规范: interaction_flow.md §2 Step 3~5
 // ADR-0002: 金额计算必须走 decimal.js
+// COSTRA-213: 修复 pressEquals / 链式 inputOperator 中 amountCents 返回元而非分的 bug
 
 import Decimal from '../../utils/vendor/decimal';
 import { toCents } from '../../utils/money';
@@ -260,7 +261,7 @@ export function inputOperator(calc: CalcState, op: '+' | '-'): CalcState {
       lastInputIsOp: true,
       justEvaluated: false,
       actionState: 'equals',
-      amountCents: result.toNumber(),
+      amountCents: safeToCents(resultStr),
     };
   }
 
@@ -344,6 +345,6 @@ export function pressEquals(calc: CalcState): CalcState {
     lastInputIsOp: false,
     justEvaluated: true,
     actionState: 'done',
-    amountCents: result.toNumber(),
+    amountCents: safeToCents(resultStr),
   };
 }
