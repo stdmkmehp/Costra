@@ -15,13 +15,11 @@ import { newClientRefId } from '../../utils/id';
 import { getSafeAreaMetrics } from '../../utils/safeArea';
 import { putEntry, type Entry } from '../../services/db';
 import { enqueue } from '../../services/outbox';
-import { getActiveLedgerId } from '../../services/family';
+import { getActiveLedgerId, getActiveFamilyId } from '../../services/family';
 import { eventBus, EventNames } from '../../services/eventBus';
 import {
-  EXPENSE_CATEGORIES, INCOME_CATEGORIES,
-  EXPENSE_DEDUPED_SUBS, INCOME_DEDUPED_SUBS,
-  DEDUP_MAPPING,
-  type CategoryTier1, type CategoryTier2,
+  loadCategories,
+  type CategoryTier1, type CategoryTier2, type DedupMapping,
 } from './categories';
 import {
   INITIAL_CALC_STATE,
@@ -83,9 +81,9 @@ Component({
     // ─── 收支类型 ───
     entryType: 'expense' as 'expense' | 'income',
 
-    // ─── 分类网格 ───
-    tier1Categories: EXPENSE_CATEGORIES as readonly CategoryTier1[],
-    dedupedSubCategories: EXPENSE_DEDUPED_SUBS as readonly CategoryTier2[],
+    // ─── 分类网格（COSTRA-219: 动态从 API 加载，初始为空） ───
+    tier1Categories: [] as readonly CategoryTier1[],
+    dedupedSubCategories: [] as readonly CategoryTier2[],
     /** 展开的一级分类 id（null = 无展开） */
     expandedTier1Id: null as string | null,
     /** 展开的一级分类的子分类 */
@@ -169,6 +167,27 @@ Component({
       // 小程序 scroll-view 不会响应同值赋值，先设 1 再 nextTick 设 0
       (this as unknown as Record<string, number>)._currentScrollTop = 0;
 
+      // COSTRA-219: 从 API 加载分类数据（降级: 缓存 → fallback）
+      let categoryData: {
+        expense: CategoryTier1[];
+        income: CategoryTier1[];
+        expenseDedupedSubs: CategoryTier2[];
+        incomeDedupedSubs: CategoryTier2[];
+        dedupMapping: DedupMapping;
+      };
+      try {
+        const familyId = await getActiveFamilyId();
+        categoryData = familyId
+          ? await loadCategories(familyId)
+          : { expense: [], income: [], expenseDedupedSubs: [], incomeDedupedSubs: [], dedupMapping: {} };
+      } catch {
+        // API 加载失败降级：空分类（categoryService 内部已有 fallback 兜底，此处是极端防御）
+        categoryData = { expense: [], income: [], expenseDedupedSubs: [], incomeDedupedSubs: [], dedupMapping: {} };
+      }
+
+      // 存储分类数据到实例属性（供收支切换使用）
+      (this as unknown as Record<string, unknown>)._categoryData = categoryData;
+
       this.setData({
         visible: true,
         safeAreaTop,
@@ -179,8 +198,8 @@ Component({
         ledgerOptions,
         showSharedToggle: false,
         entryType: 'expense',
-        tier1Categories: EXPENSE_CATEGORIES,
-        dedupedSubCategories: EXPENSE_DEDUPED_SUBS,
+        tier1Categories: categoryData.expense,
+        dedupedSubCategories: categoryData.expenseDedupedSubs,
         expandedTier1Id: null,
         expandedChildren: [],
         selectedTier1Id: '',
@@ -378,8 +397,21 @@ Component({
      * 收支切换核心逻辑（横滑手势 + 文字指示器共用）
      */
     _switchEntryType(type: 'expense' | 'income') {
-      const tier1Categories = type === 'expense' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
-      const dedupedSubCategories = type === 'expense' ? EXPENSE_DEDUPED_SUBS : INCOME_DEDUPED_SUBS;
+      // COSTRA-219: 从实例属性读取动态分类数据
+      const categoryData = (this as unknown as Record<string, unknown>)._categoryData as {
+        expense: CategoryTier1[];
+        income: CategoryTier1[];
+        expenseDedupedSubs: CategoryTier2[];
+        incomeDedupedSubs: CategoryTier2[];
+        dedupMapping: DedupMapping;
+      } | undefined;
+
+      const tier1Categories = type === 'expense'
+        ? (categoryData?.expense || [])
+        : (categoryData?.income || []);
+      const dedupedSubCategories = type === 'expense'
+        ? (categoryData?.expenseDedupedSubs || [])
+        : (categoryData?.incomeDedupedSubs || []);
 
       // 收入时隐藏费用性质开关
       const showSharedToggle = type === 'income'
@@ -455,8 +487,14 @@ Component({
       const subName = e.currentTarget.dataset.name as string;
       if (!subId) return;
 
+      // COSTRA-219: 从实例属性读取去重映射
+      const categoryData = (this as unknown as Record<string, unknown>)._categoryData as {
+        dedupMapping: DedupMapping;
+      } | undefined;
+      const dedupMapping = categoryData?.dedupMapping || {};
+
       // 查找归属的一级分类：先查去重映射表，再遍历查找
-      let parentTier1Id = DEDUP_MAPPING[subName] || '';
+      let parentTier1Id = dedupMapping[subName] || '';
       if (!parentTier1Id) {
         for (const tier1 of this.data.tier1Categories) {
           if (tier1.children.some(c => c.id === subId)) {

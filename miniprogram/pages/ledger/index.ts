@@ -9,6 +9,12 @@ import { getSafeAreaMetrics } from '../../utils/safeArea';
 import { listEntries, deleteEntry, type Entry } from '../../services/db';
 import { getActiveLedgerId, getActiveFamilyId } from '../../services/family';
 import { enqueue } from '../../services/outbox';
+import {
+  getCategories,
+  warmUpMemoryCache,
+  getCategoryIconById,
+  getCategoryNameById,
+} from '../../services/categoryService';
 
 // ─── 类型 ────────────────────────────────────────────────────────────────────────
 
@@ -103,40 +109,14 @@ function formatDateLabel(dateKey: string): string {
   return `${month}月${day}日 ${getWeekDay(dateKey)}`;
 }
 
-/** 获取分类图标首字 */
+/** 获取分类图标首字（COSTRA-219: 改为 categoryService 查找 · 降级显示 '?'） */
 function getCategoryIcon(categoryId: string | null): string {
-  if (!categoryId) return '·';
-  const iconMap: Record<string, string> = {
-    food: '餐',
-    transport: '行',
-    shopping: '购',
-    entertainment: '乐',
-    housing: '住',
-    medical: '医',
-    education: '学',
-    salary: '薪',
-    investment: '投',
-    other: '…',
-  };
-  return iconMap[categoryId] || categoryId.slice(0, 1).toUpperCase();
+  return getCategoryIconById(categoryId);
 }
 
-/** 获取分类名 */
+/** 获取分类名（COSTRA-219: 改为 categoryService 查找 · 降级显示 '未分类'） */
 function getCategoryName(categoryId: string | null): string {
-  if (!categoryId) return '未分类';
-  const nameMap: Record<string, string> = {
-    food: '餐饮',
-    transport: '交通',
-    shopping: '购物',
-    entertainment: '娱乐',
-    housing: '住房',
-    medical: '医疗',
-    education: '教育',
-    salary: '工资',
-    investment: '投资',
-    other: '其他',
-  };
-  return nameMap[categoryId] || categoryId;
+  return getCategoryNameById(categoryId);
 }
 
 /** 当前月份 → picker 值 */
@@ -234,6 +214,16 @@ Page({
       showMemberFilter: isMultiMember,
       ledgerName: '我的账本',
     });
+
+    // COSTRA-219: 预加载分类数据到内存缓存（供 getCategoryIconById/getCategoryNameById 查找）
+    if (familyId) {
+      try {
+        const items = await getCategories(familyId);
+        warmUpMemoryCache(familyId, items);
+      } catch {
+        // 分类加载失败不阻塞明细页渲染（降级 fallback 在 categoryService 内处理）
+      }
+    }
   },
 
   async _loadEntries() {
