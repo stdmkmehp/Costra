@@ -1,5 +1,5 @@
 // components/expense-overlay/index.ts · 全屏记账覆盖层（COSTRA-208 完全重写 · COSTRA-209 防遮挡滚动）
-// 卡号: COSTRA-208 / COSTRA-209 · 分类防键盘遮挡滚动 + 打开重置
+// 卡号: COSTRA-208 / COSTRA-209 / COSTRA-210 · 分类防键盘遮挡滚动 + 打开重置 + 多实例状态同步关闭
 // 设计源: design/ui/design_spec.md §6.3 + design/ui/interaction_flow.md §2/§3
 // 金额 ADR-0002: 全部走 decimal.js（utils/money.ts）
 //
@@ -106,15 +106,30 @@ Component({
 
   lifetimes: {
     attached() {
-      const handler = () => { this._show(); };
-      (this as unknown as Record<string, unknown>)._showHandler = handler;
-      eventBus.on(EventNames.SHOW_EXPENSE_OVERLAY, handler);
+      // 订阅 SHOW 事件 → 显示覆盖层
+      const showHandler = () => { this._show(); };
+      (this as unknown as Record<string, unknown>)._showHandler = showHandler;
+      eventBus.on(EventNames.SHOW_EXPENSE_OVERLAY, showHandler);
+
+      // COSTRA-210 方案 A：订阅 HIDE 事件 → 同步关闭所有实例
+      // 根因：各 Tab 页都挂载 <expense-overlay/>，SHOW 是广播导致所有实例 visible=true。
+      // 用户在某页点关闭只关当前实例 + emit HIDE，但其他实例不订阅 HIDE 导致残留。
+      const hideHandler = () => {
+        this.setData({ visible: false, keypadVisible: false, noteFocused: false, saving: false });
+      };
+      (this as unknown as Record<string, unknown>)._hideHandler = hideHandler;
+      eventBus.on(EventNames.HIDE_EXPENSE_OVERLAY, hideHandler);
     },
 
     detached() {
-      const handler = (this as unknown as Record<string, unknown>)._showHandler as (() => void) | undefined;
-      if (handler) {
-        eventBus.off(EventNames.SHOW_EXPENSE_OVERLAY, handler);
+      const showHandler = (this as unknown as Record<string, unknown>)._showHandler as (() => void) | undefined;
+      if (showHandler) {
+        eventBus.off(EventNames.SHOW_EXPENSE_OVERLAY, showHandler);
+      }
+      // COSTRA-210 方案 A：取消订阅 HIDE handler
+      const hideHandler = (this as unknown as Record<string, unknown>)._hideHandler as (() => void) | undefined;
+      if (hideHandler) {
+        eventBus.off(EventNames.HIDE_EXPENSE_OVERLAY, hideHandler);
       }
     },
   },

@@ -1,5 +1,5 @@
 // custom-tab-bar/index.ts · 5 Tab 中置式自定义 TabBar
-// 卡号: COSTRA-201 · 中间 [+] 按钮通过 eventBus 触发记账覆盖层（不跳路由）
+// 卡号: COSTRA-201 / COSTRA-210 · 中间 [+] 按钮通过 eventBus 触发记账覆盖层（不跳路由） + 切Tab防御性关闭
 // COSTRA-205: 覆盖层显隐时同步隐藏/显示 TabBar（解决键盘底部被遮挡）
 // 设计源: design/ui/design_spec.md §3 + design/ui/interaction_flow.md §2
 // 微信文档: https://developers.weixin.qq.com/miniprogram/dev/framework/ability/custom-tabbar.html
@@ -67,6 +67,11 @@ Component({
         eventBus.emit(EventNames.SHOW_EXPENSE_OVERLAY);
         return;
       }
+
+      // COSTRA-210 方案 C：普通 Tab 切换前防御性 emit HIDE
+      // 根因：overlay 多实例 + SHOW 广播，切 Tab 时后台实例可能 visible=true 残留。
+      // 在 wx.switchTab 前广播 HIDE，确保所有 overlay 实例同步关闭。
+      eventBus.emit(EventNames.HIDE_EXPENSE_OVERLAY);
 
       const url = TAB_ROUTES[index];
       if (url) {
