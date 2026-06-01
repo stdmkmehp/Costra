@@ -1,14 +1,226 @@
-<!-- components/expense-overlay/index.wxml · 记账覆盖层占位 -->
-<!-- 卡号: COSTRA-201 · 由 custom-tab-bar [+] 按钮通过 eventBus 触发显示 -->
-<!-- 交互规范: interaction_flow.md §2 — 不发生路由跳转 · 全屏覆盖层 -->
+<!-- components/expense-overlay/index.wxml · 全屏记账覆盖层 -->
+<!-- 卡号: COSTRA-204 · 分类网格+计算器+算式+账本切换+保存 -->
+<!-- 设计源: design/ui/design_spec.md §6.3 + design/ui/interaction_flow.md §2/§3 -->
 
 <view class="overlay {{visible ? 'overlay--visible' : ''}}" catchtouchmove="noop">
   <view class="overlay__content">
+
+    <!-- 顶部关闭按钮 -->
     <view class="overlay__header">
       <text class="overlay__close" bindtap="onClose">✕</text>
     </view>
-    <view class="overlay__body">
-      <text class="overlay__placeholder">记账功能开发中</text>
+
+    <!-- 收支切换指示器 -->
+    <view class="overlay__indicator">
+      <view class="indicator__dot {{tabIndicator === 'expense' ? 'indicator__dot--active' : ''}}"></view>
+      <view class="indicator__dot {{tabIndicator === 'income' ? 'indicator__dot--active' : ''}}"></view>
     </view>
+
+    <!-- 分类区域（支持 swiper 水平滑动切换） -->
+    <swiper
+      class="overlay__swiper"
+      current="{{currentTab}}"
+      bindchange="onSwiperChange"
+      duration="250"
+    >
+      <!-- 支出面板 -->
+      <swiper-item>
+        <scroll-view
+          class="category-scroll"
+          scroll-y
+          scroll-into-view="{{scrollIntoView}}"
+          scroll-with-animation
+        >
+          <!-- 一级分类网格 -->
+          <view class="tier1-grid">
+            <view
+              wx:for="{{tier1Categories}}"
+              wx:key="id"
+              class="tier1-item {{selectedTier1Id === item.id ? 'tier1-item--selected' : ''}} {{dimmedTier1Ids.indexOf(item.id) >= 0 ? 'tier1-item--dimmed' : ''}}"
+              id="tier1-{{item.id}}"
+              data-id="{{item.id}}"
+              bindtap="onTapTier1"
+            >
+              <view class="tier1-icon">{{item.icon}}</view>
+              <text class="tier1-name">{{item.name}}</text>
+            </view>
+          </view>
+
+          <!-- 分隔线 -->
+          <view class="tier-divider"></view>
+
+          <!-- 展开的子分类（场景 A：点击一级分类后显示） -->
+          <view class="expanded-children" wx:if="{{expandedChildren.length > 0}}">
+            <view
+              wx:for="{{expandedChildren}}"
+              wx:key="id"
+              class="sub-item {{selectedTier2Id === item.id ? 'sub-item--selected' : ''}}"
+              data-id="{{item.id}}"
+              bindtap="onTapExpandedChild"
+            >
+              <view class="sub-icon">{{item.name[0]}}</view>
+              <text class="sub-name">{{item.name}}</text>
+            </view>
+          </view>
+
+          <!-- 去重后的全局二级分类（初始态 / 非展开时显示） -->
+          <view class="sub-grid" wx:if="{{!expandedTier1Id}}">
+            <view
+              wx:for="{{dedupedSubCategories}}"
+              wx:key="id"
+              class="sub-item {{selectedTier2Id === item.id ? 'sub-item--selected' : ''}}"
+              id="sub-{{item.id}}"
+              data-id="{{item.id}}"
+              data-name="{{item.name}}"
+              bindtap="onTapSubCategory"
+            >
+              <view class="sub-icon">{{item.name[0]}}</view>
+              <text class="sub-name">{{item.name}}</text>
+            </view>
+          </view>
+        </scroll-view>
+      </swiper-item>
+
+      <!-- 收入面板 -->
+      <swiper-item>
+        <scroll-view
+          class="category-scroll"
+          scroll-y
+          scroll-into-view="{{scrollIntoView}}"
+          scroll-with-animation
+        >
+          <!-- 一级分类网格 -->
+          <view class="tier1-grid">
+            <view
+              wx:for="{{tier1Categories}}"
+              wx:key="id"
+              class="tier1-item {{selectedTier1Id === item.id ? 'tier1-item--selected' : ''}} {{dimmedTier1Ids.indexOf(item.id) >= 0 ? 'tier1-item--dimmed' : ''}}"
+              id="tier1-{{item.id}}"
+              data-id="{{item.id}}"
+              bindtap="onTapTier1"
+            >
+              <view class="tier1-icon">{{item.icon}}</view>
+              <text class="tier1-name">{{item.name}}</text>
+            </view>
+          </view>
+
+          <!-- 分隔线 -->
+          <view class="tier-divider"></view>
+
+          <!-- 展开的子分类 -->
+          <view class="expanded-children" wx:if="{{expandedChildren.length > 0}}">
+            <view
+              wx:for="{{expandedChildren}}"
+              wx:key="id"
+              class="sub-item {{selectedTier2Id === item.id ? 'sub-item--selected' : ''}}"
+              data-id="{{item.id}}"
+              bindtap="onTapExpandedChild"
+            >
+              <view class="sub-icon">{{item.name[0]}}</view>
+              <text class="sub-name">{{item.name}}</text>
+            </view>
+          </view>
+
+          <!-- 去重后的全局二级分类 -->
+          <view class="sub-grid" wx:if="{{!expandedTier1Id}}">
+            <view
+              wx:for="{{dedupedSubCategories}}"
+              wx:key="id"
+              class="sub-item {{selectedTier2Id === item.id ? 'sub-item--selected' : ''}}"
+              id="sub-{{item.id}}"
+              data-id="{{item.id}}"
+              data-name="{{item.name}}"
+              bindtap="onTapSubCategory"
+            >
+              <view class="sub-icon">{{item.name[0]}}</view>
+              <text class="sub-name">{{item.name}}</text>
+            </view>
+          </view>
+        </scroll-view>
+      </swiper-item>
+    </swiper>
+
+    <!-- 计算器面板（从底部升起） -->
+    <view class="keypad-panel {{keypadVisible ? 'keypad-panel--visible' : ''}}">
+
+      <!-- 金额显示区 -->
+      <view class="amount-display">
+        <text class="amount-prefix">¥</text>
+        <text class="amount-value tnum {{calc.justEvaluated ? 'amount-value--result' : ''}}">{{calc.display}}</text>
+      </view>
+
+      <!-- 操作行：账本归属 + 费用性质 + 备注 -->
+      <view class="action-row">
+        <!-- 账本切换 -->
+        <view class="action-ledger" bindtap="onTapLedgerSwitch">
+          <text class="action-ledger__text">记入: {{ledgerName}} ▼</text>
+        </view>
+
+        <!-- 费用性质开关（仅多人+支出） -->
+        <view
+          class="action-shared {{showSharedToggle ? 'action-shared--visible' : ''}}"
+          bindtap="onTapSharedType"
+        >
+          <text class="action-shared__text {{sharedType === 'personal' ? 'action-shared__text--active' : ''}}">个人支出</text>
+          <text class="action-shared__divider">|</text>
+          <text class="action-shared__text {{sharedType === 'shared' ? 'action-shared__text--active' : ''}}">公共支出</text>
+        </view>
+
+        <!-- 备注 -->
+        <view class="action-note" wx:if="{{!noteFocused}}">
+          <text class="action-note__placeholder" bindtap="onTapNote">{{note || '添加备注...'}}</text>
+        </view>
+        <input
+          wx:else
+          class="action-note__input"
+          value="{{note}}"
+          placeholder="添加备注..."
+          focus="{{noteFocused}}"
+          bindinput="onNoteInput"
+          bindconfirm="onNoteConfirm"
+          bindblur="onNoteBlur"
+          adjust-position="{{true}}"
+        />
+      </view>
+
+      <!-- 数字键盘 -->
+      <view class="keypad" wx:if="{{!noteFocused}}">
+        <!-- 第一行：1 2 3 ⌫ -->
+        <view class="keypad__row">
+          <view class="keypad__key" data-key="1" bindtap="onKeypadTap"><text>1</text></view>
+          <view class="keypad__key" data-key="2" bindtap="onKeypadTap"><text>2</text></view>
+          <view class="keypad__key" data-key="3" bindtap="onKeypadTap"><text>3</text></view>
+          <view class="keypad__key keypad__key--fn" data-key="backspace" bindtap="onKeypadTap"><text>⌫</text></view>
+        </view>
+        <!-- 第二行：4 5 6 + -->
+        <view class="keypad__row">
+          <view class="keypad__key" data-key="4" bindtap="onKeypadTap"><text>4</text></view>
+          <view class="keypad__key" data-key="5" bindtap="onKeypadTap"><text>5</text></view>
+          <view class="keypad__key" data-key="6" bindtap="onKeypadTap"><text>6</text></view>
+          <view class="keypad__key keypad__key--fn" data-key="+" bindtap="onKeypadTap"><text>+</text></view>
+        </view>
+        <!-- 第三行：7 8 9 - -->
+        <view class="keypad__row">
+          <view class="keypad__key" data-key="7" bindtap="onKeypadTap"><text>7</text></view>
+          <view class="keypad__key" data-key="8" bindtap="onKeypadTap"><text>8</text></view>
+          <view class="keypad__key" data-key="9" bindtap="onKeypadTap"><text>9</text></view>
+          <view class="keypad__key keypad__key--fn" data-key="-" bindtap="onKeypadTap"><text>-</text></view>
+        </view>
+        <!-- 第四行：. 0 00 [=|完成] -->
+        <view class="keypad__row">
+          <view class="keypad__key" data-key="." bindtap="onKeypadTap"><text>.</text></view>
+          <view class="keypad__key" data-key="0" bindtap="onKeypadTap"><text>0</text></view>
+          <view class="keypad__key" data-key="00" bindtap="onKeypadTap"><text>00</text></view>
+          <view
+            class="keypad__key keypad__key--action {{calc.actionState === 'done' ? 'keypad__key--done' : 'keypad__key--equals'}}"
+            data-key="action"
+            bindtap="onKeypadTap"
+          >
+            <text>{{calc.actionState === 'done' ? '完成' : '='}}</text>
+          </view>
+        </view>
+      </view>
+    </view>
+
   </view>
 </view>
