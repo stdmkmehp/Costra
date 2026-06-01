@@ -103,10 +103,12 @@
   padding: 8rpx 0;
 }
 
-.category-grid {
+/* 一级分类网格：严格一行 4 个（design_spec.md §6.3） */
+.category-section--tier1 {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 16rpx 0;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  row-gap: 8rpx;
+  column-gap: 0;
 }
 
 /* ═══════════════════════════════════════════════════════════════
