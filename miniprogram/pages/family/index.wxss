@@ -1,9 +1,30 @@
 /* pages/family/index.wxss · 家庭页骨架 */
-/* 卡号: COSTRA-201 */
+/* 卡号: COSTRA-201 · COSTRA-216: 补齐 custom navigation 安全区导航栏 */
 
 .family {
-  padding: 32rpx;
   min-height: 100vh;
+  background: #f1f2ec;
+}
+
+/* 自定义导航栏 */
+.page-nav {
+  display: flex;
+  align-items: center;
+  padding-left: 32rpx;
+  background: #f1f2ec;
+  position: relative;
+  z-index: 10;
+}
+
+.page-nav__title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: var(--color-role-text-primary, #1c1b1a);
+}
+
+/* 页面内容区 */
+.family__content {
+  padding: 32rpx;
 }
 
 .family__title {

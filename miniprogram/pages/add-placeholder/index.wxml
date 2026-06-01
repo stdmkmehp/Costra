@@ -1,4 +1,8 @@
 <!-- pages/add-placeholder/index.wxml · 占位页 -->
 <!-- 卡号: COSTRA-201 · 为 tabBar list 占位 · 实际不会被跳转 -->
+<!-- COSTRA-216: 补齐 custom navigation 安全区占位 -->
 
-<view>placeholder</view>
+<view class="placeholder">
+  <view class="page-safe-top" style="height: {{navBarTotalHeight}}px;"></view>
+  <text>placeholder</text>
+</view>

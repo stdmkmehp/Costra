@@ -1,4 +1,29 @@
-.mine { padding: 32rpx; background: var(--color-bg); min-height: 100vh; }
+/* pages/mine/index.wxss · 我的页 */
+/* 卡号: COSTRA-201 · COSTRA-216: 补齐 custom navigation 安全区导航栏 */
+
+.mine { background: var(--color-bg); min-height: 100vh; }
+
+/* 自定义导航栏 */
+.page-nav {
+  display: flex;
+  align-items: center;
+  padding-left: 32rpx;
+  background: #f1f2ec;
+  position: relative;
+  z-index: 10;
+}
+
+.page-nav__title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: var(--color-role-text-primary, #1c1b1a);
+}
+
+/* 页面内容区 */
+.mine__content {
+  padding: 32rpx;
+}
+
 .profile { display: flex; align-items: center; background: var(--color-surface); border-radius: var(--radius-lg); padding: 32rpx; }
 .profile__avatar { width: 112rpx; height: 112rpx; border-radius: 50%; background: var(--color-divider); }
 .profile__name { margin-left: 24rpx; font-size: 32rpx; font-weight: 600; color: var(--color-text); }

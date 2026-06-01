@@ -3,10 +3,12 @@
 // COSTRA-125: onLoad 加 bootstrapPromise gate
 // COSTRA-127: onShow 加 bootstrapPromise gate · 避免与 onLoad gate 形成 race
 // COSTRA-201: 适配 custom-tab-bar selected: 4 + 引入 expense-overlay
+// COSTRA-216: 补齐 custom navigation 安全区导航栏
 // Refs: COSTRA-030, docs/design/ia.md §我的 · .team/dispatch/COSTRA-125-miniapp-storage-async-migration.md §3 (e)
 import { hasValidSession, getSession, logout } from '../../services/auth';
 import { defaultNickname } from '../../config/defaults';
 import { triggerOnPageShow } from '../../services/syncScheduler';
+import { getSafeAreaMetrics } from '../../utils/safeArea';
 
 interface AppWithBootstrap {
   bootstrapPromise: Promise<void>;
@@ -16,10 +18,19 @@ Page({
   data: {
     nickname: '',
     avatarUrl: '',
+    statusBarHeight: 0,
+    navBarHeight: 0,
   },
 
   // onLoad gate（冗余兜底 · onShow gate 是主防线）
   onLoad() {
+    // COSTRA-216: 获取安全区指标，设置自定义导航栏高度
+    const metrics = getSafeAreaMetrics();
+    this.setData({
+      statusBarHeight: metrics.statusBarHeight,
+      navBarHeight: metrics.navBarHeight,
+    });
+
     // 等 bootstrap 完成再判登录态
     const app = getApp<AppWithBootstrap>();
     void app.bootstrapPromise.then(() => {

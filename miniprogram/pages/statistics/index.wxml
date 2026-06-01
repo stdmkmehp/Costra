@@ -1,8 +1,17 @@
 <!-- pages/statistics/index.wxml · 统计页（Tab2） -->
 <!-- 卡号: COSTRA-201 · 骨架 · 后续 COSTRA-20x 逐步实装 -->
+<!-- COSTRA-216: 补齐 custom navigation 安全区导航栏 -->
 
 <view class="statistics">
-  <text class="statistics__title">统计</text>
+  <!-- 自定义导航栏：状态栏 + 导航栏高度 -->
+  <view class="page-nav" style="padding-top: {{statusBarHeight}}px; height: {{navBarHeight}}px;">
+    <text class="page-nav__title">统计</text>
+  </view>
+
+  <!-- 页面内容区 -->
+  <view class="statistics__content">
+    <text class="statistics__title">统计</text>
+  </view>
 </view>
 
 <expense-overlay />
