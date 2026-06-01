@@ -36,7 +36,7 @@ fi
 : "${ASSUME_YES:=0}"
 
 # --- 路径基线（项目约定 · 可被环境变量覆盖）---
-: "${COSTRA_ROOT:=/root/release/Costra}"
+: "${COSTRA_ROOT:=/root/Costra}"
 : "${COSTRA_INFRA:=${COSTRA_ROOT}/infra}"
 : "${COSTRA_DATA:=/data}"
 : "${COSTRA_CONF_DIR:=${COSTRA_DATA}/conf}"

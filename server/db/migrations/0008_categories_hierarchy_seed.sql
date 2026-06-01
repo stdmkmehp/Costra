@@ -46,16 +46,8 @@ ALTER TABLE categories ADD COLUMN IF NOT EXISTS is_direct_default BOOLEAN NOT NU
 -- ---------------------------------------------------------------------------
 -- 3. 约束：最多两层 + 禁止自引用
 -- ---------------------------------------------------------------------------
-DO $$ BEGIN
-  CREATE CONSTRAINT TRIGGER chk_categories_max_two_levels
-    AFTER INSERT OR UPDATE OF parent_id ON categories
-    DEFERRABLE INITIALLY DEFERRED
-    FOR EACH ROW
-    EXECUTE FUNCTION chk_categories_hierarchy();
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
 
--- 辅助函数：校验层级 + 自引用
+-- 辅助函数：校验层级 + 自引用（必须在 TRIGGER 之前创建）
 CREATE OR REPLACE FUNCTION chk_categories_hierarchy()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -79,6 +71,15 @@ BEGIN
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
+
+DO $$ BEGIN
+  CREATE CONSTRAINT TRIGGER chk_categories_max_two_levels
+    AFTER INSERT OR UPDATE OF parent_id ON categories
+    DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW
+    EXECUTE FUNCTION chk_categories_hierarchy();
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- ---------------------------------------------------------------------------
 -- 4. 替换旧唯一索引为含 parent_id 版本
