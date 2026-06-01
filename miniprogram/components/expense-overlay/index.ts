@@ -1,5 +1,5 @@
 // components/expense-overlay/index.ts · 全屏记账覆盖层（分类网格+计算器+算式+账本切换+保存）
-// 卡号: COSTRA-204/206 · 整体重写占位组件 + COSTRA-206 UI 修复
+// 卡号: COSTRA-204/206/207 · 整体重写占位组件 + COSTRA-206 UI 修复 + COSTRA-207 移除swiper根治空白
 // 设计源: design/ui/design_spec.md §6.3 + design/ui/interaction_flow.md §2/§3
 // 金额 ADR-0002: 全部走 decimal.js（utils/money.ts）
 
@@ -82,24 +82,13 @@ Component({
     // ─── 类型 ───
     entryType: 'expense' as 'expense' | 'income',
 
-    // ─── 动态布局高度（COSTRA-206: swiper 不响应 flex，必须显式设置 height） ───
-    /** swiper 高度 = windowHeight - headerBottom（px 单位） */
-    swiperHeight: 0 as number,
-
     // ─── 保存中 ───
     saving: false,
   },
 
   lifetimes: {
     attached() {
-      // COSTRA-206: 动态计算 swiper 高度（swiper 不响应 CSS flex:1）
-      const sysInfo = wx.getSystemInfoSync();
-      const menuBtn = wx.getMenuButtonBoundingClientRect();
-      // header 底边 ≈ 胶囊按钮 bottom + 下方间距
-      const headerBottom = menuBtn.bottom + 8;
-      const swiperHeight = sysInfo.windowHeight - headerBottom;
-      this.setData({ swiperHeight });
-
+      // COSTRA-207: 不再需要动态计算swiper高度，category-panel 使用 flex:1 自动填满
       type ShowHandler = () => void;
       const handler: ShowHandler = () => { this._show(); };
       (this as unknown as Record<string, unknown>)._showHandler = handler;
@@ -160,11 +149,40 @@ Component({
       // intentionally empty
     },
 
-    // ─── 收支切换（swiper）──────────────────────────────────────────────────
+    // ─── 收支切换（轻量横滑手势 + 文字指示器）─────────────────────────────
 
-    onSwiperChange(e: WechatMiniprogram.SwiperChange) {
-      const current = e.detail.current as number;
-      this._switchTab(current);
+    /** COSTRA-207: 轻量横滑手势 — 记录触摸起点 */
+    onPanelTouchStart(e: WechatMiniprogram.TouchEvent) {
+      const touch = e.touches[0];
+      if (touch) {
+        (this as unknown as Record<string, number>)._panelTouchStartX = touch.pageX;
+        (this as unknown as Record<string, number>)._panelTouchStartY = touch.pageY;
+      }
+    },
+
+    /** COSTRA-207: 轻量横滑手势 — 判断是否切换面板 */
+    onPanelTouchEnd(e: WechatMiniprogram.TouchEvent) {
+      const touch = e.changedTouches[0];
+      if (!touch) return;
+
+      const startX = (this as unknown as Record<string, number>)._panelTouchStartX;
+      const startY = (this as unknown as Record<string, number>)._panelTouchStartY;
+      if (startX == null || startY == null) return;
+
+      const deltaX = touch.pageX - startX;
+      const deltaY = touch.pageY - startY;
+
+      // 横滑判定：水平位移 > 60px 且 水平 > 垂直 * 1.5（避免误触纵向滚动）
+      if (Math.abs(deltaX) > 60 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
+        const next = deltaX < 0 ? 1 : 0; // 左滑→收入(1)，右滑→支出(0)
+        if (next !== this.data.currentTab) {
+          this._switchTab(next);
+        }
+      }
+
+      // 清理
+      (this as unknown as Record<string, number>)._panelTouchStartX = 0;
+      (this as unknown as Record<string, number>)._panelTouchStartY = 0;
     },
 
     /** 点击文字指示器切换收支面板（COSTRA-206） */
@@ -175,7 +193,7 @@ Component({
     },
 
     /**
-     * 收支面板切换核心逻辑（swiper 滑动 + 文字指示器点击共用）
+     * 收支面板切换核心逻辑（横滑手势 + 文字指示器点击共用）
      */
     _switchTab(current: number) {
       const tabIndicator = current === 0 ? 'expense' : 'income';

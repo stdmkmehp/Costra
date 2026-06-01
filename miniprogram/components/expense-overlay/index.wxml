@@ -1,7 +1,8 @@
 <!-- components/expense-overlay/index.wxml · 全屏记账覆盖层 -->
-<!-- 卡号: COSTRA-204/206 · 分类网格+计算器+算式+账本切换+保存 -->
+<!-- 卡号: COSTRA-204/206/207 · 分类网格+计算器+算式+账本切换+保存 -->
 <!-- 设计源: design/ui/design_spec.md §6.3 + design/ui/interaction_flow.md §2/§3 -->
 <!-- COSTRA-206: 修复底部绿色残留+全屏分类初始态+支出收入文字指示器+关闭按钮避让胶囊 -->
+<!-- COSTRA-207: 移除swiper根治分类网格空白(改用flex panel+scroll-view+轻量横滑手势) -->
 
 <!-- 修改前: catchtouchmove 阻止了内部 scroll-view 的滚动 -->
 <!-- <view class="overlay {{visible ? 'overlay--visible' : ''}}" catchtouchmove="noop"> -->
@@ -29,142 +30,132 @@
       <view class="overlay__header-placeholder"></view>
     </view>
 
-    <!-- 分类区域（支持 swiper 水平滑动切换） -->
-    <swiper
-      class="overlay__swiper"
-      style="height: {{swiperHeight}}px;"
-      current="{{currentTab}}"
-      bindchange="onSwiperChange"
-      duration="250"
-    >
+    <!-- 分类区域（COSTRA-207: 移除swiper，改用flex面板+轻量横滑手势） -->
+    <view class="category-panel" bindtouchstart="onPanelTouchStart" bindtouchend="onPanelTouchEnd">
       <!-- 支出面板 -->
-      <swiper-item>
-        <scroll-view
-          class="category-scroll"
-          scroll-y
-          style="height: {{swiperHeight}}px;"
-          scroll-into-view="{{scrollIntoView}}"
-          scroll-with-animation
-          enhanced="{{true}}"
-          show-scrollbar="{{false}}"
-        >
-          <!-- 一级分类网格 -->
-          <view class="tier1-grid">
-            <view
-              wx:for="{{tier1Categories}}"
-              wx:key="id"
-              class="tier1-item {{selectedTier1Id === item.id ? 'tier1-item--selected' : ''}} {{dimmedTier1Ids.indexOf(item.id) >= 0 ? 'tier1-item--dimmed' : ''}}"
-              id="tier1-{{item.id}}"
-              data-id="{{item.id}}"
-              bindtap="onTapTier1"
-            >
-              <view class="tier1-icon">{{item.icon}}</view>
-              <text class="tier1-name">{{item.name}}</text>
-            </view>
+      <scroll-view
+        wx:if="{{currentTab === 0}}"
+        class="category-scroll"
+        scroll-y
+        scroll-into-view="{{scrollIntoView}}"
+        scroll-with-animation
+        enhanced="{{true}}"
+        show-scrollbar="{{false}}"
+      >
+        <!-- 一级分类网格 -->
+        <view class="tier1-grid">
+          <view
+            wx:for="{{tier1Categories}}"
+            wx:key="id"
+            class="tier1-item {{selectedTier1Id === item.id ? 'tier1-item--selected' : ''}} {{dimmedTier1Ids.indexOf(item.id) >= 0 ? 'tier1-item--dimmed' : ''}}"
+            id="tier1-{{item.id}}"
+            data-id="{{item.id}}"
+            bindtap="onTapTier1"
+          >
+            <view class="tier1-icon">{{item.icon}}</view>
+            <text class="tier1-name">{{item.name}}</text>
           </view>
+        </view>
 
-          <!-- 分隔线 -->
-          <view class="tier-divider"></view>
+        <!-- 分隔线 -->
+        <view class="tier-divider"></view>
 
-          <!-- 展开的子分类（场景 A：点击一级分类后显示） -->
-          <view class="expanded-children" wx:if="{{expandedChildren.length > 0}}">
-            <view
-              wx:for="{{expandedChildren}}"
-              wx:key="id"
-              class="sub-item {{selectedTier2Id === item.id ? 'sub-item--selected' : ''}}"
-              data-id="{{item.id}}"
-              bindtap="onTapExpandedChild"
-            >
-              <view class="sub-icon">{{item.name[0]}}</view>
-              <text class="sub-name">{{item.name}}</text>
-            </view>
+        <!-- 展开的子分类（场景 A：点击一级分类后显示） -->
+        <view class="expanded-children" wx:if="{{expandedChildren.length > 0}}">
+          <view
+            wx:for="{{expandedChildren}}"
+            wx:key="id"
+            class="sub-item {{selectedTier2Id === item.id ? 'sub-item--selected' : ''}}"
+            data-id="{{item.id}}"
+            bindtap="onTapExpandedChild"
+          >
+            <view class="sub-icon">{{item.name[0]}}</view>
+            <text class="sub-name">{{item.name}}</text>
           </view>
+        </view>
 
-          <!-- 去重后的全局二级分类（初始态 / 非展开时显示） -->
-          <view class="sub-grid" wx:if="{{!expandedTier1Id}}">
-            <view
-              wx:for="{{dedupedSubCategories}}"
-              wx:key="id"
-              class="sub-item {{selectedTier2Id === item.id ? 'sub-item--selected' : ''}}"
-              id="sub-{{item.id}}"
-              data-id="{{item.id}}"
-              data-name="{{item.name}}"
-              bindtap="onTapSubCategory"
-            >
-              <view class="sub-icon">{{item.name[0]}}</view>
-              <text class="sub-name">{{item.name}}</text>
-            </view>
+        <!-- 去重后的全局二级分类（初始态 / 非展开时显示） -->
+        <view class="sub-grid" wx:if="{{!expandedTier1Id}}">
+          <view
+            wx:for="{{dedupedSubCategories}}"
+            wx:key="id"
+            class="sub-item {{selectedTier2Id === item.id ? 'sub-item--selected' : ''}}"
+            id="sub-{{item.id}}"
+            data-id="{{item.id}}"
+            data-name="{{item.name}}"
+            bindtap="onTapSubCategory"
+          >
+            <view class="sub-icon">{{item.name[0]}}</view>
+            <text class="sub-name">{{item.name}}</text>
           </view>
+        </view>
 
-          <!-- 底部安全区占位：确保无键盘时内容可滚动到底部 -->
-          <view class="category-scroll__padding-bottom"></view>
-        </scroll-view>
-      </swiper-item>
+        <!-- 底部安全区占位：确保无键盘时内容可滚动到底部 -->
+        <view class="category-scroll__padding-bottom"></view>
+      </scroll-view>
 
       <!-- 收入面板 -->
-      <swiper-item>
-        <scroll-view
-          class="category-scroll"
-          scroll-y
-          style="height: {{swiperHeight}}px;"
-          scroll-into-view="{{scrollIntoView}}"
-          scroll-with-animation
-          enhanced="{{true}}"
-          show-scrollbar="{{false}}"
-        >
-          <!-- 一级分类网格 -->
-          <view class="tier1-grid">
-            <view
-              wx:for="{{tier1Categories}}"
-              wx:key="id"
-              class="tier1-item {{selectedTier1Id === item.id ? 'tier1-item--selected' : ''}} {{dimmedTier1Ids.indexOf(item.id) >= 0 ? 'tier1-item--dimmed' : ''}}"
-              id="tier1-{{item.id}}"
-              data-id="{{item.id}}"
-              bindtap="onTapTier1"
-            >
-              <view class="tier1-icon">{{item.icon}}</view>
-              <text class="tier1-name">{{item.name}}</text>
-            </view>
+      <scroll-view
+        wx:elif="{{currentTab === 1}}"
+        class="category-scroll"
+        scroll-y
+        scroll-into-view="{{scrollIntoView}}"
+        scroll-with-animation
+        enhanced="{{true}}"
+        show-scrollbar="{{false}}"
+      >
+        <!-- 一级分类网格 -->
+        <view class="tier1-grid">
+          <view
+            wx:for="{{tier1Categories}}"
+            wx:key="id"
+            class="tier1-item {{selectedTier1Id === item.id ? 'tier1-item--selected' : ''}} {{dimmedTier1Ids.indexOf(item.id) >= 0 ? 'tier1-item--dimmed' : ''}}"
+            id="tier1-{{item.id}}"
+            data-id="{{item.id}}"
+            bindtap="onTapTier1"
+          >
+            <view class="tier1-icon">{{item.icon}}</view>
+            <text class="tier1-name">{{item.name}}</text>
           </view>
+        </view>
 
-          <!-- 分隔线 -->
-          <view class="tier-divider"></view>
+        <!-- 分隔线 -->
+        <view class="tier-divider"></view>
 
-          <!-- 展开的子分类 -->
-          <view class="expanded-children" wx:if="{{expandedChildren.length > 0}}">
-            <view
-              wx:for="{{expandedChildren}}"
-              wx:key="id"
-              class="sub-item {{selectedTier2Id === item.id ? 'sub-item--selected' : ''}}"
-              data-id="{{item.id}}"
-              bindtap="onTapExpandedChild"
-            >
-              <view class="sub-icon">{{item.name[0]}}</view>
-              <text class="sub-name">{{item.name}}</text>
-            </view>
+        <!-- 展开的子分类 -->
+        <view class="expanded-children" wx:if="{{expandedChildren.length > 0}}">
+          <view
+            wx:for="{{expandedChildren}}"
+            wx:key="id"
+            class="sub-item {{selectedTier2Id === item.id ? 'sub-item--selected' : ''}}"
+            data-id="{{item.id}}"
+            bindtap="onTapExpandedChild"
+          >
+            <view class="sub-icon">{{item.name[0]}}</view>
+            <text class="sub-name">{{item.name}}</text>
           </view>
+        </view>
 
-          <!-- 去重后的全局二级分类 -->
-          <view class="sub-grid" wx:if="{{!expandedTier1Id}}">
-            <view
-              wx:for="{{dedupedSubCategories}}"
-              wx:key="id"
-              class="sub-item {{selectedTier2Id === item.id ? 'sub-item--selected' : ''}}"
-              id="sub-{{item.id}}"
-              data-id="{{item.id}}"
-              data-name="{{item.name}}"
-              bindtap="onTapSubCategory"
-            >
-              <view class="sub-icon">{{item.name[0]}}</view>
-              <text class="sub-name">{{item.name}}</text>
-            </view>
+        <!-- 去重后的全局二级分类 -->
+        <view class="sub-grid" wx:if="{{!expandedTier1Id}}">
+          <view
+            wx:for="{{dedupedSubCategories}}"
+            wx:key="id"
+            class="sub-item {{selectedTier2Id === item.id ? 'sub-item--selected' : ''}}"
+            id="sub-{{item.id}}"
+            data-id="{{item.id}}"
+            data-name="{{item.name}}"
+            bindtap="onTapSubCategory"
+          >
+            <view class="sub-icon">{{item.name[0]}}</view>
+            <text class="sub-name">{{item.name}}</text>
           </view>
+        </view>
 
-          <!-- 底部安全区占位 -->
-          <view class="category-scroll__padding-bottom"></view>
-        </scroll-view>
-      </swiper-item>
-    </swiper>
+        <!-- 底部安全区占位 -->
+        <view class="category-scroll__padding-bottom"></view>
+      </scroll-view>
+    </view>
 
     <!-- 计算器面板（从底部升起） -->
     <view class="keypad-panel {{keypadVisible ? 'keypad-panel--visible' : ''}}" catchtouchmove="noop">
