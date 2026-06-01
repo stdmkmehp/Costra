@@ -1,5 +1,5 @@
 // components/expense-overlay/calc.ts · 记账覆盖层计算器逻辑（状态机 + decimal.js 精算）
-// 卡号: COSTRA-204 · 交互规范: interaction_flow.md §2 Step 3~5
+// 卡号: COSTRA-204 / COSTRA-212 · 交互规范: interaction_flow.md §2 Step 3~5
 // ADR-0002: 金额计算必须走 decimal.js
 
 import Decimal from '../../utils/vendor/decimal';
@@ -8,6 +8,9 @@ import { toCents } from '../../utils/money';
 /** 键盘右下角按钮状态 */
 export type ActionButtonState = 'done' | 'equals';
 
+/** 运算符类型（COSTRA-212: 提取为类型别名供 replaceRightOperand 使用） */
+type Operator = '+' | '-';
+
 /** 计算器内部状态 */
 export interface CalcState {
   /** 显示文字 */
@@ -15,7 +18,7 @@ export interface CalcState {
   /** 当前累加值 */
   accumulator: string;
   /** 待运算的操作符 */
-  pendingOp: '+' | '-' | null;
+  pendingOp: Operator | null;
   /** 上次输入的是否为运算符 */
   lastInputIsOp: boolean;
   /** 是否刚按了 = 得出结果 */
@@ -71,6 +74,20 @@ function extractLeftOperand(display: string, op: string): string {
   const opIndex = display.lastIndexOf(' ' + op + ' ');
   if (opIndex === -1) return display.trim();
   return display.slice(0, opIndex).trim();
+}
+
+/** 替换 display 中右操作数（COSTRA-212: 替代 replace(/[^+-]*$/, '') 正则）
+ *
+ * 根因：原正则 `replace(/[^+-]*$/, '')` 会把 `'1 + 1'` 变成 `'1 +'`，
+ * 再拼成 `'1 +11'`，导致 extractLeftOperand 找不到 `' + '` 空格包围的运算符。
+ * 新函数精确查找 `' op '` 位置，只替换运算符之后的部分。
+ */
+function replaceRightOperand(display: string, op: Operator | null, rightOperand: string): string {
+  if (!op) return rightOperand;
+  const opPattern = ' ' + op + ' ';
+  const opIndex = display.lastIndexOf(opPattern);
+  if (opIndex === -1) return rightOperand;
+  return display.slice(0, opIndex + opPattern.length) + rightOperand;
 }
 
 /** 执行算式计算（decimal.js） */
@@ -151,8 +168,8 @@ export function inputDigit(calc: CalcState, digit: string): CalcState {
 
   let newDisplay: string;
   if (calc.pendingOp) {
-    const prefix = calc.display.replace(/[^+-]*$/, '');
-    newDisplay = prefix + currentOperand;
+    // COSTRA-212: 使用 replaceRightOperand 替代 replace(/[^+-]*$/, '') 正则
+    newDisplay = replaceRightOperand(calc.display, calc.pendingOp, currentOperand);
   } else {
     newDisplay = currentOperand;
   }
@@ -212,8 +229,8 @@ export function inputDot(calc: CalcState): CalcState {
   const currentOperand = calc.accumulator + '.';
   let newDisplay: string;
   if (calc.pendingOp) {
-    const prefix = calc.display.replace(/[^+-]*$/, '');
-    newDisplay = prefix + currentOperand;
+    // COSTRA-212: 使用 replaceRightOperand 替代 replace(/[^+-]*$/, '') 正则
+    newDisplay = replaceRightOperand(calc.display, calc.pendingOp, currentOperand);
   } else {
     newDisplay = currentOperand;
   }
@@ -295,8 +312,8 @@ export function inputBackspace(calc: CalcState): CalcState {
 
   let newDisplay: string;
   if (calc.pendingOp) {
-    const prefix = calc.display.replace(/[^+-]*$/, '');
-    newDisplay = prefix + newAccumulator;
+    // COSTRA-212: 使用 replaceRightOperand 替代 replace(/[^+-]*$/, '') 正则
+    newDisplay = replaceRightOperand(calc.display, calc.pendingOp, newAccumulator);
   } else {
     newDisplay = newAccumulator;
   }

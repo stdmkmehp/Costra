@@ -33,7 +33,6 @@
       enhanced="{{true}}"
       show-scrollbar="{{false}}"
       scroll-top="{{categoryScrollTop}}"
-      scroll-with-animation="{{true}}"
       bindscroll="onCategoryScroll"
       bindtouchstart="onTouchStart"
       bindtouchend="onTouchEnd"
@@ -124,21 +123,23 @@
           <text class="keypad-shared__text {{sharedType === 'shared' ? 'is-active' : ''}}">公共支出</text>
         </view>
 
-        <!-- 备注 -->
-        <view class="keypad-note" wx:if="{{!noteFocused}}">
-          <text class="keypad-note__placeholder" bindtap="onTapNote">{{note || '添加备注...'}}</text>
+        <!-- 备注（COSTRA-212: placeholder 与 input 同时保留，用 class 控制显隐，避免 wx:if 销毁 input 导致二次编辑焦点丢失） -->
+        <view class="keypad-note">
+          <text
+            class="keypad-note__placeholder {{noteFocused ? 'is-hidden' : ''}}"
+            bindtap="onTapNote"
+          >{{note || '添加备注...'}}</text>
+          <input
+            class="keypad-note__input {{noteFocused ? 'is-visible' : ''}}"
+            value="{{note}}"
+            placeholder="添加备注..."
+            focus="{{noteFocused}}"
+            bindinput="onNoteInput"
+            bindconfirm="onNoteConfirm"
+            bindblur="onNoteBlur"
+            adjust-position="{{true}}"
+          />
         </view>
-        <input
-          wx:else
-          class="keypad-note__input"
-          value="{{note}}"
-          placeholder="添加备注..."
-          focus="{{noteFocused}}"
-          bindinput="onNoteInput"
-          bindconfirm="onNoteConfirm"
-          bindblur="onNoteBlur"
-          adjust-position="{{true}}"
-        />
       </view>
 
       <!-- 数字键盘 -->

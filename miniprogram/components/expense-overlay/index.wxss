@@ -333,8 +333,9 @@
   color: rgba(28, 27, 26, 0.12);
 }
 
-/* 备注 */
+/* 备注（COSTRA-212: placeholder 与 input 叠放，class 控制显隐） */
 .keypad-note {
+  position: relative;
   flex: 1;
   min-width: 0;
 }
@@ -345,13 +346,30 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition: opacity 150ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.keypad-note__placeholder.is-hidden {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .keypad-note__input {
-  flex: 1;
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
   font-size: 22rpx;
   color: #1c1b1a;
   min-height: 40rpx;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.keypad-note__input.is-visible {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 /* ═══════════════════════════════════════════════════════════════

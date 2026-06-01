@@ -1,5 +1,5 @@
-// components/expense-overlay/index.ts · 全屏记账覆盖层（COSTRA-208 完全重写 · COSTRA-209 防遮挡滚动 · COSTRA-211 最小位移优化）
-// 卡号: COSTRA-208 / COSTRA-209 / COSTRA-210 / COSTRA-211 · 分类防键盘遮挡滚动(真实布局最小位移) + 打开重置 + 多实例状态同步关闭
+// components/expense-overlay/index.ts · 全屏记账覆盖层（COSTRA-208 完全重写 · COSTRA-209 防遮挡滚动 · COSTRA-211 最小位移优化 · COSTRA-212 滚动插值动画+备注可重复编辑+计算器算式修复）
+// 卡号: COSTRA-208 / COSTRA-209 / COSTRA-210 / COSTRA-211 / COSTRA-212 · 分类防键盘遮挡滚动(真实布局最小位移+插值动画) + 打开重置 + 多实例状态同步关闭
 // 设计源: design/ui/design_spec.md §6.3 + design/ui/interaction_flow.md §2/§3
 // 金额 ADR-0002: 全部走 decimal.js（utils/money.ts）
 //
@@ -8,6 +8,7 @@
 //   - 禁止 swiper，禁止 JS 动态计算 scroll-view 高度
 //   - 高度完全由 CSS flex 布局负责
 //   - COSTRA-211: 防遮挡滚动采用二阶段真实布局算法，不再依赖固定键盘高度估算
+//   - COSTRA-212: 滚动动画改为 JS 分段插值（easeOutCubic 220ms），替代 scroll-with-animation
 
 import { newClientRefId } from '../../utils/id';
 import { putEntry, type Entry } from '../../services/db';
@@ -49,6 +50,18 @@ const SAFE_MARGIN_PX = 12;
  * 80ms 足以让布局稳定，同时保持响应速度（用户感知：选中→键盘弹出→轻微滚动）。
  */
 const KEYPAD_LAYOUT_SETTLE_MS = 80;
+
+/**
+ * 分类滚动插值动画时长（ms）（COSTRA-212）。
+ * 220ms 在用户感知上属于"即时但有过渡"区间，避免瞬移感。
+ */
+const SCROLL_ANIM_DURATION_MS = 220;
+
+/**
+ * 分类滚动插值动画帧间隔（ms）（COSTRA-212）。
+ * 16ms ≈ 60fps，与 requestAnimationFrame 对齐。
+ */
+const SCROLL_ANIM_FRAME_MS = 16;
 
 // ─── Component ─────────────────────────────────────────────────────────────────
 
@@ -253,8 +266,57 @@ Component({
         const currentScrollTop = (this as unknown as Record<string, number>)._currentScrollTop || 0;
         const nextScrollTop = Math.max(0, currentScrollTop + delta);
 
-        this.setData({ categoryScrollTop: nextScrollTop });
+        // COSTRA-212: 使用插值动画替代直接 setData，实现丝滑滚动
+        this._animateCategoryScrollTo(nextScrollTop);
       });
+    },
+
+    /**
+     * 分类滚动插值动画（COSTRA-212）。
+     *
+     * 根因：程序化设置 scroll-top 时，scroll-with-animation 在 enhanced scroll-view 上
+     * 表现不稳定，可能瞬移。改为 JS 分段插值（easeOutCubic）更新 scroll-top，
+     * 即使原生动画不生效也能平滑过渡。
+     *
+     * @param target 目标 scrollTop 值
+     */
+    _animateCategoryScrollTo(target: number) {
+      const start = (this as unknown as Record<string, number>)._currentScrollTop || 0;
+      const delta = target - start;
+
+      // 极小位移不需要动画
+      if (Math.abs(delta) < 2) {
+        this.setData({ categoryScrollTop: target });
+        return;
+      }
+
+      // 递增 token 取消旧动画（防止组件关闭/再次点击分类时旧动画继续运行）
+      const token = ((this as unknown as Record<string, number>)._scrollAnimationToken || 0) + 1;
+      (this as unknown as Record<string, number>)._scrollAnimationToken = token;
+
+      const startTime = Date.now();
+
+      const step = () => {
+        // 检查是否已被新动画取消
+        if ((this as unknown as Record<string, number>)._scrollAnimationToken !== token) return;
+
+        const elapsed = Date.now() - startTime;
+        const t = Math.min(1, elapsed / SCROLL_ANIM_DURATION_MS);
+        // easeOutCubic: 1 - (1 - t)^3
+        const eased = 1 - Math.pow(1 - t, 3);
+        const value = start + delta * eased;
+
+        this.setData({ categoryScrollTop: value });
+
+        if (t < 1) {
+          setTimeout(step, SCROLL_ANIM_FRAME_MS);
+        } else {
+          // 确保最终值精确
+          this.setData({ categoryScrollTop: target });
+        }
+      };
+
+      step();
     },
 
     // ─── 收支切换（轻量横滑手势 + 文字指示器点击）────────────────────────────
@@ -515,7 +577,15 @@ Component({
     // ─── 备注 ────────────────────────────────────────────────────────────────
 
     onTapNote() {
-      this.setData({ noteFocused: true });
+      // COSTRA-212: 先 false 再 nextTick true，确保 input 已存在于 DOM 时才设 focus
+      // 避免 wx:if 场景下 input 被销毁重建导致 focus 不稳定
+      if (this.data.noteFocused) {
+        this.setData({ noteFocused: false }, () => {
+          setTimeout(() => { this.setData({ noteFocused: true }); }, 50);
+        });
+      } else {
+        this.setData({ noteFocused: true });
+      }
     },
 
     onNoteInput(e: WechatMiniprogram.Input) {
