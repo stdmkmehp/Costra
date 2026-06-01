@@ -1,24 +1,87 @@
-/* 登录页 · Tokens via app.wxss + tokens/tokens.json */
+/* 登录页 · COSTRA-202 极简重做
+ * 设计规范：design/ui/design_spec.md §6.1
+ * 令牌：tokens/index.ts v2.0.0 (COSTRA-200)
+ *
+ * - 暖灰白全屏背景 #f1f2ec
+ * - 油墨暖黑 Wordmark #1c1b1a · 80rpx · 700 · 负字距
+ * - 格言 28rpx · rgba(28,27,26,0.48)
+ * - 微信绿 CTA #07C160 · 圆角 16rpx · 60% 屏幕宽
+ * - 无隐私协议勾选框（合规走微信原生授权）
+ */
+
 .login {
   min-height: 100vh;
-  padding: 96rpx 48rpx 48rpx;
   display: flex;
   flex-direction: column;
+  align-items: center;
   justify-content: space-between;
-  background: var(--color-bg);
+  background: var(--color-role-bg-app);
+  padding: 0 48rpx;
+  /* 安全区域：底部留足空间 */
+  padding-bottom: calc(200rpx + env(safe-area-inset-bottom));
 }
-.brand { margin-top: 160rpx; text-align: center; }
-.brand__logo { font-size: 128rpx; line-height: 1; }
-.brand__name { font-size: 56rpx; font-weight: 700; margin-top: 24rpx; color: var(--color-text); }
-.brand__tagline { font-size: 28rpx; color: var(--color-text-muted); margin-top: 16rpx; }
 
-.login__actions { margin-bottom: 64rpx; }
-.btn--primary {
-  background: var(--color-primary);
-  color: #fff;
-  border-radius: var(--radius-lg);
-  font-weight: 600;
+/* ---- 中心视觉区 ---- */
+.login__center {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
-.login__err { color: var(--color-danger); text-align: center; margin-top: 16rpx; font-size: 26rpx; }
-.login__policy { text-align: center; margin-top: 24rpx; font-size: 24rpx; color: var(--color-text-muted); }
-.login__policy-link { color: var(--color-primary); display: inline; }
+
+.login__wordmark {
+  font-size: 80rpx;
+  font-weight: 700;
+  color: var(--color-role-text-primary);
+  letter-spacing: -2rpx;
+  line-height: 1.07;
+}
+
+.login__slogan {
+  margin-top: 24rpx;
+  font-size: 28rpx;
+  color: var(--color-role-text-secondary);
+  line-height: 1.5;
+  text-align: center;
+}
+
+/* ---- 底部操作区 ---- */
+.login__bottom {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* 距底部约 200rpx（由父 padding-bottom 控制） */
+  margin-bottom: 0;
+}
+
+.login__btn {
+  width: 60%;
+  background: var(--color-accent-wx-green);
+  color: var(--color-role-text-on-green);
+  border-radius: 16rpx;
+  font-size: 32rpx;
+  font-weight: 600;
+  line-height: 96rpx;
+  padding: 0;
+  text-align: center;
+  border: none;
+  transition: opacity var(--animation-fast) var(--easing-default);
+}
+
+.login__btn[disabled] {
+  opacity: 0.4;
+}
+
+/* 微信按钮默认样式覆盖 */
+.login__btn::after {
+  border: none;
+}
+
+.login__err {
+  color: var(--color-semantic-danger);
+  text-align: center;
+  margin-top: 24rpx;
+  font-size: 26rpx;
+}

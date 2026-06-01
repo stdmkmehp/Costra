@@ -1,25 +1,22 @@
-<!-- 登录页 · 对齐 docs/design/flows/login.md -->
-<!-- 卡号: COSTRA-102 · E.P0-10-partA: 移除 open-type="getUserInfo"（微信 2022-04-14 基础库 2.21.2 起已失效） -->
-<!-- 替代方案：按钮只负责 bindtap，getUserProfile 由 TS 层在点击同步上下文中唤起 -->
+<!-- 登录页 · COSTRA-202 极简重做：暖灰白背景 + Wordmark + 随机格言 + 微信绿 CTA -->
+<!-- 设计规范：design/ui/design_spec.md §6.1 · 交互流程：design/ui/interaction_flow.md §1 -->
+<!-- 合规：不在登录主界面展示隐私协议勾选框 · 合规动作走微信原生授权流程 -->
 <view class="login">
-  <view class="brand">
-    <view class="brand__logo">💰</view>
-    <view class="brand__name">Costra</view>
-    <view class="brand__tagline">家庭共享记账 · 轻松三秒一笔</view>
+  <!-- 中心视觉区 -->
+  <view class="login__center">
+    <text class="login__wordmark">Costra</text>
+    <text class="login__slogan">{{slogan}}</text>
   </view>
 
-  <view class="login__actions">
+  <!-- 底部操作区 -->
+  <view class="login__bottom">
     <button
-      class="btn btn--primary"
+      class="login__btn"
       loading="{{loading}}"
       disabled="{{loading}}"
       bindtap="onTapLogin">
-      一键微信登录
+      微信一键登录
     </button>
     <view wx:if="{{errMsg}}" class="login__err">{{errMsg}}</view>
-    <view class="login__policy">
-      登录即同意
-      <navigator url="/pages-family/privacy/index" open-type="navigate" class="login__policy-link">《隐私保护指引》</navigator>
-    </view>
   </view>
 </view>

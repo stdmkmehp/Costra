@@ -1,9 +1,8 @@
 // pages/login/index.ts
-// 登录页：启动即检查续期；用户点按 → wx.login → POST /auth/wx-login → 可选 getUserProfile PATCH /users/me → 跳首页
-// 卡号: COSTRA-102 · 承接 COSTRA-118 E.P0-10-partA（去 getUserInfo）
-// COSTRA-125: onLoad 加 bootstrapPromise gate · 等 app.ts 串行 ensureVersion+initAuth 完成后再判定登录态
-// COSTRA-127: switchTab → reLaunch · 避免冷启动复用 home 旧实例触发 first-rendering-data race · 见 docs/devops/libversion-upgrade.md §3.6 反模式 #6
-// Refs: COSTRA-030, ADR-0004 §3 Token, Design flows/login.md · .team/dispatch/COSTRA-125-miniapp-storage-async-migration.md §3 (e)
+// 登录页 · COSTRA-202 极简重做：暖灰白背景 + Wordmark + 随机格言 + 微信绿 CTA
+// 设计规范：design/ui/design_spec.md §6.1 · 交互流程：design/ui/interaction_flow.md §1
+// 保留业务逻辑：loginFlow / wx.getUserProfile / token 续签（COSTRA-102/COSTRA-118/COSTRA-125/COSTRA-127）
+// Refs: COSTRA-202, COSTRA-102, COSTRA-127, ADR-0004 §3 Token
 import { loginFlow, hasValidSession, getToken, updateLocalUserProfile } from '../../services/auth';
 import { mapError } from '../../utils/error-mapper';
 import { getEnv } from '../../services/env';
@@ -13,34 +12,52 @@ interface AppWithBootstrap {
   bootstrapPromise: Promise<void>;
 }
 
+/** 预设格言库 · design/ui/design_spec.md §6.1 要求至少 8 句 */
+const SLOGANS: readonly string[] = [
+  '掌控数字，还是被数字掌控',
+  '每一笔支出，都在为你想要的世界投票',
+  '钱是自由的尺度',
+  '不记账的生活，像没有地图的旅行',
+  '量入为出，是成年人最基本的自律',
+  '花得明白，活得敞亮',
+  '理财第一步：知道钱去了哪里',
+  '记账不是抠门，是对生活的掌控力',
+] as const;
+
 Page({
   data: {
     loading: false,
     errMsg: '' as string,
+    slogan: '' as string,
   },
 
   onLoad() {
+    // 随机抽取格言
+    const idx = Math.floor(Math.random() * SLOGANS.length);
+    this.setData({ slogan: SLOGANS[idx] });
+
     // COSTRA-125: 等 bootstrap 完成（ensureVersion + initAuth）再判定登录态
     // 之前同步 hasValidSession() 在 bootstrap 未完成时永远返回 false · 误冗余渲染登录页
     const app = getApp<AppWithBootstrap>();
     void app.bootstrapPromise.then(() => {
-      // 若已有有效会话 → 直接跳首页（冷启动续期）
+      // 若已有有效会话 → 直接跳明细页（冷启动续期）
       if (hasValidSession()) {
-        // COSTRA-127: reLaunch 强制重新初始化 home · 避免 switchTab 复用旧实例触发 first-rendering-data race
-        wx.reLaunch({ url: '/pages/home/index' });
+        // COSTRA-202: reLaunch 目标改为 /pages/ledger/index（新首屏）
+        // COSTRA-127: reLaunch 强制重新初始化 · 避免 switchTab 复用旧实例触发 first-rendering-data race
+        wx.reLaunch({ url: '/pages/ledger/index' });
       }
       // 否则：保留在登录页 · 等用户点 onTapLogin
     });
   },
 
   /**
-   * 用户主动点击"一键微信登录"
+   * 用户主动点击"微信一键登录"
    * 步骤：
    *  1. wx.login → code
    *  2. POST /auth/wx-login { code } → 拿 AuthTokenPair
    *  3. 可选：wx.getUserProfile（**必须在用户点击事件同步上下文中**调用 · 失败不阻塞登录）
    *  4. 可选：PATCH /users/me { nickname, avatar_url }（失败不阻塞 · 属画像锦上添花）
-   *  5. 跳首页
+   *  5. 跳明细页
    */
   async onTapLogin() {
     if (this.data.loading) return;
@@ -86,14 +103,12 @@ Page({
         }
       }
 
-      // COSTRA-127: reLaunch 强制重新初始化 home · 避免 switchTab 复用旧实例触发 first-rendering-data race
-      wx.reLaunch({ url: '/pages/home/index' });
+      // COSTRA-202: reLaunch 目标改为 /pages/ledger/index（新首屏）
+      // COSTRA-127: reLaunch 强制重新初始化 · 避免 switchTab 复用旧实例触发 first-rendering-data race
+      wx.reLaunch({ url: '/pages/ledger/index' });
     } catch (e: any) {
       // FU-102-ERROR-MAPPER-INTEGRATION (COSTRA-157)
       // error-codes.md §0.5 红线：客户端不得直接展示 server message 给终端用户
-      // 注：mapError 返回 TOKEN_EXPIRED 时 title=desc='' (静默自动续签场景)
-      // 但该路径正常由 request.ts 拦截器处理 · 若续签失败冒泡到此 catch · fallback 文案合理
-      // 注：MappedError.action 字段（如 navigate-login）暂不消费 · Sprint-3 用户体验扩展时统一接通
       const mapped = mapError(e);
       this.setData({
         errMsg: mapped.title ? `${mapped.title}：${mapped.desc}` : '登录失败，请重试',
