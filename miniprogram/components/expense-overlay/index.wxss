@@ -1,5 +1,6 @@
 /* components/expense-overlay/index.wxss · 全屏记账覆盖层 */
-/* 卡号: COSTRA-204 · 设计源: design/ui/design_spec.md §6.3 */
+/* 卡号: COSTRA-204/206 · 设计源: design/ui/design_spec.md §6.3 */
+/* COSTRA-206: 修复底部绿色残留+全屏分类初始态+文字指示器+关闭按钮避让胶囊 */
 
 /* ─── 覆盖层容器 ────────────────────────────────────────────────────────────── */
 
@@ -11,9 +12,12 @@
   bottom: 0;
   /* 暖灰白背景 · 对齐 tokens role.bg.app */
   background: #f1f2ec;
-  z-index: 9999;  /* COSTRA-205: 确保 TabBar(z-index:999) 之上 */
+  /* COSTRA-205/206: z-index 必须高于 TabBar(999) + 确保完全遮盖底部绿色 [+] 按钮 */
+  z-index: 9999;
   transform: translateY(100%);
   transition: transform var(--animation-slow, 350ms) var(--easing-default, cubic-bezier(0.25, 0.1, 0.25, 1));
+  /* 问题1修复：确保背景完全不透明，彻底遮盖底层 tab-bar 的任何残留 */
+  opacity: 1;
 }
 
 .overlay--visible {
@@ -24,43 +28,66 @@
   display: flex;
   flex-direction: column;
   height: 100%;
+  /* 关键：确保内容区域延伸到安全区最底部（修复问题1：底部绿色残留） */
+  padding-bottom: 0;
+  box-sizing: border-box;
 }
 
-/* ─── 顶部 ──────────────────────────────────────────────────────────────────── */
+/* ─── 顶部 header：三栏布局（取消按钮 | 支出·收入指示器 | 占位） ──────── */
 
 .overlay__header {
   display: flex;
-  justify-content: flex-end;
-  padding: 24rpx 32rpx;
-  padding-top: calc(env(safe-area-inset-top) + 24rpx);
+  align-items: center;
+  justify-content: space-between;
+  /* 使用 getMenuButtonBoundingClientRect 动态设置 padding-top */
+  padding: 16rpx 32rpx;
+  padding-top: calc(env(safe-area-inset-top) + 8rpx);
+  flex-shrink: 0;
+  /* 问题4修复：不再右对齐关闭按钮，改为左对齐"取消"，避开右侧胶囊 */
 }
 
 .overlay__close {
+  /* 问题4修复："取消" 文字替代 ✕ 符号，左上角显示 */
   color: rgba(28, 27, 26, 0.48);
-  font-size: 40rpx;
+  font-size: 28rpx;
   line-height: 1;
-  padding: 12rpx;
+  padding: 12rpx 8rpx;
+  margin-left: -8rpx; /* 抵消 padding 使文字位置精确 */
 }
 
-/* ─── 指示器（两个小圆点）──────────────────────────────────────────────────── */
+/* ─── 收支文字指示器（替换原来的两个圆点）──────────────────────────────── */
 
-.overlay__indicator {
+.overlay__tab-indicator {
   display: flex;
+  align-items: center;
   justify-content: center;
-  gap: 12rpx;
-  padding: 8rpx 0 16rpx;
+  gap: 20rpx;
 }
 
-.indicator__dot {
-  width: 12rpx;
-  height: 12rpx;
-  border-radius: 50%;
-  background: rgba(28, 27, 26, 0.12);
-  transition: background var(--animation-fast, 150ms) var(--easing-default, cubic-bezier(0.25, 0.1, 0.25, 1));
+.tab-indicator__text {
+  font-size: 28rpx;
+  color: rgba(28, 27, 26, 0.28);
+  font-weight: 400;
+  transition: color var(--animation-fast, 150ms) var(--easing-default, cubic-bezier(0.25, 0.1, 0.25, 1)),
+              font-weight var(--animation-fast, 150ms) var(--easing-default, cubic-bezier(0.25, 0.1, 0.25, 1));
+  padding: 4rpx 0;
 }
 
-.indicator__dot--active {
-  background: #1c1b1a;
+.tab-indicator__text--active {
+  color: #1c1b1a;
+  font-weight: 600;
+}
+
+.tab-indicator__sep {
+  font-size: 28rpx;
+  color: rgba(28, 27, 26, 0.18);
+  line-height: 1;
+  margin-top: 2rpx;
+}
+
+/* 右侧占位：保持 header 三栏布局平衡 */
+.overlay__header-placeholder {
+  width: 80rpx; /* 与左侧 "取消" 按钮大致等宽 */
 }
 
 /* ─── Swiper 分类区域 ──────────────────────────────────────────────────────── */
@@ -68,11 +95,21 @@
 .overlay__swiper {
   flex: 1;
   min-height: 0;
+  /* 问题2修复：确保 swiper 占满剩余全部空间，分类网格全屏展示 */
+  overflow: hidden;
 }
 
 .category-scroll {
   height: 100%;
   padding: 0 24rpx;
+  /* 问题2修复：scroll-view 必须占满 swiper-item 全高 */
+  box-sizing: border-box;
+}
+
+/* 底部安全区占位（无键盘时让分类内容可以滚动到屏幕最底端） */
+.category-scroll__padding-bottom {
+  height: env(safe-area-inset-bottom);
+  min-height: 40rpx; /* 即使无 safe-area 也保留一点呼吸空间 */
 }
 
 /* ─── 一级分类网格 ──────────────────────────────────────────────────────────── */
@@ -208,7 +245,10 @@
   border-top-right-radius: 24rpx;
   transform: translateY(100%);
   transition: transform var(--animation-slow, 350ms) var(--easing-default, cubic-bezier(0.25, 0.1, 0.25, 1));
+  /* 问题1修复：keypad-panel 自身包含 safe-area padding-bottom */
   padding-bottom: env(safe-area-inset-bottom);
+  max-height: 70vh;
+  overflow: hidden;
 }
 
 .keypad-panel--visible {

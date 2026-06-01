@@ -27,6 +27,8 @@
 .tab-bar--hidden {
   transform: translateY(100%);
   pointer-events: none;
+  /* COSTRA-206: 额外确保隐藏期间不可见、不参与布局 */
+  visibility: hidden;
 }
 
 /* 降级：不支持 backdrop-filter 的设备 */

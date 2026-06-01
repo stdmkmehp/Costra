@@ -1,19 +1,29 @@
 <!-- components/expense-overlay/index.wxml · 全屏记账覆盖层 -->
-<!-- 卡号: COSTRA-204 · 分类网格+计算器+算式+账本切换+保存 -->
+<!-- 卡号: COSTRA-204/206 · 分类网格+计算器+算式+账本切换+保存 -->
 <!-- 设计源: design/ui/design_spec.md §6.3 + design/ui/interaction_flow.md §2/§3 -->
+<!-- COSTRA-206: 修复底部绿色残留+全屏分类初始态+支出收入文字指示器+关闭按钮避让胶囊 -->
 
 <view class="overlay {{visible ? 'overlay--visible' : ''}}" catchtouchmove="noop">
   <view class="overlay__content">
 
-    <!-- 顶部关闭按钮 -->
+    <!-- 顶部区域：左侧取消按钮 + 居中收支指示器 -->
     <view class="overlay__header">
-      <text class="overlay__close" bindtap="onClose">✕</text>
-    </view>
-
-    <!-- 收支切换指示器 -->
-    <view class="overlay__indicator">
-      <view class="indicator__dot {{tabIndicator === 'expense' ? 'indicator__dot--active' : ''}}"></view>
-      <view class="indicator__dot {{tabIndicator === 'income' ? 'indicator__dot--active' : ''}}"></view>
+      <text class="overlay__close" bindtap="onClose">取消</text>
+      <view class="overlay__tab-indicator">
+        <text
+          class="tab-indicator__text {{currentTab === 0 ? 'tab-indicator__text--active' : ''}}"
+          data-tab="0"
+          bindtap="onTapTabIndicator"
+        >支出</text>
+        <text class="tab-indicator__sep">·</text>
+        <text
+          class="tab-indicator__text {{currentTab === 1 ? 'tab-indicator__text--active' : ''}}"
+          data-tab="1"
+          bindtap="onTapTabIndicator"
+        >收入</text>
+      </view>
+      <!-- 右侧占位，保持 header flex 布局平衡 -->
+      <view class="overlay__header-placeholder"></view>
     </view>
 
     <!-- 分类区域（支持 swiper 水平滑动切换） -->
@@ -30,6 +40,8 @@
           scroll-y
           scroll-into-view="{{scrollIntoView}}"
           scroll-with-animation
+          enhanced="{{true}}"
+          show-scrollbar="{{false}}"
         >
           <!-- 一级分类网格 -->
           <view class="tier1-grid">
@@ -78,6 +90,9 @@
               <text class="sub-name">{{item.name}}</text>
             </view>
           </view>
+
+          <!-- 底部安全区占位：确保无键盘时内容可滚动到底部 -->
+          <view class="category-scroll__padding-bottom"></view>
         </scroll-view>
       </swiper-item>
 
@@ -88,6 +103,8 @@
           scroll-y
           scroll-into-view="{{scrollIntoView}}"
           scroll-with-animation
+          enhanced="{{true}}"
+          show-scrollbar="{{false}}"
         >
           <!-- 一级分类网格 -->
           <view class="tier1-grid">
@@ -136,6 +153,9 @@
               <text class="sub-name">{{item.name}}</text>
             </view>
           </view>
+
+          <!-- 底部安全区占位 -->
+          <view class="category-scroll__padding-bottom"></view>
         </scroll-view>
       </swiper-item>
     </swiper>

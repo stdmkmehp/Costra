@@ -1,5 +1,5 @@
 // components/expense-overlay/index.ts · 全屏记账覆盖层（分类网格+计算器+算式+账本切换+保存）
-// 卡号: COSTRA-204 · 整体重写占位组件
+// 卡号: COSTRA-204/206 · 整体重写占位组件 + COSTRA-206 UI 修复
 // 设计源: design/ui/design_spec.md §6.3 + design/ui/interaction_flow.md §2/§3
 // 金额 ADR-0002: 全部走 decimal.js（utils/money.ts）
 
@@ -152,6 +152,20 @@ Component({
 
     onSwiperChange(e: WechatMiniprogram.SwiperChange) {
       const current = e.detail.current as number;
+      this._switchTab(current);
+    },
+
+    /** 点击文字指示器切换收支面板（COSTRA-206） */
+    onTapTabIndicator(e: WechatMiniprogram.TouchEvent) {
+      const tab = e.currentTarget.dataset.tab as number;
+      if (tab === this.data.currentTab) return; // 已是当前面板，忽略
+      this._switchTab(tab);
+    },
+
+    /**
+     * 收支面板切换核心逻辑（swiper 滑动 + 文字指示器点击共用）
+     */
+    _switchTab(current: number) {
       const tabIndicator = current === 0 ? 'expense' : 'income';
       const entryType = current === 0 ? 'expense' : 'income';
 
