@@ -9,7 +9,7 @@
 > **🆕 验证问题响应 SOP（D-017 · 2026-04-28 13:59 Human 立案 · 14:15 落盘）**：项目遇到验证失败时标准流程 —— ① 责任领域识别（Orchestrator 30s） → ② 责任 Agent 根因分析（只诊断不改文件） → ③ 多方案对比（≥2~3 方案 · 列成本/价值/风险 + Human 决策点 Qn） → ④ Human 评估裁决 → ⑤ 派单实装。**禁止 Orchestrator 自行分析根因**（反模式 A） · E1/E2/E3 例外 · 反模式 ABCD 禁令 · COSTRA-120 首次实战。详见 `.team/decisions/D-017-verification-problem-response-sop.md`。
 > **🔄 D-011 实战验证三次通过**（2026-04-23）：COSTRA-100（2 轮 · 69 min） + Sprint-0 补审（7 卡 × 2 轮 · 29 min 并行） + **COSTRA-101 Round 1 刚自动拉起（22:49 · D-014-b 首次实战）**
 
-最后更新：`2026-05-23 16:20`（Orchestrator · 🏆🏆 **COSTRA-152 + COSTRA-153 双卡 Human T1 APPROVED CLOSED · D-024 §2.2 C1 第 4 次实战完美收官**（105+156 / 157+158 / 154+150 / **152+153** 四连）· Human curl 实测 5 硬断言 H1~H5 全 PASS @ 2026-05-23 16:15 · 实测手册 `docs/qa/costra-152-153-curl-verify.md` v1.0（746 行 · commit `cfdb6e1`）· 不依赖 staging（本地 server + WX_MOCK_LOGIN=1 · 与 154+150 staging 重测路径解耦）· 联合双卡同轮 approve 一次关 2 张卡（D-014 SOP）· **152 APPROVED**：R1 commit `513dd5a` + R1.x.1 `167bf17` · review-tech 37/40 → R1.x.1 后期望 ≥38 · 含 P0 跨 family 守门补丁三处共享（GET/PATCH/DELETE）· FU 11 项全 closed · `.team/reviews/COSTRA-152/FINAL.md` · **153 APPROVED**：R1 commit `ccd80b9` + R1.x.1 `167bf17` · review-tech 39/40 → R1.x.1 后期望 ≥40 满分趋势 · §LINKAGE 决策 2 query `?version=N` 落地 · FU 8 项全 closed · `.team/reviews/COSTRA-153/FINAL.md` · **范式累计**：D-014 第 3 次完美收官 / D-016 100% 修订率连续第 7~8 张 / D-017 v3 §2.4 E1 第 10+11 次实战 / D-022 v2.0 第 9+10 次实战（37+39 双高位）/ D-024 §2.2 C1 第 4 次实战 / D-025 AP-003 第 4+5 次正向兑现 · **Sprint-3 头部累计 4/9 卡 CLOSED · 估点 15/29 = 52%**（154+150 等 staging · 剩余 151+155+159+161+162+163 共 14 点）· 25 commits 已 push origin/dev · 下一步 = ① Human 时间窗启 staging 154+150 重测 + 联合 approve（推 6/9 = 83%）② 任意时间 `start:159+162` 顺手批 / `start:161+163` devops 批 ③ Sprint-3 中后段启 151（conflict UI）+ 155（全量自动化））
+最后更新：`2026-06-02 15:30`（Orchestrator · `card-review:COSTRA-221-R2` 已完成 · Tech+Design Landing PASS-WITH-FOLLOWUP 29/30 · 0 P0/0 P1 · 可由 Human 触发 `start:COSTRA-221`）
 
 > （上一条归档）`2026-05-22 20:45`（Orchestrator · 🚀 **Sprint-3 头部双卡 152+153 R1 + R1.x.1 全闭环 · D-014 同轮范式第 3 次实战完美收官**（105+156 / 154+150 / 152+153 三连）· R1 实装 commit `513dd5a` + `ccd80b9` · R1.x.1 双胞胎 `167bf17` · review-tech 37+39/40 · 等 Human curl 实测 + approve）
 
@@ -103,29 +103,60 @@
 
 **Sprint-1 总估点**：**48 点**（40 + 2 [119] + 2 [120] + 2 [121] + 1 [122] + 1 [123] · **连续五张紧急卡溢出 40 工时顶格约束** · Sprint-0 骨架期遗留微信规约债务同族**五连** · Sprint-1 末 Retro 议题升级：紧急卡五连溢出 / D-017 v1→v2 升级（四次实战完整证据 · 候选新增 E4 代职边界例外）/ D-016 升定稿规约（12 次实战）/ T2 档位结构性局限 / Review-Tech 评分表增"runtime 加载性"维度（议题 13 升 P0）/ CI 引入 miniprogram-ci 真实编译冒烟（议题 15 新增）/ 同族盲区系统性预防 Epic-F 立案（议题 10 升 P0））
 
-## 🔄 Doing（清洗后仅列真正 in-flight · 其余为 Todo-等触发）
-- [~] **COSTRA-114** @DevOps-Agent · 开发服务器 bootstrap **手册**（D-009）· **🟠 卡定义已 approve 但实际未开工**（I-003 · 04-24 17:00 澄清 · `docs/ops/` 目录不存在）· 等 Human 真正触发 `run devops COSTRA-114`
-- [~] **COSTRA-157** @miniapp-dev + backend-dev · 用户资料完善 + 登录链路鲁棒性（5 FU 合并修复）· backend 段完成 · 等 miniapp-dev 接手 B/C/D/E + 统一 commit
-- [🟢] **COSTRA-154** @backend-dev · GET /sync/pull 增量拉取实装 · **R1 + R1.x.1 完成 @ 2026-05-19 20:35** · commit `7e87bad` + `8eecd4c` · review-tech APPROVE 38/40 · 等 Human 联合 150 实测 + approve（D-024 §2.2 C1 攒批）
-- [🟢] **COSTRA-150** @miniapp-dev · client sync 调度器（4 触发源 + mutex + debounce）· **R1 + R1.x.1 完成 @ 2026-05-20 13:20** · commit `ee97a7a` + `5ac8153` · review-tech APPROVE 38/40 · 等 Human 联合 154 实测 + approve（D-024 §2.2 C1 第 3 次实战）
+## 🔄 Doing（当前无业务开发 in-flight）
 
-## 📋 Todo · Sprint-3（2026-05-19 启动 · 估点目标 30~36 含 buffer）
+- 当前无业务开发卡 in-flight。
+- ✅ **sync-state:family-first-baseline** 已完成：`.team/STATE` / `.team/board.md` / `.team/backlog.json` / `.team/HANDOFF.md` 已同步。
+- [ ] **Sprint-3 closeout planning** @Orchestrator · `card-review:COSTRA-221-R2` 已通过；下一步建议：Human 触发 `start:COSTRA-221`。
 
-| 卡号 | 标题 | Owner | 估点 | 优先级 | 依赖 | 状态 |
-|---|---|---|---|---|---|---|
-| **COSTRA-150** | client sync 调度器（onShow / 网络恢复 / 周期 / 启动）| miniapp-dev | 5 | P1 | COSTRA-154 R1 APPROVE（已等 Human）| dispatch-ready · 等 `start:COSTRA-150` |
-| **COSTRA-152** | PATCH /entries/{entry_id} 实装（替代 stub 501）| backend-dev | 3 | P1 | COSTRA-104 ✅ | ✅ **CLOSED** @ 2026-05-23 16:15（见 Done 段 Sprint-3）|
-| **COSTRA-153** | DELETE /entries/{entry_id} 软删（替代 stub 501）| backend-dev | 2 | P1 | COSTRA-104 ✅ + COSTRA-152 K3 决策延续 | ✅ **CLOSED** @ 2026-05-23 16:15（见 Done 段 Sprint-3）|
-| **COSTRA-159** | outbox.spec.ts fake timers 重构（FU-156-OUTBOX-FLAKY）| miniapp-dev | 1 | P2 | 无 · 与 150 同链路顺手 | dispatch-ready · 等 `start:COSTRA-159` |
-| **COSTRA-161** | whitelist-check 规则 E（OpenAPI paths vs fastify register · D-025 AP-003 自动检测）| devops-ops | 1 | P2 | COSTRA-156 规则 D ✅ + 154/152/153 全 CLOSED 后启 | dispatch-ready · 等 `start:COSTRA-161` |
-| **COSTRA-162** | dev mockLogin runtime toggle | miniapp-dev | 1 | P3 | 无 | dispatch-ready · 等 `start:COSTRA-162` |
-| **COSTRA-163** | whitelist-check ICP 强等值校验 | devops-ops | 1 | P2 | COSTRA-107 ✅ · 与 161 同节奏批 | dispatch-ready · 等 `start:COSTRA-163` |
-| **COSTRA-155** | 全量 15 用例自动化 + CI 集成 | qa-planner + miniapp-dev | 5 | P2 | 154+150+152+153 全 CLOSED 后启 | dispatch-ready · Sprint-3 中后段 |
-| **COSTRA-151** | conflict 合并 UI（FU-103-CONFLICT-MERGE-UI）| miniapp-dev + design-maker | 5 | P2 | COSTRA-104 ✅ + COSTRA-150 CLOSED | dispatch-ready · Sprint-3 中后段 |
+## 📋 Todo · Sprint-3（验收后收口 · Family First baseline sync）
 
-**Sprint-3 总估点**：5（150）+ 3（152）+ 2（153）+ 1（159）+ 1（161）+ 1（162）+ 1（163）+ 5（155）+ 5（151）= **24 点 · + 154 已实装 5 点 = 累计 29 点 · + 紧急卡 buffer 3~7 点 = 30~36 点目标**
+> Sprint-3 已从“继续堆功能”调整为“验收后收口 + 状态对账 + Sprint-4 准备”。不直接启动家庭页/统计页/预算等新功能开发。
 
-> 📌 **Sprint-3 启动批量整理**（2026-05-19 20:50）：8 张 follow-up 转正立卡 dispatch 一次性落档 · COSTRA-154 R1 实装完成等 Human 联合 150 实测 · D-024 §2.2 C1 攒批节奏（154+150 联合 approve 优选 · 152+153 联合 · 161+163 联合 · 159+162 顺手）· Sprint-3 启动序列推荐：①154+150 联合 → ②152+153 联合 → ③155 全量自动化 → ④151 conflict UI → ⑤159+162+161+163 顺手批
+### 3.1 已验收完成 / 进入正式基线
+
+| 卡号 / 阶段 | Owner | 状态 | 证据 |
+|---|---|---|---|
+| **COSTRA-154** | backend-dev | ✅ Human 联合实测 PASS · 进入基线 | `qa/costra-154-150-joint-smoke.md` · `qa/phase-3-prod-realdevice-test.md` |
+| **COSTRA-150** | miniapp-dev | ✅ Human 联合实测 PASS · 进入基线 | `qa/costra-154-150-joint-smoke.md` · `qa/phase-3-prod-realdevice-test.md` |
+| **COSTRA-164/165** | backend-dev + miniapp-dev | ✅ family bootstrap + family-context 已由当前验收覆盖 | `qa/current-stage-acceptance-family-first-baseline.md` |
+| **COSTRA-217** | backend-dev | ✅ 二级分类 schema + `entries.shared_type` 进入基线 · T3 FINAL AUTO-CLOSED | `qa/current-stage-acceptance-family-first-baseline.md` · `.team/reviews/COSTRA-217/FINAL.md` |
+| **COSTRA-218** | backend-dev | ✅ 后端分类 API进入基线 · T3 review-tech PASS-WITH-FOLLOWUP 30/35 AUTO-CLOSED | `qa/current-stage-acceptance-family-first-baseline.md` · `.team/reviews/COSTRA-218/round-1-tech.md` |
+| **COSTRA-219** | miniapp-dev | ✅ 前端分类模型替换 hardcode 进入基线 · T3 review-tech PASS-WITH-FOLLOWUP 30/35 AUTO-CLOSED | `qa/current-stage-acceptance-family-first-baseline.md` · `.team/reviews/COSTRA-219/round-1-tech.md` |
+| **COSTRA-220** | miniapp-dev | ✅ 明细页真实数据完善进入基线 · T3 review-tech PASS-WITH-FOLLOWUP 29/35 AUTO-CLOSED-WITH-FOLLOWUP | `qa/current-stage-acceptance-family-first-baseline.md` · `.team/reviews/COSTRA-220/round-1-tech.md` |
+| **Family First baseline** | 全体 | ✅ Human 确认当前阶段整体验收通过 | 三份测试手册全 PASS |
+
+### 3.2 Sprint-3 收口待办（推荐优先级）
+
+| 优先级 | 动作 | Owner | 说明 | 推荐触发 |
+|---|---|---|---|---|
+| P0 | 状态源同步 | Orchestrator | 同步 `.team/STATE` / `board.md` / `backlog.json` / `HANDOFF.md` 到 Family First baseline | `sync-state:family-first-baseline` |
+| ✅ | Review 状态对账 | Orchestrator + review-tech | 已落盘 `.team/reviews/audit-217-220.md`；217 FINAL 已完成；218/219/220 T3 review-tech 已完成；220 有 P1 follow-up 不阻塞 baseline | `audit-review:217-220` ✅ · `finalize:COSTRA-217` ✅ · `review-tech:COSTRA-218` ✅ · `review-tech:COSTRA-219` ✅ · `review-tech:COSTRA-220` ✅ |
+| ✅ | Sprint-3 遗留卡处置 | Orchestrator | 已落盘 `.team/sprints/sprint-03-leftovers-triage.md`；151 defer，155 split，159 optional，161/163 guardrail，162 defer，114 superseded，FU-220 promoted P1 | `triage:sprint3-leftovers` ✅ |
+| ✅ | `COSTRA-221` dispatch 准备 | Orchestrator | 已落盘 `.team/dispatch/COSTRA-221-backend-family-management-api.md`；不写业务代码 | `plan-dispatch:COSTRA-221` ✅ |
+| ✅ | `COSTRA-221` card-review | card-reviewer-tech | R2 `PASS-WITH-FOLLOWUP 29/30`；已结合设计文档确认可落地；0 P0/P1 | `start:COSTRA-221` |
+
+### 3.3 Sprint-3 遗留卡最终处置（`triage:sprint3-leftovers`）
+
+| 卡号 | 原计划 | 建议处置 | 原因 |
+|---|---|---|---|
+| **COSTRA-151** | conflict 合并 UI | `Deferred` · Sprint 5+ | 等 `221/222/223` 家庭协作闭环后重审，避免 UI/成员口径返工 |
+| **COSTRA-155** | 全量 15 用例自动化 + CI | `Planned-Split` · Sprint-4 guardrail | 原 dispatch 过大且 CI 无微信 IDE；需拆当前基线回归网 / Family E2E / runner 决策 |
+| **COSTRA-159** | outbox fake timers 重构 | `Planned-Optional` · Sprint-4 stability | 等 outbox flaky 复现或 CI 化前降噪时启动 |
+| **COSTRA-161** | whitelist-check 规则 E | `Planned-Guardrail` · Sprint-4 P1 | 与 `COSTRA-221` `/families/*` 契约漂移防护强相关 |
+| **COSTRA-162** | dev mockLogin runtime toggle | `Deferred-P3` | Phase-3 prod 真链路已过，不抢 Family First 主线 |
+| **COSTRA-163** | ICP 强等值校验 | `Planned-Guardrail` · Sprint-4 P2 | 与 `161` 同文件同范式批处理，发布前 guardrail |
+| **COSTRA-114** | dev server bootstrap 手册 | `Closed-Superseded` | 已被 prod compose / deploy-all / 09 verify gates / costra.cloud 部署路线取代 |
+| **FU-220-SYNC-USER-ID-CREATED-BY** | COSTRA-220 T3 P1 | `Planned-Guardrail` · Sprint-4 P1 | sync wire `user_id` vs 本地 `created_by` 不对齐，需在家庭成员筛选前修复 |
+
+### 3.4 Sprint-4 入场候选
+
+| 卡号 | 标题 | Owner | 入场条件 |
+|---|---|---|---|
+| **COSTRA-221** | 家庭管理 API | backend-dev | card-review R2 passed；Human 可触发 `start:COSTRA-221` |
+| **COSTRA-222** | 家庭财务聚合 API | backend-dev | `COSTRA-221` API/成员口径稳定 |
+| **COSTRA-155-split** | 当前基线自动化回归 / Family E2E 准备 | qa-planner + miniapp-dev | 需 `revise-dispatch:COSTRA-155` |
+| **prod/sync guardrails** | `COSTRA-161/163` + `FU-220-SYNC-USER-ID-CREATED-BY` | devops-ops + backend-dev + miniapp-dev | `COSTRA-221` 前或同批审卡 |
 
 ---
 

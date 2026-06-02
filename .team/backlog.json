@@ -1,9 +1,9 @@
 {
   "project": "Costra",
-  "version": "0.2.21",
-  "last_updated": "2026-05-23T16:20:00+08:00",
+  "version": "0.2.27",
+  "last_updated": "2026-06-02T15:30:00+08:00",
   "platform": "wechat-miniprogram",
-  "notes": "v0.2.21: 🏆🏆 **Sprint-3 头部双卡 152+153 APPROVED CLOSED · D-024 §2.2 C1 第 4 次实战完美收官**（105+156 / 157+158 / 154+150 / **152+153** 四连）· Human T1 curl 实测 5 硬断言 H1~H5 全 PASS @ 2026-05-23 16:15（实测手册 `docs/qa/costra-152-153-curl-verify.md` v1.0 746 行）· 不依赖 staging（本地 server + WX_MOCK_LOGIN=1）· 联合双卡同轮 approve 一次关 2 张卡（D-014 SOP）· **152 APPROVED**：R1 commit `513dd5a` + R1.x.1 `167bf17` · review-tech 37/40 → R1.x.1 后期望 ≥38 · FU-104-ENTRIES-PATCH closed + FU-CROSS-FAMILY-GUARD-COSTRA-104 closed + FU-152-001~005 + FU-152-R001 全 closed · **153 APPROVED**：R1 commit `ccd80b9` + R1.x.1 `167bf17` · review-tech 39/40 → R1.x.1 后期望 ≥40 满分趋势 · FU-104-ENTRIES-DELETE closed + FU-153-001~006 + FU-153-R001 全 closed · **跨 family 守门补丁三处共享**（GET/PATCH/DELETE · COSTRA-104 R1 漏 + review-tech 36/40 漏检的真 P0 · 153 R2 形式审捕获 · 152 R1 实装一并修补 · 反向验证铁证 + Human curl §7 真链路再次确认）· **范式累计**：D-014 第 3 次完美收官 / D-016 100% 修订率连续第 7~8 张 / D-017 v3 §2.4 E1 第 10+11 次实战 / D-022 v2.0 第 9+10 次实战（37+39 双高位）/ D-024 §2.2 C1 第 4 次实战 / D-025 AP-003 第 4+5 次正向兑现 · **Sprint-3 头部 4/9 卡 CLOSED · 估点累计 15/29 = 52%**（154+150 等 staging · 剩余 151+155+159+161+162+163 共 14 点）· 下一步 = ① Human 时间窗启 staging 154+150 重测 + 联合 approve（推 Sprint-3 头部 6/9 = 83%）② 任意时间 `start:159+162` 顺手批 / `start:161+163` devops 批 ③ Sprint-3 中后段启 151（conflict UI）+ 155（全量自动化）。 v0.2.20: 🚀 Sprint-3 头部双卡 152+153 R1+R1.x.1 全闭环（D-014 同轮范式第 3 次实战完美收官 · 单对话轮 ~3 小时 6 阶段）。",
+  "notes": "v0.2.27: card-review:COSTRA-221-R2 完成 · Tech+Design Landing PASS-WITH-FOLLOWUP 29/30 · 0 P0/0 P1/2 P2 · 可由 Human 触发 start:COSTRA-221。 v0.2.26: revise-dispatch:COSTRA-221 完成 · 已按 card-review R1 REVISE 修订 dispatch，下一步 card-review:COSTRA-221-R2。 v0.2.25: card-review:COSTRA-221 R1 完成 · verdict=REVISE 22/30 · 3 P0 / 4 P1 / 3 P2 · 报告 .team/reviews/COSTRA-221/card-review-round-1-tech.md · 下一步 revise-dispatch:COSTRA-221。 v0.2.24: plan-dispatch:COSTRA-221 · 家庭管理 API dispatch 已落盘 .team/dispatch/COSTRA-221-backend-family-management-api.md · 下一步 card-review:COSTRA-221。 v0.2.23: triage:sprint3-leftovers · 151 defer；155 split/re-dispatch；159 optional；161/163 guardrail；162 defer P3；114 closed-superseded；FU-220-SYNC-USER-ID-CREATED-BY promoted P1 Sprint-4 sync guardrail。 v0.2.22: sync-state:family-first-baseline · Human 已确认 qa/costra-154-150-joint-smoke.md、qa/phase-3-prod-realdevice-test.md、qa/current-stage-acceptance-family-first-baseline.md 三份手册全 PASS · COSTRA-154/150 与 Phase-3 prod 真机链路进入正式基线 · Family First baseline（164/165 + 217/218/219/220 + UI 重构 + 同步/鉴权）验收通过 · 非正式 COSTRA-223 prototype 已回滚不计正式进度 · Sprint-4/5/6 Family First 规划落盘 .team/sprints/sprint-04-06-family-first-plan.md · Sprint-3 后续聚焦状态收口、review 对账、遗留卡 triage、COSTRA-221 dispatch/card-review 准备。 v0.2.21: 🏆🏆 **Sprint-3 头部双卡 152+153 APPROVED CLOSED · D-024 §2.2 C1 第 4 次实战完美收官**（105+156 / 157+158 / 154+150 / **152+153** 四连）· Human T1 curl 实测 5 硬断言 H1~H5 全 PASS @ 2026-05-23 16:15（实测手册 `docs/qa/costra-152-153-curl-verify.md` v1.0 746 行）· 不依赖 staging（本地 server + WX_MOCK_LOGIN=1）· 联合双卡同轮 approve 一次关 2 张卡（D-014 SOP）· **152 APPROVED**：R1 commit `513dd5a` + R1.x.1 `167bf17` · review-tech 37/40 → R1.x.1 后期望 ≥38 · FU-104-ENTRIES-PATCH closed + FU-CROSS-FAMILY-GUARD-COSTRA-104 closed + FU-152-001~005 + FU-152-R001 全 closed · **153 APPROVED**：R1 commit `ccd80b9` + R1.x.1 `167bf17` · review-tech 39/40 → R1.x.1 后期望 ≥40 满分趋势 · FU-104-ENTRIES-DELETE closed + FU-153-001~006 + FU-153-R001 全 closed · **跨 family 守门补丁三处共享**（GET/PATCH/DELETE · COSTRA-104 R1 漏 + review-tech 36/40 漏检的真 P0 · 153 R2 形式审捕获 · 152 R1 实装一并修补 · 反向验证铁证 + Human curl §7 真链路再次确认）· **范式累计**：D-014 第 3 次完美收官 / D-016 100% 修订率连续第 7~8 张 / D-017 v3 §2.4 E1 第 10+11 次实战 / D-022 v2.0 第 9+10 次实战（37+39 双高位）/ D-024 §2.2 C1 第 4 次实战 / D-025 AP-003 第 4+5 次正向兑现 · **Sprint-3 头部 4/9 卡 CLOSED · 估点累计 15/29 = 52%**（154+150 等 staging · 剩余 151+155+159+161+162+163 共 14 点）· 下一步 = ① Human 时间窗启 staging 154+150 重测 + 联合 approve（推 Sprint-3 头部 6/9 = 83%）② 任意时间 `start:159+162` 顺手批 / `start:161+163` devops 批 ③ Sprint-3 中后段启 151（conflict UI）+ 155（全量自动化）。 v0.2.20: 🚀 Sprint-3 头部双卡 152+153 R1+R1.x.1 全闭环（D-014 同轮范式第 3 次实战完美收官 · 单对话轮 ~3 小时 6 阶段）。",
   "epics": [
     {
       "id": "Epic-A",
@@ -234,13 +234,30 @@
         "description": "FU-104-ENTRIES-PATCH 转正 · 实装部分字段更新 + 乐观锁 + outbox 同步 · 协议事实源 server/api/openapi.yaml + sync-protocol.md",
         "disposition": "Sprint-3 头部第 3 张 · CLOSED · Human T1 APPROVED 2026-05-23 16:15（联合 153 双卡同轮 D-014 SOP）· R1 commit 513dd5a + R1.x.1 167bf17 · review-tech 37/40 → R1.x.1 后 ≥38 · 含 P0 跨 family 守门补丁三处共享 · curl 实测 5 硬断言 H1~H5 全 PASS · FINAL.md 已落档",
         "card_review": {
-          "round_1": { "verdict": "PASS-WITH-FOLLOWUP", "score": "25/30", "fu_count": 5 },
-          "round_2": { "verdict": "PASS", "score": "28/30", "fu_landed": "5/5" },
+          "round_1": {
+            "verdict": "PASS-WITH-FOLLOWUP",
+            "score": "25/30",
+            "fu_count": 5
+          },
+          "round_2": {
+            "verdict": "PASS",
+            "score": "28/30",
+            "fu_landed": "5/5"
+          },
           "final": "PASS"
         },
         "review_tech": {
-          "round_1": { "verdict": "PASS-WITH-FOLLOWUP", "score": "37/40", "fu_count": 3, "commit": "513dd5a" },
-          "round_1_x_1": { "fu_landed": "FU-152-R001", "commit": "167bf17", "expected_score": ">=38/40" }
+          "round_1": {
+            "verdict": "PASS-WITH-FOLLOWUP",
+            "score": "37/40",
+            "fu_count": 3,
+            "commit": "513dd5a"
+          },
+          "round_1_x_1": {
+            "fu_landed": "FU-152-R001",
+            "commit": "167bf17",
+            "expected_score": ">=38/40"
+          }
         },
         "terminal_verdict": "APPROVED",
         "human_final_decision": "approve",
@@ -266,14 +283,31 @@
         "description": "FU-104-ENTRIES-DELETE 转正 · 实装软删（deleted_at 列）+ outbox 同步删除事件 · 客户端 syncPull 时移除",
         "disposition": "Sprint-3 头部第 4 张 · CLOSED · Human T1 APPROVED 2026-05-23 16:15（联合 152 双卡同轮）· R1 commit ccd80b9 + R1.x.1 167bf17（与 152 双胞胎同 commit）· review-tech 39/40 → R1.x.1 后 ≥40 满分趋势 · §LINKAGE 决策 2 query `?version=N` 落地 · 跨 family 守门复用 152 补丁 · curl 实测 H4+H5 全 PASS · FINAL.md 已落档",
         "card_review": {
-          "round_1": { "verdict": "REVISE", "score": "22/30", "fu_count": 6 },
-          "round_2": { "verdict": "PASS-WITH-FOLLOWUP", "score": "26/30", "fu_landed": "6/6" },
+          "round_1": {
+            "verdict": "REVISE",
+            "score": "22/30",
+            "fu_count": 6
+          },
+          "round_2": {
+            "verdict": "PASS-WITH-FOLLOWUP",
+            "score": "26/30",
+            "fu_landed": "6/6"
+          },
           "final": "PASS-WITH-FOLLOWUP",
           "carryover_observation": "跨 family T6 真 P0 守门盲区 · 已在 R1 实装 commit 513dd5a 修补完成（与 152 共享）+ Human curl 实测 §7 真链路确认"
         },
         "review_tech": {
-          "round_1": { "verdict": "PASS-WITH-FOLLOWUP", "score": "39/40", "fu_count": 2, "commit": "ccd80b9" },
-          "round_1_x_1": { "fu_landed": "FU-153-R001", "commit": "167bf17", "expected_score": ">=40/40" }
+          "round_1": {
+            "verdict": "PASS-WITH-FOLLOWUP",
+            "score": "39/40",
+            "fu_count": 2,
+            "commit": "ccd80b9"
+          },
+          "round_1_x_1": {
+            "fu_landed": "FU-153-R001",
+            "commit": "167bf17",
+            "expected_score": ">=40/40"
+          }
         },
         "terminal_verdict": "APPROVED",
         "human_final_decision": "approve",
@@ -291,15 +325,18 @@
         "priority": "P0",
         "sprint": "sprint-3",
         "epic": "Epic-C",
-        "status": "In-R1.x.2",
+        "status": "Done",
         "dependencies": [
           "COSTRA-104",
           "COSTRA-156"
         ],
         "description": "Sprint-3 头部第 1 张 · 9 项 scope（entryRepo.findEntriesByFamilySince + syncPullService + routes/sync.ts 替换 stub + OpenAPI 删 x-deferred 修缩进 + sync-pull.test.ts ≥12 测含软删/分页/越权/字段映射 + follow-ups + 缺陷单 RESOLVED）· FU-104-SYNC-PULL 转正 · 与 COSTRA-150 client 调度器强联动（150 严格依赖 154 APPROVE）· 协议 §3 + §6.3 + §7 · PRD AC-4 核心承诺 · INVEST small 5pt · 单装扮档单 commit · dispatch 已落盘 .team/dispatch/COSTRA-154-sync-pull-incremental-fetch.md",
-        "disposition": "Sprint-3 头部第 1 张 · R1+R1.x.1 APPROVE 38/40 @ 2026-05-19 → 联合 staging 实测发现 P1 watermark 微秒精度截断 BUG → Human 决策选项 B 同轮升级 v1.2 BIGINT change_seq → R1.x.2 commit `31fb893`(server) + `2b28210`(client v1.2 适配) + `261c280`(协议文档) · 已 push origin/dev · 等 Human staging 重启 + 再次联合实测 + `approve:COSTRA-154 + COSTRA-150` 双卡同轮 approve",
-        "updated_at": "2026-05-22T17:30:00+08:00",
-        "dispatch_at": "2026-05-19T15:00:00+08:00"
+        "disposition": "Human 已确认 COSTRA-154+150 联合实测 PASS；Phase-3 prod 真机通过；v1.2 change_seq watermark 与 sync/pull 进入 Family First baseline。",
+        "updated_at": "2026-06-02T12:36:00+08:00",
+        "dispatch_at": "2026-05-19T15:00:00+08:00",
+        "terminal_verdict": "APPROVED",
+        "human_final_decision": "approve",
+        "human_final_decision_at": "2026-06-02T11:08:00+08:00"
       },
       {
         "id": "COSTRA-150",
@@ -310,7 +347,7 @@
         "priority": "P1",
         "sprint": "sprint-3",
         "epic": "Epic-C",
-        "status": "In-R1.x.2",
+        "status": "Done",
         "dependencies": [
           "COSTRA-103",
           "COSTRA-104",
@@ -319,9 +356,12 @@
           "COSTRA-154"
         ],
         "description": "Sprint-3 头部第 2 张 · 7 项 scope（services/syncScheduler.ts 新建 4 触发源 + mutex + 失败处理 + db.ts watermark 接口 + app.ts onLaunch/onHide 接入 + home/mine/entry 三页 onShow + syncScheduler.spec.ts ≥8 测 + follow-ups + 105 H6/D2 联合 RESOLVED）· FU-103-CLIENT-SYNC-SCHEDULER 转正 · 严格依赖 COSTRA-154 R1 APPROVE 才能 spawn（150 调 GET /sync/pull · 154 stub 时 401 全闸门红）· INVEST small 5pt · 单装扮档单 commit · D-022 v2.0 §4.1 runtime T2 卡铁律（C8 维度最高风险 · Human 实测前置不可省）· dispatch 已落盘 .team/dispatch/COSTRA-150-client-sync-scheduler.md",
-        "disposition": "Sprint-3 头部第 2 张 · R1+R1.x.1 APPROVE 38/40 @ 2026-05-20 → 联合 staging 实测发现 P0 outbox 死锁 BUG（150-D · push 失败后 drained 残留 + ackResults 字段错配）→ R1.x.2 commit `2b28210`（含 v1.2 watermark 适配 + outbox 死锁修复 sync.ts 不再吞错 + outbox.ts ackBatchFailure + drainBatch 防御性 recover）· 已 push origin/dev · 等再次联合实测 + 双卡 approve",
-        "updated_at": "2026-05-22T17:30:00+08:00",
-        "dispatch_at": "2026-05-19T15:05:00+08:00"
+        "disposition": "Human 已确认 COSTRA-154+150 联合实测 PASS；Phase-3 prod 真机通过；syncScheduler/outbox/v1.2 watermark 进入 Family First baseline。",
+        "updated_at": "2026-06-02T12:36:00+08:00",
+        "dispatch_at": "2026-05-19T15:05:00+08:00",
+        "terminal_verdict": "APPROVED",
+        "human_final_decision": "approve",
+        "human_final_decision_at": "2026-06-02T11:08:00+08:00"
       },
       {
         "id": "COSTRA-105",
@@ -366,16 +406,23 @@
         "owner": "DevOps-Agent",
         "type": "story",
         "points": 2,
-        "priority": "P2",
-        "sprint": "sprint-2",
+        "priority": "P3",
+        "sprint": "closed-superseded",
         "epic": "Epic-G",
-        "status": "Backlog",
+        "status": "Closed-Superseded",
         "dependencies": [
           "D-009"
         ],
         "description": "Sprint-1 未开工 · 转入 Sprint-2",
-        "disposition": "Sprint-2（可与主线并行）",
-        "updated_at": "2026-05-09T19:30:00+08:00"
+        "disposition": "triage:sprint3-leftovers · dev server bootstrap 手册已被 prod compose / deploy-all / 09 verify gates / costra.cloud 真机部署路线取代；派单档保留作历史能力边界证据。",
+        "updated_at": "2026-06-02T13:44:00+08:00",
+        "terminal_verdict": "SUPERSEDED",
+        "superseded_by": [
+          "infra/prod-bootstrap-compose.md",
+          "infra/scripts/deploy-all.sh",
+          "infra/scripts/09-verify-gates.sh"
+        ],
+        "triage_report": ".team/sprints/sprint-03-leftovers-triage.md"
       },
       {
         "id": "COSTRA-160",
@@ -465,14 +512,17 @@
         "priority": "P0",
         "sprint": "sprint-3",
         "epic": "Epic-C",
-        "status": "Fixed-Awaiting-Verify",
+        "status": "Done",
         "dependencies": [
           "COSTRA-150"
         ],
         "description": "联合 staging 实测捕获 · 三重根因：(1) sync.ts catch 静默吞错 (2) drainBatch recover 仅捞 retries>0 (3) ackResults 用错字段 idempotency_key vs ack_batch_key · 修复 commit `2b28210` · 已写 outbox.spec.ts 回归测试 · 详见 qa/defects/2026-05-22-COSTRA-150-D-outbox-deadlock-on-push-failure.md",
-        "disposition": "已修复 commit `2b28210` · 等 staging 重测验证回归 · 与 COSTRA-150 主卡同轮 approve",
-        "updated_at": "2026-05-22T17:30:00+08:00",
-        "defect_file": "qa/defects/2026-05-22-COSTRA-150-D-outbox-deadlock-on-push-failure.md"
+        "disposition": "P0 outbox 死锁 BUG 已由 R1.x.2 修复并经 Human 联合实测覆盖；随 COSTRA-150 approve closed。",
+        "updated_at": "2026-06-02T12:36:00+08:00",
+        "defect_file": "qa/defects/2026-05-22-COSTRA-150-D-outbox-deadlock-on-push-failure.md",
+        "terminal_verdict": "APPROVED",
+        "human_final_decision": "approve",
+        "human_final_decision_at": "2026-06-02T11:08:00+08:00"
       },
       {
         "id": "COSTRA-154-D",
@@ -483,14 +533,443 @@
         "priority": "P1",
         "sprint": "sprint-3",
         "epic": "Epic-C",
-        "status": "Fixed-Awaiting-Verify",
+        "status": "Done",
         "dependencies": [
           "COSTRA-154"
         ],
         "description": "联合 staging 实测 + SQL 验证捕获 137μs 差 · 根因：JS Date 毫秒精度 vs PG TIMESTAMPTZ 微秒精度 · Human 决策选项 B 彻底升级 ISO 时间戳 → BIGINT change_seq · 协议演化 v1.0 ISO ms → v1.1 ISO μs（中途未上线）→ v1.2 BIGINT（破坏性升级 · client legacy ISO 自动重置）· 修复 3 笔 commit `31fb893` + `2b28210` + `261c280` · 详见 qa/defects/2026-05-22-COSTRA-154-watermark-microsecond-precision.md（693 行 · §11 v1.2 升级声明）",
-        "disposition": "已修复 v1.2 协议升级 · 等 staging 重启 migration 0006 + 再次联合实测验证回归 · 与 COSTRA-154 主卡同轮 approve",
-        "updated_at": "2026-05-22T17:30:00+08:00",
-        "defect_file": "qa/defects/2026-05-22-COSTRA-154-watermark-microsecond-precision.md"
+        "disposition": "P1 watermark 精度 BUG 已由 v1.2 BIGINT change_seq 修复并经 Human 联合实测覆盖；随 COSTRA-154 approve closed。",
+        "updated_at": "2026-06-02T12:36:00+08:00",
+        "defect_file": "qa/defects/2026-05-22-COSTRA-154-watermark-microsecond-precision.md",
+        "terminal_verdict": "APPROVED",
+        "human_final_decision": "approve",
+        "human_final_decision_at": "2026-06-02T11:08:00+08:00"
+      },
+      {
+        "id": "COSTRA-151",
+        "title": "conflict 合并 UI（FU-103-CONFLICT-MERGE-UI）",
+        "owner": "miniapp-dev + design-maker",
+        "type": "story",
+        "points": 5,
+        "priority": "P2",
+        "sprint": "sprint-5-plus",
+        "epic": "Epic-C",
+        "status": "Deferred",
+        "dependencies": [
+          "COSTRA-104",
+          "COSTRA-150"
+        ],
+        "description": "Sprint-3 原中后段 UI 卡 · 冲突合并界面。",
+        "disposition": "triage:sprint3-leftovers · Defer 到 Family First 221/222/223 闭环后；conflict UI 等家庭协作真实场景与 UI 口径稳定后重审 dispatch。",
+        "updated_at": "2026-06-02T13:44:00+08:00",
+        "triage_report": ".team/sprints/sprint-03-leftovers-triage.md"
+      },
+      {
+        "id": "COSTRA-155",
+        "title": "全量 15 用例自动化 + CI 集成",
+        "owner": "qa-planner + miniapp-dev",
+        "type": "qa",
+        "points": 5,
+        "priority": "P1",
+        "sprint": "sprint-4-guardrail",
+        "epic": "Epic-C",
+        "status": "Planned-Split",
+        "dependencies": [
+          "COSTRA-154",
+          "COSTRA-150",
+          "COSTRA-152",
+          "COSTRA-153"
+        ],
+        "description": "原 Sprint-3 P2 自动化卡；当前建议拆为当前基线回归网 + Family E2E 准备。",
+        "disposition": "triage:sprint3-leftovers · 原 automator+CI dispatch 过大且 CI 无微信 IDE；需 revise/re-dispatch，拆为当前基线逻辑回归网、Family E2E、self-hosted runner 决策。",
+        "updated_at": "2026-06-02T13:44:00+08:00",
+        "triage_report": ".team/sprints/sprint-03-leftovers-triage.md"
+      },
+      {
+        "id": "COSTRA-159",
+        "title": "outbox.spec.ts fake timers 重构（FU-156-OUTBOX-FLAKY）",
+        "owner": "miniapp-dev",
+        "type": "test",
+        "points": 1,
+        "priority": "P2",
+        "sprint": "sprint-4-stability",
+        "epic": "Epic-C",
+        "status": "Planned-Optional",
+        "dependencies": [],
+        "description": "稳定性小卡，降低 outbox 测试 race/flaky。",
+        "disposition": "triage:sprint3-leftovers · outbox fake timers 小卡保留为 Sprint-4 optional stability；若 outbox flaky 复现或 CI 化前需降噪再启动。",
+        "updated_at": "2026-06-02T13:44:00+08:00",
+        "triage_report": ".team/sprints/sprint-03-leftovers-triage.md"
+      },
+      {
+        "id": "COSTRA-161",
+        "title": "whitelist-check 规则 E（OpenAPI paths vs fastify register 覆盖）",
+        "owner": "devops-ops",
+        "type": "devops",
+        "points": 1,
+        "priority": "P1",
+        "sprint": "sprint-4-guardrail",
+        "epic": "Epic-G",
+        "status": "Planned-Guardrail",
+        "dependencies": [
+          "COSTRA-156"
+        ],
+        "description": "D-025 AP-003 自动检测 · 契约-实装漂移守门。",
+        "disposition": "triage:sprint3-leftovers · Promote 为 Sprint-4 guardrail；建议在 COSTRA-221 前或同批审卡，明确 x-deferred 与 /families/* OpenAPI/impl 漂移策略。",
+        "updated_at": "2026-06-02T13:44:00+08:00",
+        "triage_report": ".team/sprints/sprint-03-leftovers-triage.md"
+      },
+      {
+        "id": "COSTRA-162",
+        "title": "dev mockLogin runtime toggle",
+        "owner": "miniapp-dev",
+        "type": "chore",
+        "points": 1,
+        "priority": "P3",
+        "sprint": "dev-experience-later",
+        "epic": "Epic-A",
+        "status": "Deferred-P3",
+        "dependencies": [],
+        "description": "开发期 mockLogin runtime 切换优化。",
+        "disposition": "triage:sprint3-leftovers · Phase-3 prod 真机链路已通过，runtime mockLogin toggle 降级为 dev-experience 后续批处理。",
+        "updated_at": "2026-06-02T13:44:00+08:00",
+        "triage_report": ".team/sprints/sprint-03-leftovers-triage.md"
+      },
+      {
+        "id": "COSTRA-163",
+        "title": "whitelist-check ICP 强等值校验",
+        "owner": "devops-ops",
+        "type": "devops",
+        "points": 1,
+        "priority": "P2",
+        "sprint": "sprint-4-guardrail",
+        "epic": "Epic-G",
+        "status": "Planned-Guardrail",
+        "dependencies": [
+          "COSTRA-107"
+        ],
+        "description": "ICP 备案信息强一致性校验。",
+        "disposition": "triage:sprint3-leftovers · Move to Sprint-4 guardrail；与 COSTRA-161 同文件同范式批处理但保持单卡边界。",
+        "updated_at": "2026-06-02T13:44:00+08:00",
+        "triage_report": ".team/sprints/sprint-03-leftovers-triage.md"
+      },
+      {
+        "id": "COSTRA-217",
+        "title": "分类二级 schema + entries.shared_type",
+        "owner": "backend-dev",
+        "type": "story",
+        "points": 3,
+        "priority": "P0",
+        "sprint": "family-first-baseline",
+        "epic": "Epic-B/Epic-D",
+        "status": "Done",
+        "dependencies": [],
+        "description": "B1/B2 · categories parent_id/is_direct_default + entries.shared_type · clean rebuild 策略。",
+        "disposition": "T3 追溯收口完成 · review-tech R4 PASS 33/35 · 0 P0/P1 · FINAL.md 已落档 · Family First baseline 已验收通过。",
+        "updated_at": "2026-06-02T12:52:00+08:00",
+        "terminal_verdict": "AUTO-CLOSED",
+        "review_tier": "T3",
+        "final_report": ".team/reviews/COSTRA-217/FINAL.md",
+        "review_tech": {
+          "round_4": {
+            "verdict": "PASS",
+            "score": "33/35",
+            "p0": 0,
+            "p1": 0,
+            "p2": 2
+          },
+          "final": "AUTO-CLOSED"
+        }
+      },
+      {
+        "id": "COSTRA-218",
+        "title": "后端分类 API",
+        "owner": "backend-dev",
+        "type": "story",
+        "points": 3,
+        "priority": "P0",
+        "sprint": "family-first-baseline",
+        "epic": "Epic-B",
+        "status": "Done",
+        "dependencies": [
+          "COSTRA-217"
+        ],
+        "description": "B3 · GET/POST /v1/categories + 层级分类服务。",
+        "disposition": "T3 追溯 review-tech 完成 · PASS-WITH-FOLLOWUP 30/35 · 0 P0/P1 · 5 P2 follow-up · Family First baseline 已验收通过，不阻塞。",
+        "updated_at": "2026-06-02T12:57:00+08:00",
+        "terminal_verdict": "AUTO-CLOSED",
+        "review_tier": "T3",
+        "review_tech": {
+          "round_1": {
+            "verdict": "PASS-WITH-FOLLOWUP",
+            "score": "30/35",
+            "p0": 0,
+            "p1": 0,
+            "p2": 5,
+            "info": 3
+          },
+          "final": "AUTO-CLOSED"
+        },
+        "final_report": ".team/reviews/COSTRA-218/round-1-tech.md",
+        "followups": [
+          "FU-218-IDEMPOTENCY-KEY",
+          "FU-218-PARENT-FAMILY-CHECK",
+          "FU-218-FAMILY-MEMBER-REPO",
+          "FU-218-POST-TEST-COVERAGE",
+          "GAP-COMMIT-07E0A52"
+        ]
+      },
+      {
+        "id": "COSTRA-219",
+        "title": "前端分类数据模型替换 hardcode",
+        "owner": "miniapp-dev",
+        "type": "story",
+        "points": 3,
+        "priority": "P0",
+        "sprint": "family-first-baseline",
+        "epic": "Epic-B",
+        "status": "Done",
+        "dependencies": [
+          "COSTRA-218"
+        ],
+        "description": "B4 · categoryService/cache + expense overlay/ledger 接真实分类模型。",
+        "disposition": "T3 追溯 review-tech 完成 · PASS-WITH-FOLLOWUP 30/35 · 0 P0/P1 · 5 P2 follow-up · Family First baseline 已验收通过，不阻塞。",
+        "updated_at": "2026-06-02T13:04:00+08:00",
+        "terminal_verdict": "AUTO-CLOSED",
+        "review_tier": "T3",
+        "review_tech": {
+          "round_1": {
+            "verdict": "PASS-WITH-FOLLOWUP",
+            "score": "30/35",
+            "p0": 0,
+            "p1": 0,
+            "p2": 5,
+            "info": 3
+          },
+          "final": "AUTO-CLOSED"
+        },
+        "final_report": ".team/reviews/COSTRA-219/round-1-tech.md",
+        "followups": [
+          "FU-219-CATEGORY-SPEC",
+          "FU-219-CATEGORY-SERVICE-LINES",
+          "FU-219-BUILD-TREE-FIND",
+          "FU-219-WARMUP-FAMILY-ID",
+          "FU-219-CACHE-TTL-REDUNDANCY"
+        ]
+      },
+      {
+        "id": "COSTRA-220",
+        "title": "明细页真实数据完善",
+        "owner": "miniapp-dev",
+        "type": "story",
+        "points": 3,
+        "priority": "P0",
+        "sprint": "family-first-baseline",
+        "epic": "Epic-B/Epic-D",
+        "status": "Done",
+        "dependencies": [
+          "COSTRA-217",
+          "COSTRA-218",
+          "COSTRA-219",
+          "COSTRA-164",
+          "COSTRA-165"
+        ],
+        "description": "C2 · 账本名真实显示、成员筛选基础、分类名/图标接真实分类、eventBus 响应式刷新。",
+        "disposition": "T3 追溯 review-tech 完成 · PASS-WITH-FOLLOWUP 29/35 · 0 P0 / 1 P1 / 5 P2 · P1 已登记 FU-220-SYNC-USER-ID-CREATED-BY，不阻塞 Family First baseline。",
+        "updated_at": "2026-06-02T13:36:00+08:00",
+        "terminal_verdict": "AUTO-CLOSED-WITH-FOLLOWUP",
+        "review_tier": "T3",
+        "review_tech": {
+          "round_1": {
+            "verdict": "PASS-WITH-FOLLOWUP",
+            "score": "29/35",
+            "p0": 0,
+            "p1": 1,
+            "p2": 5,
+            "info": 3
+          },
+          "final": "AUTO-CLOSED-WITH-FOLLOWUP"
+        },
+        "final_report": ".team/reviews/COSTRA-220/round-1-tech.md",
+        "followups": [
+          "FU-220-SYNC-USER-ID-CREATED-BY",
+          "FU-220-MULTI-LEDGER-SWITCH",
+          "FU-220-OVERLAY-ACTIVE-LEDGER-NAME",
+          "FU-220-AUTH-FAMILY-KIND-SOURCE",
+          "FU-220-DELETE-ANIMATION",
+          "FU-220-ENTRY-DELETED-EVENT"
+        ]
+      },
+      {
+        "id": "COSTRA-221",
+        "title": "家庭管理 API（family list / members / invite / accept / remove）",
+        "owner": "backend-dev",
+        "type": "story",
+        "points": 5,
+        "priority": "P0",
+        "sprint": "sprint-4",
+        "epic": "Epic-D",
+        "status": "Card-Review-Passed",
+        "dependencies": [
+          "COSTRA-164",
+          "COSTRA-165"
+        ],
+        "description": "D2 · 实装 /families/* 管理 API；处理 OpenAPI 已定义但 routes 未实装/无 x-deferred 的 AP-003 漂移；personal 不可邀请/删除；非 member 不可读；left_at 成员保留。",
+        "disposition": "card-review:COSTRA-221-R2 完成 · PASS-WITH-FOLLOWUP 29/30 · 结合 design_spec/interaction_flow 确认 API 足以支撑设计落地；0 P0/P1，可由 Human 触发 start:COSTRA-221。",
+        "updated_at": "2026-06-02T15:30:00+08:00",
+        "dispatch": ".team/dispatch/COSTRA-221-backend-family-management-api.md",
+        "dispatch_at": "2026-06-02T13:55:00+08:00",
+        "review_next": "start:COSTRA-221",
+        "card_review": {
+          "round_1": {
+            "verdict": "REVISE",
+            "score": "22/30",
+            "p0": 3,
+            "p1": 4,
+            "p2": 3,
+            "info": 2,
+            "report": ".team/reviews/COSTRA-221/card-review-round-1-tech.md"
+          },
+          "round_2": {
+            "verdict": "PASS-WITH-FOLLOWUP",
+            "score": "29/30",
+            "p0": 0,
+            "p1": 0,
+            "p2": 2,
+            "info": 3,
+            "report": ".team/reviews/COSTRA-221/card-review-round-2-tech.md",
+            "design_docs": [
+              "design/ui/design_spec.md",
+              "design/ui/interaction_flow.md"
+            ]
+          }
+        },
+        "dispatch_revision": "R1.x",
+        "dispatch_revised_at": "2026-06-02T14:42:00+08:00"
+      },
+      {
+        "id": "COSTRA-222",
+        "title": "家庭财务聚合 API（公共/个人/成员/垫付贡献）",
+        "owner": "backend-dev",
+        "type": "story",
+        "points": 5,
+        "priority": "P0",
+        "sprint": "sprint-4",
+        "epic": "Epic-D/Epic-F",
+        "status": "Planned",
+        "dependencies": [
+          "COSTRA-221",
+          "COSTRA-217"
+        ],
+        "description": "D3 · GET /v1/families/{id}/summary?month=YYYY-MM；复用 entries.shared_type；金额 cents；供家庭页与统计页口径复用。",
+        "disposition": "COSTRA-221 API/成员口径稳定后启动。",
+        "updated_at": "2026-06-02T12:36:00+08:00"
+      },
+      {
+        "id": "COSTRA-223",
+        "title": "家庭页全新开发 / API 接入",
+        "owner": "miniapp-dev",
+        "type": "story",
+        "points": 5,
+        "priority": "P0",
+        "sprint": "sprint-5",
+        "epic": "Epic-D",
+        "status": "Planned",
+        "dependencies": [
+          "COSTRA-221",
+          "COSTRA-222"
+        ],
+        "description": "C5 · 单人引导态、多人协作态、成员横向滚动、已退出灰化、公共/个人拆解、垫付贡献、与明细页联动。",
+        "disposition": "非正式 prototype 已回滚；正式开发必须等待 221/222 并重走 dispatch/card-review/Human start。",
+        "updated_at": "2026-06-02T12:36:00+08:00"
+      },
+      {
+        "id": "COSTRA-224",
+        "title": "月度/年度统计报表 API",
+        "owner": "backend-dev",
+        "type": "story",
+        "points": 5,
+        "priority": "P1",
+        "sprint": "sprint-6",
+        "epic": "Epic-F",
+        "status": "Planned",
+        "dependencies": [
+          "COSTRA-222"
+        ],
+        "description": "D1 · 月/年统计、趋势、分类排行、成员维度；复用家庭聚合 public/personal 口径。",
+        "disposition": "家庭聚合口径稳定后启动。",
+        "updated_at": "2026-06-02T12:36:00+08:00"
+      },
+      {
+        "id": "COSTRA-225",
+        "title": "统计页全新开发",
+        "owner": "miniapp-dev",
+        "type": "story",
+        "points": 5,
+        "priority": "P1",
+        "sprint": "sprint-6",
+        "epic": "Epic-F",
+        "status": "Planned",
+        "dependencies": [
+          "COSTRA-224"
+        ],
+        "description": "C4 · 月度/年度切换、单色趋势图、摘要网格、排行+手风琴、成员横向切换。",
+        "disposition": "依赖 COSTRA-224。",
+        "updated_at": "2026-06-02T12:36:00+08:00"
+      },
+      {
+        "id": "COSTRA-226",
+        "title": "我的页重做",
+        "owner": "miniapp-dev",
+        "type": "story",
+        "points": 3,
+        "priority": "P2",
+        "sprint": "sprint-6",
+        "epic": "Epic-G",
+        "status": "Planned",
+        "dependencies": [],
+        "description": "C6 · 极简名片、记账天数、宏观数据总览、iOS/WeUI 分组菜单、账号/隐私/关于入口。",
+        "disposition": "统计页后或并行低风险 UI 收尾。",
+        "updated_at": "2026-06-02T12:36:00+08:00"
+      },
+      {
+        "id": "FU-220-SYNC-USER-ID-CREATED-BY",
+        "title": "sync wire user_id 与本地 created_by 字段映射对齐",
+        "owner": "backend-dev + miniapp-dev",
+        "type": "follow-up",
+        "points": 1,
+        "priority": "P1",
+        "sprint": "sprint-4-guardrail",
+        "epic": "Epic-C/Epic-D",
+        "status": "Planned-Guardrail",
+        "dependencies": [
+          "COSTRA-220",
+          "COSTRA-154",
+          "COSTRA-150"
+        ],
+        "description": "COSTRA-220 T3 review P1：sync pull wire user_id 未映射到本地 Entry.created_by，导致同步拉取条目的“仅看自己”筛选失效。",
+        "disposition": "triage:sprint3-leftovers · promoted to Sprint-4 P1 sync guardrail；不阻塞 Family First baseline，但应在家庭成员筛选/221 后续联动前修复。",
+        "source_review": ".team/reviews/COSTRA-220/round-1-tech.md",
+        "triage_report": ".team/sprints/sprint-03-leftovers-triage.md",
+        "updated_at": "2026-06-02T13:44:00+08:00"
+      },
+      {
+        "id": "FU-221-MEMBER-SNAPSHOT-ON-LEFT",
+        "title": "退出成员 nickname/avatar 快照稳定性",
+        "owner": "backend-dev + miniapp-dev",
+        "type": "follow-up",
+        "points": 1,
+        "priority": "P2",
+        "sprint": "sprint-5-plus",
+        "epic": "Epic-D",
+        "status": "Open-Observation",
+        "dependencies": [
+          "COSTRA-221",
+          "COSTRA-223"
+        ],
+        "description": "COSTRA-221 card-review R1 P2：R1 不给 family_members 增加 nickname/avatar snapshot，先 JOIN users；若家庭页灰化退出成员要求展示退出时快照，再加 migration 补 snapshot 字段。",
+        "source_review": ".team/reviews/COSTRA-221/card-review-round-1-tech.md",
+        "updated_at": "2026-06-02T14:42:00+08:00"
       }
     ]
   }

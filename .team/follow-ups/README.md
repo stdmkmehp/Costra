@@ -23,7 +23,7 @@
 
 ---
 
-## 🟢 当前 open FU 速查表（33 条 · 按主题族 + 推动优先级 · 2026-05-27 17:30 COSTRA-165 R1 APPROVE 38/40 · 双卡联立完成 · 追加 2 条 FU）
+## 🟢 当前 open/scoped FU 速查表（2026-06-02 13:44 · `triage:sprint3-leftovers` 已同步）
 
 | 主题族 | FU-ID | 优先级 | 候选卡 / 归属 | 状态 |
 |---|---|---|---|---|
@@ -31,17 +31,19 @@
 | **🆕 Sprint-3 末 Retro · 分布式时序范式** | **FU-MICROSEC-VS-AUTOSEQ-PARADIGM** | **P1** | **Sprint-3 末 Retro 议题** | **open**（2026-05-22 · 触发：COSTRA-154 联合实测发现 watermark 微秒精度截断 · Human 追问"watermark 靠精度就一定能完美解决吗" · 暴露 3 类风险（同微秒并发 / NTP 回拨 / 主从切换）· 选项 B 升 BIGINT change_seq 自增序列号承担一致性 · `updated_at` 保留语义 · Sprint-3 末 Retro 议入：分布式系统 watermark / cursor / change tracking 的取舍范式（精度 vs 自增序列号 vs LSN/WAL pos）· 候选写入 ADR-0003 时序模型选型）|
 | **🆕 Sprint-3 末 Retro · 测试基础设施** | **FU-PG-MEM-SHARED-HELPER** | **P2** | **Sprint-3 末 Retro 议题** | **open**（2026-05-22 · 触发：COSTRA-154 v1.2 实装时 `server/test/setup.ts` 内联 setval / timezone / to_char mock · 后续多卡复用需提取 · Sprint-3 末 Retro 议入：将 pg-mem 兼容层提取为公共 helper（`server/test/pg-mem-extensions.ts` 或类似）· 覆盖 SEQUENCE / setval / timezone 函数 / 字符串格式化函数 · 候选独立卡 P2 1pt）|
 | **🆕 Sprint-3 末 Retro · 联合实测立意兑现** | **FU-JOINT-SMOKE-LAST-GATE-PARADIGM** | **P1** | **Sprint-3 末 Retro 议题** | **open**（2026-05-22 · 触发：COSTRA-154+150 联合 staging 实测捕获 P0 outbox 死锁 + P1 watermark 精度 · 单测 + curl + server 单测 30+ 全绿都漏不出 · D-024 §2.2 C1 立意首次得到协议升级级别证据 · Sprint-3 末 Retro 议入：联合实测 = 真闭环最后一道闸新范式 + R1.x.2 协议破坏性升级范式（vs 以往 R1.x.1 review-tech 修订型）· 候选规约：T2 卡 staging 实测前禁止 approve · 联合实测前禁止 R1 close · 配套 SOP-REVIEW v2.x §11 强化）|
-| **Sprint-3 同步协议核心** | FU-104-SYNC-PULL | **P0** | COSTRA-154 | **R1.x.2-fixed-pending-verify**（**[预闭合纠正 2026-05-22]** R1+R1.x.1 commit `7e87bad`+`8eecd4c` APPROVE 38/40 → 联合 staging 实测发现 P1 watermark 精度截断 BUG → R1.x.2 v1.2 协议升级 commit `31fb893`+`2b28210`+`261c280` · 等 Human 再次联合实测 + 双卡 approve · FU 不真 closed 直至 Human approve）|
-| **Sprint-3 同步协议核心** | FU-103-CLIENT-SYNC-SCHEDULER | P1 | COSTRA-150 | **R1.x.2-fixed-pending-verify**（**[预闭合纠正 2026-05-22]** R1+R1.x.1 commit `ee97a7a`+`5ac8153` APPROVE 38/40 → 联合 staging 实测发现 P0 outbox 死锁 BUG-D（150-D · sync.ts catch 静默吞错 + drainBatch recover 仅捞 retries>0 + ackResults 字段错配）→ R1.x.2 commit `2b28210`（双修复 + v1.2 watermark 适配）· 等 Human 再次联合实测 + 双卡 approve · FU 不真 closed 直至 Human approve）|
+| **Sprint-3 同步协议核心** | FU-104-SYNC-PULL | ~~P0~~ → **closed** | ~~COSTRA-154~~ | **closed @ COSTRA-154**（Human 已确认联合 smoke + Phase-3 prod 真机 PASS；v1.2 change_seq watermark 进入 Family First baseline）|
+| **Sprint-3 同步协议核心** | FU-103-CLIENT-SYNC-SCHEDULER | ~~P1~~ → **closed** | ~~COSTRA-150~~ | **closed @ COSTRA-150**（Human 已确认联合 smoke + Phase-3 prod 真机 PASS；syncScheduler/outbox/v1.2 watermark 进入 Family First baseline）|
 | **Sprint-3 同步协议核心** | FU-104-ENTRIES-PATCH | ~~P1~~ → **closed** | ~~COSTRA-152~~ | **closed @ COSTRA-152 R1**（PATCH /entries/{id} 实装 + cross-family guard fix + K3 method-override）|
 | **Sprint-3 同步协议核心** | FU-104-ENTRIES-DELETE | ~~P1~~ → **closed** | ~~COSTRA-153~~ | **closed @ COSTRA-153 R1**（DELETE /entries/{id} 软删 + query ?version=N）|
-| **Sprint-3 同步协议核心** | FU-103-CONFLICT-MERGE-UI | P2 | COSTRA-151 | **dispatch-ready @ 2026-05-19**（Sprint-3 中后段 · 154+150 CLOSED 后启）|
-| **🆕 Sprint-3 family-context** | **FU-150-FAMILY-CONTEXT-SERVICE** | **P0** | **COSTRA-164 + COSTRA-165**（双卡联立 · ADR-0007 锚定）| **R1 双卡 APPROVE-pending-joint-test**（2026-05-27 17:30 · COSTRA-164 R1.x APPROVE 38/40 commit `2e71dc8`+`8c8cdce` · COSTRA-165 R1 APPROVE 38/40 commit `3472864` · 等 Human 联合 164+165 staging 实测 + 双卡 approve · 实测覆盖 4 场景：① 全新登录 ② 旧 token 升级 ③ logout 清理 ④ entry ledger_id 写入 · D-024 §2.2 C1 联合 approve 范式 · 实测 + approve 后真 closed）|
+| **Sprint-3 同步协议核心** | FU-103-CONFLICT-MERGE-UI | P2 | COSTRA-151 | **deferred-family-after-223**（`triage:sprint3-leftovers`：等 `221/222/223` 家庭协作闭环后重审 conflict UI dispatch）|
+| **🆕 Sprint-3 family-context** | **FU-150-FAMILY-CONTEXT-SERVICE** | ~~P0~~ → **closed** | ~~COSTRA-164 + COSTRA-165~~ | **closed @ Family First baseline**（Human 已确认 `qa/current-stage-acceptance-family-first-baseline.md` PASS；family bootstrap/context 进入正式基线）|
 | **🆕 Sprint-3 family-context** | **FU-165-GET-CONTEXT-ATOMIC** | **P3** | **Sprint-4 R2 family 切换器顺带** | **open**（2026-05-27 · 触发：COSTRA-165 R1 review-tech P2-1 · 现象：`miniprogram/services/family.ts:32-43` getActiveFamilyId/getActiveLedgerId 各自独立调 getItem · 理论上非原子 · 实际微信 storage 同步缓存底层无 I/O 竞争 · R1 风险极低 · 修复：R2 加 family 切换器时提供 `getActiveFamilyContext(): Promise<FamilyContext \| null>` 一次读取接口）|
 | **🆕 Sprint-3 family-context** | **FU-165-DOWXLOGIN-RUNTIME-ANNOTATION** | **P3** | **下次 auth.ts 修订顺带** | **open**（2026-05-27 · 触发：COSTRA-165 R1 review-tech P2-2 · 现象：`miniprogram/services/auth.ts:238-247` doWxLogin 真实链路 setActiveFamily + globalData 同步写入缺 `[未经验测]` 标注 · 与 syncScheduler.ts:99 标注范式不一致 · 修复：加 `// [未经验测]（D-022 C8-3）: storage 写入后跨页面读取依赖微信 storage 实现 · 需真机验证` 注释）|
-| **🆕 Sprint-3 错误码同步** | **FU-164-OPENAPI-ERRORCODE-ENUM** | **P2** | **COSTRA-201**（Sprint-4 候选 · DELETE /families 落地一并修） | **open**（2026-05-27 · 触发：COSTRA-164 R1 review-tech P2-3 + R1.x review-tech P2-1 双轮登记 · 现象：`server/api/openapi.yaml` `components.schemas.ErrorCode` enum 列表中未包含 `FAMILY_PERSONAL_NOT_DELETABLE`（R1.x 已同步 docs/api/error-codes.md §2.3 + §4.1 · 但 openapi.yaml 留遗）· ErrorCode.ts §0.2 约束"新增 code 必须同步 openapi.yaml" · 推荐 COSTRA-201 落 DELETE /families 端点时一并补齐 enum · 影响：客户端类型生成可能漏映射 · 当前 server 端逻辑路径已正确 throw 此 code · 影响仅限契约文档完整性）|
-| **🆕 Sprint-3 auth refresh** | **FU-164-REFRESH-DEFAULT-IDS-NULL** | **P2** | **COSTRA-165 或 COSTRA-201** | **open**（2026-05-27 · 触发：COSTRA-164 R1 review-tech P2-2 + R1.x review-tech P2-2 双轮登记 · 现象：`server/src/services/authService.ts:257-266` refresh 路径中 · 若 `findPersonalFamily` 返回 null（理论上不应发生 · 极边缘数据异常）· `defaultFamilyId` / `defaultLedgerId` 保持空字符串 `''` · 而 OpenAPI AuthTokenPair schema 声明这两字段为 `format: uuid` + `required` · 修复方向：refresh 路径若 personal family 缺失 → 走 wxLogin 同款 bootstrap 自愈 或 throw UNAVAILABLE · 不应返回空字符串 · 影响：极边缘 · 当前 bootstrap 事务保证 wxLogin 路径必非空 · 仅 refresh 路径在数据异常时存在合约违反风险）|
+| **🆕 Sprint-3 错误码同步** | **FU-164-OPENAPI-ERRORCODE-ENUM** | **P2** | **COSTRA-221**（Sprint-4 家庭管理 API · DELETE/成员/家庭管理口径一并修） | **open**（2026-05-27 · 触发：COSTRA-164 R1 review-tech P2-3 + R1.x review-tech P2-1 双轮登记 · 现象：`server/api/openapi.yaml` `components.schemas.ErrorCode` enum 列表中未包含 `FAMILY_PERSONAL_NOT_DELETABLE`（R1.x 已同步 docs/api/error-codes.md §2.3 + §4.1 · 但 openapi.yaml 留遗）· ErrorCode.ts §0.2 约束"新增 code 必须同步 openapi.yaml" · 推荐 COSTRA-221 落家庭管理 API 时一并补齐 enum · 影响：客户端类型生成可能漏映射 · 当前 server 端逻辑路径已正确 throw 此 code · 影响仅限契约文档完整性）|
+| **🆕 Sprint-3 auth refresh** | **FU-164-REFRESH-DEFAULT-IDS-NULL** | **P2** | **COSTRA-221 或 auth hardening 批** | **open**（2026-05-27 · 触发：COSTRA-164 R1 review-tech P2-2 + R1.x review-tech P2-2 双轮登记 · 现象：`server/src/services/authService.ts:257-266` refresh 路径中 · 若 `findPersonalFamily` 返回 null（理论上不应发生 · 极边缘数据异常）· `defaultFamilyId` / `defaultLedgerId` 保持空字符串 `''` · 而 OpenAPI AuthTokenPair schema 声明这两字段为 `format: uuid` + `required` · 修复方向：refresh 路径若 personal family 缺失 → 走 wxLogin 同款 bootstrap 自愈 或 throw UNAVAILABLE · 不应返回空字符串 · 影响：极边缘 · 当前 bootstrap 事务保证 wxLogin 路径必非空 · 仅 refresh 路径在数据异常时存在合约违反风险）|
 | **🆕 Sprint-3 末 Retro · pg-mem 限制** | **FU-PG-MEM-PARTIAL-INDEX-ENUM-LIMIT** | **P3** | **Sprint-3 末 Retro 议题** | **open**（2026-05-27 · 触发：COSTRA-164 R1.x T10 ④ shared family 删除路径降级到 staging · 根因：pg-mem 在 partial unique index `WHERE kind='personal'` 含 ENUM 列时索引覆盖范围误判 · 导致 shared family INSERT 后 SELECT 返 0 行 · 真 PG 行为正常 · 测试已加 `[C8-3 pg-mem 已知 bug]` 注释 + 显式登记 FU · Sprint-3 末 Retro 议入：① 评估迁移测试基础设施到 testcontainers + 真 PG（解决 pg-mem 多个限制：partial index + ENUM / setval / timezone / ROLLBACK 不完整 / constraint 名缺失等）· ② 候选合并 FU-PG-MEM-SHARED-HELPER P2 议题 · ③ 决策点：是否 Sprint-4+ 立卡迁移 pg-mem → testcontainers · 受 Sprint-3 retro 议入 P0/P1 议题数量影响）|
+| **🆕 Sprint-4 guardrail · sync 字段映射** | **FU-220-SYNC-USER-ID-CREATED-BY** | **P1** | **Sprint-4 guardrail**（backend-dev + miniapp-dev） | **scoped-sprint-4-guardrail**（2026-06-02 · 触发：`COSTRA-220` T3 review P1 · sync wire `user_id` 与本地 Entry `created_by` 不对齐，`applyServerChanges` 未映射，影响 sync pull 条目的“仅看自己”筛选）|
+| **🆕 Family members · 退出成员快照** | **FU-221-MEMBER-SNAPSHOT-ON-LEFT** | **P2** | **Sprint-5+ / COSTRA-223 后观察** | **open-observation**（2026-06-02 · 触发：`COSTRA-221` card-review R1 P2 · R1 不给 `family_members` 加 nickname/avatar snapshot，先 JOIN users；若家庭页灰化退出成员要求展示退出时快照，再补 migration）|
 | **Epic-A 用户资料**（→ COSTRA-157 合卡）| FU-001 | P2 | COSTRA-157 | scoped |
 | **Epic-A 用户资料**（→ COSTRA-157 合卡）| FU-118-2 | P2 | COSTRA-157 | scoped |
 | **Epic-A 用户资料** | FU-102-PROFILE-REFUSE-UI | ~~P1~~ → **closed** | ~~COSTRA-158~~ | **closed @ COSTRA-158** |
@@ -54,16 +56,16 @@
 | **DevOps 基建** | FU-118-4 | P2 | Sprint-2 末维护批 | open |
 | **DevOps 基建** | FU-DEVOPS-NGINX-ICP-HEADER | P3 | DNS+SSL+反代上线触发 | open-observation |
 | **DevOps 基建** | FU-DEVOPS-ICP-HEALTH-PROBE | P2 | 合 COSTRA-903 APM | open |
-| **DevOps 基建** | **FU-DEVOPS-ICP-CROSS-SSOT-CHECK** | **P2** | **COSTRA-163** | **dispatch-ready @ 2026-05-19**（与 161 同节奏批 · whitelist-check.mjs 升级双卡）|
-| **DevOps 基建** | **FU-DEVOPS-OPENAPI-IMPL-COVERAGE** | **P2** | **COSTRA-161** | **dispatch-ready @ 2026-05-19**（D-025 AP-003 自动检测 · CI 对账族第 6 张规则 E）|
-| **DevOps 基建** | **FU-DEV-MOCKLOGIN-RUNTIME-TOGGLE** | **P3** | **COSTRA-162** | **dispatch-ready @ 2026-05-19**（dev `mockLogin` runtime toggle · ~30min 单 commit）|
+| **DevOps 基建** | **FU-DEVOPS-ICP-CROSS-SSOT-CHECK** | **P2** | **COSTRA-163** | **scoped-sprint-4-guardrail**（`triage:sprint3-leftovers`：与 161 同节奏批 · whitelist-check.mjs 升级双卡）|
+| **DevOps 基建** | **FU-DEVOPS-OPENAPI-IMPL-COVERAGE** | **P2** | **COSTRA-161** | **scoped-sprint-4-guardrail**（`triage:sprint3-leftovers`：D-025 AP-003 自动检测 · 启动前需重审 x-deferred / `/families/*` 策略）|
+| **DevOps 基建** | **FU-DEV-MOCKLOGIN-RUNTIME-TOGGLE** | **P3** | **COSTRA-162** | **deferred-p3**（`triage:sprint3-leftovers`：Phase-3 prod 真链路已过，不抢 Family First 主线）|
 | **DB 治理** | FU-DB-OPS-AUDIT | P3 | DAU>100 触发 | open |
 | **🆕 Auth / 安全** | **FU-AUTH-ROTATING-REFRESH** | **P2** | **Sprint-4+ 认领** | **open**（2026-05-25 · 触发：Human 与 Orchestrator 复盘 JWT 双 token 方案时确认当前 MVP 为「不轮换」refresh · 见 `server/src/services/authService.ts:172` 注释 + `0003_user_sessions.sql:13`「MVP 不换发」+ `docs/api/ttl-policy.md §7` 已列入调优空间 · 范围：① refresh 时签新 refresh + 原子吊销旧 jti（UPDATE…RETURNING + 同事务 INSERT）② 重用检测（已 revoked 的 refresh 再次出现 → revokeAllByUser + 审计告警 · OAuth 2.1 §6.1）③ 可选 `version` / `rotated_from` 列防双花 · 主改面：`server/src/services/authService.ts` refresh() + `server/src/repositories/sessionRepo.ts` 新增原子轮换 SQL · DB 视方案需新加一列 · 测试要覆盖：并发 refresh 仅一份成功 / 旧 refresh 重用触发全量吊销 / logout-vs-refresh 竞态 · 触发立卡的考虑阈值：用户量级上来 / 安全审计要求 / Sprint-4+ 认证强化批 · 不阻当前任何卡）|
 | **协议 / 规约残留** | FU-COMMON-MINIAPP-PATCH-LIMIT | ~~P2~~ → **closed** | ~~COSTRA-158~~ | **closed @ COSTRA-158** |
 | **协议 / 规约残留** | **FU-K3-TO-K1-UPGRADE** | **P2** | **COSTRA-152** | scoped（dispatch §1.3 阶段决策 · COSTRA-152 Card-Review 阶段拍板 · R1 K3 已落地 · Sprint-4 评估 K1）|
 | **🆕 跨 family 守门补丁** | **FU-CROSS-FAMILY-GUARD-COSTRA-104** | ~~P0~~ → **closed** | **COSTRA-152 R1** | **closed @ COSTRA-152 R1**（entryRepo.findById +userId 参数 + entryService.findById 传入 userId · GET/PATCH/DELETE 三处共享守门 · review-tech 36/40 漏检反思议入 Sprint-3 末 Retro）|
-| **QA 自动化** | FU-105-AUTOMATION-FULL-COVERAGE | P2 | **COSTRA-155** | **dispatch-ready @ 2026-05-19**（154+150+152+153 全 CLOSED 后启 · 双装扮档 qa-planner+miniapp-dev）|
-| **QA 自动化** | FU-156-OUTBOX-FLAKY | P2 | **COSTRA-159** | **dispatch-ready @ 2026-05-19**（与 150 同链路顺手 · ~30min 单 commit）|
+| **QA 自动化** | FU-105-AUTOMATION-FULL-COVERAGE | P2 | **COSTRA-155** | **scoped-sprint-4-guardrail / needs-redispatch**（`triage:sprint3-leftovers`：原 automator+CI 范围需拆基线逻辑回归网 / Family E2E / runner 决策）|
+| **QA 自动化** | FU-156-OUTBOX-FLAKY | P2 | **COSTRA-159** | **scoped-sprint-4-optional**（`triage:sprint3-leftovers`：等 outbox flaky 复现或 CI 化前降噪时启动）|
 | **外部触发** | FU-115-2 | O 观察 | Human ICP 下证日触发 | open |
 | **🆕 QA 实测发现（族 H）** | ~~BUG-105-D1-LEDGER-ID-DEFAULT~~ | ~~🔴 P0~~ → **closed** | ~~COSTRA-105 R1.x.1~~ | **closed @ commit 33dbdea** |
 | **🆕 QA 实测发现（族 H）** | ~~BUG-156-SYNC-PUSH-PAYLOAD-NO-UUID-VALIDATION~~ | ~~🔴 P0~~ → **closed** | ~~COSTRA-105 R1.x.2~~ | **closed @ commit db488b9** |
@@ -83,7 +85,7 @@
 > - **R1 → R1.x 演进**：R1 commit `2e71dc8` PASS-WITH-FOLLOWUP 35/40（0 P0 / 3 P1 / 3 P2）→ R1.x 修订 commit `8c8cdce` 同轮兑现 3 P1 → R1.x 形式审 commit (待) APPROVE 38/40（0 P0 / 0 P1 / 2 P2）· D-016 100% 修订率铁律第 13 次实战合规 · 80/80 测全绿 · typecheck 0 error
 > - **3 P1 兑现实证**：① P1-1 docs/api/error-codes.md 字典 21→22 · ② T6 constraint 双校验断言 + [C8-3] 标注 · ③ familyRepo.softDelete ownerId 守门双重防御（SELECT + UPDATE WHERE owner_id）· Sprint-2 retro 议题候选 5（service 层 user/family 守门）实战兑现
 > - **追加 3 条 FU**：
->   - **FU-164-OPENAPI-ERRORCODE-ENUM**（P2 · 推 COSTRA-201）：openapi.yaml ErrorCode enum 补 FAMILY_PERSONAL_NOT_DELETABLE
+>   - **FU-164-OPENAPI-ERRORCODE-ENUM**（P2 · 推 COSTRA-221；原 COSTRA-201 家庭卡号已重映射）：openapi.yaml ErrorCode enum 补 FAMILY_PERSONAL_NOT_DELETABLE
 >   - **FU-164-REFRESH-DEFAULT-IDS-NULL**（P2 · 推 COSTRA-165 或 201）：refresh 路径 default_family_id 空字符串风险
 >   - **FU-PG-MEM-PARTIAL-INDEX-ENUM-LIMIT**（P3 · Sprint-3 末 Retro 议题）：pg-mem partial unique index + ENUM 列已知 bug · T10 ④ 降级 staging
 > - **下一步**：spawn miniapp-dev 做 COSTRA-165 R1 实装（family-context service）· 联合实测 + 双卡 approve 后真 close FU-150-FAMILY-CONTEXT-SERVICE
@@ -93,7 +95,7 @@
 > - **决策方法**：Human + Orchestrator 4 轮选项收敛（X 单容器 → P ledger 共享开关 → Q 汇总层 → R user 多 family）· 最终采纳 Human 提议的方案 R · 落档 [`ADR-0007 family-ledger 关系模型`](../decisions/ADR-0007-family-ledger-relation-model.md) v1.0
 > - **方案 R 核心**：user 多 family（应用层上限默认 3 · 后端硬上限 20 · 配置可调）· family:ledger=1:1 产品语义（schema 物理 1:N 保留扩展空间）· 单人时透明建"我的账本"个人 family · 加入家庭=新建 family + 可选复制旧数据（INSERT...SELECT · 同步 + 进度条 · 用户接受延迟）· 个人 family 永远独立保留（解决退出 / 隐私 / 撤回三大痛点）
 > - **R1 双卡 dispatch 落档**：COSTRA-164 server family bootstrap MVP（3pt · backend-dev）+ COSTRA-165 miniapp family-context service（2pt · miniapp-dev · 强依赖 164 R1 APPROVE）· 联立攒批 D-024 §2.2 C1 联合 approve 范式
-> - **R2/Sprint-4 锚定**：COSTRA-201/202/204 邀请流程 + 加入向导（含复制选项）· R3/Sprint-5+ 选择性导入 / 异步 / 私密 ledger
+> - **R2/Sprint-4 锚定（已重映射）**：COSTRA-221/223 邀请流程 + 加入向导（含复制选项）· R3/Sprint-5+ 选择性导入 / 异步 / 私密 ledger
 > - **schema 改动量**：R1 = 0（ADR-0007 §4.1 锚定 · 现有 schema families/ledgers/family_members 已天然支持方案 R）
 
 > **2026-05-19 20:50 Sprint-3 启动批量整理**：
@@ -320,7 +322,7 @@
   - `pages-family/privacy/index.wxml` → `COSTRA-060`（不存在）
 - **建议**：Sprint-2 末批一次性纠正：
   - COSTRA-130 → COSTRA-202（Epic-D 家庭成员角色）或新 COSTRA-401（Epic-F 月度报表）
-  - COSTRA-150 已被 FU-103 占用 → 改指 COSTRA-201（家庭设置 · Epic-D）
+  - COSTRA-150 已被 FU-103 占用 → 原改指 COSTRA-201；2026-06-02 起家庭设置重映射到 COSTRA-221/223
   - COSTRA-060 → COSTRA-109（PM 隐私指引清单）或 COSTRA-901（Epic-G 隐私协议）
 - **阻断级别**：P2
 - **认领建议**：Sprint-2 末文档维护批
