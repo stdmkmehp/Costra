@@ -13,14 +13,15 @@
 
 ## §0 一句话断点（HEAD 之前 = 已兑现 · 之后 = 待做）
 
-> **2026-06-02 15:30 当前断点**：✅ **COSTRA-221 card-review R2 已通过，已结合设计文档确认可落地，等待 Human 触发 start**。Human 已确认 `qa/costra-154-150-joint-smoke.md`、`qa/phase-3-prod-realdevice-test.md`、`qa/current-stage-acceptance-family-first-baseline.md` 三份手册全 PASS；`COSTRA-154/150`、Phase-3 prod 真机、`164/165`、`217/218/219/220`、UI 重构与验收 polish 均进入正式基线。非正式 `COSTRA-223` prototype 已回滚，不计入正式进度。后续 Sprint 4/5/6 Family First 规划已落盘：`.team/sprints/sprint-04-06-family-first-plan.md`（commit `0c479e9`）。`audit-review:217-220` 已落盘；`COSTRA-217` FINAL 已完成；`COSTRA-218/219/220` T3 review-tech 已完成，其中 220 为 `AUTO-CLOSED-WITH-FOLLOWUP`；`triage:sprint3-leftovers` 已落盘 `.team/sprints/sprint-03-leftovers-triage.md`；`plan-dispatch:COSTRA-221` 已落盘 `.team/dispatch/COSTRA-221-backend-family-management-api.md`；`card-review:COSTRA-221` R1 已落盘 `.team/reviews/COSTRA-221/card-review-round-1-tech.md`，verdict=`REVISE 22/30`；`revise-dispatch:COSTRA-221` 已完成；`card-review:COSTRA-221-R2` 已落盘 `.team/reviews/COSTRA-221/card-review-round-2-tech.md`，verdict=`PASS-WITH-FOLLOWUP 29/30`。
+> **2026-06-02 15:16 当前断点**：✅ **COSTRA-222 dispatch 已落盘，等待 `card-review:COSTRA-222`**。Human 已确认 `qa/costra-154-150-joint-smoke.md`、`qa/phase-3-prod-realdevice-test.md`、`qa/current-stage-acceptance-family-first-baseline.md` 三份手册全 PASS；`COSTRA-221` 已 Human T1 APPROVED CLOSED 并进入 Sprint-4 基线；后续 Sprint 4/5/6 Family First 规划已落盘：`.team/sprints/sprint-04-06-family-first-plan.md`（commit `0c479e9`）。`COSTRA-222` 已按 Family First 路线派单：`.team/dispatch/COSTRA-222-backend-family-summary-api.md`，范围为 `GET /v1/families/{family_id}/summary?month=YYYY-MM&top_n=N` 家庭财务聚合 API，明确 shared/personal/income/balance、paid contribution、category rank、left member、Asia/Shanghai 月区间等口径。未卡审前不得 start/写业务代码。
 >
 > **当前 Orchestrator 模式**：`idle-between-cards` / `sprint-3-closeout`。本轮只同步 `.team/STATE`、`.team/board.md`、`.team/backlog.json`、`.team/HANDOFF.md` 与 `.team/reviews/*`，不写业务代码。
 >
 > **Sprint-3 当前定位**：验收后收口 + 状态对账 + Sprint-4 准备，不再继续堆大家庭/统计/预算新功能。
 >
 > **下一步推荐触发顺序**：
-> 1. `start:COSTRA-221` —— R2 已通过；仅 Human 明确触发后才启动 backend-dev。
+> 1. `card-review:COSTRA-222` —— 派单已完成；必须先卡审，不直接开发。
+> 2. 如 card-review PASS：Human 再触发 `start:COSTRA-222`。
 >
 > **后续路线摘要**：Sprint 4 = `COSTRA-221/222` + prod guardrails；Sprint 5 = `COSTRA-223` 正式家庭页 + Family E2E；Sprint 6 = `COSTRA-224/225/226` + 合规/监控前置。
 >

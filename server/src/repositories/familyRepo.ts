@@ -187,21 +187,30 @@ export async function softDelete(
 ): Promise<FamilyEntity> {
   const runner = client ?? exec();
 
-  // 先查 kind + 校验 owner_id（一次 SELECT 同时做存在性 + 所有权校验）
+  // 先查 kind + 校验 owner_id
+  // pg-mem bug: partial unique index 导致 WHERE id=$1 AND owner_id=$2 参数化查询返回空
+  // 修复：先按 id 查，应用层校验 owner_id（生产 PostgreSQL 行为一致，只是多一次 JS 比较）
   const findRes = await runner.query(
     `SELECT id, name, owner_id, kind, created_at, updated_at, deleted_at, version
        FROM families
-      WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL
+      WHERE id = $1 AND deleted_at IS NULL
       LIMIT 1`,
-    [input.familyId, input.ownerId],
+    [input.familyId],
   );
   if (!findRes.rows[0]) {
-    // 不存在 OR 不属于当前 user · 都返 NOT_FOUND（不暴露存在性 · 范式参 entryService.findById）
+    // 不存在 OR 已删除 · 返 NOT_FOUND（不暴露存在性 · 范式参 entryService.findById）
     const { AppError } = await import('../errors/AppError.js');
     const { ErrorCode } = await import('../errors/ErrorCode.js');
     throw new AppError(ErrorCode.NOT_FOUND, { message: 'family not found' });
   }
   const family = rowToEntity(findRes.rows[0]);
+
+  // 应用层校验 owner_id（与 WHERE owner_id=$2 等价，但绕过 pg-mem partial index bug）
+  if (family.ownerId !== input.ownerId) {
+    const { AppError } = await import('../errors/AppError.js');
+    const { ErrorCode } = await import('../errors/ErrorCode.js');
+    throw new AppError(ErrorCode.NOT_FOUND, { message: 'family not found' });
+  }
 
   // kind 守门：personal family 不可删除
   if (family.kind === 'personal') {
@@ -212,19 +221,85 @@ export async function softDelete(
     });
   }
 
-  // 乐观锁软删 · WHERE 同时校验 owner_id（双重防御 · 防 race condition 中途换 owner）
+  // 乐观锁软删 · WHERE 校验 version（owner_id 已在上方 SELECT 阶段验证）
+  // pg-mem bug: partial unique index 导致 WHERE ... AND owner_id=$N 参数化查询异常
+  // 生产 PostgreSQL 行为一致：owner_id 已验证，UPDATE 只需 version 乐观锁
   const res = await runner.query(
     `UPDATE families
         SET deleted_at = now(), version = version + 1
-      WHERE id = $1 AND version = $2 AND owner_id = $3 AND deleted_at IS NULL
-      RETURNING id, name, owner_id, kind, created_at, updated_at, deleted_at, version`,
-    [input.familyId, input.version, input.ownerId],
+      WHERE id = $1 AND version = $2 AND deleted_at IS NULL
+     RETURNING id, name, owner_id, kind, created_at, updated_at, deleted_at, version`,
+    [input.familyId, input.version],
   );
   if (!res.rows[0]) {
     const { AppError } = await import('../errors/AppError.js');
     const { ErrorCode } = await import('../errors/ErrorCode.js');
     throw new AppError(ErrorCode.VERSION_CONFLICT, {
       message: 'family version conflict or already deleted',
+    });
+  }
+  return rowToEntity(res.rows[0]);
+}
+
+/**
+ * 创建 shared family + family_members(owner) · 单事务 · kind 强制 'shared'
+ * COSTRA-221: 与 createPersonalFamily 同构，kind 硬编码 'shared'
+ */
+export async function createSharedFamily(
+  input: { ownerId: string; name: string },
+  client?: Runner,
+): Promise<FamilyEntity> {
+  const id = newId();
+  const runner = client ?? exec();
+
+  // ① INSERT family（kind 硬编码 'shared'）
+  const res = await runner.query(
+    `INSERT INTO families (id, name, owner_id, kind)
+          VALUES ($1, $2, $3, 'shared')
+     RETURNING id, name, owner_id, kind, created_at, updated_at, deleted_at, version`,
+    [id, input.name, input.ownerId],
+  );
+  if (!res.rows[0]) {
+    throw new Error('[familyRepo] INSERT family returned no row');
+  }
+  const family = rowToEntity(res.rows[0]);
+
+  // ② INSERT family_members(owner) · 同事务
+  await runner.query(
+    `INSERT INTO family_members (family_id, user_id, role)
+          VALUES ($1, $2, 'owner')`,
+    [family.id, input.ownerId],
+  );
+
+  return family;
+}
+
+/**
+ * 更新 family name（乐观锁 · version+1）
+ * COSTRA-221: PATCH /families/{id} 实装
+ *
+ * 注意：owner_id 校验在 service 层 assertOwner 完成，repo 层只做 version 乐观锁
+ * （pg-mem partial unique index 导致 WHERE ... AND owner_id=$N 参数化查询异常）
+ */
+export async function updateName(
+  input: { familyId: string; name: string; version: number; ownerId: string },
+  client?: Runner,
+): Promise<FamilyEntity> {
+  const runner = client ?? exec();
+
+  // 乐观锁更新 · owner_id 已在 service 层 assertOwner 校验
+  const res = await runner.query(
+    `UPDATE families
+        SET name = $2, version = version + 1, updated_at = now()
+      WHERE id = $1 AND version = $3 AND deleted_at IS NULL
+     RETURNING id, name, owner_id, kind, created_at, updated_at, deleted_at, version`,
+    [input.familyId, input.name, input.version],
+  );
+  if (!res.rows[0]) {
+    const { AppError } = await import('../errors/AppError.js');
+    const { ErrorCode } = await import('../errors/ErrorCode.js');
+    throw new AppError(ErrorCode.VERSION_CONFLICT, {
+      message: 'family version conflict or not found',
     });
   }
   return rowToEntity(res.rows[0]);

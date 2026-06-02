@@ -113,7 +113,7 @@
 
 | # | code | category | retryable | user_action | 场景说明 |
 |---|---|---|---|---|---|
-| 16 | `BUSINESS_RULE_VIOLATION` | param | ❌ | ✅ 文案按 `details.rule` 分支 | 业务规则拒绝。`details.rule` 为枚举：`family_member_limit` / `category_name_duplicate` / `budget_overlap` / `ledger_archived` / `entry_occurred_at_future` / `currency_mismatch` |
+| 16 | `BUSINESS_RULE_VIOLATION` | param | ❌ | ✅ 文案按 `details.rule` 分支 | 业务规则拒绝。`details.rule` 为枚举：`family_member_limit` / `personal_family_not_invitable` / `category_name_duplicate` / `budget_overlap` / `ledger_archived` / `entry_occurred_at_future` / `currency_mismatch` |
 
 ### 2.8 429 · 限流
 
@@ -177,6 +177,7 @@
 | rule | 用户文案 |
 |---|---|
 | `family_member_limit` | 该家庭成员已达上限（MVP = 10） |
+| `personal_family_not_invitable` | 个人账本不可邀请成员，请先创建家庭账本 |
 | `category_name_duplicate` | 分类名称已存在 |
 | `budget_overlap` | 该月份已存在相同分类的预算 |
 | `ledger_archived` | 该账本已归档，无法继续记账 |

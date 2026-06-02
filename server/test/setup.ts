@@ -170,6 +170,18 @@ function applyMigrations(db: IMemoryDb): void {
       expires_at      TIMESTAMPTZ NOT NULL,
       PRIMARY KEY (key, endpoint)
     );
+    -- COSTRA-221: family_invites 表（测试需补充）
+    CREATE TABLE family_invites (
+      id              UUID PRIMARY KEY,
+      family_id       UUID NOT NULL,
+      inviter_id      UUID NOT NULL,
+      invite_token    TEXT NOT NULL UNIQUE,
+      role            family_role NOT NULL DEFAULT 'member',
+      expires_at      TIMESTAMPTZ NOT NULL,
+      used_at         TIMESTAMPTZ,
+      used_by         UUID,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
   `;
   db.public.none(ddl);
 
@@ -227,7 +239,7 @@ function registerPgMemFunctions(db: IMemoryDb): void {
 function resetPgMem(): void {
   if (memDb) {
     memDb.public.none(
-      'DELETE FROM entries; DELETE FROM categories; DELETE FROM family_members; DELETE FROM ledgers; DELETE FROM families; DELETE FROM user_sessions; DELETE FROM users; DELETE FROM idempotency_keys;',
+      'DELETE FROM entries; DELETE FROM categories; DELETE FROM family_invites; DELETE FROM family_members; DELETE FROM ledgers; DELETE FROM families; DELETE FROM user_sessions; DELETE FROM users; DELETE FROM idempotency_keys;',
     );
   }
 }

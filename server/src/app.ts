@@ -29,6 +29,7 @@ import { registerSyncRoutes } from './routes/sync.js';
 import { registerLegalRoutes } from './routes/legal.js';
 import { registerUsersRoutes } from './routes/users.js';
 import { registerCategoriesRoutes } from './routes/categories.js';
+import { registerFamiliesRoutes } from './routes/families.js';
 
 export interface BuildAppOptions {
   /** 测试注入：禁用 logger 以避免 vitest 日志噪音 */
@@ -77,6 +78,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
     await registerLegalRoutes(v1);
     await registerUsersRoutes(v1);
     await registerCategoriesRoutes(v1);
+    await registerFamiliesRoutes(v1);
   }, { prefix: '/v1' });
 
   return app;

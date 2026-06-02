@@ -215,6 +215,7 @@ paths:
           application/json:
             schema:
               type: object
+              required: [version]
               properties:
                 name: { type: string, maxLength: 32 }
                 version: { type: integer, description: 乐观锁 }
@@ -229,23 +230,38 @@ paths:
       tags: [families]
       summary: 解散家庭（仅 owner，软删，需带 version）
       description: |
-        COSTRA-020 Round-2 新增（P1-3）：MVP 不提供 UI 入口，但契约层占位。
-        仅 owner 可操作，需 body 带 version 做乐观锁。所有家庭成员关联、账本、流水、预算均级联软删。
+        COSTRA-221：仅 owner 可操作，需 querystring version 做乐观锁。所有家庭成员关联、账本、流水、预算均级联软删。
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [version]
-              properties:
-                version: { type: integer }
+        - name: version
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1 }
+          description: 当前客户端持有的 family version（乐观锁）
       responses:
         '204': { description: 成功 }
         '403': { $ref: '#/components/responses/Forbidden' }
         '409': { $ref: '#/components/responses/Conflict' }
+
+  /families/{family_id}/members:
+    parameters:
+      - $ref: '#/components/parameters/FamilyId'
+    get:
+      tags: [families]
+      summary: 家庭成员列表（含 active + left）
+      description: |
+        COSTRA-221: 返回该 family 的所有成员（active + left）。
+        active members 按 joined_at ASC 排列在前；left members 按 left_at DESC 排列在后。
+        非 member 访问返回 403 FAMILY_NOT_MEMBER。
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/FamilyMember' }
+        '403': { $ref: '#/components/responses/Forbidden' }
 
   /families/{family_id}/invites:
     parameters:
@@ -820,6 +836,7 @@ components:
         - WX_CODE_INVALID
         - PERMISSION_DENIED
         - FAMILY_NOT_MEMBER
+        - FAMILY_PERSONAL_NOT_DELETABLE
         - NOT_FOUND
         - VERSION_CONFLICT
         - DUPLICATE_RESOURCE
@@ -847,7 +864,7 @@ components:
           description: |
             可选附加信息。特定 code 约定结构：
             - INVALID_ARGUMENT: { field, value, constraint }
-            - BUSINESS_RULE_VIOLATION: { rule: 'family_member_limit' | ... }
+            - BUSINESS_RULE_VIOLATION: { rule: 'family_member_limit' | 'personal_family_not_invitable' | ... }
             - VERSION_CONFLICT: { entity, entity_id }
           additionalProperties: true
 
@@ -912,12 +929,15 @@ components:
 
     Family:
       type: object
-      required: [id, name, owner_id, created_at, version]
+      required: [id, name, owner_id, kind, ledger_id, ledger_name, member_count, created_at, updated_at, version]
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
         owner_id: { type: string, format: uuid }
-        member_count: { type: integer }
+        kind: { type: string, enum: [personal, shared], description: 'COSTRA-221: family kind（ADR-0007 §5.7.2）' }
+        ledger_id: { type: string, format: uuid, description: 'COSTRA-221: 默认 ledger id（产品语义 family:ledger=1:1）' }
+        ledger_name: { type: string, description: 'COSTRA-221: 默认 ledger 名称' }
+        member_count: { type: integer, description: 'COSTRA-221: active member 数量' }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
         version: { type: integer }
@@ -933,18 +953,22 @@ components:
 
     FamilyMember:
       type: object
-      required: [user_id, role, joined_at]
+      required: [user_id, nickname, role, status, joined_at]
       properties:
         user_id: { type: string, format: uuid }
-        nickname: { type: string }
-        avatar_url: { type: string, format: uri, nullable: true }
+        nickname: { type: string, description: 'COSTRA-221: JOIN users 当前昵称' }
+        avatar_url: { type: string, format: uri, nullable: true, description: 'COSTRA-221: JOIN users 当前头像' }
         role: { type: string, enum: [owner, member, viewer] }
+        status: { type: string, enum: [active, left], description: 'COSTRA-221: left_at IS NULL → active; left_at IS NOT NULL → left' }
         joined_at: { type: string, format: date-time }
+        left_at: { type: string, format: date-time, nullable: true, description: 'COSTRA-221: 退出时间; NULL = active' }
 
     FamilyInvite:
       type: object
-      required: [invite_token, expires_at, share_url]
+      required: [id, family_id, invite_token, role, expires_at, share_url]
       properties:
+        id: { type: string, format: uuid, description: 'COSTRA-221: invite record id' }
+        family_id: { type: string, format: uuid, description: 'COSTRA-221: 所属 family id' }
         invite_token: { type: string }
         role: { type: string, enum: [member, viewer] }
         expires_at: { type: string, format: date-time }
