@@ -24,7 +24,7 @@ import {
 } from './categories';
 import {
   INITIAL_CALC_STATE,
-  inputDigit, inputDoubleZero, inputDot,
+  inputDigit, inputDot,
   inputOperator, inputBackspace, pressEquals,
   type CalcState,
 } from './calc';
@@ -63,6 +63,28 @@ const SCROLL_ANIM_DURATION_MS = 220;
  * 16ms ≈ 60fps，与 requestAnimationFrame 对齐。
  */
 const SCROLL_ANIM_FRAME_MS = 16;
+
+/** 本地自然日 → YYYY-MM-DD */
+function getLocalDateValue(date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/** 日期键盘文案：当天显示今天，其他日期显示 M/D */
+function formatRecordDateText(value: string): string {
+  if (value === getLocalDateValue()) return '今天';
+  const parts = value.split('-');
+  if (parts.length !== 3) return '日期';
+  return `${parseInt(parts[1], 10)}/${parseInt(parts[2], 10)}`;
+}
+
+/** 将用户选择的自然日转为 occurred_at */
+function buildOccurredAt(recordDate: string): string {
+  if (recordDate === getLocalDateValue()) return new Date().toISOString();
+  return `${recordDate}T12:00:00.000Z`;
+}
 
 // ─── Component ─────────────────────────────────────────────────────────────────
 
@@ -111,6 +133,10 @@ Component({
     showSharedToggle: false as boolean,
     /** 备注文字 */
     note: '' as string,
+    /** 账单发生日期（自然日 YYYY-MM-DD） */
+    recordDate: getLocalDateValue(),
+    /** 账单发生日期键盘文案 */
+    recordDateText: '今天',
     /** 是否正在输入备注（显示系统键盘） */
     noteFocused: false as boolean,
 
@@ -168,6 +194,8 @@ Component({
       // 小程序 scroll-view 不会响应同值赋值，先设 1 再 nextTick 设 0
       (this as unknown as Record<string, number>)._currentScrollTop = 0;
 
+      const recordDate = getLocalDateValue();
+
       // COSTRA-219: 从 API 加载分类数据（降级: 缓存 → fallback）
       let categoryData: {
         expense: CategoryTier1[];
@@ -210,6 +238,8 @@ Component({
         calc: { ...INITIAL_CALC_STATE },
         sharedType: 'shared',
         note: '',
+        recordDate,
+        recordDateText: formatRecordDateText(recordDate),
         noteFocused: false,
         saving: false,
         categoryScrollTop: 1,
@@ -552,9 +582,6 @@ Component({
         case '5': case '6': case '7': case '8': case '9':
           newCalc = inputDigit(calc, key);
           break;
-        case '00':
-          newCalc = inputDoubleZero(calc);
-          break;
         case '.':
           newCalc = inputDot(calc);
           break;
@@ -589,6 +616,16 @@ Component({
         // 按"完成" → 保存
         this._saveEntry();
       }
+    },
+
+    // ─── 账单日期 ───────────────────────────────────────────────────────────
+
+    onRecordDateChange(e: WechatMiniprogram.PickerChange) {
+      const recordDate = e.detail.value as string;
+      this.setData({
+        recordDate,
+        recordDateText: formatRecordDateText(recordDate),
+      });
     },
 
     // ─── 账本归属 ───────────────────────────────────────────────────────────
@@ -671,6 +708,7 @@ Component({
       try {
         const clientRefId = newClientRefId();
         const now = new Date().toISOString();
+        const occurredAt = buildOccurredAt(this.data.recordDate);
 
         // COSTRA-220: 本地创建的 entry 写入当前用户 ID（用于成员筛选）
         const currentUserId = getToken()?.raw.user.id || null;
@@ -683,7 +721,7 @@ Component({
           type: this.data.entryType,
           category_id: this.data.selectedTier2Id,
           note: this.data.note,
-          occurred_at: now,
+          occurred_at: occurredAt,
           created_at: now,
           updated_at: now,
           dirty: true,

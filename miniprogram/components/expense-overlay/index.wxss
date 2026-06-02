@@ -391,6 +391,15 @@
   width: 100%;
 }
 
+.keypad__picker {
+  flex: 1;
+  margin: 4rpx;
+}
+
+.keypad__picker .keypad__key {
+  margin: 0;
+}
+
 .keypad__key {
   flex: 1;
   height: 96rpx;
@@ -413,6 +422,10 @@
 .keypad__key--fn {
   background: rgba(28, 27, 26, 0.08);
   font-size: 32rpx;
+}
+
+.keypad__key--date {
+  font-size: 24rpx;
 }
 
 .keypad__key--action {

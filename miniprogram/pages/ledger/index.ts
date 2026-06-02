@@ -17,6 +17,7 @@ import {
 import { enqueue } from '../../services/outbox';
 import { getToken } from '../../services/auth';
 import { eventBus, EventNames } from '../../services/eventBus';
+import { pickRandomSlogan } from '../../config/slogans';
 import {
   getCategories,
   warmUpMemoryCache,
@@ -142,6 +143,16 @@ function formatMonthDisplay(value: string): string {
   return `${parts[0]}年${parseInt(parts[1], 10)}月`;
 }
 
+/** 当前月份是否为本机当前自然月 */
+function isCurrentMonth(value: string): boolean {
+  return value === getCurrentMonthValue();
+}
+
+/** 空态标题：当前月简洁展示，历史/未来月份带时间提醒 */
+function buildEmptyTitle(monthValue: string): string {
+  return isCurrentMonth(monthValue) ? '暂无记录' : `${formatMonthDisplay(monthValue)} 暂无记录`;
+}
+
 /** picker 值 → 范围过滤 */
 function getMonthRange(value: string): { since: string; until: string } {
   const parts = value.split('-');
@@ -177,6 +188,8 @@ Page({
     // ─── 列表 ───
     dateGroups: [] as DateGroup[],
     isEmpty: true,
+    emptyTitle: buildEmptyTitle(getCurrentMonthValue()),
+    emptyHint: '',
 
     // ─── 左滑 ───
     swipingRefId: '',
@@ -193,6 +206,8 @@ Page({
   _touchStartY: 0 as number,
   _touchRefId: '' as string,
   _swipeStarted: false as boolean,
+  _lastSwipeEndAt: 0 as number,
+  _shouldRefreshEmptyHintOnNextEmpty: false as boolean,
   /** 成员筛选状态（COSTRA-220: 'all' | 'self'） */
   _memberFilter: 'all' as MemberFilter,
   /** 当前用户 ID（COSTRA-220: 从 auth token 获取 · 用于成员筛选） */
@@ -210,6 +225,7 @@ Page({
       navBarHeight,
       navBarTotalHeight,
       monthDisplay: formatMonthDisplay(this.data.currentMonth),
+      emptyHint: pickRandomSlogan(),
     });
 
     // COSTRA-220: 获取当前 userId（用于成员筛选）
@@ -275,31 +291,40 @@ Page({
     }
   },
 
-  async _loadEntries() {
+  async _loadEntries(monthValue?: string) {
+    const targetMonth = monthValue || this.data.currentMonth;
     if (!this._ledgerId) {
+      const emptyHint = this._shouldRefreshEmptyHintOnNextEmpty
+        ? pickRandomSlogan(this.data.emptyHint)
+        : this.data.emptyHint || pickRandomSlogan();
       this.setData({
         dateGroups: [],
         isEmpty: true,
+        emptyTitle: buildEmptyTitle(targetMonth),
+        emptyHint,
         totalExpense: '¥0.00',
         totalBalance: '',
         totalExpenseCents: 0,
         totalIncomeCents: 0,
       });
+      this._shouldRefreshEmptyHintOnNextEmpty = false;
       return;
     }
 
-    const monthRange = getMonthRange(this.data.currentMonth);
+    const monthRange = getMonthRange(targetMonth);
     const entries = await listEntries({
       ledger_id: this._ledgerId,
       since: monthRange.since,
     });
 
     this._allEntries = entries.filter(e => e.occurred_at < monthRange.until);
-    this._buildDisplay();
+    this._buildDisplay(targetMonth);
   },
 
   /** 从 _allEntries 构建 dateGroups + 汇总 */
-  _buildDisplay() {
+  _buildDisplay(monthValue?: string) {
+    const targetMonth = monthValue || this.data.currentMonth;
+
     // COSTRA-220: 成员筛选 · 按 _memberFilter 过滤 entries
     let entries = this._allEntries;
     if (this._memberFilter === 'self' && this._currentUserId) {
@@ -369,14 +394,22 @@ Page({
       ? `-¥${formatAmountShort(balanceCents.abs().toNumber())}`
       : `¥${formatAmountShort(balanceCents.toNumber())}`;
 
+    const isEmpty = dateGroups.length === 0;
+    const emptyHint = isEmpty && this._shouldRefreshEmptyHintOnNextEmpty
+      ? pickRandomSlogan(this.data.emptyHint)
+      : this.data.emptyHint || pickRandomSlogan();
+
     this.setData({
       dateGroups,
-      isEmpty: dateGroups.length === 0,
+      isEmpty,
+      emptyTitle: buildEmptyTitle(targetMonth),
+      emptyHint,
       totalExpense: formatAmountDisplay(totalExpenseCents.toNumber()),
       totalExpenseCents: totalExpenseCents.toNumber(),
       totalIncomeCents: totalIncomeCents.toNumber(),
       totalBalance: `收入 ¥${formatAmountShort(totalIncomeCents.toNumber())} · 结余 ${balanceStr}`,
     });
+    this._shouldRefreshEmptyHintOnNextEmpty = false;
   },
 
   // ─── 交互：账本切换 ──────────────────────────────────────────────────────────
@@ -420,11 +453,12 @@ Page({
 
   onMonthChange(e: WechatMiniprogram.PickerChange) {
     const value = e.detail.value as string;
+    this._shouldRefreshEmptyHintOnNextEmpty = true;
     this.setData({
       currentMonth: value,
       monthDisplay: formatMonthDisplay(value),
     });
-    this._loadEntries();
+    this._loadEntries(value);
     // COSTRA-220: 月份切换后滚动到顶部
     this._scrollTopToTop();
   },
@@ -464,6 +498,12 @@ Page({
   },
 
   // ─── 交互：左滑删除 ──────────────────────────────────────────────────────────
+
+  onTapPage() {
+    if (!this.data.swipingRefId) return;
+    if (Date.now() - this._lastSwipeEndAt < 180) return;
+    this._resetAllSwipe();
+  },
 
   onTouchStart(e: WechatMiniprogram.TouchEvent) {
     const refId = e.currentTarget.dataset.refid;
@@ -510,6 +550,7 @@ Page({
         this.setData({ swipingRefId: '' });
       }
     }
+    this._lastSwipeEndAt = Date.now();
   },
 
   _resetSwipe(refId: string) {
@@ -563,7 +604,10 @@ Page({
       content: '确定删除这条记录吗？',
       confirmColor: '#FA5151',
       success: async (res) => {
-        if (!res.confirm) return;
+        if (!res.confirm) {
+          this._resetAllSwipe();
+          return;
+        }
 
         await deleteEntry(refId);
         await enqueue({
@@ -576,6 +620,7 @@ Page({
 
         wx.vibrateShort({ type: 'medium' });
 
+        this.setData({ swipingRefId: '' });
         this._allEntries = this._allEntries.filter(entry => entry.client_ref_id !== refId);
         this._buildDisplay();
       },

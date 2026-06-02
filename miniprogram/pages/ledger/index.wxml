@@ -2,7 +2,7 @@
 <!-- 卡号: COSTRA-203 / COSTRA-220 · 明细首屏巨大月支出+日期分组吸顶流水列表+左滑删除+账本切换+真实数据对接 -->
 <!-- 设计源: design/ui/design_spec.md §6.2 + design/ui/interaction_flow.md §4 -->
 
-<view class="ledger">
+<view class="ledger" bindtap="onTapPage">
 
   <!-- ─── 自定义导航栏 ─────────────────────────────────────────────────────── -->
   <view class="nav-bar" style="padding-top: {{statusBarHeight}}px;">
@@ -65,7 +65,7 @@
           <!-- 滑动容器 -->
           <view
             class="entry-item {{entry.type === 'income' ? 'entry-item--income' : ''}}"
-            style="transform: translateX({{entry.translateX}}rpx);"
+            style="transform: translateX(-{{entry.translateX}}rpx);"
             data-refid="{{entry.client_ref_id}}"
             bindtouchstart="onTouchStart"
             bindtouchmove="onTouchMove"
@@ -94,7 +94,7 @@
           <view
             class="entry-delete"
             data-refid="{{entry.client_ref_id}}"
-            bindtap="onDeleteEntry"
+            catchtap="onDeleteEntry"
           >
             <text class="entry-delete__text">删除</text>
           </view>
@@ -104,8 +104,8 @@
 
     <!-- ─── 空状态 ──────────────────── -->
     <view class="empty-state" wx:if="{{isEmpty}}">
-      <text class="empty-state__title">暂无记录</text>
-      <text class="empty-state__hint">点击下方 + 开始记账</text>
+      <text class="empty-state__title">{{emptyTitle}}</text>
+      <text class="empty-state__hint">{{emptyHint}}</text>
     </view>
   </scroll-view>
 

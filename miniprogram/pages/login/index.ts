@@ -7,22 +7,11 @@ import { loginFlow, hasValidSession, getToken, updateLocalUserProfile } from '..
 import { mapError } from '../../utils/error-mapper';
 import { getEnv } from '../../services/env';
 import { request } from '../../services/request';
+import { pickRandomSlogan } from '../../config/slogans';
 
 interface AppWithBootstrap {
   bootstrapPromise: Promise<void>;
 }
-
-/** 预设格言库 · design/ui/design_spec.md §6.1 要求至少 8 句 */
-const SLOGANS: readonly string[] = [
-  '掌控数字，还是被数字掌控',
-  '每一笔支出，都在为你想要的世界投票',
-  '钱是自由的尺度',
-  '不记账的生活，像没有地图的旅行',
-  '量入为出，是成年人最基本的自律',
-  '花得明白，活得敞亮',
-  '理财第一步：知道钱去了哪里',
-  '记账不是抠门，是对生活的掌控力',
-] as const;
 
 Page({
   data: {
@@ -33,8 +22,7 @@ Page({
 
   onLoad() {
     // 随机抽取格言
-    const idx = Math.floor(Math.random() * SLOGANS.length);
-    this.setData({ slogan: SLOGANS[idx] });
+    this.setData({ slogan: pickRandomSlogan() });
 
     // COSTRA-125: 等 bootstrap 完成（ensureVersion + initAuth）再判定登录态
     // 之前同步 hasValidSession() 在 bootstrap 未完成时永远返回 false · 误冗余渲染登录页

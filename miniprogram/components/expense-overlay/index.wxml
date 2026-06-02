@@ -148,12 +148,14 @@
 
       <!-- 数字键盘 -->
       <view class="keypad" wx:if="{{!noteFocused}}">
-        <!-- 第一行：1 2 3 ⌫ -->
+        <!-- 第一行：1 2 3 日期 -->
         <view class="keypad__row">
           <view class="keypad__key" data-key="1" bindtap="onKeypadTap"><text>1</text></view>
           <view class="keypad__key" data-key="2" bindtap="onKeypadTap"><text>2</text></view>
           <view class="keypad__key" data-key="3" bindtap="onKeypadTap"><text>3</text></view>
-          <view class="keypad__key keypad__key--fn" data-key="backspace" bindtap="onKeypadTap"><text>⌫</text></view>
+          <picker class="keypad__picker" mode="date" value="{{recordDate}}" bindchange="onRecordDateChange">
+            <view class="keypad__key keypad__key--fn keypad__key--date"><text>{{recordDateText}}</text></view>
+          </picker>
         </view>
         <!-- 第二行：4 5 6 + -->
         <view class="keypad__row">
@@ -169,11 +171,11 @@
           <view class="keypad__key" data-key="9" bindtap="onKeypadTap"><text>9</text></view>
           <view class="keypad__key keypad__key--fn" data-key="-" bindtap="onKeypadTap"><text>-</text></view>
         </view>
-        <!-- 第四行：. 0 00 [=|完成] -->
+        <!-- 第四行：. 0 ⌫ [=|完成] -->
         <view class="keypad__row">
           <view class="keypad__key" data-key="." bindtap="onKeypadTap"><text>.</text></view>
           <view class="keypad__key" data-key="0" bindtap="onKeypadTap"><text>0</text></view>
-          <view class="keypad__key" data-key="00" bindtap="onKeypadTap"><text>00</text></view>
+          <view class="keypad__key keypad__key--fn" data-key="backspace" bindtap="onKeypadTap"><text>⌫</text></view>
           <view
             class="keypad__key keypad__key--action {{calc.actionState === 'done' ? 'keypad__key--done' : 'keypad__key--equals'}}"
             data-key="action"
