@@ -46,6 +46,8 @@
 | **🆕 Family members · 退出成员快照** | **FU-221-MEMBER-SNAPSHOT-ON-LEFT** | **P2** | **Sprint-5+ / COSTRA-223 后观察** | **open-observation**（2026-06-02 · 触发：`COSTRA-221` card-review R1 P2 · R1 不给 `family_members` 加 nickname/avatar snapshot，先 JOIN users；若家庭页灰化退出成员要求展示退出时快照，再补 migration）|
 | **🆕 Family API · 测试补强** | **FU-221-PATCH-VERSION-CONFLICT-TEST** | **P2** | **Sprint-4+ 测试补强** | **open**（2026-06-02 · 触发：`COSTRA-221` review-tech R1 P2 · DELETE family 已覆盖 version conflict，PATCH family 过期 version → 409 建议补独立测试）|
 | **🆕 Family API · service 拆分观察** | **FU-221-FAMILY-SERVICE-SPLIT** | **P2** | **Sprint-4+ 工程债观察** | **open-observation**（2026-06-02 · 触发：`COSTRA-221` review-tech R1 P2 · `familyService.ts` 约 412 行，后续 invite/member 逻辑增长时考虑拆 `familyInviteService.ts`）|
+| **🆕 Family Summary · repo DRY** | **FU-222-REPO-CATEGORY-MAPS-DRY** | **P2** | **Sprint-4+ 工程债观察** | **open**（2026-06-02 · 触发：`COSTRA-222` review-tech R1 P2 · `getCategoryRanks` 与 `getPersonalCategoryRanksByMember` 存在重复 category map 构建逻辑，后续可抽私有 helper）|
+| **🆕 Family Summary · UI 展示策略** | **FU-222-ZERO-PAID-CONTRIBUTION-DISPLAY** | **P2** | **COSTRA-223 家庭页接入时确认** | **open-observation**（2026-06-02 · 触发：`COSTRA-222` review-tech R1 P2 · `paid_contributions` 当前包含 amount=0 成员，家庭页接入时确认是否过滤）|
 | **Epic-A 用户资料**（→ COSTRA-157 合卡）| FU-001 | P2 | COSTRA-157 | scoped |
 | **Epic-A 用户资料**（→ COSTRA-157 合卡）| FU-118-2 | P2 | COSTRA-157 | scoped |
 | **Epic-A 用户资料** | FU-102-PROFILE-REFUSE-UI | ~~P1~~ → **closed** | ~~COSTRA-158~~ | **closed @ COSTRA-158** |

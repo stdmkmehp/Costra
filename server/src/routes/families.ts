@@ -25,6 +25,7 @@ import { AppError } from '../errors/AppError.js';
 import { ErrorCode } from '../errors/ErrorCode.js';
 import * as familyService from '../services/familyService.js';
 import * as idempotencyService from '../services/idempotencyService.js';
+import * as familySummaryService from '../services/familySummaryService.js';
 import type { FamilyRole } from '../repositories/familyMemberRepo.js';
 
 interface JwtPayload { sub: string; iat: number; exp: number }
@@ -152,6 +153,16 @@ const memberIdParamSchema = {
   },
 } as const;
 
+const summaryQuerySchema = {
+  type: 'object',
+  required: ['month'],
+  additionalProperties: false,
+  properties: {
+    month: { type: 'string', pattern: '^\\d{4}-\\d{2}$' },
+    top_n: { type: 'integer', minimum: 1, maximum: 20 },
+  },
+} as const;
+
 // --- 注册 ---
 
 export async function registerFamiliesRoutes(app: FastifyInstance): Promise<void> {
@@ -231,6 +242,22 @@ export async function registerFamiliesRoutes(app: FastifyInstance): Promise<void
     async (req, reply) => {
       const userId = await parseUserId(req);
       const result = await familyService.listMembers(userId, req.params.family_id);
+      reply.code(200).send(result);
+    },
+  );
+
+  // GET /families/{family_id}/summary
+  // COSTRA-222: 家庭月度财务聚合
+  app.get<{ Params: { family_id: string }; Querystring: { month: string; top_n?: number } }>(
+    '/families/:family_id/summary',
+    { schema: { params: familyIdParamSchema, querystring: summaryQuerySchema } },
+    async (req, reply) => {
+      const userId = await parseUserId(req);
+      const result = await familySummaryService.getFamilySummary(userId, {
+        familyId: req.params.family_id,
+        month: req.query.month,
+        topN: req.query.top_n,
+      });
       reply.code(200).send(result);
     },
   );

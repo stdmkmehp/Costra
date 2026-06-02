@@ -1,9 +1,9 @@
 # Costra · 全局状态快照
 
-- **更新时间**：2026-06-02 15:16
-- **Orchestrator 模式**：`idle-between-cards`（COSTRA-222 dispatch ready · 等 card-review）
-- **球在谁手上**：**Human**（下一步可触发 `card-review:COSTRA-222`）
-- **Human 是否需介入**：🟡 **需要触发卡审**（`COSTRA-222` 已派单；未卡审前不得 start/写业务代码）
+- **更新时间**：2026-06-02 15:38
+- **Orchestrator 模式**：`idle-between-cards`（COSTRA-222 R1 实装 + review-tech PASS · 等 Human T1 review）
+- **球在谁手上**：**Human**（下一步可触发 `approve:COSTRA-222` 或要求修订）
+- **Human 是否需介入**：🟡 **需要终审**（`COSTRA-222` 已完成实装与技术审查；等待 Human T1 review）
 - **当前分支**：`dev`
 - **最新规划提交**：`0c479e9 docs(docs): plan family-first sprints 4-6`
 

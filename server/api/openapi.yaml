@@ -322,6 +322,51 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /families/{family_id}/summary:
+    parameters:
+      - $ref: '#/components/parameters/FamilyId'
+    get:
+      tags: [families]
+      summary: 家庭财务聚合（月度 summary）
+      description: |
+        COSTRA-222: 返回指定家庭某月的财务聚合数据，包含总支出/收入/结余、
+        公共/个人支出拆解、垫付贡献比例、成员个人支出、分类排行。
+
+        时区口径：MVP 固定 Asia/Shanghai (+08:00)。
+        month=YYYY-MM 的闭区间 [start, end)：
+          start = 当月 1 日 00:00:00 +08:00
+          end   = 下月 1 日 00:00:00 +08:00
+        SQL 使用 UTC timestamp 比较：[start_utc, end_utc)
+
+        口径规则：
+          - shared_type='shared' 的 expense → 公共支出
+          - shared_type='personal' 的 expense → 成员个人支出
+          - shared_type IS NULL 的 expense → 不进入聚合，登记 skipped_unclassified_expense_count
+          - income 只进入 totals.income / totals.balance，不进入支出/分类排行
+          - transfer 不进入任何聚合
+          - 金额全程 integer cents，ratio 使用 basis points (0~10000)
+      parameters:
+        - name: month
+          in: query
+          required: true
+          description: '月份（YYYY-MM，按 Asia/Shanghai 时区计算区间）'
+          schema: { type: string, pattern: '^\d{4}-\d{2}$' }
+        - name: top_n
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 20, default: 6 }
+          description: 分类排行返回条数（默认 6，最大 20）
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FamilySummary' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /families/{family_id}/members/{user_id}:
     parameters:
       - $ref: '#/components/parameters/FamilyId'
@@ -975,6 +1020,127 @@ components:
         share_url:
           type: string
           description: 可在小程序内分享的短链（含 scene 参数）
+
+    FamilySummary:
+      type: object
+      required: [family_id, family_name, family_kind, ledger_id, ledger_name, month, timezone, range_start, range_end, currency, totals, members, segments, shared, personal_by_member]
+      description: |
+        COSTRA-222: 家庭月度财务聚合。口径详见 GET /families/{family_id}/summary description。
+      properties:
+        family_id: { type: string, format: uuid }
+        family_name: { type: string }
+        family_kind: { type: string, enum: [personal, shared] }
+        ledger_id: { type: string, format: uuid }
+        ledger_name: { type: string }
+        month: { type: string, description: 'YYYY-MM' }
+        timezone: { type: string, description: 'MVP 固定 Asia/Shanghai', example: Asia/Shanghai }
+        range_start: { type: string, format: date-time, description: '月区间起始 UTC（inclusive）' }
+        range_end: { type: string, format: date-time, description: '月区间结束 UTC（exclusive）' }
+        currency: { type: string, example: CNY }
+        totals:
+          type: object
+          required: [expense, income, balance, shared_expense, personal_expense, entry_count, skipped_unclassified_expense_count]
+          properties:
+            expense: { type: integer, format: int64, description: '总支出（cents）' }
+            income: { type: integer, format: int64, description: '总收入（cents）' }
+            balance: { type: integer, format: int64, description: '结余 = income - expense（cents，可为负）' }
+            shared_expense: { type: integer, format: int64, description: '公共支出（cents，shared_type=shared）' }
+            personal_expense: { type: integer, format: int64, description: '个人支出（cents，shared_type=personal）' }
+            entry_count: { type: integer, description: '非删除 entry 数（income + expense，不含 transfer）' }
+            skipped_unclassified_expense_count:
+              type: integer
+              description: 'shared_type IS NULL 的 expense 数量（不进入聚合，仅可观测）'
+        members:
+          type: array
+          items: { $ref: '#/components/schemas/FamilySummaryMember' }
+        segments:
+          type: array
+          items: { $ref: '#/components/schemas/FamilySummarySegment' }
+        shared:
+          type: object
+          required: [expense, paid_contributions, categories]
+          properties:
+            expense: { type: integer, format: int64, description: '公共支出总额（cents）' }
+            paid_contributions:
+              type: array
+              items: { $ref: '#/components/schemas/FamilyPaidContribution' }
+            categories:
+              type: array
+              items: { $ref: '#/components/schemas/FamilyCategoryRankItem' }
+        personal_by_member:
+          type: array
+          items: { $ref: '#/components/schemas/FamilyPersonalExpenseBlock' }
+
+    FamilySummaryMember:
+      type: object
+      required: [user_id, nickname, avatar_url, role, status, joined_at, personal_expense, paid_contribution, expense_count]
+      description: |
+        COSTRA-222: 家庭成员在月度聚合中的数据。
+        expense_count 口径：该成员本月 expense entry 数（不含 income/transfer）。
+      properties:
+        user_id: { type: string, format: uuid }
+        nickname: { type: string }
+        avatar_url: { type: string, format: uri, nullable: true }
+        role: { type: string, enum: [owner, member, viewer] }
+        status: { type: string, enum: [active, left] }
+        joined_at: { type: string, format: date-time }
+        left_at: { type: string, format: date-time, nullable: true }
+        personal_expense: { type: integer, format: int64, description: '个人支出（cents，shared_type=personal 且 created_by=该成员）' }
+        paid_contribution: { type: integer, format: int64, description: '对公共支出的付款贡献（cents，shared_type=shared 且 created_by=该成员）' }
+        expense_count: { type: integer, description: '该成员本月 expense entry 数（含 shared + personal，不含 income/transfer）' }
+
+    FamilySummarySegment:
+      type: object
+      required: [key, type, label, amount, ratio_bps]
+      description: |
+        COSTRA-222: 支出占比视窗段。key='shared' 为公共段；key='member:{user_id}' 为成员个人段。
+      properties:
+        key: { type: string, description: "'shared' 或 'member:{user_id}'" }
+        type: { type: string, enum: [shared, personal] }
+        label: { type: string, description: '展示用标签' }
+        user_id: { type: string, format: uuid, nullable: true, description: '个人段对应的 user_id；公共段为 null' }
+        amount: { type: integer, format: int64, description: '金额（cents）' }
+        ratio_bps: { type: integer, minimum: 0, maximum: 10000, description: '占比万分比（amount / totals.expense * 10000，expense=0 时为 0）' }
+        member_status: { type: string, enum: [active, left], nullable: true, description: '个人段的成员状态；公共段为 null' }
+
+    FamilyPaidContribution:
+      type: object
+      required: [user_id, nickname, avatar_url, status, amount, ratio_bps]
+      description: COSTRA-222: 公共支出垫付贡献
+      properties:
+        user_id: { type: string, format: uuid }
+        nickname: { type: string }
+        avatar_url: { type: string, format: uri, nullable: true }
+        status: { type: string, enum: [active, left] }
+        amount: { type: integer, format: int64, description: '贡献金额（cents）' }
+        ratio_bps: { type: integer, minimum: 0, maximum: 10000, description: '占比万分比（amount / shared_expense * 10000，shared_expense=0 时为 0）' }
+
+    FamilyPersonalExpenseBlock:
+      type: object
+      required: [user_id, nickname, avatar_url, status, amount, categories]
+      description: COSTRA-222: 成员个人支出块
+      properties:
+        user_id: { type: string, format: uuid }
+        nickname: { type: string }
+        avatar_url: { type: string, format: uri, nullable: true }
+        status: { type: string, enum: [active, left] }
+        amount: { type: integer, format: int64, description: '个人支出总额（cents）' }
+        categories:
+          type: array
+          items: { $ref: '#/components/schemas/FamilyCategoryRankItem' }
+
+    FamilyCategoryRankItem:
+      type: object
+      required: [category_id, category_name, amount, entry_count, ratio_bps]
+      description: COSTRA-222: 分类排行项
+      properties:
+        category_id: { type: string, format: uuid, nullable: true, description: 'null 表示未分类' }
+        category_name: { type: string }
+        parent_category_id: { type: string, format: uuid, nullable: true }
+        parent_category_name: { type: string, nullable: true }
+        amount: { type: integer, format: int64, description: '金额（cents）' }
+        entry_count: { type: integer, description: '该分类下 entry 数' }
+        ratio_bps: { type: integer, minimum: 0, maximum: 10000, description: '占比万分比' }
 
     Ledger:
       type: object

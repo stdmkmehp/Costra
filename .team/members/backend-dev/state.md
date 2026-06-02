@@ -31,6 +31,7 @@
 
 ## §3 交付历史索引
 
+- **2026-06-02** · **COSTRA-222 R1 实装**（Family Summary API · OpenAPI + route/service/repo + 17 测 · typecheck ✅ · server 141/141 ✅）· `history/2026-06-02-costra-222-family-summary-api.md`
 - **2026-06-02** · **COSTRA-221 Human T1 APPROVED CLOSED**（Family Management API 全端点 + review-tech PASS 31/35 · FINAL 落盘 · 124/124 全绿）· `history/2026-06-02-costra-221-family-mgmt.md` · `.team/reviews/COSTRA-221/FINAL.md`
 - **2026-06-09** · **COSTRA-218 R1 实装**（GET/POST /v1/categories 端点实装 · categoryRepo + categoryService + categories routes · T1~T8 单测全绿 · 108/108 全绿）· `history/2026-06-09-costra-218-categories-api.md`
 - **2026-06-08** · **COSTRA-217 R1.x clean rebuild 重构**（Human 新准则：开发期 DB clean rebuild · 0008 migration 重写删除旧 ID 保留/__migrate__* 逻辑 · 全量 INSERT 11+62 分类 · schema.md 同步 · entries.test.ts console.error 清理 · typecheck ✅ · 100/100 测全绿）· `history/2026-06-08-costra-217-clean-rebuild-refactor.md`

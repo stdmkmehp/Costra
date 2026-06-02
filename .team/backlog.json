@@ -1,9 +1,9 @@
 {
   "project": "Costra",
-  "version": "0.2.30",
-  "last_updated": "2026-06-02T15:16:00+08:00",
+  "version": "0.2.32",
+  "last_updated": "2026-06-02T15:38:00+08:00",
   "platform": "wechat-miniprogram",
-  "notes": "v0.2.30: plan-dispatch:COSTRA-222 完成 · 家庭财务聚合 API dispatch 已落盘 .team/dispatch/COSTRA-222-backend-family-summary-api.md · 下一步 card-review:COSTRA-222。 v0.2.29: approve:COSTRA-221 完成 · Human T1 APPROVED CLOSED · FINAL .team/reviews/COSTRA-221/FINAL.md · 下一步 plan-dispatch:COSTRA-222。 v0.2.28: start:COSTRA-221 完成 · Family Management API R1 实装 + review-tech PASS 31/35 · 0 P0/0 P1/2 P2 · 等 Human T1 review / approve。 v0.2.27: card-review:COSTRA-221-R2 完成 · Tech+Design Landing PASS-WITH-FOLLOWUP 29/30 · 0 P0/0 P1/2 P2 · 可由 Human 触发 start:COSTRA-221。 v0.2.26: revise-dispatch:COSTRA-221 完成 · 已按 card-review R1 REVISE 修订 dispatch，下一步 card-review:COSTRA-221-R2。 v0.2.25: card-review:COSTRA-221 R1 完成 · verdict=REVISE 22/30 · 3 P0 / 4 P1 / 3 P2 · 报告 .team/reviews/COSTRA-221/card-review-round-1-tech.md · 下一步 revise-dispatch:COSTRA-221。 v0.2.24: plan-dispatch:COSTRA-221 · 家庭管理 API dispatch 已落盘 .team/dispatch/COSTRA-221-backend-family-management-api.md · 下一步 card-review:COSTRA-221。 v0.2.23: triage:sprint3-leftovers · 151 defer；155 split/re-dispatch；159 optional；161/163 guardrail；162 defer P3；114 closed-superseded；FU-220-SYNC-USER-ID-CREATED-BY promoted P1 Sprint-4 sync guardrail。 v0.2.22: sync-state:family-first-baseline · Human 已确认 qa/costra-154-150-joint-smoke.md、qa/phase-3-prod-realdevice-test.md、qa/current-stage-acceptance-family-first-baseline.md 三份手册全 PASS · COSTRA-154/150 与 Phase-3 prod 真机链路进入正式基线 · Family First baseline（164/165 + 217/218/219/220 + UI 重构 + 同步/鉴权）验收通过 · 非正式 COSTRA-223 prototype 已回滚不计正式进度 · Sprint-4/5/6 Family First 规划落盘 .team/sprints/sprint-04-06-family-first-plan.md · Sprint-3 后续聚焦状态收口、review 对账、遗留卡 triage、COSTRA-221 dispatch/card-review 准备。 v0.2.21: 🏆🏆 **Sprint-3 头部双卡 152+153 APPROVED CLOSED · D-024 §2.2 C1 第 4 次实战完美收官**（105+156 / 157+158 / 154+150 / **152+153** 四连）· Human T1 curl 实测 5 硬断言 H1~H5 全 PASS @ 2026-05-23 16:15（实测手册 `docs/qa/costra-152-153-curl-verify.md` v1.0 746 行）· 不依赖 staging（本地 server + WX_MOCK_LOGIN=1）· 联合双卡同轮 approve 一次关 2 张卡（D-014 SOP）· **152 APPROVED**：R1 commit `513dd5a` + R1.x.1 `167bf17` · review-tech 37/40 → R1.x.1 后期望 ≥38 · FU-104-ENTRIES-PATCH closed + FU-CROSS-FAMILY-GUARD-COSTRA-104 closed + FU-152-001~005 + FU-152-R001 全 closed · **153 APPROVED**：R1 commit `ccd80b9` + R1.x.1 `167bf17` · review-tech 39/40 → R1.x.1 后期望 ≥40 满分趋势 · FU-104-ENTRIES-DELETE closed + FU-153-001~006 + FU-153-R001 全 closed · **跨 family 守门补丁三处共享**（GET/PATCH/DELETE · COSTRA-104 R1 漏 + review-tech 36/40 漏检的真 P0 · 153 R2 形式审捕获 · 152 R1 实装一并修补 · 反向验证铁证 + Human curl §7 真链路再次确认）· **范式累计**：D-014 第 3 次完美收官 / D-016 100% 修订率连续第 7~8 张 / D-017 v3 §2.4 E1 第 10+11 次实战 / D-022 v2.0 第 9+10 次实战（37+39 双高位）/ D-024 §2.2 C1 第 4 次实战 / D-025 AP-003 第 4+5 次正向兑现 · **Sprint-3 头部 4/9 卡 CLOSED · 估点累计 15/29 = 52%**（154+150 等 staging · 剩余 151+155+159+161+162+163 共 14 点）· 下一步 = ① Human 时间窗启 staging 154+150 重测 + 联合 approve（推 Sprint-3 头部 6/9 = 83%）② 任意时间 `start:159+162` 顺手批 / `start:161+163` devops 批 ③ Sprint-3 中后段启 151（conflict UI）+ 155（全量自动化）。 v0.2.20: 🚀 Sprint-3 头部双卡 152+153 R1+R1.x.1 全闭环（D-014 同轮范式第 3 次实战完美收官 · 单对话轮 ~3 小时 6 阶段）。",
+  "notes": "v0.2.32: start:COSTRA-222 完成 · Family Summary API R1 实装 + review-tech PASS 33/35 · 0 P0/0 P1/2 P2 · server typecheck 通过 · server tests 141/141 通过 · 等 Human T1 review / approve。 v0.2.31: card-review:COSTRA-222 完成 · PASS-WITH-FOLLOWUP 27/30 · 0 P0/0 P1/4 P2 · 可由 Human 触发 start:COSTRA-222。 v0.2.30: plan-dispatch:COSTRA-222 完成 · 家庭财务聚合 API dispatch 已落盘 .team/dispatch/COSTRA-222-backend-family-summary-api.md · 下一步 card-review:COSTRA-222。 v0.2.29: approve:COSTRA-221 完成 · Human T1 APPROVED CLOSED · FINAL .team/reviews/COSTRA-221/FINAL.md · 下一步 plan-dispatch:COSTRA-222。 v0.2.28: start:COSTRA-221 完成 · Family Management API R1 实装 + review-tech PASS 31/35 · 0 P0/0 P1/2 P2 · 等 Human T1 review / approve。 v0.2.27: card-review:COSTRA-221-R2 完成 · Tech+Design Landing PASS-WITH-FOLLOWUP 29/30 · 0 P0/0 P1/2 P2 · 可由 Human 触发 start:COSTRA-221。 v0.2.26: revise-dispatch:COSTRA-221 完成 · 已按 card-review R1 REVISE 修订 dispatch，下一步 card-review:COSTRA-221-R2。 v0.2.25: card-review:COSTRA-221 R1 完成 · verdict=REVISE 22/30 · 3 P0 / 4 P1 / 3 P2 · 报告 .team/reviews/COSTRA-221/card-review-round-1-tech.md · 下一步 revise-dispatch:COSTRA-221。 v0.2.24: plan-dispatch:COSTRA-221 · 家庭管理 API dispatch 已落盘 .team/dispatch/COSTRA-221-backend-family-management-api.md · 下一步 card-review:COSTRA-221。 v0.2.23: triage:sprint3-leftovers · 151 defer；155 split/re-dispatch；159 optional；161/163 guardrail；162 defer P3；114 closed-superseded；FU-220-SYNC-USER-ID-CREATED-BY promoted P1 Sprint-4 sync guardrail。 v0.2.22: sync-state:family-first-baseline · Human 已确认 qa/costra-154-150-joint-smoke.md、qa/phase-3-prod-realdevice-test.md、qa/current-stage-acceptance-family-first-baseline.md 三份手册全 PASS · COSTRA-154/150 与 Phase-3 prod 真机链路进入正式基线 · Family First baseline（164/165 + 217/218/219/220 + UI 重构 + 同步/鉴权）验收通过 · 非正式 COSTRA-223 prototype 已回滚不计正式进度 · Sprint-4/5/6 Family First 规划落盘 .team/sprints/sprint-04-06-family-first-plan.md · Sprint-3 后续聚焦状态收口、review 对账、遗留卡 triage、COSTRA-221 dispatch/card-review 准备。 v0.2.21: 🏆🏆 **Sprint-3 头部双卡 152+153 APPROVED CLOSED · D-024 §2.2 C1 第 4 次实战完美收官**（105+156 / 157+158 / 154+150 / **152+153** 四连）· Human T1 curl 实测 5 硬断言 H1~H5 全 PASS @ 2026-05-23 16:15（实测手册 `docs/qa/costra-152-153-curl-verify.md` v1.0 746 行）· 不依赖 staging（本地 server + WX_MOCK_LOGIN=1）· 联合双卡同轮 approve 一次关 2 张卡（D-014 SOP）· **152 APPROVED**：R1 commit `513dd5a` + R1.x.1 `167bf17` · review-tech 37/40 → R1.x.1 后期望 ≥38 · FU-104-ENTRIES-PATCH closed + FU-CROSS-FAMILY-GUARD-COSTRA-104 closed + FU-152-001~005 + FU-152-R001 全 closed · **153 APPROVED**：R1 commit `ccd80b9` + R1.x.1 `167bf17` · review-tech 39/40 → R1.x.1 后期望 ≥40 满分趋势 · FU-104-ENTRIES-DELETE closed + FU-153-001~006 + FU-153-R001 全 closed · **跨 family 守门补丁三处共享**（GET/PATCH/DELETE · COSTRA-104 R1 漏 + review-tech 36/40 漏检的真 P0 · 153 R2 形式审捕获 · 152 R1 实装一并修补 · 反向验证铁证 + Human curl §7 真链路再次确认）· **范式累计**：D-014 第 3 次完美收官 / D-016 100% 修订率连续第 7~8 张 / D-017 v3 §2.4 E1 第 10+11 次实战 / D-022 v2.0 第 9+10 次实战（37+39 双高位）/ D-024 §2.2 C1 第 4 次实战 / D-025 AP-003 第 4+5 次正向兑现 · **Sprint-3 头部 4/9 卡 CLOSED · 估点累计 15/29 = 52%**（154+150 等 staging · 剩余 151+155+159+161+162+163 共 14 点）· 下一步 = ① Human 时间窗启 staging 154+150 重测 + 联合 approve（推 Sprint-3 头部 6/9 = 83%）② 任意时间 `start:159+162` 顺手批 / `start:161+163` devops 批 ③ Sprint-3 中后段启 151（conflict UI）+ 155（全量自动化）。 v0.2.20: 🚀 Sprint-3 头部双卡 152+153 R1+R1.x.1 全闭环（D-014 同轮范式第 3 次实战完美收官 · 单对话轮 ~3 小时 6 阶段）。",
   "epics": [
     {
       "id": "Epic-A",
@@ -870,17 +870,38 @@
         "priority": "P0",
         "sprint": "sprint-4",
         "epic": "Epic-D/Epic-F",
-        "status": "Dispatch-Ready",
+        "status": "Human-Review",
         "dependencies": [
           "COSTRA-221",
           "COSTRA-217"
         ],
         "description": "D3 · GET /v1/families/{id}/summary?month=YYYY-MM；复用 entries.shared_type；金额 cents；供家庭页与统计页口径复用。",
-        "disposition": "plan-dispatch:COSTRA-222 完成 · 家庭财务聚合 API dispatch 已落盘 · 下一步 card-review:COSTRA-222；未卡审前不得 start/写业务代码。",
-        "updated_at": "2026-06-02T15:16:00+08:00",
+        "disposition": "start:COSTRA-222 完成 · Family Summary API R1 实装 + review-tech PASS 33/35 · 0 P0/P1 · server typecheck 通过 · family-summary tests 17/17 · server tests 141/141 · 等 Human T1 review / approve。",
+        "updated_at": "2026-06-02T15:38:00+08:00",
         "dispatch": ".team/dispatch/COSTRA-222-backend-family-summary-api.md",
         "dispatch_at": "2026-06-02T15:16:00+08:00",
-        "review_next": "card-review:COSTRA-222"
+        "review_next": "approve:COSTRA-222",
+        "card_review": {
+          "round_1": {
+            "verdict": "PASS-WITH-FOLLOWUP",
+            "score": "27/30",
+            "p0": 0,
+            "p1": 0,
+            "p2": 4,
+            "info": 0,
+            "report": ".team/reviews/COSTRA-222/card-review-round-1-tech.md"
+          }
+        },
+        "review_tech": {
+          "round_1": {
+            "verdict": "PASS",
+            "score": "33/35",
+            "p0": 0,
+            "p1": 0,
+            "p2": 2,
+            "report": ".team/reviews/COSTRA-222/round-1-tech.md"
+          }
+        }
       },
       {
         "id": "COSTRA-223",

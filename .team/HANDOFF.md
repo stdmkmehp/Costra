@@ -13,15 +13,15 @@
 
 ## §0 一句话断点（HEAD 之前 = 已兑现 · 之后 = 待做）
 
-> **2026-06-02 15:16 当前断点**：✅ **COSTRA-222 dispatch 已落盘，等待 `card-review:COSTRA-222`**。Human 已确认 `qa/costra-154-150-joint-smoke.md`、`qa/phase-3-prod-realdevice-test.md`、`qa/current-stage-acceptance-family-first-baseline.md` 三份手册全 PASS；`COSTRA-221` 已 Human T1 APPROVED CLOSED 并进入 Sprint-4 基线；后续 Sprint 4/5/6 Family First 规划已落盘：`.team/sprints/sprint-04-06-family-first-plan.md`（commit `0c479e9`）。`COSTRA-222` 已按 Family First 路线派单：`.team/dispatch/COSTRA-222-backend-family-summary-api.md`，范围为 `GET /v1/families/{family_id}/summary?month=YYYY-MM&top_n=N` 家庭财务聚合 API，明确 shared/personal/income/balance、paid contribution、category rank、left member、Asia/Shanghai 月区间等口径。未卡审前不得 start/写业务代码。
+> **2026-06-02 15:25 当前断点**：✅ **COSTRA-222 card-review R1 已通过，等待 Human 触发 `start:COSTRA-222`**。Human 已确认 `qa/costra-154-150-joint-smoke.md`、`qa/phase-3-prod-realdevice-test.md`、`qa/current-stage-acceptance-family-first-baseline.md` 三份手册全 PASS；`COSTRA-221` 已 Human T1 APPROVED CLOSED 并进入 Sprint-4 基线；后续 Sprint 4/5/6 Family First 规划已落盘：`.team/sprints/sprint-04-06-family-first-plan.md`（commit `0c479e9`）。`COSTRA-222` 已按 Family First 路线派单并完成卡审：`.team/dispatch/COSTRA-222-backend-family-summary-api.md`，`card-review:COSTRA-222` 已落盘 `.team/reviews/COSTRA-222/card-review-round-1-tech.md`，verdict=`PASS-WITH-FOLLOWUP 27/30`，0 P0 / 0 P1 / 4 P2。未收到 `start:COSTRA-222` 前不得写业务代码。
 >
 > **当前 Orchestrator 模式**：`idle-between-cards` / `sprint-3-closeout`。本轮只同步 `.team/STATE`、`.team/board.md`、`.team/backlog.json`、`.team/HANDOFF.md` 与 `.team/reviews/*`，不写业务代码。
 >
 > **Sprint-3 当前定位**：验收后收口 + 状态对账 + Sprint-4 准备，不再继续堆大家庭/统计/预算新功能。
 >
 > **下一步推荐触发顺序**：
-> 1. `card-review:COSTRA-222` —— 派单已完成；必须先卡审，不直接开发。
-> 2. 如 card-review PASS：Human 再触发 `start:COSTRA-222`。
+> 1. `approve:COSTRA-222` —— R1 实装与 review-tech 已通过；等待 Human T1 review / approve。
+> 2. `plan-dispatch:COSTRA-223` —— 仅在 `COSTRA-222` approve 后启动家庭页正式实现派单。
 >
 > **后续路线摘要**：Sprint 4 = `COSTRA-221/222` + prod guardrails；Sprint 5 = `COSTRA-223` 正式家庭页 + Family E2E；Sprint 6 = `COSTRA-224/225/226` + 合规/监控前置。
 >
