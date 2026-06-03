@@ -9,7 +9,7 @@
 #   - 本地 postgres 正在运行
 
 USER_A="019e8c3b-9b2e-70ca-b6fe-ecc51a41a5c2"
-USER_B="019e8c3c-7d18-75ab-a012-eaecf88b462b"
+USER_B="019e8cbf-1c6d-7d2b-bde2-860608e67ceb"
 FAMILY_F="019e8c3d-099b-7969-a9dc-181790ea9b99"
 
 echo "=== 将用户 B 加入家庭 F ==="
@@ -42,14 +42,7 @@ if [ $? -eq 0 ]; then
   echo ""
   echo "✅ 用户 B 已成功加入家庭 F（角色: member）"
   echo ""
-  echo "验证："
-  docker exec -i costra-postgres psql -U costra -d costra -c "
-    SELECT fm.user_id, u.nickname, fm.role, fm.joined_at, fm.left_at
-      FROM family_members fm
-      JOIN users u ON u.id = fm.user_id
-     WHERE fm.family_id = '${FAMILY_F}'
-     ORDER BY fm.joined_at;
-  "
+
 else
   echo ""
   echo "❌ 执行失败，请检查数据库连接"

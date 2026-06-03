@@ -13,22 +13,21 @@
 
 ## §0 一句话断点（HEAD 之前 = 已兑现 · 之后 = 待做）
 
-> **2026-06-03 16:38 当前断点**：✅ **COSTRA-223 协作页 R1.x.1 + Human 验收修复全部提交**（commit `1cd6082`）。43 文件 +3206/-231 行。验证全绿：typecheck/lint/test。Human 验收通过基础功能；剩余新需求"明细页条目编辑（修改分类/备注/金额/时间）"需作为新卡 `COSTRA-227` 走 dispatch → card-review 流程。
+> **2026-06-03 19:23 当前断点**：✅ **COSTRA-227 明细页条目编辑功能实装完成**。分区域点击编辑：分类图标→全屏分类面板（支出/收入切换）；文字区域→原地 inline 编辑备注；金额区域→半屏计算器键盘（日期+shared_type）。公共样式/逻辑已抽取：`styles/category-grid.wxss`、`styles/keypad.wxss`、`utils/calc.ts`。验证全绿。🔴 **发现 P0 sync bug**：outbox 409 幂等键冲突导致条目永久积压，已出卡 `COSTRA-228`。
 >
 > **当前 Orchestrator 模式**：`idle-between-cards`。
 >
 > **本会话交付清单**：
-> - ✅ `COSTRA-223` 协作页全新开发：Solo/Multi 两态、成员横滚、占比条、Accordion、月份切换
-> - ✅ 记账 overlay 修复：真实账本列表、个人/公共支出切换、shared_type 写入 entry
-> - ✅ 三页面统一导航栏（居中账本名+▼切换）+ 账本切换从 API 获取真实家庭列表
-> - ✅ 明细页月份快速切换（‹ picker ›）+ 筛选行布局重构
-> - ✅ TabBar "家庭" → "协作" + 双人叠站图标
-> - ✅ 家庭数量限制配置（maxSharedFamilies=3）
-> - ✅ createInvite 空 body 修复、getFamilies 数组包装修复、403 专门处理
+> - ✅ `COSTRA-227` dispatch + card-review + 实装（多轮 Human 反馈迭代）
+> - ✅ 公共样式抽取：`styles/category-grid.wxss` + `styles/keypad.wxss`
+> - ✅ 计算器逻辑抽取：`utils/calc.ts`（expense-overlay + ledger 共用）
+> - ✅ 通用 tabbar 控制事件：`HIDE_TAB_BAR` / `SHOW_TAB_BAR`
+> - ✅ `COSTRA-228` bug 修复卡已出（sync/outbox 409 idempotency 冲突）
 >
 > **下一步推荐**：
-> 1. `plan-dispatch:COSTRA-227` —— 明细页条目编辑（修改分类/备注/金额/时间）
-> 2. `approve:COSTRA-223` —— 如 Human 确认协作页基础功能验收通过
+> 1. `start:COSTRA-228` —— P0 sync 409 bug 修复（阻塞正常同步）
+> 2. `approve:COSTRA-227` —— 条目编辑功能验收
+> 3. `approve:COSTRA-223` —— 协作页验收
 >
 > **硬约束提醒**：Orchestrator 不直接写业务代码；新卡必须 dispatch → card-review → Human 触发 → spawn 对应 Agent → review → Human 终审。
 

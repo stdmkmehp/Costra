@@ -25,31 +25,29 @@ Component({
 
   lifetimes: {
     attached() {
-      // 订阅覆盖层显示事件 → 隐藏 TabBar
-      type ShowHandler = () => void;
-      const showHandler: ShowHandler = () => {
-        this.setData({ hidden: true });
-      };
-      (this as unknown as Record<string, unknown>)._overlayShowHandler = showHandler;
-      eventBus.on(EventNames.SHOW_EXPENSE_OVERLAY, showHandler);
+      // 隐藏 TabBar（记账覆盖层 + 任何全屏面板）
+      const hideHandler = () => { this.setData({ hidden: true }); };
+      (this as unknown as Record<string, unknown>)._hideHandler = hideHandler;
+      eventBus.on(EventNames.SHOW_EXPENSE_OVERLAY, hideHandler);
+      eventBus.on(EventNames.HIDE_TAB_BAR, hideHandler);
 
-      // 订阅覆盖层隐藏事件 → 恢复 TabBar
-      type HideHandler = () => void;
-      const hideHandler: HideHandler = () => {
-        this.setData({ hidden: false });
-      };
-      (this as unknown as Record<string, unknown>)._overlayHideHandler = hideHandler;
-      eventBus.on(EventNames.HIDE_EXPENSE_OVERLAY, hideHandler);
+      // 恢复 TabBar
+      const showHandler = () => { this.setData({ hidden: false }); };
+      (this as unknown as Record<string, unknown>)._showHandler = showHandler;
+      eventBus.on(EventNames.HIDE_EXPENSE_OVERLAY, showHandler);
+      eventBus.on(EventNames.SHOW_TAB_BAR, showHandler);
     },
 
     detached() {
-      const showHandler = (this as unknown as Record<string, unknown>)._overlayShowHandler as (() => void) | undefined;
-      if (showHandler) {
-        eventBus.off(EventNames.SHOW_EXPENSE_OVERLAY, showHandler);
-      }
-      const hideHandler = (this as unknown as Record<string, unknown>)._overlayHideHandler as (() => void) | undefined;
+      const hideHandler = (this as unknown as Record<string, unknown>)._hideHandler as (() => void) | undefined;
       if (hideHandler) {
-        eventBus.off(EventNames.HIDE_EXPENSE_OVERLAY, hideHandler);
+        eventBus.off(EventNames.SHOW_EXPENSE_OVERLAY, hideHandler);
+        eventBus.off(EventNames.HIDE_TAB_BAR, hideHandler);
+      }
+      const showHandler = (this as unknown as Record<string, unknown>)._showHandler as (() => void) | undefined;
+      if (showHandler) {
+        eventBus.off(EventNames.HIDE_EXPENSE_OVERLAY, showHandler);
+        eventBus.off(EventNames.SHOW_TAB_BAR, showHandler);
       }
     },
   },

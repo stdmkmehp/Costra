@@ -6,7 +6,7 @@
 import Decimal from '../../utils/vendor/decimal';
 import { toYuan } from '../../utils/money';
 import { getSafeAreaMetrics } from '../../utils/safeArea';
-import { listEntries, deleteEntry, type Entry } from '../../services/db';
+import { listEntries, deleteEntry, putEntry, type Entry } from '../../services/db';
 import {
   getActiveLedgerId,
   getActiveFamilyId,
@@ -25,6 +25,12 @@ import {
   getCategoryIconById,
   getCategoryNameById,
 } from '../../services/categoryService';
+import { loadCategories } from '../../components/expense-overlay/categories';
+import {
+  INITIAL_CALC_STATE, inputDigit, inputDot,
+  inputOperator, inputBackspace, pressEquals,
+  type CalcState,
+} from '../../utils/calc';
 
 // ─── 类型 ────────────────────────────────────────────────────────────────────────
 
@@ -195,6 +201,28 @@ Page({
     // ─── 左滑 ───
     swipingRefId: '',
 
+    // ─── COSTRA-227: 编辑状态 ───
+    editCategoryVisible: false,
+    editTier1Categories: [] as { id: string; icon: string; name: string; children: { id: string; name: string; icon: string }[] }[],
+    editDedupedSubCategories: [] as { id: string; name: string; icon: string }[],
+    editExpandedTier1Id: null as string | null,
+    editExpandedChildren: [] as { id: string; name: string; icon: string }[],
+    editSelectedTier1Id: '',
+    editSelectedTier2Id: '',
+    editDimmedTier1Ids: [] as string[],
+    editingNoteRefId: '',
+    editNoteValue: '',
+    editAmountVisible: false,
+    editAmountDisplay: '0',
+    editAmountCalc: { ...INITIAL_CALC_STATE } as CalcState,
+    editAmountShowShared: false,
+    editAmountSharedType: 'shared' as 'personal' | 'shared',
+    editAmountDate: '',
+    editAmountDateText: '今天',
+    editCategoryType: 'expense' as 'expense' | 'income',
+    editCategoryList: [] as { id: string; icon: string; name: string }[],
+    editSelectedCategoryId: '',
+
     // ─── 列表滚动位置（COSTRA-220: 月份切换后滚动到顶部） ───
     listScrollTop: 0,
   },
@@ -215,6 +243,10 @@ Page({
   _currentUserId: '' as string,
   /** eventBus 订阅 handler（COSTRA-220: 防内存泄漏） */
   _entrySavedHandler: null as (() => void) | null,
+  /** eventBus 订阅 handler（COSTRA-227: 编辑保存刷新） */
+  _entryUpdatedHandler: null as (() => void) | null,
+  /** COSTRA-227: 当前正在编辑的条目 client_ref_id */
+  _editingRefId: '' as string,
 
   // ─── 生命周期 ────────────────────────────────────────────────────────────────
 
@@ -239,6 +271,11 @@ Page({
     const handler = () => { this._onEntrySaved(); };
     this._entrySavedHandler = handler;
     eventBus.on(EventNames.ENTRY_SAVED, handler);
+
+    // COSTRA-227: 订阅 ENTRY_UPDATED 事件 → 编辑保存后刷新明细页
+    const updatedHandler = () => { this._onEntryUpdated(); };
+    this._entryUpdatedHandler = updatedHandler;
+    eventBus.on(EventNames.ENTRY_UPDATED, updatedHandler);
   },
 
   async onShow() {
@@ -252,6 +289,11 @@ Page({
     if (this._entrySavedHandler) {
       eventBus.off(EventNames.ENTRY_SAVED, this._entrySavedHandler);
       this._entrySavedHandler = null;
+    }
+    // COSTRA-227: 取消订阅 ENTRY_UPDATED 事件
+    if (this._entryUpdatedHandler) {
+      eventBus.off(EventNames.ENTRY_UPDATED, this._entryUpdatedHandler);
+      this._entryUpdatedHandler = null;
     }
   },
 
@@ -508,6 +550,13 @@ Page({
     await this._loadEntries();
   },
 
+  // ─── COSTRA-227: 编辑保存后响应式刷新 ─────────────────────────────────────────
+
+  async _onEntryUpdated() {
+    // 编辑保存后重新加载条目数据并刷新列表
+    await this._loadEntries();
+  },
+
   // ─── UX 增强（COSTRA-220）────────────────────────────────────────────────────
 
   /** 滚动列表到顶部（月份切换后） */
@@ -617,6 +666,11 @@ Page({
     return null;
   },
 
+  /** COSTRA-227: 从原始 entries 查找完整 Entry 对象（用于编辑） */
+  _findRawEntry(refId: string): Entry | null {
+    return this._allEntries.find(e => e.client_ref_id === refId) || null;
+  },
+
   onDeleteEntry(e: WechatMiniprogram.TouchEvent) {
     const refId = e.currentTarget.dataset.refid;
     if (!refId) return;
@@ -649,11 +703,378 @@ Page({
     });
   },
 
-  onTapEntry() {
-    if (this.data.swipingRefId) {
-      this._resetAllSwipe();
+  // ─── COSTRA-227: 条目区域点击编辑 ────────────────────────────────────────────
+
+  /** 点击分类图标 → 全屏分类选择面板（和记账界面一致） */
+  onTapEntryCategory(e: WechatMiniprogram.TouchEvent) {
+    if (this.data.swipingRefId) { this._resetAllSwipe(); return; }
+    const refId = (e.currentTarget.dataset as Record<string, string>).refid;
+    if (!refId) return;
+    const entry = this._findRawEntry(refId);
+    if (!entry) return;
+
+    this._editingRefId = refId;
+
+    const familyId = this._familyId;
+    if (!familyId) return;
+
+    // 使用 categoryService 的 loadCategories（与 expense-overlay 相同）复用树形结构
+    loadCategories(familyId).then((categoryData) => {
+        // 存储供收支切换使用
+        (this as unknown as Record<string, unknown>)._editCategoryData = categoryData;
+
+        const entryType = entry.type || 'expense';
+        const tier1 = entryType === 'expense' ? categoryData.expense : categoryData.income;
+        const deduped = entryType === 'expense' ? categoryData.expenseDedupedSubs : categoryData.incomeDedupedSubs;
+
+        // 找到当前选中的分类
+        let selectedTier1Id = '';
+        const selectedTier2Id = entry.category_id || '';
+        if (selectedTier2Id) {
+          for (const t of tier1) {
+            if (t.children.some(c => c.id === selectedTier2Id)) {
+              selectedTier1Id = t.id;
+              break;
+            }
+          }
+        }
+
+        // COSTRA-227: 通知 tabbar 隐藏
+        eventBus.emit(EventNames.HIDE_TAB_BAR);
+
+        this.setData({
+          editCategoryVisible: true,
+          editCategoryType: entryType,
+          editTier1Categories: tier1,
+          editDedupedSubCategories: deduped,
+          editExpandedTier1Id: null,
+          editExpandedChildren: [],
+          editSelectedTier1Id: selectedTier1Id,
+          editSelectedTier2Id: selectedTier2Id,
+          editDimmedTier1Ids: [],
+        });
+    });
+  },
+
+  /** 分类面板：点击一级分类 → 展开子分类 */
+  onEditTapTier1(e: WechatMiniprogram.TouchEvent) {
+    const tier1Id = (e.currentTarget.dataset as Record<string, string>).id;
+    if (!tier1Id) return;
+
+    const tier1 = this.data.editTier1Categories.find(c => c.id === tier1Id);
+    if (!tier1) return;
+
+    // 如果点击已展开的一级分类 → 收起
+    if (this.data.editExpandedTier1Id === tier1Id) {
+      this.setData({
+        editExpandedTier1Id: null,
+        editExpandedChildren: [],
+        editDimmedTier1Ids: [],
+      });
+      return;
+    }
+
+    const dimmed = this.data.editTier1Categories
+      .filter(c => c.id !== tier1Id)
+      .map(c => c.id);
+
+    this.setData({
+      editExpandedTier1Id: tier1Id,
+      editExpandedChildren: tier1.children,
+      editSelectedTier1Id: tier1Id,
+      editDimmedTier1Ids: dimmed,
+    });
+  },
+
+  /** 分类面板：选中二级分类 → 保存并关闭 */
+  onEditTapSubCategory(e: WechatMiniprogram.TouchEvent) {
+    const catId = (e.currentTarget.dataset as Record<string, string>).id;
+    if (!catId || !this._editingRefId) return;
+
+    const entry = this._findRawEntry(this._editingRefId);
+    if (!entry) { this.setData({ editCategoryVisible: false }); eventBus.emit(EventNames.SHOW_TAB_BAR); return; }
+
+    if (entry.category_id === catId) {
+      this.setData({ editCategoryVisible: false });
+      eventBus.emit(EventNames.SHOW_TAB_BAR);
+      return;
+    }
+
+    // 保存分类变更
+    entry.category_id = catId;
+    entry.updated_at = new Date().toISOString();
+    entry.dirty = true;
+    putEntry(entry).then(() => {
+      enqueue({
+        op: 'update',
+        entity: 'entry',
+        client_ref_id: entry.client_ref_id,
+        base_version: entry.version ?? null,
+        payload: { category_id: catId },
+      });
+    });
+
+    this.setData({ editCategoryVisible: false });
+    eventBus.emit(EventNames.SHOW_TAB_BAR);
+    this._buildDisplay();
+    eventBus.emit(EventNames.ENTRY_UPDATED);
+  },
+
+  onCloseEditCategory() {
+    this.setData({ editCategoryVisible: false });
+    eventBus.emit(EventNames.SHOW_TAB_BAR);
+  },
+
+  /** 分类面板：切换支出/收入分类 */
+  onEditCategoryTypeTab(e: WechatMiniprogram.TouchEvent) {
+    const type = (e.currentTarget.dataset as Record<string, string>).type as 'expense' | 'income';
+    if (type === this.data.editCategoryType) return;
+
+    const catData = (this as unknown as Record<string, unknown>)._editCategoryData as {
+      expense: { id: string; icon: string; name: string; children: { id: string; name: string; icon: string }[] }[];
+      income: { id: string; icon: string; name: string; children: { id: string; name: string; icon: string }[] }[];
+      expenseDedupedSubs: { id: string; name: string; icon: string }[];
+      incomeDedupedSubs: { id: string; name: string; icon: string }[];
+    } | undefined;
+    if (!catData) return;
+
+    const tier1 = type === 'expense' ? catData.expense : catData.income;
+    const deduped = type === 'expense' ? catData.expenseDedupedSubs : catData.incomeDedupedSubs;
+
+    this.setData({
+      editCategoryType: type,
+      editTier1Categories: tier1,
+      editDedupedSubCategories: deduped,
+      editExpandedTier1Id: null,
+      editExpandedChildren: [],
+      editSelectedTier1Id: '',
+      editSelectedTier2Id: '',
+      editDimmedTier1Ids: [],
+    });
+  },
+
+  /** 点击文字区域 → 原地 inline 编辑备注 */
+  onTapEntryNote(e: WechatMiniprogram.TouchEvent) {
+    if (this.data.swipingRefId) { this._resetAllSwipe(); return; }
+    const refId = (e.currentTarget.dataset as Record<string, string>).refid;
+    if (!refId) return;
+    const entry = this._findRawEntry(refId);
+    if (!entry) return;
+
+    this._editingRefId = refId;
+    this.setData({
+      editingNoteRefId: refId,
+      editNoteValue: entry.note || '',
+    });
+  },
+
+  onEditNoteInput(e: WechatMiniprogram.Input) {
+    this.setData({ editNoteValue: e.detail.value });
+  },
+
+  onConfirmEditNote() {
+    if (!this._editingRefId) { this.setData({ editingNoteRefId: '' }); return; }
+    const entry = this._findRawEntry(this._editingRefId);
+    if (!entry) { this.setData({ editingNoteRefId: '' }); return; }
+
+    const newNote = this.data.editNoteValue.trim();
+    const oldNote = (entry.note || '').trim();
+
+    this.setData({ editingNoteRefId: '' });
+
+    if (newNote === oldNote) return;
+
+    entry.note = newNote;
+    entry.updated_at = new Date().toISOString();
+    entry.dirty = true;
+    putEntry(entry).then(() => {
+      enqueue({
+        op: 'update',
+        entity: 'entry',
+        client_ref_id: entry.client_ref_id,
+        base_version: entry.version ?? null,
+        payload: { note: newNote },
+      });
+    });
+
+    this._buildDisplay();
+    eventBus.emit(EventNames.ENTRY_UPDATED);
+  },
+
+  /** 点击金额区域 → 底部半屏键盘面板 */
+  onTapEntryAmount(e: WechatMiniprogram.TouchEvent) {
+    if (this.data.swipingRefId) { this._resetAllSwipe(); return; }
+    const refId = (e.currentTarget.dataset as Record<string, string>).refid;
+    if (!refId) return;
+    const entry = this._findRawEntry(refId);
+    if (!entry) return;
+
+    this._editingRefId = refId;
+
+    // 用 calc 状态机预填金额
+    const yuanStr = entry.amount > 0 ? (entry.amount / 100).toString() : '0';
+    const editCalc: CalcState = {
+      ...INITIAL_CALC_STATE,
+      display: yuanStr,
+      accumulator: yuanStr,
+      amountCents: entry.amount || 0,
+      actionState: 'done',
+    };
+
+    // 日期
+    const d = new Date(entry.occurred_at);
+    const dateVal = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const today = new Date();
+    const todayVal = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const dateText = dateVal === todayVal ? '今天' : `${d.getMonth() + 1}/${d.getDate()}`;
+
+    const isMulti = this.data.showMemberFilter;
+    const sharedType = entry.shared_type || 'shared';
+
+    eventBus.emit(EventNames.HIDE_TAB_BAR);
+    this.setData({
+      editAmountVisible: true,
+      editAmountDisplay: editCalc.display,
+      editAmountCalc: editCalc,
+      editAmountShowShared: isMulti && entry.type === 'expense',
+      editAmountSharedType: sharedType,
+      editAmountDate: dateVal,
+      editAmountDateText: dateText,
+    });
+  },
+
+  onEditAmountKey(e: WechatMiniprogram.TouchEvent) {
+    const key = (e.currentTarget.dataset as Record<string, string>).key;
+    if (!key) return;
+
+    if (key === 'done') {
+      this._onEditAmountAction();
+      return;
+    }
+
+    let calc = this.data.editAmountCalc;
+
+    switch (key) {
+      case '0': case '1': case '2': case '3': case '4':
+      case '5': case '6': case '7': case '8': case '9':
+        calc = inputDigit(calc, key);
+        break;
+      case '.':
+        calc = inputDot(calc);
+        break;
+      case '+':
+        calc = inputOperator(calc, '+');
+        break;
+      case '-':
+        calc = inputOperator(calc, '-');
+        break;
+      case 'backspace':
+        calc = inputBackspace(calc);
+        break;
+      default:
+        return;
+    }
+
+    this.setData({ editAmountCalc: calc, editAmountDisplay: calc.display });
+  },
+
+  _onEditAmountAction() {
+    const calc = this.data.editAmountCalc;
+    if (calc.actionState === 'equals') {
+      const newCalc = pressEquals(calc);
+      this.setData({ editAmountCalc: newCalc, editAmountDisplay: newCalc.display });
+    } else {
+      this._confirmEditAmount();
     }
   },
+
+  _confirmEditAmount() {
+    const calc = this.data.editAmountCalc;
+    const cents = calc.amountCents;
+
+    if (!this._editingRefId) { this._closeEditAmount(); return; }
+    const entry = this._findRawEntry(this._editingRefId);
+    if (!entry) { this._closeEditAmount(); return; }
+
+    if (cents <= 0) {
+      wx.showToast({ title: '金额须大于0', icon: 'none' });
+      return;
+    }
+
+    // 收集所有变更
+    const changedFields: Record<string, unknown> = {};
+    if (cents !== entry.amount) changedFields.amount = cents;
+
+    // 日期变更
+    const origDate = new Date(entry.occurred_at);
+    const origDateKey = `${origDate.getFullYear()}-${String(origDate.getMonth() + 1).padStart(2, '0')}-${String(origDate.getDate()).padStart(2, '0')}`;
+    if (this.data.editAmountDate !== origDateKey) {
+      const now = new Date();
+      const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      changedFields.occurred_at = this.data.editAmountDate === todayKey
+        ? now.toISOString()
+        : `${this.data.editAmountDate}T12:00:00.000Z`;
+    }
+
+    // shared_type 变更
+    if (this.data.editAmountShowShared) {
+      const newShared = this.data.editAmountSharedType;
+      if (newShared !== (entry.shared_type || 'shared')) {
+        changedFields.shared_type = newShared;
+      }
+    }
+
+    if (Object.keys(changedFields).length === 0) {
+      this._closeEditAmount();
+      return;
+    }
+
+    if (changedFields.amount) entry.amount = cents;
+    if (changedFields.occurred_at) entry.occurred_at = changedFields.occurred_at as string;
+    if (changedFields.shared_type) entry.shared_type = changedFields.shared_type as 'personal' | 'shared';
+    entry.updated_at = new Date().toISOString();
+    entry.dirty = true;
+
+    putEntry(entry).then(() => {
+      enqueue({
+        op: 'update',
+        entity: 'entry',
+        client_ref_id: entry.client_ref_id,
+        base_version: entry.version ?? null,
+        payload: changedFields,
+      });
+    });
+
+    this._closeEditAmount();
+    this._buildDisplay();
+    eventBus.emit(EventNames.ENTRY_UPDATED);
+  },
+
+  onCloseEditAmount() {
+    this._closeEditAmount();
+  },
+
+  _closeEditAmount() {
+    this.setData({ editAmountVisible: false });
+    eventBus.emit(EventNames.SHOW_TAB_BAR);
+  },
+
+  onEditAmountDateChange(e: WechatMiniprogram.PickerChange) {
+    const val = e.detail.value as string;
+    const today = new Date();
+    const todayVal = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const text = val === todayVal ? '今天' : `${parseInt(val.split('-')[1], 10)}/${parseInt(val.split('-')[2], 10)}`;
+    this.setData({ editAmountDate: val, editAmountDateText: text });
+  },
+
+  onEditAmountToggleShared() {
+    this.setData({
+      editAmountSharedType: this.data.editAmountSharedType === 'shared' ? 'personal' : 'shared',
+    });
+  },
+
+  /** 阻止弹窗穿透 */
+  noop() {},
 
   onListScroll() {
     if (this.data.swipingRefId) {

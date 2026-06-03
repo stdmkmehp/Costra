@@ -309,3 +309,143 @@
   font-size: 26rpx;
   color: var(--color-role-text-tertiary, rgba(28,27,26,0.28));
 }
+
+/* ─── COSTRA-227: 金额包装层（用于点击区域扩大） ─── */
+.entry-amount-wrap {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 8rpx 0 8rpx 16rpx;
+}
+
+/* ─── COSTRA-227: inline 备注输入 ─── */
+.entry-label__input {
+  font-size: 28rpx;
+  color: #1c1b1a;
+  width: 100%;
+  height: 48rpx;
+  line-height: 48rpx;
+}
+
+/* ─── COSTRA-227: 全屏分类选择面板 ─── */
+.edit-category-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: var(--color-role-bg-app, #f1f2ec);
+  transform: translateY(100%);
+  transition: transform 350ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+.edit-category-overlay.is-visible {
+  transform: translateY(0);
+}
+.edit-category-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--color-role-bg-app, #f1f2ec);
+}
+.edit-category-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  padding: 0 32rpx 16rpx;
+}
+.edit-category-header__close {
+  color: rgba(28, 27, 26, 0.48);
+  font-size: 28rpx;
+  padding: 12rpx 8rpx;
+}
+.edit-category-header__tabs {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+}
+.edit-category-header__tab {
+  font-size: 34rpx;
+  color: rgba(28, 27, 26, 0.28);
+  font-weight: 400;
+}
+.edit-category-header__tab.is-active {
+  color: #1c1b1a;
+  font-weight: 600;
+}
+.edit-category-header__sep {
+  font-size: 28rpx;
+  color: rgba(28, 27, 26, 0.2);
+}
+.edit-category-header__placeholder {
+  width: 80rpx;
+}
+.edit-category-scroll {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0 28rpx;
+}
+
+/* 分类网格（公共样式 · COSTRA-227 抽取） */
+@import '../../styles/category-grid.wxss';
+
+/* ─── COSTRA-227: 金额编辑半屏底部面板 ─── */
+
+/* 键盘公共样式 */
+@import '../../styles/keypad.wxss';
+
+.edit-amount-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 200ms;
+}
+.edit-amount-panel.is-visible {
+  pointer-events: auto;
+  opacity: 1;
+}
+.edit-amount-panel__mask {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: transparent;
+}
+.edit-amount-panel__sheet {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  transform: translateY(100%);
+  transition: transform 250ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+.edit-amount-panel.is-visible .edit-amount-panel__sheet {
+  transform: translateY(0);
+}
+
+/* 费用性质开关（与 expense-overlay 共用命名） */
+.keypad-shared {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  opacity: 0;
+  height: 0;
+  overflow: hidden;
+  transition: opacity 250ms, height 250ms;
+}
+.keypad-shared.is-visible {
+  opacity: 1;
+  height: 40rpx;
+}
+.keypad-shared__text {
+  font-size: 22rpx;
+  color: rgba(28, 27, 26, 0.36);
+}
+.keypad-shared__text.is-active {
+  color: #1c1b1a;
+  font-weight: 600;
+}
+.keypad-shared__sep {
+  font-size: 22rpx;
+  color: rgba(28, 27, 26, 0.12);
+}

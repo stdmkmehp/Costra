@@ -1,0 +1,110 @@
+/* styles/keypad.wxss · 计算器键盘公共样式 */
+/* COSTRA-227: 抽取自 expense-overlay · 供明细页金额编辑复用 */
+
+/* ─── 金额显示区 ─── */
+
+.keypad-sheet__amount {
+  display: flex;
+  align-items: baseline;
+  padding: 24rpx 32rpx 16rpx;
+  min-height: 80rpx;
+}
+
+.keypad-sheet__prefix {
+  font-size: 32rpx;
+  color: rgba(28, 27, 26, 0.48);
+  margin-right: 8rpx;
+  font-weight: 500;
+}
+
+.keypad-sheet__value {
+  font-size: 56rpx;
+  font-weight: 600;
+  color: #1c1b1a;
+  line-height: 1.2;
+  letter-spacing: -1rpx;
+  word-break: break-all;
+}
+
+.keypad-sheet__value.is-result {
+  color: #07C160;
+}
+
+/* ─── 操作行容器 ─── */
+
+.keypad-sheet__actions {
+  display: flex;
+  align-items: center;
+  padding: 0 32rpx 16rpx;
+  gap: 16rpx;
+  min-height: 56rpx;
+}
+
+/* ─── 数字键盘网格 ─── */
+
+.keypad {
+  padding: 0 8rpx 8rpx;
+}
+
+.keypad__row {
+  display: flex;
+  width: 100%;
+}
+
+.keypad__picker {
+  flex: 1;
+  margin: 4rpx;
+}
+
+.keypad__picker .keypad__key {
+  margin: 0;
+}
+
+.keypad__key {
+  flex: 1;
+  height: 96rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 4rpx;
+  border-radius: 12rpx;
+  background: rgba(28, 27, 26, 0.04);
+  font-size: 36rpx;
+  color: #1c1b1a;
+  font-weight: 500;
+  transition: background 150ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.keypad__key:active {
+  background: rgba(28, 27, 26, 0.1);
+}
+
+.keypad__key--fn {
+  background: rgba(28, 27, 26, 0.08);
+  font-size: 32rpx;
+}
+
+.keypad__key--date {
+  font-size: 24rpx;
+}
+
+.keypad__key--action {
+  font-size: 28rpx;
+  font-weight: 600;
+}
+
+.keypad__key--done {
+  background: #07C160;
+  color: #ffffff;
+}
+
+.keypad__key--done:active {
+  background: #06ad56;
+}
+
+.keypad__key--equals {
+  background: rgba(28, 27, 26, 0.12);
+  color: #1c1b1a;
+  font-size: 40rpx;
+  font-weight: 700;
+}

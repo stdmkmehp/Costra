@@ -1,9 +1,9 @@
 # Costra · 全局状态快照
 
-- **更新时间**：2026-06-03 16:38
-- **Orchestrator 模式**：`idle-between-cards`（COSTRA-223 已提交 · 等新卡规划）
-- **球在谁手上**：**Human**（可触发 `plan-dispatch:COSTRA-227` 或 `approve:COSTRA-223`）
-- **Human 是否需介入**：🟡 **需要决定下一步**
+- **更新时间**：2026-06-03 19:23
+- **Orchestrator 模式**：`idle-between-cards`（COSTRA-227 实装完成 · COSTRA-228 已出卡待排期）
+- **球在谁手上**：**Human**（可 approve:COSTRA-227 或 start:COSTRA-228）
+- **Human 是否需介入**：🟡 **COSTRA-228 P0 sync bug 需尽快修复**
 - **当前分支**：`dev`
 - **最新提交**：`1cd6082 feat(miniapp): costra-223 collaboration page + multi-ledger switch + expense shared_type`
 

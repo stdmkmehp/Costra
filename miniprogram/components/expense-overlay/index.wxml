@@ -11,7 +11,7 @@
     <!-- padding-top = menuButtonTop：与胶囊按钮顶部精确对齐 -->
     <view class="expense-header" style="padding-top: {{menuButtonTop}}px;" catchtouchmove="noop">
       <text class="expense-header__close" bindtap="onClose">取消</text>
-      <view class="expense-header__tabs">
+      <view wx:if="{{!keypadOnly}}" class="expense-header__tabs {{typeSwipeDisabled ? 'is-disabled' : ''}}">
         <text
           class="expense-header__tab {{entryType === 'expense' ? 'is-active' : ''}}"
           data-type="expense"
@@ -24,12 +24,16 @@
           bindtap="onTapTab"
         >收入</text>
       </view>
+      <view wx:if="{{keypadOnly}}" class="expense-header__tabs">
+        <text class="expense-header__tab is-active">编辑金额</text>
+      </view>
       <!-- 右侧占位保持三栏平衡 -->
       <view class="expense-header__placeholder"></view>
     </view>
 
-    <!-- ═══ 分类滚动区（flex:1 自动填满 header 到屏幕底部） ═══ -->
+    <!-- ═══ 分类滚动区（flex:1 自动填满 header 到屏幕底部）· COSTRA-227: keypadOnly 模式下隐藏 ═══ -->
     <scroll-view
+      wx:if="{{!keypadOnly}}"
       class="category-scroll"
       scroll-y
       enhanced="{{true}}"
@@ -99,6 +103,9 @@
       <!-- COSTRA-214: 高度由 JS safeAreaBottom 驱动 -->
       <view class="category-bottom-spacer" style="height: {{safeAreaBottom || 20}}px;"></view>
     </scroll-view>
+
+    <!-- COSTRA-227: keypadOnly 模式下占位区，将键盘推到底部 -->
+    <view wx:if="{{keypadOnly}}" class="keypad-spacer"></view>
 
     <!-- ═══ 数字键盘面板（键盘出现时作为 shell 最后一个 flex 子项） ═══ -->
     <!-- COSTRA-214: 底部安全区由 JS safeAreaBottom 驱动 -->
@@ -181,7 +188,7 @@
             data-key="action"
             bindtap="onKeypadTap"
           >
-            <text>{{calc.actionState === 'done' ? '完成' : '='}}</text>
+            <text>{{calc.actionState === 'done' ? actionButtonLabel : '='}}</text>
           </view>
         </view>
       </view>

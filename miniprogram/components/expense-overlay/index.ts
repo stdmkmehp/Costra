@@ -98,6 +98,17 @@ Component({
     // ─── 显隐 ───
     visible: false,
 
+    // ─── 编辑模式（COSTRA-227） ───
+    editMode: false,
+    /** 编辑标题 */
+    overlayTitle: '记一笔',
+    /** 完成按钮文案 */
+    actionButtonLabel: '完成',
+    /** 编辑模式下收支切换是否禁用 */
+    typeSwipeDisabled: false,
+    /** 仅显示键盘（隐藏分类区域） */
+    keypadOnly: false,
+
     // ─── 安全区（COSTRA-214: 统一由 getSafeAreaMetrics() 驱动） ───
     safeAreaTop: 0,
     safeAreaBottom: 0,
@@ -161,7 +172,7 @@ Component({
       // 根因：各 Tab 页都挂载 <expense-overlay/>，SHOW 是广播导致所有实例 visible=true。
       // 用户在某页点关闭只关当前实例 + emit HIDE，但其他实例不订阅 HIDE 导致残留。
       const hideHandler = () => {
-        this.setData({ visible: false, keypadVisible: false, noteFocused: false, saving: false });
+        this.setData({ visible: false, keypadVisible: false, noteFocused: false, saving: false, editMode: false });
       };
       (this as unknown as Record<string, unknown>)._hideHandler = hideHandler;
       eventBus.on(EventNames.HIDE_EXPENSE_OVERLAY, hideHandler);
@@ -242,6 +253,11 @@ Component({
 
       this.setData({
         visible: true,
+        editMode: false,
+        overlayTitle: '记一笔',
+        actionButtonLabel: '完成',
+        typeSwipeDisabled: false,
+        keypadOnly: false,
         safeAreaTop,
         safeAreaBottom,
         menuButtonTop,
@@ -276,8 +292,250 @@ Component({
     },
 
     onClose() {
-      this.setData({ visible: false, keypadVisible: false });
+      const wasEditMode = this.data.editMode;
+      this.setData({ visible: false, keypadVisible: false, editMode: false });
       eventBus.emit(EventNames.HIDE_EXPENSE_OVERLAY);
+      if (wasEditMode) {
+        eventBus.emit(EventNames.SHOW_TAB_BAR);
+      }
+    },
+
+    // ─── COSTRA-227: 编辑模式 ─────────────────────────────────────────────────
+
+    /**
+     * 打开编辑模式（由明细页 selectComponent 调用）。
+     * 绕过 SHOW_EXPENSE_OVERLAY 事件和 _show() 全量重置路径。
+     */
+    async openEditMode(entry: Entry) {
+      // COSTRA-227: 通知 tabbar 隐藏
+      eventBus.emit(EventNames.HIDE_TAB_BAR);
+
+      // 存储原始 entry 引用（用于后续 diff）
+      (this as unknown as Record<string, unknown>)._editOriginalEntry = entry;
+
+      const ledgerId = entry.ledger_id || await getActiveLedgerId() || '';
+      const familyKind = await getActiveFamilyKind();
+      const ledgerNameStored = await getActiveLedgerName();
+
+      // 获取真实家庭列表
+      let ledgerOptions: LedgerOption[] = [
+        { id: ledgerId, name: ledgerNameStored || '我的账本', isMultiMember: familyKind === 'shared' },
+      ];
+      let currentIsMultiMember = familyKind === 'shared';
+
+      try {
+        const { families } = await getFamilies();
+        if (families && families.length > 0) {
+          ledgerOptions = families.map(f => ({
+            id: f.ledger_id,
+            name: f.name,
+            isMultiMember: f.kind === 'shared',
+          }));
+          const activeFamily = families.find(f => f.ledger_id === ledgerId) || families[0];
+          currentIsMultiMember = activeFamily.kind === 'shared';
+        }
+      } catch { /* 降级 */ }
+
+      // 安全区
+      const { safeAreaTop, safeAreaBottom, menuButtonTop } = getSafeAreaMetrics();
+
+      // 加载分类数据
+      let categoryData: {
+        expense: CategoryTier1[];
+        income: CategoryTier1[];
+        expenseDedupedSubs: CategoryTier2[];
+        incomeDedupedSubs: CategoryTier2[];
+        dedupMapping: DedupMapping;
+      };
+      try {
+        const familyId = await getActiveFamilyId();
+        categoryData = familyId
+          ? await loadCategories(familyId)
+          : { expense: [], income: [], expenseDedupedSubs: [], incomeDedupedSubs: [], dedupMapping: {} };
+      } catch {
+        categoryData = { expense: [], income: [], expenseDedupedSubs: [], incomeDedupedSubs: [], dedupMapping: {} };
+      }
+      (this as unknown as Record<string, unknown>)._categoryData = categoryData;
+
+      // 解析 entry 数据用于预填
+      const entryType = entry.type || 'expense';
+      const tier1Categories = entryType === 'expense'
+        ? categoryData.expense
+        : categoryData.income;
+      const dedupedSubCategories = entryType === 'expense'
+        ? categoryData.expenseDedupedSubs
+        : categoryData.incomeDedupedSubs;
+
+      // 查找分类预填
+      let selectedTier1Id = '';
+      const selectedTier2Id = entry.category_id || '';
+      if (selectedTier2Id) {
+        for (const tier1 of tier1Categories) {
+          if (tier1.children.some(c => c.id === selectedTier2Id)) {
+            selectedTier1Id = tier1.id;
+            break;
+          }
+        }
+      }
+
+      // 金额预填：cents → 元字符串（去掉尾部多余的零）
+      const amountYuanRaw = entry.amount > 0
+        ? (entry.amount / 100).toString()
+        : '0';
+      // 移除多余小数尾零（如 12.30 → 12.3，12.00 → 12）
+      const amountYuan = amountYuanRaw.includes('.')
+        ? amountYuanRaw.replace(/0+$/, '').replace(/\.$/, '')
+        : amountYuanRaw;
+      // 构建 calc state with prefilled amount
+      const editCalcState: CalcState = {
+        display: amountYuan === '0' ? '0' : amountYuan,
+        accumulator: amountYuan,
+        pendingOp: null,
+        lastInputIsOp: false,
+        justEvaluated: false,
+        actionState: 'done',
+        amountCents: entry.amount || 0,
+      };
+
+      // 日期预填：occurred_at → 本地 YYYY-MM-DD
+      const occurredDate = new Date(entry.occurred_at);
+      const recordDate = `${occurredDate.getFullYear()}-${String(occurredDate.getMonth() + 1).padStart(2, '0')}-${String(occurredDate.getDate()).padStart(2, '0')}`;
+
+      // shared_type 预填
+      const sharedType = entry.shared_type || (currentIsMultiMember ? 'shared' : 'shared');
+      const showSharedToggle = currentIsMultiMember && entryType === 'expense';
+
+      (this as unknown as Record<string, number>)._currentScrollTop = 0;
+
+      this.setData({
+        visible: true,
+        editMode: true,
+        overlayTitle: '编辑',
+        actionButtonLabel: '保存',
+        typeSwipeDisabled: true,
+        keypadOnly: true,
+        safeAreaTop,
+        safeAreaBottom,
+        menuButtonTop,
+        ledgerId,
+        ledgerName: ledgerNameStored || '我的账本',
+        isMultiMemberLedger: currentIsMultiMember,
+        ledgerOptions,
+        showSharedToggle,
+        entryType,
+        tier1Categories,
+        dedupedSubCategories,
+        expandedTier1Id: null,
+        expandedChildren: [],
+        selectedTier1Id,
+        selectedTier2Id,
+        dimmedTier1Ids: [],
+        keypadVisible: true,
+        calc: editCalcState,
+        sharedType,
+        note: entry.note || '',
+        recordDate,
+        recordDateText: formatRecordDateText(recordDate),
+        noteFocused: false,
+        saving: false,
+        categoryScrollTop: 1,
+      });
+
+      setTimeout(() => {
+        this.setData({ categoryScrollTop: 0 });
+      }, 50);
+    },
+
+    /** COSTRA-227: 编辑模式保存逻辑 */
+    async _saveEditEntry() {
+      if (this.data.saving) return;
+
+      const amountCents = this.data.calc.amountCents;
+      if (amountCents <= 0) {
+        wx.showToast({ title: '请输入金额', icon: 'none' });
+        return;
+      }
+
+      if (!this.data.selectedTier2Id) {
+        wx.showToast({ title: '请选择分类', icon: 'none' });
+        return;
+      }
+
+      const originalEntry = (this as unknown as Record<string, unknown>)._editOriginalEntry as Entry | null;
+      if (!originalEntry) return;
+
+      // 构建新 occurred_at
+      const newOccurredAt = buildOccurredAt(this.data.recordDate);
+
+      // 解析原始日期为本地 YYYY-MM-DD（用于比较）
+      const origDate = new Date(originalEntry.occurred_at);
+      const origDateKey = `${origDate.getFullYear()}-${String(origDate.getMonth() + 1).padStart(2, '0')}-${String(origDate.getDate()).padStart(2, '0')}`;
+
+      // 提取变更字段
+      const changedFields: Record<string, unknown> = {};
+      if (amountCents !== originalEntry.amount) {
+        changedFields.amount = amountCents;
+      }
+      if (this.data.selectedTier2Id !== (originalEntry.category_id || '')) {
+        changedFields.category_id = this.data.selectedTier2Id;
+      }
+      if (this.data.note.trim() !== (originalEntry.note || '').trim()) {
+        changedFields.note = this.data.note.trim();
+      }
+      if (this.data.recordDate !== origDateKey) {
+        changedFields.occurred_at = newOccurredAt;
+      }
+      const newSharedType = this.data.isMultiMemberLedger && this.data.entryType === 'expense'
+        ? this.data.sharedType
+        : null;
+      if (newSharedType !== (originalEntry.shared_type || null)) {
+        changedFields.shared_type = newSharedType;
+      }
+
+      // 无变更 → 直接关闭
+      if (Object.keys(changedFields).length === 0) {
+        this.setData({ visible: false, keypadVisible: false, editMode: false });
+        eventBus.emit(EventNames.HIDE_EXPENSE_OVERLAY);
+        return;
+      }
+
+      this.setData({ saving: true });
+
+      try {
+        // 更新本地 entry
+        const updatedEntry: Entry = {
+          ...originalEntry,
+          amount: amountCents,
+          category_id: this.data.selectedTier2Id,
+          note: this.data.note.trim(),
+          occurred_at: changedFields.occurred_at ? newOccurredAt : originalEntry.occurred_at,
+          shared_type: newSharedType,
+          updated_at: new Date().toISOString(),
+          dirty: true,
+        };
+
+        await putEntry(updatedEntry);
+        await enqueue({
+          op: 'update',
+          entity: 'entry',
+          client_ref_id: originalEntry.client_ref_id,
+          base_version: originalEntry.version ?? null,
+          payload: changedFields,
+        });
+
+        // 关闭覆盖层
+        this.setData({ visible: false, keypadVisible: false, saving: false, editMode: false });
+        eventBus.emit(EventNames.HIDE_EXPENSE_OVERLAY);
+        eventBus.emit(EventNames.SHOW_TAB_BAR);
+        eventBus.emit(EventNames.ENTRY_UPDATED);
+
+        wx.vibrateShort({ type: 'light' });
+        wx.showToast({ title: '已保存', icon: 'success' });
+      } catch (err) {
+        console.error('[expense-overlay] edit save failed', err);
+        this.setData({ saving: false });
+        wx.showToast({ title: '保存失败，请重试', icon: 'none' });
+      }
     },
 
     /** 阻止触摸穿透 */
@@ -420,6 +678,9 @@ Component({
       const touch = e.changedTouches[0];
       if (!touch) return;
 
+      // COSTRA-227: 编辑模式下禁止收支切换
+      if (this.data.typeSwipeDisabled) return;
+
       const startX = (this as unknown as Record<string, number>)._touchStartX;
       const startY = (this as unknown as Record<string, number>)._touchStartY;
       if (startX == null || startY == null) return;
@@ -443,6 +704,8 @@ Component({
 
     /** 点击顶部文字指示器切换收支 */
     onTapTab(e: WechatMiniprogram.TouchEvent) {
+      // COSTRA-227: 编辑模式下禁止收支切换
+      if (this.data.typeSwipeDisabled) return;
       const type = e.currentTarget.dataset.type as 'expense' | 'income';
       if (type === this.data.entryType) return;
       this._switchEntryType(type);
@@ -637,8 +900,12 @@ Component({
         const newCalc = pressEquals(calc);
         this.setData({ calc: newCalc });
       } else {
-        // 按"完成" → 保存
-        this._saveEntry();
+        // 按"完成/保存" → 保存
+        if (this.data.editMode) {
+          this._saveEditEntry();
+        } else {
+          this._saveEntry();
+        }
       }
     },
 

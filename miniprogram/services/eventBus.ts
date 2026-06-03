@@ -12,6 +12,12 @@ export const EventNames = {
   HIDE_EXPENSE_OVERLAY: 'hide-expense-overlay',
   /** 记账保存成功（COSTRA-220: 明细页响应式刷新） */
   ENTRY_SAVED: 'entry-saved',
+  /** 条目编辑保存成功（COSTRA-227: 明细页响应式刷新） */
+  ENTRY_UPDATED: 'entry-updated',
+  /** 隐藏 TabBar（通用：任何全屏面板打开时） */
+  HIDE_TAB_BAR: 'hide-tab-bar',
+  /** 显示 TabBar（通用：全屏面板关闭时） */
+  SHOW_TAB_BAR: 'show-tab-bar',
 } as const;
 
 export type EventName = typeof EventNames[keyof typeof EventNames];

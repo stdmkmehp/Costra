@@ -79,27 +79,39 @@
             bindtouchstart="onTouchStart"
             bindtouchmove="onTouchMove"
             bindtouchend="onTouchEnd"
-            bindtap="onTapEntry"
           >
-            <!-- 极简单色圆形图标 · 48rpx -->
-            <view class="entry-icon">
+            <!-- 极简单色圆形图标 · COSTRA-227: 点击编辑分类 -->
+            <view class="entry-icon" data-refid="{{entry.client_ref_id}}" catchtap="onTapEntryCategory">
               <text class="entry-icon__text">{{entry.icon}}</text>
             </view>
-            <!-- 成员头像（多人账本） · 32rpx 圆形 -->
+            <!-- 成员头像（多人账本） -->
             <image
               wx:if="{{showMemberFilter && entry.avatarUrl}}"
               class="entry-avatar"
               src="{{entry.avatarUrl}}"
               mode="aspectFill"
             />
-            <!-- 分类名/备注 · flex-1 -->
-            <view class="entry-label grow">
-              <text class="entry-label__text">{{entry.label}}</text>
+            <!-- 分类名/备注 · COSTRA-227: 点击原地编辑备注 -->
+            <view class="entry-label grow" data-refid="{{entry.client_ref_id}}" catchtap="onTapEntryNote">
+              <text wx:if="{{editingNoteRefId !== entry.client_ref_id}}" class="entry-label__text">{{entry.label}}</text>
+              <input
+                wx:if="{{editingNoteRefId === entry.client_ref_id}}"
+                class="entry-label__input"
+                value="{{editNoteValue}}"
+                placeholder="添加备注..."
+                focus="{{true}}"
+                bindinput="onEditNoteInput"
+                bindconfirm="onConfirmEditNote"
+                bindblur="onConfirmEditNote"
+                maxlength="200"
+              />
             </view>
-            <!-- 金额 · tnum · 收入绿色带+号（保持单行，避免 text 保留换行导致视觉中心下沉） -->
-            <text class="entry-amount tnum {{entry.type === 'income' ? 'entry-amount--income' : ''}}">{{entry.amountText}}</text>
+            <!-- 金额 · COSTRA-227: 点击编辑金额 -->
+            <view class="entry-amount-wrap" data-refid="{{entry.client_ref_id}}" catchtap="onTapEntryAmount">
+              <text class="entry-amount tnum {{entry.type === 'income' ? 'entry-amount--income' : ''}}">{{entry.amountText}}</text>
+            </view>
           </view>
-          <!-- 左滑删除按钮 · 160rpx · 红底白字 -->
+          <!-- 左滑删除按钮 -->
           <view
             class="entry-delete"
             data-refid="{{entry.client_ref_id}}"
@@ -118,6 +130,125 @@
     </view>
   </scroll-view>
 
-  <!-- 记账覆盖层（COSTRA-201） -->
-  <expense-overlay />
+  <!-- ═══ COSTRA-227: 全屏分类选择面板（和记账界面一致） ═══ -->
+  <view class="edit-category-overlay {{editCategoryVisible ? 'is-visible' : ''}}">
+    <view class="edit-category-shell">
+      <!-- 顶部 header：和记账一样的支出·收入切换 -->
+      <view class="edit-category-header" style="padding-top: {{menuButtonTop || statusBarHeight}}px;">
+        <text class="edit-category-header__close" bindtap="onCloseEditCategory">取消</text>
+        <view class="edit-category-header__tabs">
+          <text
+            class="edit-category-header__tab {{editCategoryType === 'expense' ? 'is-active' : ''}}"
+            data-type="expense"
+            bindtap="onEditCategoryTypeTab"
+          >支出</text>
+          <text class="edit-category-header__sep">·</text>
+          <text
+            class="edit-category-header__tab {{editCategoryType === 'income' ? 'is-active' : ''}}"
+            data-type="income"
+            bindtap="onEditCategoryTypeTab"
+          >收入</text>
+        </view>
+        <view class="edit-category-header__placeholder"></view>
+      </view>
+      <!-- 分类滚动区 -->
+      <scroll-view class="edit-category-scroll" scroll-y enhanced="{{true}}" show-scrollbar="{{false}}">
+        <!-- 一级分类网格 -->
+        <view class="category-section category-section--tier1">
+          <view
+            wx:for="{{editTier1Categories}}"
+            wx:key="id"
+            class="category-tier1 {{editSelectedTier1Id === item.id ? 'is-selected' : ''}} {{editDimmedTier1Ids.indexOf(item.id) >= 0 ? 'is-dimmed' : ''}}"
+            data-id="{{item.id}}"
+            bindtap="onEditTapTier1"
+          >
+            <view class="category-tier1__icon">{{item.icon}}</view>
+            <text class="category-tier1__name">{{item.name}}</text>
+          </view>
+        </view>
+        <!-- 分隔线 -->
+        <view class="category-divider"></view>
+        <!-- 展开的子分类 -->
+        <view class="category-section category-section--tier2" wx:if="{{editExpandedChildren.length > 0}}">
+          <view
+            wx:for="{{editExpandedChildren}}"
+            wx:key="id"
+            class="category-item {{editSelectedTier2Id === item.id ? 'is-selected' : ''}}"
+            data-id="{{item.id}}"
+            bindtap="onEditTapSubCategory"
+          >
+            <view class="category-item__icon">{{item.name[0]}}</view>
+            <text class="category-item__name">{{item.name}}</text>
+          </view>
+        </view>
+        <!-- 去重后全局二级分类 -->
+        <view class="category-section category-section--tier2" wx:if="{{!editExpandedTier1Id}}">
+          <view
+            wx:for="{{editDedupedSubCategories}}"
+            wx:key="id"
+            class="category-item {{editSelectedTier2Id === item.id ? 'is-selected' : ''}}"
+            data-id="{{item.id}}"
+            data-name="{{item.name}}"
+            bindtap="onEditTapSubCategory"
+          >
+            <view class="category-item__icon">{{item.name[0]}}</view>
+            <text class="category-item__name">{{item.name}}</text>
+          </view>
+        </view>
+        <view style="height: 40rpx;"></view>
+      </scroll-view>
+    </view>
+  </view>
+
+  <!-- ═══ COSTRA-227: 底部金额编辑键盘面板（半屏，上方仍显示明细） ═══ -->
+  <view class="edit-amount-panel {{editAmountVisible ? 'is-visible' : ''}}">
+    <view class="edit-amount-panel__mask" bindtap="onCloseEditAmount"></view>
+    <view class="edit-amount-panel__sheet keypad-sheet" style="padding-bottom: env(safe-area-inset-bottom, 0px);">
+      <!-- 金额显示（公共样式） -->
+      <view class="keypad-sheet__amount">
+        <text class="keypad-sheet__prefix">¥</text>
+        <text class="keypad-sheet__value tnum">{{editAmountDisplay}}</text>
+      </view>
+      <!-- 操作行：费用性质 -->
+      <view class="keypad-sheet__actions">
+        <view class="keypad-shared {{editAmountShowShared ? 'is-visible' : ''}}" bindtap="onEditAmountToggleShared">
+          <text class="keypad-shared__text {{editAmountSharedType === 'personal' ? 'is-active' : ''}}">个人支出</text>
+          <text class="keypad-shared__sep">|</text>
+          <text class="keypad-shared__text {{editAmountSharedType === 'shared' ? 'is-active' : ''}}">公共支出</text>
+        </view>
+      </view>
+      <!-- 数字键盘（公共样式） -->
+      <view class="keypad">
+        <view class="keypad__row">
+          <view class="keypad__key" data-key="1" bindtap="onEditAmountKey"><text>1</text></view>
+          <view class="keypad__key" data-key="2" bindtap="onEditAmountKey"><text>2</text></view>
+          <view class="keypad__key" data-key="3" bindtap="onEditAmountKey"><text>3</text></view>
+          <picker class="keypad__picker" mode="date" value="{{editAmountDate}}" bindchange="onEditAmountDateChange">
+            <view class="keypad__key keypad__key--fn keypad__key--date"><text>{{editAmountDateText}}</text></view>
+          </picker>
+        </view>
+        <view class="keypad__row">
+          <view class="keypad__key" data-key="4" bindtap="onEditAmountKey"><text>4</text></view>
+          <view class="keypad__key" data-key="5" bindtap="onEditAmountKey"><text>5</text></view>
+          <view class="keypad__key" data-key="6" bindtap="onEditAmountKey"><text>6</text></view>
+          <view class="keypad__key keypad__key--fn" data-key="+" bindtap="onEditAmountKey"><text>+</text></view>
+        </view>
+        <view class="keypad__row">
+          <view class="keypad__key" data-key="7" bindtap="onEditAmountKey"><text>7</text></view>
+          <view class="keypad__key" data-key="8" bindtap="onEditAmountKey"><text>8</text></view>
+          <view class="keypad__key" data-key="9" bindtap="onEditAmountKey"><text>9</text></view>
+          <view class="keypad__key keypad__key--fn" data-key="-" bindtap="onEditAmountKey"><text>-</text></view>
+        </view>
+        <view class="keypad__row">
+          <view class="keypad__key" data-key="." bindtap="onEditAmountKey"><text>.</text></view>
+          <view class="keypad__key" data-key="0" bindtap="onEditAmountKey"><text>0</text></view>
+          <view class="keypad__key keypad__key--fn" data-key="backspace" bindtap="onEditAmountKey"><text>⌫</text></view>
+          <view class="keypad__key keypad__key--action keypad__key--done" data-key="done" bindtap="onEditAmountKey"><text>{{editAmountCalc.actionState === 'done' ? '保存' : '='}}</text></view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 记账覆盖层 -->
+  <expense-overlay id="expense-overlay" />
 </view>
