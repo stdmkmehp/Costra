@@ -13,14 +13,24 @@
 
 ## §0 一句话断点（HEAD 之前 = 已兑现 · 之后 = 待做）
 
-> **2026-06-02 17:20 当前断点**：✅ **`review-tech:COSTRA-223` R1 REVISE 25/35 → R1.x.1 修订完成**。2 P0 + 4 P1 全部修复（InviteResponse 对齐 OpenAPI · 403 专门处理 · PersonalByMember.amount · SWR stale-first · 分享路径兜底 · 缓存上限 20）。验证全绿：typecheck ✅ / lint ✅ / test 99/99 ✅。4 P2 不阻塞，记入后续。
+> **2026-06-03 16:38 当前断点**：✅ **COSTRA-223 协作页 R1.x.1 + Human 验收修复全部提交**（commit `1cd6082`）。43 文件 +3206/-231 行。验证全绿：typecheck/lint/test。Human 验收通过基础功能；剩余新需求"明细页条目编辑（修改分类/备注/金额/时间）"需作为新卡 `COSTRA-227` 走 dispatch → card-review 流程。
 >
-> **当前 Orchestrator 模式**：`awaiting-human-review`。R1.x.1 修订后 P0/P1=0，可进入 Human T1 终审。
+> **当前 Orchestrator 模式**：`idle-between-cards`。
 >
-> **下一步**：
-> 1. **`approve:COSTRA-223`** —— Human T1 终审（微信开发者工具 + 可选真机验证）。
+> **本会话交付清单**：
+> - ✅ `COSTRA-223` 协作页全新开发：Solo/Multi 两态、成员横滚、占比条、Accordion、月份切换
+> - ✅ 记账 overlay 修复：真实账本列表、个人/公共支出切换、shared_type 写入 entry
+> - ✅ 三页面统一导航栏（居中账本名+▼切换）+ 账本切换从 API 获取真实家庭列表
+> - ✅ 明细页月份快速切换（‹ picker ›）+ 筛选行布局重构
+> - ✅ TabBar "家庭" → "协作" + 双人叠站图标
+> - ✅ 家庭数量限制配置（maxSharedFamilies=3）
+> - ✅ createInvite 空 body 修复、getFamilies 数组包装修复、403 专门处理
 >
-> **硬约束提醒**：Orchestrator 不直接写业务代码。
+> **下一步推荐**：
+> 1. `plan-dispatch:COSTRA-227` —— 明细页条目编辑（修改分类/备注/金额/时间）
+> 2. `approve:COSTRA-223` —— 如 Human 确认协作页基础功能验收通过
+>
+> **硬约束提醒**：Orchestrator 不直接写业务代码；新卡必须 dispatch → card-review → Human 触发 → spawn 对应 Agent → review → Human 终审。
 
 ---
 
