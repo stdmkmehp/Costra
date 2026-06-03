@@ -48,13 +48,19 @@
     bindtap="switchTab"
   >
     <view class="tab-item__icon">
-      <!-- 家庭 icon · 简单人形 -->
-      <view class="icon-family">
-        <view class="icon-family__head"></view>
-        <view class="icon-family__body"></view>
+      <!-- 协作 icon · 双人前后叠站（一大一小） -->
+      <view class="icon-collab">
+        <view class="icon-collab__person icon-collab__person--back">
+          <view class="icon-collab__head"></view>
+          <view class="icon-collab__body"></view>
+        </view>
+        <view class="icon-collab__person icon-collab__person--front">
+          <view class="icon-collab__head"></view>
+          <view class="icon-collab__body"></view>
+        </view>
       </view>
     </view>
-    <text class="tab-item__text">家庭</text>
+    <text class="tab-item__text">协作</text>
   </view>
 
   <view

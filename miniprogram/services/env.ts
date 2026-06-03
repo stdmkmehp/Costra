@@ -47,7 +47,7 @@ const ENV_MAP: Record<EnvName, EnvConfig> = {
 };
 
 // 当前环境：由 __wxConfig 或编译期替换决定，这里默认 dev
-const CURRENT_ENV: EnvName = 'prod';
+const CURRENT_ENV: EnvName = 'dev';
 
 export function getEnv(): EnvConfig {
   return ENV_MAP[CURRENT_ENV];

@@ -9,7 +9,7 @@
 > **🆕 验证问题响应 SOP（D-017 · 2026-04-28 13:59 Human 立案 · 14:15 落盘）**：项目遇到验证失败时标准流程 —— ① 责任领域识别（Orchestrator 30s） → ② 责任 Agent 根因分析（只诊断不改文件） → ③ 多方案对比（≥2~3 方案 · 列成本/价值/风险 + Human 决策点 Qn） → ④ Human 评估裁决 → ⑤ 派单实装。**禁止 Orchestrator 自行分析根因**（反模式 A） · E1/E2/E3 例外 · 反模式 ABCD 禁令 · COSTRA-120 首次实战。详见 `.team/decisions/D-017-verification-problem-response-sop.md`。
 > **🔄 D-011 实战验证三次通过**（2026-04-23）：COSTRA-100（2 轮 · 69 min） + Sprint-0 补审（7 卡 × 2 轮 · 29 min 并行） + **COSTRA-101 Round 1 刚自动拉起（22:49 · D-014-b 首次实战）**
 
-最后更新：`2026-06-02 15:38`（Orchestrator · `start:COSTRA-222` 已完成 · Family Summary API R1 实装 + `review-tech:COSTRA-222` PASS 33/35 · 0 P0/0 P1 · 等 Human T1 review / approve）
+最后更新：`2026-06-02 17:03`（Orchestrator · `start:COSTRA-223` R1 实装完成 · 5 文件 1712 行 · typecheck/lint/test 全绿 · Card-Review P2 全兑现 · 下一步 review-tech 自动拉起）
 
 > （上一条归档）`2026-05-22 20:45`（Orchestrator · 🚀 **Sprint-3 头部双卡 152+153 R1 + R1.x.1 全闭环 · D-014 同轮范式第 3 次实战完美收官**（105+156 / 154+150 / 152+153 三连）· R1 实装 commit `513dd5a` + `ccd80b9` · R1.x.1 双胞胎 `167bf17` · review-tech 37+39/40 · 等 Human curl 实测 + approve）
 
@@ -108,7 +108,7 @@
 - 当前无业务开发卡 in-flight。
 - ✅ **sync-state:family-first-baseline** 已完成：`.team/STATE` / `.team/board.md` / `.team/backlog.json` / `.team/HANDOFF.md` 已同步。
 - ✅ **COSTRA-221** @backend-dev · Human T1 APPROVED CLOSED。
-- ✅ **COSTRA-222 card-review** @card-reviewer-tech · PASS-WITH-FOLLOWUP 27/30；0 P0/P1；下一步：Human 触发 `start:COSTRA-222`。
+- ✅ **COSTRA-222** @backend-dev · Human T1 APPROVED CLOSED；下一步建议：`plan-dispatch:COSTRA-223`。
 
 ## 📋 Todo · Sprint-3（验收后收口 · Family First baseline sync）
 
@@ -155,7 +155,7 @@
 | 卡号 | 标题 | Owner | 入场条件 |
 |---|---|---|---|
 | **COSTRA-221** | 家庭管理 API | backend-dev | ✅ Human T1 APPROVED CLOSED |
-| **COSTRA-222** | 家庭财务聚合 API | backend-dev | ✅ R1 + review-tech PASS · 下一步 `approve:COSTRA-222` |
+| **COSTRA-222** | 家庭财务聚合 API | backend-dev | ✅ Human T1 APPROVED CLOSED |
 | **COSTRA-155-split** | 当前基线自动化回归 / Family E2E 准备 | qa-planner + miniapp-dev | 需 `revise-dispatch:COSTRA-155` |
 | **prod/sync guardrails** | `COSTRA-161/163` + `FU-220-SYNC-USER-ID-CREATED-BY` | devops-ops + backend-dev + miniapp-dev | `COSTRA-221` 前或同批审卡 |
 
@@ -190,6 +190,7 @@ _（无强阻塞。COSTRA-040 "真实上传链路激活" 仍依赖外部资源�
 
 ### Sprint-4
 - [D] **COSTRA-221 家庭管理 API** @backend-dev · 2026-06-02 Human T1 APPROVED CLOSED · review-tech PASS 31/35 · server typecheck ✅ · server tests 124/124 ✅ · `.team/reviews/COSTRA-221/FINAL.md`
+- [D] **COSTRA-222 家庭财务聚合 API** @backend-dev · 2026-06-02 Human T1 APPROVED CLOSED · review-tech PASS 33/35 · server typecheck ✅ · server tests 141/141 ✅ · commit `6bf431b` · `.team/reviews/COSTRA-222/FINAL.md`
 
 ### Sprint-0
 - [D] COSTRA-001 项目章程与目标对齐    @PM-Agent       · 2026-04-21 G1 通过 · charter.md v2.2

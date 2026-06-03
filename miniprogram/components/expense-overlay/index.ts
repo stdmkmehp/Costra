@@ -15,7 +15,8 @@ import { newClientRefId } from '../../utils/id';
 import { getSafeAreaMetrics } from '../../utils/safeArea';
 import { putEntry, type Entry } from '../../services/db';
 import { enqueue } from '../../services/outbox';
-import { getActiveLedgerId, getActiveFamilyId } from '../../services/family';
+import { getActiveLedgerId, getActiveFamilyId, getActiveFamilyKind, getActiveLedgerName, setActiveFamily } from '../../services/family';
+import { getFamilies } from '../../services/familyApi';
 import { getToken } from '../../services/auth';
 import { eventBus, EventNames } from '../../services/eventBus';
 import {
@@ -100,6 +101,7 @@ Component({
     // ─── 安全区（COSTRA-214: 统一由 getSafeAreaMetrics() 驱动） ───
     safeAreaTop: 0,
     safeAreaBottom: 0,
+    menuButtonTop: 0,
 
     // ─── 收支类型 ───
     entryType: 'expense' as 'expense' | 'income',
@@ -183,12 +185,33 @@ Component({
 
     async _show() {
       const ledgerId = await getActiveLedgerId() || '';
-      const ledgerOptions: LedgerOption[] = [
-        { id: ledgerId || 'default', name: '我的账本', isMultiMember: false },
+      const familyKind = await getActiveFamilyKind();
+      const ledgerNameStored = await getActiveLedgerName();
+
+      // COSTRA-223: 从 API 获取真实家庭列表，构建账本选项
+      let ledgerOptions: LedgerOption[] = [
+        { id: ledgerId || 'default', name: ledgerNameStored || '我的账本', isMultiMember: familyKind === 'shared' },
       ];
+      let currentIsMultiMember = familyKind === 'shared';
+
+      try {
+        const { families } = await getFamilies();
+        if (families && families.length > 0) {
+          ledgerOptions = families.map(f => ({
+            id: f.ledger_id,
+            name: f.name,
+            isMultiMember: f.kind === 'shared',
+          }));
+          // 确定当前选中的 family
+          const activeFamily = families.find(f => f.ledger_id === ledgerId) || families[0];
+          currentIsMultiMember = activeFamily.kind === 'shared';
+        }
+      } catch {
+        // API 获取失败降级：使用本地存储的信息
+      }
 
       // COSTRA-214: 读取统一安全区指标
-      const { safeAreaTop, safeAreaBottom } = getSafeAreaMetrics();
+      const { safeAreaTop, safeAreaBottom, menuButtonTop } = getSafeAreaMetrics();
 
       // COSTRA-209: 重置滚动位置到顶部
       // 小程序 scroll-view 不会响应同值赋值，先设 1 再 nextTick 设 0
@@ -221,11 +244,12 @@ Component({
         visible: true,
         safeAreaTop,
         safeAreaBottom,
+        menuButtonTop,
         ledgerId: ledgerId || 'default',
-        ledgerName: '我的账本',
-        isMultiMemberLedger: false,
+        ledgerName: ledgerNameStored || '我的账本',
+        isMultiMemberLedger: currentIsMultiMember,
         ledgerOptions,
-        showSharedToggle: false,
+        showSharedToggle: currentIsMultiMember,
         entryType: 'expense',
         tier1Categories: categoryData.expense,
         dedupedSubCategories: categoryData.expenseDedupedSubs,
@@ -636,11 +660,25 @@ Component({
 
       wx.showActionSheet({
         itemList: items,
-        success: (res) => {
+        success: async (res) => {
           const selected = this.data.ledgerOptions[res.tapIndex];
           if (!selected) return;
 
           const showSharedToggle = selected.isMultiMember && this.data.entryType === 'expense';
+
+          // COSTRA-223: 切换账本后同步更新 active family context
+          try {
+            const { families } = await getFamilies();
+            const targetFamily = families.find(f => f.ledger_id === selected.id);
+            if (targetFamily) {
+              await setActiveFamily({
+                family_id: targetFamily.id,
+                ledger_id: targetFamily.ledger_id,
+                family_kind: targetFamily.kind,
+                ledger_name: targetFamily.name,
+              });
+            }
+          } catch { /* 静默降级 */ }
 
           this.setData({
             ledgerId: selected.id,
@@ -726,6 +764,10 @@ Component({
           updated_at: now,
           dirty: true,
           created_by: currentUserId,
+          // COSTRA-223: 费用性质（仅 expense + 多人家庭时有意义）
+          shared_type: this.data.isMultiMemberLedger && this.data.entryType === 'expense'
+            ? this.data.sharedType
+            : null,
         };
 
         await putEntry(entry);

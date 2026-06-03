@@ -18,6 +18,7 @@ import { enqueue } from '../../services/outbox';
 import { getToken } from '../../services/auth';
 import { eventBus, EventNames } from '../../services/eventBus';
 import { pickRandomSlogan } from '../../config/slogans';
+import { getFamilies } from '../../services/familyApi';
 import {
   getCategories,
   warmUpMemoryCache,
@@ -415,41 +416,62 @@ Page({
   // ─── 交互：账本切换 ──────────────────────────────────────────────────────────
 
   async onTapLedgerName() {
-    // COSTRA-220: 从 FamilyContext 获取真实账本名称
-    const currentName = this.data.ledgerName;
-    const items = [currentName];
-    // TODO: D2 阶段接入家庭列表 API 后动态填充多账本选项
-    // if (this._familyId && familyKind === 'shared') {
-    //   items.push('家庭账本');
-    // }
+    try {
+      const { families } = await getFamilies();
+      if (!families || families.length <= 1) {
+        wx.showToast({ title: '当前只有一个账本', icon: 'none' });
+        return;
+      }
 
-    // MVP 阶段只有个人账本，无需 ActionSheet
-    if (items.length <= 1) {
-      wx.showToast({ title: '当前只有一个账本', icon: 'none' });
-      return;
+      const items = families.map(f => {
+        const suffix = f.kind === 'personal' ? '（个人）' : `（${f.member_count}人）`;
+        return f.name + suffix;
+      });
+
+      wx.showActionSheet({
+        itemList: items,
+        success: async (res) => {
+          const selected = families[res.tapIndex];
+          if (selected.ledger_id === this._ledgerId) return;
+
+          // 切换 active family context
+          await setActiveFamily({
+            family_id: selected.id,
+            ledger_id: selected.ledger_id,
+            family_kind: selected.kind,
+            ledger_name: selected.name,
+          });
+
+          this._familyId = selected.id;
+          this._ledgerId = selected.ledger_id;
+          this.setData({ ledgerName: selected.name });
+          await this._loadEntries();
+        },
+      });
+    } catch {
+      wx.showToast({ title: '获取账本列表失败', icon: 'none' });
     }
-
-    wx.showActionSheet({
-      itemList: items,
-      success: async (res) => {
-        const selected = items[res.tapIndex];
-        if (selected === currentName) return;
-
-        // COSTRA-220: 切换后更新 _ledgerId + 持久化 + 刷新数据
-        this.setData({ ledgerName: selected });
-        await setActiveFamily({
-          family_id: this._familyId,
-          ledger_id: this._ledgerId,
-          // 保留 kind，更新 name
-          family_kind: (await getActiveFamilyKind()) ?? undefined,
-          ledger_name: selected,
-        });
-        await this._loadEntries();
-      },
-    });
   },
 
   // ─── 交互：月份选择 ──────────────────────────────────────────────────────────
+
+  onPrevMonth() {
+    const [y, m] = this.data.currentMonth.split('-').map(Number);
+    const prev = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`;
+    this._shouldRefreshEmptyHintOnNextEmpty = true;
+    this.setData({ currentMonth: prev, monthDisplay: formatMonthDisplay(prev) });
+    this._loadEntries(prev);
+    this._scrollTopToTop();
+  },
+
+  onNextMonth() {
+    const [y, m] = this.data.currentMonth.split('-').map(Number);
+    const nxt = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
+    this._shouldRefreshEmptyHintOnNextEmpty = true;
+    this.setData({ currentMonth: nxt, monthDisplay: formatMonthDisplay(nxt) });
+    this._loadEntries(nxt);
+    this._scrollTopToTop();
+  },
 
   onMonthChange(e: WechatMiniprogram.PickerChange) {
     const value = e.detail.value as string;

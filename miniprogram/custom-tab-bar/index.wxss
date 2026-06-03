@@ -142,34 +142,60 @@
 .icon-stat__bar--tall   { height: 32rpx; }
 .icon-stat__bar--medium { height: 22rpx; }
 
-/* ---- 图标：家庭（双人） ---- */
-.icon-family {
-  display: flex;
-  align-items: flex-end;
-  gap: 3rpx;
+/* ---- 图标：协作（双人前后叠站 · 一大一小） ---- */
+.icon-collab {
   position: relative;
   width: 36rpx;
   height: 32rpx;
 }
 
-.icon-family__head {
-  width: 12rpx;
-  height: 12rpx;
-  border-radius: 50%;
-  background: currentColor;
+.icon-collab__person {
   position: absolute;
-  top: 0;
-  left: 4rpx;
 }
 
-.icon-family__body {
-  width: 28rpx;
-  height: 14rpx;
-  border-radius: 14rpx 14rpx 0 0;
+.icon-collab__head {
+  border-radius: 50%;
   background: currentColor;
-  position: absolute;
+}
+
+.icon-collab__body {
+  border-radius: 99rpx 99rpx 0 0;
+  background: currentColor;
+}
+
+/* 后排（较大） */
+.icon-collab__person--back {
+  right: 0;
   bottom: 0;
-  left: 4rpx;
+}
+
+.icon-collab__person--back .icon-collab__head {
+  width: 14rpx;
+  height: 14rpx;
+  margin: 0 auto 2rpx;
+}
+
+.icon-collab__person--back .icon-collab__body {
+  width: 24rpx;
+  height: 14rpx;
+}
+
+/* 前排（较小 · 偏左下叠在前面） */
+.icon-collab__person--front {
+  left: 0;
+  bottom: 0;
+  z-index: 1;
+}
+
+.icon-collab__person--front .icon-collab__head {
+  width: 10rpx;
+  height: 10rpx;
+  margin: 0 auto 2rpx;
+}
+
+.icon-collab__person--front .icon-collab__body {
+  width: 18rpx;
+  height: 10rpx;
 }
 
 /* ---- 图标：我的（单人） ---- */

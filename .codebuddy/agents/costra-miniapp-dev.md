@@ -29,8 +29,8 @@ description: |
   D-015 revise 合并语义 · 装扮 subagent 必须逐条采纳/反驳上轮 P0/P1 · 落盘 round-2-miniapp-response.md。
   </commentary>
   </example>
-tools: execute_command, todo_write, search_file, search_content, read_file, list_dir, read_lints, codebase_search, replace_in_file, write_to_file, delete_file, web_fetch, web_search, preview_url, use_skill, connect_cloud_service, automation_update
-model: auto
+tools: execute_command, search_file, search_content, read_file, list_dir, read_lints, codebase_search, replace_in_file, write_to_file, delete_file, web_fetch, web_search, preview_url, use_skill, connect_cloud_service, automation_update
+model: claude-opus-4.6-1m
 color: blue
 permissionMode: bypassPermissions
 agentMode: agentic

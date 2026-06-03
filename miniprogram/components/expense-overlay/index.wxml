@@ -8,8 +8,8 @@
   <view class="expense-shell">
 
     <!-- ═══ 顶部区域：取消 + 支出/收入指示器 ═══ -->
-    <!-- COSTRA-214: padding-top 由 JS safeAreaTop 驱动，不再用 CSS env(safe-area-inset-top) -->
-    <view class="expense-header" style="padding-top: {{safeAreaTop + 4}}px;" catchtouchmove="noop">
+    <!-- padding-top = menuButtonTop：与胶囊按钮顶部精确对齐 -->
+    <view class="expense-header" style="padding-top: {{menuButtonTop}}px;" catchtouchmove="noop">
       <text class="expense-header__close" bindtap="onClose">取消</text>
       <view class="expense-header__tabs">
         <text

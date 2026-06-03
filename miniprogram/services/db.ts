@@ -22,6 +22,8 @@ export interface Entry {
   dirty?: boolean;              // 本地标记 · 未 push
   /** 创建者用户 ID（COSTRA-220: 从 sync wire user_id 字段写入 · 本地创建时写入当前 userId） */
   created_by?: string | null;
+  /** 费用性质（COSTRA-217: shared=公共支出 / personal=个人支出 · 仅 expense 有意义） */
+  shared_type?: 'shared' | 'personal' | null;
 }
 
 export interface Category {

@@ -13,19 +13,14 @@
 
 ## §0 一句话断点（HEAD 之前 = 已兑现 · 之后 = 待做）
 
-> **2026-06-02 15:25 当前断点**：✅ **COSTRA-222 card-review R1 已通过，等待 Human 触发 `start:COSTRA-222`**。Human 已确认 `qa/costra-154-150-joint-smoke.md`、`qa/phase-3-prod-realdevice-test.md`、`qa/current-stage-acceptance-family-first-baseline.md` 三份手册全 PASS；`COSTRA-221` 已 Human T1 APPROVED CLOSED 并进入 Sprint-4 基线；后续 Sprint 4/5/6 Family First 规划已落盘：`.team/sprints/sprint-04-06-family-first-plan.md`（commit `0c479e9`）。`COSTRA-222` 已按 Family First 路线派单并完成卡审：`.team/dispatch/COSTRA-222-backend-family-summary-api.md`，`card-review:COSTRA-222` 已落盘 `.team/reviews/COSTRA-222/card-review-round-1-tech.md`，verdict=`PASS-WITH-FOLLOWUP 27/30`，0 P0 / 0 P1 / 4 P2。未收到 `start:COSTRA-222` 前不得写业务代码。
+> **2026-06-02 17:20 当前断点**：✅ **`review-tech:COSTRA-223` R1 REVISE 25/35 → R1.x.1 修订完成**。2 P0 + 4 P1 全部修复（InviteResponse 对齐 OpenAPI · 403 专门处理 · PersonalByMember.amount · SWR stale-first · 分享路径兜底 · 缓存上限 20）。验证全绿：typecheck ✅ / lint ✅ / test 99/99 ✅。4 P2 不阻塞，记入后续。
 >
-> **当前 Orchestrator 模式**：`idle-between-cards` / `sprint-3-closeout`。本轮只同步 `.team/STATE`、`.team/board.md`、`.team/backlog.json`、`.team/HANDOFF.md` 与 `.team/reviews/*`，不写业务代码。
+> **当前 Orchestrator 模式**：`awaiting-human-review`。R1.x.1 修订后 P0/P1=0，可进入 Human T1 终审。
 >
-> **Sprint-3 当前定位**：验收后收口 + 状态对账 + Sprint-4 准备，不再继续堆大家庭/统计/预算新功能。
+> **下一步**：
+> 1. **`approve:COSTRA-223`** —— Human T1 终审（微信开发者工具 + 可选真机验证）。
 >
-> **下一步推荐触发顺序**：
-> 1. `approve:COSTRA-222` —— R1 实装与 review-tech 已通过；等待 Human T1 review / approve。
-> 2. `plan-dispatch:COSTRA-223` —— 仅在 `COSTRA-222` approve 后启动家庭页正式实现派单。
->
-> **后续路线摘要**：Sprint 4 = `COSTRA-221/222` + prod guardrails；Sprint 5 = `COSTRA-223` 正式家庭页 + Family E2E；Sprint 6 = `COSTRA-224/225/226` + 合规/监控前置。
->
-> **硬约束提醒**：Orchestrator 不直接写业务代码；新卡必须 dispatch → card-review → Human 触发 → spawn 对应 Agent → review → Human 终审。
+> **硬约束提醒**：Orchestrator 不直接写业务代码。
 
 ---
 

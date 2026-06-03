@@ -1,9 +1,9 @@
 # Costra · 全局状态快照
 
-- **更新时间**：2026-06-02 15:38
-- **Orchestrator 模式**：`idle-between-cards`（COSTRA-222 R1 实装 + review-tech PASS · 等 Human T1 review）
-- **球在谁手上**：**Human**（下一步可触发 `approve:COSTRA-222` 或要求修订）
-- **Human 是否需介入**：🟡 **需要终审**（`COSTRA-222` 已完成实装与技术审查；等待 Human T1 review）
+- **更新时间**：2026-06-02 17:20
+- **Orchestrator 模式**：`awaiting-human-review`（COSTRA-223 R1.x.1 修订完成 · 等 Human T1 终审）
+- **球在谁手上**：**Human**（`approve:COSTRA-223`）
+- **Human 是否需介入**：🟡 **需要终审**（review-tech REVISE → R1.x.1 修订后 P0/P1=0 · 可安全 approve）
 - **当前分支**：`dev`
 - **最新规划提交**：`0c479e9 docs(docs): plan family-first sprints 4-6`
 
@@ -49,6 +49,7 @@ Human 已确认以下 3 份测试手册全部 PASS：
 - ✅ `COSTRA-219`：前端分类模型替换 hardcode。
 - ✅ `COSTRA-220`：明细页真实数据完善。
 - ✅ `COSTRA-221`：家庭管理 API（family list / detail / members / invite / accept / remove / rename / delete）。
+- ✅ `COSTRA-222`：家庭财务聚合 API（summary / shared-personal split / paid contribution / category rank）。
 - ✅ UI 重构基线：设计令牌、5 Tab custom-tab-bar、登录页、明细页、记账 overlay、安全区、自定义导航与验收 polish。
 - ✅ Phase-2/3 prod 验证链路：部署、真实登录、同步与 Family First baseline 已由 Human 确认。
 
@@ -116,7 +117,7 @@ Sprint 6：Stats + Mine + Compliance Prep
 
 按推荐顺序：
 
-1. `start:COSTRA-221` —— R2 已通过；仅 Human 明确触发后启动 backend-dev。
+1. `approve:COSTRA-223` —— review-tech R1 REVISE → R1.x.1 修订完成 · P0/P1=0 · 建议微信开发者工具验证后 approve。
 
 ---
 

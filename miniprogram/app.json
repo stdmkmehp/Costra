@@ -52,7 +52,7 @@
       { "pagePath": "pages/ledger/index",        "text": "明细" },
       { "pagePath": "pages/statistics/index",     "text": "统计" },
       { "pagePath": "pages/add-placeholder/index", "text": "记账" },
-      { "pagePath": "pages/family/index",         "text": "家庭" },
+      { "pagePath": "pages/family/index",         "text": "协作" },
       { "pagePath": "pages/mine/index",           "text": "我的" }
     ]
   },

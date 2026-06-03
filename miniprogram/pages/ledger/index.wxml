@@ -22,19 +22,28 @@
       <!-- 收入 + 结余 辅助行 · 28rpx / secondary -->
       <text class="header__sub">{{totalBalance}}</text>
     </view>
-    <view class="header__right">
-      <!-- 时间选择器 -->
+  </view>
+
+  <!-- ─── 时间导航 + 筛选行（支出/收入下方、流水上方） ───────────────────────── -->
+  <view class="filter-row">
+    <view class="filter-row__left">
+      <view class="filter-row__arrow" bindtap="onPrevMonth">
+        <text class="filter-row__arrow-icon">‹</text>
+      </view>
       <picker mode="date" fields="month" value="{{currentMonth}}" bindchange="onMonthChange">
-        <view class="header__picker">
-          <text class="header__picker-text">{{monthDisplay}}</text>
-          <text class="header__picker-arrow">▼</text>
+        <view class="filter-row__month">
+          <text class="filter-row__month-text">{{monthDisplay}}</text>
+          <text class="filter-row__dropdown">▼</text>
         </view>
       </picker>
-      <!-- 成员筛选（仅多人账本显示） -->
-      <view class="header__member" wx:if="{{showMemberFilter}}" bindtap="onTapMemberFilter">
-        <text class="header__member-text">{{memberFilterText}}</text>
-        <text class="header__member-arrow">▼</text>
+      <view class="filter-row__arrow" bindtap="onNextMonth">
+        <text class="filter-row__arrow-icon">›</text>
       </view>
+    </view>
+    <!-- 成员筛选（仅多人账本显示） -->
+    <view class="filter-row__right" wx:if="{{showMemberFilter}}" bindtap="onTapMemberFilter">
+      <text class="filter-row__member-text">{{memberFilterText}}</text>
+      <text class="filter-row__member-arrow">▼</text>
     </view>
   </view>
 

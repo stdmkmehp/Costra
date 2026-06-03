@@ -1,25 +1,765 @@
 // pages/family/index.ts · 家庭页（Tab4）
-// 卡号: COSTRA-201 · 骨架 · 后续 COSTRA-20x 逐步实装
-// COSTRA-216: 补齐 custom navigation 安全区导航栏
+// 卡号: COSTRA-223 · 家庭页全新开发 / API 接入 · R1 实装
+// 设计源: design/ui/design_spec.md §6.5 + design/ui/interaction_flow.md §6
+// 金额 ADR-0002: 全部走 decimal.js（utils/money.ts）
+// P2-1 约束: 年度维度 API 不支持 · R1 仅月度 · 年度 Tab 不展示
+
+import { toYuan } from '../../utils/money';
 import { getSafeAreaMetrics } from '../../utils/safeArea';
+import { getCategoryIconById } from '../../services/categoryService';
+import { maxSharedFamilies } from '../../config/defaults';
+import {
+  getActiveFamilyId,
+  setActiveFamily,
+  clearActiveFamily,
+  type FamilyKind,
+} from '../../services/family';
+import { getToken } from '../../services/auth';
+import {
+  getFamilies,
+  getFamilySummary,
+  getCachedSummary,
+  createFamily,
+  createInvite,
+  removeMember,
+  invalidateFamilyCache,
+  type FamilyItem,
+  type FamilySummary,
+  type CategoryRankItem,
+} from '../../services/familyApi';
+import type { ApiError } from '../../services/request';
+
+// ─── 类型 ────────────────────────────────────────────────────────────────────────
+
+/** 展示用成员项（排序后：活跃在前，已退出在后） */
+interface MemberDisplay {
+  userId: string;
+  nickname: string;
+  avatarUrl: string;
+  role: string;
+  status: 'active' | 'left';
+  isOwner: boolean;
+}
+
+/** Segmented Bar 展示段 */
+interface SegmentDisplay {
+  key: string;
+  type: 'shared' | 'personal';
+  label: string;
+  amount: string;       // 格式化后的元
+  amountCents: number;
+  flexBps: number;      // 0~10000 basis points → flex 比例
+  color: string;
+  memberStatus: 'active' | 'left' | null;
+  userId: string | null;
+}
+
+/** 垫付贡献展示项 */
+interface ContributionDisplay {
+  nickname: string;
+  avatarUrl: string;
+  amount: string;       // 格式化后的元
+}
+
+/** 分类排行展示项 */
+interface CategoryDisplay {
+  categoryId: string | null;
+  categoryName: string;
+  icon: string;           // 分类图标首字
+  amount: string;         // 格式化后的元
+  amountCents: number;
+}
+
+/** 数据明细行 */
+interface DetailRow {
+  key: string;              // 'shared' or 'member:{user_id}'
+  type: 'shared' | 'personal';
+  label: string;
+  amount: string;           // 格式化后的元
+  amountCents: number;
+  avatarUrl: string;
+  contributions: ContributionDisplay[];
+  categories: CategoryDisplay[];
+  hasMoreCategories: boolean;
+  moreCategoriesCount: number;
+  expanded: boolean;
+}
+
+// ─── 辅助函数 ────────────────────────────────────────────────────────────────────
+
+/** 当前月份 → YYYY-MM */
+function getCurrentMonthValue(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/** YYYY-MM → 显示文字: 2026年5月 */
+function formatMonthDisplay(value: string): string {
+  const parts = value.split('-');
+  return `${parts[0]}年${parseInt(parts[1], 10)}月`;
+}
+
+/** 上一月 */
+function prevMonth(value: string): string {
+  const [y, m] = value.split('-').map(Number);
+  if (m === 1) return `${y - 1}-12`;
+  return `${y}-${String(m - 1).padStart(2, '0')}`;
+}
+
+/** 下一月 */
+function nextMonth(value: string): string {
+  const [y, m] = value.split('-').map(Number);
+  if (m === 12) return `${y + 1}-01`;
+  return `${y}-${String(m + 1).padStart(2, '0')}`;
+}
+
+/** cents → 元展示（带千分位） */
+function formatCentsToYuan(cents: number): string {
+  const yuanStr = toYuan(Math.abs(cents));
+  const parts = yuanStr.split('.');
+  const intPart = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return `${intPart}.${parts[1]}`;
+}
+
+/** cents → ¥X,XXX.XX 展示 */
+function formatCentsDisplay(cents: number): string {
+  const prefix = cents < 0 ? '-' : '';
+  return `${prefix}¥${formatCentsToYuan(cents)}`;
+}
+
+/** 成员色板（非公共段使用不同灰度） */
+const MEMBER_PALETTE = [
+  'rgba(28,27,26,0.22)',  // 浅灰 1
+  'rgba(28,27,26,0.36)',  // 中灰 2
+  'rgba(28,27,26,0.18)',  // 极浅灰 3
+  'rgba(28,27,26,0.28)',  // 灰 4
+  'rgba(28,27,26,0.14)',  // 极浅灰 5
+  'rgba(28,27,26,0.32)',  // 灰 6
+];
+
+/** 获取成员段颜色 */
+function getMemberColor(index: number): string {
+  return MEMBER_PALETTE[index % MEMBER_PALETTE.length];
+}
+
+/** Segmented Bar 公共段颜色 */
+const SHARED_SEGMENT_COLOR = '#07C160';
+
+// ─── Page ─────────────────────────────────────────────────────────────────────────
 
 Page({
   data: {
+    // ─── 导航栏 ───
     statusBarHeight: 0,
-    navBarHeight: 0,
+    navBarHeight: 44,
+
+    // ─── 模式 ───
+    mode: 'solo' as 'solo' | 'multi',
+
+    // ─── 家庭信息 ───
+    familyId: '',
+    familyName: '我的账本',
+    familyKind: 'personal' as FamilyKind,
+    isOwner: false,
+    currentUserId: '',
+
+    // ─── 家庭列表（多家庭切换用） ───
+    familyList: [] as FamilyItem[],
+
+    // ─── 成员 ───
+    members: [] as MemberDisplay[],
+
+    // ─── 时间维度 ───
+    currentMonth: getCurrentMonthValue(),
+    monthDisplay: '',
+    dimension: 'monthly' as 'monthly' | 'yearly',
+
+    // ─── 摘要数据 ───
+    loading: true,
+    summary: null as FamilySummary | null,
+
+    // ─── Solo 态摘要 ───
+    soloExpense: '¥0.00',
+    soloIncome: '¥0.00',
+    soloBalance: '¥0.00',
+
+    // ─── Segmented Bar ───
+    segments: [] as SegmentDisplay[],
+    totalExpenseCents: 0,
+
+    // ─── 数据明细行 ───
+    detailRows: [] as DetailRow[],
+
+    // ─── Accordion 展开 ───
+    expandedRow: '' as string,
+
+    // ─── 空态 ───
+    isEmpty: false,
   },
 
+  // 内部状态
+  _familyId: '' as string,
+  _currentUserId: '' as string,
+  _loadingPromise: null as Promise<void> | null,
+
+  // ─── 生命周期 ────────────────────────────────────────────────────────────────
+
   onLoad() {
-    // COSTRA-216: 获取安全区指标，设置自定义导航栏高度
-    const metrics = getSafeAreaMetrics();
+    const { statusBarHeight, navBarHeight } = getSafeAreaMetrics();
     this.setData({
-      statusBarHeight: metrics.statusBarHeight,
-      navBarHeight: metrics.navBarHeight,
+      statusBarHeight,
+      navBarHeight,
+      monthDisplay: formatMonthDisplay(this.data.currentMonth),
+    });
+
+    // 获取当前用户 ID
+    const token = getToken();
+    if (token?.raw?.user?.id) {
+      this._currentUserId = token.raw.user.id;
+      this.setData({ currentUserId: token.raw.user.id });
+    }
+  },
+
+  async onShow() {
+    this.getTabBar?.()?.setData?.({ selected: 3 });
+    await this._loadPage();
+  },
+
+  // ─── 数据加载 ────────────────────────────────────────────────────────────────
+
+  async _loadPage() {
+    if (this._loadingPromise) return this._loadingPromise;
+
+    this._loadingPromise = this._doLoadPage();
+    try {
+      await this._loadingPromise;
+    } finally {
+      this._loadingPromise = null;
+    }
+  },
+
+  async _doLoadPage() {
+    this.setData({ loading: true });
+
+    try {
+      // 1. 获取家庭列表 → 判断 solo/multi 模式
+      const { families } = await getFamilies();
+      const sharedFamilies = families.filter(f => f.kind === 'shared');
+
+      // 2. 获取 active family id
+      const activeFamilyId = await getActiveFamilyId();
+
+      // 3. 确定当前展示的 family
+      let targetFamily: FamilyItem | null = null;
+
+      if (activeFamilyId) {
+        targetFamily = families.find(f => f.id === activeFamilyId) || null;
+      }
+
+      // 如果 active family 不在列表中或没有 active family，尝试找到第一个 shared family
+      if (!targetFamily && sharedFamilies.length > 0) {
+        targetFamily = sharedFamilies[0];
+      }
+
+      // 兜底取 personal family
+      if (!targetFamily && families.length > 0) {
+        targetFamily = families.find(f => f.kind === 'personal') || families[0];
+      }
+
+      // 4. 判断模式：有 shared family 且当前选中的是 shared → multi 态
+      const hasShared = sharedFamilies.length > 0;
+      const isMultiMode = hasShared && targetFamily?.kind === 'shared';
+      const mode = isMultiMode ? 'multi' : 'solo';
+
+      // Solo 态：确保使用 personal family
+      if (mode === 'solo') {
+        const personalFamily = families.find(f => f.kind === 'personal');
+        if (personalFamily) {
+          targetFamily = personalFamily;
+        }
+      }
+
+      if (!targetFamily) {
+        this.setData({ loading: false, mode: 'solo', isEmpty: true });
+        return;
+      }
+
+      const familyId = targetFamily.id;
+      this._familyId = familyId;
+
+      // 更新 active family context（如果切换了）
+      if (activeFamilyId !== familyId) {
+        await setActiveFamily({
+          family_id: familyId,
+          ledger_id: targetFamily.ledger_id,
+          family_kind: targetFamily.kind,
+          ledger_name: targetFamily.ledger_name,
+        });
+      }
+
+      this.setData({
+        mode,
+        familyId,
+        familyName: mode === 'solo' ? '我的账本' : targetFamily.name,
+        familyKind: targetFamily.kind,
+        familyList: families,
+        isOwner: targetFamily.role === 'owner',
+      });
+
+      // 5. 加载 summary 数据
+      await this._loadSummary(familyId, this.data.currentMonth);
+    } catch (err) {
+      console.error('[family] loadPage failed', err);
+
+      // P0-2: 403 / FAMILY_NOT_MEMBER 专门处理（COSTRA-223 R1.x.1）
+      const apiErr = err as ApiError;
+      if (apiErr.status === 403 || apiErr.code === 'FAMILY_NOT_MEMBER') {
+        if (this._familyId) {
+          invalidateFamilyCache(this._familyId);
+        }
+        await clearActiveFamily();
+        wx.showToast({ title: '你已不在该家庭中', icon: 'none' });
+        // 切回 personal family 重新加载
+        this._familyId = '';
+        this._loadingPromise = null;
+        await this._doLoadPage();
+        return;
+      }
+
+      this.setData({ loading: false });
+      wx.showToast({ title: '加载失败', icon: 'none' });
+    }
+  },
+
+  async _loadSummary(familyId: string, month: string) {
+    // P1-2: SWR stale-first — 先取缓存立即渲染（COSTRA-223 R1.x.1）
+    const cached = getCachedSummary(familyId, month);
+    if (cached) {
+      this.setData({ summary: cached });
+      if (this.data.mode === 'solo') {
+        this._buildSoloDisplay(cached);
+      } else {
+        this._buildMultiDisplay(cached);
+      }
+    } else {
+      this.setData({ loading: true });
+    }
+
+    try {
+      const summary = await getFamilySummary(familyId, month);
+
+      this.setData({ summary });
+
+      if (this.data.mode === 'solo') {
+        this._buildSoloDisplay(summary);
+      } else {
+        this._buildMultiDisplay(summary);
+      }
+    } catch (err) {
+      console.error('[family] loadSummary failed', err);
+
+      // P0-2: 403 / FAMILY_NOT_MEMBER 专门处理（COSTRA-223 R1.x.1）
+      const apiErr = err as ApiError;
+      if (apiErr.status === 403 || apiErr.code === 'FAMILY_NOT_MEMBER') {
+        invalidateFamilyCache(familyId);
+        await clearActiveFamily();
+        wx.showToast({ title: '你已不在该家庭中', icon: 'none' });
+        // 切回 personal family 重新加载
+        this._familyId = '';
+        this._loadingPromise = null;
+        await this._doLoadPage();
+        return;
+      }
+
+      // 降级展示空态
+      this.setData({
+        loading: false,
+        isEmpty: true,
+      });
+      wx.showToast({ title: '数据加载失败', icon: 'none' });
+    }
+  },
+
+  // ─── Solo 态构建 ────────────────────────────────────────────────────────────
+
+  _buildSoloDisplay(summary: FamilySummary) {
+    const { totals } = summary;
+
+    this.setData({
+      soloExpense: formatCentsDisplay(totals.expense),
+      soloIncome: formatCentsDisplay(totals.income),
+      soloBalance: formatCentsDisplay(totals.balance),
+      loading: false,
+      isEmpty: totals.expense === 0 && totals.income === 0,
     });
   },
 
-  onShow() {
-    // 更新 custom-tab-bar 选中态
-    this.getTabBar?.()?.setData?.({ selected: 3 });
+  // ─── Multi 态构建 ───────────────────────────────────────────────────────────
+
+  _buildMultiDisplay(summary: FamilySummary) {
+    const { members, segments, shared, personal_by_member, totals } = summary;
+
+    // 1. 构建成员展示列表（活跃在前，已退出在后）
+    const activeMembers: MemberDisplay[] = [];
+    const leftMembers: MemberDisplay[] = [];
+
+    for (const m of members) {
+      const display: MemberDisplay = {
+        userId: m.user_id,
+        nickname: m.nickname,
+        avatarUrl: m.avatar_url || '',
+        role: m.role,
+        status: m.status,
+        isOwner: m.role === 'owner',
+      };
+      if (m.status === 'active') {
+        activeMembers.push(display);
+      } else {
+        leftMembers.push(display);
+      }
+    }
+
+    const memberDisplays = [...activeMembers, ...leftMembers];
+
+    // 2. 构建 Segmented Bar
+    const segmentDisplays: SegmentDisplay[] = [];
+    let memberIndex = 0;
+    const totalExpense = totals.expense;
+
+    for (const seg of segments) {
+      // 零值排除
+      if (seg.amount === 0) continue;
+
+      const color = seg.type === 'shared' ? SHARED_SEGMENT_COLOR : getMemberColor(memberIndex++);
+      segmentDisplays.push({
+        key: seg.key,
+        type: seg.type,
+        label: seg.label,
+        amount: formatCentsDisplay(seg.amount),
+        amountCents: seg.amount,
+        flexBps: seg.ratio_bps,
+        color,
+        memberStatus: seg.member_status,
+        userId: seg.user_id,
+      });
+    }
+
+    // 3. 构建数据明细行（保留旧的展开状态）
+    const oldExpandedMap = new Map<string, boolean>();
+    for (const row of this.data.detailRows) {
+      oldExpandedMap.set(row.key, row.expanded);
+    }
+    const detailRows: DetailRow[] = [];
+
+    // 公共支出行
+    if (shared.expense > 0) {
+      const contributions: ContributionDisplay[] = shared.paid_contributions
+        .filter(c => c.amount > 0)
+        .map(c => ({
+          nickname: c.nickname,
+          avatarUrl: c.avatar_url || '',
+          amount: `¥${formatCentsToYuan(c.amount)}`,
+        }));
+
+      const categories = this._buildCategoryList(shared.categories);
+      const maxVisible = 5; // 最多展示5个，超出显示省略提示
+      const visibleCategories = categories.slice(0, maxVisible);
+      const hasMore = categories.length > maxVisible;
+
+      detailRows.push({
+        key: 'shared',
+        type: 'shared',
+        label: '公共支出',
+        amount: formatCentsDisplay(shared.expense),
+        amountCents: shared.expense,
+        avatarUrl: '',
+        contributions,
+        categories: visibleCategories,
+        hasMoreCategories: hasMore,
+        moreCategoriesCount: categories.length - maxVisible,
+        expanded: oldExpandedMap.get('shared') ?? false,
+      });
+    }
+
+    // 各成员个人支出行（P1-1: pm.amount 对齐后端字段名）
+    for (const pm of personal_by_member) {
+      if (pm.amount <= 0) continue;
+
+      const categories = this._buildCategoryList(pm.categories);
+      const maxVisible = 5;
+      const visibleCategories = categories.slice(0, maxVisible);
+      const hasMore = categories.length > maxVisible;
+
+      detailRows.push({
+        key: `member:${pm.user_id}`,
+        type: 'personal',
+        label: `${pm.nickname}个人支出`,
+        amount: formatCentsDisplay(pm.amount),
+        amountCents: pm.amount,
+        avatarUrl: pm.avatar_url || '',
+        contributions: [],
+        categories: visibleCategories,
+        hasMoreCategories: hasMore,
+        moreCategoriesCount: categories.length - maxVisible,
+        expanded: oldExpandedMap.get(`member:${pm.user_id}`) ?? false,
+      });
+    }
+
+    this.setData({
+      members: memberDisplays,
+      segments: segmentDisplays,
+      totalExpenseCents: totalExpense,
+      detailRows,
+      loading: false,
+      isEmpty: totalExpense === 0 && totals.income === 0,
+      familyName: summary.family_name,
+    });
+  },
+
+  /** 构建分类排行列表（零值排除 + 分类图标） */
+  _buildCategoryList(categories: CategoryRankItem[]): CategoryDisplay[] {
+    return categories
+      .filter(c => c.amount > 0)
+      .map(c => ({
+        categoryId: c.category_id,
+        categoryName: c.category_name,
+        icon: getCategoryIconById(c.category_id),
+        amount: `¥${formatCentsToYuan(c.amount)}`,
+        amountCents: c.amount,
+      }));
+  },
+
+  // ─── 交互：月份切换 ──────────────────────────────────────────────────────────
+
+  onPrevMonth() {
+    const prev = prevMonth(this.data.currentMonth);
+    this.setData({
+      currentMonth: prev,
+      monthDisplay: formatMonthDisplay(prev),
+      expandedRow: '',
+    });
+    this._loadSummary(this._familyId, prev);
+  },
+
+  onNextMonth() {
+    const nxt = nextMonth(this.data.currentMonth);
+    this.setData({
+      currentMonth: nxt,
+      monthDisplay: formatMonthDisplay(nxt),
+      expandedRow: '',
+    });
+    this._loadSummary(this._familyId, nxt);
+  },
+
+  /** picker mode="date" fields="month" 变更回调（统一与明细页一致） */
+  onMonthChange(e: WechatMiniprogram.PickerChange) {
+    const value = e.detail.value as string;
+    this.setData({
+      currentMonth: value,
+      monthDisplay: formatMonthDisplay(value),
+      expandedRow: '',
+    });
+    this._loadSummary(this._familyId, value);
+  },
+
+  /** 月度/年度切换 */
+  onSwitchDimension(e: WechatMiniprogram.TouchEvent) {
+    const dim = e.currentTarget.dataset.dim as 'monthly' | 'yearly';
+    if (dim === 'yearly') {
+      wx.showToast({ title: '年度统计即将上线', icon: 'none' });
+      return;
+    }
+    if (dim === this.data.dimension) return;
+    this.setData({ dimension: dim });
+    // 月度：刷新当前月数据
+    this._loadSummary(this._familyId, this.data.currentMonth);
+  },
+
+  // ─── 交互：Accordion 展开/收起 ─────────────────────────────────────────────
+
+  onTapDetailRow(e: WechatMiniprogram.TouchEvent) {
+    const key = e.currentTarget.dataset.key as string;
+
+    // 支持多个同时展开：toggle 当前行
+    const detailRows = this.data.detailRows;
+    for (const row of detailRows) {
+      if (row.key === key) {
+        row.expanded = !row.expanded;
+      }
+    }
+    this.setData({ detailRows });
+  },
+
+  // ─── 交互：邀请成员 ──────────────────────────────────────────────────────────
+
+  /** 提前创建邀请（在 open-type="share" 触发 onShareAppMessage 之前） */
+  async onPrepareInvite() {
+    if (!this._familyId) return;
+
+    try {
+      const invite = await createInvite(this._familyId);
+      this._pendingInviteToken = invite.invite_token;
+      this._pendingInviteFamilyId = invite.family_id;
+    } catch (err) {
+      console.error('[family] createInvite failed', err);
+      // 即使创建失败也不阻断分享，只是分享链接不含邀请码
+    }
+  },
+
+  /** 暂存邀请信息（分享时使用） */
+  _pendingInviteToken: '' as string,
+  _pendingInviteFamilyId: '' as string,
+
+  /** onShareAppMessage 回调（由 button open-type="share" 触发） */
+  onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent {
+    const inviteToken = this._pendingInviteToken;
+    const familyName = this.data.familyName;
+    const path = inviteToken
+      ? `/pages/entry/index?invite_token=${inviteToken}`
+      : '/pages/entry/index';
+
+    // 使用后清空，避免重复使用过期 token
+    this._pendingInviteToken = '';
+    this._pendingInviteFamilyId = '';
+
+    return {
+      title: `${familyName} 邀请你一起记账`,
+      path,
+    };
+  },
+
+  // ─── 交互：成员头像点击 ────────────────────────────────────────────────────
+
+  onTapMember(e: WechatMiniprogram.TouchEvent) {
+    const { userid, status } = e.currentTarget.dataset;
+
+    // 已退出成员：点击无响应
+    if (status === 'left') return;
+
+    // 自己：点击无响应
+    if (userid === this._currentUserId) return;
+
+    // 非创建者：点击无响应（只有 owner 能管理）
+    if (!this.data.isOwner) return;
+
+    // 创建者点击他人头像 → ActionSheet → 移出
+    wx.showActionSheet({
+      itemList: ['移出家庭'],
+      itemColor: '#FA5151',
+      success: (res) => {
+        if (res.tapIndex === 0) {
+          this._confirmRemoveMember(userid);
+        }
+      },
+    });
+  },
+
+  _confirmRemoveMember(userId: string) {
+    const member = this.data.members.find(m => m.userId === userId);
+    const name = member?.nickname || '该成员';
+
+    wx.showModal({
+      title: '',
+      content: `确定将${name}移出家庭吗？`,
+      confirmColor: '#FA5151',
+      success: async (res) => {
+        if (!res.confirm) return;
+        try {
+          await removeMember(this._familyId, userId);
+          wx.showToast({ title: '已移出', icon: 'success' });
+          // 刷新页面数据
+          await this._loadSummary(this._familyId, this.data.currentMonth);
+        } catch (err) {
+          console.error('[family] removeMember failed', err);
+          wx.showToast({ title: '移出失败', icon: 'none' });
+        }
+      },
+    });
+  },
+
+  // ─── 交互：创建家庭 ──────────────────────────────────────────────────────────
+
+  onCreateFamily() {
+    // 检查协作账本数量限制
+    const families = this.data.familyList;
+    const sharedCount = families.filter(f => f.kind === 'shared').length;
+    if (sharedCount >= maxSharedFamilies) {
+      wx.showToast({ title: `最多创建${maxSharedFamilies}个协作账本`, icon: 'none' });
+      return;
+    }
+
+    wx.showModal({
+      title: '创建协作账本',
+      editable: true,
+      placeholderText: '输入账本名称',
+      success: async (res) => {
+        if (!res.confirm || !res.content) return;
+        const name = res.content.trim();
+        if (!name) {
+          wx.showToast({ title: '请输入账本名称', icon: 'none' });
+          return;
+        }
+        try {
+          const newFamily = await createFamily(name);
+          // 切换 active family context 到新创建的 shared family
+          await setActiveFamily({
+            family_id: newFamily.id,
+            ledger_id: newFamily.ledger_id,
+            family_kind: 'shared',
+            ledger_name: newFamily.ledger_name,
+          });
+          wx.showToast({ title: '创建成功', icon: 'success' });
+          // 刷新页面
+          await this._loadPage();
+        } catch (err) {
+          console.error('[family] createFamily failed', err);
+          wx.showToast({ title: '创建失败', icon: 'none' });
+        }
+      },
+    });
+  },
+
+  // ─── 交互：多家庭切换（P2-4: 复用明细页账本切换模式）──────────────────────────
+
+  onTapFamilyName() {
+    const families = this.data.familyList;
+    if (!families || families.length <= 1) {
+      wx.showToast({ title: '当前只有一个账本', icon: 'none' });
+      return;
+    }
+
+    const items = families.map(f => {
+      const suffix = f.kind === 'personal' ? '（个人）' : `（${f.member_count}人）`;
+      return f.name + suffix;
+    });
+
+    wx.showActionSheet({
+      itemList: items,
+      success: async (res) => {
+        const selected = families[res.tapIndex];
+        if (selected.id === this._familyId) return;
+
+        // 切换 active family context
+        await setActiveFamily({
+          family_id: selected.id,
+          ledger_id: selected.ledger_id,
+          family_kind: selected.kind,
+          ledger_name: selected.ledger_name,
+        });
+
+        this._familyId = selected.id;
+        this.setData({
+          familyId: selected.id,
+          familyName: selected.name,
+          familyKind: selected.kind,
+          isOwner: selected.role === 'owner',
+          mode: selected.kind === 'shared' ? 'multi' : 'solo',
+          expandedRow: '',
+        });
+
+        // 切换家庭后重新加载
+        await this._loadSummary(selected.id, this.data.currentMonth);
+      },
+    });
   },
 });

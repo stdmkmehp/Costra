@@ -16,6 +16,7 @@
 
 ## §2 当前关注（active tasks）
 
+- ✅ **COSTRA-222 Human T1 APPROVED CLOSED**（2026-06-02 · Family Summary API · review-tech PASS 33/35 · FINAL 已落盘 · implementation commit `6bf431b` · typecheck ✅ · server 141/141 ✅ · 后续进入 COSTRA-223 派单规划）
 - ✅ **COSTRA-221 Human T1 APPROVED CLOSED**（2026-06-02 · Family Management API 全端点实装 + review-tech PASS 31/35 · FINAL 已落盘 · typecheck ✅ · 124/124 全绿 · 后续进入 COSTRA-222 派单规划）
 - 🆕 **COSTRA-218 R1 实装完成**（2026-06-09 · GET /v1/categories + POST /v1/categories 端点实装 · categoryRepo + categoryService + categories routes + app.ts 注册 + T1~T8 单测 · 权限守门 isUserInFamily · 层级校验禁止三层 · 同名去重应用层+DB双保险 · children_count 内存计算 · 108/108 测全绿 · typecheck ✅ · 等 review-tech R1 + Human T1 approve）
 - 🆕 **COSTRA-217 R1.x clean rebuild 重构完成**（2026-06-08 · Human 新准则：开发期 DB clean rebuild 不兼容旧数据 · 0008 migration 重写：删除旧 ID 保留/__migrate__* 临时重命名/中断态恢复逻辑 · 改为 DELETE 旧系统分类 + 全量 INSERT 11 一级 + 62 二级 · docs/db/schema.md 删除"旧 12 条 ID 保留迁移"改为 clean rebuild · entries.test.ts console.error 清理 · typecheck ✅ · 100/100 测全绿 · 等 review-tech R3 + Human T1 approve）
@@ -31,7 +32,7 @@
 
 ## §3 交付历史索引
 
-- **2026-06-02** · **COSTRA-222 R1 实装**（Family Summary API · OpenAPI + route/service/repo + 17 测 · typecheck ✅ · server 141/141 ✅）· `history/2026-06-02-costra-222-family-summary-api.md`
+- **2026-06-02** · **COSTRA-222 Human T1 APPROVED CLOSED**（Family Summary API · review-tech PASS 33/35 · FINAL 落盘 · commit `6bf431b` · server 141/141 ✅）· `history/2026-06-02-costra-222-family-summary-api.md` · `.team/reviews/COSTRA-222/FINAL.md`
 - **2026-06-02** · **COSTRA-221 Human T1 APPROVED CLOSED**（Family Management API 全端点 + review-tech PASS 31/35 · FINAL 落盘 · 124/124 全绿）· `history/2026-06-02-costra-221-family-mgmt.md` · `.team/reviews/COSTRA-221/FINAL.md`
 - **2026-06-09** · **COSTRA-218 R1 实装**（GET/POST /v1/categories 端点实装 · categoryRepo + categoryService + categories routes · T1~T8 单测全绿 · 108/108 全绿）· `history/2026-06-09-costra-218-categories-api.md`
 - **2026-06-08** · **COSTRA-217 R1.x clean rebuild 重构**（Human 新准则：开发期 DB clean rebuild · 0008 migration 重写删除旧 ID 保留/__migrate__* 逻辑 · 全量 INSERT 11+62 分类 · schema.md 同步 · entries.test.ts console.error 清理 · typecheck ✅ · 100/100 测全绿）· `history/2026-06-08-costra-217-clean-rebuild-refactor.md`
@@ -97,4 +98,5 @@
 - **2026-05-27T15:30:00+08:00 · COSTRA-164 R1 实装完成**（dispatch v2.1 全 6 项 scope 落地 · 80/80 测全绿 · DoD 22/23 通过 · G15 反例命中：subagent 完成代码但漏 commit/state/history 归档 · Orchestrator 接管收尾 · Sprint-2 末 retro 议题"SBAI 装扮档 7 点卡需在 R1 内分阶段 commit"实战预警第 N 次 · 落 ADR-0007 v1.1 方案 R · migration 0007 family_kind ENUM + partial unique index · familyRepo + ledgerRepo 新建 + softDelete kind 守门 · authService withTx + isUniqueViolation + race fallback · AuthTokenPair +2 字段 · ErrorCode FAMILY_PERSONAL_NOT_DELETABLE · 等 review-tech R1 / 与 165 联合 approve）
 - **2026-06-08T17:14:00+08:00 · COSTRA-217 R1.x clean rebuild 重构完成**（0008 migration 重写 · schema.md 同步 · entries.test.ts console.error 清理 · typecheck ✅ · 100/100 测全绿 · 等 review-tech R3 + Human T1 approve）
 - **2026-06-01T16:30:00+08:00 · COSTRA-217 R1.x 收尾完成**（删除 5 debug 文件 · schema.md v1.2 同步 · api/CHANGELOG.md 新建 · pg-mem ON CONFLICT bug 修复 4 文件 · shared_type 默认规则已实装 · 100/100 测全绿 · 等 review-tech R1 + Human T1 approve）
+- **2026-06-02T16:14:00+08:00 · COSTRA-222 Human T1 APPROVED CLOSED**（Family Summary API · review-tech PASS 33/35 · FINAL 落盘 · commit `6bf431b` · typecheck ✅ · server 141/141 ✅ · 后续进入 COSTRA-223 派单规划）
 - **2026-06-02T15:07:00+08:00 · COSTRA-221 Human T1 APPROVED CLOSED**（Family Management API 全端点 + review-tech PASS 31/35 · FINAL 落盘 · typecheck ✅ · 124/124 全绿 · 后续进入 COSTRA-222 派单规划）

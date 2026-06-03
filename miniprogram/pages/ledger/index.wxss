@@ -42,7 +42,7 @@
 }
 
 .nav-bar__title {
-  font-size: 34rpx;
+  font-size: 36rpx;
   font-weight: 600;
   color: var(--color-role-text-primary, #1c1b1a);
   line-height: 1.2;
@@ -90,36 +90,52 @@
   font-feature-settings: "tnum";
 }
 
-.header__right {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 12rpx;
-  flex-shrink: 0;
-  padding-top: 16rpx;
-}
-
-.header__picker {
+/* ---- 时间导航 + 筛选行 ---- */
+.filter-row {
   display: flex;
   align-items: center;
-  gap: 4rpx;
-  padding: 8rpx 16rpx;
-  border-radius: var(--radius-pill, 9999rpx);
-  background: rgba(28, 27, 26, 0.04);
+  justify-content: space-between;
+  padding: 0 32rpx 16rpx;
 }
 
-.header__picker-text {
-  font-size: 24rpx;
-  color: var(--color-role-text-primary, #1c1b1a);
-  font-weight: 500;
+.filter-row__left {
+  display: flex;
+  align-items: center;
 }
 
-.header__picker-arrow {
-  font-size: 16rpx;
+.filter-row__arrow {
+  width: 48rpx;
+  height: 48rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.filter-row__arrow-icon {
+  font-size: 32rpx;
   color: var(--color-role-text-secondary, rgba(28,27,26,0.48));
+  font-weight: 300;
 }
 
-.header__member {
+.filter-row__month {
+  display: flex;
+  align-items: center;
+  padding: 0 8rpx;
+}
+
+.filter-row__month-text {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--color-role-text-primary, #1c1b1a);
+}
+
+.filter-row__dropdown {
+  font-size: 16rpx;
+  margin-left: 6rpx;
+  color: var(--color-role-text-tertiary, rgba(28,27,26,0.28));
+}
+
+.filter-row__right {
   display: flex;
   align-items: center;
   gap: 4rpx;
@@ -128,13 +144,13 @@
   background: rgba(28, 27, 26, 0.04);
 }
 
-.header__member-text {
+.filter-row__member-text {
   font-size: 24rpx;
   color: var(--color-role-text-primary, #1c1b1a);
   font-weight: 500;
 }
 
-.header__member-arrow {
+.filter-row__member-arrow {
   font-size: 16rpx;
   color: var(--color-role-text-secondary, rgba(28,27,26,0.48));
 }

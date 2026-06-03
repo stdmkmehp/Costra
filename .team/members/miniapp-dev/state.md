@@ -16,6 +16,7 @@
 
 ## §2 当前关注（active tasks）
 
+- 🔧 **COSTRA-223 家庭页 R1.x.1 修订**（2026-06-18 · P0-1 InviteResponse 对齐 OpenAPI + P0-2 403/FAMILY_NOT_MEMBER 专门处理 + P1-1 PersonalByMember.amount + P1-2 SWR stale-first + P1-3 分享路径 invite_token + P1-4 缓存上限 20 · 2文件 +65/-39 · typecheck+lint+test 99/99 全绿 · 等 review-tech R2）
 - ✅ **COSTRA-220 明细页真实数据完善**（2026-06-17 · 扩展 FamilyContext(kind+name) + 账本名真实显示 + 成员筛选过滤 + eventBus 响应式刷新 + UX 增强 · 6文件 +250/-60 · typecheck+lint+check:appjson+test 99/99 全绿）
 - 🔧 **COSTRA-219 前端分类数据模型替换硬编码**（2026-06-16 · 新建 categoryService.ts + 重写 categories.ts + 修改 expense-overlay/index.ts + 修改 ledger/index.ts · 4文件 +593/-194 · commit `d00c47e`）
 - 🔧 **COSTRA-216 修复 Tab 页 custom navigation 后页面标题顶部错位**（2026-06-15 · family/statistics/mine/add-placeholder 四页面补齐最小自定义导航栏/顶部安全区 · 使用 getSafeAreaMetrics() 统一获取安全区指标 · 12文件 +194/-35 · commit `307fa2b`）
@@ -41,6 +42,8 @@
 
 ## §3 交付历史索引
 
+- 2026-06-18 · `history/2026-06-18-costra-223-r1x1-revise.md` · COSTRA-223 **R1.x.1 修订**（P0-1 InviteResponse 对齐 OpenAPI + P0-2 403 处理 + P1-1 amount 字段 + P1-2 SWR stale-first + P1-3 invite_token + P1-4 缓存上限 · 2文件 +65/-39 · typecheck+lint+test 99/99 全绿）
+- 2026-06-18 · `history/2026-06-18-costra-223-family-page.md` · COSTRA-223 **家庭页全新开发 / API 接入 · R1 实装**（Solo/Multi 两态 + 成员横滚 + 已退出灰化 + 邀请/移出/创建家庭接真实 API + 月度 summary + Segmented Bar + Accordion 下钻 + 月份切换 + 空态 · 5文件 +720/-30 · typecheck+lint+check:appjson+test 99/99 全绿 · 等 review-tech R1）
 - 2026-06-17 · `history/2026-06-17-costra-220-ledger-data-integration.md` · COSTRA-220 **明细页真实数据完善**（扩展 FamilyContext(kind+name) + 账本名真实显示 + 成员筛选过滤 + eventBus ENTRY_SAVED 响应式刷新 + 空状态美化+月份切换scrollTop · 6文件 +250/-60 · typecheck+lint+check:appjson+test 99/99 全绿）
 - 2026-06-16 · `history/2026-06-16-costra-219-category-model-api.md` · COSTRA-219 **前端分类数据模型替换硬编码**（新建 categoryService.ts + 重写 categories.ts + 修改 expense-overlay/index.ts + 修改 ledger/index.ts · 4文件 +593/-194 · typecheck+lint+check:appjson+test 95/95 全绿 · commit `d00c47e`）
 - 2026-05-02 · `history/2026-05-02-getglobalstorage-v2-diagnose.md` · FU-LAUNCH 第 3 次观察 **重定性 v2**（D-017 Step 2 · SBAI v1.1 P2' 冒烟 · 证据坐实"storage.ts:29 模块顶层副作用 vs 高版本库时序约束"）
@@ -114,7 +117,7 @@
   - **FU-125-P2-4（跨卡文档追写治理依据）**：dispatch §4 "可写" 组加注"追写 COSTRA-124 新建文档属接力卡治理反哺范式（D-017 §13.6/13.7 先例）· 非越权"
 
 ## §7 最近更新时间戳
-- **2026-06-17T18:20:00+08:00** · COSTRA-220 **明细页真实数据完善交付**（扩展 FamilyContext(kind+name) + 账本名真实显示 + 成员筛选过滤 + eventBus ENTRY_SAVED 响应式刷新 + 空状态美化+月份切换scrollTop · 6文件 +250/-60 · typecheck+lint+check:appjson+test 99/99 全绿）
+- **2026-06-18T18:30:00+08:00** · COSTRA-223 **R1.x.1 修订交付**（P0-1 InviteResponse 对齐 OpenAPI + P0-2 403/FAMILY_NOT_MEMBER 专门处理 + P1-1 PersonalByMember.amount + P1-2 SWR stale-first + P1-3 invite_token + P1-4 缓存上限 20 · 2文件 +65/-39 · typecheck+lint+test 99/99 全绿 · 等 review-tech R2）
 - **2026-06-16T18:05:00+08:00** · COSTRA-219 **前端分类数据模型替换硬编码交付**（新建 categoryService.ts + 重写 categories.ts + 修改 expense-overlay/index.ts + 修改 ledger/index.ts · 4文件 +593/-194 · typecheck+lint+check:appjson+test 95/95 全绿 · commit `d00c47e`）
 - **2026-06-15T** · `history/2026-06-15-costra-216-tab-custom-nav-safe-area-fix.md` · COSTRA-216 **修复 Tab 页 custom navigation 后页面标题顶部错位**（family/statistics/mine/add-placeholder 四页面补齐最小自定义导航栏/顶部安全区 · 使用 getSafeAreaMetrics() 统一获取安全区指标 · 12文件 +194/-35 · typecheck+lint+check:appjson 全绿 · commit `307fa2b`）
 - **2026-06-15T** · `history/2026-06-15-costra-215-tab-custom-nav.md` · COSTRA-215 **统一 Tab 页 custom navigation 修复 overlay 偏低**（statistics/family/mine/add-placeholder 四页面 navigationStyle:custom · 移除原生导航栏 titleText · 4文件 +4/-21 · typecheck+lint+check:appjson 全绿 · commit `a058d50`）
