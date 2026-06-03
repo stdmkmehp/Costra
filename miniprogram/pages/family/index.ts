@@ -300,7 +300,7 @@ Page({
       this.setData({
         mode,
         familyId,
-        familyName: mode === 'solo' ? '我的账本' : targetFamily.name,
+        familyName: mode === 'solo' ? (targetFamily.ledger_name || '日常账本') : targetFamily.name,
         familyKind: targetFamily.kind,
         familyList: families,
         isOwner: targetFamily.role === 'owner',

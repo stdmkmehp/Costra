@@ -3,10 +3,11 @@
 /* 设计源: design/ui/design_spec.md §6.5 */
 
 .family {
-  min-height: 100vh;
+  height: 100vh;
   background: #f1f2ec;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 /* 导航栏（与明细页一致） */
@@ -55,7 +56,7 @@
 /* 可滚动内容区 */
 .family__scroll {
   flex: 1;
-  height: 0; /* flex 子项需显式高度 */
+  min-height: 0; /* flex 子项允许收缩 · 兼容真机 scroll-view 高度计算 */
 }
 
 .family__content {
