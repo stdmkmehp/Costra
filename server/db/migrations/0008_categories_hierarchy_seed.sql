@@ -25,8 +25,8 @@
 --   同名二级分类在不同一级下：只有最日常/最高频的那个设 is_direct_default = true
 --   直选映射：餐饮→餐饮-餐饮, 机票→交通-机票, 零食→餐饮-零食, 买菜→餐饮-买菜, 饮料→餐饮-饮料
 --
--- 系统分类目标数量：11 一级 + 62 二级 = 73 条
--- is_direct_default=true 的二级分类：55 条（支出 44 + 收入 11）
+-- 系统分类目标数量：11 一级 + 78 二级 = 89 条
+-- is_direct_default=true 的二级分类：68 条（支出 55 + 收入 13）
 --
 -- 幂等策略：DELETE + INSERT · 可重复执行 · 不为旧数据迁移承担兼容责任
 -- =========================================================================
@@ -111,7 +111,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_categories_direct_default
 -- 策略：
 --   a) 清空旧系统分类（使 0002_seed_system_categories.sql 的旧扁平 seed 无害化）
 --   b) 全量插入 11 个一级分类
---   c) 全量插入 62 个二级分类
+--   c) 全量插入 78 个二级分类
 --
 -- 幂等策略：先 DELETE 再 INSERT · 重复执行结果一致
 
@@ -132,19 +132,19 @@ VALUES
   (NULL, '生活',     'expense', '活', 'color.category.lifestyle', 4,  true, NULL, false),
   (NULL, '旅行',     'expense', '旅', 'color.category.travel',    5,  true, NULL, false),
   (NULL, '文娱',     'expense', '娱', 'color.category.culture',   6,  true, NULL, false),
-  (NULL, '汽车',     'expense', '车', 'color.category.auto',      7,  true, NULL, false),
+  (NULL, '转账',     'expense', '转', 'color.category.transfer',  7,  true, NULL, false),
   (NULL, '其他',     'expense', '他', 'color.category.other',     99, true, NULL, false),
   -- 收入一级
   (NULL, '职业收入', 'income',  '薪', 'color.category.salary',    1,  true, NULL, false),
   (NULL, '投资与资产','income', '投', 'color.category.invest',    2,  true, NULL, false),
-  (NULL, '意外所得', 'income',  '运', 'color.category.windfall',  3,  true, NULL, false);
+  (NULL, '意外收入', 'income',  '运', 'color.category.windfall',  3,  true, NULL, false);
 
 -- ===========================================================================
--- 7c. 二级分类（62 条：51 支出 + 11 收入）
+-- 7c. 二级分类（78 条：65 支出 + 13 收入）
 -- ===========================================================================
 -- is_direct_default 规则：
 --   每个一级下的"同名默认子类"（如餐饮-餐饮）设 is_direct_default = true
---   其他二级分类：按 category_dictionary.md 标注"(默认)"的设为 true
+--   其他二级分类：按 categories.yaml 标注为 true 的设为 true
 --   同名二级在不同一级下：只有直选默认归属的那个设 true
 --     零食：餐饮-零食=true, 购物-零食=false
 --     买菜：餐饮-买菜=true, 生活-买菜=false
@@ -152,29 +152,40 @@ VALUES
 --     机票：交通-机票=true, 旅行-机票=false
 --     交通：交通-交通=true, 旅行-交通=false
 --     餐饮：餐饮-餐饮=true, 旅行-餐饮=false
---     火车：旅行-火车=true (旅行下叫"火车"非"火车/高铁")
+--     日用：购物-日用=true, 生活-日用=false
+--     柴米油盐：餐饮-柴米油盐=true, 生活-柴米油盐=false
+--     火车/高铁：交通-火车/高铁=true, 旅行-火车/高铁=false
 
--- ----------- 餐饮 下二级（6 条）-----------
+-- ----------- 餐饮 下二级（10 条）-----------
 INSERT INTO categories (family_id, name, type, icon, color, sort_order, is_system, parent_id, is_direct_default)
 VALUES
   (NULL, '餐饮', 'expense', '餐', 'color.category.food', 1, true, (SELECT id FROM categories WHERE name = '餐饮' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
   (NULL, '外卖', 'expense', '餐', 'color.category.food', 2, true, (SELECT id FROM categories WHERE name = '餐饮' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
   (NULL, '买菜', 'expense', '餐', 'color.category.food', 3, true, (SELECT id FROM categories WHERE name = '餐饮' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
-  (NULL, '零食', 'expense', '餐', 'color.category.food', 4, true, (SELECT id FROM categories WHERE name = '餐饮' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
-  (NULL, '饮料', 'expense', '餐', 'color.category.food', 5, true, (SELECT id FROM categories WHERE name = '餐饮' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
-  (NULL, '酒水', 'expense', '餐', 'color.category.food', 6, true, (SELECT id FROM categories WHERE name = '餐饮' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), false);
+  (NULL, '水果', 'expense', '餐', 'color.category.food', 4, true, (SELECT id FROM categories WHERE name = '餐饮' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
+  (NULL, '零食', 'expense', '餐', 'color.category.food', 5, true, (SELECT id FROM categories WHERE name = '餐饮' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
+  (NULL, '饮料', 'expense', '餐', 'color.category.food', 6, true, (SELECT id FROM categories WHERE name = '餐饮' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
+  (NULL, '酒水', 'expense', '餐', 'color.category.food', 7, true, (SELECT id FROM categories WHERE name = '餐饮' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), false),
+  (NULL, '柴米油盐', 'expense', '餐', 'color.category.food', 8, true, (SELECT id FROM categories WHERE name = '餐饮' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
+  (NULL, '聚餐', 'expense', '餐', 'color.category.food', 9, true, (SELECT id FROM categories WHERE name = '餐饮' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
+  (NULL, '宴请', 'expense', '餐', 'color.category.food', 10, true, (SELECT id FROM categories WHERE name = '餐饮' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true);
 
--- ----------- 交通 下二级（6 条）-----------
+-- ----------- 交通 下二级（11 条）-----------
 INSERT INTO categories (family_id, name, type, icon, color, sort_order, is_system, parent_id, is_direct_default)
 VALUES
   (NULL, '交通',     'expense', '行', 'color.category.transport', 1, true, (SELECT id FROM categories WHERE name = '交通' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
   (NULL, '打车',     'expense', '行', 'color.category.transport', 2, true, (SELECT id FROM categories WHERE name = '交通' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
   (NULL, '公交',     'expense', '行', 'color.category.transport', 3, true, (SELECT id FROM categories WHERE name = '交通' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
   (NULL, '地铁',     'expense', '行', 'color.category.transport', 4, true, (SELECT id FROM categories WHERE name = '交通' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
-  (NULL, '火车/高铁','expense', '行', 'color.category.transport', 5, true, (SELECT id FROM categories WHERE name = '交通' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
-  (NULL, '机票',     'expense', '行', 'color.category.transport', 6, true, (SELECT id FROM categories WHERE name = '交通' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true);
+  (NULL, '加油',     'expense', '行', 'color.category.transport', 5, true, (SELECT id FROM categories WHERE name = '交通' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
+  (NULL, '停车',     'expense', '行', 'color.category.transport', 6, true, (SELECT id FROM categories WHERE name = '交通' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
+  (NULL, '火车/高铁','expense', '行', 'color.category.transport', 7, true, (SELECT id FROM categories WHERE name = '交通' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
+  (NULL, '机票',     'expense', '行', 'color.category.transport', 8, true, (SELECT id FROM categories WHERE name = '交通' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
+  (NULL, '汽车保养','expense', '行', 'color.category.transport', 9, true, (SELECT id FROM categories WHERE name = '交通' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
+  (NULL, '保险',     'expense', '行', 'color.category.transport', 10, true, (SELECT id FROM categories WHERE name = '交通' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
+  (NULL, '过路费',   'expense', '行', 'color.category.transport', 11, true, (SELECT id FROM categories WHERE name = '交通' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true);
 
--- ----------- 购物 下二级（7 条）-----------
+-- ----------- 购物 下二级（8 条）-----------
 INSERT INTO categories (family_id, name, type, icon, color, sort_order, is_system, parent_id, is_direct_default)
 VALUES
   (NULL, '购物', 'expense', '购', 'color.category.shopping', 1, true, (SELECT id FROM categories WHERE name = '购物' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
@@ -183,59 +194,64 @@ VALUES
   (NULL, '数码', 'expense', '购', 'color.category.shopping', 4, true, (SELECT id FROM categories WHERE name = '购物' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
   (NULL, '零食', 'expense', '购', 'color.category.shopping', 5, true, (SELECT id FROM categories WHERE name = '购物' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), false),
   (NULL, '纸巾', 'expense', '购', 'color.category.shopping', 6, true, (SELECT id FROM categories WHERE name = '购物' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
-  (NULL, '饮料', 'expense', '购', 'color.category.shopping', 7, true, (SELECT id FROM categories WHERE name = '购物' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), false);
+  (NULL, '饮料', 'expense', '购', 'color.category.shopping', 7, true, (SELECT id FROM categories WHERE name = '购物' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), false),
+  (NULL, '护肤美妆', 'expense', '购', 'color.category.shopping', 8, true, (SELECT id FROM categories WHERE name = '购物' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true);
 
--- ----------- 生活 下二级（9 条）-----------
+-- ----------- 生活 下二级（12 条）-----------
 INSERT INTO categories (family_id, name, type, icon, color, sort_order, is_system, parent_id, is_direct_default)
 VALUES
   (NULL, '生活',     'expense', '活', 'color.category.lifestyle', 1, true, (SELECT id FROM categories WHERE name = '生活' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
-  (NULL, '买菜',     'expense', '活', 'color.category.lifestyle', 2, true, (SELECT id FROM categories WHERE name = '生活' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), false),
-  (NULL, '护肤美容', 'expense', '活', 'color.category.lifestyle', 3, true, (SELECT id FROM categories WHERE name = '生活' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
-  (NULL, '宠物',     'expense', '活', 'color.category.lifestyle', 4, true, (SELECT id FROM categories WHERE name = '生活' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
-  (NULL, '住房',     'expense', '活', 'color.category.lifestyle', 5, true, (SELECT id FROM categories WHERE name = '生活' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
-  (NULL, '水电煤',   'expense', '活', 'color.category.lifestyle', 6, true, (SELECT id FROM categories WHERE name = '生活' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
-  (NULL, '话费网费', 'expense', '活', 'color.category.lifestyle', 7, true, (SELECT id FROM categories WHERE name = '生活' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
-  (NULL, '物业维修', 'expense', '活', 'color.category.lifestyle', 8, true, (SELECT id FROM categories WHERE name = '生活' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
-  (NULL, '家居',     'expense', '活', 'color.category.lifestyle', 9, true, (SELECT id FROM categories WHERE name = '生活' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true);
+  (NULL, '日用',     'expense', '活', 'color.category.lifestyle', 2, true, (SELECT id FROM categories WHERE name = '生活' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), false),
+  (NULL, '买菜',     'expense', '活', 'color.category.lifestyle', 3, true, (SELECT id FROM categories WHERE name = '生活' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), false),
+  (NULL, '柴米油盐', 'expense', '活', 'color.category.lifestyle', 4, true, (SELECT id FROM categories WHERE name = '生活' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), false),
+  (NULL, '宠物',     'expense', '活', 'color.category.lifestyle', 5, true, (SELECT id FROM categories WHERE name = '生活' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
+  (NULL, '美容美发', 'expense', '活', 'color.category.lifestyle', 6, true, (SELECT id FROM categories WHERE name = '生活' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
+  (NULL, '水电煤',   'expense', '活', 'color.category.lifestyle', 7, true, (SELECT id FROM categories WHERE name = '生活' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
+  (NULL, '话费网费', 'expense', '活', 'color.category.lifestyle', 8, true, (SELECT id FROM categories WHERE name = '生活' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
+  (NULL, '物业维修', 'expense', '活', 'color.category.lifestyle', 9, true, (SELECT id FROM categories WHERE name = '生活' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
+  (NULL, '医疗',     'expense', '活', 'color.category.lifestyle', 10, true, (SELECT id FROM categories WHERE name = '生活' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
+  (NULL, '母婴',     'expense', '活', 'color.category.lifestyle', 11, true, (SELECT id FROM categories WHERE name = '生活' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
+  (NULL, '租房',     'expense', '活', 'color.category.lifestyle', 12, true, (SELECT id FROM categories WHERE name = '生活' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true);
 
 -- ----------- 旅行 下二级（6 条）-----------
 INSERT INTO categories (family_id, name, type, icon, color, sort_order, is_system, parent_id, is_direct_default)
 VALUES
-  (NULL, '旅行', 'expense', '旅', 'color.category.travel', 1, true, (SELECT id FROM categories WHERE name = '旅行' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
-  (NULL, '机票', 'expense', '旅', 'color.category.travel', 2, true, (SELECT id FROM categories WHERE name = '旅行' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), false),
-  (NULL, '酒店', 'expense', '旅', 'color.category.travel', 3, true, (SELECT id FROM categories WHERE name = '旅行' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
-  (NULL, '交通', 'expense', '旅', 'color.category.travel', 4, true, (SELECT id FROM categories WHERE name = '旅行' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), false),
-  (NULL, '火车', 'expense', '旅', 'color.category.travel', 5, true, (SELECT id FROM categories WHERE name = '旅行' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
-  (NULL, '餐饮', 'expense', '旅', 'color.category.travel', 6, true, (SELECT id FROM categories WHERE name = '旅行' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), false);
+  (NULL, '旅行',      'expense', '旅', 'color.category.travel', 1, true, (SELECT id FROM categories WHERE name = '旅行' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
+  (NULL, '机票',      'expense', '旅', 'color.category.travel', 2, true, (SELECT id FROM categories WHERE name = '旅行' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), false),
+  (NULL, '酒店',      'expense', '旅', 'color.category.travel', 3, true, (SELECT id FROM categories WHERE name = '旅行' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
+  (NULL, '交通',      'expense', '旅', 'color.category.travel', 4, true, (SELECT id FROM categories WHERE name = '旅行' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), false),
+  (NULL, '火车/高铁', 'expense', '旅', 'color.category.travel', 5, true, (SELECT id FROM categories WHERE name = '旅行' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), false),
+  (NULL, '餐饮',      'expense', '旅', 'color.category.travel', 6, true, (SELECT id FROM categories WHERE name = '旅行' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), false);
 
 -- ----------- 文娱 下二级（8 条）-----------
 INSERT INTO categories (family_id, name, type, icon, color, sort_order, is_system, parent_id, is_direct_default)
 VALUES
-  (NULL, '文娱', 'expense', '娱', 'color.category.culture', 1, true, (SELECT id FROM categories WHERE name = '文娱' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
-  (NULL, '游戏', 'expense', '娱', 'color.category.culture', 2, true, (SELECT id FROM categories WHERE name = '文娱' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
-  (NULL, '电影', 'expense', '娱', 'color.category.culture', 3, true, (SELECT id FROM categories WHERE name = '文娱' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
-  (NULL, '门票', 'expense', '娱', 'color.category.culture', 4, true, (SELECT id FROM categories WHERE name = '文娱' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
-  (NULL, '教育', 'expense', '娱', 'color.category.culture', 5, true, (SELECT id FROM categories WHERE name = '文娱' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
-  (NULL, '医疗', 'expense', '娱', 'color.category.culture', 6, true, (SELECT id FROM categories WHERE name = '文娱' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
-  (NULL, '书籍', 'expense', '娱', 'color.category.culture', 7, true, (SELECT id FROM categories WHERE name = '文娱' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
-  (NULL, '运动', 'expense', '娱', 'color.category.culture', 8, true, (SELECT id FROM categories WHERE name = '文娱' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true);
+  (NULL, '文娱',     'expense', '娱', 'color.category.culture', 1, true, (SELECT id FROM categories WHERE name = '文娱' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
+  (NULL, '订阅会员', 'expense', '娱', 'color.category.culture', 2, true, (SELECT id FROM categories WHERE name = '文娱' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
+  (NULL, '演出',     'expense', '娱', 'color.category.culture', 3, true, (SELECT id FROM categories WHERE name = '文娱' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
+  (NULL, '游戏',     'expense', '娱', 'color.category.culture', 4, true, (SELECT id FROM categories WHERE name = '文娱' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
+  (NULL, '运动',     'expense', '娱', 'color.category.culture', 5, true, (SELECT id FROM categories WHERE name = '文娱' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
+  (NULL, '电影',     'expense', '娱', 'color.category.culture', 6, true, (SELECT id FROM categories WHERE name = '文娱' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
+  (NULL, '门票',     'expense', '娱', 'color.category.culture', 7, true, (SELECT id FROM categories WHERE name = '文娱' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
+  (NULL, '教育',     'expense', '娱', 'color.category.culture', 8, true, (SELECT id FROM categories WHERE name = '文娱' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true);
 
--- ----------- 汽车 下二级（5 条）-----------
+-- ----------- 转账 下二级（2 条）-----------
 INSERT INTO categories (family_id, name, type, icon, color, sort_order, is_system, parent_id, is_direct_default)
 VALUES
-  (NULL, '汽车',   'expense', '车', 'color.category.auto', 1, true, (SELECT id FROM categories WHERE name = '汽车' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
-  (NULL, '加油',   'expense', '车', 'color.category.auto', 2, true, (SELECT id FROM categories WHERE name = '汽车' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
-  (NULL, '停车',   'expense', '车', 'color.category.auto', 3, true, (SELECT id FROM categories WHERE name = '汽车' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
-  (NULL, '保养',   'expense', '车', 'color.category.auto', 4, true, (SELECT id FROM categories WHERE name = '汽车' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
-  (NULL, '过路费', 'expense', '车', 'color.category.auto', 5, true, (SELECT id FROM categories WHERE name = '汽车' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true);
+  (NULL, '转账', 'expense', '转', 'color.category.transfer', 1, true, (SELECT id FROM categories WHERE name = '转账' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
+  (NULL, '还贷', 'expense', '转', 'color.category.transfer', 2, true, (SELECT id FROM categories WHERE name = '转账' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true);
 
--- ----------- 其他 下二级（4 条）-----------
+-- ----------- 其他 下二级（8 条）-----------
 INSERT INTO categories (family_id, name, type, icon, color, sort_order, is_system, parent_id, is_direct_default)
 VALUES
   (NULL, '其他', 'expense', '他', 'color.category.other', 1, true, (SELECT id FROM categories WHERE name = '其他' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
-  (NULL, '人情', 'expense', '他', 'color.category.other', 2, true, (SELECT id FROM categories WHERE name = '其他' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
-  (NULL, '捐赠', 'expense', '他', 'color.category.other', 3, true, (SELECT id FROM categories WHERE name = '其他' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
-  (NULL, '丢失', 'expense', '他', 'color.category.other', 4, true, (SELECT id FROM categories WHERE name = '其他' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true);
+  (NULL, '红包', 'expense', '他', 'color.category.other', 2, true, (SELECT id FROM categories WHERE name = '其他' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
+  (NULL, '礼金', 'expense', '他', 'color.category.other', 3, true, (SELECT id FROM categories WHERE name = '其他' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
+  (NULL, '赡养', 'expense', '他', 'color.category.other', 4, true, (SELECT id FROM categories WHERE name = '其他' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
+  (NULL, '捐赠', 'expense', '他', 'color.category.other', 5, true, (SELECT id FROM categories WHERE name = '其他' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
+  (NULL, '丢失', 'expense', '他', 'color.category.other', 6, true, (SELECT id FROM categories WHERE name = '其他' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
+  (NULL, '礼物', 'expense', '他', 'color.category.other', 7, true, (SELECT id FROM categories WHERE name = '其他' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
+  (NULL, '垫付', 'expense', '他', 'color.category.other', 8, true, (SELECT id FROM categories WHERE name = '其他' AND type = 'expense' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true);
 
 -- ----------- 职业收入 下二级（4 条）-----------
 INSERT INTO categories (family_id, name, type, icon, color, sort_order, is_system, parent_id, is_direct_default)
@@ -252,12 +268,14 @@ VALUES
   (NULL, '收租', 'income', '投', 'color.category.invest', 2, true, (SELECT id FROM categories WHERE name = '投资与资产' AND type = 'income' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
   (NULL, '利息', 'income', '投', 'color.category.invest', 3, true, (SELECT id FROM categories WHERE name = '投资与资产' AND type = 'income' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true);
 
--- ----------- 意外所得 下二级（4 条）-----------
+-- ----------- 意外收入 下二级（6 条）-----------
 INSERT INTO categories (family_id, name, type, icon, color, sort_order, is_system, parent_id, is_direct_default)
 VALUES
-  (NULL, '人情',     'income', '运', 'color.category.windfall', 1, true, (SELECT id FROM categories WHERE name = '意外所得' AND type = 'income' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
-  (NULL, '中奖',     'income', '运', 'color.category.windfall', 2, true, (SELECT id FROM categories WHERE name = '意外所得' AND type = 'income' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
-  (NULL, '闲置出售', 'income', '运', 'color.category.windfall', 3, true, (SELECT id FROM categories WHERE name = '意外所得' AND type = 'income' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
-  (NULL, '其他',     'income', '运', 'color.category.windfall', 4, true, (SELECT id FROM categories WHERE name = '意外所得' AND type = 'income' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true);
+  (NULL, '其他',     'income', '运', 'color.category.windfall', 1, true, (SELECT id FROM categories WHERE name = '意外收入' AND type = 'income' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
+  (NULL, '转账',     'income', '运', 'color.category.windfall', 2, true, (SELECT id FROM categories WHERE name = '意外收入' AND type = 'income' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
+  (NULL, '红包',     'income', '运', 'color.category.windfall', 3, true, (SELECT id FROM categories WHERE name = '意外收入' AND type = 'income' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
+  (NULL, '中奖',     'income', '运', 'color.category.windfall', 4, true, (SELECT id FROM categories WHERE name = '意外收入' AND type = 'income' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
+  (NULL, '闲置出售', 'income', '运', 'color.category.windfall', 5, true, (SELECT id FROM categories WHERE name = '意外收入' AND type = 'income' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true),
+  (NULL, '礼金',     'income', '运', 'color.category.windfall', 6, true, (SELECT id FROM categories WHERE name = '意外收入' AND type = 'income' AND parent_id IS NULL AND family_id IS NULL AND deleted_at IS NULL LIMIT 1), true);
 
 COMMIT;

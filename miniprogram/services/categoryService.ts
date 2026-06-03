@@ -68,170 +68,203 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 // ─── 内嵌 fallback 数据 ─────────────────────────────────────────────────────────
 // API 不可达 + 缓存也无时使用。ID 使用 UUID 占位符（不是旧 slug）。
-// 数据来源: design/ui/category_dictionary.md
+// 数据来源: design/categories.yaml
 
-const FALLBACK_UUIDS = {
-  // 支出一级
-  food: '00000000-0000-4000-8000-000000000001',
-  transport: '00000000-0000-4000-8000-000000000002',
-  shopping: '00000000-0000-4000-8000-000000000003',
-  lifestyle: '00000000-0000-4000-8000-000000000004',
-  travel: '00000000-0000-4000-8000-000000000005',
-  entertainment: '00000000-0000-4000-8000-000000000006',
-  auto: '00000000-0000-4000-8000-000000000007',
-  others: '00000000-0000-4000-8000-000000000008',
-  // 收入一级
-  career: '00000000-0000-4000-8000-000000000101',
-  investment: '00000000-0000-4000-8000-000000000102',
-  windfall: '00000000-0000-4000-8000-000000000103',
-  // 支出二级
-  food_dining: '10000000-0000-4000-8000-000000000001',
-  food_delivery: '10000000-0000-4000-8000-000000000002',
-  food_groceries: '10000000-0000-4000-8000-000000000003',
-  food_snacks: '10000000-0000-4000-8000-000000000004',
-  food_beverages: '10000000-0000-4000-8000-000000000005',
-  food_drinks: '10000000-0000-4000-8000-000000000006',
-  transport_transit: '10000000-0000-4000-8000-000000000007',
-  transport_taxi: '10000000-0000-4000-8000-000000000008',
-  transport_bus: '10000000-0000-4000-8000-000000000009',
-  transport_subway: '10000000-0000-4000-8000-000000000010',
-  transport_train: '10000000-0000-4000-8000-000000000011',
-  transport_flight: '10000000-0000-4000-8000-000000000012',
-  shopping_general: '10000000-0000-4000-8000-000000000013',
-  shopping_daily: '10000000-0000-4000-8000-000000000014',
-  shopping_clothing: '10000000-0000-4000-8000-000000000015',
-  shopping_electronics: '10000000-0000-4000-8000-000000000016',
-  shopping_snacks: '10000000-0000-4000-8000-000000000017',
-  shopping_tissues: '10000000-0000-4000-8000-000000000018',
-  shopping_beverages: '10000000-0000-4000-8000-000000000019',
-  lifestyle_general: '10000000-0000-4000-8000-000000000020',
-  lifestyle_groceries: '10000000-0000-4000-8000-000000000021',
-  lifestyle_beauty: '10000000-0000-4000-8000-000000000022',
-  lifestyle_pets: '10000000-0000-4000-8000-000000000023',
-  lifestyle_housing: '10000000-0000-4000-8000-000000000024',
-  lifestyle_utilities: '10000000-0000-4000-8000-000000000025',
-  lifestyle_phone: '10000000-0000-4000-8000-000000000026',
-  lifestyle_maintenance: '10000000-0000-4000-8000-000000000027',
-  lifestyle_home: '10000000-0000-4000-8000-000000000028',
-  travel_general: '10000000-0000-4000-8000-000000000029',
-  travel_flight: '10000000-0000-4000-8000-000000000030',
-  travel_hotel: '10000000-0000-4000-8000-000000000031',
-  travel_transit: '10000000-0000-4000-8000-000000000032',
-  travel_train: '10000000-0000-4000-8000-000000000033',
-  travel_dining: '10000000-0000-4000-8000-000000000034',
-  entertainment_general: '10000000-0000-4000-8000-000000000035',
-  entertainment_games: '10000000-0000-4000-8000-000000000036',
-  entertainment_movies: '10000000-0000-4000-8000-000000000037',
-  entertainment_tickets: '10000000-0000-4000-8000-000000000038',
-  entertainment_education: '10000000-0000-4000-8000-000000000039',
-  entertainment_medical: '10000000-0000-4000-8000-000000000040',
-  entertainment_books: '10000000-0000-4000-8000-000000000041',
-  entertainment_sports: '10000000-0000-4000-8000-000000000042',
-  auto_general: '10000000-0000-4000-8000-000000000043',
-  auto_gas: '10000000-0000-4000-8000-000000000044',
-  auto_parking: '10000000-0000-4000-8000-000000000045',
-  auto_maintenance: '10000000-0000-4000-8000-000000000046',
-  auto_tolls: '10000000-0000-4000-8000-000000000047',
-  others_general: '10000000-0000-4000-8000-000000000048',
-  others_social: '10000000-0000-4000-8000-000000000049',
-  others_donations: '10000000-0000-4000-8000-000000000050',
-  others_lost: '10000000-0000-4000-8000-000000000051',
-  // 收入二级
-  career_salary: '11000000-0000-4000-8000-000000000001',
-  career_bonus: '11000000-0000-4000-8000-000000000002',
-  career_parttime: '11000000-0000-4000-8000-000000000003',
-  career_reimbursement: '11000000-0000-4000-8000-000000000004',
-  investment_general: '11000000-0000-4000-8000-000000000005',
-  investment_rent: '11000000-0000-4000-8000-000000000006',
-  investment_interest: '11000000-0000-4000-8000-000000000007',
-  windfall_gifts: '11000000-0000-4000-8000-000000000008',
-  windfall_lottery: '11000000-0000-4000-8000-000000000009',
-  windfall_secondhand: '11000000-0000-4000-8000-000000000010',
-  windfall_others: '11000000-0000-4000-8000-000000000011',
-} as const;
+const CONFIG_EXPENSE = [
+  { name: '餐饮', icon: '餐', color: 'color.category.food', order: 1, children: [
+    { name: '餐饮', order: 1, def: true },
+    { name: '外卖', order: 2, def: true },
+    { name: '买菜', order: 3, def: true },
+    { name: '水果', order: 4, def: true },
+    { name: '零食', order: 5, def: true },
+    { name: '饮料', order: 6, def: true },
+    { name: '酒水', order: 7, def: false },
+    { name: '柴米油盐', order: 8, def: true },
+    { name: '聚餐', order: 9, def: true },
+    { name: '宴请', order: 10, def: true }
+  ]},
+  { name: '交通', icon: '行', color: 'color.category.transport', order: 2, children: [
+    { name: '交通', order: 1, def: true },
+    { name: '打车', order: 2, def: true },
+    { name: '公交', order: 3, def: true },
+    { name: '地铁', order: 4, def: true },
+    { name: '加油', order: 5, def: true },
+    { name: '停车', order: 6, def: true },
+    { name: '火车/高铁', order: 7, def: true },
+    { name: '机票', order: 8, def: true },
+    { name: '汽车保养', order: 9, def: true },
+    { name: '保险', order: 10, def: true },
+    { name: '过路费', order: 11, def: true }
+  ]},
+  { name: '购物', icon: '购', color: 'color.category.shopping', order: 3, children: [
+    { name: '购物', order: 1, def: true },
+    { name: '日用', order: 2, def: true },
+    { name: '服饰', order: 3, def: true },
+    { name: '数码', order: 4, def: true },
+    { name: '零食', order: 5, def: false },
+    { name: '纸巾', order: 6, def: true },
+    { name: '饮料', order: 7, def: false },
+    { name: '护肤美妆', order: 8, def: true }
+  ]},
+  { name: '生活', icon: '活', color: 'color.category.lifestyle', order: 4, children: [
+    { name: '生活', order: 1, def: true },
+    { name: '日用', order: 2, def: false },
+    { name: '买菜', order: 3, def: false },
+    { name: '柴米油盐', order: 4, def: false },
+    { name: '宠物', order: 5, def: true },
+    { name: '美容美发', order: 6, def: true },
+    { name: '水电煤', order: 7, def: true },
+    { name: '话费网费', order: 8, def: true },
+    { name: '物业维修', order: 9, def: true },
+    { name: '医疗', order: 10, def: true },
+    { name: '母婴', order: 11, def: true },
+    { name: '租房', order: 12, def: true }
+  ]},
+  { name: '旅行', icon: '旅', color: 'color.category.travel', order: 5, children: [
+    { name: '旅行', order: 1, def: true },
+    { name: '机票', order: 2, def: false },
+    { name: '酒店', order: 3, def: true },
+    { name: '交通', order: 4, def: false },
+    { name: '火车/高铁', order: 5, def: false },
+    { name: '餐饮', order: 6, def: false }
+  ]},
+  { name: '文娱', icon: '娱', color: 'color.category.culture', order: 6, children: [
+    { name: '文娱', order: 1, def: true },
+    { name: '订阅会员', order: 2, def: true },
+    { name: '演出', order: 3, def: true },
+    { name: '游戏', order: 4, def: true },
+    { name: '运动', order: 5, def: true },
+    { name: '电影', order: 6, def: true },
+    { name: '门票', order: 7, def: true },
+    { name: '教育', order: 8, def: true }
+  ]},
+  { name: '转账', icon: '转', color: 'color.category.transfer', order: 7, children: [
+    { name: '转账', order: 1, def: true },
+    { name: '还贷', order: 2, def: true }
+  ]},
+  { name: '其他', icon: '他', color: 'color.category.other', order: 99, children: [
+    { name: '其他', order: 1, def: true },
+    { name: '红包', order: 2, def: true },
+    { name: '礼金', order: 3, def: true },
+    { name: '赡养', order: 4, def: true },
+    { name: '捐赠', order: 5, def: true },
+    { name: '丢失', order: 6, def: true },
+    { name: '礼物', order: 7, def: true },
+    { name: '垫付', order: 8, def: true }
+  ]}
+];
+
+const CONFIG_INCOME = [
+  { name: '职业收入', icon: '薪', color: 'color.category.salary', order: 1, children: [
+    { name: '工资', order: 1, def: true },
+    { name: '奖金', order: 2, def: true },
+    { name: '兼职', order: 3, def: true },
+    { name: '报销', order: 4, def: true }
+  ]},
+  { name: '投资与资产', icon: '投', color: 'color.category.invest', order: 2, children: [
+    { name: '理财', order: 1, def: true },
+    { name: '收租', order: 2, def: true },
+    { name: '利息', order: 3, def: true }
+  ]},
+  { name: '意外收入', icon: '运', color: 'color.category.windfall', order: 3, children: [
+    { name: '其他', order: 1, def: true },
+    { name: '转账', order: 2, def: true },
+    { name: '红包', order: 3, def: true },
+    { name: '中奖', order: 4, def: true },
+    { name: '闲置出售', order: 5, def: true },
+    { name: '礼金', order: 6, def: true }
+  ]}
+];
 
 /** 内嵌 fallback 静态数据（API 不可达 + 缓存也无时降级用） */
 function getFallbackItems(): CategoryItem[] {
-  const F = FALLBACK_UUIDS;
-  return [
-    // ─── 支出一级 ───
-    { id: F.food, familyId: null, name: '餐饮', type: 'expense', icon: '餐', sortOrder: 1, isSystem: true, parentId: null, isDirectDefault: false, childrenCount: 6 },
-    { id: F.transport, familyId: null, name: '交通', type: 'expense', icon: '行', sortOrder: 2, isSystem: true, parentId: null, isDirectDefault: false, childrenCount: 6 },
-    { id: F.shopping, familyId: null, name: '购物', type: 'expense', icon: '购', sortOrder: 3, isSystem: true, parentId: null, isDirectDefault: false, childrenCount: 7 },
-    { id: F.lifestyle, familyId: null, name: '生活', type: 'expense', icon: '活', sortOrder: 4, isSystem: true, parentId: null, isDirectDefault: false, childrenCount: 9 },
-    { id: F.travel, familyId: null, name: '旅行', type: 'expense', icon: '旅', sortOrder: 5, isSystem: true, parentId: null, isDirectDefault: false, childrenCount: 6 },
-    { id: F.entertainment, familyId: null, name: '文娱', type: 'expense', icon: '娱', sortOrder: 6, isSystem: true, parentId: null, isDirectDefault: false, childrenCount: 8 },
-    { id: F.auto, familyId: null, name: '汽车', type: 'expense', icon: '车', sortOrder: 7, isSystem: true, parentId: null, isDirectDefault: false, childrenCount: 5 },
-    { id: F.others, familyId: null, name: '其他', type: 'expense', icon: '他', sortOrder: 8, isSystem: true, parentId: null, isDirectDefault: false, childrenCount: 4 },
-    // ─── 支出二级 ───
-    { id: F.food_dining, familyId: null, name: '餐饮', type: 'expense', icon: '餐', sortOrder: 1, isSystem: true, parentId: F.food, isDirectDefault: true, childrenCount: 0 },
-    { id: F.food_delivery, familyId: null, name: '外卖', type: 'expense', icon: '餐', sortOrder: 2, isSystem: true, parentId: F.food, isDirectDefault: false, childrenCount: 0 },
-    { id: F.food_groceries, familyId: null, name: '买菜', type: 'expense', icon: '餐', sortOrder: 3, isSystem: true, parentId: F.food, isDirectDefault: true, childrenCount: 0 },
-    { id: F.food_snacks, familyId: null, name: '零食', type: 'expense', icon: '餐', sortOrder: 4, isSystem: true, parentId: F.food, isDirectDefault: true, childrenCount: 0 },
-    { id: F.food_beverages, familyId: null, name: '饮料', type: 'expense', icon: '餐', sortOrder: 5, isSystem: true, parentId: F.food, isDirectDefault: true, childrenCount: 0 },
-    { id: F.food_drinks, familyId: null, name: '酒水', type: 'expense', icon: '餐', sortOrder: 6, isSystem: true, parentId: F.food, isDirectDefault: false, childrenCount: 0 },
-    { id: F.transport_transit, familyId: null, name: '交通', type: 'expense', icon: '行', sortOrder: 1, isSystem: true, parentId: F.transport, isDirectDefault: true, childrenCount: 0 },
-    { id: F.transport_taxi, familyId: null, name: '打车', type: 'expense', icon: '行', sortOrder: 2, isSystem: true, parentId: F.transport, isDirectDefault: false, childrenCount: 0 },
-    { id: F.transport_bus, familyId: null, name: '公交', type: 'expense', icon: '行', sortOrder: 3, isSystem: true, parentId: F.transport, isDirectDefault: false, childrenCount: 0 },
-    { id: F.transport_subway, familyId: null, name: '地铁', type: 'expense', icon: '行', sortOrder: 4, isSystem: true, parentId: F.transport, isDirectDefault: false, childrenCount: 0 },
-    { id: F.transport_train, familyId: null, name: '火车/高铁', type: 'expense', icon: '行', sortOrder: 5, isSystem: true, parentId: F.transport, isDirectDefault: false, childrenCount: 0 },
-    { id: F.transport_flight, familyId: null, name: '机票', type: 'expense', icon: '行', sortOrder: 6, isSystem: true, parentId: F.transport, isDirectDefault: true, childrenCount: 0 },
-    { id: F.shopping_general, familyId: null, name: '购物', type: 'expense', icon: '购', sortOrder: 1, isSystem: true, parentId: F.shopping, isDirectDefault: true, childrenCount: 0 },
-    { id: F.shopping_daily, familyId: null, name: '日用', type: 'expense', icon: '购', sortOrder: 2, isSystem: true, parentId: F.shopping, isDirectDefault: false, childrenCount: 0 },
-    { id: F.shopping_clothing, familyId: null, name: '服饰', type: 'expense', icon: '购', sortOrder: 3, isSystem: true, parentId: F.shopping, isDirectDefault: false, childrenCount: 0 },
-    { id: F.shopping_electronics, familyId: null, name: '数码', type: 'expense', icon: '购', sortOrder: 4, isSystem: true, parentId: F.shopping, isDirectDefault: false, childrenCount: 0 },
-    { id: F.shopping_snacks, familyId: null, name: '零食', type: 'expense', icon: '购', sortOrder: 5, isSystem: true, parentId: F.shopping, isDirectDefault: false, childrenCount: 0 },
-    { id: F.shopping_tissues, familyId: null, name: '纸巾', type: 'expense', icon: '购', sortOrder: 6, isSystem: true, parentId: F.shopping, isDirectDefault: false, childrenCount: 0 },
-    { id: F.shopping_beverages, familyId: null, name: '饮料', type: 'expense', icon: '购', sortOrder: 7, isSystem: true, parentId: F.shopping, isDirectDefault: false, childrenCount: 0 },
-    { id: F.lifestyle_general, familyId: null, name: '生活', type: 'expense', icon: '活', sortOrder: 1, isSystem: true, parentId: F.lifestyle, isDirectDefault: true, childrenCount: 0 },
-    { id: F.lifestyle_groceries, familyId: null, name: '买菜', type: 'expense', icon: '活', sortOrder: 2, isSystem: true, parentId: F.lifestyle, isDirectDefault: false, childrenCount: 0 },
-    { id: F.lifestyle_beauty, familyId: null, name: '护肤美容', type: 'expense', icon: '活', sortOrder: 3, isSystem: true, parentId: F.lifestyle, isDirectDefault: false, childrenCount: 0 },
-    { id: F.lifestyle_pets, familyId: null, name: '宠物', type: 'expense', icon: '活', sortOrder: 4, isSystem: true, parentId: F.lifestyle, isDirectDefault: false, childrenCount: 0 },
-    { id: F.lifestyle_housing, familyId: null, name: '住房', type: 'expense', icon: '活', sortOrder: 5, isSystem: true, parentId: F.lifestyle, isDirectDefault: false, childrenCount: 0 },
-    { id: F.lifestyle_utilities, familyId: null, name: '水电煤', type: 'expense', icon: '活', sortOrder: 6, isSystem: true, parentId: F.lifestyle, isDirectDefault: false, childrenCount: 0 },
-    { id: F.lifestyle_phone, familyId: null, name: '话费网费', type: 'expense', icon: '活', sortOrder: 7, isSystem: true, parentId: F.lifestyle, isDirectDefault: false, childrenCount: 0 },
-    { id: F.lifestyle_maintenance, familyId: null, name: '物业维修', type: 'expense', icon: '活', sortOrder: 8, isSystem: true, parentId: F.lifestyle, isDirectDefault: false, childrenCount: 0 },
-    { id: F.lifestyle_home, familyId: null, name: '家居', type: 'expense', icon: '活', sortOrder: 9, isSystem: true, parentId: F.lifestyle, isDirectDefault: false, childrenCount: 0 },
-    { id: F.travel_general, familyId: null, name: '旅行', type: 'expense', icon: '旅', sortOrder: 1, isSystem: true, parentId: F.travel, isDirectDefault: true, childrenCount: 0 },
-    { id: F.travel_flight, familyId: null, name: '机票', type: 'expense', icon: '旅', sortOrder: 2, isSystem: true, parentId: F.travel, isDirectDefault: false, childrenCount: 0 },
-    { id: F.travel_hotel, familyId: null, name: '酒店', type: 'expense', icon: '旅', sortOrder: 3, isSystem: true, parentId: F.travel, isDirectDefault: false, childrenCount: 0 },
-    { id: F.travel_transit, familyId: null, name: '交通', type: 'expense', icon: '旅', sortOrder: 4, isSystem: true, parentId: F.travel, isDirectDefault: false, childrenCount: 0 },
-    { id: F.travel_train, familyId: null, name: '火车', type: 'expense', icon: '旅', sortOrder: 5, isSystem: true, parentId: F.travel, isDirectDefault: false, childrenCount: 0 },
-    { id: F.travel_dining, familyId: null, name: '餐饮', type: 'expense', icon: '旅', sortOrder: 6, isSystem: true, parentId: F.travel, isDirectDefault: false, childrenCount: 0 },
-    { id: F.entertainment_general, familyId: null, name: '文娱', type: 'expense', icon: '娱', sortOrder: 1, isSystem: true, parentId: F.entertainment, isDirectDefault: true, childrenCount: 0 },
-    { id: F.entertainment_games, familyId: null, name: '游戏', type: 'expense', icon: '娱', sortOrder: 2, isSystem: true, parentId: F.entertainment, isDirectDefault: false, childrenCount: 0 },
-    { id: F.entertainment_movies, familyId: null, name: '电影', type: 'expense', icon: '娱', sortOrder: 3, isSystem: true, parentId: F.entertainment, isDirectDefault: false, childrenCount: 0 },
-    { id: F.entertainment_tickets, familyId: null, name: '门票', type: 'expense', icon: '娱', sortOrder: 4, isSystem: true, parentId: F.entertainment, isDirectDefault: false, childrenCount: 0 },
-    { id: F.entertainment_education, familyId: null, name: '教育', type: 'expense', icon: '娱', sortOrder: 5, isSystem: true, parentId: F.entertainment, isDirectDefault: false, childrenCount: 0 },
-    { id: F.entertainment_medical, familyId: null, name: '医疗', type: 'expense', icon: '娱', sortOrder: 6, isSystem: true, parentId: F.entertainment, isDirectDefault: false, childrenCount: 0 },
-    { id: F.entertainment_books, familyId: null, name: '书籍', type: 'expense', icon: '娱', sortOrder: 7, isSystem: true, parentId: F.entertainment, isDirectDefault: false, childrenCount: 0 },
-    { id: F.entertainment_sports, familyId: null, name: '运动', type: 'expense', icon: '娱', sortOrder: 8, isSystem: true, parentId: F.entertainment, isDirectDefault: false, childrenCount: 0 },
-    { id: F.auto_general, familyId: null, name: '汽车', type: 'expense', icon: '车', sortOrder: 1, isSystem: true, parentId: F.auto, isDirectDefault: true, childrenCount: 0 },
-    { id: F.auto_gas, familyId: null, name: '加油', type: 'expense', icon: '车', sortOrder: 2, isSystem: true, parentId: F.auto, isDirectDefault: false, childrenCount: 0 },
-    { id: F.auto_parking, familyId: null, name: '停车', type: 'expense', icon: '车', sortOrder: 3, isSystem: true, parentId: F.auto, isDirectDefault: false, childrenCount: 0 },
-    { id: F.auto_maintenance, familyId: null, name: '保养', type: 'expense', icon: '车', sortOrder: 4, isSystem: true, parentId: F.auto, isDirectDefault: false, childrenCount: 0 },
-    { id: F.auto_tolls, familyId: null, name: '过路费', type: 'expense', icon: '车', sortOrder: 5, isSystem: true, parentId: F.auto, isDirectDefault: false, childrenCount: 0 },
-    { id: F.others_general, familyId: null, name: '其他', type: 'expense', icon: '他', sortOrder: 1, isSystem: true, parentId: F.others, isDirectDefault: true, childrenCount: 0 },
-    { id: F.others_social, familyId: null, name: '人情', type: 'expense', icon: '他', sortOrder: 2, isSystem: true, parentId: F.others, isDirectDefault: false, childrenCount: 0 },
-    { id: F.others_donations, familyId: null, name: '捐赠', type: 'expense', icon: '他', sortOrder: 3, isSystem: true, parentId: F.others, isDirectDefault: false, childrenCount: 0 },
-    { id: F.others_lost, familyId: null, name: '丢失', type: 'expense', icon: '他', sortOrder: 4, isSystem: true, parentId: F.others, isDirectDefault: false, childrenCount: 0 },
-    // ─── 收入一级 ───
-    { id: F.career, familyId: null, name: '职业收入', type: 'income', icon: '薪', sortOrder: 1, isSystem: true, parentId: null, isDirectDefault: false, childrenCount: 4 },
-    { id: F.investment, familyId: null, name: '投资与资产', type: 'income', icon: '投', sortOrder: 2, isSystem: true, parentId: null, isDirectDefault: false, childrenCount: 3 },
-    { id: F.windfall, familyId: null, name: '意外所得', type: 'income', icon: '运', sortOrder: 3, isSystem: true, parentId: null, isDirectDefault: false, childrenCount: 4 },
-    // ─── 收入二级 ───
-    { id: F.career_salary, familyId: null, name: '工资', type: 'income', icon: '薪', sortOrder: 1, isSystem: true, parentId: F.career, isDirectDefault: true, childrenCount: 0 },
-    { id: F.career_bonus, familyId: null, name: '奖金', type: 'income', icon: '薪', sortOrder: 2, isSystem: true, parentId: F.career, isDirectDefault: false, childrenCount: 0 },
-    { id: F.career_parttime, familyId: null, name: '兼职', type: 'income', icon: '薪', sortOrder: 3, isSystem: true, parentId: F.career, isDirectDefault: false, childrenCount: 0 },
-    { id: F.career_reimbursement, familyId: null, name: '报销', type: 'income', icon: '薪', sortOrder: 4, isSystem: true, parentId: F.career, isDirectDefault: false, childrenCount: 0 },
-    { id: F.investment_general, familyId: null, name: '理财', type: 'income', icon: '投', sortOrder: 1, isSystem: true, parentId: F.investment, isDirectDefault: true, childrenCount: 0 },
-    { id: F.investment_rent, familyId: null, name: '收租', type: 'income', icon: '投', sortOrder: 2, isSystem: true, parentId: F.investment, isDirectDefault: false, childrenCount: 0 },
-    { id: F.investment_interest, familyId: null, name: '利息', type: 'income', icon: '投', sortOrder: 3, isSystem: true, parentId: F.investment, isDirectDefault: false, childrenCount: 0 },
-    { id: F.windfall_gifts, familyId: null, name: '人情', type: 'income', icon: '运', sortOrder: 1, isSystem: true, parentId: F.windfall, isDirectDefault: true, childrenCount: 0 },
-    { id: F.windfall_lottery, familyId: null, name: '中奖', type: 'income', icon: '运', sortOrder: 2, isSystem: true, parentId: F.windfall, isDirectDefault: false, childrenCount: 0 },
-    { id: F.windfall_secondhand, familyId: null, name: '闲置出售', type: 'income', icon: '运', sortOrder: 3, isSystem: true, parentId: F.windfall, isDirectDefault: false, childrenCount: 0 },
-    { id: F.windfall_others, familyId: null, name: '其他', type: 'income', icon: '运', sortOrder: 4, isSystem: true, parentId: F.windfall, isDirectDefault: false, childrenCount: 0 },
-  ];
+  const result: CategoryItem[] = [];
+
+  // 一级分类 UUID 映射表
+  // 支出尾数: 餐饮=1, 交通=2, 购物=3, 生活=4, 旅行=5, 文娱=6, 转账=7, 其他=8
+  // 收入尾数: 职业=201, 投资=202, 意外=203 (为了和支出拉开距离)
+  const getParentUuid = (type: 'expense' | 'income', order: number): string => {
+    const isIncome = type === 'income';
+    const suffix = isIncome ? (200 + order) : order;
+    return `00000000-0000-4000-8000-${String(suffix).padStart(12, '0')}`;
+  };
+
+  const getChildUuid = (type: 'expense' | 'income', parentOrder: number, childOrder: number): string => {
+    const isIncome = type === 'income';
+    const parentSuffix = isIncome ? (200 + parentOrder) : parentOrder;
+    const prefix = isIncome ? '11000000' : '10000000';
+    return `${prefix}-0000-4000-8000-${String(parentSuffix).padStart(6, '0')}${String(childOrder).padStart(6, '0')}`;
+  };
+
+  // 1. 构建支出
+  CONFIG_EXPENSE.forEach(p => {
+    const pId = getParentUuid('expense', p.order);
+    result.push({
+      id: pId,
+      familyId: null,
+      name: p.name,
+      type: 'expense',
+      icon: p.icon,
+      color: p.color,
+      sortOrder: p.order,
+      isSystem: true,
+      parentId: null,
+      isDirectDefault: false,
+      childrenCount: p.children.length
+    });
+
+    p.children.forEach(c => {
+      result.push({
+        id: getChildUuid('expense', p.order, c.order),
+        familyId: null,
+        name: c.name,
+        type: 'expense',
+        icon: p.icon, // 子类默认继承父类 icon
+        color: p.color,
+        sortOrder: c.order,
+        isSystem: true,
+        parentId: pId,
+        isDirectDefault: c.def,
+        childrenCount: 0
+      });
+    });
+  });
+
+  // 2. 构建收入
+  CONFIG_INCOME.forEach(p => {
+    const pId = getParentUuid('income', p.order);
+    result.push({
+      id: pId,
+      familyId: null,
+      name: p.name,
+      type: 'income',
+      icon: p.icon,
+      color: p.color,
+      sortOrder: p.order,
+      isSystem: true,
+      parentId: null,
+      isDirectDefault: false,
+      childrenCount: p.children.length
+    });
+
+    p.children.forEach(c => {
+      result.push({
+        id: getChildUuid('income', p.order, c.order),
+        familyId: null,
+        name: c.name,
+        type: 'income',
+        icon: p.icon,
+        color: p.color,
+        sortOrder: c.order,
+        isSystem: true,
+        parentId: pId,
+        isDirectDefault: c.def,
+        childrenCount: 0
+      });
+    });
+  });
+
+  return result;
 }
 
 // ─── snake_case → camelCase 转换 ──────────────────────────────────────────────

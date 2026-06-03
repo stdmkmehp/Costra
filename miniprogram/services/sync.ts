@@ -9,9 +9,9 @@
 //   - syncPull 内部接入 db.ts.applyServerChanges
 // Refs: costra-103-miniapp-local-persistence-outbox.md §2.4
 
-import { request } from './request';
+import { request, ApiError } from './request';
 import { getWatermark, setWatermark, applyServerChanges } from './db';
-import { drainBatch, ackResults, ackBatchFailure, PushResultItem } from './outbox';
+import { drainBatch, ackResults, ackBatchFailure, ackBatchAsAlreadyProcessed, PushResultItem } from './outbox';
 
 /**
  * Entity 枚举
@@ -117,8 +117,18 @@ export async function pushDelta(): Promise<{
       else rejected++;
     }
     return { pushed, conflicts, rejected, failed: 0 };
-  } catch {
-    // 网络/超时/HTTP 4xx/5xx · 无 results 可消费 · 必须复原 drained 否则永久死锁
+  } catch (err: unknown) {
+    // COSTRA-228: 区分 409 幂等键冲突与其他错误
+    const status = (err as ApiError)?.status;
+
+    if (status === 409) {
+      // 幂等键冲突：服务端已处理过该批次 → 清除 outbox 条目
+      // 后续通过 syncPull 回填 server_id/version
+      const cleared = await ackBatchAsAlreadyProcessed(batchKey);
+      return { pushed: cleared, conflicts: 0, rejected: 0, failed: 0 };
+    }
+
+    // 网络/超时/其他 HTTP 错误 · 无 results 可消费 · 必须复原 drained 否则永久死锁
     // 历史 BUG-COSTRA-150-D（COSTRA-103 R1 引入）· R1.x.2 修复
     const failed = await ackBatchFailure(batchKey);
     return { pushed: 0, conflicts: 0, rejected: 0, failed };

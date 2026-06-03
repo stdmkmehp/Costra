@@ -105,6 +105,21 @@ function newSeq(): number {
   return now * 1000 + _seqCounter;
 }
 
+// ─── retry 上限（COSTRA-228 · 超限移入 dead-letter 不再重试）─────────────────
+const MAX_RETRIES = 50;
+const DEAD_LETTER_KEY = 'outbox:__dead_letter';
+
+async function readDeadLetter(): Promise<SyncOp[]> {
+  return (await getItem<SyncOp[]>(DEAD_LETTER_KEY)) || [];
+}
+
+async function moveToDeadLetter(op: SyncOp, seq: number): Promise<void> {
+  const dl = await readDeadLetter();
+  dl.push(op);
+  await setItem(DEAD_LETTER_KEY, dl);
+  await removeItem(opKey(seq));
+}
+
 // ─── retry 计数（指数退避在 Sprint-3 合并 UI 时恢复）─────────────────────────
 
 // ─── 导出 API（6 个）───────────────────────────────────────────────────────────
@@ -322,15 +337,56 @@ export async function ackBatchFailure(batchKey: string): Promise<number> {
 
   const newIdx = await readIndex();
   const now = Date.now();
+  let recovered = 0;
   for (const seq of thisBatchSeqs) {
     const op = await getItem<SyncOp>(opKey(seq));
     if (!op) continue;
     op.retries = await incrementRetry(op.client_ref_id);
+    // COSTRA-228: 超过 MAX_RETRIES 移入 dead-letter · 不再重试
+    if (op.retries >= MAX_RETRIES) {
+      await moveToDeadLetter(op, seq);
+      continue;
+    }
     op.next_retry_at = now; // 立即可重试
     await setItem(opKey(seq), op);
     if (!newIdx.includes(seq)) newIdx.push(seq);
+    recovered++;
   }
   await writeIndex(newIdx);
+
+  return recovered;
+}
+
+/**
+ * 标记本批次为"服务端已处理"（HTTP 409 幂等键冲突 · COSTRA-228）
+ *
+ * 场景：客户端首次 push 成功但未收到响应 → 重试时服务端返回 409
+ * 含义：服务端已持有该批次数据 · 客户端无需再推 · 后续通过 syncPull 回填 server_id/version
+ *
+ * 处理：从 drained 中取出本批次所有 op · 物理删除（等效 ackResults ok）
+ *
+ * @param batchKey 批次 idempotency_key
+ * @returns 清除的 op 数
+ */
+export async function ackBatchAsAlreadyProcessed(batchKey: string): Promise<number> {
+  const allDrained = await readDrained();
+  const thisBatchSeqs: number[] = [];
+  const otherDrained: number[] = [];
+
+  for (const seq of allDrained) {
+    const op = await getItem<SyncOp>(opKey(seq));
+    if (op && op.ack_batch_key === batchKey) {
+      thisBatchSeqs.push(seq);
+    } else {
+      otherDrained.push(seq);
+    }
+  }
+
+  await writeDrained(otherDrained);
+
+  for (const seq of thisBatchSeqs) {
+    await removeItem(opKey(seq));
+  }
 
   return thisBatchSeqs.length;
 }

@@ -444,8 +444,8 @@ describe('COSTRA-217: entries.shared_type', () => {
 // pg-mem 环境中我们验证的是表结构和约束逻辑
 //
 // 系统分类 seed 数量硬断言（dispatch DoD-2）：
-//   目标：一级 11 条 + 二级 62 条 = 总计 73 条
-//   is_direct_default=true 的二级分类：55 条（支出 44 + 收入 11）
+//   目标：一级 11 条 + 二级 78 条 = 总计 89 条
+//   is_direct_default=true 的二级分类：68 条（支出 55 + 收入 13）
 //   ⚠️ pg-mem 不执行 0008 migration seed · 这些断言需在真实 PG 环境验证
 //   当前状态：P2（非 P1）· 等 staging/prod 环境可用后补真实 PG 集成测试
 

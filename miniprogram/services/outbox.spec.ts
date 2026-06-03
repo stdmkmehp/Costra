@@ -7,6 +7,7 @@ import {
   drainBatch,
   ackResults,
   ackBatchFailure,
+  ackBatchAsAlreadyProcessed,
   size,
   __peek,
   __clear,
@@ -235,5 +236,101 @@ describe('services/outbox · 模拟 wx.storage（mock 环境）', () => {
     expect(r2).not.toBeNull();
     expect(r2!.batch).toHaveLength(1);
     expect(r2!.batch[0].client_ref_id).toBe('orphan-1');
+  });
+
+  // ─── COSTRA-228 修复测试 ──────────────────────────────────────────────────────
+  // 409 幂等键冲突 → ackBatchAsAlreadyProcessed 清除 outbox 条目
+  // max_retries 超限 → 移入 dead-letter 不再重试
+
+  it('COSTRA-228 · ackBatchAsAlreadyProcessed 物理删除本批次所有 op（模拟 409 场景）', async () => {
+    await enqueue({ op: 'create', entity: 'entry', client_ref_id: '409-op-1', base_version: null, payload: { ledger_id: 'l1', amount: 100, currency: 'CNY', type: 'expense', category_id: null, note: '', occurred_at: '2026-05-09T00:00:00.000Z' } });
+    await enqueue({ op: 'create', entity: 'entry', client_ref_id: '409-op-2', base_version: null, payload: { ledger_id: 'l1', amount: 200, currency: 'CNY', type: 'expense', category_id: null, note: '', occurred_at: '2026-05-09T00:00:00.000Z' } });
+    expect(await size()).toBe(2);
+
+    const result = await drainBatch(200);
+    expect(result).not.toBeNull();
+    expect(result!.batch).toHaveLength(2);
+
+    // 模拟 409：调用 ackBatchAsAlreadyProcessed
+    const cleared = await ackBatchAsAlreadyProcessed(result!.batchKey);
+    expect(cleared).toBe(2);
+
+    // 验证：outbox 完全清空 · 条目不再重试
+    expect(await __peek()).toHaveLength(0);
+    expect(await size()).toBe(0);
+
+    // 验证：后续 drainBatch 返回 null（无剩余待推送）
+    const next = await drainBatch(200);
+    expect(next).toBeNull();
+  });
+
+  it('COSTRA-228 · ackBatchAsAlreadyProcessed 仅清本批次 · 不影响其他批次', async () => {
+    await enqueue({ op: 'create', entity: 'entry', client_ref_id: '409-iso-A', base_version: null, payload: { ledger_id: 'l1', amount: 100, currency: 'CNY', type: 'expense', category_id: null, note: '', occurred_at: '2026-05-09T00:00:00.000Z' } });
+
+    // drain A
+    const rA = await drainBatch(200);
+    expect(rA).not.toBeNull();
+
+    // ack A as already processed
+    await ackBatchAsAlreadyProcessed(rA!.batchKey);
+    expect(await __peek()).toHaveLength(0);
+
+    // 再 enqueue B
+    await enqueue({ op: 'create', entity: 'entry', client_ref_id: '409-iso-B', base_version: null, payload: { ledger_id: 'l1', amount: 200, currency: 'CNY', type: 'expense', category_id: null, note: '', occurred_at: '2026-05-09T00:00:00.000Z' } });
+    expect(await size()).toBe(1);
+
+    // B 仍可正常 drain
+    const rB = await drainBatch(200);
+    expect(rB).not.toBeNull();
+    expect(rB!.batch).toHaveLength(1);
+    expect(rB!.batch[0].client_ref_id).toBe('409-iso-B');
+  });
+
+  it('COSTRA-228 · max_retries 超限 → 移入 dead-letter · outbox 不再积压', async () => {
+    await enqueue({ op: 'create', entity: 'entry', client_ref_id: 'max-retry-op', base_version: null, payload: { ledger_id: 'l1', amount: 100, currency: 'CNY', type: 'expense', category_id: null, note: '', occurred_at: '2026-05-09T00:00:00.000Z' } });
+
+    // 模拟 50 次连续网络失败（达到 MAX_RETRIES）
+    for (let i = 0; i < 50; i++) {
+      const r = await drainBatch(200);
+      expect(r).not.toBeNull();
+      await ackBatchFailure(r!.batchKey);
+    }
+
+    // 第 50 次 ackBatchFailure 后 op 应被移入 dead-letter · outbox 为空
+    expect(await size()).toBe(0);
+    expect(await __peek()).toHaveLength(0);
+
+    // drainBatch 返回 null · 不再重试
+    const next = await drainBatch(200);
+    expect(next).toBeNull();
+
+    // dead-letter 中应有该条目（storage 使用 Envelope 包裹：{ v, t, d }）
+    const envelope = mockStore.get('outbox:__dead_letter') as { d: unknown[] };
+    expect(envelope).toBeDefined();
+    expect(envelope.d).toHaveLength(1);
+    expect((envelope.d[0] as { client_ref_id: string }).client_ref_id).toBe('max-retry-op');
+  });
+
+  it('COSTRA-228 · max_retries 之前 op 正常重试（49 次失败 + 第 50 次成功）', async () => {
+    await enqueue({ op: 'create', entity: 'entry', client_ref_id: 'almost-dead', base_version: null, payload: { ledger_id: 'l1', amount: 100, currency: 'CNY', type: 'expense', category_id: null, note: '', occurred_at: '2026-05-09T00:00:00.000Z' } });
+
+    // 49 次连续失败（retries 会到 49，第 50 次 ackBatchFailure 才会超限）
+    for (let i = 0; i < 49; i++) {
+      const r = await drainBatch(200);
+      expect(r).not.toBeNull();
+      await ackBatchFailure(r!.batchKey);
+    }
+
+    // 第 50 次 drain 成功推送
+    const r50 = await drainBatch(200);
+    expect(r50).not.toBeNull();
+    expect(r50!.batch[0].retries).toBe(49);
+
+    const okResults: PushResultItem[] = [{ client_ref_id: 'almost-dead', status: 'ok', server_id: 'srv-final', server_version: 1 }];
+    await ackResults(r50!.batchKey, okResults);
+
+    // 物理删除成功
+    expect(await __peek()).toHaveLength(0);
+    expect(await size()).toBe(0);
   });
 });

@@ -1,0 +1,336 @@
+# Costra 分类定义（一级 + 二级）
+# 修改后告诉我，我会同步更新到：
+#   1. server/db/migrations/0008_categories_hierarchy_seed.sql（权威源）
+#   2. miniprogram/services/categoryService.ts getFallbackItems()（前端降级兜底）
+#   3. server/test/categories-shared-type.test.ts（测试断言数量）
+#
+# 字段说明：
+#   name:              分类名称
+#   icon:              单字符图标（过渡方案，未来改为语义 ID + icon map）
+#   color:             颜色 token（如 color.category.food）
+#   sort_order:        排序权重（越小越靠前）
+#   is_direct_default: 是否为直选默认归属（仅二级有效）
+#                      同名二级出现在多个一级下时，只有最日常/高频的那个设为 true
+#
+# 规则：
+#   - 一级分类 is_direct_default 永远为 false
+#   - 二级分类 is_direct_default=true 表示记账时该名称默认归属到此父级
+#   - 例：用户选"零食"→ 默认归入"餐饮-零食"(true)，而非"购物-零食"(false)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 支出分类（expense）
+# ═══════════════════════════════════════════════════════════════════════════════
+
+expense:
+  - name: 餐饮
+    icon: 餐
+    color: color.category.food
+    sort_order: 1
+    children:
+      - name: 餐饮
+        sort_order: 1
+        is_direct_default: true
+      - name: 外卖
+        sort_order: 2
+        is_direct_default: true
+      - name: 买菜
+        sort_order: 3
+        is_direct_default: true
+      - name: 水果
+        sort_order: 4
+        is_direct_default: true
+      - name: 零食
+        sort_order: 5
+        is_direct_default: true
+      - name: 饮料
+        sort_order: 6
+        is_direct_default: true
+      - name: 酒水
+        sort_order: 7
+        is_direct_default: false
+      - name: 柴米油盐
+        sort_order: 8
+        is_direct_default: true
+      - name: 聚餐
+        sort_order: 9
+        is_direct_default: true
+      - name: 宴请
+        sort_order: 10
+        is_direct_default: true
+
+  - name: 交通
+    icon: 行
+    color: color.category.transport
+    sort_order: 2
+    children:
+      - name: 交通
+        sort_order: 1
+        is_direct_default: true
+      - name: 打车
+        sort_order: 2
+        is_direct_default: true
+      - name: 公交
+        sort_order: 3
+        is_direct_default: true
+      - name: 地铁
+        sort_order: 4
+        is_direct_default: true
+      - name: 加油
+        sort_order: 5
+        is_direct_default: true
+      - name: 停车
+        sort_order: 6
+        is_direct_default: true
+      - name: 火车/高铁
+        sort_order: 7
+        is_direct_default: true
+      - name: 机票
+        sort_order: 8
+        is_direct_default: true
+      - name: 汽车保养
+        sort_order: 9
+        is_direct_default: true
+      - name: 保险
+        sort_order: 10
+        is_direct_default: true
+      - name: 过路费
+        sort_order: 11
+        is_direct_default: true
+
+  - name: 购物
+    icon: 购
+    color: color.category.shopping
+    sort_order: 3
+    children:
+      - name: 购物
+        sort_order: 1
+        is_direct_default: true
+      - name: 日用
+        sort_order: 2
+        is_direct_default: true
+      - name: 服饰
+        sort_order: 3
+        is_direct_default: true
+      - name: 数码
+        sort_order: 4
+        is_direct_default: true
+      - name: 零食
+        sort_order: 5
+        is_direct_default: false       # 默认归属到 餐饮-零食
+      - name: 纸巾
+        sort_order: 6
+        is_direct_default: true
+      - name: 饮料
+        sort_order: 7
+        is_direct_default: false       # 默认归属到 餐饮-饮料
+      - name: 护肤美妆
+        sort_order: 8
+        is_direct_default: true
+
+  - name: 生活
+    icon: 活
+    color: color.category.lifestyle
+    sort_order: 4
+    children:
+      - name: 生活
+        sort_order: 1
+        is_direct_default: true
+      - name: 日用
+        sort_order: 2
+        is_direct_default: false
+      - name: 买菜
+        sort_order: 3
+        is_direct_default: false       # 默认归属到 餐饮-买菜
+      - name: 柴米油盐
+        sort_order: 4
+        is_direct_default: false
+      - name: 宠物
+        sort_order: 5
+        is_direct_default: true
+      - name: 美容美发
+        sort_order: 6
+        is_direct_default: true
+      - name: 水电煤
+        sort_order: 7
+        is_direct_default: true
+      - name: 话费网费
+        sort_order: 8
+        is_direct_default: true
+      - name: 物业维修
+        sort_order: 9
+        is_direct_default: true
+      - name: 医疗
+        sort_order: 10
+        is_direct_default: true
+      - name: 母婴
+        sort_order: 11
+        is_direct_default: true
+      - name: 租房
+        sort_order: 12
+        is_direct_default: true
+
+  - name: 旅行
+    icon: 旅
+    color: color.category.travel
+    sort_order: 5
+    children:
+      - name: 旅行
+        sort_order: 1
+        is_direct_default: true
+      - name: 机票
+        sort_order: 2
+        is_direct_default: false       # 默认归属到 交通-机票
+      - name: 酒店
+        sort_order: 3
+        is_direct_default: true
+      - name: 交通
+        sort_order: 4
+        is_direct_default: false       # 默认归属到 交通-交通
+      - name: 火车/高铁
+        sort_order: 5
+        is_direct_default: false
+      - name: 餐饮
+        sort_order: 6
+        is_direct_default: false       # 默认归属到 餐饮-餐饮
+
+  - name: 文娱
+    icon: 娱
+    color: color.category.culture
+    sort_order: 6
+    children:
+      - name: 文娱
+        sort_order: 1
+        is_direct_default: true
+      - name: 订阅会员
+        sort_order: 2
+        is_direct_default: true
+      - name: 演出
+        sort_order: 3
+        is_direct_default: true
+      - name: 游戏
+        sort_order: 4
+        is_direct_default: true
+      - name: 运动
+        sort_order: 5
+        is_direct_default: true
+      - name: 电影
+        sort_order: 6
+        is_direct_default: true
+      - name: 门票
+        sort_order: 7
+        is_direct_default: true
+      - name: 教育
+        sort_order: 8
+        is_direct_default: true
+
+  - name: 转账
+    icon: 转
+    color: color.category.transfer
+    sort_order: 7
+    children:
+      - name: 转账
+        sort_order: 1
+        is_direct_default: true
+      - name: 还贷
+        sort_order: 2
+        is_direct_default: true
+
+  - name: 其他
+    icon: 他
+    color: color.category.other
+    sort_order: 99
+    children:
+      - name: 其他
+        sort_order: 1
+        is_direct_default: true
+      - name: 红包
+        sort_order: 2
+        is_direct_default: true
+      - name: 礼金
+        sort_order: 3
+        is_direct_default: true
+      - name: 赡养
+        sort_order: 4
+        is_direct_default: true
+      - name: 捐赠
+        sort_order: 5
+        is_direct_default: true
+      - name: 丢失
+        sort_order: 6
+        is_direct_default: true
+      - name: 礼物
+        sort_order: 7
+        is_direct_default: true
+      - name: 垫付
+        sort_order: 8
+        is_direct_default: true
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 收入分类（income）
+# ═══════════════════════════════════════════════════════════════════════════════
+
+income:
+  - name: 职业收入
+    icon: 薪
+    color: color.category.salary
+    sort_order: 1
+    children:
+      - name: 工资
+        sort_order: 1
+        is_direct_default: true
+      - name: 奖金
+        sort_order: 2
+        is_direct_default: true
+      - name: 兼职
+        sort_order: 3
+        is_direct_default: true
+      - name: 报销
+        sort_order: 4
+        is_direct_default: true
+
+  - name: 投资与资产
+    icon: 投
+    color: color.category.invest
+    sort_order: 2
+    children:
+      - name: 理财
+        sort_order: 1
+        is_direct_default: true
+      - name: 收租
+        sort_order: 2
+        is_direct_default: true
+      - name: 利息
+        sort_order: 3
+        is_direct_default: true
+
+  - name: 意外收入
+    icon: 运
+    color: color.category.windfall
+    sort_order: 3
+    children:
+      - name: 其他
+        sort_order: 1
+        is_direct_default: true
+      - name: 转账
+        sort_order: 2
+        is_direct_default: true
+      - name: 红包
+        sort_order: 3
+        is_direct_default: true
+      - name: 中奖
+        sort_order: 4
+        is_direct_default: true
+      - name: 闲置出售
+        sort_order: 5
+        is_direct_default: true
+      - name: 礼金
+        sort_order: 6
+        is_direct_default: true
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 统计摘要
+# ═══════════════════════════════════════════════════════════════════════════════
+# 一级分类: 11 条（支出 8 + 收入 3）
+# 二级分类: 78 条（支出 65 + 收入 13）
+# 总计: 89 条
+# is_direct_default=true 的二级: 68 条（支出 55 + 收入 13）
