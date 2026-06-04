@@ -68,12 +68,13 @@
     data-index="4"
     bindtap="switchTab"
   >
-    <view class="tab-item__icon">
+    <view class="tab-item__icon tab-item__icon--badge-host">
       <!-- 我的 icon · 简单人形 -->
       <view class="icon-mine">
         <view class="icon-mine__head"></view>
         <view class="icon-mine__body"></view>
       </view>
+      <view wx:if="{{showProfileBadge}}" class="badge-dot"></view>
     </view>
     <text class="tab-item__text">我的</text>
   </view>

@@ -1,0 +1,61 @@
+<!-- pages/profile-setup/index.wxml · 完善资料页 -->
+<view class="profile-setup">
+  <!-- 自定义导航栏 -->
+  <view class="page-nav" style="padding-top: {{statusBarHeight}}px; height: {{navBarHeight}}px;">
+    <view class="page-nav__back" bindtap="onTapBack">‹</view>
+    <text class="page-nav__title">完善资料</text>
+  </view>
+
+  <view class="setup-body">
+
+    <!-- 头像选择：button 内联块居中 -->
+    <view class="avatar-section">
+      <button
+        class="avatar-btn"
+        open-type="chooseAvatar"
+        bindchooseavatar="onChooseAvatar"
+      >
+        <view class="avatar-wrap">
+          <image
+            wx:if="{{avatarUrl}}"
+            class="avatar-img"
+            src="{{avatarUrl}}"
+            mode="aspectFill"
+          ></image>
+          <view wx:else class="avatar-placeholder">
+            <view class="avatar-placeholder__icon">
+              <view class="avatar-placeholder__head"></view>
+              <view class="avatar-placeholder__body"></view>
+            </view>
+          </view>
+          <view class="avatar-edit-badge">
+            <text class="avatar-edit-badge__icon">✎</text>
+          </view>
+        </view>
+      </button>
+      <text class="avatar-tip">点击更换头像</text>
+    </view>
+
+    <!-- 昵称输入：单行卡片，input 撑满整行给微信原生足够空间 -->
+    <view class="field-card">
+      <input
+        class="field-input"
+        type="nickname"
+        value="{{nickname}}"
+        placeholder="输入昵称"
+        placeholder-class="field-placeholder"
+        maxlength="24"
+        bindinput="onNicknameInput"
+      />
+    </view>
+
+    <!-- 保存按钮 -->
+    <button
+      class="save-btn {{submitting ? 'save-btn--loading' : ''}}"
+      loading="{{submitting}}"
+      disabled="{{submitting}}"
+      bindtap="onTapSave"
+    >保存</button>
+
+  </view>
+</view>

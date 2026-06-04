@@ -7,7 +7,7 @@ import {
   setActiveFamily,
 } from '../../services/family';
 import { getFamilies } from '../../services/familyApi';
-import { triggerOnPageShow } from '../../services/syncScheduler';
+import { triggerOnPageShow, syncOnce } from '../../services/syncScheduler';
 import { eventBus, EventNames, type SyncDonePayload } from '../../services/eventBus';
 
 Page({
@@ -87,6 +87,8 @@ Page({
 
           this._ledgerId = selected.ledger_id;
           this.setData({ ledgerName: selected.name });
+          // 切换账本后主动拉取新账本数据
+          void syncOnce('ledger-switch');
           // 未来统计页实装后这里刷新数据
         },
       });

@@ -117,21 +117,11 @@
         <text class="keypad-sheet__value tnum {{calc.justEvaluated ? 'is-result' : ''}}">{{calc.display}}</text>
       </view>
 
-      <!-- 操作行：账本归属 + 费用性质 + 备注 -->
+      <!-- 操作行：账本归属 + 备注 + 费用性质（右对齐） -->
       <view class="keypad-sheet__actions">
         <!-- 账本切换 -->
         <view class="keypad-ledger" bindtap="onTapLedgerSwitch">
           <text class="keypad-ledger__text">记入: {{ledgerName}} ▼</text>
-        </view>
-
-        <!-- 费用性质开关（仅多人+支出） -->
-        <view
-          class="keypad-shared {{showSharedToggle ? 'is-visible' : ''}}"
-          bindtap="onTapSharedType"
-        >
-          <text class="keypad-shared__text {{sharedType === 'personal' ? 'is-active' : ''}}">个人支出</text>
-          <text class="keypad-shared__sep">|</text>
-          <text class="keypad-shared__text {{sharedType === 'shared' ? 'is-active' : ''}}">公共支出</text>
         </view>
 
         <!-- 备注（COSTRA-212: placeholder 与 input 同时保留，用 class 控制显隐，避免 wx:if 销毁 input 导致二次编辑焦点丢失） -->
@@ -150,6 +140,16 @@
             bindblur="onNoteBlur"
             adjust-position="{{true}}"
           />
+        </view>
+
+        <!-- 费用性质开关（仅多人+支出 · 右对齐） -->
+        <view
+          class="keypad-shared {{showSharedToggle ? 'is-visible' : ''}}"
+          bindtap="onTapSharedType"
+        >
+          <text class="keypad-shared__text {{sharedType === 'personal' ? 'is-active' : ''}}">个人支出</text>
+          <text class="keypad-shared__sep">|</text>
+          <text class="keypad-shared__text {{sharedType === 'shared' ? 'is-active' : ''}}">公共支出</text>
         </view>
       </view>
 

@@ -6,9 +6,16 @@
 
   <!-- 页面内容区 -->
   <view class="mine__content">
-    <view class="profile">
-      <image class="profile__avatar" src="{{avatarUrl}}" mode="aspectFill"></image>
-      <view class="profile__name">{{nickname}}</view>
+    <view class="profile" bindtap="onTapProfile">
+      <view class="profile__avatar-wrap">
+        <image class="profile__avatar" src="{{avatarUrl}}" mode="aspectFill"></image>
+        <view wx:if="{{showProfileBadge}}" class="profile__badge-dot"></view>
+      </view>
+      <view class="profile__info">
+        <view class="profile__name">{{nickname}}</view>
+        <view wx:if="{{showProfileBadge}}" class="profile__hint">点击完善头像和昵称</view>
+      </view>
+      <view class="profile__arrow">›</view>
     </view>
 
     <view class="menu">

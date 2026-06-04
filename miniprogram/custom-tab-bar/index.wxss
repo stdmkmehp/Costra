@@ -224,3 +224,19 @@
   bottom: 0;
   left: 3rpx;
 }
+
+/* ---- 红点（画像未完善弱引导） ---- */
+.tab-item__icon--badge-host {
+  position: relative;
+}
+
+.badge-dot {
+  position: absolute;
+  top: -4rpx;
+  right: -4rpx;
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  background: #FF3B30;
+  border: 2rpx solid rgba(255, 255, 255, 0.85);
+}

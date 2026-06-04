@@ -30,6 +30,7 @@ import * as familyMemberRepo from '../repositories/familyMemberRepo.js';
 import type { FamilyRole } from '../repositories/familyMemberRepo.js';
 import * as familyInviteRepo from '../repositories/familyInviteRepo.js';
 import * as ledgerRepo from '../repositories/ledgerRepo.js';
+import { maxSharedFamilies, maxSharedFamiliesHardLimit } from '../config/defaults.js';
 
 // --- Wire 响应类型（与 OpenAPI Family/FamilyMember/FamilyInvite schema 对齐）---
 
@@ -166,11 +167,40 @@ export async function listFamilies(userId: string): Promise<FamilyResponse[]> {
 
 /**
  * 创建 shared family + owner member + 默认 ledger（事务一致）
+ * 上限校验：
+ *   - 产品配置上限：maxSharedFamilies（当前 3）→ 422 BUSINESS_RULE_VIOLATION
+ *   - 程序硬上限：maxSharedFamiliesHardLimit（20）→ 422 BUSINESS_RULE_VIOLATION
+ * 两层都在事务外提前校验，避免无意义的 INSERT 尝试。
  */
 export async function createFamily(
   userId: string,
   payload: { name: string },
 ): Promise<FamilyResponse> {
+  // ── 上限校验（事务外，读即可）──
+  const ownedCount = await familyRepo.countOwnedSharedFamilies(userId);
+
+  if (ownedCount >= maxSharedFamiliesHardLimit) {
+    throw new AppError(ErrorCode.BUSINESS_RULE_VIOLATION, {
+      message: `shared family hard limit reached (max ${maxSharedFamiliesHardLimit})`,
+      details: {
+        rule: 'shared_family_hard_limit',
+        current_count: ownedCount,
+        max: maxSharedFamiliesHardLimit,
+      },
+    });
+  }
+
+  if (ownedCount >= maxSharedFamilies) {
+    throw new AppError(ErrorCode.BUSINESS_RULE_VIOLATION, {
+      message: `shared family limit reached (max ${maxSharedFamilies})`,
+      details: {
+        rule: 'shared_family_limit',
+        current_count: ownedCount,
+        max: maxSharedFamilies,
+      },
+    });
+  }
+
   const result = await withTx(async (client) => {
     // 1. 创建 shared family + owner member
     const family = await familyRepo.createSharedFamily(

@@ -252,6 +252,23 @@ export async function createInvite(familyId: string): Promise<InviteResponse> {
 }
 
 /**
+ * 接受邀请
+ * POST /v1/families/invites/accept
+ * 成功返回加入的 FamilyItem（后端返回 FamilyResponse，字段与 FamilyItem 兼容）
+ * 失败情形（后端 410 INVITE_EXPIRED）：
+ *   - used_at IS NOT NULL → 邀请已被他人使用
+ *   - expires_at <= now() → 邀请已超时
+ *   两者在前端统一用 mapError INVITE_EXPIRED 文案处理
+ */
+export async function acceptInvite(inviteToken: string): Promise<FamilyItem> {
+  return request<FamilyItem>({
+    method: 'POST',
+    path: '/families/invites/accept',
+    body: { invite_token: inviteToken },
+  });
+}
+
+/**
  * 移出成员
  * DELETE /v1/families/{id}/members/{userId}
  */

@@ -26,6 +26,10 @@ export interface UserEntity {
   updatedAt: Date;
   deletedAt: Date | null;
   version: number;
+  /** migration 0011: 用户上次选择的 family（可 null） */
+  preferredFamilyId: string | null;
+  /** migration 0011: 用户上次选择的 ledger（可 null） */
+  preferredLedgerId: string | null;
 }
 
 interface UserRow {
@@ -40,6 +44,8 @@ interface UserRow {
   updated_at: Date;
   deleted_at: Date | null;
   version: number;
+  preferred_family_id: string | null;
+  preferred_ledger_id: string | null;
 }
 
 function rowToEntity(r: UserRow): UserEntity {
@@ -55,6 +61,8 @@ function rowToEntity(r: UserRow): UserEntity {
     updatedAt: r.updated_at,
     deletedAt: r.deleted_at,
     version: r.version,
+    preferredFamilyId: r.preferred_family_id ?? null,
+    preferredLedgerId: r.preferred_ledger_id ?? null,
   };
 }
 
@@ -75,7 +83,8 @@ export async function findByOpenid(openid: string, client?: Runner): Promise<Use
   const res = await runner.query(
     `SELECT id, wx_openid, wx_unionid, nickname, avatar_url, timezone,
             has_completed_profile,
-            created_at, updated_at, deleted_at, version
+            created_at, updated_at, deleted_at, version,
+            preferred_family_id, preferred_ledger_id
        FROM users
       WHERE wx_openid = $1 AND deleted_at IS NULL
       LIMIT 1`,
@@ -90,7 +99,8 @@ export async function findById(id: string, client?: Runner): Promise<UserEntity 
   const res = await runner.query(
     `SELECT id, wx_openid, wx_unionid, nickname, avatar_url, timezone,
             has_completed_profile,
-            created_at, updated_at, deleted_at, version
+            created_at, updated_at, deleted_at, version,
+            preferred_family_id, preferred_ledger_id
        FROM users
       WHERE id = $1 AND deleted_at IS NULL
       LIMIT 1`,
@@ -118,7 +128,8 @@ export async function create(input: CreateUserInput, client?: Runner): Promise<U
     `INSERT INTO users (id, wx_openid, wx_unionid, nickname, avatar_url, timezone)
           VALUES ($1, $2, $3, $4, $5, COALESCE($6, 'Asia/Shanghai'))
         RETURNING id, wx_openid, wx_unionid, nickname, avatar_url, timezone,
-                  has_completed_profile, created_at, updated_at, deleted_at, version`,
+                  has_completed_profile, created_at, updated_at, deleted_at, version,
+                  preferred_family_id, preferred_ledger_id`,
     [
       id,
       input.wxOpenid,
@@ -182,7 +193,8 @@ export async function updateProfile(
             version = version + 1
       WHERE id = $1 AND deleted_at IS NULL
       RETURNING id, wx_openid, wx_unionid, nickname, avatar_url, timezone,
-                has_completed_profile, created_at, updated_at, deleted_at, version`,
+                has_completed_profile, created_at, updated_at, deleted_at, version,
+                preferred_family_id, preferred_ledger_id`,
     [
       userId,
       input.nickname ?? null,
@@ -190,6 +202,38 @@ export async function updateProfile(
       input.avatarUrl === null,  // 显式传 null = 想清空 avatar · 不是不更新
       input.timezone ?? null,
     ],
+  );
+  return res.rows[0] ? rowToEntity(res.rows[0]) : null;
+}
+
+// --- migration 0011: preferred family/ledger ---
+
+export interface UpdatePreferenceInput {
+  preferredFamilyId: string | null;
+  preferredLedgerId: string | null;
+}
+
+/**
+ * 更新用户的偏好 family + ledger（PUT /users/me/preference 路径消费）
+ * 不走 version 乐观锁（preference 为低优先级用户偏好 · 覆盖写语义）
+ * ON DELETE SET NULL 约束：被移出 / family 删除时自动清空，安全无副作用
+ */
+export async function updatePreference(
+  userId: string,
+  input: UpdatePreferenceInput,
+  client?: Runner,
+): Promise<UserEntity | null> {
+  const runner = client ?? exec();
+  const res = await runner.query(
+    `UPDATE users
+        SET preferred_family_id = $2,
+            preferred_ledger_id  = $3,
+            updated_at = now()
+      WHERE id = $1 AND deleted_at IS NULL
+      RETURNING id, wx_openid, wx_unionid, nickname, avatar_url, timezone,
+                has_completed_profile, created_at, updated_at, deleted_at, version,
+                preferred_family_id, preferred_ledger_id`,
+    [userId, input.preferredFamilyId, input.preferredLedgerId],
   );
   return res.rows[0] ? rowToEntity(res.rows[0]) : null;
 }

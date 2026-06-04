@@ -51,6 +51,8 @@ vi.mock('./family', () => ({
     familyState.ctx = null;
     storageMap.delete('__costra_family_context_v1');
   }),
+  // migration 0011: mock fetchAndRestorePreference → 返回 null，让 T8/T9 走 fallback refresh 路径
+  fetchAndRestorePreference: vi.fn(async () => null),
 }));
 
 // wx 运行时在单测环境不存在 · 仅 buildStored 与 wrap 逻辑不依赖 wx，直接测即可

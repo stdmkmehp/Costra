@@ -5,10 +5,11 @@
 // COSTRA-201: 适配 custom-tab-bar selected: 4 + 引入 expense-overlay
 // COSTRA-216: 补齐 custom navigation 安全区导航栏
 // Refs: COSTRA-030, docs/design/ia.md §我的 · .team/dispatch/COSTRA-125-miniapp-storage-async-migration.md §3 (e)
-import { hasValidSession, getSession, logout } from '../../services/auth';
+import { hasValidSession, getSession, logout, getToken } from '../../services/auth';
 import { defaultNickname } from '../../config/defaults';
 import { triggerOnPageShow, syncOnce, stopScheduler } from '../../services/syncScheduler';
 import { getSafeAreaMetrics } from '../../utils/safeArea';
+import { eventBus, EventNames } from '../../services/eventBus';
 
 interface AppWithBootstrap {
   bootstrapPromise: Promise<void>;
@@ -20,7 +21,11 @@ Page({
     avatarUrl: '',
     statusBarHeight: 0,
     navBarHeight: 0,
+    showProfileBadge: false,
   },
+
+  _profileBadgeOnHandler: null as (() => void) | null,
+  _profileBadgeOffHandler: null as (() => void) | null,
 
   // onLoad gate（冗余兜底 · onShow gate 是主防线）
   onLoad() {
@@ -31,13 +36,37 @@ Page({
       navBarHeight: metrics.navBarHeight,
     });
 
+    // 订阅红点事件
+    const badgeOnHandler = () => { this.setData({ showProfileBadge: true }); };
+    this._profileBadgeOnHandler = badgeOnHandler;
+    eventBus.on(EventNames.PROFILE_INCOMPLETE, badgeOnHandler);
+
+    const badgeOffHandler = () => { this.setData({ showProfileBadge: false }); };
+    this._profileBadgeOffHandler = badgeOffHandler;
+    eventBus.on(EventNames.PROFILE_COMPLETED, badgeOffHandler);
+
     // 等 bootstrap 完成再判登录态
     const app = getApp<AppWithBootstrap>();
     void app.bootstrapPromise.then(() => {
       if (!hasValidSession()) {
         wx.reLaunch({ url: '/pages/login/index' });
+        return;
+      }
+      // 同步当前红点状态（bootstrap 已 emit 但 mine 页此时才 onLoad · 需从 token 补读）
+      const token = getToken();
+      if (token && !token.raw.user.has_completed_profile) {
+        this.setData({ showProfileBadge: true });
       }
     });
+  },
+
+  onUnload() {
+    if (this._profileBadgeOnHandler) {
+      eventBus.off(EventNames.PROFILE_INCOMPLETE, this._profileBadgeOnHandler);
+    }
+    if (this._profileBadgeOffHandler) {
+      eventBus.off(EventNames.PROFILE_COMPLETED, this._profileBadgeOffHandler);
+    }
   },
 
   onShow() {
@@ -59,6 +88,10 @@ Page({
       // COSTRA-201: 更新 custom-tab-bar 选中态为 index 4（我的）
       this.getTabBar?.()?.setData?.({ selected: 4 });
     });
+  },
+
+  onTapProfile() {
+    wx.navigateTo({ url: '/pages/profile-setup/index' });
   },
 
   onTapFamily() {

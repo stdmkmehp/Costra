@@ -416,6 +416,9 @@
   bottom: 0;
   left: 0;
   right: 0;
+  background: #ffffff;
+  border-top-left-radius: 24rpx;
+  border-top-right-radius: 24rpx;
   transform: translateY(100%);
   transition: transform 250ms cubic-bezier(0.25, 0.1, 0.25, 1);
 }
@@ -423,29 +426,4 @@
   transform: translateY(0);
 }
 
-/* 费用性质开关（与 expense-overlay 共用命名） */
-.keypad-shared {
-  display: flex;
-  align-items: center;
-  gap: 8rpx;
-  opacity: 0;
-  height: 0;
-  overflow: hidden;
-  transition: opacity 250ms, height 250ms;
-}
-.keypad-shared.is-visible {
-  opacity: 1;
-  height: 40rpx;
-}
-.keypad-shared__text {
-  font-size: 22rpx;
-  color: rgba(28, 27, 26, 0.36);
-}
-.keypad-shared__text.is-active {
-  color: #1c1b1a;
-  font-weight: 600;
-}
-.keypad-shared__sep {
-  font-size: 22rpx;
-  color: rgba(28, 27, 26, 0.12);
-}
+/* 费用性质开关样式已移至 styles/keypad.wxss，此处无需重复定义 */

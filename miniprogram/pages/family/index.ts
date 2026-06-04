@@ -13,6 +13,7 @@ import {
   getActiveFamilyId,
   setActiveFamily,
   clearActiveFamily,
+  savePreferenceAsync,
   type FamilyKind,
 } from '../../services/family';
 import { eventBus, EventNames, type SyncDonePayload } from '../../services/eventBus';
@@ -742,13 +743,14 @@ Page({
         }
         try {
           const newFamily = await createFamily(name);
-          // 切换 active family context 到新创建的 shared family
+          // 切换 active family context 到新创建的 shared family + 持久化偏好（migration 0011）
           await setActiveFamily({
             family_id: newFamily.id,
             ledger_id: newFamily.ledger_id,
             family_kind: 'shared',
             ledger_name: newFamily.ledger_name,
           });
+          savePreferenceAsync(newFamily.id, newFamily.ledger_id);
           wx.showToast({ title: '创建成功', icon: 'success' });
           // 刷新页面
           await this._loadPage();
@@ -780,13 +782,14 @@ Page({
         const selected = families[res.tapIndex];
         if (selected.id === this._familyId) return;
 
-        // 切换 active family context
+        // 切换 active family context + 持久化偏好（migration 0011）
         await setActiveFamily({
           family_id: selected.id,
           ledger_id: selected.ledger_id,
           family_kind: selected.kind,
           ledger_name: selected.ledger_name,
         });
+        savePreferenceAsync(selected.id, selected.ledger_id);
 
         this._familyId = selected.id;
         this.setData({

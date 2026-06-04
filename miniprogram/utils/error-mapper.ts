@@ -44,7 +44,7 @@ const DEFAULT_MAP: Record<string, MappedError> = {
   IDEMPOTENCY_KEY_MISMATCH:   { title: '请求异常', desc: '请稍后再试' },
 
   // 410
-  INVITE_EXPIRED: { title: '邀请已过期', desc: '请联系家庭成员重新邀请' },
+  INVITE_EXPIRED: { title: '邀请链接已失效', desc: '该链接已被使用或已过期，请联系家庭创建者重新发起邀请' },
 
   // 429
   RATE_LIMITED: { title: '操作过于频繁', desc: '请稍后再试' },
@@ -61,6 +61,8 @@ const DEFAULT_MAP: Record<string, MappedError> = {
 
 const BUSINESS_RULE_TEXT: Record<string, string> = {
   family_member_limit:       '该家庭成员已达上限（MVP = 10）',
+  shared_family_limit:       `协作账本数量已达上限，最多创建 3 个`,
+  shared_family_hard_limit:  `协作账本数量已达程序上限（20 个）`,
   category_name_duplicate:   '分类名称已存在',
   budget_overlap:            '该月份已存在相同分类的预算',
   ledger_archived:           '该账本已归档，无法继续记账',

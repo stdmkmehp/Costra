@@ -8,7 +8,7 @@
 import { getEnv } from './env';
 import { setItem, getItem, removeItem } from './storage';
 import { request } from './request';
-import { setActiveFamily, getActiveFamilyId, getActiveLedgerId, clearActiveFamily } from './family';
+import { setActiveFamily, getActiveFamilyId, getActiveLedgerId, clearActiveFamily, fetchAndRestorePreference } from './family';
 
 const TOKEN_KEY = '__costra_token_v1';
 const REFRESH_WINDOW_MS = 5 * 60 * 1000; // 距过期 < 5 分钟触发续签
@@ -84,23 +84,31 @@ function buildStored(raw: TokenRaw): TokenStored {
 
 export async function initAuth(): Promise<void> {
   // COSTRA-125: getItem 已改 async · 必须 await · 否则 saved 是 Promise 永不等于 TokenStored
-  // R2 诊断（2026-05-03）坐实：R1 漏网点 · async function 体内 await 之前的同步代码仍在 onLaunch 栈内执行
   const saved = await getItem<TokenStored>(TOKEN_KEY);
   if (saved && saved.access_expires_at > Date.now()) {
     current = wrap(saved);
 
-    // COSTRA-165 v1.1 P1-1: 旧 token 升级场景 · storage 中无 family-context → 走 refresh 触发刷新（透明无 UX 退化）
     const familyId = await getActiveFamilyId();
     if (!familyId) {
-      try {
-        await refreshToken();  // refresh response 含 default_family_id/default_ledger_id（authService.ts:275-276）
-        // refreshToken 内部已调 setActiveFamily
-      } catch (e) {
-        // refresh 失败兜底：清 token + 跳登录页（极边缘 · refresh_token 也过期）
-        console.warn('[auth] initAuth fallback refresh failed', e);
-        await clearToken();
-        await clearActiveFamily();
-        return;
+      // 本地无 family context（storage 被清 / 首次安装 / 旧版升级）
+      // 策略：先从服务端偏好恢复，成功则直接用（避免 refresh 请求）
+      const restored = await fetchAndRestorePreference();
+      if (restored) {
+        // 偏好已写回 storage · 同步 globalData
+        const app = getApp();
+        if (app?.globalData) {
+          app.globalData.activeLedgerId = restored.ledger_id;
+        }
+      } else {
+        // 服务端也无偏好（或请求失败）→ refresh 触发 default_family_id 兜底
+        try {
+          await refreshToken();
+        } catch (e) {
+          console.warn('[auth] initAuth fallback refresh failed', e);
+          await clearToken();
+          await clearActiveFamily();
+          return;
+        }
       }
     } else {
       // 正常路径：family-context 已存在 · 同步 globalData
@@ -189,6 +197,8 @@ export async function logout(): Promise<void> {
   }
 
   await clearToken();
+  // migration 0011：logout 不清 family context（偏好保留，重新登录时可恢复上次账本）
+  // 注：换账号登录时 doWxLogin 会拉取新 userId 对应的服务端偏好覆盖 · 天然隔离
   try {
     wx.reLaunch({ url: '/pages/login/index' });
   } catch {
@@ -241,18 +251,29 @@ export async function doWxLogin(): Promise<Token> {
   current = wrap(stored);
   await setItem(TOKEN_KEY, stored);  // COSTRA-125: async
 
-  // COSTRA-165: 写 family-context（首登 default_family_id 一定非空 · 后续切 family 时由 R2 UI 覆盖）
-  // COSTRA-220: 附带 family_kind + ledger_name（wx-login 首登走 personal family · server bootstrap 名 '日常账本'）
-  await setActiveFamily({
-    family_id: resp.default_family_id,
-    ledger_id: resp.default_ledger_id,
-    family_kind: 'personal',
-    ledger_name: '日常账本',
-  });
-  // 同步 globalData.activeLedgerId（pages/entry 直接读 · app.ts L22 字段已声明）
-  const app = getApp();
-  if (app?.globalData) {
-    app.globalData.activeLedgerId = resp.default_ledger_id;
+  // 登录后恢复账本偏好策略（migration 0011）：
+  //   1. 先尝试从服务端拉偏好（fetchAndRestorePreference）
+  //   2. 若服务端有偏好 → 使用偏好（用户上次选择的 family/ledger）
+  //   3. 若无偏好（首次登录）→ 写入 default_family_id（personal family）
+  const restored = await fetchAndRestorePreference();
+  if (restored) {
+    // 服务端有偏好，同步 globalData
+    const appRestored = getApp();
+    if (appRestored?.globalData) {
+      appRestored.globalData.activeLedgerId = restored.ledger_id;
+    }
+  } else {
+    // 首次登录 / 无偏好 → 用服务端 default（personal family）
+    await setActiveFamily({
+      family_id: resp.default_family_id,
+      ledger_id: resp.default_ledger_id,
+      family_kind: 'personal',
+      ledger_name: '日常账本',
+    });
+    const app = getApp();
+    if (app?.globalData) {
+      app.globalData.activeLedgerId = resp.default_ledger_id;
+    }
   }
 
   console.info('[auth] login success', { userId: resp.user.id, familyId: resp.default_family_id });
@@ -301,19 +322,23 @@ export async function refreshToken(): Promise<void> {
   current = wrap(stored);
   await setItem(TOKEN_KEY, stored);  // COSTRA-125: async
 
-  // COSTRA-165 v1.1 P1-1: refresh response 含 default_family_id/default_ledger_id · 写入 family-context
-  // 极边缘场景：server 返空字符串（FU-164-REFRESH-DEFAULT-IDS-NULL · personal family 缺失）→ 跳过写入 · 保持现有 family-context
+  // COSTRA-165 v1.1 P1-1: 续签时不覆盖已有 family-context（migration 0011 优化）
+  // 仅在本地 context 完全缺失时才用 default_family_id 兜底
+  // 避免续签请求把用户精心切换的 shared family 覆盖回 personal
   if (resp.default_family_id && resp.default_ledger_id) {
-    await setActiveFamily({
-      family_id: resp.default_family_id,
-      ledger_id: resp.default_ledger_id,
-      // COSTRA-220: refresh 返 default 个人 family · kind=personal · name 用 storage 残留或降级
-      family_kind: 'personal',
-      ledger_name: '日常账本',
-    });
-    const app = getApp();
-    if (app?.globalData) {
-      app.globalData.activeLedgerId = resp.default_ledger_id;
+    const existingFamilyId = await getActiveFamilyId();
+    if (!existingFamilyId) {
+      // 本地无 context → 用 default 填充（最后兜底）
+      await setActiveFamily({
+        family_id: resp.default_family_id,
+        ledger_id: resp.default_ledger_id,
+        family_kind: 'personal',
+        ledger_name: '日常账本',
+      });
+      const app = getApp();
+      if (app?.globalData) {
+        app.globalData.activeLedgerId = resp.default_ledger_id;
+      }
     }
   }
 }

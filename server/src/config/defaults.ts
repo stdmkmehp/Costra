@@ -14,3 +14,16 @@
  */
 
 export const defaultNickname = '微信用户';
+
+/**
+ * 单用户可创建（own）的最大 shared family 数量（产品配置值）
+ * 修改此值即可快速扩容；不得超过 maxSharedFamiliesHardLimit
+ * ⚠️ 必须与 miniprogram/config/defaults.ts maxSharedFamilies 保持一致
+ */
+export const maxSharedFamilies = 3;
+
+/**
+ * 程序硬上限（架构约束 · 不建议超过）
+ * ⚠️ 必须与 miniprogram/config/defaults.ts maxSharedFamiliesHardLimit 保持一致
+ */
+export const maxSharedFamiliesHardLimit = 20;

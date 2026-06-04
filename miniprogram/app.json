@@ -8,7 +8,8 @@
     "pages/login/index",
     "pages/family-dashboard/index",
     "pages/stat-overview/index",
-    "pages/entry/index"
+    "pages/entry/index",
+    "pages/profile-setup/index"
   ],
   "subpackages": [
     {

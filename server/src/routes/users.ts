@@ -73,6 +73,21 @@ type PatchBody = {
   timezone?: string;
 };
 
+const preferenceBodySchema = {
+  type: 'object',
+  required: ['preferred_family_id', 'preferred_ledger_id'],
+  additionalProperties: false,
+  properties: {
+    preferred_family_id: { type: 'string', format: 'uuid', nullable: true },
+    preferred_ledger_id:  { type: 'string', format: 'uuid', nullable: true },
+  },
+} as const;
+
+type PreferenceBody = {
+  preferred_family_id: string | null;
+  preferred_ledger_id:  string | null;
+};
+
 // --- 注册 ---
 
 export async function registerUsersRoutes(app: FastifyInstance): Promise<void> {
@@ -134,6 +149,37 @@ export async function registerUsersRoutes(app: FastifyInstance): Promise<void> {
           message: 'POST /users/me requires X-HTTP-Method-Override: PATCH',
         },
       });
+    },
+  );
+
+  // GET /users/me/preference
+  // 返回用户上次选择的 family_id + ledger_id（可为 null）
+  // 设备清除本地 storage 后调此接口恢复偏好
+  app.get('/users/me/preference', async (req, reply) => {
+    const userId = await parseUserId(req);
+    const user = await userRepo.findById(userId);
+    if (!user) {
+      throw new AppError(ErrorCode.UNAUTHENTICATED, { message: 'user not found' });
+    }
+    reply.code(200).send({
+      preferred_family_id: user.preferredFamilyId,
+      preferred_ledger_id:  user.preferredLedgerId,
+    });
+  });
+
+  // PUT /users/me/preference
+  // 覆盖写用户偏好（切换账本时调，fire-and-forget 可接受）
+  app.put<{ Body: PreferenceBody }>(
+    '/users/me/preference',
+    { schema: { body: preferenceBodySchema } },
+    async (req, reply) => {
+      const userId = await parseUserId(req);
+      const body = req.body;
+      await userRepo.updatePreference(userId, {
+        preferredFamilyId: body.preferred_family_id,
+        preferredLedgerId:  body.preferred_ledger_id,
+      });
+      reply.code(204).send();
     },
   );
 }

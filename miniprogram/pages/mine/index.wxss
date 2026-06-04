@@ -24,9 +24,66 @@
   padding: 32rpx;
 }
 
-.profile { display: flex; align-items: center; background: var(--color-surface); border-radius: var(--radius-lg); padding: 32rpx; }
-.profile__avatar { width: 112rpx; height: 112rpx; border-radius: 50%; background: var(--color-divider); }
-.profile__name { margin-left: 24rpx; font-size: 32rpx; font-weight: 600; color: var(--color-text); }
+/* 用户信息卡片 */
+.profile {
+  display: flex;
+  align-items: center;
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  padding: 32rpx;
+  /* 表示可点击 */
+  active-background-color: rgba(0,0,0,0.04);
+}
+
+/* 头像容器（相对定位，承载红点） */
+.profile__avatar-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.profile__avatar {
+  width: 112rpx;
+  height: 112rpx;
+  border-radius: 50%;
+  background: var(--color-divider);
+  display: block;
+}
+
+/* 头像右上角红点 */
+.profile__badge-dot {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 20rpx;
+  height: 20rpx;
+  border-radius: 50%;
+  background: #FF3B30;
+  border: 3rpx solid var(--color-surface, #fff);
+}
+
+/* 昵称 + 提示文字 */
+.profile__info {
+  flex: 1;
+  margin-left: 24rpx;
+}
+
+.profile__name {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.profile__hint {
+  margin-top: 6rpx;
+  font-size: 24rpx;
+  color: #FF3B30;
+}
+
+.profile__arrow {
+  color: var(--color-text-muted);
+  font-size: 36rpx;
+  margin-left: 8rpx;
+}
 
 .menu { margin-top: 32rpx; background: var(--color-surface); border-radius: var(--radius-lg); overflow: hidden; }
 .menu__item { display: flex; align-items: center; padding: 28rpx 32rpx; border-bottom: 1rpx solid var(--color-divider); }

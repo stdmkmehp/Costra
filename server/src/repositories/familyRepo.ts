@@ -242,6 +242,23 @@ export async function softDelete(
 }
 
 /**
+ * 统计 user 当前 owned（owner_id = userId）且未软删的 shared family 数量
+ * 用于 createFamily 前的上限校验（service 层消费）
+ */
+export async function countOwnedSharedFamilies(
+  userId: string,
+  client?: Runner,
+): Promise<number> {
+  const runner = client ?? exec();
+  const res = await runner.query(
+    `SELECT COUNT(*)::int AS cnt FROM families
+      WHERE owner_id = $1 AND kind = 'shared' AND deleted_at IS NULL`,
+    [userId],
+  );
+  return (res.rows as unknown as { cnt: number }[])[0].cnt;
+}
+
+/**
  * 创建 shared family + family_members(owner) · 单事务 · kind 强制 'shared'
  * COSTRA-221: 与 createPersonalFamily 同构，kind 硬编码 'shared'
  */

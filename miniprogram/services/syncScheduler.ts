@@ -14,7 +14,7 @@ import { deadLetterSize } from './outbox';
 
 // ─── 类型 ─────────────────────────────────────────────────────────────────────
 
-export type TriggerSource = 'launch' | 'network-recover' | 'page-show' | 'periodic' | 'mutation' | 'hide' | 'conflict-retry';
+export type TriggerSource = 'launch' | 'network-recover' | 'page-show' | 'periodic' | 'mutation' | 'hide' | 'conflict-retry' | 'ledger-switch';
 
 export interface SyncResult {
   pushed: number;
@@ -30,7 +30,6 @@ export interface SyncResult {
 
 const SHOW_DEBOUNCE_MS = 5000;
 const PERIODIC_INTERVAL_MS = 60_000;
-const MUTATION_DEBOUNCE_MS = 2000;
 const CONFLICT_RETRY_DELAY_MS = 1000;
 const MAX_CONFLICT_RETRIES = 3;
 
@@ -40,7 +39,6 @@ let isRunning = false;
 let pendingRetrigger = false; // L6 修复：mutex skip 时标记，释放后重触发
 let lastShowTriggerAt = 0;
 let periodicTimer: ReturnType<typeof setInterval> | null = null;
-let mutationTimer: ReturnType<typeof setTimeout> | null = null;
 let conflictRetryTimer: ReturnType<typeof setTimeout> | null = null;
 let conflictRetryCount = 0;
 
@@ -197,7 +195,7 @@ export function startScheduler(ready?: Promise<void>): void {
     periodicTimer = setInterval(() => syncOnce('periodic'), PERIODIC_INTERVAL_MS);
   }
 
-  // 订阅 outbox 入队事件 → mutation debounce 触发同步
+  // 订阅 outbox 入队事件 → 立即触发同步（mutex 保证不并发）
   eventBus.on(EventNames.OUTBOX_ENQUEUED, () => {
     triggerOnMutation();
   });
@@ -207,10 +205,6 @@ export function stopScheduler(): void {
   if (periodicTimer) {
     clearInterval(periodicTimer);
     periodicTimer = null;
-  }
-  if (mutationTimer) {
-    clearTimeout(mutationTimer);
-    mutationTimer = null;
   }
   if (conflictRetryTimer) {
     clearTimeout(conflictRetryTimer);
@@ -232,13 +226,14 @@ export function triggerOnPageShow(pageName: string): void {
 
 // ─── mutation trigger（Bug A 修复）─────────────────────────────────────────────
 
-/** 数据变更后触发（debounce 2s 合并连续操作） */
+/**
+ * 数据变更后立即触发同步。
+ * 不做 debounce：用户新增/编辑记账后期望立刻在明细页/协作页看到结果，
+ * 2s 延迟体感差。syncOnce 内部 mutex 保证不会并发请求，
+ * 连续操作时走 pendingRetrigger 路径（第一次完成后自动重触发一次）即可合并。
+ */
 export function triggerOnMutation(): void {
-  if (mutationTimer) clearTimeout(mutationTimer);
-  mutationTimer = setTimeout(() => {
-    mutationTimer = null;
-    syncOnce('mutation');
-  }, MUTATION_DEBOUNCE_MS);
+  void syncOnce('mutation');
 }
 
 // ─── testing-only 重置 ───────────────────────────────────────────────────────
@@ -252,10 +247,6 @@ export const __test__ = {
     if (periodicTimer) {
       clearInterval(periodicTimer);
       periodicTimer = null;
-    }
-    if (mutationTimer) {
-      clearTimeout(mutationTimer);
-      mutationTimer = null;
     }
     if (conflictRetryTimer) {
       clearTimeout(conflictRetryTimer);

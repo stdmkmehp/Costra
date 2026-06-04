@@ -13,11 +13,12 @@ import {
   getActiveFamilyKind,
   getActiveLedgerName,
   setActiveFamily,
+  savePreferenceAsync,
 } from '../../services/family';
 import { enqueue } from '../../services/outbox';
 import { getToken } from '../../services/auth';
 import { eventBus, EventNames, type SyncDonePayload } from '../../services/eventBus';
-import { triggerOnPageShow } from '../../services/syncScheduler';
+import { triggerOnPageShow, syncOnce } from '../../services/syncScheduler';
 import { pickRandomSlogan } from '../../config/slogans';
 import { getFamilies } from '../../services/familyApi';
 import {
@@ -552,18 +553,21 @@ Page({
           const selected = families[res.tapIndex];
           if (selected.ledger_id === this._ledgerId) return;
 
-          // 切换 active family context
+          // 切换 active family context + 持久化偏好（migration 0011）
           await setActiveFamily({
             family_id: selected.id,
             ledger_id: selected.ledger_id,
             family_kind: selected.kind,
             ledger_name: selected.name,
           });
+          savePreferenceAsync(selected.id, selected.ledger_id);
 
           this._familyId = selected.id;
           this._ledgerId = selected.ledger_id;
           this.setData({ ledgerName: selected.name });
           await this._loadEntries();
+          // 切换账本后主动拉取新账本数据 · 其他成员可能已记账但本地未同步
+          void syncOnce('ledger-switch');
         },
       });
     } catch {

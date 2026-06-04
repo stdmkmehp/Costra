@@ -22,6 +22,10 @@ export const EventNames = {
   OUTBOX_ENQUEUED: 'outbox-enqueued',
   /** 同步完成（pulled>0 或 pushed>0 时由 syncScheduler emit · 各 tab 页订阅后即时刷新） */
   SYNC_DONE: 'sync-done',
+  /** 用户画像未完善（has_completed_profile=false · bootstrap 检测后广播 · tabBar + mine 页订阅） */
+  PROFILE_INCOMPLETE: 'profile-incomplete',
+  /** 用户画像已完善（PATCH /users/me 成功后广播 · 清除红点） */
+  PROFILE_COMPLETED: 'profile-completed',
 } as const;
 
 export type EventName = typeof EventNames[keyof typeof EventNames];
@@ -37,7 +41,7 @@ export interface SyncDonePayload {
   /** 本次 sync 成功推送到服务端的 op 条数（>=0） */
   pushed: number;
   /** 触发本次 sync 的来源 */
-  trigger: 'launch' | 'network-recover' | 'page-show' | 'periodic' | 'mutation' | 'hide' | 'conflict-retry';
+  trigger: 'launch' | 'network-recover' | 'page-show' | 'periodic' | 'mutation' | 'hide' | 'conflict-retry' | 'ledger-switch';
 }
 
 class EventBus {
