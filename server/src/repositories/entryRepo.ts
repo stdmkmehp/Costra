@@ -439,3 +439,23 @@ export async function findByLedgerAndClientRefId(ledgerId: string, clientRefId: 
   );
   return res.rows[0] ? rowToEntity(res.rows[0]) : null;
 }
+
+/**
+ * 按 client_ref_id 查找 entry（sync/push update/delete 使用）
+ * 权限校验通过 JOIN families_users 确保调用者是 family 成员
+ */
+export async function findByClientRefId(clientRefId: string, userId: string, client?: Runner): Promise<EntryEntity | null> {
+  const runner = client ?? exec();
+  const res = await runner.query(
+    `SELECT e.id, e.ledger_id, e.amount, e.currency, e.type, e.category_id,
+            e.account_id, e.to_account_id, e.note, e.occurred_at,
+            e.created_by, e.created_at, e.updated_at, e.deleted_at, e.version, e.client_ref_id, e.change_seq, e.shared_type
+       FROM entries e
+       JOIN ledgers l ON l.id = e.ledger_id
+       JOIN families_users fu ON fu.family_id = l.family_id AND fu.user_id = $2
+      WHERE e.client_ref_id = $1 AND e.deleted_at IS NULL
+      LIMIT 1`,
+    [clientRefId, userId],
+  );
+  return res.rows[0] ? rowToEntity(res.rows[0]) : null;
+}

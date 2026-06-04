@@ -13,7 +13,7 @@
 
 import { newClientRefId } from '../../utils/id';
 import { getSafeAreaMetrics } from '../../utils/safeArea';
-import { putEntry, type Entry } from '../../services/db';
+import { putEntry, updateEntryFields, type Entry } from '../../services/db';
 import { enqueue } from '../../services/outbox';
 import { getActiveLedgerId, getActiveFamilyId, getActiveFamilyKind, getActiveLedgerName, setActiveFamily } from '../../services/family';
 import { getFamilies } from '../../services/familyApi';
@@ -502,19 +502,15 @@ Component({
       this.setData({ saving: true });
 
       try {
-        // 更新本地 entry
-        const updatedEntry: Entry = {
-          ...originalEntry,
+        // 更新本地 entry（使用 updateEntryFields 保留 storage 中的 version/id）
+        await updateEntryFields(originalEntry.client_ref_id, {
           amount: amountCents,
           category_id: this.data.selectedTier2Id,
           note: this.data.note.trim(),
-          occurred_at: changedFields.occurred_at ? newOccurredAt : originalEntry.occurred_at,
+          occurred_at: changedFields.occurred_at ? newOccurredAt : undefined,
           shared_type: newSharedType,
           updated_at: new Date().toISOString(),
-          dirty: true,
-        };
-
-        await putEntry(updatedEntry);
+        });
         await enqueue({
           op: 'update',
           entity: 'entry',
@@ -1029,7 +1025,6 @@ Component({
           occurred_at: occurredAt,
           created_at: now,
           updated_at: now,
-          dirty: true,
           created_by: currentUserId,
           // COSTRA-223: 费用性质（仅 expense + 多人家庭时有意义）
           shared_type: this.data.isMultiMemberLedger && this.data.entryType === 'expense'

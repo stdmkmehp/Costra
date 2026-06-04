@@ -6,7 +6,7 @@
 import Decimal from '../../utils/vendor/decimal';
 import { toYuan } from '../../utils/money';
 import { getSafeAreaMetrics } from '../../utils/safeArea';
-import { listEntries, deleteEntry, putEntry, type Entry } from '../../services/db';
+import { listEntries, deleteEntry, putEntry, updateEntryFields, type Entry } from '../../services/db';
 import {
   getActiveLedgerId,
   getActiveFamilyId,
@@ -801,10 +801,10 @@ Page({
     }
 
     // 保存分类变更
-    entry.category_id = catId;
-    entry.updated_at = new Date().toISOString();
-    entry.dirty = true;
-    putEntry(entry).then(() => {
+    updateEntryFields(entry.client_ref_id, {
+      category_id: catId,
+      updated_at: new Date().toISOString(),
+    }).then(() => {
       enqueue({
         op: 'update',
         entity: 'entry',
@@ -886,8 +886,10 @@ Page({
 
     entry.note = newNote;
     entry.updated_at = new Date().toISOString();
-    entry.dirty = true;
-    putEntry(entry).then(() => {
+    updateEntryFields(entry.client_ref_id, {
+      note: newNote,
+      updated_at: new Date().toISOString(),
+    }).then(() => {
       enqueue({
         op: 'update',
         entity: 'entry',
@@ -1033,9 +1035,9 @@ Page({
     if (changedFields.occurred_at) entry.occurred_at = changedFields.occurred_at as string;
     if (changedFields.shared_type) entry.shared_type = changedFields.shared_type as 'personal' | 'shared';
     entry.updated_at = new Date().toISOString();
-    entry.dirty = true;
 
-    putEntry(entry).then(() => {
+    const localFields: Record<string, unknown> = { ...changedFields, updated_at: new Date().toISOString() };
+    updateEntryFields(entry.client_ref_id, localFields).then(() => {
       enqueue({
         op: 'update',
         entity: 'entry',

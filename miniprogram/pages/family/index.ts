@@ -8,6 +8,7 @@ import { toYuan } from '../../utils/money';
 import { getSafeAreaMetrics } from '../../utils/safeArea';
 import { getCategoryIconById } from '../../services/categoryService';
 import { maxSharedFamilies } from '../../config/defaults';
+import { triggerOnPageShow } from '../../services/syncScheduler';
 import {
   getActiveFamilyId,
   setActiveFamily,
@@ -222,6 +223,7 @@ Page({
 
   async onShow() {
     this.getTabBar?.()?.setData?.({ selected: 3 });
+    triggerOnPageShow('family');
     await this._loadPage();
   },
 

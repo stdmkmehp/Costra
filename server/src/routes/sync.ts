@@ -20,6 +20,8 @@ import { createHash } from 'node:crypto';
 import { AppError } from '../errors/AppError.js';
 import { ErrorCode } from '../errors/ErrorCode.js';
 import { createEntryService } from '../services/entryService.js';
+import { findByClientRefId, updateEntryByVersion, softDeleteEntry } from '../repositories/entryRepo.js';
+import type { UpdateEntryInput } from '../repositories/entryRepo.js';
 import { checkAndGet, save } from '../services/idempotencyService.js';
 import { syncPull } from '../services/syncPullService.js';
 import type { CreateEntryPayload, UpdateEntryPayload } from '../services/entryService.js';
@@ -140,31 +142,43 @@ async function processEntryOp(
     if (op.base_version == null) {
       return { client_ref_id: op.client_ref_id, status: 'rejected', error: { code: ErrorCode.INVALID_ARGUMENT, message: 'update requires base_version' } };
     }
-    const payload = op.payload as UpdateEntryPayload & { entry_id?: string };
-    const entryId = (payload.entry_id ?? op.client_ref_id) as string; // fallback: client_ref_id as entry id
-    const result = await entryService.updateWithVersion(userId, entryId, payload, op.base_version);
-    if (result.status === 'ok') {
-      return { client_ref_id: op.client_ref_id, status: 'ok', server_id: result.serverId, server_version: result.serverVersion };
+    // 通过 client_ref_id 查找 entry（含权限校验 JOIN families_users）
+    const entry = await findByClientRefId(op.client_ref_id, userId);
+    if (!entry) {
+      return { client_ref_id: op.client_ref_id, status: 'rejected', error: { code: ErrorCode.NOT_FOUND, message: `entry ${op.client_ref_id} not found` } };
     }
-    if (result.status === 'conflict') {
-      return { client_ref_id: op.client_ref_id, status: 'conflict', server_version: result.serverVersion };
+    const payload = op.payload as UpdateEntryPayload;
+    // 业务校验：shared_type 仅允许 expense 类型修改
+    if (payload.shared_type !== undefined && entry.type !== 'expense') {
+      return { client_ref_id: op.client_ref_id, status: 'rejected', error: { code: 'BUSINESS_RULE_VIOLATION', message: 'shared_type is only allowed for expense entries' } };
     }
-    return { client_ref_id: op.client_ref_id, status: 'rejected', error: result.error };
+    // 直接调 repo 层（权限已在 findByClientRefId 中验证）
+    const repoInput: UpdateEntryInput = {};
+    if (payload.amount !== undefined) repoInput.amount = payload.amount;
+    if (payload.category_id !== undefined) repoInput.categoryId = payload.category_id;
+    if (payload.note !== undefined) repoInput.note = payload.note;
+    if (payload.occurred_at !== undefined) repoInput.occurredAt = payload.occurred_at;
+    if (payload.shared_type !== undefined) repoInput.sharedType = payload.shared_type;
+    const updated = await updateEntryByVersion(entry.id, repoInput, op.base_version);
+    if (!updated) {
+      return { client_ref_id: op.client_ref_id, status: 'conflict', server_version: entry.version };
+    }
+    return { client_ref_id: op.client_ref_id, status: 'ok', server_id: entry.id, server_version: updated.version };
   }
 
   // delete
   if (op.base_version == null) {
     return { client_ref_id: op.client_ref_id, status: 'rejected', error: { code: ErrorCode.INVALID_ARGUMENT, message: 'delete requires base_version' } };
   }
-  const entryId = op.client_ref_id as string; // client_ref_id 作为 entry id
-  const result = await entryService.softDelete(userId, entryId, op.base_version);
-  if (result.status === 'ok') {
-    return { client_ref_id: op.client_ref_id, status: 'ok', server_id: result.serverId, server_version: result.serverVersion };
+  const entry = await findByClientRefId(op.client_ref_id, userId);
+  if (!entry) {
+    return { client_ref_id: op.client_ref_id, status: 'rejected', error: { code: ErrorCode.NOT_FOUND, message: `entry ${op.client_ref_id} not found` } };
   }
-  if (result.status === 'conflict') {
-    return { client_ref_id: op.client_ref_id, status: 'conflict', server_version: result.serverVersion };
+  const deleted = await softDeleteEntry(entry.id, op.base_version);
+  if (!deleted) {
+    return { client_ref_id: op.client_ref_id, status: 'conflict', server_version: entry.version };
   }
-  return { client_ref_id: op.client_ref_id, status: 'rejected', error: result.error };
+  return { client_ref_id: op.client_ref_id, status: 'ok', server_id: entry.id, server_version: deleted.version };
 }
 
 // --- 注册 ---

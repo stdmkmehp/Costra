@@ -53,7 +53,6 @@ describe('services/db · 模拟 wx.storage（mock 环境）', () => {
     expect(got).not.toBeNull();
     expect(got?.client_ref_id).toBe('test-ref-1');
     expect(got?.amount).toBe(100);
-    expect(got?.dirty).toBe(true);
   });
 
   it('getEntry 不存在的 key 返回 null', async () => {

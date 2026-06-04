@@ -1,14 +1,12 @@
-// services/db.ts · 本地 KV 实体持久化层（基于 storage.ts async KV 抽象）
-// 卡号: COSTRA-103（Epic-C 主线 · R1 · SBAI 第 7 次冒烟）
-// Refs: sync-protocol.md §2.1/§3.3 · id-strategy.md §2.5 · costra-103-miniapp-local-persistence-outbox.md §2.1
-// 存储 key 命名空间：entry:{client_ref_id} / entry:__index / category:{client_ref_id} / ... / watermark:{family_id}
+// services/db.ts · 本地 KV 实体持久化层
+// 重构: 移除 dirty 字段 + 添加 wireToEntry 字段映射 + 简化 applyServerChanges
 
 import { getItem, setItem } from './storage';
 
 export interface Entry {
   id?: string;                  // 服务端 UUID v7（push 成功后回写）
   client_ref_id: string;        // 客户端 UUID v4（本地主键 · 必填）
-  ledger_id: string;            // family ledger
+  ledger_id: string;
   amount: number;               // cents · int
   currency: string;             // ISO 4217
   type: 'expense' | 'income';
@@ -18,11 +16,8 @@ export interface Entry {
   created_at?: string;
   updated_at?: string;
   version?: number;             // 服务端乐观锁版本
-  deleted_at?: string | null;   // 软删
-  dirty?: boolean;              // 本地标记 · 未 push
-  /** 创建者用户 ID（COSTRA-220: 从 sync wire user_id 字段写入 · 本地创建时写入当前 userId） */
+  deleted_at?: string | null;
   created_by?: string | null;
-  /** 费用性质（COSTRA-217: shared=公共支出 / personal=个人支出 · 仅 expense 有意义） */
   shared_type?: 'shared' | 'personal' | null;
 }
 
@@ -37,7 +32,6 @@ export interface Category {
   updated_at?: string;
   version?: number;
   deleted_at?: string | null;
-  dirty?: boolean;
 }
 
 export interface Budget {
@@ -45,13 +39,12 @@ export interface Budget {
   client_ref_id: string;
   ledger_id: string;
   category_id: string;
-  amount: number;               // cents
-  month: string;               // 'YYYY-MM'
+  amount: number;
+  month: string;
   created_at?: string;
   updated_at?: string;
   version?: number;
   deleted_at?: string | null;
-  dirty?: boolean;
 }
 
 export interface Ledger {
@@ -64,13 +57,10 @@ export interface Ledger {
   updated_at?: string;
   version?: number;
   deleted_at?: string | null;
-  dirty?: boolean;
 }
 
 type Entity = 'entry' | 'category' | 'budget' | 'ledger';
 
-// storage.ts getItem 返回 Envelope<实际类型>.d
-// 这里用 EntityEnvelope 声明，与 storage.ts Envelope 对齐
 interface EntityEnvelope<T> {
   v: number;
   t: number;
@@ -128,12 +118,56 @@ async function putEntity<T extends { client_ref_id: string }>(
   await setItem(entityKey(entity, item.client_ref_id), env);
 }
 
-// ─── Entry API（8 个）─────────────────────────────────────────────────────────
+// ─── Wire → Local 字段映射 ───────────────────────────────────────────────────
+// 服务端 sync/pull wire 格式使用 server_version/user_id
+// 本地 Entry 使用 version/created_by
+
+function wireToEntry(wire: Record<string, unknown>): Entry {
+  return {
+    id: wire.id as string | undefined,
+    client_ref_id: wire.client_ref_id as string,
+    ledger_id: wire.ledger_id as string,
+    amount: wire.amount as number,
+    currency: wire.currency as string,
+    type: wire.type as 'expense' | 'income',
+    category_id: (wire.category_id as string | null) ?? null,
+    note: (wire.note as string) ?? '',
+    occurred_at: wire.occurred_at as string,
+    created_at: wire.created_at as string | undefined,
+    updated_at: wire.updated_at as string | undefined,
+    deleted_at: wire.deleted_at as string | null | undefined,
+    version: wire.server_version as number | undefined,     // server_version → version
+    created_by: wire.user_id as string | null | undefined,  // user_id → created_by
+    shared_type: wire.shared_type as 'shared' | 'personal' | null | undefined,
+  };
+}
+
+// ─── Entry API ────────────────────────────────────────────────────────────────
 
 export async function putEntry(entry: Entry): Promise<void> {
-  entry.dirty = entry.dirty ?? true;
   await putEntity('entry', entry);
   await appendToIndex('entry', entry.client_ref_id);
+}
+
+/**
+ * 部分更新 entry 字段（保留 storage 中的 version/id 等同步字段）
+ * 用于页面编辑场景：页面持有的 entry 对象可能没有最新 version，
+ * 直接 putEntry 会覆盖 storage 中已回填的 version。
+ */
+export async function updateEntryFields(
+  clientRefId: string,
+  fields: Partial<Omit<Entry, 'client_ref_id'>>
+): Promise<Entry | null> {
+  const current = await getEntry(clientRefId);
+  if (!current) return null;
+  // 只 merge 非 undefined 的字段，避免覆盖有效数据
+  const cleaned: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(fields)) {
+    if (v !== undefined) cleaned[k] = v;
+  }
+  const updated = { ...current, ...cleaned } as Entry;
+  await putEntity('entry', updated);
+  return updated;
 }
 
 export async function getEntry(clientRefId: string): Promise<Entry | null> {
@@ -167,10 +201,13 @@ export async function deleteEntry(clientRefId: string): Promise<void> {
   if (!entry) return;
   entry.deleted_at = new Date().toISOString();
   entry.updated_at = entry.deleted_at;
-  entry.dirty = true;
   await putEntry(entry);
   await removeFromIndex('entry', clientRefId);
 }
+
+// ─── applyServerChanges ──────────────────────────────────────────────────────
+// 覆盖条件：服务端 version > 本地 version（或本地不存在）
+// 不再依赖 dirty 字段判断冲突
 
 export async function applyServerChanges(
   changes: {
@@ -184,18 +221,16 @@ export async function applyServerChanges(
   for (const raw of changes.ledgers || []) {
     const item = raw as Ledger;
     const local = await getEntity<Ledger>('ledger', item.client_ref_id);
+    const serverVer = item.version ?? 0;
+    const localVer = local?.version ?? 0;
     if (item.deleted_at) {
-      if (!local || (local.version ?? 0) < (item.version ?? 0)) {
-        await putEntity('ledger', { ...item, dirty: false });
+      if (!local || localVer < serverVer) {
+        await putEntity('ledger', item);
         await removeFromIndex('ledger', item.client_ref_id);
       }
-    } else if (!local || (item.version ?? 0) > (local.version ?? 0)) {
-      if (local?.dirty) {
-        await mergeIntoConflictQueue('ledger', local, item);
-      } else {
-        await putEntity('ledger', { ...item, dirty: false });
-        await appendToIndex('ledger', item.client_ref_id);
-      }
+    } else if (!local || serverVer > localVer) {
+      await putEntity('ledger', item);
+      await appendToIndex('ledger', item.client_ref_id);
     }
   }
 
@@ -203,18 +238,16 @@ export async function applyServerChanges(
   for (const raw of changes.categories || []) {
     const item = raw as Category;
     const local = await getEntity<Category>('category', item.client_ref_id);
+    const serverVer = item.version ?? 0;
+    const localVer = local?.version ?? 0;
     if (item.deleted_at) {
-      if (!local || (local.version ?? 0) < (item.version ?? 0)) {
-        await putEntity('category', { ...item, dirty: false });
+      if (!local || localVer < serverVer) {
+        await putEntity('category', item);
         await removeFromIndex('category', item.client_ref_id);
       }
-    } else if (!local || (item.version ?? 0) > (local.version ?? 0)) {
-      if (local?.dirty) {
-        await mergeIntoConflictQueue('category', local, item);
-      } else {
-        await putEntity('category', { ...item, dirty: false });
-        await appendToIndex('category', item.client_ref_id);
-      }
+    } else if (!local || serverVer > localVer) {
+      await putEntity('category', item);
+      await appendToIndex('category', item.client_ref_id);
     }
   }
 
@@ -222,65 +255,46 @@ export async function applyServerChanges(
   for (const raw of changes.budgets || []) {
     const item = raw as Budget;
     const local = await getEntity<Budget>('budget', item.client_ref_id);
+    const serverVer = item.version ?? 0;
+    const localVer = local?.version ?? 0;
     if (item.deleted_at) {
-      if (!local || (local.version ?? 0) < (item.version ?? 0)) {
-        await putEntity('budget', { ...item, dirty: false });
+      if (!local || localVer < serverVer) {
+        await putEntity('budget', item);
         await removeFromIndex('budget', item.client_ref_id);
       }
-    } else if (!local || (item.version ?? 0) > (local.version ?? 0)) {
-      if (local?.dirty) {
-        await mergeIntoConflictQueue('budget', local, item);
-      } else {
-        await putEntity('budget', { ...item, dirty: false });
-        await appendToIndex('budget', item.client_ref_id);
-      }
+    } else if (!local || serverVer > localVer) {
+      await putEntity('budget', item);
+      await appendToIndex('budget', item.client_ref_id);
     }
   }
 
-  // entries
+  // entries（使用 wireToEntry 字段映射）
   for (const raw of changes.entries || []) {
-    const item = raw as Entry;
+    const item = wireToEntry(raw as Record<string, unknown>);
     const local = await getEntity<Entry>('entry', item.client_ref_id);
+    const serverVer = item.version ?? 0;
+    const localVer = local?.version ?? 0;
     if (item.deleted_at) {
-      if (!local || (local.version ?? 0) < (item.version ?? 0)) {
-        await putEntity('entry', { ...item, dirty: false });
+      if (!local || localVer <= serverVer) {
+        await putEntity('entry', item);
         await removeFromIndex('entry', item.client_ref_id);
       }
-    } else if (!local || (item.version ?? 0) > (local.version ?? 0)) {
-      if (local?.dirty) {
-        await mergeIntoConflictQueue('entry', local, item);
-      } else {
-        await putEntity('entry', { ...item, dirty: false });
-        await appendToIndex('entry', item.client_ref_id);
-      }
+    } else if (!local || serverVer >= localVer) {
+      await putEntity('entry', item);
+      await appendToIndex('entry', item.client_ref_id);
     }
   }
 }
 
-async function mergeIntoConflictQueue(
-  entity: Entity,
-  local: { client_ref_id: string; version?: number },
-  server: { client_ref_id: string; version?: number }
-): Promise<void> {
-  console.warn('[db] conflict detected', { entity, local_ref_id: local.client_ref_id, server_version: server.version });
-  const queue = (await getItem<{ entity: Entity; local: unknown; server: unknown }[]>('conflict:__queue')) || [];
-  queue.push({ entity, local, server });
-  await setItem('conflict:__queue', queue);
-}
+// ─── Watermark ────────────────────────────────────────────────────────────────
 
 export async function getWatermark(familyId: string): Promise<number> {
-  // BUG-COSTRA-154 v1.2 升级（2026-05-22）：
-  //   watermark 类型从 string（ISO 微秒）→ number（BIGINT change_seq）
-  //   兼容旧值：检测到 storage 残留 ISO 字符串自动重置为 0
-  //     → 触发一次性全量 pull · 之后正常增量
-  //     → 避免 server schema 校验失败（pullQuerySchema since: integer minimum=0）
   const v = await getItem<unknown>(watermarkKey(familyId));
   if (typeof v === 'number' && Number.isInteger(v) && v >= 0) {
     return v;
   }
   if (typeof v === 'string') {
-    // 旧 v1.0/v1.1 ISO 字符串 watermark · 一次性清除 + 全量重拉
-    console.warn('[db] legacy ISO watermark detected, resetting to 0 (full re-sync)', { familyId, legacy: v });
+    console.warn('[db] legacy ISO watermark detected, resetting to 0', { familyId });
     await setItem<number>(watermarkKey(familyId), 0);
     return 0;
   }
@@ -288,7 +302,6 @@ export async function getWatermark(familyId: string): Promise<number> {
 }
 
 export async function setWatermark(familyId: string, watermark: number): Promise<void> {
-  // 防御性校验：watermark 必须是非负整数（v1.2 协议契约）
   if (!Number.isInteger(watermark) || watermark < 0) {
     console.warn('[db] invalid watermark · ignored', { familyId, watermark });
     return;

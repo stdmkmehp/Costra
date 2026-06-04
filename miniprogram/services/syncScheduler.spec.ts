@@ -3,7 +3,7 @@
 // COSTRA-165: T2 重构 · mock family.ts service 而非 storage.getItem
 // Refs: .team/dispatch/COSTRA-150-client-sync-scheduler.md §2.1 E 项
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { syncOnce, startScheduler, stopScheduler, triggerOnPageShow, __test__ } from './syncScheduler';
+import { syncOnce, startScheduler, stopScheduler, triggerOnPageShow, triggerOnMutation, __test__ } from './syncScheduler';
 
 // ─── mock 依赖 ────────────────────────────────────────────────────────────────
 
@@ -19,6 +19,11 @@ vi.mock('./auth', () => ({
 // COSTRA-165: mock family.ts 而非 storage.getItem（syncScheduler 不再直接依赖 storage）
 vi.mock('./family', () => ({
   getActiveFamilyId: vi.fn(),
+}));
+
+vi.mock('./eventBus', () => ({
+  eventBus: { on: vi.fn(), off: vi.fn(), emit: vi.fn() },
+  EventNames: { OUTBOX_ENQUEUED: 'outbox-enqueued' },
 }));
 
 import { pushDelta } from './sync';
@@ -138,7 +143,7 @@ describe('services/syncScheduler', () => {
 
     expect(result).toBeNull();
     expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining('[sync] fail')
+      expect.stringContaining('[sync] ✗ fail')
     );
 
     warnSpy.mockRestore();

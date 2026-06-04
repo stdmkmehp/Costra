@@ -1,25 +1,17 @@
-// services/outbox.ts · outbox 重放队列（多 key 分片 · 指数退避重试 · 三态消费）
-// 卡号: COSTRA-103（Epic-C 主线 · R1.2 末轮修复 · SBAI 第 7 次冒烟）
-// R1.x.2 修复（2026-05-22 BUG-COSTRA-150-D）: 新增 ackBatchFailure · 修正 drained 语义
-// Refs: sync-protocol.md §2 push/§5 重试 · id-strategy.md §3.1 · costra-103-miniapp-local-persistence-outbox.md §2.2
-// 存储 key 命名空间：outbox:{seq} / outbox:__index / outbox:__retries / outbox:__drained
-//
-// 状态机契约（R1.x.2 修订）：
-//   - index：待 drain 的 seq 列表
-//   - drained：已 drain 但未 ack 的 seq（pushDelta 一次完整调用后必为空）
-//   - 三种结束路径必须清空 drained 中本批次 seq：
-//     a) ackResults（服务端响应三态：ok/conflict/rejected）
-//     b) ackBatchFailure（网络/异常失败 · 整批复原到 index）
-//     c) drainBatch recover 分支（防御性兜底 · 处理异常中断遗留的孤儿）
+// services/outbox.ts · outbox 重放队列
+// 修复: COSTRA-228 数据丢失系列 Bug（G/F/D/E + op 合并）
 //
 // 设计要点：
-//   1. index = 全量待重放 op seq 列表（drainBatch 时移除 · ackBatchFailure/conflict 时复原）
-//   2. drainBatch 过滤 next_retry_at <= now 的 op，记录到 outbox:__drained
-//   3. ackResults 从 outbox:__drained 读取 drained seqs，按 idempotency_key 处理三态
-//   4. ackBatchFailure（新增）：网络失败时复原本批次到 index · retries 递增
-//   5. conflict → 立即重试（next_retry_at = now+1，recover cutoff=now+5000 兜底让第二次 drainBatch 取回）
+//   1. enqueue 时做 op 合并（create+update → merge into create · update+update → merge payload）
+//   2. drainBatch 取 op 时不冻结 base_version（由 pushDelta 发送前从 storage 刷新）
+//   3. rejected/conflict/failure 后重新生成 idempotency_key（防止 409）
+//   4. ackResultsBySeq 按数组下标匹配 results（不再用 client_ref_id Map）
+//   5. 409 走 ackBatchFailure 保守重试（不再无条件清除）
+//   6. index = 待 drain 的 seq 列表 · drained = 已 drain 未 ack 的 seq
 
 import { getItem, setItem, removeItem } from './storage';
+import { eventBus, EventNames } from './eventBus';
+import { getEntry, putEntry } from './db';
 
 export type SyncOp = {
   op: 'create' | 'update' | 'delete';
@@ -27,17 +19,15 @@ export type SyncOp = {
   client_ref_id: string;
   base_version: number | null;
   payload: Record<string, unknown>;
-  enqueued_at: number;          // 原始 ms（用于 sync-protocol 协议）
-  /** 存储键 seq（微秒级唯一，防 Date.now() 同值碰撞）；drainBatch/ackResults 用此键寻址 */
+  enqueued_at: number;
   seq: number;
   retries: number;
   next_retry_at: number;
   idempotency_key: string;
-  /** drainBatch 批次键；ackResults 按此字段定位本次批次的 op */
   ack_batch_key?: string;
 };
 
-/** push 结果单条（sync-protocol.md §2.3 results[]） */
+/** push 结果单条 */
 export interface PushResultItem {
   client_ref_id: string;
   status: 'ok' | 'conflict' | 'rejected';
@@ -57,7 +47,6 @@ function opKey(seq: number): string {
 }
 
 const INDEX_KEY = 'outbox:__index';
-const RETRIES_KEY = 'outbox:__retries';
 const DRAINED_KEY = 'outbox:__drained';
 
 // ─── internal helpers ───────────────────────────────────────────────────────────
@@ -78,18 +67,7 @@ async function writeDrained(seqs: number[]): Promise<void> {
   await setItem(DRAINED_KEY, seqs);
 }
 
-async function readRetries(): Promise<Record<string, number>> {
-  return (await getItem<Record<string, number>>(RETRIES_KEY)) || {};
-}
-
-async function incrementRetry(clientRefId: string): Promise<number> {
-  const retries = await readRetries();
-  retries[clientRefId] = (retries[clientRefId] || 0) + 1;
-  await setItem(RETRIES_KEY, retries);
-  return retries[clientRefId];
-}
-
-// ─── seq 生成器（防 Date.now() 同值碰撞）───────────────────────────────────────
+// ─── seq 生成器 ──────────────────────────────────────────────────────────────
 
 let _seqCounter = 0;
 let _lastSeqTime = 0;
@@ -105,7 +83,12 @@ function newSeq(): number {
   return now * 1000 + _seqCounter;
 }
 
-// ─── retry 上限（COSTRA-228 · 超限移入 dead-letter 不再重试）─────────────────
+function newIdemKey(): string {
+  return `idem-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+// ─── retry 上限 ──────────────────────────────────────────────────────────────
+
 const MAX_RETRIES = 50;
 const DEAD_LETTER_KEY = 'outbox:__dead_letter';
 
@@ -114,22 +97,86 @@ async function readDeadLetter(): Promise<SyncOp[]> {
 }
 
 async function moveToDeadLetter(op: SyncOp, seq: number): Promise<void> {
+  console.error(`[outbox:dead-letter] ✗ op=${op.op} ref=${op.client_ref_id} base_version=${op.base_version} retries=${op.retries} seq=${seq} → DATA LOSS RISK`);
   const dl = await readDeadLetter();
   dl.push(op);
   await setItem(DEAD_LETTER_KEY, dl);
   await removeItem(opKey(seq));
 }
 
-// ─── retry 计数（指数退避在 Sprint-3 合并 UI 时恢复）─────────────────────────
+// ─── op 合并：查找 index 中同 client_ref_id 的 pending op ─────────────────────
 
-// ─── 导出 API（6 个）───────────────────────────────────────────────────────────
+async function findPendingOp(clientRefId: string): Promise<SyncOp | null> {
+  const idx = await readIndex();
+  for (const seq of idx) {
+    const op = await getItem<SyncOp>(opKey(seq));
+    if (op && op.client_ref_id === clientRefId) {
+      return op;
+    }
+  }
+  return null;
+}
 
+// ─── 导出 API ─────────────────────────────────────────────────────────────────
+
+/**
+ * 入队操作，支持 op 合并：
+ *   - create + update → merge payload into create
+ *   - create + delete → remove create (noop)
+ *   - update + update → merge payload, keep first base_version
+ *   - update + delete → replace with delete, keep first base_version
+ */
 export async function enqueue(
   op: Omit<SyncOp, 'seq' | 'enqueued_at' | 'retries' | 'next_retry_at' | 'idempotency_key' | 'ack_batch_key'>
 ): Promise<void> {
+  // ─── op 合并检查 ────────────────────────────────────────────────────────
+  if (op.op === 'update' || op.op === 'delete') {
+    const pending = await findPendingOp(op.client_ref_id);
+    if (pending) {
+      if (pending.op === 'create' && op.op === 'update') {
+        // create + update → merge update payload into create payload
+        Object.assign(pending.payload, op.payload);
+        pending.idempotency_key = newIdemKey(); // 合并后换新 key
+        await setItem(opKey(pending.seq), pending);
+        console.log(`[outbox:enqueue] MERGED update into pending create · ref=${op.client_ref_id} seq=${pending.seq}`);
+        eventBus.emit(EventNames.OUTBOX_ENQUEUED);
+        return;
+      }
+      if (pending.op === 'create' && op.op === 'delete') {
+        // create + delete → 两者抵消，删除 create op
+        await removeItem(opKey(pending.seq));
+        const idx = await readIndex();
+        await writeIndex(idx.filter(s => s !== pending.seq));
+        console.log(`[outbox:enqueue] CANCELLED create+delete · ref=${op.client_ref_id} seq=${pending.seq} removed`);
+        // 不 emit：抵消操作不需要触发同步
+        return;
+      }
+      if (pending.op === 'update' && op.op === 'update') {
+        // update + update → merge payload, keep first base_version
+        Object.assign(pending.payload, op.payload);
+        pending.idempotency_key = newIdemKey();
+        await setItem(opKey(pending.seq), pending);
+        console.log(`[outbox:enqueue] MERGED update into pending update · ref=${op.client_ref_id} seq=${pending.seq}`);
+        eventBus.emit(EventNames.OUTBOX_ENQUEUED);
+        return;
+      }
+      if (pending.op === 'update' && op.op === 'delete') {
+        // update + delete → replace with delete, keep base_version
+        pending.op = 'delete';
+        pending.payload = {};
+        pending.idempotency_key = newIdemKey();
+        await setItem(opKey(pending.seq), pending);
+        console.log(`[outbox:enqueue] REPLACED update with delete · ref=${op.client_ref_id} seq=${pending.seq}`);
+        eventBus.emit(EventNames.OUTBOX_ENQUEUED);
+        return;
+      }
+    }
+  }
+
+  // ─── 正常入队 ────────────────────────────────────────────────────────────
   const now = Date.now();
   const seq = newSeq();
-  const idempotencyKey = `idem-${now}-${Math.random().toString(36).slice(2, 8)}`;
+  const idempotencyKey = newIdemKey();
 
   const fullOp: SyncOp = {
     ...op,
@@ -144,16 +191,13 @@ export async function enqueue(
   const idx = await readIndex();
   const uniqueSeqs = [...new Set([...idx, seq])];
   await writeIndex(uniqueSeqs);
+
+  console.log(`[outbox:enqueue] op=${op.op} entity=${op.entity} ref=${op.client_ref_id} base_version=${op.base_version} seq=${seq} idem=${idempotencyKey} index_size=${uniqueSeqs.length}`);
+  eventBus.emit(EventNames.OUTBOX_ENQUEUED);
 }
 
 /**
- * 取出一批可重放的 op（drain · 原子操作）
- * 设计：
- *   - drainBatch 过滤 next_retry_at <= now 的 op
- *   - 写 ack_batch_key 到每条 op
- *   - 把这些 seq 从 index 移除，记录到 outbox:__drained
- *   - 当 idx 为空但 drained 有待重试 op（conflict 场景）时，从 drained 恢复
- * @param maxBatch 批次上限 · 默认 200
+ * 取出一批可重放的 op（drain）
  */
 export async function drainBatch(
   maxBatch = 200
@@ -164,26 +208,21 @@ export async function drainBatch(
   const drainedList: number[] = [];
 
   const now = Date.now();
-  let pendingDrained = [...drained]; // 可变 drained 列表（recover 后删 recovered seq）
-  let currentIdx = [...idx];         // 可变 index（recover 后删 recovered seq 避免重复 append）
+  let pendingDrained = [...drained];
+  let currentIdx = [...idx];
 
-  // ─── 防御性 recover 分支 ─────────────────────────────────────────────────────
-  // 不变量（R1.x.2 修订）：pushDelta 一次完整调用结束后 · drained 应清空
-  //   - 成功路径走 ackResults · 失败路径走 ackBatchFailure · 都会清 drained
-  //   - drained 残留 = 异常中断 / storage 损坏 / 上一版本遗留的孤儿
-  //   - 此分支无差别 recover 所有 drained 中的 op（不再区分 retries > 0）
-  //   - 修复 BUG-COSTRA-150-D：旧实装只 recover retries > 0 · 导致首次失败的 retries=0 op 死锁
+  // ─── 防御性 recover 分支：drained 残留 = 异常中断遗留 ──────────────────
   if (drained.length > 0) {
+    console.warn(`[outbox:drainBatch] ⚠️ RECOVER · drained residue: count=${drained.length} seqs=[${drained.join(',')}]`);
     for (const seq of drained) {
       const op = await getItem<SyncOp>(opKey(seq));
       if (!op) {
         pendingDrained = pendingDrained.filter(s => s !== seq);
         continue;
       }
-      // 防止本轮主循环（L162-172）通过 currentIdx 重复取此 op
+      console.log(`[outbox:drainBatch] recover · seq=${seq} op=${op.op} ref=${op.client_ref_id} retries=${op.retries}`);
       pendingDrained = pendingDrained.filter(s => s !== seq);
       currentIdx = currentIdx.filter(s => s !== seq);
-      // next_retry_at 推到 now+1 · 防止重复入队竞态（L169 过滤 next_retry_at > now）
       op.next_retry_at = now + 1;
       batch.push({ ...op });
     }
@@ -192,128 +231,108 @@ export async function drainBatch(
     }
   }
 
+  // ─── 主循环：从 index 取可发送的 ops ──────────────────────────────────
   for (const seq of currentIdx) {
     if (batch.length >= maxBatch) break;
     const op = await getItem<SyncOp>(opKey(seq));
     if (!op) {
-      drainedList.push(seq); // orphaned key 清理
+      drainedList.push(seq);
       continue;
     }
-    if (op.next_retry_at > now) continue; // 跳过 future op
-    batch.push({ ...op });  // ⚠️ 复制对象：防止 L190 setItem mutate 覆盖 storage 中的 conflict 值
+    if (op.next_retry_at > now) continue;
+    batch.push({ ...op });
     drainedList.push(seq);
   }
 
   if (batch.length === 0) return null;
 
-  const batchKey = batch[0].idempotency_key;
+  // 生成新的 batchKey（每次 drain 都用新 key，避免幂等键复用）
+  const batchKey = newIdemKey();
   for (const op of batch) {
     op.ack_batch_key = batchKey;
     await setItem(opKey(op.seq), op);
   }
 
-  // 写 drained：普通 drain 项追加（供 ackResults 扫描三态）
   const prevDrained = await readDrained();
   await writeDrained([...prevDrained, ...drainedList]);
   const remaining = currentIdx.filter(s => !drainedList.includes(s));
   await writeIndex(remaining);
 
+  console.log(`[outbox:drainBatch] drained · batchKey=${batchKey} count=${batch.length} ops=[${batch.map(o => `${o.op}:${o.client_ref_id}:v${o.base_version}`).join(', ')}]`);
   return { batch, batchKey };
 }
 
 /**
- * 消费 push 结果（三态处理 · sync-protocol.md §2.4）
- * 设计：从 outbox:__drained 读 drained seqs，按 idempotency_key 处理三态。
- * @param batchKey 批次 idempotency_key
- * @param results push 返回的 results 数组
+ * 消费 push 结果（按数组下标匹配，不再用 client_ref_id Map）
+ * @param batchKey 批次 key
+ * @param seqResultPairs 按下标配对的 (seq, result) 数组
  */
-export async function ackResults(
+export async function ackResultsBySeq(
   batchKey: string,
-  results: PushResultItem[]
+  seqResultPairs: Array<{ seq: number; result: PushResultItem }>
 ): Promise<void> {
-  const resultMap = new Map<string, PushResultItem>();
-  for (const r of results) {
-    resultMap.set(r.client_ref_id, r);
-  }
+  console.log(`[outbox:ackResults] batchKey=${batchKey} pairs=${seqResultPairs.length} statuses=[${seqResultPairs.map(p => `${p.result.status}`).join(',')}]`);
 
+  // 清理本 batch 的 drained 记录
   const allDrained = await readDrained();
-  const thisBatchDrained: number[] = [];
-  const otherDrained: number[] = [];
+  const thisBatchSeqs = new Set(seqResultPairs.map(p => p.seq));
+  const otherDrained = allDrained.filter(s => !thisBatchSeqs.has(s));
 
-  for (const seq of allDrained) {
-    const op = await getItem<SyncOp>(opKey(seq));
-    // R1.x.2 修复：必须用 ack_batch_key（drainBatch 时写入 = batch[0].idempotency_key）
-    //   而非 op.idempotency_key（每个 op 独有 · 仅与 batch[0] 匹配 · 漏掉同批次其他 op）
-    if (op && op.ack_batch_key === batchKey) {
-      thisBatchDrained.push(seq);
-    } else {
-      otherDrained.push(seq);
-    }
-  }
-
-  const conflictDrained: number[] = []; // 累积所有 conflict seq
-
-  for (const seq of thisBatchDrained) {
+  for (const { seq, result } of seqResultPairs) {
     const op = await getItem<SyncOp>(opKey(seq));
     if (!op) continue;
 
-    const result = resultMap.get(op.client_ref_id);
-
-    if (!result) {
-      // 网络级失败 → 立即重试
-      const count = await incrementRetry(op.client_ref_id);
-      op.retries = count;
-      op.next_retry_at = Date.now();
-      await setItem(opKey(seq), op);
-      const newIdx = await readIndex();
-      if (!newIdx.includes(seq)) newIdx.push(seq);
-      await writeIndex(newIdx);
-      conflictDrained.push(seq); // 网络失败也进 drained（供 drainBatch recover）
-    } else if (result.status === 'ok') {
+    if (result.status === 'ok') {
+      console.log(`[outbox:ackResults] ✓ OK · seq=${seq} op=${op.op} ref=${op.client_ref_id} server_id=${result.server_id} server_version=${result.server_version} → removed`);
+      // 立即回写 server_id/version 到本地 entry（不等 pull 回填）
+      if (result.server_id || result.server_version != null) {
+        const entry = await getEntry(op.client_ref_id);
+        if (entry) {
+          if (result.server_id) entry.id = result.server_id;
+          if (result.server_version != null) entry.version = result.server_version;
+          await putEntry(entry);
+          console.log(`[outbox:ackResults] ✓ version written · ref=${op.client_ref_id} version=${entry.version}`);
+        } else {
+          console.warn(`[outbox:ackResults] ⚠️ entry not found for version write · ref=${op.client_ref_id}`);
+        }
+      }
       await removeItem(opKey(seq));
     } else if (result.status === 'conflict') {
-      // conflict → 立即可重试（recover 清 drained 后，conflict seq 靠 index 被下次 drainBatch 取出）
-      // ⚠️ next_retry_at 不改：保留 enqueue 时 set 的旧值（past = 通过 next_retry_at > now 过滤）
-      // ⚠️ 不走 handleRetry 指数退避（conflict 在 R1 无 mergeIntoConflictQueue UI）
-      const count = await incrementRetry(op.client_ref_id);
-      op.retries = count;
+      // conflict → 重入 index 重试（下次 pushDelta 会从 storage 刷新 base_version）
+      op.retries++;
+      op.next_retry_at = Date.now();
+      op.idempotency_key = newIdemKey(); // 换新 key 防 409
       await setItem(opKey(seq), op);
       const newIdx = await readIndex();
       if (!newIdx.includes(seq)) newIdx.push(seq);
       await writeIndex(newIdx);
-      conflictDrained.push(seq); // 累积 conflict seq 到 drained（供 drainBatch recover）
+      console.warn(`[outbox:ackResults] ⚠️ CONFLICT · seq=${seq} op=${op.op} ref=${op.client_ref_id} base_version=${op.base_version} server_version=${result.server_version} retries=${op.retries} → re-index`);
     } else {
+      // rejected
       const code = result.error?.code;
       if (code === 'NOT_FOUND' || code === 'PERMISSION_DENIED') {
+        console.warn(`[outbox:ackResults] ✗ REJECTED(${code}) · seq=${seq} op=${op.op} ref=${op.client_ref_id} → permanently removed`);
         await removeItem(opKey(seq));
       } else {
-        const count = await incrementRetry(op.client_ref_id);
-        op.retries = count;
+        // 可重试的 rejected（如 INVALID_ARGUMENT: base_version null → 下次刷新后可恢复）
+        op.retries++;
         op.next_retry_at = Date.now();
+        op.idempotency_key = newIdemKey(); // 换新 key 防 409
         await setItem(opKey(seq), op);
         const newIdx = await readIndex();
         if (!newIdx.includes(seq)) newIdx.push(seq);
         await writeIndex(newIdx);
+        console.warn(`[outbox:ackResults] ⚠️ REJECTED(${code}) · seq=${seq} op=${op.op} ref=${op.client_ref_id} base_version=${op.base_version} msg="${result.error?.message}" retries=${op.retries} → re-index`);
       }
     }
   }
 
-// 写 drained：otherDrained（非本批）+ conflictDrained
-  await writeDrained([...otherDrained, ...conflictDrained]);
+  await writeDrained(otherDrained);
+  console.log(`[outbox:ackResults] done · remaining_drained=${otherDrained.length}`);
 }
 
 /**
- * 标记本批次整体失败（POST /sync/push 网络/超时/HTTP 异常 · 没有 results 可消费）
- *
- * 设计（R1.x.2 修复 BUG-COSTRA-150-D）：
- *   - 与 ackResults 互斥：服务端有响应（含部分 conflict/rejected）→ ackResults · 完全无响应 → ackBatchFailure
- *   - 从 drained 取出本批次所有 seq · retries 递增 · 复原到 index · next_retry_at = now（立即可重试）
- *   - 不走指数退避（R1 决定 · 与 ackResults conflict 路径保持一致）
- *
- * 不变量保证：调用结束后 · 本批次 seq 必从 drained 中清除（消除 BUG-COSTRA-150-D 死锁）
- *
- * @param batchKey 批次 idempotency_key
- * @returns 复原的 op 数（用于上层 telemetry）
+ * 标记本批次整体失败 → 复原到 index 待重试
  */
 export async function ackBatchFailure(batchKey: string): Promise<number> {
   const allDrained = await readDrained();
@@ -322,7 +341,6 @@ export async function ackBatchFailure(batchKey: string): Promise<number> {
 
   for (const seq of allDrained) {
     const op = await getItem<SyncOp>(opKey(seq));
-    // 用 ack_batch_key（drainBatch 时写入）而非 idempotency_key（仅 batch[0] 匹配）
     if (op && op.ack_batch_key === batchKey) {
       thisBatchSeqs.push(seq);
     } else {
@@ -330,7 +348,7 @@ export async function ackBatchFailure(batchKey: string): Promise<number> {
     }
   }
 
-  // 先清 drained · 保证不变量（即使后续步骤异常 · drained 也已干净）
+  console.warn(`[outbox:ackBatchFailure] batchKey=${batchKey} thisBatch=${thisBatchSeqs.length} otherDrained=${otherDrained.length}`);
   await writeDrained(otherDrained);
 
   if (thisBatchSeqs.length === 0) return 0;
@@ -341,59 +359,33 @@ export async function ackBatchFailure(batchKey: string): Promise<number> {
   for (const seq of thisBatchSeqs) {
     const op = await getItem<SyncOp>(opKey(seq));
     if (!op) continue;
-    op.retries = await incrementRetry(op.client_ref_id);
-    // COSTRA-228: 超过 MAX_RETRIES 移入 dead-letter · 不再重试
+    op.retries++;
     if (op.retries >= MAX_RETRIES) {
       await moveToDeadLetter(op, seq);
       continue;
     }
-    op.next_retry_at = now; // 立即可重试
+    op.next_retry_at = now;
+    op.idempotency_key = newIdemKey(); // 换新 key 防 409
     await setItem(opKey(seq), op);
     if (!newIdx.includes(seq)) newIdx.push(seq);
     recovered++;
+    console.warn(`[outbox:ackBatchFailure] ↻ RECOVER · seq=${seq} op=${op.op} ref=${op.client_ref_id} retries=${op.retries} → re-index`);
   }
   await writeIndex(newIdx);
-
   return recovered;
 }
 
-/**
- * 标记本批次为"服务端已处理"（HTTP 409 幂等键冲突 · COSTRA-228）
- *
- * 场景：客户端首次 push 成功但未收到响应 → 重试时服务端返回 409
- * 含义：服务端已持有该批次数据 · 客户端无需再推 · 后续通过 syncPull 回填 server_id/version
- *
- * 处理：从 drained 中取出本批次所有 op · 物理删除（等效 ackResults ok）
- *
- * @param batchKey 批次 idempotency_key
- * @returns 清除的 op 数
- */
-export async function ackBatchAsAlreadyProcessed(batchKey: string): Promise<number> {
-  const allDrained = await readDrained();
-  const thisBatchSeqs: number[] = [];
-  const otherDrained: number[] = [];
-
-  for (const seq of allDrained) {
-    const op = await getItem<SyncOp>(opKey(seq));
-    if (op && op.ack_batch_key === batchKey) {
-      thisBatchSeqs.push(seq);
-    } else {
-      otherDrained.push(seq);
-    }
-  }
-
-  await writeDrained(otherDrained);
-
-  for (const seq of thisBatchSeqs) {
-    await removeItem(opKey(seq));
-  }
-
-  return thisBatchSeqs.length;
-}
+// ─── 辅助 API ─────────────────────────────────────────────────────────────────
 
 export async function size(): Promise<number> {
   const idx = await readIndex();
   return idx.length;
+}
+
+/** 获取 dead-letter 中的条目数（供 UI 展示告警） */
+export async function deadLetterSize(): Promise<number> {
+  const dl = await readDeadLetter();
+  return dl.length;
 }
 
 export async function __peek(): Promise<SyncOp[]> {
@@ -415,6 +407,5 @@ export async function __clear(): Promise<void> {
   }
   await writeIndex([]);
   await writeDrained([]);
-  await setItem(RETRIES_KEY, {});
   await removeItem('conflict:__queue');
 }

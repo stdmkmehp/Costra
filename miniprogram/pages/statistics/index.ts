@@ -7,6 +7,7 @@ import {
   setActiveFamily,
 } from '../../services/family';
 import { getFamilies } from '../../services/familyApi';
+import { triggerOnPageShow } from '../../services/syncScheduler';
 
 Page({
   data: {
@@ -30,6 +31,7 @@ Page({
     // 同步最新的 active family 名称（其他页面可能已切换）
     const name = await getActiveLedgerName();
     this.setData({ ledgerName: name });
+    triggerOnPageShow('statistics');
   },
 
   // ─── 交互：账本切换（与明细页/家庭页一致） ───────────────────────────────────

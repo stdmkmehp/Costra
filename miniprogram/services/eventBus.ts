@@ -18,6 +18,8 @@ export const EventNames = {
   HIDE_TAB_BAR: 'hide-tab-bar',
   /** 显示 TabBar（通用：全屏面板关闭时） */
   SHOW_TAB_BAR: 'show-tab-bar',
+  /** Outbox 入队（触发 mutation sync） */
+  OUTBOX_ENQUEUED: 'outbox-enqueued',
 } as const;
 
 export type EventName = typeof EventNames[keyof typeof EventNames];

@@ -71,7 +71,6 @@ Page({
         category_id: this.data.categoryId || null,
         note: this.data.note,
         occurred_at: now,
-        dirty: true,
       });
       // 入 outbox（snake_case payload · 驼峰 amountCents/categoryId/occurredAt 已修正）
       await enqueue({
