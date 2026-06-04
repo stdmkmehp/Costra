@@ -121,6 +121,14 @@ export interface InviteResponse {
   share_url: string;
 }
 
+/** 邀请预览响应（被邀请方在确认前查看家庭信息） */
+export interface InvitePreviewResponse {
+  family_name: string;
+  inviter_nickname: string;
+  role: 'member' | 'viewer';
+  expires_at: string;
+}
+
 // ─── 缓存层（stale-while-revalidate · P1-2 重构 COSTRA-223 R1.x.1）──────────────────
 
 const SUMMARY_CACHE_TTL = 5 * 60 * 1000; // 5 分钟
@@ -248,6 +256,18 @@ export async function createInvite(familyId: string): Promise<InviteResponse> {
     method: 'POST',
     path: `/families/${familyId}/invites`,
     body: {},
+  });
+}
+
+/**
+ * 预览邀请信息（被邀请方在确认前查看家庭名称和邀请人）
+ * GET /v1/families/invites/preview?token=xxx
+ */
+export async function previewInvite(inviteToken: string): Promise<InvitePreviewResponse> {
+  return request<InvitePreviewResponse>({
+    method: 'GET',
+    path: '/families/invites/preview',
+    query: { token: inviteToken },
   });
 }
 

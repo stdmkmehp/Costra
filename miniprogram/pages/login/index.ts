@@ -9,7 +9,6 @@ import { loginFlow, hasValidSession, getToken } from '../../services/auth';
 import { mapError } from '../../utils/error-mapper';
 import { pickRandomSlogan } from '../../config/slogans';
 import { eventBus, EventNames } from '../../services/eventBus';
-import { consumeInviteToken } from '../../app';
 import { syncOnce } from '../../services/syncScheduler';
 
 interface AppWithBootstrap {
@@ -32,13 +31,19 @@ Page({
     // 之前同步 hasValidSession() 在 bootstrap 未完成时永远返回 false · 误冗余渲染登录页
     const app = getApp<AppWithBootstrap>();
     void app.bootstrapPromise.then(() => {
-      // 若已有有效会话 → 直接跳明细页（冷启动续期）
-      // 注意：已登录用户从邀请链接打开时，invite_token 由 app.ts bootstrap 末尾直接消费，
-      //       此处无需再处理，直接跳明细页即可。
+      // 若已有有效会话 → 检查是否有 pending invite_token
+      // 已登录用户从邀请链接打开时，invite_token 已由 app.ts bootstrap 跳转到 invite-confirm，
+      // 此处不会执行到（reLaunch 已离开 login 页）；保留此处作为兜底。
       if (hasValidSession()) {
-        // COSTRA-202: reLaunch 目标改为 /pages/ledger/index（新首屏）
-        // COSTRA-127: reLaunch 强制重新初始化 · 避免 switchTab 复用旧实例触发 first-rendering-data race
-        wx.reLaunch({ url: '/pages/ledger/index' });
+        const pendingToken = app?.globalData?.pendingInviteToken;
+        if (pendingToken) {
+          app.globalData.pendingInviteToken = null;
+          wx.reLaunch({ url: `/pages/invite-confirm/index?token=${encodeURIComponent(pendingToken)}` });
+        } else {
+          // COSTRA-202: reLaunch 目标改为 /pages/ledger/index（新首屏）
+          // COSTRA-127: reLaunch 强制重新初始化 · 避免 switchTab 复用旧实例触发 first-rendering-data race
+          wx.reLaunch({ url: '/pages/ledger/index' });
+        }
       }
       // 否则：保留在登录页 · 等用户点 onTapLogin
     });
@@ -49,8 +54,8 @@ Page({
    * 步骤：
    *  1. wx.login → code
    *  2. POST /auth/wx-login { code } → 拿 AuthTokenPair（nickname 此时为服务端默认值"微信用户"）
-   *  3. 若 storage 中有 pending invite_token → 消费（POST /families/invites/accept）
-   *  4. 跳明细页；用户可在「我的」页点击头像区域进入 profile-setup 完善资料
+   *  3. 若有 pending invite_token → 跳转邀请确认页（用户主动确认后加入）
+   *  4. 否则跳明细页；用户可在「我的」页点击头像区域进入 profile-setup 完善资料
    */
   async onTapLogin() {
     if (this.data.loading) return;
@@ -65,13 +70,14 @@ Page({
         eventBus.emit(EventNames.PROFILE_INCOMPLETE);
       }
 
-      // 消费 pending invite_token（首次登录从分享链接进入的场景）
+      // 检查 pending invite_token（首次登录从分享链接进入的场景）
       // 从 globalData 读取（避免 storage clearStorage 竞争问题）
       const app = getApp<AppWithBootstrap>();
       const pendingToken = app?.globalData?.pendingInviteToken;
       if (pendingToken) {
-        app.globalData.pendingInviteToken = null;  // 消费后清除，防止重复调用
-        await consumeInviteToken(pendingToken);
+        app.globalData.pendingInviteToken = null;  // 消费后清除，防止重复跳转
+        wx.reLaunch({ url: `/pages/invite-confirm/index?token=${encodeURIComponent(pendingToken)}` });
+        return;
       }
 
       // 登录成功后强制触发一次全量 sync（拉取服务端数据到本地）

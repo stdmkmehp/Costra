@@ -14,8 +14,6 @@ import { ensureVersion } from './services/storage';
 import { startScheduler, stopScheduler, syncOnce } from './services/syncScheduler';
 import { tokens } from './tokens/index';
 import { eventBus, EventNames } from './services/eventBus';
-import { acceptInvite } from './services/familyApi';
-import { setActiveFamily } from './services/family';
 
 interface AppGlobalData {
   env: ReturnType<typeof getEnv>;
@@ -26,7 +24,8 @@ interface AppGlobalData {
   /**
    * 从分享邀请链接启动时，onLaunch query 中的 invite_token。
    * 存于 globalData（而非 storage）以避免 ensureVersion clearStorage 竞争问题。
-   * login.ts onTapLogin 登录成功后读取并消费，消费后置 null。
+   * 已登录用户：bootstrap 完成后直接跳 invite-confirm 页面。
+   * 未登录用户：login.ts onTapLogin 登录成功后读取并跳转到 invite-confirm 页面，消费后置 null。
    */
   pendingInviteToken?: string | null;
 }
@@ -85,10 +84,12 @@ App<AppOption>({
       if (token && !token.raw.user.has_completed_profile) {
         eventBus.emit(EventNames.PROFILE_INCOMPLETE);
       }
-      // 已登录用户从邀请链接冷启动：bootstrap 完成后立即消费 invite_token
-      // （首次登录路径由 login.ts onTapLogin 消费；此处覆盖已有 token 重启场景）
+      // 已登录用户从邀请链接冷启动：跳转到邀请确认页让用户主动确认
       if (inviteToken) {
-        await consumeInviteToken(inviteToken);
+        try {
+          wx.reLaunch({ url: `/pages/invite-confirm/index?token=${encodeURIComponent(inviteToken)}` });
+        } catch { /* noop */ }
+        return;
       }
     })().catch((err) => {
       console.error('[Costra] bootstrap failed', err);
@@ -131,53 +132,3 @@ App<AppOption>({
     console.error('[Costra] runtime error', msg);
   }
 });
-
-/**
- * 消费邀请 token：调 POST /families/invites/accept，成功后切换 active family context。
- * 供两条路径复用：
- *   1. 已登录用户从分享链接冷启动（app.ts bootstrap 末尾调用）
- *   2. 首次登录成功后（login.ts onTapLogin 调用，从 storage 读 token）
- *
- * 行为约定：
- *   - 成功：wx.showToast "成功加入 {familyName}"，更新 active family context
- *   - 已是成员：服务端 acceptInvite 走 ON CONFLICT DO UPDATE（幂等），视为成功
- *   - 邀请已失效（410 INVITE_EXPIRED）：wx.showModal 提示用户
- *   - 其他错误：静默 warn，不阻断主流程
- *   - 无论成功与否，消费后立即清除 storage 中的 pending token
- */
-export async function consumeInviteToken(token: string): Promise<void> {
-  try {
-    const family = await acceptInvite(token);
-    // 更新 active family context 到刚加入的家庭
-    await setActiveFamily({
-      family_id: family.id,
-      ledger_id: family.ledger_id,
-      family_kind: family.kind,
-      ledger_name: family.ledger_name,
-    });
-    // 更新 globalData.activeLedgerId
-    const app = getApp();
-    if (app?.globalData) {
-      app.globalData.activeLedgerId = family.ledger_id;
-    }
-    console.info('[Costra] invite accepted, joined family', family.id);
-    try {
-      wx.showToast({ title: `已加入「${family.name}」`, icon: 'success', duration: 2000 });
-    } catch { /* noop */ }
-  } catch (e: unknown) {
-    const err = e as { code?: string; status?: number };
-    if (err.code === 'INVITE_EXPIRED' || err.status === 410) {
-      // 邀请已失效（已使用 / 已超时）
-      try {
-        wx.showModal({
-          title: '邀请链接已失效',
-          content: '该邀请已被使用或已过期，请联系家庭创建者重新发起邀请。',
-          showCancel: false,
-          confirmText: '知道了',
-        });
-      } catch { /* noop */ }
-    } else {
-      console.warn('[Costra] consumeInviteToken failed', e);
-    }
-  }
-}

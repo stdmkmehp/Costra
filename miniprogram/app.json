@@ -9,7 +9,8 @@
     "pages/family-dashboard/index",
     "pages/stat-overview/index",
     "pages/entry/index",
-    "pages/profile-setup/index"
+    "pages/profile-setup/index",
+    "pages/invite-confirm/index"
   ],
   "subpackages": [
     {

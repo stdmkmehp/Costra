@@ -12,6 +12,7 @@
  *   - DELETE /families/{family_id}             → 204
  *   - GET    /families/{family_id}/members     → 200 FamilyMember[]
  *   - POST   /families/{family_id}/invites     → 201 FamilyInvite
+ *   - GET    /families/invites/preview         → 200 FamilyInvitePreview
  *   - POST   /families/invites/accept          → 200 Family
  *   - DELETE /families/{family_id}/members/{user_id} → 204
  *
@@ -131,6 +132,15 @@ const acceptInviteBodySchema = {
   additionalProperties: false,
   properties: {
     invite_token: { type: 'string' },
+  },
+} as const;
+
+const previewInviteQuerySchema = {
+  type: 'object',
+  required: ['token'],
+  additionalProperties: false,
+  properties: {
+    token: { type: 'string' },
   },
 } as const;
 
@@ -282,6 +292,19 @@ export async function registerFamiliesRoutes(app: FastifyInstance): Promise<void
       });
       await saveIdempotency(req, 'POST /families/{family_id}/invites', userId, 201, result);
       reply.code(201).send(result);
+    },
+  );
+
+  // GET /families/invites/preview
+  // ⚠️ 必须在 /families/:family_id 之前注册，避免 Fastify 将 'invites' 当作 family_id 参数匹配
+  app.get<{ Querystring: { token: string } }>(
+    '/families/invites/preview',
+    { schema: { querystring: previewInviteQuerySchema } },
+    async (req, reply) => {
+      // 需要登录（确保被邀请方已完成微信认证）
+      await parseUserId(req);
+      const result = await familyService.previewInvite({ invite_token: req.query.token });
+      reply.code(200).send(result);
     },
   );
 

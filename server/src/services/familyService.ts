@@ -11,6 +11,7 @@
  *   - updateFamily: 更新 family name（仅 owner）
  *   - deleteFamily: 软删 family（仅 owner，personal 不可删）
  *   - createInvite: 生成邀请口令（仅 shared owner）
+ *   - previewInvite: 预览邀请信息（无需 member，任意登录用户可查询）
  *   - acceptInvite: 接受邀请
  *   - removeMember: 移除成员（仅 owner，不可移自己）
  *   - assertActiveMember / assertOwner: 公共守门
@@ -31,6 +32,8 @@ import type { FamilyRole } from '../repositories/familyMemberRepo.js';
 import * as familyInviteRepo from '../repositories/familyInviteRepo.js';
 import * as ledgerRepo from '../repositories/ledgerRepo.js';
 import { maxSharedFamilies, maxSharedFamiliesHardLimit } from '../config/defaults.js';
+
+import * as userRepo from '../repositories/userRepo.js';
 
 // --- Wire 响应类型（与 OpenAPI Family/FamilyMember/FamilyInvite schema 对齐）---
 
@@ -68,6 +71,14 @@ export interface FamilyInviteResponse {
   role: FamilyRole;
   expires_at: string;
   share_url: string;
+}
+
+/** 邀请预览响应（供被邀请方在确认前查看） */
+export interface FamilyInvitePreviewResponse {
+  family_name: string;
+  inviter_nickname: string;
+  role: FamilyRole;
+  expires_at: string;
 }
 
 // --- 公共守门 ---
@@ -358,6 +369,45 @@ export async function createInvite(
     role: invite.role,
     expires_at: invite.expiresAt.toISOString(),
     share_url: `costra://invite?token=${invite.inviteToken}`,
+  };
+}
+
+/**
+ * 预览邀请信息（任意登录用户可查询，无需是成员）
+ * 用于被邀请方在确认加入前展示家庭名称和邀请人昵称
+ * token 无效/已过期/已使用 → 410 INVITE_EXPIRED
+ */
+export async function previewInvite(
+  payload: { invite_token: string },
+): Promise<FamilyInvitePreviewResponse> {
+  const invite = await familyInviteRepo.findValidByToken(payload.invite_token);
+
+  if (!invite) {
+    const anyInvite = await familyInviteRepo.findByToken(payload.invite_token);
+    if (anyInvite) {
+      throw new AppError(ErrorCode.INVITE_EXPIRED, {
+        message: 'invite has expired or already been used',
+      });
+    }
+    throw new AppError(ErrorCode.INVITE_EXPIRED, {
+      message: 'invite token not found or expired',
+    });
+  }
+
+  const family = await familyRepo.findById(invite.familyId);
+  if (!family) {
+    throw new AppError(ErrorCode.INVITE_EXPIRED, {
+      message: 'invite family no longer exists',
+    });
+  }
+
+  const inviter = await userRepo.findById(invite.inviterId);
+
+  return {
+    family_name: family.name,
+    inviter_nickname: inviter?.nickname ?? '未知用户',
+    role: invite.role,
+    expires_at: invite.expiresAt.toISOString(),
   };
 }
 

@@ -1,0 +1,36 @@
+<!-- pages/invite-confirm/index.wxml · 邀请确认页 -->
+<view class="invite-confirm">
+
+  <!-- 加载中 -->
+  <view wx:if="{{loading}}" class="state-wrap">
+    <view class="state-spinner"></view>
+    <text class="state-text">正在获取邀请信息…</text>
+  </view>
+
+  <!-- 邀请已失效 -->
+  <view wx:elif="{{expired}}" class="state-wrap">
+    <text class="state-icon">🔗</text>
+    <text class="state-title">邀请链接已失效</text>
+    <text class="state-desc">该链接已被使用或已过期，请联系对方重新发起邀请。</text>
+    <button class="btn btn--secondary" bindtap="onTapClose">关闭</button>
+  </view>
+
+  <!-- 邀请信息卡片 -->
+  <view wx:elif="{{familyName}}" class="confirm-body">
+    <view class="card">
+      <view class="card__icon">🏠</view>
+      <text class="card__family">{{familyName}}</text>
+      <text class="card__sub">「{{inviterNickname}}」邀请你加入共同记账</text>
+    </view>
+
+    <view class="desc-block">
+      <text class="desc-text">加入后，你们可以在同一个账本里共同记录每一笔花销，一起掌握家庭收支。</text>
+    </view>
+
+    <view class="action-row">
+      <button class="btn btn--decline" bindtap="onTapDecline">拒绝</button>
+      <button class="btn btn--confirm {{joining ? 'btn--loading' : ''}}" loading="{{joining}}" disabled="{{joining}}" bindtap="onTapConfirm">加入账本</button>
+    </view>
+  </view>
+
+</view>
