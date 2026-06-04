@@ -66,7 +66,7 @@ Page({
         return;
       }
       this.setData({ ready: true });
-      this.getTabBar?.()?.setData?.({ selected: 1 });
+      this.getTabBar?.()?.setData?.({ selected: 1, hidden: false });
       // 同步最新的 active family 名称（其他页面可能已切换）
       const name = await getActiveLedgerName();
       this.setData({ ledgerName: name });

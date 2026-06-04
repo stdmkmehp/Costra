@@ -85,8 +85,8 @@ Page({
       // COSTRA-150: 页面 onShow 触发同步调度（debounce 5s）
       triggerOnPageShow('mine');
 
-      // COSTRA-201: 更新 custom-tab-bar 选中态为 index 4（我的）
-      this.getTabBar?.()?.setData?.({ selected: 4 });
+      // COSTRA-201: 更新 custom-tab-bar 选中态为 index 4（我的）+ 解锁显示
+      this.getTabBar?.()?.setData?.({ selected: 4, hidden: false });
     });
   },
 

@@ -27,8 +27,14 @@ Component({
   data: {
     /** 当前选中 index（0-4）· index 2 是 [+] 不会被 selected */
     selected: 0,
-    /** 是否隐藏 TabBar（覆盖层显示时隐藏，避免遮挡键盘） */
-    hidden: false,
+    /**
+     * 是否隐藏 TabBar
+     * - 初始 true：冷启动时 bootstrap 尚未完成、登录态未确认前隐藏 tabBar，
+     *   防止未登录用户闪烁 tabBar 后再跳登录页
+     * - 覆盖层显示时也为 true
+     * - 由页面 onShow 的 bootstrapPromise gate 通过 getTabBar().setData({ hidden: false }) 解锁
+     */
+    hidden: true,
     /**
      * 「我的」tab 红点：
      * - 显示：has_completed_profile=false 且用户尚未点过 mine tab
@@ -45,8 +51,12 @@ Component({
       eventBus.on(EventNames.SHOW_EXPENSE_OVERLAY, hideHandler);
       eventBus.on(EventNames.HIDE_TAB_BAR, hideHandler);
 
-      // 恢复 TabBar
-      const showHandler = () => { this.setData({ hidden: false }); };
+      // 恢复 TabBar · 仅在已被页面解锁后才响应（防止冷启动 bootstrap 前事件误触显示）
+      const showHandler = () => {
+        if ((this as unknown as Record<string, boolean>)._unlocked) {
+          this.setData({ hidden: false });
+        }
+      };
       (this as unknown as Record<string, unknown>)._showHandler = showHandler;
       eventBus.on(EventNames.HIDE_EXPENSE_OVERLAY, showHandler);
       eventBus.on(EventNames.SHOW_TAB_BAR, showHandler);
@@ -75,6 +85,18 @@ Component({
       const badgeOnHandler = (this as unknown as Record<string, unknown>)._badgeOnHandler as (() => void) | undefined;
       if (badgeOnHandler) {
         eventBus.off(EventNames.PROFILE_INCOMPLETE, badgeOnHandler);
+      }
+    },
+  },
+
+  observers: {
+    /**
+     * 监听 hidden 变化：页面首次通过 getTabBar().setData({ hidden: false }) 解锁后，
+     * 标记 _unlocked=true，此后 eventBus showHandler 才能恢复 TabBar 可见。
+     */
+    hidden(val: boolean) {
+      if (!val) {
+        (this as unknown as Record<string, boolean>)._unlocked = true;
       }
     },
   },

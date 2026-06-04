@@ -32,8 +32,8 @@ Page({
     const app = getApp<AppWithBootstrap>();
     void app.bootstrapPromise.then(() => {
       // 若已有有效会话 → 检查是否有 pending invite_token
-      // 已登录用户从邀请链接打开时，invite_token 已由 app.ts bootstrap 跳转到 invite-confirm，
-      // 此处不会执行到（reLaunch 已离开 login 页）；保留此处作为兜底。
+      // 已登录用户从邀请链接打开时，app.ts bootstrap 完成后会检测 pendingInviteToken 并
+      // 主动 reLaunch 到 invite-confirm，通常不会再到达此处；保留此处作为兜底。
       if (hasValidSession()) {
         const pendingToken = app?.globalData?.pendingInviteToken;
         if (pendingToken) {

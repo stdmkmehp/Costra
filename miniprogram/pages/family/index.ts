@@ -265,7 +265,7 @@ Page({
         return;
       }
       this.setData({ ready: true });
-      this.getTabBar?.()?.setData?.({ selected: 3 });
+      this.getTabBar?.()?.setData?.({ selected: 3, hidden: false });
       triggerOnPageShow('family');
       await this._loadPage();
     });

@@ -1,9 +1,9 @@
 // pages/invite-confirm/index.ts · 邀请确认页
 // 被邀请方打开邀请链接后进入此页，展示家庭名称和邀请人，由用户主动选择加入或拒绝。
 // 进入路径：
-//   1. 已登录用户从分享链接冷启动（app.ts 检测到 invite_token → reLaunch 到本页）
+//   1. 已登录用户从分享链接冷启动（app.ts bootstrap 完成后检测 pendingInviteToken → reLaunch 到本页）
 //   2. 未登录用户完成登录后（login.ts 检测到 pendingInviteToken → reLaunch 到本页）
-// 路由参数：token=<invite_token>（由 onLaunch query 透传）
+// 路由参数：token=<invite_token>（由 app.ts reLaunch 时携带）
 // ⚠️ 本页进入时必然已登录（两条路径均保证），onLoad 加 bootstrapPromise 兜底防止异常情形
 
 import { previewInvite, acceptInvite } from '../../services/familyApi';

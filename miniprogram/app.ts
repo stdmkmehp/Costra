@@ -85,7 +85,17 @@ App<AppOption>({
       if (token && !token.raw.user.has_completed_profile) {
         eventBus.emit(EventNames.PROFILE_INCOMPLETE);
       }
-      // 已登录用户从邀请链接冷启动：落地页已经是 invite-confirm，onLoad 直接消费 query.token，无需 reLaunch
+      // 已登录用户从邀请链接冷启动/热切换：检测 pendingInviteToken 并跳转到邀请确认页
+      // 微信小程序冷启动时先渲染 pages[0]（ledger/index），bootstrap 异步完成期间落地页自动导航
+      // 可能被阻断，因此这里必须主动 reLaunch，确保邀请流程不丢失。
+      if (this.globalData.pendingInviteToken) {
+        const pendingToken = this.globalData.pendingInviteToken;
+        this.globalData.pendingInviteToken = null;
+        try {
+          wx.reLaunch({ url: `/pages/invite-confirm/index?token=${encodeURIComponent(pendingToken)}` });
+        } catch { /* 单测 / 非 wx 环境 noop */ }
+        return;
+      }
     })().catch((err) => {
       console.error('[Costra] bootstrap failed', err);
       try { wx.reLaunch({ url: '/pages/login/index' }); } catch { /* noop */ }

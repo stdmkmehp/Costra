@@ -322,7 +322,7 @@ Page({
       return;
     }
     this.setData({ ready: true });
-    this.getTabBar?.()?.setData?.({ selected: 0 });
+    this.getTabBar?.()?.setData?.({ selected: 0, hidden: false });
     await this._loadContext();
     await this._loadEntries();
     // sync-refresh: 与其他 tab 页（statistics/family/mine）保持一致 · 切回明细页时触发同步（debounce 5s 内防重）
