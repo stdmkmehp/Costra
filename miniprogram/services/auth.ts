@@ -189,16 +189,14 @@ export async function logout(): Promise<void> {
     }
   }
 
-  // COSTRA-165: 清 family-context + globalData（在 clearToken 之前）
-  await clearActiveFamily();
+  // migration 0011：不清 family-context（偏好独立于登录态，重新登录后可恢复上次账本）
+  // clearActiveFamily() 已移除，globalData 仍需清空（页面层读 globalData.activeLedgerId）
   const app = getApp();
   if (app?.globalData) {
     app.globalData.activeLedgerId = undefined;
   }
 
   await clearToken();
-  // migration 0011：logout 不清 family context（偏好保留，重新登录时可恢复上次账本）
-  // 注：换账号登录时 doWxLogin 会拉取新 userId 对应的服务端偏好覆盖 · 天然隔离
   try {
     wx.reLaunch({ url: '/pages/login/index' });
   } catch {
@@ -262,6 +260,11 @@ export async function doWxLogin(): Promise<Token> {
     if (appRestored?.globalData) {
       appRestored.globalData.activeLedgerId = restored.ledger_id;
     }
+    console.info('[auth] login success · preference restored', {
+      userId: resp.user.id,
+      activeFamilyId: restored.family_id,
+      activeLedgerId: restored.ledger_id,
+    });
   } else {
     // 首次登录 / 无偏好 → 用服务端 default（personal family）
     await setActiveFamily({
@@ -274,9 +277,11 @@ export async function doWxLogin(): Promise<Token> {
     if (app?.globalData) {
       app.globalData.activeLedgerId = resp.default_ledger_id;
     }
+    console.info('[auth] login success · using default family', {
+      userId: resp.user.id,
+      activeFamilyId: resp.default_family_id,
+    });
   }
-
-  console.info('[auth] login success', { userId: resp.user.id, familyId: resp.default_family_id });
   return current;
 }
 

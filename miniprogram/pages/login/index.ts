@@ -9,11 +9,12 @@ import { loginFlow, hasValidSession, getToken } from '../../services/auth';
 import { mapError } from '../../utils/error-mapper';
 import { pickRandomSlogan } from '../../config/slogans';
 import { eventBus, EventNames } from '../../services/eventBus';
-import { getItem } from '../../services/storage';
-import { consumeInviteToken, PENDING_INVITE_TOKEN_KEY } from '../../app';
+import { consumeInviteToken } from '../../app';
+import { syncOnce } from '../../services/syncScheduler';
 
 interface AppWithBootstrap {
   bootstrapPromise: Promise<void>;
+  globalData: { pendingInviteToken?: string | null };
 }
 
 Page({
@@ -65,11 +66,18 @@ Page({
       }
 
       // 消费 pending invite_token（首次登录从分享链接进入的场景）
-      // storage 读取确保 ensureVersion 已在 bootstrap 中执行完毕（此时 bootstrap 已完成）
-      const pendingToken = await getItem<string>(PENDING_INVITE_TOKEN_KEY);
+      // 从 globalData 读取（避免 storage clearStorage 竞争问题）
+      const app = getApp<AppWithBootstrap>();
+      const pendingToken = app?.globalData?.pendingInviteToken;
       if (pendingToken) {
+        app.globalData.pendingInviteToken = null;  // 消费后清除，防止重复调用
         await consumeInviteToken(pendingToken);
       }
+
+      // 登录成功后强制触发一次全量 sync（拉取服务端数据到本地）
+      // 不走 triggerOnPageShow（有 5s debounce），直接调 syncOnce
+      // 场景：清数据后重新登录，本地 DB 为空，必须 sync 后才能显示明细
+      void syncOnce('launch');
 
       // COSTRA-202: reLaunch 目标改为 /pages/ledger/index（新首屏）
       // COSTRA-127: reLaunch 强制重新初始化 · 避免 switchTab 复用旧实例触发 first-rendering-data race

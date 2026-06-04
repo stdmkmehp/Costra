@@ -130,10 +130,31 @@ export async function fetchAndRestorePreference(): Promise<FamilyContext | null>
     if (!pref.preferred_family_id || !pref.preferred_ledger_id) {
       return null;
     }
-    // 服务端有偏好：写回本地 storage（kind/name 未知，保留为 undefined；页面层会在 _doLoadPage 中修正）
+
+    // 拉 families 列表补全 family_kind + ledger_name（避免显示"我的账本"兜底）
+    let family_kind: FamilyKind | undefined;
+    let ledger_name: string | undefined;
+    try {
+      const resp = await request<{ id: string; kind: FamilyKind; name: string; ledger_id: string; ledger_name: string }[]>({
+        method: 'GET',
+        path: '/families',
+      });
+      const matched = Array.isArray(resp)
+        ? resp.find((f) => f.id === pref.preferred_family_id)
+        : null;
+      if (matched) {
+        family_kind = matched.kind;
+        ledger_name = matched.ledger_name || matched.name;
+      }
+    } catch {
+      // 补全失败不影响主流程，kind/name 由页面层 _doLoadPage 修正
+    }
+
     const ctx: FamilyContext = {
       family_id: pref.preferred_family_id,
       ledger_id:  pref.preferred_ledger_id,
+      family_kind,
+      ledger_name,
     };
     await setActiveFamily(ctx);
     return ctx;

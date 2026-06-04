@@ -10,15 +10,12 @@
 //   - docs/devops/libversion-upgrade.md §3.4（反模式 #4）
 import { initAuth, isLoggedIn, getToken } from './services/auth';
 import { getEnv } from './services/env';
-import { ensureVersion, setItem, getItem, removeItem } from './services/storage';
+import { ensureVersion } from './services/storage';
 import { startScheduler, stopScheduler, syncOnce } from './services/syncScheduler';
 import { tokens } from './tokens/index';
 import { eventBus, EventNames } from './services/eventBus';
 import { acceptInvite } from './services/familyApi';
 import { setActiveFamily } from './services/family';
-
-/** storage key：待消费的邀请 token（从分享链接 onLaunch query 中提取，登录后消费） */
-export const PENDING_INVITE_TOKEN_KEY = '__costra_pending_invite_token';
 
 interface AppGlobalData {
   env: ReturnType<typeof getEnv>;
@@ -26,6 +23,12 @@ interface AppGlobalData {
   bootAt: number;
   // COSTRA-105 R1.x.1 BUG-001: COSTRA-155 实装真账本切换时填充 · 目前 fallback 到 FALLBACK_LEDGER_ID
   activeLedgerId?: string;
+  /**
+   * 从分享邀请链接启动时，onLaunch query 中的 invite_token。
+   * 存于 globalData（而非 storage）以避免 ensureVersion clearStorage 竞争问题。
+   * login.ts onTapLogin 登录成功后读取并消费，消费后置 null。
+   */
+  pendingInviteToken?: string | null;
 }
 
 /**
@@ -56,12 +59,13 @@ App<AppOption>({
     this.globalData.bootAt = Date.now();
     console.info('[Costra] onLaunch env=', this.globalData.env.name);
 
-    // 分享邀请链接携带的 invite_token：存入 storage 供登录流程消费
-    // path: /pages/entry/index?invite_token=xxx（family/index.ts onShareAppMessage 生成）
+    // 分享邀请链接携带的 invite_token：存入 globalData 供登录流程消费
+    // ⚠️ 不存 storage：ensureVersion() 可能 clearStorage，导致 token 丢失
+    // globalData 与小程序实例同生命周期，不受 storage 版本清除影响
     const inviteToken = options?.query?.invite_token as string | undefined;
     if (inviteToken) {
-      console.info('[Costra] onLaunch invite_token detected, storing for post-login consumption');
-      void setItem(PENDING_INVITE_TOKEN_KEY, inviteToken);
+      console.info('[Costra] onLaunch invite_token detected');
+      this.globalData.pendingInviteToken = inviteToken;
     }
 
     // COSTRA-125: 串行 bootstrap 两阶段都是 async storage
@@ -142,7 +146,6 @@ App<AppOption>({
  *   - 无论成功与否，消费后立即清除 storage 中的 pending token
  */
 export async function consumeInviteToken(token: string): Promise<void> {
-  await removeItem(PENDING_INVITE_TOKEN_KEY);  // 先清除，防止重试循环
   try {
     const family = await acceptInvite(token);
     // 更新 active family context 到刚加入的家庭
