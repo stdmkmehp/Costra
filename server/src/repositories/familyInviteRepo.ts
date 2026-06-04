@@ -130,18 +130,52 @@ export async function findByToken(
 }
 
 /**
- * 标记邀请已使用
+ * 按 id 查找邀请（含已过期/已使用，用于撤销与错误判定）
+ */
+export async function findById(
+  inviteId: string,
+  client?: Runner,
+): Promise<FamilyInviteEntity | null> {
+  const runner = client ?? exec();
+  const res = await runner.query(
+    `SELECT id, family_id, inviter_id, invite_token, role, expires_at, used_at, used_by, created_at
+       FROM family_invites
+      WHERE id = $1
+      LIMIT 1`,
+    [inviteId],
+  );
+  return res.rows[0] ? rowToEntity(res.rows[0]) : null;
+}
+
+/**
+ * 删除未分享后取消的邀请（彻底废弃 token）
+ */
+export async function deleteById(
+  inviteId: string,
+  client?: Runner,
+): Promise<void> {
+  const runner = client ?? exec();
+  await runner.query(
+    `DELETE FROM family_invites
+      WHERE id = $1`,
+    [inviteId],
+  );
+}
+
+/**
+ * 标记邀请已使用；返回是否成功占用（防止与撤销/并发接受竞争）
  */
 export async function markUsed(
   inviteId: string,
   usedBy: string,
   client?: Runner,
-): Promise<void> {
+): Promise<boolean> {
   const runner = client ?? exec();
-  await runner.query(
+  const res = await runner.query(
     `UPDATE family_invites
         SET used_at = now(), used_by = $2
-      WHERE id = $1`,
+      WHERE id = $1 AND used_at IS NULL AND expires_at > now()`,
     [inviteId, usedBy],
   );
+  return (res.rowCount ?? 0) > 0;
 }

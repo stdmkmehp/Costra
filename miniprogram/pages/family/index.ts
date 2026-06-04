@@ -25,6 +25,7 @@ import {
   getCachedSummary,
   createFamily,
   createInvite,
+  revokeInvite,
   removeMember,
   invalidateFamilyCache,
   type FamilyItem,
@@ -220,7 +221,10 @@ Page({
   _familyId: '' as string,
   _currentUserId: '' as string,
   _loadingPromise: null as Promise<void> | null,
+  _pendingInviteId: '' as string,
   _pendingInviteToken: '' as string,
+  _pendingInviteFamilyId: '' as string,
+  _pendingInviteShared: false,
   _invitePrepareSeq: 0,
   /** eventBus 订阅 handler（sync-refresh: SYNC_DONE 后失效缓存 + 重拉 summary，防内存泄漏） */
   _syncDoneHandler: null as ((payload?: unknown) => void) | null,
@@ -257,11 +261,7 @@ Page({
         wx.reLaunch({ url: '/pages/login/index' });
         return;
       }
-      const token = getToken();
-      if (token?.raw?.user?.id) {
-        this._currentUserId = token.raw.user.id;
-        this.setData({ currentUserId: token.raw.user.id });
-      }
+      this._syncCurrentUserIdFromToken();
     });
   },
 
@@ -273,6 +273,7 @@ Page({
         wx.reLaunch({ url: '/pages/login/index' });
         return;
       }
+      this._syncCurrentUserIdFromToken();
       this.setData({ ready: true });
       this.getTabBar?.()?.setData?.({ selected: 3, hidden: this.data.inviteOverlayVisible });
       triggerOnPageShow('family');
@@ -286,6 +287,18 @@ Page({
       eventBus.off(EventNames.SYNC_DONE, this._syncDoneHandler);
       this._syncDoneHandler = null;
     }
+  },
+
+  /** 同步当前登录用户 ID，供 owner 判定与成员管理使用 */
+  _syncCurrentUserIdFromToken(): string {
+    const currentUserId = getToken()?.raw?.user?.id || '';
+    if (!currentUserId) return '';
+
+    this._currentUserId = currentUserId;
+    if (this.data.currentUserId !== currentUserId) {
+      this.setData({ currentUserId });
+    }
+    return currentUserId;
   },
 
   /**
@@ -497,6 +510,10 @@ Page({
     }
 
     const memberDisplays = [...activeMembers, ...leftMembers];
+    const currentUserId = this._currentUserId || this._syncCurrentUserIdFromToken();
+    const isCurrentUserOwner = currentUserId
+      ? members.some(m => m.user_id === currentUserId && m.role === 'owner' && m.status === 'active')
+      : this.data.isOwner;
 
     // 2. 构建 Segmented Bar
     const segmentDisplays: SegmentDisplay[] = [];
@@ -590,6 +607,7 @@ Page({
       loading: false,
       isEmpty: totalExpense === 0 && totals.income === 0,
       familyName: summary.family_name,
+      isOwner: isCurrentUserOwner,
     });
   },
 
@@ -673,6 +691,7 @@ Page({
   onOpenInviteOverlay() {
     if (!this._familyId || !this.data.isOwner || this.data.inviteOverlayVisible) return;
 
+    this._resetPendingInviteState();
     this.setData({
       inviteOverlayVisible: true,
       invitePreparing: true,
@@ -686,6 +705,7 @@ Page({
   /** 重新创建邀请 token（失败态重试） */
   onRetryInvite() {
     if (!this.data.inviteOverlayVisible || this.data.invitePreparing) return;
+    this._resetPendingInviteState();
     this.setData({
       invitePreparing: true,
       inviteReady: false,
@@ -694,10 +714,25 @@ Page({
     void this._prepareInviteToken();
   },
 
-  /** 关闭邀请遮罩 */
+  /** 关闭邀请遮罩（未分享时同步回收服务端 token） */
   onCloseInviteOverlay() {
-    this._invitePrepareSeq += 1;
+    this._closeInviteOverlay({ revokePendingInvite: true });
+  },
+
+  _resetPendingInviteState() {
+    this._pendingInviteId = '';
     this._pendingInviteToken = '';
+    this._pendingInviteFamilyId = '';
+    this._pendingInviteShared = false;
+  },
+
+  _closeInviteOverlay(options: { revokePendingInvite: boolean }) {
+    const inviteId = this._pendingInviteId;
+    const familyId = this._pendingInviteFamilyId || this._familyId;
+    const shouldRevoke = options.revokePendingInvite && !!inviteId && !this._pendingInviteShared;
+
+    this._invitePrepareSeq += 1;
+    this._resetPendingInviteState();
     this.setData({
       inviteOverlayVisible: false,
       invitePreparing: false,
@@ -705,6 +740,18 @@ Page({
       inviteErrorText: '',
     });
     eventBus.emit(EventNames.SHOW_TAB_BAR);
+
+    if (shouldRevoke && familyId) {
+      void this._revokeInvite(familyId, inviteId);
+    }
+  },
+
+  async _revokeInvite(familyId: string, inviteId: string) {
+    try {
+      await revokeInvite(familyId, inviteId);
+    } catch (err) {
+      console.error('[family] revokeInvite failed', err);
+    }
   },
 
   /** 创建 invite token；仅在遮罩仍然存活且请求序号匹配时提交结果 */
@@ -712,13 +759,19 @@ Page({
     if (!this._familyId) return;
 
     const prepareSeq = ++this._invitePrepareSeq;
-    this._pendingInviteToken = '';
+    this._resetPendingInviteState();
 
     try {
       const invite = await createInvite(this._familyId);
-      if (prepareSeq !== this._invitePrepareSeq || !this.data.inviteOverlayVisible) return;
+      if (prepareSeq !== this._invitePrepareSeq || !this.data.inviteOverlayVisible) {
+        void this._revokeInvite(invite.family_id, invite.id);
+        return;
+      }
 
+      this._pendingInviteId = invite.id;
       this._pendingInviteToken = invite.invite_token;
+      this._pendingInviteFamilyId = invite.family_id;
+      this._pendingInviteShared = false;
       this.setData({
         invitePreparing: false,
         inviteReady: true,

@@ -213,6 +213,52 @@ describe('COSTRA-221: Family Management API', () => {
     expect(new Date(invite.expires_at).getTime()).toBeGreaterThan(Date.now() - 1000);
   });
 
+  // T6b: revoke invite
+  it('T6b: revoked invite cannot be previewed or accepted', async () => {
+    const { token: ownerToken } = await registerUser('t6b-owner');
+    const { token: memberToken } = await registerUser('t6b-member');
+
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/v1/families',
+      headers: { ...authHeaders(ownerToken), 'idempotency-key': 't6b-create-001' },
+      payload: { name: 'T6B家庭' },
+    });
+    const familyId = createRes.json().id;
+
+    const inviteRes = await app.inject({
+      method: 'POST',
+      url: `/v1/families/${familyId}/invites`,
+      headers: { ...authHeaders(ownerToken), 'idempotency-key': 't6b-invite-001' },
+      payload: { role: 'member' },
+    });
+    const invite = inviteRes.json();
+
+    const revokeRes = await app.inject({
+      method: 'DELETE',
+      url: `/v1/families/${familyId}/invites/${invite.id}`,
+      headers: authHeaders(ownerToken),
+    });
+    expect(revokeRes.statusCode).toBe(204);
+
+    const previewRes = await app.inject({
+      method: 'GET',
+      url: `/v1/families/invites/preview?token=${invite.invite_token}`,
+      headers: authHeaders(memberToken),
+    });
+    expect(previewRes.statusCode).toBe(410);
+    expect(previewRes.json().code).toBe('INVITE_EXPIRED');
+
+    const acceptRes = await app.inject({
+      method: 'POST',
+      url: '/v1/families/invites/accept',
+      headers: { ...authHeaders(memberToken), 'idempotency-key': 't6b-accept-001' },
+      payload: { invite_token: invite.invite_token },
+    });
+    expect(acceptRes.statusCode).toBe(410);
+    expect(acceptRes.json().code).toBe('INVITE_EXPIRED');
+  });
+
   // T7: invite accept
   it('T7: invite accept works; duplicate accept returns 410', async () => {
     const { token: ownerToken } = await registerUser('t7-owner');

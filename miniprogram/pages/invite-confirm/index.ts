@@ -15,6 +15,15 @@ interface AppWithBootstrap {
   globalData: { activeLedgerId?: string };
 }
 
+function closeToTab(url: string) {
+  wx.switchTab({
+    url,
+    fail: () => {
+      wx.reLaunch({ url });
+    },
+  });
+}
+
 Page({
   data: {
     loading: true,
@@ -61,7 +70,7 @@ Page({
     }
   },
 
-  /** 用户点击"加入账本" */
+  /** 用户点击"同意加入" */
   async onTapConfirm() {
     if (this.data.joining) return;
     this.setData({ joining: true });
@@ -78,10 +87,8 @@ Page({
       if (app?.globalData) {
         app.globalData.activeLedgerId = family.ledger_id;
       }
-      wx.showToast({ title: `已加入「${family.name}」`, icon: 'success', duration: 2000 });
-      setTimeout(() => {
-        wx.reLaunch({ url: '/pages/ledger/index' });
-      }, 1500);
+      closeToTab('/pages/family/index');
+      wx.showToast({ title: `已加入「${family.name}」`, icon: 'success', duration: 1800 });
     } catch (e: unknown) {
       const err = e as { code?: string; status?: number };
       if (err.code === 'INVITE_EXPIRED' || err.status === 410) {
@@ -93,13 +100,13 @@ Page({
     }
   },
 
-  /** 用户点击"拒绝" */
-  onTapDecline() {
-    wx.reLaunch({ url: '/pages/ledger/index' });
+  /** 用户点击"取消" */
+  onTapCancel() {
+    closeToTab('/pages/ledger/index');
   },
 
   /** 关闭（邀请失效状态） */
   onTapClose() {
-    wx.reLaunch({ url: '/pages/ledger/index' });
+    closeToTab('/pages/ledger/index');
   },
 });

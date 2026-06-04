@@ -257,8 +257,8 @@
         <text class="invite-dialog__desc">{{inviteErrorText}}</text>
         <text class="invite-dialog__hint">你可以重试生成邀请，或先返回协作页继续浏览。</text>
         <view class="invite-dialog__actions">
-          <button class="invite-dialog__btn invite-dialog__btn--secondary" bindtap="onCloseInviteOverlay">取消</button>
           <button class="invite-dialog__btn invite-dialog__btn--primary" bindtap="onRetryInvite">重试</button>
+          <button class="invite-dialog__btn invite-dialog__btn--secondary" bindtap="onCloseInviteOverlay">取消</button>
         </view>
       </block>
 
@@ -266,10 +266,9 @@
         <view class="invite-dialog__badge">邀</view>
         <text class="invite-dialog__title">邀请用户加入「{{familyName}}」</text>
         <text class="invite-dialog__desc">邀请链接已准备完成，点击下方按钮即可发起分享。</text>
-        <text class="invite-dialog__hint">若你暂时不想邀请，也可以直接取消，本页其他区域不可操作。</text>
         <view class="invite-dialog__actions">
+          <button class="invite-dialog__btn invite-dialog__btn--primary" open-type="share">分享邀请</button>
           <button class="invite-dialog__btn invite-dialog__btn--secondary" bindtap="onCloseInviteOverlay">取消</button>
-          <button class="invite-dialog__btn invite-dialog__btn--primary" open-type="share">确认发起分享</button>
         </view>
       </block>
     </view>

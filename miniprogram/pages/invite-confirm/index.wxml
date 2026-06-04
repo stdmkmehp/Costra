@@ -22,10 +22,10 @@
       <view class="invite-dialog__badge">邀</view>
       <text class="invite-dialog__title">加入「{{familyName}}」</text>
       <text class="invite-dialog__desc">「{{inviterNickname}}」邀请你加入共同记账，确认后即可进入同一个协作账本。</text>
-      <text class="invite-dialog__hint">确认后你将与家庭成员共享账本数据；若暂不加入，可直接拒绝。</text>
+      <text class="invite-dialog__hint">确认后你将与家庭成员共享账本数据；若暂不加入，可直接取消。</text>
       <view class="invite-dialog__actions">
-        <button class="invite-dialog__btn invite-dialog__btn--secondary" bindtap="onTapDecline">拒绝</button>
         <button class="invite-dialog__btn invite-dialog__btn--primary" loading="{{joining}}" disabled="{{joining}}" bindtap="onTapConfirm">同意加入</button>
+        <button class="invite-dialog__btn invite-dialog__btn--secondary" bindtap="onTapCancel">取消</button>
       </view>
     </block>
   </view>

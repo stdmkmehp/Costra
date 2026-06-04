@@ -163,6 +163,16 @@ const memberIdParamSchema = {
   },
 } as const;
 
+const inviteIdParamSchema = {
+  type: 'object',
+  required: ['family_id', 'invite_id'],
+  additionalProperties: false,
+  properties: {
+    family_id: { type: 'string', format: 'uuid' },
+    invite_id: { type: 'string', format: 'uuid' },
+  },
+} as const;
+
 const summaryQuerySchema = {
   type: 'object',
   required: ['month'],
@@ -292,6 +302,17 @@ export async function registerFamiliesRoutes(app: FastifyInstance): Promise<void
       });
       await saveIdempotency(req, 'POST /families/{family_id}/invites', userId, 201, result);
       reply.code(201).send(result);
+    },
+  );
+
+  // DELETE /families/{family_id}/invites/{invite_id}
+  app.delete<{ Params: { family_id: string; invite_id: string } }>(
+    '/families/:family_id/invites/:invite_id',
+    { schema: { params: inviteIdParamSchema } },
+    async (req, reply) => {
+      const userId = await parseUserId(req);
+      await familyService.revokeInvite(userId, req.params.family_id, req.params.invite_id);
+      reply.code(204).send();
     },
   );
 

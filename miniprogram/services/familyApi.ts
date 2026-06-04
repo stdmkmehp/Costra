@@ -260,6 +260,17 @@ export async function createInvite(familyId: string): Promise<InviteResponse> {
 }
 
 /**
+ * 撤销邀请（owner 在未分享时取消，回收已创建 token）
+ * DELETE /v1/families/{id}/invites/{inviteId}
+ */
+export async function revokeInvite(familyId: string, inviteId: string): Promise<void> {
+  return request<void>({
+    method: 'DELETE',
+    path: `/families/${familyId}/invites/${inviteId}`,
+  });
+}
+
+/**
  * 预览邀请信息（被邀请方在确认前查看家庭名称和邀请人）
  * GET /v1/families/invites/preview?token=xxx
  */

@@ -412,6 +412,27 @@ export async function previewInvite(
 }
 
 /**
+ * 撤销邀请（owner 在未分享或放弃邀请时回收 token）
+ */
+export async function revokeInvite(
+  userId: string,
+  familyId: string,
+  inviteId: string,
+): Promise<void> {
+  await assertActiveMember(userId, familyId);
+  await assertOwner(userId, familyId);
+
+  const invite = await familyInviteRepo.findById(inviteId);
+  if (!invite) return;
+  if (invite.familyId !== familyId) {
+    throw new AppError(ErrorCode.NOT_FOUND, { message: 'invite not found in family' });
+  }
+  if (invite.usedAt || invite.expiresAt.getTime() <= Date.now()) return;
+
+  await familyInviteRepo.deleteById(inviteId);
+}
+
+/**
  * 接受邀请
  * 校验：token 未过期、未使用；成员上限 10；历史成员重新加入
  */
