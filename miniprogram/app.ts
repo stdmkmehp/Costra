@@ -41,6 +41,7 @@ interface AppOption {
   bootstrapPromise: Promise<void>;
   onLaunch(options: WechatMiniprogram.App.LaunchShowOption): void;
   onShow(): void;
+  onHide(): void;
   onError(msg: string): void;
 }
 
@@ -63,15 +64,9 @@ App<AppOption>({
     // ⚠️ 不存 storage：ensureVersion() 可能 clearStorage，导致 token 丢失
     // globalData 与小程序实例同生命周期，不受 storage 版本清除影响
     const inviteToken = options?.query?.token as string | undefined;
-    // [临时测试] 打印 onLaunch options 全貌，定位 invite token 是否正确传入
-    console.error('[INVITE-DEBUG][app.ts onLaunch] options=', JSON.stringify(options));
-    console.error('[INVITE-DEBUG][app.ts onLaunch] inviteToken=', inviteToken);
     if (inviteToken) {
       console.info('[Costra] onLaunch invite_token detected');
       this.globalData.pendingInviteToken = inviteToken;
-      console.error('[INVITE-DEBUG][app.ts onLaunch] pendingInviteToken SET=', inviteToken);
-    } else {
-      console.error('[INVITE-DEBUG][app.ts onLaunch] NO invite token in options.query');
     }
 
     // COSTRA-125: 串行 bootstrap 两阶段都是 async storage
@@ -83,10 +78,7 @@ App<AppOption>({
       await initAuth();
       // 启动期兜底 · entry page 渲染前先定登录态（与 Page.onLoad/onShow gate 形成多层保险）
       const loggedIn = isLoggedIn();
-      // [临时测试] bootstrap 完成后登录态判定
-      console.error('[INVITE-DEBUG][app.ts bootstrap] isLoggedIn=', loggedIn, 'pendingInviteToken=', this.globalData.pendingInviteToken);
       if (!loggedIn) {
-        console.error('[INVITE-DEBUG][app.ts bootstrap] NOT logged in → reLaunch to login');
         try { wx.reLaunch({ url: '/pages/login/index' }); } catch { /* 单测 / 非 wx 环境 noop */ }
         return;
       }
@@ -101,15 +93,11 @@ App<AppOption>({
       if (this.globalData.pendingInviteToken) {
         const pendingToken = this.globalData.pendingInviteToken;
         this.globalData.pendingInviteToken = null;
-        // [临时测试] 已登录 + 有 pendingInviteToken → 主动跳转 invite-confirm
-        console.error('[INVITE-DEBUG][app.ts bootstrap] LOGGED IN + HAS TOKEN → reLaunch invite-confirm, token=', pendingToken);
         try {
           wx.reLaunch({ url: `/pages/invite-confirm/index?token=${encodeURIComponent(pendingToken)}` });
         } catch { /* 单测 / 非 wx 环境 noop */ }
         return;
       }
-      // [临时测试] 已登录但无 pendingInviteToken → 正常流程（不跳邀请页）
-      console.error('[INVITE-DEBUG][app.ts bootstrap] LOGGED IN + NO pendingInviteToken → normal flow');
     })().catch((err) => {
       console.error('[Costra] bootstrap failed', err);
       try { wx.reLaunch({ url: '/pages/login/index' }); } catch { /* noop */ }
@@ -143,11 +131,11 @@ App<AppOption>({
     // 注：小程序 onHide 后仍有短暂可执行时间窗口（iOS ~5s / Android ~10s），
     //   syncOnce 内部是 push 先于 pull，最关键的 pushDelta 通常 < 1s 可完成
     void syncOnce('hide');
-    // COSTRA-150: 停止周期 timer · 切后台不跑 periodic sync
+    // COSTRA-150: 后台阶段停止周期调度，避免无意义轮询
     stopScheduler();
   },
 
   onError(msg: string) {
-    console.error('[Costra] runtime error', msg);
-  }
+    console.error('[Costra] App.onError', msg);
+  },
 });

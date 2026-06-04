@@ -31,19 +31,15 @@ Page({
     // 之前同步 hasValidSession() 在 bootstrap 未完成时永远返回 false · 误冗余渲染登录页
     const app = getApp<AppWithBootstrap>();
     void app.bootstrapPromise.then(() => {
-      // [临时测试] login onLoad bootstrapPromise resolved
-      console.error('[INVITE-DEBUG][login.ts onLoad] bootstrapPromise resolved, hasValidSession=', hasValidSession(), 'pendingInviteToken=', app?.globalData?.pendingInviteToken);
       // 若已有有效会话 → 检查是否有 pending invite_token
       // 已登录用户从邀请链接打开时，app.ts bootstrap 完成后会检测 pendingInviteToken 并
       // 主动 reLaunch 到 invite-confirm，通常不会再到达此处；保留此处作为兜底。
       if (hasValidSession()) {
         const pendingToken = app?.globalData?.pendingInviteToken;
         if (pendingToken) {
-          console.error('[INVITE-DEBUG][login.ts onLoad] hasValidSession + pendingToken → reLaunch invite-confirm, token=', pendingToken);
           app.globalData.pendingInviteToken = null;
           wx.reLaunch({ url: `/pages/invite-confirm/index?token=${encodeURIComponent(pendingToken)}` });
         } else {
-          console.error('[INVITE-DEBUG][login.ts onLoad] hasValidSession + NO pendingToken → reLaunch ledger');
           // COSTRA-202: reLaunch 目标改为 /pages/ledger/index（新首屏）
           // COSTRA-127: reLaunch 强制重新初始化 · 避免 switchTab 复用旧实例触发 first-rendering-data race
           wx.reLaunch({ url: '/pages/ledger/index' });
@@ -67,8 +63,6 @@ Page({
 
     try {
       await loginFlow();
-      // [临时测试] loginFlow 成功
-      console.error('[INVITE-DEBUG][login.ts onTapLogin] loginFlow SUCCESS');
 
       // 登录成功后检测画像完善状态，触发 tabBar 红点弱引导
       const token = getToken();
@@ -80,16 +74,12 @@ Page({
       // 从 globalData 读取（避免 storage clearStorage 竞争问题）
       const app = getApp<AppWithBootstrap>();
       const pendingToken = app?.globalData?.pendingInviteToken;
-      // [临时测试] 打印 pendingInviteToken
-      console.error('[INVITE-DEBUG][login.ts onTapLogin] pendingInviteToken=', pendingToken, 'globalData=', JSON.stringify(app?.globalData));
       if (pendingToken) {
         app.globalData.pendingInviteToken = null;  // 消费后清除，防止重复跳转
-        console.error('[INVITE-DEBUG][login.ts onTapLogin] HAS pendingToken → reLaunch invite-confirm');
         wx.reLaunch({ url: `/pages/invite-confirm/index?token=${encodeURIComponent(pendingToken)}` });
         return;
       }
 
-      console.error('[INVITE-DEBUG][login.ts onTapLogin] NO pendingToken → reLaunch ledger');
       // 登录成功后强制触发一次全量 sync（拉取服务端数据到本地）
       // 不走 triggerOnPageShow（有 5s debounce），直接调 syncOnce
       // 场景：清数据后重新登录，本地 DB 为空，必须 sync 后才能显示明细

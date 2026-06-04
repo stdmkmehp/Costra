@@ -28,44 +28,35 @@ Page({
 
   async onLoad(query: Record<string, string>) {
     const inviteToken = query.token;
-    // [临时测试] invite-confirm onLoad 触发
-    console.error('[INVITE-DEBUG][invite-confirm onLoad] query=', JSON.stringify(query), 'token=', inviteToken);
 
     // 等 bootstrap 完成（auth 初始化），再检查登录态
     const app = getApp<AppWithBootstrap>();
     await app.bootstrapPromise;
-    console.error('[INVITE-DEBUG][invite-confirm onLoad] bootstrapPromise resolved, isLoggedIn=', isLoggedIn());
 
     if (!isLoggedIn()) {
       // 理论上不会到此处；兜底：保留 token 让 login 页消费
-      console.error('[INVITE-DEBUG][invite-confirm onLoad] NOT logged in → reLaunch login');
       wx.reLaunch({ url: '/pages/login/index' });
       return;
     }
 
     if (!inviteToken) {
-      console.error('[INVITE-DEBUG][invite-confirm onLoad] NO inviteToken → show expired');
       this.setData({ loading: false, expired: true });
       return;
     }
     this._inviteToken = inviteToken;
-    console.error('[INVITE-DEBUG][invite-confirm onLoad] calling _loadPreview with token=', inviteToken);
     await this._loadPreview(inviteToken);
   },
 
   async _loadPreview(token: string) {
     this.setData({ loading: true, expired: false });
     try {
-      console.error('[INVITE-DEBUG][invite-confirm _loadPreview] calling previewInvite, token=', token);
       const preview = await previewInvite(token);
-      console.error('[INVITE-DEBUG][invite-confirm _loadPreview] SUCCESS preview=', JSON.stringify(preview));
       this.setData({
         loading: false,
         familyName: preview.family_name,
         inviterNickname: preview.inviter_nickname,
       });
     } catch (e: unknown) {
-      console.error('[INVITE-DEBUG][invite-confirm _loadPreview] ERROR=', e);
       this.setData({ loading: false, expired: true });
     }
   },

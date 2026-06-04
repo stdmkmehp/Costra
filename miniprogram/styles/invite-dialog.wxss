@@ -1,0 +1,151 @@
+/* styles/invite-dialog.wxss · 邀请流程卡片公共样式 */
+/* 适用：A 侧邀请覆盖层 / B 侧邀请确认页 */
+
+.invite-dialog-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48rpx 40rpx;
+  box-sizing: border-box;
+  background: linear-gradient(180deg, rgba(241,242,236,0.98) 0%, #f1f2ec 100%);
+}
+
+.invite-dialog__mask {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48rpx 40rpx;
+  box-sizing: border-box;
+  background: rgba(241,242,236,0.18);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .invite-dialog__mask {
+    background: rgba(241,242,236,0.48);
+  }
+}
+
+.invite-dialog__card {
+  width: 100%;
+  max-width: 640rpx;
+  padding: 56rpx 40rpx 40rpx;
+  box-sizing: border-box;
+  border-radius: 32rpx;
+  background: rgba(255,255,255,0.96);
+  border: 1rpx solid rgba(28,27,26,0.06);
+  box-shadow: 0 24rpx 80rpx rgba(28,27,26,0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 24rpx;
+}
+
+.invite-dialog__badge {
+  width: 96rpx;
+  height: 96rpx;
+  margin: 0 auto;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(7,193,96,0.12);
+  color: #07C160;
+  font-size: 44rpx;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.invite-dialog__badge--warn {
+  background: rgba(250,81,81,0.10);
+  color: #FA5151;
+}
+
+.invite-dialog__title {
+  font-size: 38rpx;
+  line-height: 1.35;
+  font-weight: 700;
+  color: var(--color-role-text-primary, #1c1b1a);
+  text-align: center;
+}
+
+.invite-dialog__desc {
+  font-size: 28rpx;
+  line-height: 1.6;
+  color: rgba(28,27,26,0.58);
+  text-align: center;
+}
+
+.invite-dialog__hint {
+  font-size: 24rpx;
+  line-height: 1.6;
+  color: rgba(28,27,26,0.40);
+  text-align: center;
+}
+
+.invite-dialog__state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20rpx;
+  padding: 12rpx 0 8rpx;
+}
+
+.invite-dialog__spinner {
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 50%;
+  border: 6rpx solid rgba(28,27,26,0.10);
+  border-top-color: #07C160;
+  animation: invite-dialog-spin 0.8s linear infinite;
+}
+
+@keyframes invite-dialog-spin {
+  to { transform: rotate(360deg); }
+}
+
+.invite-dialog__actions {
+  display: flex;
+  gap: 24rpx;
+  margin-top: 8rpx;
+}
+
+.invite-dialog__actions--single {
+  display: block;
+}
+
+.invite-dialog__btn {
+  flex: 1;
+  height: 88rpx;
+  border-radius: 18rpx;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30rpx;
+  font-weight: 600;
+  transition: opacity 150ms;
+}
+
+.invite-dialog__btn::after {
+  border: none;
+}
+
+.invite-dialog__btn--secondary {
+  background: rgba(255,255,255,0.92);
+  color: rgba(28,27,26,0.68);
+  border: 2rpx solid rgba(28,27,26,0.12);
+}
+
+.invite-dialog__btn--primary {
+  background: #07C160;
+  color: #ffffff;
+}
+
+.invite-dialog__btn[disabled] {
+  opacity: 0.6;
+}

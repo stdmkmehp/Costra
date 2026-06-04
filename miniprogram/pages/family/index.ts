@@ -32,6 +32,7 @@ import {
   type CategoryRankItem,
 } from '../../services/familyApi';
 import type { ApiError } from '../../services/request';
+import { mapError } from '../../utils/error-mapper';
 
 interface AppWithBootstrap {
   bootstrapPromise: Promise<void>;
@@ -207,12 +208,20 @@ Page({
 
     // ─── 空态 ───
     isEmpty: false,
+
+    // ─── 邀请遮罩 ───
+    inviteOverlayVisible: false,
+    invitePreparing: false,
+    inviteReady: false,
+    inviteErrorText: '',
   },
 
   // 内部状态
   _familyId: '' as string,
   _currentUserId: '' as string,
   _loadingPromise: null as Promise<void> | null,
+  _pendingInviteToken: '' as string,
+  _invitePrepareSeq: 0,
   /** eventBus 订阅 handler（sync-refresh: SYNC_DONE 后失效缓存 + 重拉 summary，防内存泄漏） */
   _syncDoneHandler: null as ((payload?: unknown) => void) | null,
 
@@ -265,7 +274,7 @@ Page({
         return;
       }
       this.setData({ ready: true });
-      this.getTabBar?.()?.setData?.({ selected: 3, hidden: false });
+      this.getTabBar?.()?.setData?.({ selected: 3, hidden: this.data.inviteOverlayVisible });
       triggerOnPageShow('family');
       await this._loadPage();
     });
@@ -660,44 +669,97 @@ Page({
 
   // ─── 交互：邀请成员 ──────────────────────────────────────────────────────────
 
-  /** 提前创建邀请（在 open-type="share" 触发 onShareAppMessage 之前） */
-  async onPrepareInvite() {
+  /** 打开邀请遮罩，并在遮罩内异步准备 invite token */
+  onOpenInviteOverlay() {
+    if (!this._familyId || !this.data.isOwner || this.data.inviteOverlayVisible) return;
+
+    this.setData({
+      inviteOverlayVisible: true,
+      invitePreparing: true,
+      inviteReady: false,
+      inviteErrorText: '',
+    });
+    eventBus.emit(EventNames.HIDE_TAB_BAR);
+    void this._prepareInviteToken();
+  },
+
+  /** 重新创建邀请 token（失败态重试） */
+  onRetryInvite() {
+    if (!this.data.inviteOverlayVisible || this.data.invitePreparing) return;
+    this.setData({
+      invitePreparing: true,
+      inviteReady: false,
+      inviteErrorText: '',
+    });
+    void this._prepareInviteToken();
+  },
+
+  /** 关闭邀请遮罩 */
+  onCloseInviteOverlay() {
+    this._invitePrepareSeq += 1;
+    this._pendingInviteToken = '';
+    this.setData({
+      inviteOverlayVisible: false,
+      invitePreparing: false,
+      inviteReady: false,
+      inviteErrorText: '',
+    });
+    eventBus.emit(EventNames.SHOW_TAB_BAR);
+  },
+
+  /** 创建 invite token；仅在遮罩仍然存活且请求序号匹配时提交结果 */
+  async _prepareInviteToken() {
     if (!this._familyId) return;
+
+    const prepareSeq = ++this._invitePrepareSeq;
+    this._pendingInviteToken = '';
 
     try {
       const invite = await createInvite(this._familyId);
+      if (prepareSeq !== this._invitePrepareSeq || !this.data.inviteOverlayVisible) return;
+
       this._pendingInviteToken = invite.invite_token;
-      this._pendingInviteFamilyId = invite.family_id;
+      this.setData({
+        invitePreparing: false,
+        inviteReady: true,
+        inviteErrorText: '',
+      });
     } catch (err) {
+      if (prepareSeq !== this._invitePrepareSeq || !this.data.inviteOverlayVisible) return;
+
       console.error('[family] createInvite failed', err);
-      // 即使创建失败也不阻断分享，只是分享链接不含邀请码
+      const mapped = mapError(err as ApiError);
+      this.setData({
+        invitePreparing: false,
+        inviteReady: false,
+        inviteErrorText: mapped.desc || '邀请码创建失败，请稍后重试',
+      });
     }
   },
 
-  /** 暂存邀请信息（分享时使用） */
-  _pendingInviteToken: '' as string,
-  _pendingInviteFamilyId: '' as string,
-
-  /** onShareAppMessage 回调（由 button open-type="share" 触发） */
+  /** onShareAppMessage 回调（仅在 invite token 已就绪时由遮罩内分享按钮触发） */
   onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent {
     const inviteToken = this._pendingInviteToken;
     const familyName = this.data.familyName;
     const path = inviteToken
       ? `/pages/invite-confirm/index?token=${inviteToken}`
-      : '/pages/ledger/index';
+      : '/pages/family/index';
 
-    // [临时测试] 确认分享路径是否携带 invite token
-    console.error('[INVITE-DEBUG][family onShareAppMessage] inviteToken=', inviteToken, 'path=', path);
-
-    // 使用后清空，避免重复使用过期 token
-    this._pendingInviteToken = '';
-    this._pendingInviteFamilyId = '';
-
-    return {
-      title: `${familyName} 邀请你一起记账`,
+    const shareContent = {
+      title: inviteToken ? `${familyName} 邀请你一起记账` : 'Costra 协作记账',
       path,
+      success: () => {
+        if (!inviteToken) return;
+        wx.showToast({ title: '邀请已发出', icon: 'success' });
+        this.onCloseInviteOverlay();
+      },
     };
+
+    return shareContent as WechatMiniprogram.Page.ICustomShareContent;
   },
+
+  /** 阻止遮罩触摸穿透 */
+  noop() {},
 
   // ─── 交互：成员头像点击 ────────────────────────────────────────────────────
 

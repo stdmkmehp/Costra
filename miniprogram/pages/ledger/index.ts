@@ -310,8 +310,6 @@ Page({
   },
 
   async onShow() {
-    // [临时测试] ledger onShow 触发时间
-    console.error('[INVITE-DEBUG][ledger onShow] triggered, awaiting bootstrapPromise...');
     // COSTRA-127 范式：onShow 加 bootstrapPromise gate · 主防线
     // - 未登录：reLaunch 到 login，不加载任何数据（防止冷启动时先闪明细页内容）
     // - 已登录：设 ready=true 解锁渲染，再正常加载数据
@@ -319,7 +317,6 @@ Page({
     //   彻底消除冷启动"先闪明细框架再跳登录"的问题
     const app = getApp<{ bootstrapPromise: Promise<void> }>();
     await app.bootstrapPromise;
-    console.error('[INVITE-DEBUG][ledger onShow] bootstrapPromise resolved, hasValidSession=', hasValidSession());
     if (!hasValidSession()) {
       wx.reLaunch({ url: '/pages/login/index' });
       return;
