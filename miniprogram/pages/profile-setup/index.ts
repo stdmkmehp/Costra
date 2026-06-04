@@ -3,10 +3,54 @@
 //   头像：<button open-type="chooseAvatar">
 //   昵称：<input type="nickname">
 // 本页提供完善资料的主动入口，PATCH /users/me 成功后更新本地 token + emit PROFILE_COMPLETED 清除红点。
+//
+// 头像持久化：
+//   wx.chooseAvatar 返回的是微信临时路径（http://tmp/...），删除小程序后失效。
+//   保存时先 wx.uploadFile 上传到 POST /v1/upload/avatar，服务端存磁盘并返回持久 URL，
+//   再以持久 URL 调 PATCH /users/me，确保重装后仍能看到头像。
 import { getToken, updateLocalUserProfile } from '../../services/auth';
 import { request } from '../../services/request';
 import { eventBus, EventNames } from '../../services/eventBus';
 import { getSafeAreaMetrics } from '../../utils/safeArea';
+import { getEnv } from '../../services/env';
+
+/** 判断是否是微信临时路径，需要上传 */
+function isWxTempPath(url: string): boolean {
+  return url.startsWith('http://tmp/') || url.startsWith('wxfile://');
+}
+
+/** 将微信临时路径上传到服务端，返回持久 URL */
+async function uploadAvatar(tempPath: string, accessToken: string): Promise<string> {
+  const env = getEnv();
+  // apiBaseUrl = https://costra.cloud/v1，上传端点在 /v1/upload/avatar
+  const uploadUrl = `${env.apiBaseUrl}/upload/avatar`;
+
+  return new Promise((resolve, reject) => {
+    wx.uploadFile({
+      url: uploadUrl,
+      filePath: tempPath,
+      name: 'file',
+      header: { Authorization: `Bearer ${accessToken}` },
+      success: (res) => {
+        if (res.statusCode !== 201) {
+          reject(new Error(`upload failed: statusCode=${res.statusCode}`));
+          return;
+        }
+        try {
+          const body = JSON.parse(res.data) as { url?: string };
+          if (!body.url) {
+            reject(new Error('upload response missing url field'));
+            return;
+          }
+          resolve(body.url);
+        } catch {
+          reject(new Error('upload response is not valid JSON'));
+        }
+      },
+      fail: (err) => reject(new Error(`wx.uploadFile failed: ${JSON.stringify(err)}`)),
+    });
+  });
+}
 
 Page({
   data: {
@@ -59,12 +103,20 @@ Page({
 
     this.setData({ submitting: true });
     try {
+      // 头像持久化：若是微信临时路径，先上传到服务端拿持久 URL
+      let persistentAvatarUrl: string | null = avatarUrl || null;
+      if (avatarUrl && isWxTempPath(avatarUrl)) {
+        const token = getToken();
+        if (!token) throw new Error('not logged in');
+        persistentAvatarUrl = await uploadAvatar(avatarUrl, token.raw.access_token);
+      }
+
       await request({
         method: 'PATCH',
         path: '/users/me',
         body: {
           nickname: trimmedNickname,
-          avatar_url: avatarUrl || null,
+          avatar_url: persistentAvatarUrl,
         },
         timeout: 8_000,
       });
@@ -72,7 +124,7 @@ Page({
       // 更新本地 token 中的 user 子对象 · 页面和 mine 页 onShow 都会读到新值
       await updateLocalUserProfile({
         nickname: trimmedNickname,
-        avatar_url: avatarUrl || null,
+        avatar_url: persistentAvatarUrl,
         has_completed_profile: true,
       });
 
@@ -83,7 +135,7 @@ Page({
       // 短暂延迟后返回，让 toast 有时间显示
       setTimeout(() => { wx.navigateBack(); }, 1300);
     } catch (e) {
-      console.warn('[profile-setup] PATCH /users/me failed', e);
+      console.warn('[profile-setup] save failed', e);
       wx.showToast({ title: '保存失败，请重试', icon: 'none' });
     } finally {
       this.setData({ submitting: false });

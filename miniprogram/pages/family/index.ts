@@ -3,6 +3,7 @@
 // 设计源: design/ui/design_spec.md §6.5 + design/ui/interaction_flow.md §6
 // 金额 ADR-0002: 全部走 decimal.js（utils/money.ts）
 // P2-1 约束: 年度维度 API 不支持 · R1 仅月度 · 年度 Tab 不展示
+// COSTRA-125 范式: onLoad + onShow 均加 bootstrapPromise gate，与 mine/ledger/statistics 对齐
 
 import { toYuan } from '../../utils/money';
 import { getSafeAreaMetrics } from '../../utils/safeArea';
@@ -17,7 +18,7 @@ import {
   type FamilyKind,
 } from '../../services/family';
 import { eventBus, EventNames, type SyncDonePayload } from '../../services/eventBus';
-import { getToken } from '../../services/auth';
+import { getToken, hasValidSession } from '../../services/auth';
 import {
   getFamilies,
   getFamilySummary,
@@ -31,6 +32,10 @@ import {
   type CategoryRankItem,
 } from '../../services/familyApi';
 import type { ApiError } from '../../services/request';
+
+interface AppWithBootstrap {
+  bootstrapPromise: Promise<void>;
+}
 
 // ─── 类型 ────────────────────────────────────────────────────────────────────────
 
@@ -209,6 +214,7 @@ Page({
 
   // ─── 生命周期 ────────────────────────────────────────────────────────────────
 
+  // onLoad gate（冗余兜底 · onShow gate 是主防线）
   onLoad() {
     const { statusBarHeight, navBarHeight } = getSafeAreaMetrics();
     this.setData({
@@ -216,13 +222,6 @@ Page({
       navBarHeight,
       monthDisplay: formatMonthDisplay(this.data.currentMonth),
     });
-
-    // 获取当前用户 ID
-    const token = getToken();
-    if (token?.raw?.user?.id) {
-      this._currentUserId = token.raw.user.id;
-      this.setData({ currentUserId: token.raw.user.id });
-    }
 
     // sync-refresh: 订阅 SYNC_DONE → 失效服务端 summary 缓存 + 重拉当前月数据
     // 关键：family 页数据来自服务端聚合 API（不是本地 storage），
@@ -237,12 +236,34 @@ Page({
     };
     this._syncDoneHandler = syncDoneHandler;
     eventBus.on(EventNames.SYNC_DONE, syncDoneHandler);
+
+    // 等 bootstrap 完成后补读 userId（bootstrap 前 token 可能未就绪）
+    const app = getApp<AppWithBootstrap>();
+    void app.bootstrapPromise.then(() => {
+      if (!hasValidSession()) {
+        wx.reLaunch({ url: '/pages/login/index' });
+        return;
+      }
+      const token = getToken();
+      if (token?.raw?.user?.id) {
+        this._currentUserId = token.raw.user.id;
+        this.setData({ currentUserId: token.raw.user.id });
+      }
+    });
   },
 
-  async onShow() {
-    this.getTabBar?.()?.setData?.({ selected: 3 });
-    triggerOnPageShow('family');
-    await this._loadPage();
+  onShow() {
+    // COSTRA-127 范式：onShow 加 bootstrapPromise gate · 主防线
+    const app = getApp<AppWithBootstrap>();
+    void app.bootstrapPromise.then(async () => {
+      if (!hasValidSession()) {
+        wx.reLaunch({ url: '/pages/login/index' });
+        return;
+      }
+      this.getTabBar?.()?.setData?.({ selected: 3 });
+      triggerOnPageShow('family');
+      await this._loadPage();
+    });
   },
 
   onUnload() {
@@ -657,8 +678,8 @@ Page({
     const inviteToken = this._pendingInviteToken;
     const familyName = this.data.familyName;
     const path = inviteToken
-      ? `/pages/entry/index?invite_token=${inviteToken}`
-      : '/pages/entry/index';
+      ? `/pages/invite-confirm/index?token=${inviteToken}`
+      : '/pages/ledger/index';
 
     // 使用后清空，避免重复使用过期 token
     this._pendingInviteToken = '';

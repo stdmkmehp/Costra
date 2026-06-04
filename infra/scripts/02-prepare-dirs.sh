@@ -55,6 +55,7 @@ DIRS_TO_CREATE=(
   "${COSTRA_DATA}/logs/nginx"
   "${COSTRA_DATA}/certbot/www"
   "${COSTRA_DATA}/backups"
+  "${COSTRA_DATA}/uploads/avatars"
 )
 
 for dir in "${DIRS_TO_CREATE[@]}"; do
@@ -82,6 +83,7 @@ RUN_AS_999=(
 # uid=1000 → server 容器（node 用户 · Dockerfile USER node）
 RUN_AS_1000=(
   "${COSTRA_DATA}/logs/server"
+  "${COSTRA_DATA}/uploads"
 )
 
 log_info "chown ${UID_REDIS}:${UID_REDIS} → ${RUN_AS_999[*]}"

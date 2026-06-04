@@ -22,10 +22,10 @@ interface AppGlobalData {
   // COSTRA-105 R1.x.1 BUG-001: COSTRA-155 实装真账本切换时填充 · 目前 fallback 到 FALLBACK_LEDGER_ID
   activeLedgerId?: string;
   /**
-   * 从分享邀请链接启动时，onLaunch query 中的 invite_token。
-   * 存于 globalData（而非 storage）以避免 ensureVersion clearStorage 竞争问题。
-   * 已登录用户：bootstrap 完成后直接跳 invite-confirm 页面。
-   * 未登录用户：login.ts onTapLogin 登录成功后读取并跳转到 invite-confirm 页面，消费后置 null。
+   * 从分享邀请链接启动时，onLaunch query 中的 token。
+   * 落地页为 /pages/invite-confirm/index?token=xxx，直接由落地页 onLoad 消费。
+   * 存于 globalData 仅为未登录路径备用：bootstrap 检测到未登录 → reLaunch 到 login，
+   * login 登录成功后读取此值并跳转到 invite-confirm 页面，消费后置 null。
    */
   pendingInviteToken?: string | null;
 }
@@ -58,10 +58,11 @@ App<AppOption>({
     this.globalData.bootAt = Date.now();
     console.info('[Costra] onLaunch env=', this.globalData.env.name);
 
-    // 分享邀请链接携带的 invite_token：存入 globalData 供登录流程消费
+    // 分享邀请链接携带的 invite token：存入 globalData 供登录流程消费
+    // 落地页为 /pages/invite-confirm/index?token=xxx，query key 为 'token'
     // ⚠️ 不存 storage：ensureVersion() 可能 clearStorage，导致 token 丢失
     // globalData 与小程序实例同生命周期，不受 storage 版本清除影响
-    const inviteToken = options?.query?.invite_token as string | undefined;
+    const inviteToken = options?.query?.token as string | undefined;
     if (inviteToken) {
       console.info('[Costra] onLaunch invite_token detected');
       this.globalData.pendingInviteToken = inviteToken;
@@ -84,13 +85,7 @@ App<AppOption>({
       if (token && !token.raw.user.has_completed_profile) {
         eventBus.emit(EventNames.PROFILE_INCOMPLETE);
       }
-      // 已登录用户从邀请链接冷启动：跳转到邀请确认页让用户主动确认
-      if (inviteToken) {
-        try {
-          wx.reLaunch({ url: `/pages/invite-confirm/index?token=${encodeURIComponent(inviteToken)}` });
-        } catch { /* noop */ }
-        return;
-      }
+      // 已登录用户从邀请链接冷启动：落地页已经是 invite-confirm，onLoad 直接消费 query.token，无需 reLaunch
     })().catch((err) => {
       console.error('[Costra] bootstrap failed', err);
       try { wx.reLaunch({ url: '/pages/login/index' }); } catch { /* noop */ }

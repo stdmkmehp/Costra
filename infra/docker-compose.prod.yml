@@ -178,6 +178,8 @@ services:
     volumes:
       # 日志（pino stdout 已重定向到 docker logs · 此卷供 audit log / 临时文件用）
       - /data/logs/server:/var/log/costra
+      # 用户上传文件（头像等）· server 写入 · nginx 只读服务
+      - /data/uploads:/var/costra/uploads
 
     depends_on:
       postgres:
@@ -230,6 +232,8 @@ services:
       # webroot（certbot http-01 challenge 用 · ACME 续期）
       - /data/certbot/www:/var/www/certbot:ro
       - /data/logs/nginx:/var/log/nginx
+      # 用户上传文件（头像等）· nginx 只读静态服务
+      - /data/uploads:/data/uploads:ro
 
     environment:
       TZ: Asia/Shanghai

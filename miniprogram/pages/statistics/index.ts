@@ -1,6 +1,7 @@
 // pages/statistics/index.ts · 统计页（Tab2）
 // 卡号: COSTRA-201 / COSTRA-223 · 骨架 + 导航栏账本切换
 // COSTRA-223: 顶部导航栏与明细页/家庭页保持一致（居中账本名+▼切换）
+// COSTRA-125 范式: onLoad + onShow 均加 bootstrapPromise gate，与 mine/ledger 对齐
 import { getSafeAreaMetrics } from '../../utils/safeArea';
 import {
   getActiveLedgerName,
@@ -9,6 +10,11 @@ import {
 import { getFamilies } from '../../services/familyApi';
 import { triggerOnPageShow, syncOnce } from '../../services/syncScheduler';
 import { eventBus, EventNames, type SyncDonePayload } from '../../services/eventBus';
+import { hasValidSession } from '../../services/auth';
+
+interface AppWithBootstrap {
+  bootstrapPromise: Promise<void>;
+}
 
 Page({
   data: {
@@ -21,6 +27,7 @@ Page({
   /** eventBus 订阅 handler（sync-refresh: SYNC_DONE 桩 · 防内存泄漏） */
   _syncDoneHandler: null as ((payload?: unknown) => void) | null,
 
+  // onLoad gate（冗余兜底 · onShow gate 是主防线）
   onLoad() {
     const metrics = getSafeAreaMetrics();
     this.setData({
@@ -39,14 +46,29 @@ Page({
     };
     this._syncDoneHandler = syncDoneHandler;
     eventBus.on(EventNames.SYNC_DONE, syncDoneHandler);
+
+    const app = getApp<AppWithBootstrap>();
+    void app.bootstrapPromise.then(() => {
+      if (!hasValidSession()) {
+        wx.reLaunch({ url: '/pages/login/index' });
+      }
+    });
   },
 
-  async onShow() {
-    this.getTabBar?.()?.setData?.({ selected: 1 });
-    // 同步最新的 active family 名称（其他页面可能已切换）
-    const name = await getActiveLedgerName();
-    this.setData({ ledgerName: name });
-    triggerOnPageShow('statistics');
+  onShow() {
+    // COSTRA-127 范式：onShow 加 bootstrapPromise gate · 主防线
+    const app = getApp<AppWithBootstrap>();
+    void app.bootstrapPromise.then(async () => {
+      if (!hasValidSession()) {
+        wx.reLaunch({ url: '/pages/login/index' });
+        return;
+      }
+      this.getTabBar?.()?.setData?.({ selected: 1 });
+      // 同步最新的 active family 名称（其他页面可能已切换）
+      const name = await getActiveLedgerName();
+      this.setData({ ledgerName: name });
+      triggerOnPageShow('statistics');
+    });
   },
 
   onUnload() {

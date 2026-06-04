@@ -16,7 +16,7 @@ import {
   savePreferenceAsync,
 } from '../../services/family';
 import { enqueue } from '../../services/outbox';
-import { getToken } from '../../services/auth';
+import { getToken, hasValidSession } from '../../services/auth';
 import { eventBus, EventNames, type SyncDonePayload } from '../../services/eventBus';
 import { triggerOnPageShow, syncOnce } from '../../services/syncScheduler';
 import { pickRandomSlogan } from '../../config/slogans';
@@ -259,6 +259,7 @@ Page({
 
   // ─── 生命周期 ────────────────────────────────────────────────────────────────
 
+  // onLoad gate（冗余兜底 · onShow gate 是主防线）
   onLoad() {
     // COSTRA-214: 使用统一安全区服务替代直接调用 wx.getWindowInfo()
     const { statusBarHeight, navBarHeight, navBarTotalHeight } = getSafeAreaMetrics();
@@ -270,11 +271,18 @@ Page({
       emptyHint: pickRandomSlogan(),
     });
 
-    // COSTRA-220: 获取当前 userId（用于成员筛选）
-    const token = getToken();
-    if (token?.raw?.user?.id) {
-      this._currentUserId = token.raw.user.id;
-    }
+    // COSTRA-220: 获取当前 userId（bootstrap 完成后才有 token）
+    interface AppWithBootstrap { bootstrapPromise: Promise<void> }
+    void getApp<AppWithBootstrap>().bootstrapPromise.then(() => {
+      if (!hasValidSession()) {
+        wx.reLaunch({ url: '/pages/login/index' });
+        return;
+      }
+      const token = getToken();
+      if (token?.raw?.user?.id) {
+        this._currentUserId = token.raw.user.id;
+      }
+    });
 
     // COSTRA-220: 订阅 ENTRY_SAVED 事件 → 响应式刷新明细页
     const handler = () => { this._onEntrySaved(); };
@@ -298,6 +306,15 @@ Page({
   },
 
   async onShow() {
+    // COSTRA-127 范式：onShow 加 bootstrapPromise gate · 主防线
+    // - 未登录：reLaunch 到 login，不加载任何数据（防止冷启动时先闪明细页内容）
+    // - 已登录：正常加载数据
+    const app = getApp<{ bootstrapPromise: Promise<void> }>();
+    await app.bootstrapPromise;
+    if (!hasValidSession()) {
+      wx.reLaunch({ url: '/pages/login/index' });
+      return;
+    }
     this.getTabBar?.()?.setData?.({ selected: 0 });
     await this._loadContext();
     await this._loadEntries();

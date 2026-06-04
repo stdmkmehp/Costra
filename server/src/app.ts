@@ -18,6 +18,7 @@
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 import cors from '@fastify/cors';
 import sensible from '@fastify/sensible';
+import multipart from '@fastify/multipart';
 import { randomUUID } from 'node:crypto';
 import { appEnv } from './config/env.js';
 import { registerErrorHandler } from './plugins/errorHandler.js';
@@ -30,6 +31,7 @@ import { registerLegalRoutes } from './routes/legal.js';
 import { registerUsersRoutes } from './routes/users.js';
 import { registerCategoriesRoutes } from './routes/categories.js';
 import { registerFamiliesRoutes } from './routes/families.js';
+import { registerUploadRoutes } from './routes/upload.js';
 
 export interface BuildAppOptions {
   /** 测试注入：禁用 logger 以避免 vitest 日志噪音 */
@@ -62,6 +64,10 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
     credentials: false,
   });
   await app.register(sensible);
+  // multipart：处理文件上传（头像等）；单文件限 2MB（upload 路由内部再校验）
+  await app.register(multipart, {
+    limits: { fileSize: 2 * 1024 * 1024, files: 1 },
+  });
 
   // --- 核心插件 ---
   await registerJwt(app);
@@ -79,6 +85,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
     await registerUsersRoutes(v1);
     await registerCategoriesRoutes(v1);
     await registerFamiliesRoutes(v1);
+    await registerUploadRoutes(v1);
   }, { prefix: '/v1' });
 
   return app;
