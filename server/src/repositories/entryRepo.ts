@@ -452,7 +452,7 @@ export async function findByClientRefId(clientRefId: string, userId: string, cli
             e.created_by, e.created_at, e.updated_at, e.deleted_at, e.version, e.client_ref_id, e.change_seq, e.shared_type
        FROM entries e
        JOIN ledgers l ON l.id = e.ledger_id
-       JOIN families_users fu ON fu.family_id = l.family_id AND fu.user_id = $2
+       JOIN family_members fm ON fm.family_id = l.family_id AND fm.user_id = $2
       WHERE e.client_ref_id = $1 AND e.deleted_at IS NULL
       LIMIT 1`,
     [clientRefId, userId],
