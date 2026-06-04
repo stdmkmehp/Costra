@@ -157,6 +157,10 @@ const SHARED_SEGMENT_COLOR = '#07C160';
 
 Page({
   data: {
+    // ─── 首屏保护 ───
+    /** bootstrap 完成且已登录后才设为 true · 防止页面框架提前渲染 */
+    ready: false,
+
     // ─── 导航栏 ───
     statusBarHeight: 0,
     navBarHeight: 44,
@@ -260,6 +264,7 @@ Page({
         wx.reLaunch({ url: '/pages/login/index' });
         return;
       }
+      this.setData({ ready: true });
       this.getTabBar?.()?.setData?.({ selected: 3 });
       triggerOnPageShow('family');
       await this._loadPage();

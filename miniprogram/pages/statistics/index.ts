@@ -18,6 +18,8 @@ interface AppWithBootstrap {
 
 Page({
   data: {
+    /** bootstrap 完成且已登录后才设为 true · 防止页面框架提前渲染 */
+    ready: false,
     statusBarHeight: 0,
     navBarHeight: 44,
     ledgerName: '我的账本',
@@ -63,6 +65,7 @@ Page({
         wx.reLaunch({ url: '/pages/login/index' });
         return;
       }
+      this.setData({ ready: true });
       this.getTabBar?.()?.setData?.({ selected: 1 });
       // 同步最新的 active family 名称（其他页面可能已切换）
       const name = await getActiveLedgerName();

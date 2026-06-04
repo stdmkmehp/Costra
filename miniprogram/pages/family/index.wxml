@@ -2,8 +2,9 @@
 <!-- 卡号: COSTRA-223 · 家庭页全新开发 / API 接入 · R1 实装 -->
 <!-- 设计源: design/ui/design_spec.md §6.5 + design/ui/interaction_flow.md §6 -->
 <!-- P2-1: 年度维度 API 不支持 · R1 仅月度 · 不展示年度 Tab -->
+<!-- ready gate: bootstrap 完成且已登录前页面完全空白 -->
 
-<view class="family">
+<view class="family" wx:if="{{ready}}">
   <!-- 导航栏：与明细页一致（居中账本名 + ▼ 切换） -->
   <view class="nav-bar" style="padding-top: {{statusBarHeight}}px;">
     <view class="nav-bar__content" style="height: {{navBarHeight}}px;">

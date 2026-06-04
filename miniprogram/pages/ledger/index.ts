@@ -178,6 +178,10 @@ function getMonthRange(value: string): { since: string; until: string } {
 
 Page({
   data: {
+    // ─── 首屏保护 ───
+    /** bootstrap 完成且已登录后才设为 true · 防止冷启动页面框架闪现 */
+    ready: false,
+
     // ─── 导航栏 ───
     statusBarHeight: 0,
     navBarHeight: 44,
@@ -308,13 +312,16 @@ Page({
   async onShow() {
     // COSTRA-127 范式：onShow 加 bootstrapPromise gate · 主防线
     // - 未登录：reLaunch 到 login，不加载任何数据（防止冷启动时先闪明细页内容）
-    // - 已登录：正常加载数据
+    // - 已登录：设 ready=true 解锁渲染，再正常加载数据
+    // ready gate：bootstrap 完成且已登录才设 true，保证 WXML 在这之前完全空白，
+    //   彻底消除冷启动"先闪明细框架再跳登录"的问题
     const app = getApp<{ bootstrapPromise: Promise<void> }>();
     await app.bootstrapPromise;
     if (!hasValidSession()) {
       wx.reLaunch({ url: '/pages/login/index' });
       return;
     }
+    this.setData({ ready: true });
     this.getTabBar?.()?.setData?.({ selected: 0 });
     await this._loadContext();
     await this._loadEntries();

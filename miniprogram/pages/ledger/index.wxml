@@ -1,8 +1,9 @@
 <!-- pages/ledger/index.wxml · 明细页（首屏 Tab1） -->
 <!-- 卡号: COSTRA-203 / COSTRA-220 · 明细首屏巨大月支出+日期分组吸顶流水列表+左滑删除+账本切换+真实数据对接 -->
 <!-- 设计源: design/ui/design_spec.md §6.2 + design/ui/interaction_flow.md §4 -->
+<!-- ready gate: bootstrap 完成且已登录前页面完全空白，消除冷启动框架闪现 -->
 
-<view class="ledger" bindtap="onTapPage">
+<view class="ledger" bindtap="onTapPage" wx:if="{{ready}}">
 
   <!-- ─── 自定义导航栏 ─────────────────────────────────────────────────────── -->
   <view class="nav-bar" style="padding-top: {{statusBarHeight}}px;">
