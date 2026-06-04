@@ -686,6 +686,9 @@ Page({
       ? `/pages/invite-confirm/index?token=${inviteToken}`
       : '/pages/ledger/index';
 
+    // [临时测试] 确认分享路径是否携带 invite token
+    console.error('[INVITE-DEBUG][family onShareAppMessage] inviteToken=', inviteToken, 'path=', path);
+
     // 使用后清空，避免重复使用过期 token
     this._pendingInviteToken = '';
     this._pendingInviteFamilyId = '';
