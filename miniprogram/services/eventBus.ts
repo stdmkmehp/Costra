@@ -37,7 +37,7 @@ export interface SyncDonePayload {
   /** 本次 sync 成功推送到服务端的 op 条数（>=0） */
   pushed: number;
   /** 触发本次 sync 的来源 */
-  trigger: 'launch' | 'network-recover' | 'page-show' | 'periodic' | 'mutation';
+  trigger: 'launch' | 'network-recover' | 'page-show' | 'periodic' | 'mutation' | 'hide' | 'conflict-retry';
 }
 
 class EventBus {

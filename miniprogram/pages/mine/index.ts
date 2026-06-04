@@ -7,7 +7,7 @@
 // Refs: COSTRA-030, docs/design/ia.md §我的 · .team/dispatch/COSTRA-125-miniapp-storage-async-migration.md §3 (e)
 import { hasValidSession, getSession, logout } from '../../services/auth';
 import { defaultNickname } from '../../config/defaults';
-import { triggerOnPageShow } from '../../services/syncScheduler';
+import { triggerOnPageShow, syncOnce, stopScheduler } from '../../services/syncScheduler';
 import { getSafeAreaMetrics } from '../../utils/safeArea';
 
 interface AppWithBootstrap {
@@ -73,6 +73,10 @@ Page({
   async onTapLogout() {
     const res = await wx.showModal({ title: '退出登录', content: '确定要退出吗？' });
     if (res.confirm) {
+      // 退出前主动推送本地未同步数据 · 保证用户离开前数据尽量上行
+      // syncOnce 需要 familyId + 登录态，必须在 logout() 清除前调用
+      try { await syncOnce('hide'); } catch { /* 吞错 · logout 必须成功 */ }
+      stopScheduler();
       // COSTRA-102 D2.2：logout 已改为 async（含真调 POST /auth/logout 204）
       // 内部已自带 wx.reLaunch，此处无需再跳
       await logout();

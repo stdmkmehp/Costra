@@ -10,6 +10,7 @@ import {
   __peek,
   __clear,
   PushResultItem,
+  computeRetryBackoff,
 } from './outbox';
 
 let mockStore: Map<string, unknown>;
@@ -39,9 +40,11 @@ describe('services/outbox', () => {
   beforeEach(() => {
     mockStore = new Map<string, unknown>();
     vi.stubGlobal('wx', mockWx());
+    vi.useFakeTimers();
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -103,6 +106,8 @@ describe('services/outbox', () => {
       result: { client_ref_id: 'ack-conflict', status: 'conflict', server_version: 5 },
     }]);
 
+    // 退避延迟后才能 drain（retries=1 → 3s）
+    vi.advanceTimersByTime(3100);
     const result2 = await drainBatch(200);
     expect(result2).not.toBeNull();
     expect(result2!.batch[0].retries).toBe(1);
@@ -132,6 +137,8 @@ describe('services/outbox', () => {
       result: { client_ref_id: 'ack-retry', status: 'rejected', error: { code: 'INVALID_ARGUMENT', message: 'update requires base_version' } },
     }]);
 
+    // 退避延迟后才能 drain（retries=1 → 3s）
+    vi.advanceTimersByTime(3100);
     // 仍在 index 等重试
     const result2 = await drainBatch(200);
     expect(result2).not.toBeNull();
@@ -157,6 +164,8 @@ describe('services/outbox', () => {
     const recovered = await ackBatchFailure(result!.batchKey);
     expect(recovered).toBe(1);
 
+    // 退避延迟后才能 drain（retries=1 → 3s）
+    vi.advanceTimersByTime(3100);
     const result2 = await drainBatch(200);
     expect(result2).not.toBeNull();
     expect(result2!.batch[0].retries).toBe(1);
@@ -167,12 +176,15 @@ describe('services/outbox', () => {
     await enqueue({ op: 'create', entity: 'entry', client_ref_id: 'persist-1', base_version: null, payload: { ledger_id: 'l1', amount: 100, currency: 'CNY', type: 'expense', category_id: null, note: '', occurred_at: '2026-05-09T00:00:00.000Z' } });
 
     for (let i = 0; i < 3; i++) {
+      // 前进足够时间让退避到期（最大 20s）
+      vi.advanceTimersByTime(21_000);
       const r = await drainBatch(200);
       expect(r).not.toBeNull();
       expect(r!.batch[0].retries).toBe(i);
       await ackBatchFailure(r!.batchKey);
     }
 
+    vi.advanceTimersByTime(21_000);
     const r4 = await drainBatch(200);
     expect(r4).not.toBeNull();
     expect(r4!.batch[0].retries).toBe(3);
@@ -197,7 +209,9 @@ describe('services/outbox', () => {
   it('max_retries 超限 → dead-letter', async () => {
     await enqueue({ op: 'create', entity: 'entry', client_ref_id: 'max-retry', base_version: null, payload: { ledger_id: 'l1', amount: 100, currency: 'CNY', type: 'expense', category_id: null, note: '', occurred_at: '2026-05-09T00:00:00.000Z' } });
 
-    for (let i = 0; i < 50; i++) {
+    for (let i = 0; i < 5; i++) {
+      // 前进足够时间让退避到期（最大 20s）
+      vi.advanceTimersByTime(21_000);
       const r = await drainBatch(200);
       expect(r).not.toBeNull();
       await ackBatchFailure(r!.batchKey);
@@ -261,11 +275,50 @@ describe('services/outbox', () => {
     // 失败复原
     await ackBatchFailure(r1!.batchKey);
 
+    // 退避延迟后才能 drain（retries=1 → 3s）
+    vi.advanceTimersByTime(3100);
     const r2 = await drainBatch(200);
     expect(r2).not.toBeNull();
     const key2 = r2!.batchKey;
 
     // 两次的 batchKey 不同
     expect(key1).not.toBe(key2);
+  });
+
+  // ─── 退避隔离测试 ──────────────────────────────────────────────────────────
+
+  it('退避延迟让失败 op 不阻塞后续新 op', async () => {
+    // 入队两条 op
+    await enqueue({ op: 'create', entity: 'entry', client_ref_id: 'fail-op', base_version: null, payload: { ledger_id: 'l1', amount: 100, currency: 'CNY', type: 'expense', category_id: null, note: '', occurred_at: '2026-05-09T00:00:00.000Z' } });
+    await enqueue({ op: 'create', entity: 'entry', client_ref_id: 'good-op', base_version: null, payload: { ledger_id: 'l1', amount: 200, currency: 'CNY', type: 'expense', category_id: null, note: '', occurred_at: '2026-05-09T00:00:00.000Z' } });
+
+    // 第一次 drain 拉出两条
+    const r1 = await drainBatch(200);
+    expect(r1).not.toBeNull();
+    expect(r1!.batch).toHaveLength(2);
+
+    // fail-op conflict, good-op ok
+    await ackResultsBySeq(r1!.batchKey, [
+      { seq: r1!.batch[0].seq, result: { client_ref_id: 'fail-op', status: 'conflict', server_version: 5 } },
+      { seq: r1!.batch[1].seq, result: { client_ref_id: 'good-op', status: 'ok', server_id: 'srv-good', server_version: 1 } },
+    ]);
+
+    // 入队新 op
+    await enqueue({ op: 'create', entity: 'entry', client_ref_id: 'new-op', base_version: null, payload: { ledger_id: 'l1', amount: 300, currency: 'CNY', type: 'expense', category_id: null, note: '', occurred_at: '2026-05-09T00:00:00.000Z' } });
+
+    // 不前进时间 → drain 只拉出 new-op（fail-op 退避中被跳过）
+    const r2 = await drainBatch(200);
+    expect(r2).not.toBeNull();
+    expect(r2!.batch).toHaveLength(1);
+    expect(r2!.batch[0].client_ref_id).toBe('new-op');
+  });
+
+  it('computeRetryBackoff 公式验证', () => {
+    // MAX_RETRIES=5 · 范围 3s~20s · step=(20000-3000)/4=4250ms
+    expect(computeRetryBackoff(1)).toBe(3000);   // 最低 3s
+    expect(computeRetryBackoff(2)).toBe(7250);   // 3000 + 4250
+    expect(computeRetryBackoff(3)).toBe(11500);  // 3000 + 8500
+    expect(computeRetryBackoff(5)).toBe(20000);  // 封顶 20s
+    expect(computeRetryBackoff(100)).toBe(20000); // 超出仍是封顶
   });
 });

@@ -89,8 +89,24 @@ function newIdemKey(): string {
 
 // ─── retry 上限 ──────────────────────────────────────────────────────────────
 
-const MAX_RETRIES = 50;
+const MAX_RETRIES = 5;
 const DEAD_LETTER_KEY = 'outbox:__dead_letter';
+
+/**
+ * 退避延迟策略：retries 越多，等待越久，让持续失败的 op 不阻塞后续正常 op 的 drain。
+ * 范围: 3s ~ 20s · 线性步进 = (20000 - 3000) / (MAX_RETRIES - 1) ≈ 4250ms
+ * 公式: 3000 + (retries - 1) * step，封顶 20000ms
+ *   retries=1 → 3s · retries=2 → 7.25s · retries=3 → 11.5s · retries=4 → 15.75s · retries=5 → 20s
+ * drainBatch 中 `if (op.next_retry_at > now) continue;` 会跳过未到时的 op，
+ * 从而让同批次中时间到的其他 op 正常发送，解决"一条记账一直失败阻塞所有同步"的问题。
+ */
+const BACKOFF_MIN_MS = 3000;
+const BACKOFF_MAX_MS = 20_000;
+const BACKOFF_STEP_MS = (BACKOFF_MAX_MS - BACKOFF_MIN_MS) / Math.max(MAX_RETRIES - 1, 1);
+
+export function computeRetryBackoff(retries: number): number {
+  return Math.min(BACKOFF_MIN_MS + (retries - 1) * BACKOFF_STEP_MS, BACKOFF_MAX_MS);
+}
 
 async function readDeadLetter(): Promise<SyncOp[]> {
   return (await getItem<SyncOp[]>(DEAD_LETTER_KEY)) || [];
@@ -300,13 +316,13 @@ export async function ackResultsBySeq(
     } else if (result.status === 'conflict') {
       // conflict → 重入 index 重试（下次 pushDelta 会从 storage 刷新 base_version）
       op.retries++;
-      op.next_retry_at = Date.now();
+      op.next_retry_at = Date.now() + computeRetryBackoff(op.retries);
       op.idempotency_key = newIdemKey(); // 换新 key 防 409
       await setItem(opKey(seq), op);
       const newIdx = await readIndex();
       if (!newIdx.includes(seq)) newIdx.push(seq);
       await writeIndex(newIdx);
-      console.warn(`[outbox:ackResults] ⚠️ CONFLICT · seq=${seq} op=${op.op} ref=${op.client_ref_id} base_version=${op.base_version} server_version=${result.server_version} retries=${op.retries} → re-index`);
+      console.warn(`[outbox:ackResults] ⚠️ CONFLICT · seq=${seq} op=${op.op} ref=${op.client_ref_id} base_version=${op.base_version} server_version=${result.server_version} retries=${op.retries} next_retry_in=${computeRetryBackoff(op.retries)}ms → re-index`);
     } else {
       // rejected
       const code = result.error?.code;
@@ -316,13 +332,13 @@ export async function ackResultsBySeq(
       } else {
         // 可重试的 rejected（如 INVALID_ARGUMENT: base_version null → 下次刷新后可恢复）
         op.retries++;
-        op.next_retry_at = Date.now();
+        op.next_retry_at = Date.now() + computeRetryBackoff(op.retries);
         op.idempotency_key = newIdemKey(); // 换新 key 防 409
         await setItem(opKey(seq), op);
         const newIdx = await readIndex();
         if (!newIdx.includes(seq)) newIdx.push(seq);
         await writeIndex(newIdx);
-        console.warn(`[outbox:ackResults] ⚠️ REJECTED(${code}) · seq=${seq} op=${op.op} ref=${op.client_ref_id} base_version=${op.base_version} msg="${result.error?.message}" retries=${op.retries} → re-index`);
+        console.warn(`[outbox:ackResults] ⚠️ REJECTED(${code}) · seq=${seq} op=${op.op} ref=${op.client_ref_id} base_version=${op.base_version} msg="${result.error?.message}" retries=${op.retries} next_retry_in=${computeRetryBackoff(op.retries)}ms → re-index`);
       }
     }
   }
@@ -364,12 +380,12 @@ export async function ackBatchFailure(batchKey: string): Promise<number> {
       await moveToDeadLetter(op, seq);
       continue;
     }
-    op.next_retry_at = now;
+    op.next_retry_at = now + computeRetryBackoff(op.retries);
     op.idempotency_key = newIdemKey(); // 换新 key 防 409
     await setItem(opKey(seq), op);
     if (!newIdx.includes(seq)) newIdx.push(seq);
     recovered++;
-    console.warn(`[outbox:ackBatchFailure] ↻ RECOVER · seq=${seq} op=${op.op} ref=${op.client_ref_id} retries=${op.retries} → re-index`);
+    console.warn(`[outbox:ackBatchFailure] ↻ RECOVER · seq=${seq} op=${op.op} ref=${op.client_ref_id} retries=${op.retries} next_retry_in=${computeRetryBackoff(op.retries)}ms → re-index`);
   }
   await writeIndex(newIdx);
   return recovered;

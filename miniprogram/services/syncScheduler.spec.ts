@@ -384,4 +384,157 @@ describe('services/syncScheduler', () => {
       trigger: 'mutation',
     });
   });
+
+  // ─── conflict-retry 机制 ────────────────────────────────────────────────────
+
+  // T16: conflicts > 0 时 1s 后自动触发 conflict-retry
+  it('T16: schedules conflict-retry after 1s when conflicts > 0', async () => {
+    mockedIsLoggedIn.mockReturnValue(true);
+    mockedGetActiveFamilyId.mockResolvedValue('family-123');
+    mockedPushDelta.mockResolvedValue({ pushed: 1, conflicts: 1, rejected: 0, failed: 0 });
+    mockedSyncPull.mockResolvedValue({
+      watermark: 100,
+      changes: { entries: [], categories: [], budgets: [], ledgers: [] },
+    });
+
+    await syncOnce('mutation');
+    expect(mockedPushDelta).toHaveBeenCalledTimes(1);
+    expect(__test__.getConflictRetryCount()).toBe(1);
+
+    // 1s 前不应重试
+    await vi.advanceTimersByTimeAsync(900);
+    expect(mockedPushDelta).toHaveBeenCalledTimes(1);
+
+    // 1s 时触发重试
+    mockedPushDelta.mockResolvedValue({ pushed: 0, conflicts: 0, rejected: 0, failed: 0 });
+    await vi.advanceTimersByTimeAsync(200);
+    expect(mockedPushDelta).toHaveBeenCalledTimes(2);
+  });
+
+  // T17: rejected > 0 同样触发 conflict-retry
+  it('T17: schedules conflict-retry when rejected > 0', async () => {
+    mockedIsLoggedIn.mockReturnValue(true);
+    mockedGetActiveFamilyId.mockResolvedValue('family-123');
+    mockedPushDelta.mockResolvedValue({ pushed: 0, conflicts: 0, rejected: 2, failed: 0 });
+    mockedSyncPull.mockResolvedValue({
+      watermark: 100,
+      changes: { entries: [], categories: [], budgets: [], ledgers: [] },
+    });
+
+    await syncOnce('mutation');
+    expect(__test__.getConflictRetryCount()).toBe(1);
+
+    // 1s 后重试
+    mockedPushDelta.mockResolvedValue({ pushed: 0, conflicts: 0, rejected: 0, failed: 0 });
+    await vi.advanceTimersByTimeAsync(1100);
+    expect(mockedPushDelta).toHaveBeenCalledTimes(2);
+  });
+
+  // T18: conflict-retry 达到 MAX_CONFLICT_RETRIES(3) 后停止 + 强制 emit SYNC_DONE
+  it('T18: stops retrying after MAX_CONFLICT_RETRIES and force-emits SYNC_DONE', async () => {
+    mockedIsLoggedIn.mockReturnValue(true);
+    mockedGetActiveFamilyId.mockResolvedValue('family-123');
+    // 每次都有 conflict
+    mockedPushDelta.mockResolvedValue({ pushed: 1, conflicts: 1, rejected: 0, failed: 0 });
+    mockedSyncPull.mockResolvedValue({
+      watermark: 100,
+      changes: { entries: [], categories: [], budgets: [], ledgers: [] },
+    });
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    // 第 1 次（mutation 触发）
+    await syncOnce('mutation');
+    expect(__test__.getConflictRetryCount()).toBe(1);
+
+    // 第 2 次（conflict-retry #1 → 1s 后）
+    await vi.advanceTimersByTimeAsync(1100);
+    expect(__test__.getConflictRetryCount()).toBe(2);
+
+    // 第 3 次（conflict-retry #2 → 1s 后）
+    await vi.advanceTimersByTimeAsync(1100);
+    expect(__test__.getConflictRetryCount()).toBe(3);
+
+    // 第 4 次（conflict-retry #3 → 1s 后 · 达到上限）
+    mockedEventBusEmit.mockClear();
+    await vi.advanceTimersByTimeAsync(1100);
+
+    // 达到上限后 count 被重置
+    expect(__test__.getConflictRetryCount()).toBe(0);
+    // 强制 emit SYNC_DONE（即使 pulled=0）
+    expect(mockedEventBusEmit).toHaveBeenCalledWith('sync-done', expect.objectContaining({
+      trigger: 'conflict-retry',
+    }));
+    // 不再安排下一次 retry（再等 1s 不应有新调用）
+    const callCountBefore = mockedPushDelta.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(1100);
+    expect(mockedPushDelta).toHaveBeenCalledTimes(callCountBefore);
+
+    warnSpy.mockRestore();
+  });
+
+  // T19: conflict-retry 成功解决后重置计数器 + emit SYNC_DONE
+  it('T19: conflict-retry resets count when conflict resolves', async () => {
+    mockedIsLoggedIn.mockReturnValue(true);
+    mockedGetActiveFamilyId.mockResolvedValue('family-123');
+    mockedPushDelta.mockResolvedValue({ pushed: 1, conflicts: 1, rejected: 0, failed: 0 });
+    mockedSyncPull.mockResolvedValue({
+      watermark: 100,
+      changes: { entries: [], categories: [], budgets: [], ledgers: [] },
+    });
+
+    // 第 1 次有冲突
+    await syncOnce('mutation');
+    expect(__test__.getConflictRetryCount()).toBe(1);
+
+    // 第 2 次（retry）无冲突
+    mockedPushDelta.mockResolvedValue({ pushed: 0, conflicts: 0, rejected: 0, failed: 0 });
+    mockedEventBusEmit.mockClear();
+    await vi.advanceTimersByTimeAsync(1100);
+
+    // 计数器归零
+    expect(__test__.getConflictRetryCount()).toBe(0);
+    // 因为 pushed=0 且 pulled=0，但 trigger='conflict-retry' 会走"解决"分支发 emit
+    expect(mockedEventBusEmit).toHaveBeenCalledWith('sync-done', {
+      pulled: 0,
+      pushed: 0,
+      trigger: 'conflict-retry',
+    });
+  });
+
+  // T20: 非 conflict-retry 触发重置计数器
+  it('T20: non conflict-retry trigger resets conflictRetryCount', async () => {
+    mockedIsLoggedIn.mockReturnValue(true);
+    mockedGetActiveFamilyId.mockResolvedValue('family-123');
+    mockedPushDelta.mockResolvedValue({ pushed: 1, conflicts: 1, rejected: 0, failed: 0 });
+    mockedSyncPull.mockResolvedValue({
+      watermark: 100,
+      changes: { entries: [], categories: [], budgets: [], ledgers: [] },
+    });
+
+    // 第 1 次 mutation 有冲突
+    await syncOnce('mutation');
+    expect(__test__.getConflictRetryCount()).toBe(1);
+
+    // 第 2 次非 conflict-retry 触发（如 periodic）· 应重置计数器（新轮次）
+    await syncOnce('periodic');
+    // 重置后又有冲突 → 应从 1 开始
+    expect(__test__.getConflictRetryCount()).toBe(1);
+  });
+
+  // T21: syncOnce('hide') trigger 正确透传
+  it('T21: syncOnce hide trigger passes through', async () => {
+    mockedIsLoggedIn.mockReturnValue(true);
+    mockedGetActiveFamilyId.mockResolvedValue('family-123');
+    mockedPushDelta.mockResolvedValue({ pushed: 1, conflicts: 0, rejected: 0, failed: 0 });
+    mockedSyncPull.mockResolvedValue({
+      watermark: 100,
+      changes: { entries: [], categories: [], budgets: [], ledgers: [] },
+    });
+
+    const result = await syncOnce('hide');
+    expect(result).not.toBeNull();
+    expect(result!.trigger).toBe('hide');
+    expect(mockedEventBusEmit).toHaveBeenCalledWith('sync-done', expect.objectContaining({ trigger: 'hide' }));
+  });
 });

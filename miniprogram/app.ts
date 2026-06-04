@@ -11,7 +11,7 @@
 import { initAuth, isLoggedIn, getToken } from './services/auth';
 import { getEnv } from './services/env';
 import { ensureVersion } from './services/storage';
-import { startScheduler, stopScheduler } from './services/syncScheduler';
+import { startScheduler, stopScheduler, syncOnce } from './services/syncScheduler';
 import { tokens } from './tokens/index';
 
 interface AppGlobalData {
@@ -90,6 +90,10 @@ App<AppOption>({
   },
 
   onHide() {
+    // 关闭/切后台时主动推送一次本地未同步数据 · 保证离开前数据尽量上行
+    // 注：小程序 onHide 后仍有短暂可执行时间窗口（iOS ~5s / Android ~10s），
+    //   syncOnce 内部是 push 先于 pull，最关键的 pushDelta 通常 < 1s 可完成
+    void syncOnce('hide');
     // COSTRA-150: 停止周期 timer · 切后台不跑 periodic sync
     stopScheduler();
   },

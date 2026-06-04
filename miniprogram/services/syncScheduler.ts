@@ -1,8 +1,10 @@
 // services/syncScheduler.ts · 客户端同步调度器
-// 触发源: launch / network-recover / page-show / periodic / mutation
+// 触发源: launch / network-recover / page-show / periodic / mutation / hide / conflict-retry
 // 修复: Bug A（新增 mutation 触发源，enqueue 后 2s debounce 即时同步）
 // 增强: SYNC_DONE 事件广播 · 拉取/推送任一非零时广播，订阅页面（ledger/family/statistics）即时刷新
 // 增强: startScheduler 接受 ready: Promise<void> · launch sync 在 bootstrap 完成后立即触发（取代固定 500ms 延迟）
+// 增强: onHide 时主动触发 syncOnce('hide')，确保离开前数据上行
+// 增强: conflict-retry 机制 · conflicts/rejected > 0 时 3s 后自动重试（最多 3 次后停止 + 强制 UI 刷新）
 
 import { syncPull, pushDelta } from './sync';
 import { isLoggedIn } from './auth';
@@ -12,7 +14,7 @@ import { deadLetterSize } from './outbox';
 
 // ─── 类型 ─────────────────────────────────────────────────────────────────────
 
-export type TriggerSource = 'launch' | 'network-recover' | 'page-show' | 'periodic' | 'mutation';
+export type TriggerSource = 'launch' | 'network-recover' | 'page-show' | 'periodic' | 'mutation' | 'hide' | 'conflict-retry';
 
 export interface SyncResult {
   pushed: number;
@@ -29,6 +31,8 @@ export interface SyncResult {
 const SHOW_DEBOUNCE_MS = 5000;
 const PERIODIC_INTERVAL_MS = 60_000;
 const MUTATION_DEBOUNCE_MS = 2000;
+const CONFLICT_RETRY_DELAY_MS = 1000;
+const MAX_CONFLICT_RETRIES = 3;
 
 // ─── module-level state ──────────────────────────────────────────────────────
 
@@ -37,6 +41,8 @@ let pendingRetrigger = false; // L6 修复：mutex skip 时标记，释放后重
 let lastShowTriggerAt = 0;
 let periodicTimer: ReturnType<typeof setInterval> | null = null;
 let mutationTimer: ReturnType<typeof setTimeout> | null = null;
+let conflictRetryTimer: ReturnType<typeof setTimeout> | null = null;
+let conflictRetryCount = 0;
 
 // ─── 核心：syncOnce ──────────────────────────────────────────────────────────
 
@@ -86,6 +92,54 @@ export async function syncOnce(trigger: TriggerSource): Promise<SyncResult | nul
         trigger,
       };
       eventBus.emit(EventNames.SYNC_DONE, payload);
+    }
+
+    // ── conflict-retry 机制 ────────────────────────────────────────────────────
+    // 当 push 返回 conflicts/rejected 时，说明服务端已有更新版本：
+    //   - 3s 后自动重试（让 outbox reconcile 有机会生效），合并最终一致
+    //   - 最多重试 MAX_CONFLICT_RETRIES 次后停止，强制 emit SYNC_DONE 让 UI 刷新到当前可达的最终态
+    //   - 若本次为非 conflict-retry 触发（用户操作 / periodic 等）则重置计数器
+    if (trigger !== 'conflict-retry') {
+      conflictRetryCount = 0;
+    }
+    if (pushResult.conflicts > 0 || pushResult.rejected > 0) {
+      if (conflictRetryCount < MAX_CONFLICT_RETRIES) {
+        conflictRetryCount++;
+        console.log(`[sync] conflict-retry scheduled · attempt=${conflictRetryCount}/${MAX_CONFLICT_RETRIES} · in ${CONFLICT_RETRY_DELAY_MS}ms`);
+        if (conflictRetryTimer) clearTimeout(conflictRetryTimer);
+        conflictRetryTimer = setTimeout(() => {
+          conflictRetryTimer = null;
+          void syncOnce('conflict-retry');
+        }, CONFLICT_RETRY_DELAY_MS);
+      } else {
+        // 达到最大重试次数 · 停止重试 + 强制广播让 UI 刷新到当前最终态
+        console.warn(`[sync] conflict-retry exhausted (${MAX_CONFLICT_RETRIES} attempts) · giving up · forcing UI refresh`);
+        conflictRetryCount = 0;
+        if (conflictRetryTimer) {
+          clearTimeout(conflictRetryTimer);
+          conflictRetryTimer = null;
+        }
+        // 无论 pushed/pulled 是否 > 0，强制广播 · 让各页面刷新到 reconcile 后的数据状态
+        const forcePayload: SyncDonePayload = {
+          pulled,
+          pushed: pushResult.pushed,
+          trigger,
+        };
+        eventBus.emit(EventNames.SYNC_DONE, forcePayload);
+      }
+    } else if (trigger === 'conflict-retry') {
+      // conflict-retry 触发但本次已无冲突 → 冲突已解决，重置计数器 + 确保 UI 刷新
+      console.log('[sync] conflict-retry resolved · conflicts cleared');
+      conflictRetryCount = 0;
+      // 如果上面的 SYNC_DONE 已经 emit（pushed>0 || pulled>0），则无需重复；否则补一次
+      if (pushResult.pushed === 0 && pulled === 0) {
+        const resolvedPayload: SyncDonePayload = {
+          pulled: 0,
+          pushed: 0,
+          trigger,
+        };
+        eventBus.emit(EventNames.SYNC_DONE, resolvedPayload);
+      }
     }
 
     return {
@@ -158,6 +212,10 @@ export function stopScheduler(): void {
     clearTimeout(mutationTimer);
     mutationTimer = null;
   }
+  if (conflictRetryTimer) {
+    clearTimeout(conflictRetryTimer);
+    conflictRetryTimer = null;
+  }
 }
 
 // ─── page-show debounce ──────────────────────────────────────────────────────
@@ -190,6 +248,7 @@ export const __test__ = {
     isRunning = false;
     pendingRetrigger = false;
     lastShowTriggerAt = 0;
+    conflictRetryCount = 0;
     if (periodicTimer) {
       clearInterval(periodicTimer);
       periodicTimer = null;
@@ -198,8 +257,15 @@ export const __test__ = {
       clearTimeout(mutationTimer);
       mutationTimer = null;
     }
+    if (conflictRetryTimer) {
+      clearTimeout(conflictRetryTimer);
+      conflictRetryTimer = null;
+    }
   },
   getIsRunning(): boolean {
     return isRunning;
+  },
+  getConflictRetryCount(): number {
+    return conflictRetryCount;
   },
 };

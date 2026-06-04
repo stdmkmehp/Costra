@@ -158,6 +158,9 @@ export async function clearToken(): Promise<void> {
  * 页面层门面：退出登录
  * P0 行为：先尝试真调 POST /auth/logout（204），无论成功失败都清本地并跳登录页。
  * 故意不 throw：退出登录语义上必须成功。
+ *
+ * 注意：调用方（如 mine 页 onTapLogout）应在调用 logout 前先执行 syncOnce('hide') + stopScheduler()，
+ * 保证用户离开前本地数据尽量上行。此处不直接引入 syncScheduler 以避免循环依赖。
  */
 export async function logout(): Promise<void> {
   const env = getEnv();
