@@ -15,6 +15,7 @@ import {
   clearActiveFamily,
   type FamilyKind,
 } from '../../services/family';
+import { eventBus, EventNames, type SyncDonePayload } from '../../services/eventBus';
 import { getToken } from '../../services/auth';
 import {
   getFamilies,
@@ -202,6 +203,8 @@ Page({
   _familyId: '' as string,
   _currentUserId: '' as string,
   _loadingPromise: null as Promise<void> | null,
+  /** eventBus 订阅 handler（sync-refresh: SYNC_DONE 后失效缓存 + 重拉 summary，防内存泄漏） */
+  _syncDoneHandler: null as ((payload?: unknown) => void) | null,
 
   // ─── 生命周期 ────────────────────────────────────────────────────────────────
 
@@ -219,12 +222,48 @@ Page({
       this._currentUserId = token.raw.user.id;
       this.setData({ currentUserId: token.raw.user.id });
     }
+
+    // sync-refresh: 订阅 SYNC_DONE → 失效服务端 summary 缓存 + 重拉当前月数据
+    // 关键：family 页数据来自服务端聚合 API（不是本地 storage），
+    //   因此 pushed > 0（本机数据上行后服务端聚合已变）和 pulled > 0（其他端数据已被本机拉到，但 family 聚合是服务端实时 SQL，与本地存储无关）
+    //   两种情况下都需要重新调 API 以拿到服务端最新聚合结果
+    const syncDoneHandler = (payload?: unknown) => {
+      const p = payload as SyncDonePayload | undefined;
+      if (!p) return;
+      // pushed/pulled 任一非零都重拉（emit 时已保证至少一个 > 0，此处再 guard 一次以防订阅链异常）
+      if (p.pushed <= 0 && p.pulled <= 0) return;
+      void this._onSyncDone();
+    };
+    this._syncDoneHandler = syncDoneHandler;
+    eventBus.on(EventNames.SYNC_DONE, syncDoneHandler);
   },
 
   async onShow() {
     this.getTabBar?.()?.setData?.({ selected: 3 });
     triggerOnPageShow('family');
     await this._loadPage();
+  },
+
+  onUnload() {
+    // sync-refresh: 取消订阅 SYNC_DONE 事件（防内存泄漏）
+    if (this._syncDoneHandler) {
+      eventBus.off(EventNames.SYNC_DONE, this._syncDoneHandler);
+      this._syncDoneHandler = null;
+    }
+  },
+
+  /**
+   * sync-refresh: SYNC_DONE 事件处理 · 失效当前家庭的 summary 缓存 + 重拉当前月数据
+   * - invalidateFamilyCache 后 _loadSummary 内 getCachedSummary 返回 null，直接走 API（绕过 stale 渲染）
+   * - 仅刷新当前展示月份，不动其他 UI 状态（mode/familyList 等）
+   * - 若 _loadPage 正在执行（`_loadingPromise != null`），其末尾会调一次 _loadSummary，无需重复触发，
+   *   避免短暂 loading 状态闪烁（reviewer Minor-3）
+   */
+  async _onSyncDone() {
+    if (!this._familyId) return;
+    if (this._loadingPromise) return;
+    invalidateFamilyCache(this._familyId);
+    await this._loadSummary(this._familyId, this.data.currentMonth);
   },
 
   // ─── 数据加载 ────────────────────────────────────────────────────────────────

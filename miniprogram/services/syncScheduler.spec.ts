@@ -23,18 +23,20 @@ vi.mock('./family', () => ({
 
 vi.mock('./eventBus', () => ({
   eventBus: { on: vi.fn(), off: vi.fn(), emit: vi.fn() },
-  EventNames: { OUTBOX_ENQUEUED: 'outbox-enqueued' },
+  EventNames: { OUTBOX_ENQUEUED: 'outbox-enqueued', SYNC_DONE: 'sync-done' },
 }));
 
 import { pushDelta } from './sync';
 import { syncPull } from './sync';
 import { isLoggedIn } from './auth';
 import { getActiveFamilyId as familyContextGetActiveFamilyId } from './family';
+import { eventBus } from './eventBus';
 
 const mockedPushDelta = vi.mocked(pushDelta);
 const mockedSyncPull = vi.mocked(syncPull);
 const mockedIsLoggedIn = vi.mocked(isLoggedIn);
 const mockedGetActiveFamilyId = vi.mocked(familyContextGetActiveFamilyId);
+const mockedEventBusEmit = vi.mocked(eventBus.emit);
 
 // ─── 测 ───────────────────────────────────────────────────────────────────────
 
@@ -196,13 +198,14 @@ describe('services/syncScheduler', () => {
       onNetworkStatusChange: onNetworkCb,
     });
 
+    // 不传 ready · 立即触发 launch sync
     startScheduler();
 
     // 验证 wx.onNetworkStatusChange 被注册
     expect(onNetworkCb).toHaveBeenCalledTimes(1);
 
-    // launch 触发（500ms 后）
-    await vi.advanceTimersByTimeAsync(600);
+    // launch 触发（同步路径，flush microtasks 即可）
+    await vi.advanceTimersByTimeAsync(0);
     expect(mockedPushDelta).toHaveBeenCalledTimes(1);
 
     // 周期 60s 触发
@@ -234,5 +237,151 @@ describe('services/syncScheduler', () => {
 
     expect(result).not.toBeNull();
     expect(result!.trigger).toBe('network-recover');
+  });
+
+  // T9: SYNC_DONE emits when pulled > 0（payload 携带正确字段）
+  it('T9: emits SYNC_DONE with payload when pulled > 0', async () => {
+    mockedIsLoggedIn.mockReturnValue(true);
+    mockedGetActiveFamilyId.mockResolvedValue('family-123');
+    mockedPushDelta.mockResolvedValue({ pushed: 0, conflicts: 0, rejected: 0, failed: 0 });
+    mockedSyncPull.mockResolvedValue({
+      watermark: 100,
+      changes: { entries: [{ id: 'e1' }, { id: 'e2' }, { id: 'e3' }], categories: [], budgets: [], ledgers: [] },
+    });
+
+    await syncOnce('periodic');
+
+    expect(mockedEventBusEmit).toHaveBeenCalledWith('sync-done', {
+      pulled: 3,
+      pushed: 0,
+      trigger: 'periodic',
+    });
+  });
+
+  // T10: SYNC_DONE emits when pushed > 0（payload 携带正确字段）
+  it('T10: emits SYNC_DONE with payload when pushed > 0', async () => {
+    mockedIsLoggedIn.mockReturnValue(true);
+    mockedGetActiveFamilyId.mockResolvedValue('family-123');
+    mockedPushDelta.mockResolvedValue({ pushed: 2, conflicts: 0, rejected: 0, failed: 0 });
+    mockedSyncPull.mockResolvedValue({
+      watermark: 100,
+      changes: { entries: [], categories: [], budgets: [], ledgers: [] },
+    });
+
+    await syncOnce('mutation');
+
+    expect(mockedEventBusEmit).toHaveBeenCalledWith('sync-done', {
+      pulled: 0,
+      pushed: 2,
+      trigger: 'mutation',
+    });
+  });
+
+  // T11: SYNC_DONE NOT emitted when both pushed=0 and pulled=0（避免空 sync 触发无意义 UI 刷新）
+  it('T11: does NOT emit SYNC_DONE when pushed=0 and pulled=0', async () => {
+    mockedIsLoggedIn.mockReturnValue(true);
+    mockedGetActiveFamilyId.mockResolvedValue('family-123');
+    mockedPushDelta.mockResolvedValue({ pushed: 0, conflicts: 0, rejected: 0, failed: 0 });
+    mockedSyncPull.mockResolvedValue({
+      watermark: 100,
+      changes: { entries: [], categories: [], budgets: [], ledgers: [] },
+    });
+
+    await syncOnce('periodic');
+
+    // 不应有 SYNC_DONE 的 emit 调用（OUTBOX_ENQUEUED 等其他事件不在本测断言范围）
+    const syncDoneCalls = mockedEventBusEmit.mock.calls.filter(c => c[0] === 'sync-done');
+    expect(syncDoneCalls).toHaveLength(0);
+  });
+
+  // T12: SYNC_DONE NOT emitted on failure path（5xx 等异常情况下不广播）
+  it('T12: does NOT emit SYNC_DONE on failure path', async () => {
+    mockedIsLoggedIn.mockReturnValue(true);
+    mockedGetActiveFamilyId.mockResolvedValue('family-123');
+    mockedPushDelta.mockRejectedValue({ code: 'SERVER_ERROR', message: 'boom' });
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await syncOnce('launch');
+
+    const syncDoneCalls = mockedEventBusEmit.mock.calls.filter(c => c[0] === 'sync-done');
+    expect(syncDoneCalls).toHaveLength(0);
+
+    warnSpy.mockRestore();
+  });
+
+  // T13: startScheduler awaits ready promise before launch sync
+  it('T13: startScheduler awaits ready promise before launching first sync', async () => {
+    mockedIsLoggedIn.mockReturnValue(true);
+    mockedGetActiveFamilyId.mockResolvedValue('family-123');
+    mockedPushDelta.mockResolvedValue({ pushed: 0, conflicts: 0, rejected: 0, failed: 0 });
+    mockedSyncPull.mockResolvedValue({
+      watermark: 100,
+      changes: { entries: [], categories: [], budgets: [], ledgers: [] },
+    });
+
+    vi.stubGlobal('wx', { onNetworkStatusChange: vi.fn() });
+
+    let resolveReady!: () => void;
+    const ready = new Promise<void>((resolve) => { resolveReady = resolve; });
+
+    startScheduler(ready);
+
+    // ready 未 resolve 之前不应触发 launch sync
+    await vi.advanceTimersByTimeAsync(50);
+    expect(mockedPushDelta).not.toHaveBeenCalled();
+
+    // resolve ready · launch sync 立即触发（无需等待固定 500ms）
+    resolveReady();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mockedPushDelta).toHaveBeenCalledTimes(1);
+
+    stopScheduler();
+    __test__.reset();
+    vi.unstubAllGlobals();
+  });
+
+  // T14: startScheduler 即使 ready promise reject 也兜底触发 launch sync
+  it('T14: startScheduler still launches sync even if ready promise rejects', async () => {
+    mockedIsLoggedIn.mockReturnValue(true);
+    mockedGetActiveFamilyId.mockResolvedValue('family-123');
+    mockedPushDelta.mockResolvedValue({ pushed: 0, conflicts: 0, rejected: 0, failed: 0 });
+    mockedSyncPull.mockResolvedValue({
+      watermark: 100,
+      changes: { entries: [], categories: [], budgets: [], ledgers: [] },
+    });
+
+    vi.stubGlobal('wx', { onNetworkStatusChange: vi.fn() });
+
+    const ready = Promise.reject(new Error('bootstrap failed'));
+
+    startScheduler(ready);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(mockedPushDelta).toHaveBeenCalledTimes(1);
+
+    stopScheduler();
+    __test__.reset();
+    vi.unstubAllGlobals();
+  });
+
+  // T15: SYNC_DONE payload 在 pushed>0 且 pulled>0 同时非零时正确携带两个值
+  // （reviewer Nit-2 · 补足 T9/T10 单字段非零之外的双字段非零路径）
+  it('T15: emits SYNC_DONE with both pushed and pulled non-zero', async () => {
+    mockedIsLoggedIn.mockReturnValue(true);
+    mockedGetActiveFamilyId.mockResolvedValue('family-123');
+    mockedPushDelta.mockResolvedValue({ pushed: 5, conflicts: 0, rejected: 0, failed: 0 });
+    mockedSyncPull.mockResolvedValue({
+      watermark: 200,
+      changes: { entries: [{ id: 'e1' }, { id: 'e2' }], categories: [], budgets: [], ledgers: [] },
+    });
+
+    await syncOnce('mutation');
+
+    expect(mockedEventBusEmit).toHaveBeenCalledWith('sync-done', {
+      pulled: 2,
+      pushed: 5,
+      trigger: 'mutation',
+    });
   });
 });

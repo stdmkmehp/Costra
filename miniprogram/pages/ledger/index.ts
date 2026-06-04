@@ -16,7 +16,8 @@ import {
 } from '../../services/family';
 import { enqueue } from '../../services/outbox';
 import { getToken } from '../../services/auth';
-import { eventBus, EventNames } from '../../services/eventBus';
+import { eventBus, EventNames, type SyncDonePayload } from '../../services/eventBus';
+import { triggerOnPageShow } from '../../services/syncScheduler';
 import { pickRandomSlogan } from '../../config/slogans';
 import { getFamilies } from '../../services/familyApi';
 import {
@@ -245,6 +246,13 @@ Page({
   _entrySavedHandler: null as (() => void) | null,
   /** eventBus 订阅 handler（COSTRA-227: 编辑保存刷新） */
   _entryUpdatedHandler: null as (() => void) | null,
+  /** eventBus 订阅 handler（sync-refresh: SYNC_DONE 后即时刷新） */
+  _syncDoneHandler: null as ((payload?: unknown) => void) | null,
+  /**
+   * 当前已渲染 entries 的签名（sync-refresh: 签名 diff 跳过无效 setData，避免列表跳动）
+   * 拼接字段：client_ref_id|version|occurred_at|amount|type|category_id|note|deleted_at|shared_type|created_by
+   */
+  _entriesSignature: '' as string,
   /** COSTRA-227: 当前正在编辑的条目 client_ref_id */
   _editingRefId: '' as string,
 
@@ -276,12 +284,24 @@ Page({
     const updatedHandler = () => { this._onEntryUpdated(); };
     this._entryUpdatedHandler = updatedHandler;
     eventBus.on(EventNames.ENTRY_UPDATED, updatedHandler);
+
+    // sync-refresh: 订阅 SYNC_DONE 事件 → sync 完成后即时刷新明细页（仅在 pulled > 0 时）
+    const syncDoneHandler = (payload?: unknown) => {
+      const p = payload as SyncDonePayload | undefined;
+      // ledger 只关心 pulled（本地 storage 数据可能已变）；pushed 仅是本机数据上行，不影响明细页展示
+      if (!p || p.pulled <= 0) return;
+      void this._refreshIfChanged();
+    };
+    this._syncDoneHandler = syncDoneHandler;
+    eventBus.on(EventNames.SYNC_DONE, syncDoneHandler);
   },
 
   async onShow() {
     this.getTabBar?.()?.setData?.({ selected: 0 });
     await this._loadContext();
     await this._loadEntries();
+    // sync-refresh: 与其他 tab 页（statistics/family/mine）保持一致 · 切回明细页时触发同步（debounce 5s 内防重）
+    triggerOnPageShow('ledger');
   },
 
   onUnload() {
@@ -294,6 +314,11 @@ Page({
     if (this._entryUpdatedHandler) {
       eventBus.off(EventNames.ENTRY_UPDATED, this._entryUpdatedHandler);
       this._entryUpdatedHandler = null;
+    }
+    // sync-refresh: 取消订阅 SYNC_DONE 事件
+    if (this._syncDoneHandler) {
+      eventBus.off(EventNames.SYNC_DONE, this._syncDoneHandler);
+      this._syncDoneHandler = null;
     }
   },
 
@@ -361,6 +386,57 @@ Page({
     });
 
     this._allEntries = entries.filter(e => e.occurred_at < monthRange.until);
+    // sync-refresh: 维护签名 · 后续 SYNC_DONE 触发的 _refreshIfChanged 据此判断是否真的有变化
+    this._entriesSignature = this._computeEntriesSignature(this._allEntries);
+    this._buildDisplay(targetMonth);
+  },
+
+  /**
+   * sync-refresh: 计算 entries 列表签名
+   * 选取会影响视觉的字段拼接 · 整体变化哪怕一处也会改变签名
+   * 复杂度 O(n)，单月几十~几百条 entry 实测 < 1ms
+   */
+  _computeEntriesSignature(entries: Entry[]): string {
+    return entries
+      .map(e => [
+        e.client_ref_id,
+        e.version ?? 0,
+        e.occurred_at,
+        e.amount,
+        e.type,
+        e.category_id ?? '',
+        e.note ?? '',
+        e.deleted_at ?? '',
+        e.shared_type ?? '',
+        e.created_by ?? '',
+      ].join('|'))
+      .join(';');
+  },
+
+  /**
+   * sync-refresh: SYNC_DONE 后调用 · 若签名变化则重建并 setData，否则跳过避免列表跳动
+   * 注意：仅刷新当前展示月份；不动用 _shouldRefreshEmptyHintOnNextEmpty 等内部状态
+   *
+   * 账本切换路径无需特殊处理：onTapLedgerName 切账本时会调 _loadEntries 直接重建签名；
+   * 之后若 SYNC_DONE 到达，_refreshIfChanged 用最新 _ledgerId 查询新账本数据，与最新签名比对，
+   * 行为正确（无残留旧账本数据风险）。
+   */
+  async _refreshIfChanged() {
+    if (!this._ledgerId) return;
+    const targetMonth = this.data.currentMonth;
+    const monthRange = getMonthRange(targetMonth);
+    const entries = await listEntries({
+      ledger_id: this._ledgerId,
+      since: monthRange.since,
+    });
+    const filtered = entries.filter(e => e.occurred_at < monthRange.until);
+    const nextSig = this._computeEntriesSignature(filtered);
+    if (nextSig === this._entriesSignature) {
+      // 当前展示月份的可见数据未变 · 跳过 setData
+      return;
+    }
+    this._allEntries = filtered;
+    this._entriesSignature = nextSig;
     this._buildDisplay(targetMonth);
   },
 

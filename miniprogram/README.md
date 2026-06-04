@@ -79,7 +79,7 @@ Sprint-0 骨架仅实现"最小可演示登录闭环"，主包与分包的**完�
 |---|---|---|---|---|
 | 启动页 / 授权引导 | `pages/launch/index` | 合并到 `pages/login/index` | Sprint-1 | COSTRA-102 |
 | 手机号绑定 | `pages/bind-phone/index` | ❌ 未创建 | Sprint-2 | COSTRA-102 (R2) |
-| 首页·流水 | `pages/home/index` | ✅ 占位 | Sprint-1 落业务 | COSTRA-102 |
+| 首页·流水 | ~~`pages/home/index`~~ | 已废弃 · 由 `pages/ledger/index` 取代 | — | — |
 | 记一笔 | `pages/entry/index` | ✅ 占位 | Sprint-1 落业务 | COSTRA-102 |
 | 流水筛选 | `pages/entry-filter/index` | ❌ 未创建 | Sprint-2 | COSTRA-114 |
 | 账户管理 | `pages/accounts/index` | ❌ 未创建 | Sprint-2 | COSTRA-111 |

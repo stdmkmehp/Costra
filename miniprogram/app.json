@@ -6,7 +6,6 @@
     "pages/family/index",
     "pages/mine/index",
     "pages/login/index",
-    "pages/home/index",
     "pages/family-dashboard/index",
     "pages/stat-overview/index",
     "pages/entry/index"

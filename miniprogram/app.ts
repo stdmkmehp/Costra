@@ -67,8 +67,9 @@ App<AppOption>({
     });
 
     // COSTRA-150: 启动同步调度器（4 触发源 + mutex + debounce）
-    // 放在 bootstrapPromise 之后 · 不破异步等待链
-    startScheduler();
+    // 增强：传入 bootstrapPromise · launch sync 在 bootstrap 完成后立即触发，
+    //   消除原 setTimeout(500ms) 时序竞争，加速首屏新数据到达
+    startScheduler(this.bootstrapPromise);
   },
 
   onShow() {

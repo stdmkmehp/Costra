@@ -20,9 +20,25 @@ export const EventNames = {
   SHOW_TAB_BAR: 'show-tab-bar',
   /** Outbox 入队（触发 mutation sync） */
   OUTBOX_ENQUEUED: 'outbox-enqueued',
+  /** 同步完成（pulled>0 或 pushed>0 时由 syncScheduler emit · 各 tab 页订阅后即时刷新） */
+  SYNC_DONE: 'sync-done',
 } as const;
 
 export type EventName = typeof EventNames[keyof typeof EventNames];
+
+/**
+ * SYNC_DONE 事件 payload
+ * 仅在本次 sync 实际拉到/推送了数据时由 syncScheduler 广播，
+ * 订阅方按需根据 pulled/pushed 决定是否刷新。
+ */
+export interface SyncDonePayload {
+  /** 本次 sync 从服务端拉回的 entry 条数（>=0） */
+  pulled: number;
+  /** 本次 sync 成功推送到服务端的 op 条数（>=0） */
+  pushed: number;
+  /** 触发本次 sync 的来源 */
+  trigger: 'launch' | 'network-recover' | 'page-show' | 'periodic' | 'mutation';
+}
 
 class EventBus {
   private listeners: Map<string, Set<Handler>> = new Map();
