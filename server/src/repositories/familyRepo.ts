@@ -281,7 +281,8 @@ export async function countJoinedSharedFamilies(
   return (res.rows as unknown as { cnt: number }[])[0].cnt;
 }
 
-
+/**
+ * 创建 shared family + family_members(owner) · 单事务 · kind 强制 'shared'
  * COSTRA-221: 与 createPersonalFamily 同构，kind 硬编码 'shared'
  */
 export async function createSharedFamily(
