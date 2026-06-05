@@ -22,8 +22,8 @@
       <!-- ═══════ Solo Landing 态 ═══════ -->
       <block wx:if="{{mode === 'solo'}}">
 
-        <!-- 个人摘要 -->
-        <view class="solo-summary" wx:if="{{!isEmpty}}">
+        <!-- 个人摘要：loading 中不渲染，避免数据到位后 isEmpty 翻转导致布局跳动 -->
+        <view class="solo-summary" wx:if="{{!isEmpty && !loading}}">
           <view class="solo-summary__item">
             <text class="solo-summary__label">本月支出</text>
             <text class="solo-summary__value tnum">{{soloExpense}}</text>
@@ -45,8 +45,8 @@
           <text class="empty-state__text">本月暂无收支记录</text>
         </view>
 
-        <!-- 引导文案 + CTA -->
-        <view class="solo-cta-area">
+        <!-- 引导文案 + CTA：loading 中不渲染，避免位置跳变 -->
+        <view class="solo-cta-area" wx:if="{{!loading}}">
           <text class="solo-cta-area__hint">财务独立，但不孤立。\n邀请其他用户，开启清晰的协作记账。</text>
           <button class="solo-cta-area__btn" bind:tap="onCreateFamily">创建协作账本</button>
         </view>

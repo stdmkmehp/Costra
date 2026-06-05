@@ -39,6 +39,7 @@ import { mapError } from '../../utils/error-mapper';
 
 interface AppWithBootstrap {
   bootstrapPromise: Promise<void>;
+  globalData: { pendingFamilyAction?: 'create' | null };
 }
 
 // ─── 类型 ────────────────────────────────────────────────────────────────────────
@@ -316,11 +317,20 @@ Page({
         return;
       }
       this._syncCurrentUserIdFromToken();
-      this.setData({ ready: true });
+      // ready=true 的同时设 loading=true，保证在 _loadPage setData 到达前不会有中间帧
+      // 渲染出旧的 isEmpty+loading=false 状态（避免 CTA 按钮闪烁）
+      this.setData({ ready: true, loading: true });
       // tabbar 自治 hidden（由 _unlocked + _panelOpen 合成）· 此处仅同步 selected 并解锁
       (this.getTabBar?.() as { markActive?: (idx: number) => void } | undefined)?.markActive?.(3);
       triggerOnPageShow('family');
       await this._loadPage();
+
+      // 消费跨页面 pending action（如 mine 页"创建协作账本"触发的跳转）
+      const app = getApp<AppWithBootstrap>();
+      if (app.globalData.pendingFamilyAction === 'create') {
+        app.globalData.pendingFamilyAction = null;
+        this.onCreateFamily();
+      }
     });
   },
 

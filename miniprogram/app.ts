@@ -30,6 +30,11 @@ interface AppGlobalData {
    * login 登录成功后读取此值并跳转到 invite-confirm 页面，消费后置 null。
    */
   pendingInviteToken?: string | null;
+  /**
+   * 跨页面挂起动作：mine 页点击"创建协作账本"后写入，switchTab 到 family 页后由 onShow 消费。
+   * 消费后须置 null，防止后续 onShow 重复触发。
+   */
+  pendingFamilyAction?: 'create' | null;
 }
 
 /**

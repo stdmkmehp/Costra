@@ -11,8 +11,9 @@ import { triggerOnPageShow, syncOnce, stopScheduler } from '../../services/syncS
 import { getSafeAreaMetrics } from '../../utils/safeArea';
 import { eventBus, EventNames } from '../../services/eventBus';
 
-interface AppWithBootstrap {
+interface AppWithBootstrapAndGlobal {
   bootstrapPromise: Promise<void>;
+  globalData: { pendingFamilyAction?: 'create' | null };
 }
 
 Page({
@@ -54,7 +55,7 @@ Page({
     eventBus.on(EventNames.PROFILE_COMPLETED, badgeOffHandler);
 
     // 等 bootstrap 完成再判登录态
-    const app = getApp<AppWithBootstrap>();
+    const app = getApp<AppWithBootstrapAndGlobal>();
     void app.bootstrapPromise.then(() => {
       if (!hasValidSession()) {
         wx.reLaunch({ url: '/pages/login/index' });
@@ -79,7 +80,7 @@ Page({
 
   onShow() {
     // COSTRA-127: onShow 加 bootstrapPromise gate · 避免与 onLoad gate 形成 race
-    const app = getApp<AppWithBootstrap>();
+    const app = getApp<AppWithBootstrapAndGlobal>();
     void app.bootstrapPromise.then(() => {
       if (!hasValidSession()) {
         wx.reLaunch({ url: '/pages/login/index' });
@@ -105,6 +106,13 @@ Page({
 
   onTapSettings() {
     wx.navigateTo({ url: '/pages-family/settings/index' });
+  },
+
+  onTapCreateFamily() {
+    // 写入 pending action，让协作页 onShow 消费后自动打开创建弹窗
+    const app = getApp<AppWithBootstrapAndGlobal>();
+    app.globalData.pendingFamilyAction = 'create';
+    wx.switchTab({ url: '/pages/family/index' });
   },
 
   async onTapLogout() {

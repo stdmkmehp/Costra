@@ -19,6 +19,10 @@
     </view>
 
     <view class="menu">
+      <view class="menu__item" bindtap="onTapCreateFamily">
+        <view class="menu__label">创建协作账本</view>
+        <view class="menu__arrow">›</view>
+      </view>
       <view class="menu__item" bindtap="onTapSettings">
         <view class="menu__label">设置</view>
         <view class="menu__arrow">›</view>
