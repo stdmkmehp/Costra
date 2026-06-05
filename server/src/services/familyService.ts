@@ -303,6 +303,9 @@ export async function updateFamily(
 
 /**
  * 软删 family（仅 owner，personal 不可删）
+ *
+ * COSTRA-229 / D-029 §2.3：解散时单事务内先批量 setAllActiveLeftAt 再 softDelete，
+ * 保证「family 软删」与「成员 left_at 已写」一致，不出现「family 已软删但成员仍 active」中间态。
  */
 export async function deleteFamily(
   userId: string,
@@ -313,8 +316,87 @@ export async function deleteFamily(
   await assertActiveMember(userId, familyId);
   await assertOwner(userId, familyId);
 
-  // familyRepo.softDelete 内部有 kind='personal' 守门 + 乐观锁
-  await familyRepo.softDelete({ familyId, version, ownerId: userId });
+  // 单事务：先批量写 left_at + 释放 color_slot，再软删 family
+  // familyRepo.softDelete 内部有 kind='personal' 守门 + 乐观锁 + ownerId 守门
+  await withTx(async (client) => {
+    await familyMemberRepo.setAllActiveLeftAt(familyId, client);
+    await familyRepo.softDelete({ familyId, version, ownerId: userId }, client);
+  });
+}
+
+/**
+ * 当前用户主动离开 family（COSTRA-229 / D-029 §2.1）
+ *
+ * 路由层调用：POST /v1/families/{family_id}/members/me/leave
+ *
+ * 业务编排：
+ *   1. assertActiveMember（已 left / 非成员 → 403 FAMILY_NOT_MEMBER，幂等语义）
+ *   2. 读 family；kind === 'personal' → 抛 FAMILY_PERSONAL_NOT_DELETABLE（403）
+ *   3. 角色分支（withTx 单事务）：
+ *      - owner 多人：findNextOwnerCandidate + transferOwnership + setLeftAt(self)
+ *      - owner 单人：setAllActiveLeftAt + softDelete + setLeftAt(self) 在 setAllActiveLeftAt 中已覆盖
+ *      - 非 owner：直接 setLeftAt(self)
+ *
+ * 不变量（D-029 §4）：
+ *   - 所有写动作必须在单事务内，避免「role 改了但 left_at 没写」中间态
+ *   - 选 nextOwner 用 SQL ORDER BY，不写硬逻辑
+ */
+export async function leaveFamily(
+  userId: string,
+  familyId: string,
+): Promise<void> {
+  // 1. 守门：必须是 active member（重复调用幂等：已 left → 403 FAMILY_NOT_MEMBER）
+  await assertActiveMember(userId, familyId);
+
+  // 2. 读 family，personal 直接拒绝
+  const family = await familyRepo.findById(familyId);
+  if (!family) {
+    throw new AppError(ErrorCode.NOT_FOUND, { message: 'family not found' });
+  }
+  if (family.kind === 'personal') {
+    throw new AppError(ErrorCode.FAMILY_PERSONAL_NOT_DELETABLE, {
+      message: 'personal family cannot be left',
+    });
+  }
+
+  // 3. 取角色（事务外读，事务内不再 SELECT，减少锁开销；
+  //    role 变更只可能由 transferOwnership 在 leave/dissolve 路径触发，无并发漂移风险）
+  const role = await familyMemberRepo.getActiveRole(userId, familyId);
+  if (role === null) {
+    // 理论不可达（assertActiveMember 已守门），防御性
+    throw new AppError(ErrorCode.FAMILY_NOT_MEMBER, {
+      message: 'user role not found in family',
+      details: { family_id: familyId },
+    });
+  }
+
+  await withTx(async (client) => {
+    if (role === 'owner') {
+      // 寻找继承人（最早加入的 active 非 self 成员）
+      const nextOwnerId = await familyMemberRepo.findNextOwnerCandidate(
+        familyId,
+        userId,
+        client,
+      );
+
+      if (nextOwnerId) {
+        // owner 多人 → 移交 + 自己离开
+        await familyMemberRepo.transferOwnership(familyId, userId, nextOwnerId, client);
+        await familyMemberRepo.setLeftAt(familyId, userId, client);
+      } else {
+        // owner 仅自己一人 → 自动解散
+        // setAllActiveLeftAt 会把 self 也置为 left_at（self 是唯一 active 成员）
+        await familyMemberRepo.setAllActiveLeftAt(familyId, client);
+        await familyRepo.softDelete(
+          { familyId, version: family.version, ownerId: userId },
+          client,
+        );
+      }
+    } else {
+      // 非 owner：直接离开
+      await familyMemberRepo.setLeftAt(familyId, userId, client);
+    }
+  });
 }
 
 /**

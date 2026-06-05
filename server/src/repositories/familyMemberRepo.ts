@@ -262,3 +262,108 @@ export async function setLeftAt(
   }
   return rowToEntity((res.rows as FamilyMemberRow[])[0]);
 }
+
+/**
+ * 选择 family 中除 excludeUserId 之外、最早加入的 active 成员，作为所有权移交目标。
+ *
+ * 卡号：COSTRA-229 · 决策：D-029 §2.2
+ *
+ * 排序规则：`joined_at ASC` —— 最早加入的 active 成员优先继承所有权。
+ *   - 不读全量列表后再 JS 排序（用户偏好「不写硬逻辑」）
+ *   - 数据库直接给出有序结果，O(1) 索引扫描（family_members(family_id, joined_at) 现有索引）
+ *
+ * 返回：候选 user_id；若家庭仅剩 excludeUserId 一人 active → 返回 null（调用方应走「自动解散」分支）。
+ */
+export async function findNextOwnerCandidate(
+  familyId: string,
+  excludeUserId: string,
+  client?: Runner,
+): Promise<string | null> {
+  const runner = client ?? exec();
+  const res = await runner.query(
+    `SELECT user_id FROM family_members
+      WHERE family_id = $1 AND user_id != $2 AND left_at IS NULL
+      ORDER BY joined_at ASC
+      LIMIT 1`,
+    [familyId, excludeUserId],
+  );
+  if ((res.rows as unknown[]).length === 0) return null;
+  return (res.rows as unknown as { user_id: string }[])[0].user_id;
+}
+
+/**
+ * 在事务内把所有权从 fromUserId 移交给 toUserId。
+ *
+ * 卡号：COSTRA-229 · 决策：D-029 §2.2
+ *
+ * 调用方 MUST 在事务内调用并传入 client（PoolClient），保证以下三步要么全成功要么全回滚：
+ *   1) 旧 owner SET role='member'
+ *   2) 新 owner SET role='owner'
+ *   3) （由调用方）setLeftAt(fromUserId)
+ *
+ * 防御：两条 UPDATE 都加 `AND left_at IS NULL`，防御「极小窗口内目标成员先离开」的竞态
+ *   —— 若任一行命中 0 行（理论上不会，因为 leaveFamily 入口 assertActiveMember 已守门），
+ *      抛 NOT_FOUND 让事务回滚，业务侧表现为「移交失败 → 事务回滚 → 客户端可重试」。
+ */
+export async function transferOwnership(
+  familyId: string,
+  fromUserId: string,
+  toUserId: string,
+  client: Runner,
+): Promise<void> {
+  // 旧 owner 降级为 member
+  const oldRes = await client.query(
+    `UPDATE family_members
+        SET role = 'member'
+      WHERE family_id = $1 AND user_id = $2 AND left_at IS NULL`,
+    [familyId, fromUserId],
+  );
+  if ((oldRes.rowCount ?? 0) === 0) {
+    const { AppError } = await import('../errors/AppError.js');
+    const { ErrorCode } = await import('../errors/ErrorCode.js');
+    throw new AppError(ErrorCode.NOT_FOUND, {
+      message: 'transfer source member not found or already left',
+      details: { family_id: familyId, user_id: fromUserId },
+    });
+  }
+
+  // 新 owner 升级
+  const newRes = await client.query(
+    `UPDATE family_members
+        SET role = 'owner'
+      WHERE family_id = $1 AND user_id = $2 AND left_at IS NULL`,
+    [familyId, toUserId],
+  );
+  if ((newRes.rowCount ?? 0) === 0) {
+    const { AppError } = await import('../errors/AppError.js');
+    const { ErrorCode } = await import('../errors/ErrorCode.js');
+    throw new AppError(ErrorCode.NOT_FOUND, {
+      message: 'transfer target member not found or already left',
+      details: { family_id: familyId, user_id: toUserId },
+    });
+  }
+}
+
+/**
+ * 解散 family 时批量将所有 active 成员置为 left_at=now() 并释放 color_slot。
+ *
+ * 卡号：COSTRA-229 · 决策：D-029 §2.3
+ *
+ * 调用方 MUST 在事务内调用并传入 client，与 familyRepo.softDelete 配对：
+ *   - 必须先调本函数，再调 softDelete，保证「family 软删」与「成员 left_at 已写」一致
+ *   - 单条 UPDATE 一次性完成，不需要 N 次往返
+ *
+ * 返回受影响行数（仅供日志/调试用，业务路径不依赖）。
+ */
+export async function setAllActiveLeftAt(
+  familyId: string,
+  client: Runner,
+): Promise<number> {
+  const res = await client.query(
+    `UPDATE family_members
+        SET left_at = now(), color_slot = NULL
+      WHERE family_id = $1 AND left_at IS NULL`,
+    [familyId],
+  );
+  return res.rowCount ?? 0;
+}

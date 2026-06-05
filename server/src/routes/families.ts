@@ -359,4 +359,26 @@ export async function registerFamiliesRoutes(app: FastifyInstance): Promise<void
       reply.code(204).send();
     },
   );
+
+  // POST /families/{family_id}/members/me/leave
+  // COSTRA-229 / D-029 §2.1: 当前用户主动离开 family
+  // 语义：非 owner 直接 leave；owner 多人触发自动移交；owner 单人触发自动解散
+  app.post<{ Params: { family_id: string } }>(
+    '/families/:family_id/members/me/leave',
+    { schema: { params: familyIdParamSchema } },
+    async (req, reply) => {
+      const userId = await parseUserId(req);
+
+      // 幂等检查（与 POST /families 同范式：用户重试不会触发二次自动解散）
+      const cached = await checkIdempotency(req, 'POST /families/{family_id}/members/me/leave');
+      if (cached) {
+        reply.code(cached.cached.statusCode).send(cached.cached.body);
+        return;
+      }
+
+      await familyService.leaveFamily(userId, req.params.family_id);
+      await saveIdempotency(req, 'POST /families/{family_id}/members/me/leave', userId, 204, null);
+      reply.code(204).send();
+    },
+  );
 }

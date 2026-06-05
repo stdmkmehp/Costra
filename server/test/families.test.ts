@@ -20,6 +20,14 @@
  *   T14 DELETE /families/{id}
  *   T15 shared family member 上限
  *   T16 OpenAPI ErrorCode FAMILY_PERSONAL_NOT_DELETABLE
+ *
+ * 卡号：COSTRA-229 · 事实源：D-029 §4 不变量
+ *   T17 非 owner leave → 204，member status=left
+ *   T18 owner 多人 leave → 204，触发所有权移交（joined_at ASC 最早者）
+ *   T19 owner 单人 leave → 204，family 自动 softDelete
+ *   T20 personal family leave → 403 FAMILY_PERSONAL_NOT_DELETABLE
+ *   T21 已 left 成员重复 leave → 403 FAMILY_NOT_MEMBER（幂等）
+ *   T22 dissolve（DELETE family）后，所有 active 成员 status=left
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -703,5 +711,290 @@ describe('COSTRA-221: Family Management API', () => {
   // T16: OpenAPI ErrorCode FAMILY_PERSONAL_NOT_DELETABLE 已出现在 enum
   it('T16: FAMILY_PERSONAL_NOT_DELETABLE exists in ErrorCode enum', () => {
     expect(ErrorCode.FAMILY_PERSONAL_NOT_DELETABLE).toBe('FAMILY_PERSONAL_NOT_DELETABLE');
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  // COSTRA-229：family leave / dissolve / 所有权移交
+  // ─────────────────────────────────────────────────────────────────
+
+  // T17: 非 owner leave → 204，member status=left
+  it('T17: non-owner leaves family; status=left', async () => {
+    const { token: ownerToken } = await registerUser('t17-owner');
+    const { token: memberToken, userId: memberUserId } = await registerUser('t17-member');
+
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/v1/families',
+      headers: { ...authHeaders(ownerToken), 'idempotency-key': 't17-create-001' },
+      payload: { name: 'T17家庭' },
+    });
+    const familyId = createRes.json().id;
+
+    const inviteRes = await app.inject({
+      method: 'POST',
+      url: `/v1/families/${familyId}/invites`,
+      headers: { ...authHeaders(ownerToken), 'idempotency-key': 't17-invite-001' },
+      payload: { role: 'member' },
+    });
+    await app.inject({
+      method: 'POST',
+      url: '/v1/families/invites/accept',
+      headers: { ...authHeaders(memberToken), 'idempotency-key': 't17-accept-001' },
+      payload: { invite_token: inviteRes.json().invite_token },
+    });
+
+    // member 主动 leave
+    const leaveRes = await app.inject({
+      method: 'POST',
+      url: `/v1/families/${familyId}/members/me/leave`,
+      headers: { ...authHeaders(memberToken), 'idempotency-key': 't17-leave-001' },
+    });
+    expect(leaveRes.statusCode).toBe(204);
+
+    // owner 视角 members 列表中该成员 status=left
+    const membersRes = await app.inject({
+      method: 'GET',
+      url: `/v1/families/${familyId}/members`,
+      headers: authHeaders(ownerToken),
+    });
+    const left = membersRes.json().find((m: { user_id: string }) => m.user_id === memberUserId);
+    expect(left).toBeDefined();
+    expect(left.status).toBe('left');
+    expect(left.left_at).toBeTruthy();
+  });
+
+  // T18: owner 多人 leave → 204，所有权移交给 joined_at 最早的非 self active 成员
+  it('T18: owner leaves with multiple members; ownership transfers to earliest joiner', async () => {
+    const { token: ownerToken, userId: ownerUserId } = await registerUser('t18-owner');
+    const { token: memberAToken, userId: memberAUserId } = await registerUser('t18-member-a');
+    const { token: memberBToken, userId: memberBUserId } = await registerUser('t18-member-b');
+
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/v1/families',
+      headers: { ...authHeaders(ownerToken), 'idempotency-key': 't18-create-001' },
+      payload: { name: 'T18家庭' },
+    });
+    const familyId = createRes.json().id;
+
+    // member A 先加入
+    const inviteARes = await app.inject({
+      method: 'POST',
+      url: `/v1/families/${familyId}/invites`,
+      headers: { ...authHeaders(ownerToken), 'idempotency-key': 't18-invite-a' },
+      payload: { role: 'member' },
+    });
+    await app.inject({
+      method: 'POST',
+      url: '/v1/families/invites/accept',
+      headers: { ...authHeaders(memberAToken), 'idempotency-key': 't18-accept-a' },
+      payload: { invite_token: inviteARes.json().invite_token },
+    });
+
+    // member B 后加入（joined_at 更晚）
+    const inviteBRes = await app.inject({
+      method: 'POST',
+      url: `/v1/families/${familyId}/invites`,
+      headers: { ...authHeaders(ownerToken), 'idempotency-key': 't18-invite-b' },
+      payload: { role: 'member' },
+    });
+    await app.inject({
+      method: 'POST',
+      url: '/v1/families/invites/accept',
+      headers: { ...authHeaders(memberBToken), 'idempotency-key': 't18-accept-b' },
+      payload: { invite_token: inviteBRes.json().invite_token },
+    });
+
+    // owner leave
+    const leaveRes = await app.inject({
+      method: 'POST',
+      url: `/v1/families/${familyId}/members/me/leave`,
+      headers: { ...authHeaders(ownerToken), 'idempotency-key': 't18-leave-001' },
+    });
+    expect(leaveRes.statusCode).toBe(204);
+
+    // 验证：member A 升级为 owner（joined_at 最早），member B 仍为 member，旧 owner=left
+    const membersRes = await app.inject({
+      method: 'GET',
+      url: `/v1/families/${familyId}/members`,
+      headers: authHeaders(memberAToken),
+    });
+    const members = membersRes.json();
+
+    const newOwner = members.find((m: { user_id: string }) => m.user_id === memberAUserId);
+    expect(newOwner.role).toBe('owner');
+    expect(newOwner.status).toBe('active');
+
+    const stillMember = members.find((m: { user_id: string }) => m.user_id === memberBUserId);
+    expect(stillMember.role).toBe('member');
+    expect(stillMember.status).toBe('active');
+
+    const oldOwner = members.find((m: { user_id: string }) => m.user_id === ownerUserId);
+    expect(oldOwner.status).toBe('left');
+    expect(oldOwner.left_at).toBeTruthy();
+
+    // family 仍然存在（没有 softDelete）
+    const familyDetailRes = await app.inject({
+      method: 'GET',
+      url: `/v1/families/${familyId}`,
+      headers: authHeaders(memberAToken),
+    });
+    expect(familyDetailRes.statusCode).toBe(200);
+  });
+
+  // T19: owner 单人 leave → 204，family 自动 softDelete
+  it('T19: lone owner leaves; family auto-dissolved', async () => {
+    const { token: ownerToken } = await registerUser('t19-owner');
+
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/v1/families',
+      headers: { ...authHeaders(ownerToken), 'idempotency-key': 't19-create-001' },
+      payload: { name: 'T19家庭' },
+    });
+    const familyId = createRes.json().id;
+
+    // owner 唯一成员，直接 leave → 触发 dissolve
+    const leaveRes = await app.inject({
+      method: 'POST',
+      url: `/v1/families/${familyId}/members/me/leave`,
+      headers: { ...authHeaders(ownerToken), 'idempotency-key': 't19-leave-001' },
+    });
+    expect(leaveRes.statusCode).toBe(204);
+
+    // GET /families 不再返回该 family
+    const listRes = await app.inject({
+      method: 'GET',
+      url: '/v1/families',
+      headers: authHeaders(ownerToken),
+    });
+    const families = listRes.json();
+    const found = families.find((f: { id: string }) => f.id === familyId);
+    expect(found).toBeUndefined();
+
+    // 直接 GET /families/:id 也应不可达（404 或 403，被 assertActiveMember 拒绝）
+    const detailRes = await app.inject({
+      method: 'GET',
+      url: `/v1/families/${familyId}`,
+      headers: authHeaders(ownerToken),
+    });
+    expect([403, 404]).toContain(detailRes.statusCode);
+  });
+
+  // T20: personal family leave → 403 FAMILY_PERSONAL_NOT_DELETABLE
+  it('T20: personal family rejects leave', async () => {
+    const { token } = await registerUser('t20-user');
+
+    const listRes = await app.inject({
+      method: 'GET',
+      url: '/v1/families',
+      headers: authHeaders(token),
+    });
+    const personal = listRes.json().find((f: { kind: string }) => f.kind === 'personal');
+    expect(personal).toBeDefined();
+
+    const leaveRes = await app.inject({
+      method: 'POST',
+      url: `/v1/families/${personal.id}/members/me/leave`,
+      headers: { ...authHeaders(token), 'idempotency-key': 't20-leave-001' },
+    });
+    expect(leaveRes.statusCode).toBe(403);
+    expect(leaveRes.json().code).toBe('FAMILY_PERSONAL_NOT_DELETABLE');
+  });
+
+  // T21: 已 left 成员重复 leave → 403 FAMILY_NOT_MEMBER
+  it('T21: already-left member cannot leave again', async () => {
+    const { token: ownerToken } = await registerUser('t21-owner');
+    const { token: memberToken } = await registerUser('t21-member');
+
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/v1/families',
+      headers: { ...authHeaders(ownerToken), 'idempotency-key': 't21-create-001' },
+      payload: { name: 'T21家庭' },
+    });
+    const familyId = createRes.json().id;
+
+    const inviteRes = await app.inject({
+      method: 'POST',
+      url: `/v1/families/${familyId}/invites`,
+      headers: { ...authHeaders(ownerToken), 'idempotency-key': 't21-invite-001' },
+      payload: { role: 'member' },
+    });
+    await app.inject({
+      method: 'POST',
+      url: '/v1/families/invites/accept',
+      headers: { ...authHeaders(memberToken), 'idempotency-key': 't21-accept-001' },
+      payload: { invite_token: inviteRes.json().invite_token },
+    });
+
+    // 第一次 leave 成功
+    const leave1 = await app.inject({
+      method: 'POST',
+      url: `/v1/families/${familyId}/members/me/leave`,
+      headers: { ...authHeaders(memberToken), 'idempotency-key': 't21-leave-001' },
+    });
+    expect(leave1.statusCode).toBe(204);
+
+    // 第二次 leave（不同 idempotency-key）→ 403 FAMILY_NOT_MEMBER
+    const leave2 = await app.inject({
+      method: 'POST',
+      url: `/v1/families/${familyId}/members/me/leave`,
+      headers: { ...authHeaders(memberToken), 'idempotency-key': 't21-leave-002' },
+    });
+    expect(leave2.statusCode).toBe(403);
+    expect(leave2.json().code).toBe('FAMILY_NOT_MEMBER');
+  });
+
+  // T22: dissolve（DELETE family）后所有 active 成员 status=left
+  it('T22: DELETE family marks all active members as left', async () => {
+    const { token: ownerToken, userId: ownerUserId } = await registerUser('t22-owner');
+    const { token: memberToken, userId: memberUserId } = await registerUser('t22-member');
+
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/v1/families',
+      headers: { ...authHeaders(ownerToken), 'idempotency-key': 't22-create-001' },
+      payload: { name: 'T22家庭' },
+    });
+    const familyId = createRes.json().id;
+    const familyVersion = createRes.json().version;
+
+    const inviteRes = await app.inject({
+      method: 'POST',
+      url: `/v1/families/${familyId}/invites`,
+      headers: { ...authHeaders(ownerToken), 'idempotency-key': 't22-invite-001' },
+      payload: { role: 'member' },
+    });
+    await app.inject({
+      method: 'POST',
+      url: '/v1/families/invites/accept',
+      headers: { ...authHeaders(memberToken), 'idempotency-key': 't22-accept-001' },
+      payload: { invite_token: inviteRes.json().invite_token },
+    });
+
+    // owner DELETE family（dissolve）
+    const deleteRes = await app.inject({
+      method: 'DELETE',
+      url: `/v1/families/${familyId}?version=${familyVersion}`,
+      headers: { ...authHeaders(ownerToken), 'idempotency-key': 't22-delete-001' },
+    });
+    expect(deleteRes.statusCode).toBe(204);
+
+    // 直接查 DB 验证成员 left_at（family 已软删，GET 路径会被 assertActiveMember 拒绝）
+    const pool = getPool();
+    const membersDb = await pool.query(
+      `SELECT user_id, left_at, color_slot FROM family_members WHERE family_id = $1`,
+      [familyId],
+    );
+    expect(membersDb.rows.length).toBe(2);
+    for (const row of membersDb.rows) {
+      expect(row.left_at).toBeTruthy();
+      expect(row.color_slot).toBeNull();
+    }
+    const ownerRow = membersDb.rows.find((r: { user_id: string }) => r.user_id === ownerUserId);
+    const memberRow = membersDb.rows.find((r: { user_id: string }) => r.user_id === memberUserId);
+    expect(ownerRow).toBeDefined();
+    expect(memberRow).toBeDefined();
   });
 });

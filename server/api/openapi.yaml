@@ -381,6 +381,30 @@ paths:
         '204': { description: 成功 }
         '403': { $ref: '#/components/responses/Forbidden' }
 
+  /families/{family_id}/members/me/leave:
+    parameters:
+      - $ref: '#/components/parameters/FamilyId'
+    post:
+      tags: [families]
+      summary: 当前用户主动离开 family
+      description: |
+        语义（COSTRA-229 / D-029）：
+        - 非 owner：直接 setLeftAt(self)
+        - owner 多人：单事务内移交所有权给最早加入的 active 成员（joined_at ASC）+ setLeftAt(self)
+        - owner 仅一人：单事务内 softDelete(family) + setAllActiveLeftAt(family) → 自动解散
+        - personal family：拒绝（403 FAMILY_PERSONAL_NOT_DELETABLE）
+        - 已 left 重复调：assertActiveMember 拦截，返回 403 FAMILY_NOT_MEMBER（幂等语义）
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '204': { description: 离开成功（已写 left_at；如触发自动解散，family 同事务软删） }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: 不是 active member 或 personal family 拒绝离开
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   # ============ accounts ============
   # COSTRA-020 Round-2 新增（P0-1）：覆盖 DB schema §3.4 accounts 表的 API 入口
   /accounts:
