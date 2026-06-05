@@ -139,11 +139,11 @@ Component({
 
     // ─── 账本归属 + 费用性质 ───
     ledgerId: '' as string,
-    ledgerName: '我的账本' as string,
+    ledgerName: '个人账本' as string,
     isMultiMemberLedger: false as boolean,
     ledgerOptions: [] as LedgerOption[],
     /** 费用性质：personal / shared */
-    sharedType: 'shared' as 'personal' | 'shared',
+    sharedType: 'personal' as 'personal' | 'shared',
     /** 是否显示费用性质开关（多人+支出时显示） */
     showSharedToggle: false as boolean,
     /** 备注文字 */
@@ -217,7 +217,7 @@ Component({
       ]);
 
       const currentLedgerId = ledgerId || '';
-      const currentLedgerName = ledgerNameStored || '我的账本';
+      const currentLedgerName = ledgerNameStored || '个人账本';
       const isMultiMember = familyKind === 'shared';
 
       // 账本选项初值：用本地 context 拼一个单元素列表，避免开屏空状态
@@ -268,7 +268,7 @@ Component({
         dimmedTier1Ids: [],
         keypadVisible: false,
         calc: { ...INITIAL_CALC_STATE },
-        sharedType: 'shared',
+        sharedType: 'personal',
         note: '',
         recordDate,
         recordDateText: formatRecordDateText(recordDate),
@@ -401,7 +401,7 @@ Component({
       ]);
 
       const ledgerId = entry.ledger_id || activeLedgerId || '';
-      const ledgerName = ledgerNameStored || '我的账本';
+      const ledgerName = ledgerNameStored || '个人账本';
       const isMultiMember = familyKind === 'shared';
 
       const initialLedgerOptions: LedgerOption[] = [
@@ -463,7 +463,7 @@ Component({
       const recordDate = `${occurredDate.getFullYear()}-${String(occurredDate.getMonth() + 1).padStart(2, '0')}-${String(occurredDate.getDate()).padStart(2, '0')}`;
 
       // shared_type 预填
-      const sharedType = entry.shared_type || (isMultiMember ? 'shared' : 'shared');
+      const sharedType = entry.shared_type || 'personal';
       const showSharedToggle = isMultiMember && entryType === 'expense';
 
       (this as unknown as Record<string, number>)._currentScrollTop = 0;
@@ -1005,7 +1005,7 @@ Component({
             ledgerName: selected.name,
             isMultiMemberLedger: selected.isMultiMember,
             showSharedToggle,
-            sharedType: selected.isMultiMember ? 'shared' : 'shared',
+            sharedType: 'personal',
           });
         },
       });

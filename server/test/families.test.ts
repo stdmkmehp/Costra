@@ -569,6 +569,7 @@ describe('COSTRA-221: Family Management API', () => {
     });
     expect(patchRes.statusCode).toBe(200);
     expect(patchRes.json().name).toBe('新名');
+    expect(patchRes.json().ledger_name).toBe('新名');
     expect(patchRes.json().version).toBe(version + 1);
 
     // 非 owner 改名 → 403

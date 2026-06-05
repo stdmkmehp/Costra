@@ -274,6 +274,9 @@ export async function listMembers(
 /**
  * 更新 family name（仅 owner）
  * PATCH 不要求 Idempotency-Key，走 version 乐观锁
+ *
+ * 事务内同步更新 families.name + ledgers.name，保证 API 返回的 ledger_name 一致
+ * （产品语义 family:ledger=1:1，两者名称始终相同）
  */
 export async function updateFamily(
   userId: string,
@@ -291,13 +294,24 @@ export async function updateFamily(
     });
   }
 
-  const family = await familyRepo.updateName({
-    familyId,
-    name: payload.name.trim(),
-    version: payload.version,
-    ownerId: userId,
+  const trimmedName = payload.name.trim();
+
+  // 事务：families.name + ledgers.name 同步更新，保证一致性
+  const family = await withTx(async (client) => {
+    const updated = await familyRepo.updateName({
+      familyId,
+      name: trimmedName,
+      version: payload.version,
+      ownerId: userId,
+    }, client);
+
+    // 同步更新关联 ledger 的 name（产品语义 1:1 · ledger_name 应与 family name 一致）
+    await ledgerRepo.updateNameByFamilyId({ familyId, name: trimmedName }, client);
+
+    return updated;
   });
 
+  // toFamilyResponse 会从 ledgers 表读取 ledger_name，此时已是新值
   return await toFamilyResponse(family);
 }
 

@@ -237,7 +237,7 @@ Page({
     editAmountDisplay: '0',
     editAmountCalc: { ...INITIAL_CALC_STATE } as CalcState,
     editAmountShowShared: false,
-    editAmountSharedType: 'shared' as 'personal' | 'shared',
+    editAmountSharedType: 'personal' as 'personal' | 'shared',
     editAmountDate: '',
     editAmountDateText: '今天',
     editCategoryType: 'expense' as 'expense' | 'income',
@@ -1283,7 +1283,7 @@ Page({
     const dateText = dateVal === todayVal ? '今天' : `${d.getMonth() + 1}/${d.getDate()}`;
 
     const isMulti = this.data.showMemberFilter;
-    const sharedType = entry.shared_type || 'shared';
+    const sharedType = entry.shared_type || 'personal';
 
     eventBus.emit(EventNames.HIDE_TAB_BAR);
     this.setData({
@@ -1379,7 +1379,7 @@ Page({
     // shared_type 变更
     if (this.data.editAmountShowShared) {
       const newShared = this.data.editAmountSharedType;
-      if (newShared !== (entry.shared_type || 'shared')) {
+      if (newShared !== (entry.shared_type || 'personal')) {
         changedFields.shared_type = newShared;
       }
     }

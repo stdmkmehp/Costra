@@ -83,6 +83,25 @@ export async function createDefaultLedger(
 }
 
 /**
+ * 按 family_id 更新 ledger name（重命名 family 时同步 · 产品语义 1:1）
+ * 返回更新后的 ledger entity；无匹配行时返回 null（数据异常 · service 层兜底）
+ */
+export async function updateNameByFamilyId(
+  input: { familyId: string; name: string },
+  client?: Runner,
+): Promise<LedgerEntity | null> {
+  const runner = client ?? exec();
+  const res = await runner.query(
+    `UPDATE ledgers
+        SET name = $2, updated_at = now()
+      WHERE family_id = $1 AND deleted_at IS NULL
+     RETURNING id, family_id, name, currency, created_at, updated_at, deleted_at, version`,
+    [input.familyId, input.name],
+  );
+  return res.rows[0] ? rowToEntity(res.rows[0]) : null;
+}
+
+/**
  * 按 id 查 ledger（COSTRA-217 R1.x：entryService 需通过 ledger→family 判定 shared_type 默认值）
  */
 export async function findById(

@@ -12,6 +12,8 @@ import { maxSharedFamilies, maxFamilyMembers } from '../../config/defaults';
 import { triggerOnPageShow } from '../../services/syncScheduler';
 import {
   getActiveFamilyId,
+  getActiveLedgerId,
+  getActiveFamilyKind,
   setActiveFamily,
   clearActiveFamily,
   savePreferenceAsync,
@@ -1097,13 +1099,26 @@ Page({
     try {
       const updated = await renameFamily(this._familyId, name, family.version);
       // 更新内存中的 familyList（含 version 递增） + familyName
-      const newList = this.data.familyList.map(f => (f.id === updated.id ? { ...f, name: updated.name, version: updated.version } : f));
+      const newList = this.data.familyList.map(f => (f.id === updated.id ? { ...f, name: updated.name, ledger_name: updated.ledger_name, version: updated.version } : f));
       this.setData({
         familyList: newList,
         familyName: name,
         renameOverlayVisible: false,
         renameLoading: false,
       });
+      // 同步更新 storage 中的 ledger_name，让明细页/统计页 onShow 即刻读到新名称
+      const [ledgerId, familyKind] = await Promise.all([
+        getActiveLedgerId(),
+        getActiveFamilyKind(),
+      ]);
+      if (ledgerId && familyKind) {
+        await setActiveFamily({
+          family_id: this._familyId,
+          ledger_id: ledgerId,
+          family_kind: familyKind,
+          ledger_name: updated.ledger_name || name,
+        });
+      }
       // 失效缓存确保统计/明细页拉到新名称
       invalidateFamilyCache(this._familyId);
       wx.showToast({ title: '已修改', icon: 'success' });
@@ -1117,8 +1132,21 @@ Page({
           const refreshed = this.data.familyList.find(f => f.id === this._familyId);
           if (refreshed) {
             const retried = await renameFamily(this._familyId, name, refreshed.version);
-            const newList = this.data.familyList.map(f => (f.id === retried.id ? { ...f, name: retried.name, version: retried.version } : f));
+            const newList = this.data.familyList.map(f => (f.id === retried.id ? { ...f, name: retried.name, ledger_name: retried.ledger_name, version: retried.version } : f));
             this.setData({ familyList: newList, familyName: name, renameOverlayVisible: false, renameLoading: false });
+            // 同步更新 storage 中的 ledger_name
+            const [ledgerId2, familyKind2] = await Promise.all([
+              getActiveLedgerId(),
+              getActiveFamilyKind(),
+            ]);
+            if (ledgerId2 && familyKind2) {
+              await setActiveFamily({
+                family_id: this._familyId,
+                ledger_id: ledgerId2,
+                family_kind: familyKind2,
+                ledger_name: retried.ledger_name || name,
+              });
+            }
             invalidateFamilyCache(this._familyId);
             wx.showToast({ title: '已修改', icon: 'success' });
             return;

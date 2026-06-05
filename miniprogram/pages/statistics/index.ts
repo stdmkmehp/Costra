@@ -22,7 +22,7 @@ Page({
     ready: false,
     statusBarHeight: 0,
     navBarHeight: 44,
-    ledgerName: '我的账本',
+    ledgerName: '个人账本',
   },
 
   _ledgerId: '' as string,
