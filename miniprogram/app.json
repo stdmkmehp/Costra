@@ -59,7 +59,7 @@
   "style": "v2",
   "sitemapLocation": "sitemap.json",
   "requiredBackgroundModes": [],
-  "requiredPrivateInfos": ["chooseAvatar", "nickname"],
+  "requiredPrivateInfos": [],
   "permission": {},
   "lazyCodeLoading": "requiredComponents"
 }
