@@ -387,7 +387,14 @@ Page({
       { label: '记账笔数', value: `${totals.entry_count}` },
     ];
 
-    const l1: L1Display[] = category_ranks.slice(0, L1_VISIBLE).map((c) => this._buildL1Display(c));
+    // 保留旧展开态：切 Tab 回到统计页时，新数据进来不应把已展开的下钻列表关掉。
+    // 参考家庭页 detailRows 的做法，用旧列表的 category_id 索引把展开相关字段（expanded
+    // / l2Items / l2HasMore / l2MoreCount）合并到新 L1 上。
+    // 月份/年份/维度切换、SYNC_DONE 等场景已在调用方主动清空展开态，此处的 merge 不会
+    // 错误地把陈旧的 L2/L3 数据带到新场景下。
+    const l1: L1Display[] = category_ranks
+      .slice(0, L1_VISIBLE)
+      .map((c) => this._buildL1Display(c, this.data.monthlyL1));
 
     this.setData({
       monthlyTotalExpense: fmtYuan(totals.expense),
@@ -403,19 +410,30 @@ Page({
     });
   },
 
-  _buildL1Display(c: StatCategoryRankItem): L1Display {
+  /**
+   * 构建单个 L1 显示对象。
+   *
+   * 新数据（金额/排名/icon/name）一律来自 API 返回的 c；展开相关字段
+   * （expanded / l2Items / l2HasMore / l2MoreCount）若旧列表存在同 category_id
+   * 的项则沿用其值，从而在 onShow → SWR 重渲染时不丢失下钻状态。
+   *
+   * 旧 L1 列表为空（如初次加载）时，展开态默认为 false（与全新进入页面一致）。
+   */
+  _buildL1Display(c: StatCategoryRankItem, prevList: L1Display[]): L1Display {
+    const id = c.category_id || '';
+    const prev = prevList.find((p) => p.category_id === id);
     return {
-      category_id: c.category_id || '',
+      category_id: id,
       category_name: c.category_name,
       icon: c.icon,
       amount: fmtYuan(c.amount),
       amountCents: c.amount,
       ratio_bps: c.ratio_bps,
-      expanded: false,
+      expanded: prev?.expanded ?? false,
       loadingL2: false,
-      l2Items: [],
-      l2HasMore: false,
-      l2MoreCount: 0,
+      l2Items: prev?.l2Items ?? [],
+      l2HasMore: prev?.l2HasMore ?? false,
+      l2MoreCount: prev?.l2MoreCount ?? 0,
     };
   },
 
@@ -444,7 +462,9 @@ Page({
       isEmpty: mt.expense === 0 && mt.income === 0,
     }));
 
-    const l1: L1Display[] = category_ranks.slice(0, L1_VISIBLE).map((c) => this._buildL1Display(c));
+    const l1: L1Display[] = category_ranks
+      .slice(0, L1_VISIBLE)
+      .map((c) => this._buildL1Display(c, this.data.yearlyL1));
 
     this.setData({
       yearlyTotalExpense: fmtYuan(totals.expense),
@@ -468,12 +488,35 @@ Page({
     if (this._loadingPromise) return;
     invalidateStatisticsCache(this._familyId);
     // 收起所有展开（数据可能变 · 避免显示陈旧 L2/L3）
-    if (this.data.dimension === 'monthly') {
-      this.setData({ monthlyL1: this.data.monthlyL1.map((l1) => ({ ...l1, expanded: false, l2Items: [] })) });
-    } else {
-      this.setData({ yearlyL1: this.data.yearlyL1.map((l1) => ({ ...l1, expanded: false, l2Items: [] })) });
-    }
+    this._collapseCurrentDimL1();
     await this._loadData();
+  },
+
+  /**
+   * 收起当前维度（monthly/yearly）所有 L1 的展开态 + 清空已拉的 L2/L3。
+   *
+   * 调用场景（数据源已失效，旧下钻数据可能陈旧）：
+   *  - SYNC_DONE：服务端数据被修改
+   *  - 切月份 / 切年份：scope 变了，旧 L2/L3 不再适用
+   *
+   * 不调用场景（旧下钻数据仍有效，应保留以提升 UX）：
+   *  - onShow → _loadData：切 Tab 回来，scope 未变（_buildMonthlyDisplay 内做 merge）
+   *  - 切维度：另一维度自身的展开态用户切回时仍期望保留
+   */
+  _collapseCurrentDimL1() {
+    if (this.data.dimension === 'monthly') {
+      this.setData({
+        monthlyL1: this.data.monthlyL1.map((l1) => ({
+          ...l1, expanded: false, l2Items: [], l2HasMore: false, l2MoreCount: 0,
+        })),
+      });
+    } else {
+      this.setData({
+        yearlyL1: this.data.yearlyL1.map((l1) => ({
+          ...l1, expanded: false, l2Items: [], l2HasMore: false, l2MoreCount: 0,
+        })),
+      });
+    }
   },
 
   // ─── 交互：时间维度 ────────────────────────────────────────────────────────
@@ -486,6 +529,7 @@ Page({
       const prev = prevYear(this.data.currentYear);
       this.setData({ currentYear: prev, yearDisplay: formatYearDisplay(prev) });
     }
+    this._collapseCurrentDimL1();
     void this._loadData();
   },
 
@@ -497,12 +541,14 @@ Page({
       const nxt = nextYear(this.data.currentYear);
       this.setData({ currentYear: nxt, yearDisplay: formatYearDisplay(nxt) });
     }
+    this._collapseCurrentDimL1();
     void this._loadData();
   },
 
   onMonthChange(e: WechatMiniprogram.PickerChange) {
     const value = e.detail.value as string;
     this.setData({ currentMonth: value, monthDisplay: formatMonthDisplay(value) });
+    this._collapseCurrentDimL1();
     void this._loadData();
   },
 
@@ -512,12 +558,15 @@ Page({
     // 微信 picker year mode 仅返回完整日期 yyyy-mm-dd 中的年部分，做兜底
     const y = value.split('-')[0] || value;
     this.setData({ currentYear: y, yearDisplay: formatYearDisplay(y) });
+    this._collapseCurrentDimL1();
     void this._loadData();
   },
 
   onSwitchDimension(e: WechatMiniprogram.TouchEvent) {
     const dim = (e.currentTarget.dataset as Record<string, string>).dim as 'monthly' | 'yearly';
     if (dim === this.data.dimension) return;
+    // 切维度只切 dimension · 不清任何展开态：用户在月度展开 A、切到年度查询、再切回月度时，
+    // 仍期望看到 A 是展开的（与"切 Tab 不丢"的诉求一致）。
     this.setData({ dimension: dim });
     void this._loadData();
   },
@@ -528,11 +577,14 @@ Page({
     const month = (e.currentTarget.dataset as Record<string, number>).month as number;
     if (!month) return;
     const monthValue = `${this.data.currentYear}-${String(month).padStart(2, '0')}`;
+    // 改 dimension + currentMonth · 等价于"切到月度的某个具体月份"。
+    // 月度 L1 的 scope 变了（旧 L2/L3 是另一个月的），主动清空展开态后再 _loadData。
     this.setData({
       dimension: 'monthly',
       currentMonth: monthValue,
       monthDisplay: formatMonthDisplay(monthValue),
     });
+    this._collapseCurrentDimL1(); // 此时 dimension 已是 monthly · 清月度 L1
     void this._loadData();
   },
 
@@ -739,20 +791,13 @@ Page({
     }
   },
 
-  // ─── 交互：成员 swiper（COSTRA-229 框架预留）─────────────────────────────
-
-  onSwiperChange(e: WechatMiniprogram.TouchEvent) {
-    const idx = (e.detail as unknown as { current: number }).current;
-    if (typeof idx === 'number' && idx !== this.data.memberTabIndex) {
-      this.setData({ memberTabIndex: idx });
-      // TODO(COSTRA-229 后续): 按 memberTabs[idx].key 拉成员维度数据
-    }
-  },
+  // ─── 交互：成员 tabs（COSTRA-229 框架预留 · 当前仅「全部」一档）─────────
 
   onTapMemberTab(e: WechatMiniprogram.TouchEvent) {
     const idx = parseInt((e.currentTarget.dataset as Record<string, string>).index, 10);
     if (Number.isNaN(idx) || idx === this.data.memberTabIndex) return;
     this.setData({ memberTabIndex: idx });
+    // TODO(COSTRA-229): 按 memberTabs[idx].key 拉成员维度数据
   },
 
   /** 阻止穿透 */

@@ -17,6 +17,7 @@ import { tokens } from './tokens/index';
 import { eventBus, EventNames } from './services/eventBus';
 import { getActiveFamilyId } from './services/family';
 import { prefetchCategories } from './services/categoryService';
+import { prefetchHomeData } from './services/prefetch';
 
 interface AppGlobalData {
   env: ReturnType<typeof getEnv>;
@@ -113,6 +114,12 @@ App<AppOption>({
       void getActiveFamilyId().then((fid) => {
         if (fid) void prefetchCategories(fid);
       });
+
+      // 2026-06-06: 统计/协作页首屏数据预热（fire-and-forget · 不阻塞 bootstrap）
+      // 提前拉当月统计 + 当月家庭汇总，写入各自 SWR 缓存。用户切到 [统计]/[协作] Tab 时
+      // 走 cache-first 立即渲染，消除"切 Tab 后 200~600ms 白屏 loading"的体感延迟。
+      // 仅当月、仅 active family；接口失败静默；与上方 prefetchCategories 互不依赖。
+      void prefetchHomeData();
 
       // 已登录用户从邀请链接冷启动/热切换：检测 pendingInviteToken 并跳转到邀请确认页
       // 微信小程序冷启动时先渲染 pages[0]（ledger/index），bootstrap 异步完成期间落地页自动导航

@@ -13,14 +13,13 @@
     </view>
   </view>
 
-  <scroll-view
-    scroll-y
-    class="stat__scroll"
-    enhanced
-    show-scrollbar="{{false}}"
-    style="padding-top: {{statusBarHeight + navBarHeight}}px;"
-  >
-    <view class="stat__content">
+  <!--
+    页面级滚动（不使用 scroll-view / swiper）。
+    swiper 必须定高、与下钻列表的可变高度冲突；scroll-view 在多成员维度
+    扩展前没有必要套一层。COSTRA-229 实装多成员滑动时，再决定用 scroll-view
+    横向 + scroll-into-view 或动态测量高度的 swiper 重构。
+  -->
+  <view class="stat__content" style="padding-top: {{statusBarHeight + navBarHeight}}px;">
 
       <!-- ═══════ 时间维度 + 月/年切换 ═══════ -->
       <view class="time-bar">
@@ -39,7 +38,7 @@
           >
             <view class="time-nav__picker-inner">
               <text class="time-nav__text">{{monthDisplay}}</text>
-              <text class="time-nav__caret">▾</text>
+              <text class="time-nav__caret">▼</text>
             </view>
           </picker>
 
@@ -53,7 +52,7 @@
           >
             <view class="time-nav__picker-inner">
               <text class="time-nav__text">{{yearDisplay}}</text>
-              <text class="time-nav__caret">▾</text>
+              <text class="time-nav__caret">▼</text>
             </view>
           </picker>
 
@@ -76,8 +75,7 @@
         </view>
       </view>
 
-      <!-- ═══════ 成员 swiper 框架（COSTRA-229 占位 · 当前仅 1 屏「全部」）═══════ -->
-      <!-- multi 模式才显示 tabs · solo 模式直接渲染数据 -->
+      <!-- ═══════ 成员维度 tabs（COSTRA-229 框架预留 · 当前仅「全部」一档）═══════ -->
       <view class="member-tabs" wx:if="{{familyKind === 'shared' && memberTabs.length > 1}}">
         <view
           wx:for="{{memberTabs}}"
@@ -90,17 +88,13 @@
         </view>
       </view>
 
-      <swiper
-        class="stat-swiper"
-        current="{{memberTabIndex}}"
-        bindchange="onSwiperChange"
-        circular="{{false}}"
-        duration="280"
-        style="height: {{dimension === 'monthly' ? 'auto' : 'auto'}};"
-      >
-        <swiper-item wx:for="{{memberTabs}}" wx:key="key">
-          <!-- ═══════ 月度视角 ═══════ -->
-          <view wx:if="{{dimension === 'monthly'}}">
+      <!--
+        数据视图区（不使用 swiper · 因 swiper 必须定高，会裁剪超出内容）。
+        COSTRA-229 实装多成员滑动时，再以 scroll-view 横向 + scroll-into-view
+        或动态测量高度的 swiper 重构（事实源: design_spec.md §6.4）。
+      -->
+      <!-- ═══════ 月度视角 ═══════ -->
+      <view wx:if="{{dimension === 'monthly'}}">
             <!-- 宏观区 -->
             <view class="macro" wx:if="{{!isEmpty || loading}}">
               <view class="macro__primary tnum">{{monthlyTotalExpense}}</view>
@@ -348,10 +342,10 @@
               <text class="empty__text">本年暂无收支记录</text>
             </view>
           </view>
-        </swiper-item>
-      </swiper>
 
       <view class="bottom-spacer"></view>
-    </view>
-  </scroll-view>
+  </view>
 </view>
+
+<!-- 记账覆盖层 · 由 custom-tab-bar [+] 按钮触发（必须挂载，否则 SHOW_EXPENSE_OVERLAY 事件无组件实例响应） -->
+<expense-overlay />

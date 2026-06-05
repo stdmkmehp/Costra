@@ -10,16 +10,22 @@ page {
   background: #f1f2ec;
 }
 
-/* ─── 导航栏 · 与明细页/家庭页一致（毛玻璃浅色） ─────────────────────── */
+/* ─── 导航栏 · 与明细页/家庭页严格一致 ─────────────────────────────── */
 .nav-bar {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   z-index: 100;
-  background: rgba(241, 242, 236, 0.85);
+  background: rgba(241, 242, 236, 0.92);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .nav-bar {
+    background: #f1f2ec;
+  }
 }
 
 .nav-bar__content {
@@ -32,33 +38,28 @@ page {
 .nav-bar__center {
   display: flex;
   align-items: center;
-  gap: 8rpx;
+  gap: 6rpx;
 }
 
 .nav-bar__title {
-  font-size: 32rpx;
+  font-size: 36rpx;
   font-weight: 600;
-  color: #1c1b1a;
-  letter-spacing: -0.3rpx;
+  color: var(--color-role-text-primary, #1c1b1a);
+  line-height: 1.2;
 }
 
 .nav-bar__arrow {
-  font-size: 18rpx;
-  color: rgba(28, 27, 26, 0.4);
-  margin-top: 4rpx;
+  font-size: 20rpx;
+  color: var(--color-role-text-tertiary, rgba(28,27,26,0.28));
 }
 
-/* ─── 滚动区 ───────────────────────────────────────────────────────── */
-.stat__scroll {
-  height: 100vh;
-  box-sizing: border-box;
-}
-
+/* ─── 内容区（页面级滚动 · 不使用 scroll-view）───────────────────── */
 .stat__content {
   padding: 24rpx 0 200rpx;
+  /* padding-top 由 wxml 内联补足导航栏高度 */
 }
 
-/* ─── 时间维度条 ─────────────────────────────────────────────────────── */
+/* ─── 时间维度条 · 与家庭页严格一致 ─────────────────────────────────── */
 .time-bar {
   display: flex;
   align-items: center;
@@ -69,7 +70,6 @@ page {
 .time-nav {
   display: flex;
   align-items: center;
-  gap: 4rpx;
 }
 
 .time-nav__arrow {
@@ -78,16 +78,12 @@ page {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 12rpx;
-}
-
-.time-nav__arrow:active {
-  background: rgba(28, 27, 26, 0.06);
 }
 
 .time-nav__arrow-text {
   font-size: 36rpx;
-  color: rgba(28, 27, 26, 0.6);
+  color: var(--color-role-text-secondary, rgba(28,27,26,0.38));
+  font-weight: 500;
   line-height: 1;
 }
 
@@ -96,42 +92,44 @@ page {
 }
 
 .time-nav__picker-inner {
-  padding: 8rpx 16rpx;
+  padding: 0 8rpx;
   display: flex;
   align-items: center;
-  gap: 6rpx;
 }
 
 .time-nav__text {
-  font-size: 28rpx;
-  font-weight: 500;
-  color: #1c1b1a;
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--color-role-text-primary, #1c1b1a);
 }
 
 .time-nav__caret {
   font-size: 18rpx;
-  color: rgba(28, 27, 26, 0.4);
-  margin-top: 2rpx;
+  margin-left: 6rpx;
+  color: var(--color-role-text-tertiary, rgba(28,27,26,0.28));
 }
 
+/* 月度/年度切换 · 与家庭页一致 */
 .dim-switch {
   display: flex;
-  background: rgba(28, 27, 26, 0.06);
-  border-radius: 100rpx;
+  align-items: center;
+  gap: 4rpx;
+  background: rgba(28,27,26,0.05);
+  border-radius: 8rpx;
   padding: 4rpx;
 }
 
 .dim-switch__btn {
-  padding: 8rpx 24rpx;
   font-size: 24rpx;
-  color: rgba(28, 27, 26, 0.6);
-  border-radius: 100rpx;
+  padding: 8rpx 16rpx;
+  border-radius: 6rpx;
+  color: var(--color-role-text-secondary, rgba(28,27,26,0.48));
   transition: all 0.2s ease;
 }
 
 .dim-switch__btn--active {
-  background: #1c1b1a;
-  color: #f1f2ec;
+  background: #ffffff;
+  color: var(--color-role-text-primary, #1c1b1a);
   font-weight: 500;
 }
 
@@ -152,12 +150,6 @@ page {
   color: #1c1b1a;
   font-weight: 500;
   border-bottom: 4rpx solid #1c1b1a;
-}
-
-/* ─── swiper · 自适应高度（小程序 swiper 需固定高度，给个大致值） ────── */
-.stat-swiper {
-  height: 1800rpx;
-  width: 100%;
 }
 
 /* ─── 宏观区 ────────────────────────────────────────────────────────── */

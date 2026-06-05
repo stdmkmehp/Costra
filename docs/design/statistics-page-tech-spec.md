@@ -49,7 +49,7 @@ pages/statistics/index
 │   └─ 月度视角 / 年度视角（dimension 切换）
 │       ├─ 宏观区
 │       │   ├─ 巨大数字「总支出 ¥12,345.67」「总收入 ¥8,000.00」
-│       │   └─ Canvas 折线图（30 天 / 12 月静态趋势）
+│       │   └─ SVG 折线图（30 天 / 12 月静态趋势）
 │       │
 │       ├─ 摘要区（2x2 网格 · 4 格）
 │       │   月度: 日均支出 / 最大单笔 / 单日最高 / 记账笔数
@@ -72,7 +72,7 @@ pages/statistics/index
 | 子模块 | 文件 | 复用来源 | 复杂度 |
 |--------|------|---------|--------|
 | 时间导航条 | inline in `pages/statistics/index` | 家庭页 | 简单 |
-| Canvas 折线图 | `components/trend-line-chart/` | 新建 | 中（canvas 绘制） |
+| SVG 折线图 | `components/trend-line-chart/` | 新建 | 简单（SVG 字符串拼接） |
 | 摘要 4 格 | inline + `wxss` 网格 | 新建 | 简单 |
 | 12 月流水简表 | inline | 新建 | 简单 |
 | 一级分类排行 + 手风琴 | inline | 家庭页排行区 | 中 |
@@ -412,6 +412,13 @@ export function getCachedYearly(familyId: string, year: string): YearlyStatistic
 
 **职责**：纯静态展示 expense 趋势曲线（不响应手势）。
 
+**实现策略**：使用 **SVG**（`data:image/svg+xml` URI 作为 `<image>` 的 src），而非 `<canvas type="2d">`。
+
+> 历史抉择：v1 曾使用 canvas。canvas 是同层渲染原生组件，在页面快速滚动时
+> Native 合成线程与 WebView 之间存在位置同步滞后（iOS 尤其明显），表现为
+> "折线追不上其他文字元素"。SVG 走 WebView 同线程渲染，与文本零滞后跟随。
+> 数据点 ≤ 31，矢量字符串约 1KB，性能与可读性都优于 canvas。
+
 ```typescript
 // components/trend-line-chart/index.ts
 Component({
@@ -426,36 +433,36 @@ Component({
     fillGradient: { type: Boolean, value: true },
   },
   data: {
-    canvasId: '',
+    instanceId: '',  // 防止多实例 <linearGradient id> 冲突
+    svgUri: '',
   },
   lifetimes: {
     attached() {
-      // 生成唯一 id，避免多组件 canvas 冲突
-      this.setData({ canvasId: `chart_${Math.random().toString(36).slice(2, 8)}` });
+      this.setData({ instanceId: rand() }, () => this._render());
     },
-    ready() { this._draw(); },
   },
   observers: {
-    'data, color': function() { this._draw(); },
+    'data, color, fillGradient': function() { this._render(); },
   },
   methods: {
-    _draw() {
-      // 用 Canvas 2D API 绘制：
+    _render() {
       // 1. 取 data max → 用作 Y 轴比例
-      // 2. 平滑曲线（Bezier）连接每个数据点
-      // 3. fillGradient 时绘制底部渐变 alpha 0.15 → 0
+      // 2. 平滑曲线（Bezier 控制点取相邻两点 1/3 与 2/3）连接每个数据点
+      // 3. fillGradient 时 <defs><linearGradient> alpha 0.15 → 0
       // 4. 不绘制坐标轴 / 网格 / 标签
-      // 5. 数据全 0 → 绘制中线（避免空白突兀）
+      // 5. 数据空 / 全 0 / 单点 → 平直中线（避免空白突兀）
+      // 6. SVG 字符串 → svgToDataUri() → setData({ svgUri })
     },
   },
 });
 ```
 
 **关键技术要点**：
-- 使用微信 `Canvas 2D` 新接口（性能优于旧 `wx.createCanvasContext`），在 `ready` 钩子中调 `wx.createSelectorQuery().select('#xx').fields({ node: true, size: true })`
-- 自适应 dpr（`canvas.width = width * dpr`）
-- 平滑曲线：`bezierCurveTo` 控制点取相邻两点的 1/3 与 2/3
-- 容错：data 为空 / 全 0 → 不报错，绘制平直中线
+- SVG `viewBox="0 0 100 40"` + `preserveAspectRatio="none"` 让矢量横向自适应容器宽度，无需测量 DOM 尺寸
+- 平滑曲线：cubic Bezier，控制点取相邻两点的 1/3 与 2/3（与 Apple Health 风格一致）
+- 渐变填充：`<defs><linearGradient>` 双 stop（rgb 0.15 → rgb 0），id 拼 instanceId 防多实例冲突
+- 容错：data 为空 / 全 0 / 单点 → 不报错，绘制平直中线
+- URI 编码：仅转义 `% # & < >` 与 `"`（最小必要集），保持体积尽量小
 
 ### 4.4 pages/statistics/index 主逻辑
 
@@ -688,10 +695,10 @@ F. **`statistics.test.ts` 集成测试**
 **Scope**：
 - `components/trend-line-chart/` 四件套
 - 支持 props: `data: number[]`, `height: number`, `color: string`, `fillGradient: boolean`
-- Canvas 2D 新接口 + dpr 适配 + Bezier 平滑曲线
+- SVG `data:image/svg+xml` URI + Bezier 平滑曲线 + `<linearGradient>` 渐变填充
 - 容错：`data` 为空 / 全 0 / 单点
 
-**单测**（可选 · vitest 不易覆盖 canvas DOM，做 unit-level 边界数据测试）：
+**单测**（可选 · 改 SVG 字符串生成后变得易测）：
 - 数据为空时 setData 不报错
 - 数据全 0 时 setData 不报错
 - 数据单点时不报错
@@ -783,7 +790,7 @@ F. **`statistics.test.ts` 集成测试**
 | 风险 | 等级 | 缓解 |
 |------|------|------|
 | pg-mem 不支持 `EXTRACT(DAY FROM occurred_at AT TIME ZONE ...)` | 中 | 测试用例落地时优先用 PG 标准 SQL；pg-mem 兼容层在 setup.ts 适配（已有先例：to_char/setval） |
-| canvas 在低端机渲染异常 | 低 | 折线图使用最简 Bezier · 不做动画 · 数据点 ≤ 31 性能足够 |
+| SVG 折线图在大量数据点下字符串膨胀 | 低 | 折线使用最简 Bezier · 不做动画 · 数据点 ≤ 31，data URI ≤ 2KB |
 | L2/L3 内存缓存随页面 lifetime 增长 | 低 | LRU 限制 50 条目 · SYNC_DONE 触发清空 |
 | 后端时区转换跨时区时段重叠（如月初 8 点 UTC = 月初 16 点 Shanghai） | 中 | 用 `range_start_utc / range_end_utc` 显式表达 · 单测 T8 验证年度边界 |
 | 前端 Map 在 setData 中无法序列化 | 高 | `_l2Cache` / `_l3Cache` 不放 data，仅作内部状态；展开数据通过 setData 注入 |

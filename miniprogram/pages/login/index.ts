@@ -10,6 +10,7 @@ import { mapError } from '../../utils/error-mapper';
 import { pickRandomSlogan } from '../../config/slogans';
 import { eventBus, EventNames } from '../../services/eventBus';
 import { syncOnce } from '../../services/syncScheduler';
+import { prefetchHomeData } from '../../services/prefetch';
 
 interface AppWithBootstrap {
   bootstrapPromise: Promise<void>;
@@ -84,6 +85,12 @@ Page({
       // 不走 triggerOnPageShow（有 5s debounce），直接调 syncOnce
       // 场景：清数据后重新登录，本地 DB 为空，必须 sync 后才能显示明细
       void syncOnce('launch');
+
+      // 2026-06-06: 预热统计/协作页首屏数据（fire-and-forget · 不阻塞跳转）
+      // 用户登录后 reLaunch 到明细页，再切到 [统计]/[协作] Tab 时，缓存命中立即渲染。
+      // 与 app.ts bootstrap 中的预热互补：登录路径下 onLaunch 早于 loginFlow 完成，
+      // 那次预热在未登录时跳过，必须在这里补一次。
+      void prefetchHomeData();
 
       // COSTRA-202: reLaunch 目标改为 /pages/ledger/index（新首屏）
       // COSTRA-127: reLaunch 强制重新初始化 · 避免 switchTab 复用旧实例触发 first-rendering-data race

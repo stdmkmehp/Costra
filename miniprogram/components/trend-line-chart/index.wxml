@@ -1,10 +1,16 @@
-<!-- components/trend-line-chart/index.wxml · 极简静态趋势折线图 -->
+<!-- components/trend-line-chart/index.wxml · 极简静态趋势折线图（SVG 实现） -->
 <!-- 卡号: COSTRA-230 · 设计源: docs/design/statistics-page-tech-spec.md §4.3 -->
-<view class="chart-wrapper" style="height: {{height}}rpx;">
-  <canvas
-    type="2d"
-    id="{{canvasId}}"
-    class="chart-canvas"
+<!--
+  采用 SVG（data:image/svg+xml）替代 <canvas type="2d">。
+  原因：canvas 是同层渲染原生组件，在页面快速滚动时存在位置同步滞后；
+        SVG 走 WebView 同线程渲染，与文本零滞后跟随。
+-->
+<view class="chart-wrapper" id="chart-wrapper-{{instanceId}}" style="height: {{height}}rpx;">
+  <image
+    wx:if="{{svgUri}}"
+    class="chart-svg"
+    src="{{svgUri}}"
+    mode="scaleToFill"
     style="height: {{height}}rpx;"
-  ></canvas>
+  />
 </view>

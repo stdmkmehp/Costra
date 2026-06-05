@@ -269,8 +269,8 @@
 
 .time-nav__arrow-icon {
   font-size: 36rpx;
-  color: var(--color-role-text-secondary, rgba(28,27,26,0.48));
-  font-weight: 300;
+  color: var(--color-role-text-secondary, rgba(28,27,26,0.38));
+  font-weight: 500;
 }
 
 .time-nav__month {
