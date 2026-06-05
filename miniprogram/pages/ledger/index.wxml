@@ -42,21 +42,33 @@
       </view>
     </view>
     <!-- 成员筛选（仅多人账本显示） -->
-    <view class="filter-row__right" wx:if="{{showMemberFilter}}" bindtap="onTapMemberFilter">
+    <view class="filter-row__right {{filterActive ? 'is-active' : ''}}" wx:if="{{showMemberFilter}}" bindtap="onTapMemberFilter">
       <text class="filter-row__member-text">{{memberFilterText}}</text>
-      <text class="filter-row__member-arrow">▼</text>
+      <text class="filter-row__member-arrow {{filterPanelVisible ? 'is-rotated' : ''}}">▼</text>
     </view>
   </view>
 
-  <!-- ─── 流水列表 ─────────────────────────────────────────────────────────── -->
-  <scroll-view
-    class="entry-list"
-    scroll-y
-    enhanced
-    show-scrollbar="{{false}}"
-    scroll-top="{{listScrollTop}}"
-    bindscroll="onListScroll"
-  >
+  <!-- ─── 流水列表（含筛选面板浮层） ─────────────────────────────────────────── -->
+  <view class="list-container">
+    <!-- 筛选面板（浮于列表上方） -->
+    <filter-panel
+      visible="{{filterPanelVisible}}"
+      members="{{filterMembers}}"
+      expenseType="{{filterExpenseType}}"
+      bind:expenseTypeChange="onFilterExpenseTypeChange"
+      bind:memberToggle="onFilterMemberToggle"
+      bind:selectAll="onFilterSelectAll"
+      bind:close="onFilterPanelClose"
+    />
+
+    <scroll-view
+      class="entry-list"
+      scroll-y
+      enhanced
+      show-scrollbar="{{false}}"
+      scroll-top="{{listScrollTop}}"
+      bindscroll="onListScroll"
+    >
     <block wx:if="{{!isEmpty}}">
       <block wx:for="{{dateGroups}}" wx:key="dateKey" wx:for-item="group">
         <!-- 日期分组头（sticky 吸顶） -->
@@ -139,6 +151,7 @@
       <text class="empty-state__hint">{{emptyHint}}</text>
     </view>
   </scroll-view>
+  </view><!-- /.list-container -->
 
   <!-- ═══ COSTRA-227: 全屏分类选择面板（和记账界面一致） ═══ -->
   <view class="edit-category-overlay {{editCategoryVisible ? 'is-visible' : ''}}">

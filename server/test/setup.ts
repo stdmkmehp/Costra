@@ -163,11 +163,19 @@ function applyMigrations(db: IMemoryDb): void {
       is_system       BOOLEAN NOT NULL DEFAULT false,
       parent_id       UUID,
       is_direct_default BOOLEAN NOT NULL DEFAULT false,
+      -- migration 0013_categories_display_order.sql
+      -- is_parent_default：精确标记"点父一级时自动选中的默认子分类"
+      -- display_order：全局二级展示区的展示顺序，NULL=不展示
+      is_parent_default BOOLEAN NOT NULL DEFAULT false,
+      display_order   SMALLINT,
       created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
       updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
       deleted_at      TIMESTAMPTZ,
       version         INTEGER NOT NULL DEFAULT 1
     );
+    -- migration 0013: 每父级最多 1 个 is_parent_default=true 的 partial unique index
+    -- pg-mem 实测：partial unique index 在 WHERE bool_col = true 谓词下会污染所有针对索引列的等值查询
+    -- （详见 PROBE 记录 · 2026-06-05）· 改为应用层 + 真实 PG 约束兜底，pg-mem 跳过该 index
     CREATE TABLE idempotency_keys (
       key             TEXT NOT NULL,
       endpoint        TEXT NOT NULL,

@@ -26,6 +26,10 @@ export interface CategoryEntity {
   isSystem: boolean;
   parentId: string | null; // null = 一级分类
   isDirectDefault: boolean;
+  // migration 0013：精确标记"点父一级时自动选中的默认子分类"
+  isParentDefault: boolean;
+  // migration 0013：全局二级展示区的展示顺序，NULL = 不展示
+  displayOrder: number | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -41,6 +45,8 @@ interface CategoryRow {
   is_system: boolean;
   parent_id: string | null;
   is_direct_default: boolean;
+  is_parent_default: boolean;
+  display_order: number | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -57,6 +63,8 @@ function rowToEntity(r: CategoryRow): CategoryEntity {
     isSystem: r.is_system,
     parentId: r.parent_id,
     isDirectDefault: r.is_direct_default,
+    isParentDefault: r.is_parent_default,
+    displayOrder: r.display_order,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -91,7 +99,8 @@ export async function findByFamily(familyId: string, client?: Runner): Promise<C
   const runner = client ?? exec();
   const res = await runner.query(
     `SELECT id, family_id, name, type, icon, color, sort_order, is_system,
-            parent_id, is_direct_default, created_at, updated_at
+            parent_id, is_direct_default, is_parent_default, display_order,
+            created_at, updated_at
        FROM categories
       WHERE deleted_at IS NULL
         AND (family_id IS NULL OR family_id = $1)
@@ -108,7 +117,8 @@ export async function findById(categoryId: string, client?: Runner): Promise<Cat
   const runner = client ?? exec();
   const res = await runner.query(
     `SELECT id, family_id, name, type, icon, color, sort_order, is_system,
-            parent_id, is_direct_default, created_at, updated_at
+            parent_id, is_direct_default, is_parent_default, display_order,
+            created_at, updated_at
        FROM categories
       WHERE id = $1 AND deleted_at IS NULL
       LIMIT 1`,
@@ -120,15 +130,18 @@ export async function findById(categoryId: string, client?: Runner): Promise<Cat
 /**
  * 插入自定义分类。
  * is_system 默认 false，is_direct_default 默认 false（自定义分类不参与直选映射）。
+ * is_parent_default 默认 false、display_order 默认 NULL（自定义分类暂不开放设置入口 · migration 0013）。
  */
 export async function insert(input: CreateCategoryInput, client?: Runner): Promise<CategoryEntity> {
   const id = newId();
   const runner = client ?? exec();
   const res = await runner.query(
-    `INSERT INTO categories (id, family_id, name, type, icon, color, sort_order, is_system, parent_id, is_direct_default)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, false, $8, false)
+    `INSERT INTO categories (id, family_id, name, type, icon, color, sort_order, is_system,
+                              parent_id, is_direct_default, is_parent_default, display_order)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, false, $8, false, false, NULL)
         RETURNING id, family_id, name, type, icon, color, sort_order, is_system,
-                  parent_id, is_direct_default, created_at, updated_at`,
+                  parent_id, is_direct_default, is_parent_default, display_order,
+                  created_at, updated_at`,
     [
       id,
       input.familyId,

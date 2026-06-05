@@ -142,17 +142,45 @@
   padding: 8rpx 16rpx;
   border-radius: var(--radius-pill, 9999rpx);
   background: rgba(28, 27, 26, 0.04);
+  transition: all 180ms ease;
+}
+
+.filter-row__right.is-active {
+  background: #07C160;
 }
 
 .filter-row__member-text {
   font-size: 24rpx;
   color: var(--color-role-text-primary, #1c1b1a);
   font-weight: 500;
+  transition: color 180ms ease;
+}
+
+.filter-row__right.is-active .filter-row__member-text {
+  color: #ffffff;
 }
 
 .filter-row__member-arrow {
   font-size: 16rpx;
   color: var(--color-role-text-secondary, rgba(28,27,26,0.48));
+  transition: transform 280ms ease, color 180ms ease;
+}
+
+.filter-row__member-arrow.is-rotated {
+  transform: rotate(180deg);
+}
+
+.filter-row__right.is-active .filter-row__member-arrow {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* ─── 列表容器（筛选面板的定位参照） ─── */
+.list-container {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ---- 流水列表 ---- */

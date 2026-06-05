@@ -22,6 +22,10 @@ export interface CategoryItem {
   isSystem: boolean;
   parentId: string | null;  // null = 一级分类
   isDirectDefault: boolean; // 全局二级展示区直选默认归属标记
+  // migration 0013：精确标记"点父一级时自动选中的默认子分类"
+  isParentDefault: boolean;
+  // migration 0013：全局二级展示区展示顺序，null = 不展示
+  displayOrder: number | null;
   childrenCount: number;
 }
 
@@ -37,6 +41,8 @@ interface CategoryRaw {
   is_system: boolean;
   parent_id: string | null;
   is_direct_default: boolean;
+  is_parent_default: boolean;
+  display_order: number | null;
   children_count: number;
 }
 
@@ -73,107 +79,107 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 const CONFIG_EXPENSE = [
   { name: '餐饮', icon: '餐', color: 'color.category.food', order: 1, children: [
-    { name: '餐饮', order: 1, def: true },
-    { name: '外卖', order: 2, def: true },
-    { name: '买菜', order: 3, def: true },
-    { name: '水果', order: 4, def: true },
-    { name: '零食', order: 5, def: true },
-    { name: '饮料', order: 6, def: true },
-    { name: '酒水', order: 7, def: false },
-    { name: '柴米油盐', order: 8, def: true },
-    { name: '聚餐', order: 9, def: true },
-    { name: '宴请', order: 10, def: true }
+    { name: '餐饮', order: 1, def: true, pd: true, dsp: null },
+    { name: '外卖', order: 2, def: true, pd: false, dsp: 1 },
+    { name: '买菜', order: 3, def: true, pd: false, dsp: 2 },
+    { name: '水果', order: 4, def: true, pd: false, dsp: 5 },
+    { name: '零食', order: 5, def: true, pd: false, dsp: 6 },
+    { name: '饮料', order: 6, def: true, pd: false, dsp: 7 },
+    { name: '酒水', order: 7, def: false, pd: false, dsp: 48 },
+    { name: '柴米油盐', order: 8, def: true, pd: false, dsp: 14 },
+    { name: '聚餐', order: 9, def: true, pd: false, dsp: 13 },
+    { name: '宴请', order: 10, def: true, pd: false, dsp: 23 }
   ]},
   { name: '交通', icon: '行', color: 'color.category.transport', order: 2, children: [
-    { name: '交通', order: 1, def: true },
-    { name: '打车', order: 2, def: true },
-    { name: '公交', order: 3, def: true },
-    { name: '地铁', order: 4, def: true },
-    { name: '加油', order: 5, def: true },
-    { name: '停车', order: 6, def: true },
-    { name: '火车/高铁', order: 7, def: true },
-    { name: '机票', order: 8, def: true },
-    { name: '汽车保养', order: 9, def: true },
-    { name: '保险', order: 10, def: true },
-    { name: '过路费', order: 11, def: true }
+    { name: '交通', order: 1, def: true, pd: true, dsp: null },
+    { name: '打车', order: 2, def: true, pd: false, dsp: 3 },
+    { name: '公交', order: 3, def: true, pd: false, dsp: 8 },
+    { name: '地铁', order: 4, def: true, pd: false, dsp: 9 },
+    { name: '加油', order: 5, def: true, pd: false, dsp: 16 },
+    { name: '停车', order: 6, def: true, pd: false, dsp: 17 },
+    { name: '火车/高铁', order: 7, def: true, pd: false, dsp: 24 },
+    { name: '机票', order: 8, def: true, pd: false, dsp: 25 },
+    { name: '汽车保养', order: 9, def: true, pd: false, dsp: 35 },
+    { name: '保险', order: 10, def: true, pd: false, dsp: 36 },
+    { name: '过路费', order: 11, def: true, pd: false, dsp: 37 }
   ]},
   { name: '购物', icon: '购', color: 'color.category.shopping', order: 3, children: [
-    { name: '购物', order: 1, def: true },
-    { name: '日用', order: 2, def: true },
-    { name: '服饰', order: 3, def: true },
-    { name: '数码', order: 4, def: true },
-    { name: '零食', order: 5, def: false },
-    { name: '纸巾', order: 6, def: true },
-    { name: '饮料', order: 7, def: false },
-    { name: '护肤美妆', order: 8, def: true }
+    { name: '购物', order: 1, def: true, pd: true, dsp: null },
+    { name: '日用', order: 2, def: true, pd: false, dsp: 4 },
+    { name: '服饰', order: 3, def: true, pd: false, dsp: 10 },
+    { name: '数码', order: 4, def: true, pd: false, dsp: 28 },
+    { name: '零食', order: 5, def: false, pd: false, dsp: null },
+    { name: '纸巾', order: 6, def: true, pd: false, dsp: 40 },
+    { name: '饮料', order: 7, def: false, pd: false, dsp: null },
+    { name: '护肤美妆', order: 8, def: true, pd: false, dsp: 27 }
   ]},
   { name: '生活', icon: '活', color: 'color.category.lifestyle', order: 4, children: [
-    { name: '生活', order: 1, def: true },
-    { name: '日用', order: 2, def: false },
-    { name: '买菜', order: 3, def: false },
-    { name: '柴米油盐', order: 4, def: false },
-    { name: '宠物', order: 5, def: true },
-    { name: '美容美发', order: 6, def: true },
-    { name: '水电煤', order: 7, def: true },
-    { name: '话费网费', order: 8, def: true },
-    { name: '物业维修', order: 9, def: true },
-    { name: '医疗', order: 10, def: true },
-    { name: '母婴', order: 11, def: true },
-    { name: '租房', order: 12, def: true }
+    { name: '生活', order: 1, def: true, pd: true, dsp: null },
+    { name: '日用', order: 2, def: false, pd: false, dsp: null },
+    { name: '买菜', order: 3, def: false, pd: false, dsp: null },
+    { name: '柴米油盐', order: 4, def: false, pd: false, dsp: null },
+    { name: '宠物', order: 5, def: true, pd: false, dsp: 30 },
+    { name: '美容美发', order: 6, def: true, pd: false, dsp: 21 },
+    { name: '水电煤', order: 7, def: true, pd: false, dsp: 11 },
+    { name: '话费网费', order: 8, def: true, pd: false, dsp: 12 },
+    { name: '物业维修', order: 9, def: true, pd: false, dsp: 38 },
+    { name: '医疗', order: 10, def: true, pd: false, dsp: 18 },
+    { name: '母婴', order: 11, def: true, pd: false, dsp: 34 },
+    { name: '租房', order: 12, def: true, pd: false, dsp: 39 }
   ]},
   { name: '旅行', icon: '旅', color: 'color.category.travel', order: 5, children: [
-    { name: '旅行', order: 1, def: true },
-    { name: '机票', order: 2, def: false },
-    { name: '酒店', order: 3, def: true },
-    { name: '交通', order: 4, def: false },
-    { name: '火车/高铁', order: 5, def: false },
-    { name: '餐饮', order: 6, def: false }
+    { name: '旅行', order: 1, def: true, pd: true, dsp: null },
+    { name: '机票', order: 2, def: false, pd: false, dsp: null },
+    { name: '酒店', order: 3, def: true, pd: false, dsp: 22 },
+    { name: '交通', order: 4, def: false, pd: false, dsp: null },
+    { name: '火车/高铁', order: 5, def: false, pd: false, dsp: null },
+    { name: '餐饮', order: 6, def: false, pd: false, dsp: null }
   ]},
   { name: '文娱', icon: '娱', color: 'color.category.culture', order: 6, children: [
-    { name: '文娱', order: 1, def: true },
-    { name: '订阅会员', order: 2, def: true },
-    { name: '演出', order: 3, def: true },
-    { name: '游戏', order: 4, def: true },
-    { name: '运动', order: 5, def: true },
-    { name: '电影', order: 6, def: true },
-    { name: '门票', order: 7, def: true },
-    { name: '教育', order: 8, def: true }
+    { name: '文娱', order: 1, def: true, pd: true, dsp: null },
+    { name: '订阅会员', order: 2, def: true, pd: false, dsp: 15 },
+    { name: '演出', order: 3, def: true, pd: false, dsp: 32 },
+    { name: '游戏', order: 4, def: true, pd: false, dsp: 29 },
+    { name: '运动', order: 5, def: true, pd: false, dsp: 20 },
+    { name: '电影', order: 6, def: true, pd: false, dsp: 19 },
+    { name: '门票', order: 7, def: true, pd: false, dsp: 31 },
+    { name: '教育', order: 8, def: true, pd: false, dsp: 33 }
   ]},
   { name: '转账', icon: '转', color: 'color.category.transfer', order: 7, children: [
-    { name: '转账', order: 1, def: true },
-    { name: '还贷', order: 2, def: true }
+    { name: '转账', order: 1, def: true, pd: true, dsp: null },
+    { name: '还贷', order: 2, def: true, pd: false, dsp: 26 }
   ]},
   { name: '其他', icon: '他', color: 'color.category.other', order: 99, children: [
-    { name: '其他', order: 1, def: true },
-    { name: '红包', order: 2, def: true },
-    { name: '礼金', order: 3, def: true },
-    { name: '赡养', order: 4, def: true },
-    { name: '捐赠', order: 5, def: true },
-    { name: '丢失', order: 6, def: true },
-    { name: '礼物', order: 7, def: true },
-    { name: '垫付', order: 8, def: true }
+    { name: '其他', order: 1, def: true, pd: true, dsp: null },
+    { name: '红包', order: 2, def: true, pd: false, dsp: 41 },
+    { name: '礼金', order: 3, def: true, pd: false, dsp: 42 },
+    { name: '赡养', order: 4, def: true, pd: false, dsp: 44 },
+    { name: '捐赠', order: 5, def: true, pd: false, dsp: 45 },
+    { name: '丢失', order: 6, def: true, pd: false, dsp: 47 },
+    { name: '礼物', order: 7, def: true, pd: false, dsp: 43 },
+    { name: '垫付', order: 8, def: true, pd: false, dsp: 46 }
   ]}
 ];
 
 const CONFIG_INCOME = [
   { name: '职业收入', icon: '薪', color: 'color.category.salary', order: 1, children: [
-    { name: '工资', order: 1, def: true },
-    { name: '奖金', order: 2, def: true },
-    { name: '兼职', order: 3, def: true },
-    { name: '报销', order: 4, def: true }
+    { name: '工资', order: 1, def: true, pd: true, dsp: null },
+    { name: '奖金', order: 2, def: true, pd: false, dsp: 1 },
+    { name: '兼职', order: 3, def: true, pd: false, dsp: 2 },
+    { name: '报销', order: 4, def: true, pd: false, dsp: 3 }
   ]},
   { name: '投资与资产', icon: '投', color: 'color.category.invest', order: 2, children: [
-    { name: '理财', order: 1, def: true },
-    { name: '收租', order: 2, def: true },
-    { name: '利息', order: 3, def: true }
+    { name: '理财', order: 1, def: true, pd: true, dsp: null },
+    { name: '收租', order: 2, def: true, pd: false, dsp: 4 },
+    { name: '利息', order: 3, def: true, pd: false, dsp: 5 }
   ]},
   { name: '意外收入', icon: '运', color: 'color.category.windfall', order: 3, children: [
-    { name: '其他', order: 1, def: true },
-    { name: '转账', order: 2, def: true },
-    { name: '红包', order: 3, def: true },
-    { name: '中奖', order: 4, def: true },
-    { name: '闲置出售', order: 5, def: true },
-    { name: '礼金', order: 6, def: true }
+    { name: '其他', order: 1, def: true, pd: true, dsp: null },
+    { name: '转账', order: 2, def: true, pd: false, dsp: 7 },
+    { name: '红包', order: 3, def: true, pd: false, dsp: 6 },
+    { name: '中奖', order: 4, def: true, pd: false, dsp: 9 },
+    { name: '闲置出售', order: 5, def: true, pd: false, dsp: 10 },
+    { name: '礼金', order: 6, def: true, pd: false, dsp: 8 }
   ]}
 ];
 
@@ -211,6 +217,8 @@ function getFallbackItems(): CategoryItem[] {
       isSystem: true,
       parentId: null,
       isDirectDefault: false,
+      isParentDefault: false,
+      displayOrder: null,
       childrenCount: p.children.length
     });
 
@@ -226,6 +234,8 @@ function getFallbackItems(): CategoryItem[] {
         isSystem: true,
         parentId: pId,
         isDirectDefault: c.def,
+        isParentDefault: c.pd,
+        displayOrder: c.dsp,
         childrenCount: 0
       });
     });
@@ -245,6 +255,8 @@ function getFallbackItems(): CategoryItem[] {
       isSystem: true,
       parentId: null,
       isDirectDefault: false,
+      isParentDefault: false,
+      displayOrder: null,
       childrenCount: p.children.length
     });
 
@@ -260,6 +272,8 @@ function getFallbackItems(): CategoryItem[] {
         isSystem: true,
         parentId: pId,
         isDirectDefault: c.def,
+        isParentDefault: c.pd,
+        displayOrder: c.dsp,
         childrenCount: 0
       });
     });
@@ -282,6 +296,8 @@ function rawToItem(raw: CategoryRaw): CategoryItem {
     isSystem: raw.is_system,
     parentId: raw.parent_id,
     isDirectDefault: raw.is_direct_default,
+    isParentDefault: raw.is_parent_default,
+    displayOrder: raw.display_order,
     childrenCount: raw.children_count,
   };
 }
@@ -494,6 +510,8 @@ export function computeCategoriesSignature(items: CategoryItem[]): string {
       i.type,
       i.sortOrder,
       i.isDirectDefault ? 1 : 0,
+      i.isParentDefault ? 1 : 0,
+      i.displayOrder ?? '',
     ].join('|'))
     .join(';');
 }
@@ -575,8 +593,13 @@ export function getCategoryNameById(categoryId: string | null): string {
 }
 
 /**
- * 构建去重后的二级分类列表（同名仅展示一次）
- * 沿用旧 categories.ts 的去重逻辑，但基于 CategoryItem 数据源
+ * 构建全局二级展示区列表（migration 0013 重写）。
+ *
+ * 规则：
+ *   1. 过滤：仅二级分类（parentId !== null）且不是父默认子（!isParentDefault）且有展示顺序（displayOrder !== null）
+ *   2. 排序：按 displayOrder 升序（高频在前）
+ *   3. 同名去重：displayOrder 已保证顺序，先出现的保留（seed 中 is_direct_default=true 的副本分配了 displayOrder、
+ *      而同名重复中 is_direct_default=false 的副本 displayOrder=null 已被步骤 1 过滤掉）
  */
 export function buildDedupedSubCategories(
   items: CategoryItem[],
@@ -585,10 +608,13 @@ export function buildDedupedSubCategories(
   const seen = new Set<string>();
   const result: CategoryTier2[] = [];
 
-  // 按 sortOrder 排序
+  // 按 displayOrder 升序排序（过滤 null 后 displayOrder 必不为 null）
   const sorted = items
-    .filter(i => i.type === type && i.parentId !== null)
-    .sort((a, b) => a.sortOrder - b.sortOrder);
+    .filter(i => i.type === type
+              && i.parentId !== null
+              && !i.isParentDefault
+              && i.displayOrder !== null)
+    .sort((a, b) => a.displayOrder! - b.displayOrder!);
 
   for (const item of sorted) {
     if (!seen.has(item.name)) {

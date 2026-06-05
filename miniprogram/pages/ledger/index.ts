@@ -74,8 +74,16 @@ interface DisplayEntry {
   translateX: number;
 }
 
-/** 成员筛选状态（COSTRA-220 MVP: 仅全部/仅看自己） */
-type MemberFilter = 'all' | 'self';
+/** 成员筛选状态（原 COSTRA-220 MVP 升级为多维筛选面板） */
+type ExpenseTypeFilter = 'all' | 'personal' | 'shared';
+
+interface FilterMemberItem {
+  user_id: string;
+  nickname: string;
+  avatar_url: string;
+  initial: string;
+  selected: boolean;
+}
 
 // ─── 辅助函数 ────────────────────────────────────────────────────────────────────
 
@@ -199,7 +207,11 @@ Page({
     totalIncomeCents: 0,
     totalBalance: '',
     showMemberFilter: false,
-    memberFilterText: '全部成员',
+    memberFilterText: '全部',
+    filterActive: false,
+    filterPanelVisible: false,
+    filterMembers: [] as FilterMemberItem[],
+    filterExpenseType: 'all' as ExpenseTypeFilter,
 
     // ─── 列表 ───
     dateGroups: [] as DateGroup[],
@@ -246,8 +258,10 @@ Page({
   _swipeStarted: false as boolean,
   _lastSwipeEndAt: 0 as number,
   _shouldRefreshEmptyHintOnNextEmpty: false as boolean,
-  /** 成员筛选状态（COSTRA-220: 'all' | 'self'） */
-  _memberFilter: 'all' as MemberFilter,
+  /** 费用性质筛选状态 */
+  _filterExpenseType: 'all' as ExpenseTypeFilter,
+  /** 成员筛选：选中的 user_id 集合（空 = 全选） */
+  _filterSelectedMemberIds: [] as string[],
   /** 当前用户 ID（COSTRA-220: 从 auth token 获取 · 用于成员筛选） */
   _currentUserId: '' as string,
   /** 成员映射（user_id → nickname/avatar · 协作账本时构建） */
@@ -398,10 +412,17 @@ Page({
       ledgerName: ledgerName || '个人账本',
     });
 
-    // 切换到非共享账本时重置成员筛选
-    if (!isMultiMember && this._memberFilter !== 'all') {
-      this._memberFilter = 'all';
-      this.setData({ memberFilterText: '全部成员' });
+    // 切换到非共享账本时重置筛选
+    if (!isMultiMember) {
+      this._filterExpenseType = 'all';
+      this._filterSelectedMemberIds = [];
+      this.setData({
+        filterExpenseType: 'all',
+        filterMembers: [],
+        filterActive: false,
+        filterPanelVisible: false,
+        memberFilterText: '全部',
+      });
     }
 
     // 协作账本: 加载成员映射（用于条目行头像展示）
@@ -426,14 +447,27 @@ Page({
     try {
       const members = await getFamilyMembers(familyId);
       const map: Record<string, { nickname: string; avatarUrl: string }> = {};
+      const filterMembers: FilterMemberItem[] = [];
       for (const m of members) {
         map[m.user_id] = {
           nickname: m.nickname || '成员',
           avatarUrl: m.avatar_url || '',
         };
+        // 筛选面板仅展示 active 成员
+        if (m.status === 'active') {
+          filterMembers.push({
+            user_id: m.user_id,
+            nickname: m.nickname || '成员',
+            avatar_url: m.avatar_url || '',
+            initial: (m.nickname || '成员')[0],
+            selected: this._filterSelectedMemberIds.length === 0
+              || this._filterSelectedMemberIds.includes(m.user_id),
+          });
+        }
       }
       // 合并：保留 bootstrap 预填的当前用户信息，避免极端情况下覆盖丢失
       this._memberMap = { ...this._memberMap, ...map };
+      this.setData({ filterMembers });
       // 成员信息到位后重新渲染（此时条目可能已渲染但头像为空）
       if (this._allEntries.length > 0) {
         this._buildDisplay();
@@ -524,10 +558,21 @@ Page({
   _buildDisplay(monthValue?: string) {
     const targetMonth = monthValue || this.data.currentMonth;
 
-    // COSTRA-220: 成员筛选 · 按 _memberFilter 过滤 entries
+    // 筛选：费用性质 + 成员多选
     let entries = this._allEntries;
-    if (this._memberFilter === 'self' && this._currentUserId) {
-      entries = entries.filter(e => e.created_by === this._currentUserId);
+
+    // 费用性质过滤
+    if (this._filterExpenseType === 'personal') {
+      entries = entries.filter(e => e.shared_type !== 'shared');
+    } else if (this._filterExpenseType === 'shared') {
+      entries = entries.filter(e => e.shared_type === 'shared');
+    }
+
+    // 成员过滤（仅当有选择且非全选时过滤）
+    const allMembers = this.data.filterMembers as FilterMemberItem[];
+    const selectedIds = this._filterSelectedMemberIds;
+    if (selectedIds.length > 0 && selectedIds.length < allMembers.length) {
+      entries = entries.filter(e => e.created_by && selectedIds.includes(e.created_by));
     }
 
     // 按日期分组
@@ -703,17 +748,86 @@ Page({
   // ─── 交互：成员筛选 ──────────────────────────────────────────────────────────
 
   onTapMemberFilter() {
-    // COSTRA-220: 真实过滤逻辑 · 选择后记录 _memberFilter 状态 + 重建显示
-    const items = ['全部成员', '仅看自己'];
-    wx.showActionSheet({
-      itemList: items,
-      success: (res) => {
-        const filter: MemberFilter = res.tapIndex === 0 ? 'all' : 'self';
-        this._memberFilter = filter;
-        this.setData({ memberFilterText: items[res.tapIndex] });
-        this._buildDisplay();
-      },
-    });
+    // 切换筛选面板显示/隐藏
+    const visible = !this.data.filterPanelVisible;
+    this.setData({ filterPanelVisible: visible });
+  },
+
+  /** 筛选面板：费用性质变更 */
+  onFilterExpenseTypeChange(e: WechatMiniprogram.CustomEvent<{ expenseType: ExpenseTypeFilter }>) {
+    const { expenseType } = e.detail;
+    this._filterExpenseType = expenseType;
+    this.setData({ filterExpenseType: expenseType });
+    this._updateFilterState();
+    this._buildDisplay();
+  },
+
+  /** 筛选面板：成员 toggle */
+  onFilterMemberToggle(e: WechatMiniprogram.CustomEvent<{ userId: string }>) {
+    const { userId } = e.detail;
+    const filterMembers = [...this.data.filterMembers] as FilterMemberItem[];
+    const idx = filterMembers.findIndex(m => m.user_id === userId);
+    if (idx < 0) return;
+    filterMembers[idx] = { ...filterMembers[idx], selected: !filterMembers[idx].selected };
+    this._filterSelectedMemberIds = filterMembers.filter(m => m.selected).map(m => m.user_id);
+    this.setData({ filterMembers });
+    this._updateFilterState();
+    this._buildDisplay();
+  },
+
+  /** 筛选面板：全选/取消全选 */
+  onFilterSelectAll(e: WechatMiniprogram.CustomEvent<{ selectAll: boolean }>) {
+    const { selectAll } = e.detail;
+    const filterMembers = this.data.filterMembers.map((m: FilterMemberItem) => ({
+      ...m,
+      selected: selectAll,
+    }));
+    this._filterSelectedMemberIds = selectAll
+      ? filterMembers.map((m: FilterMemberItem) => m.user_id)
+      : [];
+    this.setData({ filterMembers });
+    this._updateFilterState();
+    this._buildDisplay();
+  },
+
+  /** 筛选面板：关闭 */
+  onFilterPanelClose() {
+    // 关闭时若无成员选中 → 自动全选
+    const hasSelected = this.data.filterMembers.some((m: FilterMemberItem) => m.selected);
+    if (!hasSelected) {
+      const filterMembers = this.data.filterMembers.map((m: FilterMemberItem) => ({
+        ...m,
+        selected: true,
+      }));
+      this._filterSelectedMemberIds = filterMembers.map((m: FilterMemberItem) => m.user_id);
+      this.setData({ filterMembers });
+    }
+    this.setData({ filterPanelVisible: false });
+    this._updateFilterState();
+    this._buildDisplay();
+  },
+
+  /** 更新筛选按钮文字和激活态 */
+  _updateFilterState() {
+    const allMembers = this.data.filterMembers as FilterMemberItem[];
+    const selectedCount = allMembers.filter(m => m.selected).length;
+    const isAllMembers = selectedCount === 0 || selectedCount === allMembers.length;
+    const isAllExpense = this._filterExpenseType === 'all';
+    const filterActive = !isAllMembers || !isAllExpense;
+
+    let memberFilterText = '全部';
+    if (filterActive) {
+      const parts: string[] = [];
+      if (!isAllExpense) {
+        parts.push(this._filterExpenseType === 'personal' ? '个人' : '公共');
+      }
+      if (!isAllMembers) {
+        parts.push(`${selectedCount}人`);
+      }
+      memberFilterText = parts.length > 0 ? parts.join(' · ') : '筛选中';
+    }
+
+    this.setData({ filterActive, memberFilterText });
   },
 
   // ─── eventBus 响应式刷新（COSTRA-220）─────────────────────────────────────────

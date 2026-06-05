@@ -1279,7 +1279,7 @@ components:
 
     Category:
       type: object
-      required: [id, name, type, icon, sort_order, parent_id, is_direct_default, children_count]
+      required: [id, name, type, icon, sort_order, parent_id, is_direct_default, is_parent_default, display_order, children_count]
       properties:
         id: { type: string, format: uuid }
         family_id:
@@ -1307,6 +1307,23 @@ components:
             仅二级分类有意义（一级分类恒为 false）。
             同名二级分类在不同一级下时，只有最日常/最高频的那个为 true。
             COSTRA-217 B1：对齐 design/ui/category_dictionary.md §默认直选归属映射表。
+        is_parent_default:
+          type: boolean
+          description: |
+            "点父一级时自动选中的默认子分类"标记（migration 0013）。
+            每个一级分类下最多一个（DB partial unique index 兜底）。
+            UI 据此过滤"全局二级展示区"——is_parent_default=true 的子分类不在该区出现，
+            因为用户点一级时已天然选中它。
+            一级分类（parent_id IS NULL）恒为 false。
+        display_order:
+          type: integer
+          nullable: true
+          minimum: 1
+          description: |
+            全局二级展示区的展示顺序（migration 0013）。
+            NULL = 不在全局展示区展示（含 is_parent_default=true 的子分类、同名重复中非主归属的副本等）。
+            有值时按升序展示。支出（type=expense）与收入（type=income）各自独立编号空间。
+            一级分类恒为 NULL。
         children_count:
           type: integer
           minimum: 0

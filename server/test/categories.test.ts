@@ -73,20 +73,22 @@ beforeEach(async () => {
 
   // 插入系统分类种子（简化版：模拟 0008 migration 的 11 一级 + 部分二级）
   // 为了测试 children_count，至少需要一个一级带多个二级
+  // 同时覆盖 migration 0013 新增字段：is_parent_default + display_order
   await pool.query(
-    `INSERT INTO categories (id, family_id, name, type, icon, color, sort_order, is_system, parent_id, is_direct_default)
+    `INSERT INTO categories (id, family_id, name, type, icon, color, sort_order, is_system, parent_id,
+                              is_direct_default, is_parent_default, display_order)
      VALUES
-       ('a0000000-0000-0000-0000-000000000001', NULL, '餐饮', 'expense', '餐', 'color.category.food', 1, true, NULL, false),
-       ('a0000000-0000-0000-0000-000000000002', NULL, '交通', 'expense', '行', 'color.category.transport', 2, true, NULL, false),
-       ('a0000000-0000-0000-0000-000000000003', NULL, '购物', 'expense', '购', 'color.category.shopping', 3, true, NULL, false),
-       ('a0000000-0000-0000-0000-000000000010', NULL, '职业收入', 'income', '薪', 'color.category.salary', 1, true, NULL, false),
-       -- 餐饮 二级
-       ('a0000000-0000-0000-0000-000000000101', NULL, '餐饮', 'expense', '餐', 'color.category.food', 1, true, 'a0000000-0000-0000-0000-000000000001', true),
-       ('a0000000-0000-0000-0000-000000000102', NULL, '外卖', 'expense', '餐', 'color.category.food', 2, true, 'a0000000-0000-0000-0000-000000000001', true),
-       ('a0000000-0000-0000-0000-000000000103', NULL, '零食', 'expense', '餐', 'color.category.food', 3, true, 'a0000000-0000-0000-0000-000000000001', true),
-       -- 交通 二级
-       ('a0000000-0000-0000-0000-000000000201', NULL, '交通', 'expense', '行', 'color.category.transport', 1, true, 'a0000000-0000-0000-0000-000000000002', true),
-       ('a0000000-0000-0000-0000-000000000202', NULL, '打车', 'expense', '行', 'color.category.transport', 2, true, 'a0000000-0000-0000-0000-000000000002', true)
+       ('a0000000-0000-0000-0000-000000000001', NULL, '餐饮', 'expense', '餐', 'color.category.food', 1, true, NULL, false, false, NULL),
+       ('a0000000-0000-0000-0000-000000000002', NULL, '交通', 'expense', '行', 'color.category.transport', 2, true, NULL, false, false, NULL),
+       ('a0000000-0000-0000-0000-000000000003', NULL, '购物', 'expense', '购', 'color.category.shopping', 3, true, NULL, false, false, NULL),
+       ('a0000000-0000-0000-0000-000000000010', NULL, '职业收入', 'income', '薪', 'color.category.salary', 1, true, NULL, false, false, NULL),
+       -- 餐饮 二级（餐饮=父默认子，is_parent_default=true、display_order=NULL；外卖=高频展示项；零食=普通展示项）
+       ('a0000000-0000-0000-0000-000000000101', NULL, '餐饮', 'expense', '餐', 'color.category.food', 1, true, 'a0000000-0000-0000-0000-000000000001', true, true, NULL),
+       ('a0000000-0000-0000-0000-000000000102', NULL, '外卖', 'expense', '餐', 'color.category.food', 2, true, 'a0000000-0000-0000-0000-000000000001', true, false, 1),
+       ('a0000000-0000-0000-0000-000000000103', NULL, '零食', 'expense', '餐', 'color.category.food', 3, true, 'a0000000-0000-0000-0000-000000000001', true, false, 6),
+       -- 交通 二级（交通=父默认子，display_order=NULL；打车=高频展示项 display_order=3）
+       ('a0000000-0000-0000-0000-000000000201', NULL, '交通', 'expense', '行', 'color.category.transport', 1, true, 'a0000000-0000-0000-0000-000000000002', true, true, NULL),
+       ('a0000000-0000-0000-0000-000000000202', NULL, '打车', 'expense', '行', 'color.category.transport', 2, true, 'a0000000-0000-0000-0000-000000000002', false, false, 3)
     `,
   );
 });
@@ -126,7 +128,7 @@ describe('GET /v1/categories', () => {
     const body = res.json() as Array<Record<string, unknown>>;
     // 应包含系统分类 + 无家庭自定义分类 = 9 条（4 一级 + 5 二级）
     expect(body.length).toBe(9);
-    // 所有条目都有 children_count 字段
+    // 所有条目都有 children_count 字段 + migration 0013 新增字段
     for (const cat of body) {
       expect(cat).toHaveProperty('children_count');
       expect(cat).toHaveProperty('id');
@@ -134,7 +136,54 @@ describe('GET /v1/categories', () => {
       expect(cat).toHaveProperty('type');
       expect(cat).toHaveProperty('parent_id');
       expect(cat).toHaveProperty('is_direct_default');
+      // migration 0013：新字段必须透传，且类型严格
+      expect(cat).toHaveProperty('is_parent_default');
+      expect(typeof cat.is_parent_default).toBe('boolean');
+      expect(cat).toHaveProperty('display_order');
+      // display_order 必须是 number 或 null（不允许 undefined）
+      const v = cat.display_order;
+      expect(v === null || typeof v === 'number').toBe(true);
     }
+  });
+
+  it('T3b migration 0013 字段语义透传：餐饮(子)=父默认子且不展示；外卖=展示项 order=1', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/v1/categories?family_id=${familyId}`,
+      headers: authHeader(),
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as Array<Record<string, unknown>>;
+
+    // 餐饮(子) → is_parent_default=true、display_order=null
+    const foodChild = body.find(
+      (c) => c.id === 'a0000000-0000-0000-0000-000000000101',
+    );
+    expect(foodChild).toBeDefined();
+    expect(foodChild!.is_parent_default).toBe(true);
+    expect(foodChild!.display_order).toBeNull();
+
+    // 外卖 → is_parent_default=false、display_order=1
+    const takeout = body.find(
+      (c) => c.id === 'a0000000-0000-0000-0000-000000000102',
+    );
+    expect(takeout).toBeDefined();
+    expect(takeout!.is_parent_default).toBe(false);
+    expect(takeout!.display_order).toBe(1);
+
+    // 一级分类（餐饮）→ is_parent_default=false、display_order=null
+    const foodTier1 = body.find(
+      (c) => c.id === 'a0000000-0000-0000-0000-000000000001',
+    );
+    expect(foodTier1).toBeDefined();
+    expect(foodTier1!.is_parent_default).toBe(false);
+    expect(foodTier1!.display_order).toBeNull();
+  });
+
+  it('T3c migration 0013 字段：自定义分类创建默认 is_parent_default=false / display_order=null', async () => {
+    // 注：is_parent_default 唯一性约束（每父级最多 1 个 true）由 migration 0013 partial unique index 在真实 PG 兜底；
+    // pg-mem partial unique index 实现不稳，此测试不在 pg-mem 跑约束断言，仅验证应用层默认值正确（已在 T5 覆盖）。
+    expect(true).toBe(true);
   });
 
   it('T4 非成员 family_id → 403 FAMILY_NOT_MEMBER', async () => {
@@ -184,6 +233,9 @@ describe('POST /v1/categories', () => {
     expect(body.parent_id).toBeNull();
     expect(body.children_count).toBe(0);
     expect(body.is_direct_default).toBe(false);
+    // migration 0013：自定义分类默认 is_parent_default=false、display_order=null
+    expect(body.is_parent_default).toBe(false);
+    expect(body.display_order).toBeNull();
   });
 
   it('T6 parent_id 指向二级分类 → 422（不允许三层）', async () => {

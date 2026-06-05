@@ -32,6 +32,10 @@ export interface CategoryResponse {
   is_system: boolean;
   parent_id: string | null;
   is_direct_default: boolean;
+  // migration 0013：精确标记"点父一级时自动选中的默认子分类"
+  is_parent_default: boolean;
+  // migration 0013：全局二级展示区的展示顺序，NULL = 不展示
+  display_order: number | null;
   children_count: number;
 }
 
@@ -71,6 +75,8 @@ function entityToResponse(e: CategoryEntity, childrenCount: number): CategoryRes
     is_system: e.isSystem,
     parent_id: e.parentId,
     is_direct_default: e.isDirectDefault,
+    is_parent_default: e.isParentDefault,
+    display_order: e.displayOrder,
     children_count: childrenCount,
   };
 }
