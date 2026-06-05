@@ -277,7 +277,7 @@
   <!-- 创建协作账本弹窗 -->
   <view wx:if="{{createOverlayVisible}}" class="invite-dialog__mask" catchtouchmove="noop" catchtap="noop">
     <view class="invite-dialog__card" catchtouchmove="noop" catchtap="noop">
-      <view class="invite-dialog__badge">+</view>
+      <view class="invite-dialog__badge">账</view>
       <text class="invite-dialog__title">创建协作账本</text>
       <text class="invite-dialog__desc">为新账本起一个名字，创建后可邀请其他用户一起记账。</text>
       <input
