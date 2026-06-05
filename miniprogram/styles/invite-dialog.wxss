@@ -149,3 +149,28 @@
 .invite-dialog__btn[disabled] {
   opacity: 0.6;
 }
+
+/* ─── 创建协作账本弹窗专有样式 ─── */
+
+.create-family__input {
+  width: 100%;
+  height: 88rpx;
+  border-radius: 18rpx;
+  border: 2rpx solid rgba(28,27,26,0.12);
+  background: rgba(28,27,26,0.03);
+  padding: 0 28rpx;
+  font-size: 30rpx;
+  color: #1c1b1a;
+  box-sizing: border-box;
+}
+
+.create-family__input-placeholder {
+  color: rgba(28,27,26,0.30);
+}
+
+.create-family__error {
+  font-size: 24rpx;
+  color: #FA5151;
+  text-align: center;
+  margin-top: -8rpx;
+}

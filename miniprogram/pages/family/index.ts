@@ -216,6 +216,12 @@ Page({
     invitePreparing: false,
     inviteReady: false,
     inviteErrorText: '',
+
+    // ─── 创建协作账本弹窗 ───
+    createOverlayVisible: false,
+    createFamilyName: '',
+    createFamilyLoading: false,
+    createFamilyError: '',
   },
 
   // 内部状态
@@ -880,42 +886,51 @@ Page({
       wx.showToast({ title: `最多创建${maxSharedFamilies}个协作账本`, icon: 'none' });
       return;
     }
-
-    wx.showModal({
-      title: '创建协作账本',
-      editable: true,
-      placeholderText: '输入账本名称（最多20字）',
-      success: async (res) => {
-        if (!res.confirm || !res.content) return;
-        // 去除换行符及首尾空格
-        const name = res.content.replace(/[\r\n]/g, '').trim();
-        if (!name) {
-          wx.showToast({ title: '请输入账本名称', icon: 'none' });
-          return;
-        }
-        if (name.length > 20) {
-          wx.showToast({ title: '名称最多20个字', icon: 'none' });
-          return;
-        }
-        try {
-          const newFamily = await createFamily(name);
-          // 切换 active family context 到新创建的 shared family + 持久化偏好（migration 0011）
-          await setActiveFamily({
-            family_id: newFamily.id,
-            ledger_id: newFamily.ledger_id,
-            family_kind: 'shared',
-            ledger_name: newFamily.ledger_name,
-          });
-          savePreferenceAsync(newFamily.id, newFamily.ledger_id);
-          wx.showToast({ title: '创建成功', icon: 'success' });
-          // 刷新页面
-          await this._loadPage();
-        } catch (err) {
-          console.error('[family] createFamily failed', err);
-          wx.showToast({ title: '创建失败', icon: 'none' });
-        }
-      },
+    this.setData({
+      createOverlayVisible: true,
+      createFamilyName: '',
+      createFamilyLoading: false,
+      createFamilyError: '',
     });
+  },
+
+  onCreateFamilyInput(e: WechatMiniprogram.Input) {
+    this.setData({ createFamilyName: e.detail.value, createFamilyError: '' });
+  },
+
+  onCancelCreateFamily() {
+    if (this.data.createFamilyLoading) return;
+    this.setData({ createOverlayVisible: false });
+  },
+
+  async onConfirmCreateFamily() {
+    if (this.data.createFamilyLoading) return;
+    const name = this.data.createFamilyName.replace(/[\r\n]/g, '').trim();
+    if (!name) {
+      this.setData({ createFamilyError: '请输入账本名称' });
+      return;
+    }
+    if (name.length > 20) {
+      this.setData({ createFamilyError: '名称最多 20 个字' });
+      return;
+    }
+    this.setData({ createFamilyLoading: true, createFamilyError: '' });
+    try {
+      const newFamily = await createFamily(name);
+      await setActiveFamily({
+        family_id: newFamily.id,
+        ledger_id: newFamily.ledger_id,
+        family_kind: 'shared',
+        ledger_name: newFamily.ledger_name,
+      });
+      savePreferenceAsync(newFamily.id, newFamily.ledger_id);
+      this.setData({ createOverlayVisible: false, createFamilyLoading: false });
+      wx.showToast({ title: '创建成功', icon: 'success' });
+      await this._loadPage();
+    } catch (err) {
+      console.error('[family] createFamily failed', err);
+      this.setData({ createFamilyLoading: false, createFamilyError: '创建失败，请重试' });
+    }
   },
 
   // ─── 交互：多家庭切换（P2-4: 复用明细页账本切换模式）──────────────────────────

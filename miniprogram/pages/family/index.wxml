@@ -257,8 +257,8 @@
         <text class="invite-dialog__desc">{{inviteErrorText}}</text>
         <text class="invite-dialog__hint">你可以重试生成邀请，或先返回协作页继续浏览。</text>
         <view class="invite-dialog__actions">
-          <button class="invite-dialog__btn invite-dialog__btn--primary" bindtap="onRetryInvite">重试</button>
           <button class="invite-dialog__btn invite-dialog__btn--secondary" bindtap="onCloseInviteOverlay">取消</button>
+          <button class="invite-dialog__btn invite-dialog__btn--primary" bindtap="onRetryInvite">重试</button>
         </view>
       </block>
 
@@ -267,10 +267,42 @@
         <text class="invite-dialog__title">邀请用户加入「{{familyName}}」</text>
         <text class="invite-dialog__desc">邀请链接已准备完成，点击下方按钮即可发起分享。</text>
         <view class="invite-dialog__actions">
-          <button class="invite-dialog__btn invite-dialog__btn--primary" open-type="share">分享邀请</button>
           <button class="invite-dialog__btn invite-dialog__btn--secondary" bindtap="onCloseInviteOverlay">取消</button>
+          <button class="invite-dialog__btn invite-dialog__btn--primary" open-type="share">分享邀请</button>
         </view>
       </block>
+    </view>
+  </view>
+
+  <!-- 创建协作账本弹窗 -->
+  <view wx:if="{{createOverlayVisible}}" class="invite-dialog__mask" catchtouchmove="noop" catchtap="noop">
+    <view class="invite-dialog__card" catchtouchmove="noop" catchtap="noop">
+      <view class="invite-dialog__badge">+</view>
+      <text class="invite-dialog__title">创建协作账本</text>
+      <text class="invite-dialog__desc">为新账本起一个名字，创建后可邀请其他用户一起记账。</text>
+      <input
+        class="create-family__input"
+        value="{{createFamilyName}}"
+        placeholder="输入账本名称（最多 20 字）"
+        placeholder-class="create-family__input-placeholder"
+        maxlength="20"
+        bindinput="onCreateFamilyInput"
+        disabled="{{createFamilyLoading}}"
+      />
+      <text wx:if="{{createFamilyError}}" class="create-family__error">{{createFamilyError}}</text>
+      <view class="invite-dialog__actions">
+        <button
+          class="invite-dialog__btn invite-dialog__btn--secondary"
+          disabled="{{createFamilyLoading}}"
+          bindtap="onCancelCreateFamily"
+        >取消</button>
+        <button
+          class="invite-dialog__btn invite-dialog__btn--primary"
+          loading="{{createFamilyLoading}}"
+          disabled="{{createFamilyLoading}}"
+          bindtap="onConfirmCreateFamily"
+        >创建</button>
+      </view>
     </view>
   </view>
 </view>
