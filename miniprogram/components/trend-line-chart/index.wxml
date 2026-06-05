@@ -1,0 +1,10 @@
+<!-- components/trend-line-chart/index.wxml · 极简静态趋势折线图 -->
+<!-- 卡号: COSTRA-230 · 设计源: docs/design/statistics-page-tech-spec.md §4.3 -->
+<view class="chart-wrapper" style="height: {{height}}rpx;">
+  <canvas
+    type="2d"
+    id="{{canvasId}}"
+    class="chart-canvas"
+    style="height: {{height}}rpx;"
+  ></canvas>
+</view>
