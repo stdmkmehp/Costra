@@ -1,53 +1,253 @@
 // pages/statistics/index.ts · 统计页（Tab2）
-// 卡号: COSTRA-201 / COSTRA-223 · 骨架 + 导航栏账本切换
-// COSTRA-223: 顶部导航栏与明细页/家庭页保持一致（居中账本名+▼切换）
-// COSTRA-125 范式: onLoad + onShow 均加 bootstrapPromise gate，与 mine/ledger 对齐
+// 卡号: COSTRA-225 · 统计页月度视角实装
+// 设计源: design/ui/design_spec.md §6.4 + design/ui/interaction_flow.md §5
+// 配套后端: COSTRA-224（statistics API）· 公共组件: trend-line-chart（COSTRA-230）
+// 金额 ADR-0002: 全部走 decimal.js（utils/money.ts toYuan）
+
+import { toYuan } from '../../utils/money';
 import { getSafeAreaMetrics } from '../../utils/safeArea';
 import {
+  getActiveFamilyId,
+  getActiveLedgerId,
   getActiveLedgerName,
+  getActiveFamilyKind,
   setActiveFamily,
+  savePreferenceAsync,
 } from '../../services/family';
-import { getFamilies } from '../../services/familyApi';
 import { triggerOnPageShow, syncOnce } from '../../services/syncScheduler';
 import { eventBus, EventNames, type SyncDonePayload } from '../../services/eventBus';
 import { hasValidSession } from '../../services/auth';
+import { getFamilies, type FamilyItem } from '../../services/familyApi';
+import {
+  getMonthlyStatistics,
+  getYearlyStatistics,
+  drillDownLevel2,
+  drillDownLevel3,
+  getCachedMonthly,
+  getCachedYearly,
+  invalidateStatisticsCache,
+  type MonthlyStatistics,
+  type YearlyStatistics,
+  type StatCategoryRankItem,
+  type DrillDownLevel2Response,
+  type DrillDownLevel3Response,
+  type DrillDownEntryItem,
+} from '../../services/statisticsApi';
 
-interface AppWithBootstrap {
-  bootstrapPromise: Promise<void>;
+interface AppWithBootstrap { bootstrapPromise: Promise<void> }
+
+// ─── 类型 ────────────────────────────────────────────────────────────────────
+
+interface SummaryGridItem {
+  label: string;
+  value: string;
 }
+
+interface MonthRow {
+  month: number;
+  label: string;
+  expense: string;
+  income: string;
+  balance: string;
+  isEmpty: boolean;
+}
+
+interface L1Display {
+  category_id: string;
+  category_name: string;
+  icon: string;
+  amount: string;        // 已格式化
+  amountCents: number;
+  ratio_bps: number;
+  expanded: boolean;
+  loadingL2: boolean;
+  /** L2 子分类排行（展开后填充） */
+  l2Items: L2Display[];
+  l2HasMore: boolean;
+  l2MoreCount: number;
+}
+
+interface L2Display {
+  category_id: string;
+  category_name: string;
+  icon: string;
+  amount: string;
+  amountCents: number;
+  ratio_bps: number;
+  expanded: boolean;
+  loadingL3: boolean;
+  l3Items: L3Display[];
+  l3HasMore: boolean;
+  l3MoreCount: number;
+}
+
+interface L3Display {
+  entry_id: string;
+  amount: string;          // 已格式化
+  note: string;
+  dateLabel: string;       // 6月3日
+  shared: boolean;
+  nickname: string;
+  avatarUrl: string;
+  initial: string;
+}
+
+interface MemberTabItem {
+  key: string;       // 'all' | userId
+  label: string;
+}
+
+// ─── 辅助函数 ────────────────────────────────────────────────────────────────
+
+/** cents → 元（带千分位） */
+function fmtAmount(cents: number): string {
+  const yuanStr = toYuan(Math.abs(cents));
+  const parts = yuanStr.split('.');
+  const intPart = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return `${intPart}.${parts[1]}`;
+}
+
+/** cents → ¥X,XXX.XX（含负号） */
+function fmtYuan(cents: number): string {
+  const sign = cents < 0 ? '-' : '';
+  return `${sign}¥${fmtAmount(cents)}`;
+}
+
+function getCurrentMonthValue(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function getCurrentYearValue(): string {
+  return `${new Date().getFullYear()}`;
+}
+
+function formatMonthDisplay(value: string): string {
+  const parts = value.split('-');
+  return `${parts[0]}年${parseInt(parts[1], 10)}月`;
+}
+
+function formatYearDisplay(value: string): string {
+  return `${value}年`;
+}
+
+function prevMonth(value: string): string {
+  const [y, m] = value.split('-').map(Number);
+  if (m === 1) return `${y - 1}-12`;
+  return `${y}-${String(m - 1).padStart(2, '0')}`;
+}
+
+function nextMonth(value: string): string {
+  const [y, m] = value.split('-').map(Number);
+  if (m === 12) return `${y + 1}-01`;
+  return `${y}-${String(m + 1).padStart(2, '0')}`;
+}
+
+function prevYear(v: string): string { return `${parseInt(v, 10) - 1}`; }
+function nextYear(v: string): string { return `${parseInt(v, 10) + 1}`; }
+
+/** ISO UTC → 6月3日 (Asia/Shanghai) */
+function formatEntryDate(isoUtc: string): string {
+  const utc = new Date(isoUtc);
+  const sh = new Date(utc.getTime() + 8 * 60 * 60 * 1000);
+  return `${sh.getUTCMonth() + 1}月${sh.getUTCDate()}日`;
+}
+
+/** L1 排行长列表省略：保留前 N 项 */
+const L1_VISIBLE = 6;
+const L2_VISIBLE = 6;
+const L3_VISIBLE = 10;
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 Page({
   data: {
-    /** bootstrap 完成且已登录后才设为 true · 防止页面框架提前渲染 */
+    // 首屏保护
     ready: false,
     statusBarHeight: 0,
     navBarHeight: 44,
+
+    // 账本
     ledgerName: '个人账本',
+    familyKind: 'personal' as 'personal' | 'shared',
+
+    // 时间维度
+    dimension: 'monthly' as 'monthly' | 'yearly',
+    currentMonth: getCurrentMonthValue(),
+    currentYear: getCurrentYearValue(),
+    monthDisplay: '',
+    yearDisplay: '',
+
+    // 加载状态
+    loading: true,
+
+    // 月度数据（rendered）
+    monthlyTotalExpense: '¥0.00',
+    monthlyTotalIncome: '¥0.00',
+    monthlyTotalBalance: '¥0.00',
+    monthlyTrend: [] as number[],     // 传给 trend-line-chart
+    monthlySummary: [] as SummaryGridItem[],
+    monthlyL1: [] as L1Display[],
+    monthlyL1HasMore: false,
+    monthlyL1MoreCount: 0,
+
+    // 年度数据
+    yearlyTotalExpense: '¥0.00',
+    yearlyTotalIncome: '¥0.00',
+    yearlyTotalBalance: '¥0.00',
+    yearlyTrend: [] as number[],
+    yearlySummary: [] as SummaryGridItem[],
+    yearlyMonths: [] as MonthRow[],
+    yearlyL1: [] as L1Display[],
+    yearlyL1HasMore: false,
+    yearlyL1MoreCount: 0,
+
+    // 成员 swiper 框架（COSTRA-229 框架预留 · 当前仅展示「全部」）
+    memberTabs: [{ key: 'all', label: '全部' }] as MemberTabItem[],
+    memberTabIndex: 0,
+
+    // 空态
+    isEmpty: false,
   },
 
+  // 内部状态
+  _familyId: '' as string,
   _ledgerId: '' as string,
-  /** eventBus 订阅 handler（sync-refresh: SYNC_DONE 桩 · 防内存泄漏） */
   _syncDoneHandler: null as ((payload?: unknown) => void) | null,
+  _entrySavedHandler: null as (() => void) | null,
+  _entryUpdatedHandler: null as (() => void) | null,
+  _loadingPromise: null as Promise<void> | null,
 
-  // onLoad gate（冗余兜底 · onShow gate 是主防线）
+  // ─── 生命周期 ──────────────────────────────────────────────────────────────
+
   onLoad() {
-    const metrics = getSafeAreaMetrics();
+    const m = getSafeAreaMetrics();
     this.setData({
-      statusBarHeight: metrics.statusBarHeight,
-      navBarHeight: metrics.navBarHeight,
+      statusBarHeight: m.statusBarHeight,
+      navBarHeight: m.navBarHeight,
+      monthDisplay: formatMonthDisplay(this.data.currentMonth),
+      yearDisplay: formatYearDisplay(this.data.currentYear),
     });
 
-    // sync-refresh: 订阅 SYNC_DONE 预留桩
-    // 当前统计页是骨架页面，无真实聚合数据；待统计图表实装后，
-    // 在此 handler 内补 _loadStatistics(this._ledgerId, currentMonth) 即可
-    const syncDoneHandler = (payload?: unknown) => {
+    // SYNC_DONE 订阅 · 失效缓存 + 重拉
+    const syncHandler = (payload?: unknown) => {
       const p = payload as SyncDonePayload | undefined;
       if (!p) return;
-      // 骨架阶段 · 仅留日志便于联调；TODO: 统计页实装后改为重拉聚合接口
-      console.log(`[statistics] SYNC_DONE pulled=${p.pulled} pushed=${p.pushed} trigger=${p.trigger} (page is skeleton, no-op)`);
+      if (p.pulled <= 0 && p.pushed <= 0) return;
+      void this._onSyncDone();
     };
-    this._syncDoneHandler = syncDoneHandler;
-    eventBus.on(EventNames.SYNC_DONE, syncDoneHandler);
+    this._syncDoneHandler = syncHandler;
+    eventBus.on(EventNames.SYNC_DONE, syncHandler);
+
+    // 记账保存后即时刷新
+    const savedHandler = () => { void this._onSyncDone(); };
+    this._entrySavedHandler = savedHandler;
+    eventBus.on(EventNames.ENTRY_SAVED, savedHandler);
+
+    // 条目编辑保存后即时刷新
+    const updatedHandler = () => { void this._onSyncDone(); };
+    this._entryUpdatedHandler = updatedHandler;
+    eventBus.on(EventNames.ENTRY_UPDATED, updatedHandler);
 
     const app = getApp<AppWithBootstrap>();
     void app.bootstrapPromise.then(() => {
@@ -58,32 +258,444 @@ Page({
   },
 
   onShow() {
-    // COSTRA-127 范式：onShow 加 bootstrapPromise gate · 主防线
     const app = getApp<AppWithBootstrap>();
     void app.bootstrapPromise.then(async () => {
       if (!hasValidSession()) {
         wx.reLaunch({ url: '/pages/login/index' });
         return;
       }
-      this.setData({ ready: true });
-      // tabbar 自治 hidden（由 _unlocked + _panelOpen 合成）· 此处仅同步 selected 并解锁
+      this.setData({ ready: true, loading: true });
       (this.getTabBar?.() as { markActive?: (idx: number) => void } | undefined)?.markActive?.(1);
-      // 同步最新的 active family 名称（其他页面可能已切换）
-      const name = await getActiveLedgerName();
-      this.setData({ ledgerName: name });
       triggerOnPageShow('statistics');
+      await this._loadContext();
+      await this._loadData();
     });
   },
 
   onUnload() {
-    // sync-refresh: 取消订阅 SYNC_DONE 事件（防内存泄漏）
     if (this._syncDoneHandler) {
       eventBus.off(EventNames.SYNC_DONE, this._syncDoneHandler);
       this._syncDoneHandler = null;
     }
+    if (this._entrySavedHandler) {
+      eventBus.off(EventNames.ENTRY_SAVED, this._entrySavedHandler);
+      this._entrySavedHandler = null;
+    }
+    if (this._entryUpdatedHandler) {
+      eventBus.off(EventNames.ENTRY_UPDATED, this._entryUpdatedHandler);
+      this._entryUpdatedHandler = null;
+    }
   },
 
-  // ─── 交互：账本切换（与明细页/家庭页一致） ───────────────────────────────────
+  // ─── 数据加载 ──────────────────────────────────────────────────────────────
+
+  async _loadContext() {
+    const [familyId, ledgerId, ledgerName, familyKind] = await Promise.all([
+      getActiveFamilyId(),
+      getActiveLedgerId(),
+      getActiveLedgerName(),
+      getActiveFamilyKind(),
+    ]);
+    this._familyId = familyId || '';
+    this._ledgerId = ledgerId || '';
+    this.setData({
+      ledgerName: ledgerName || '个人账本',
+      familyKind: familyKind || 'personal',
+    });
+
+    // 多人账本：构建 memberTabs 框架（仅"全部"一档 · 数据 R1 不按成员拉）
+    // COSTRA-229 后续扩展：从 getFamilyMembers 拉 active 成员填充 memberTabs，
+    // 触发 swiper change 时按成员拉数据。
+    if (familyKind === 'shared') {
+      this.setData({
+        memberTabs: [{ key: 'all', label: '全部' }],
+        memberTabIndex: 0,
+      });
+    } else {
+      this.setData({
+        memberTabs: [{ key: 'all', label: '全部' }],
+        memberTabIndex: 0,
+      });
+    }
+  },
+
+  async _loadData() {
+    if (this._loadingPromise) return this._loadingPromise;
+    this._loadingPromise = this._doLoadData();
+    try { await this._loadingPromise; }
+    finally { this._loadingPromise = null; }
+  },
+
+  async _doLoadData() {
+    if (!this._familyId) {
+      this.setData({ loading: false, isEmpty: true });
+      return;
+    }
+    if (this.data.dimension === 'monthly') {
+      await this._loadMonthly();
+    } else {
+      await this._loadYearly();
+    }
+  },
+
+  async _loadMonthly() {
+    const month = this.data.currentMonth;
+    // SWR：先用缓存渲染
+    const cached = getCachedMonthly(this._familyId, month);
+    if (cached) {
+      this._buildMonthlyDisplay(cached);
+    } else {
+      this.setData({ loading: true });
+    }
+    try {
+      const fresh = await getMonthlyStatistics(this._familyId, month);
+      this._buildMonthlyDisplay(fresh);
+    } catch (err) {
+      console.error('[statistics] loadMonthly failed', err);
+      this.setData({ loading: false });
+      wx.showToast({ title: '数据加载失败', icon: 'none' });
+    }
+  },
+
+  async _loadYearly() {
+    const year = this.data.currentYear;
+    const cached = getCachedYearly(this._familyId, year);
+    if (cached) {
+      this._buildYearlyDisplay(cached);
+    } else {
+      this.setData({ loading: true });
+    }
+    try {
+      const fresh = await getYearlyStatistics(this._familyId, year);
+      this._buildYearlyDisplay(fresh);
+    } catch (err) {
+      console.error('[statistics] loadYearly failed', err);
+      this.setData({ loading: false });
+      wx.showToast({ title: '数据加载失败', icon: 'none' });
+    }
+  },
+
+  // ─── 月度展示构建 ──────────────────────────────────────────────────────────
+
+  _buildMonthlyDisplay(s: MonthlyStatistics) {
+    const { totals, daily_trend, extremes, category_ranks } = s;
+
+    const summary: SummaryGridItem[] = [
+      { label: '日均支出', value: fmtYuan(extremes.avg_daily_expense) },
+      { label: '最大单笔', value: fmtYuan(extremes.max_single_expense) },
+      { label: '单日最高', value: fmtYuan(extremes.max_day_expense) },
+      { label: '记账笔数', value: `${totals.entry_count}` },
+    ];
+
+    const l1: L1Display[] = category_ranks.slice(0, L1_VISIBLE).map((c) => this._buildL1Display(c));
+
+    this.setData({
+      monthlyTotalExpense: fmtYuan(totals.expense),
+      monthlyTotalIncome: fmtYuan(totals.income),
+      monthlyTotalBalance: fmtYuan(totals.balance),
+      monthlyTrend: daily_trend.map((d) => d.expense),
+      monthlySummary: summary,
+      monthlyL1: l1,
+      monthlyL1HasMore: category_ranks.length > L1_VISIBLE,
+      monthlyL1MoreCount: Math.max(0, category_ranks.length - L1_VISIBLE),
+      loading: false,
+      isEmpty: totals.expense === 0 && totals.income === 0,
+    });
+  },
+
+  _buildL1Display(c: StatCategoryRankItem): L1Display {
+    return {
+      category_id: c.category_id || '',
+      category_name: c.category_name,
+      icon: c.icon,
+      amount: fmtYuan(c.amount),
+      amountCents: c.amount,
+      ratio_bps: c.ratio_bps,
+      expanded: false,
+      loadingL2: false,
+      l2Items: [],
+      l2HasMore: false,
+      l2MoreCount: 0,
+    };
+  },
+
+  // ─── 年度展示构建 ──────────────────────────────────────────────────────────
+
+  _buildYearlyDisplay(s: YearlyStatistics) {
+    const { totals, monthly_trend, extremes, category_ranks } = s;
+
+    const summary: SummaryGridItem[] = [
+      { label: '月均支出', value: fmtYuan(extremes.avg_monthly_expense) },
+      { label: '年度最大单笔', value: fmtYuan(extremes.max_single_expense) },
+      { label: '单月最高', value: extremes.max_month_label
+        ? `${fmtYuan(extremes.max_month_expense)} · ${extremes.max_month_label}`
+        : fmtYuan(extremes.max_month_expense) },
+      { label: '全年最贵分类', value: extremes.top_category_name
+        ? `${extremes.top_category_name} · ${fmtYuan(extremes.top_category_amount)}`
+        : '—' },
+    ];
+
+    const months: MonthRow[] = monthly_trend.map((mt) => ({
+      month: mt.month,
+      label: `${mt.month}月`,
+      expense: fmtYuan(mt.expense),
+      income: fmtYuan(mt.income),
+      balance: fmtYuan(mt.balance),
+      isEmpty: mt.expense === 0 && mt.income === 0,
+    }));
+
+    const l1: L1Display[] = category_ranks.slice(0, L1_VISIBLE).map((c) => this._buildL1Display(c));
+
+    this.setData({
+      yearlyTotalExpense: fmtYuan(totals.expense),
+      yearlyTotalIncome: fmtYuan(totals.income),
+      yearlyTotalBalance: fmtYuan(totals.balance),
+      yearlyTrend: monthly_trend.map((m) => m.expense),
+      yearlySummary: summary,
+      yearlyMonths: months,
+      yearlyL1: l1,
+      yearlyL1HasMore: category_ranks.length > L1_VISIBLE,
+      yearlyL1MoreCount: Math.max(0, category_ranks.length - L1_VISIBLE),
+      loading: false,
+      isEmpty: totals.expense === 0 && totals.income === 0,
+    });
+  },
+
+  // ─── SYNC_DONE 响应式刷新 ──────────────────────────────────────────────────
+
+  async _onSyncDone() {
+    if (!this._familyId) return;
+    if (this._loadingPromise) return;
+    invalidateStatisticsCache(this._familyId);
+    // 收起所有展开（数据可能变 · 避免显示陈旧 L2/L3）
+    if (this.data.dimension === 'monthly') {
+      this.setData({ monthlyL1: this.data.monthlyL1.map((l1) => ({ ...l1, expanded: false, l2Items: [] })) });
+    } else {
+      this.setData({ yearlyL1: this.data.yearlyL1.map((l1) => ({ ...l1, expanded: false, l2Items: [] })) });
+    }
+    await this._loadData();
+  },
+
+  // ─── 交互：时间维度 ────────────────────────────────────────────────────────
+
+  onPrevTime() {
+    if (this.data.dimension === 'monthly') {
+      const prev = prevMonth(this.data.currentMonth);
+      this.setData({ currentMonth: prev, monthDisplay: formatMonthDisplay(prev) });
+    } else {
+      const prev = prevYear(this.data.currentYear);
+      this.setData({ currentYear: prev, yearDisplay: formatYearDisplay(prev) });
+    }
+    void this._loadData();
+  },
+
+  onNextTime() {
+    if (this.data.dimension === 'monthly') {
+      const nxt = nextMonth(this.data.currentMonth);
+      this.setData({ currentMonth: nxt, monthDisplay: formatMonthDisplay(nxt) });
+    } else {
+      const nxt = nextYear(this.data.currentYear);
+      this.setData({ currentYear: nxt, yearDisplay: formatYearDisplay(nxt) });
+    }
+    void this._loadData();
+  },
+
+  onMonthChange(e: WechatMiniprogram.PickerChange) {
+    const value = e.detail.value as string;
+    this.setData({ currentMonth: value, monthDisplay: formatMonthDisplay(value) });
+    void this._loadData();
+  },
+
+  onYearChange(e: WechatMiniprogram.PickerChange) {
+    // year picker 用 fields=year，detail.value 形如 "2026"
+    const value = e.detail.value as string;
+    // 微信 picker year mode 仅返回完整日期 yyyy-mm-dd 中的年部分，做兜底
+    const y = value.split('-')[0] || value;
+    this.setData({ currentYear: y, yearDisplay: formatYearDisplay(y) });
+    void this._loadData();
+  },
+
+  onSwitchDimension(e: WechatMiniprogram.TouchEvent) {
+    const dim = (e.currentTarget.dataset as Record<string, string>).dim as 'monthly' | 'yearly';
+    if (dim === this.data.dimension) return;
+    this.setData({ dimension: dim });
+    void this._loadData();
+  },
+
+  // ─── 交互：年度月度行点击 → 切回月度 ─────────────────────────────────────
+
+  onTapYearlyMonth(e: WechatMiniprogram.TouchEvent) {
+    const month = (e.currentTarget.dataset as Record<string, number>).month as number;
+    if (!month) return;
+    const monthValue = `${this.data.currentYear}-${String(month).padStart(2, '0')}`;
+    this.setData({
+      dimension: 'monthly',
+      currentMonth: monthValue,
+      monthDisplay: formatMonthDisplay(monthValue),
+    });
+    void this._loadData();
+  },
+
+  // ─── 交互：L1 一级分类展开 ─────────────────────────────────────────────────
+
+  async onTapL1(e: WechatMiniprogram.TouchEvent) {
+    const id = (e.currentTarget.dataset as Record<string, string>).id;
+    if (!id) return;
+    const key = this.data.dimension === 'monthly' ? 'monthlyL1' : 'yearlyL1';
+    const list = (this.data as unknown as Record<string, L1Display[]>)[key];
+    const idx = list.findIndex((l) => l.category_id === id);
+    if (idx < 0) return;
+    const item = list[idx];
+
+    if (item.expanded) {
+      // 收起
+      list[idx] = { ...item, expanded: false };
+      this.setData({ [key]: list });
+      return;
+    }
+
+    // 展开 · 已有 l2Items 则直接展示，否则拉
+    if (item.l2Items.length > 0) {
+      list[idx] = { ...item, expanded: true };
+      this.setData({ [key]: list });
+      return;
+    }
+    list[idx] = { ...item, expanded: true, loadingL2: true };
+    this.setData({ [key]: list });
+
+    try {
+      const scope = this.data.dimension === 'monthly'
+        ? { month: this.data.currentMonth }
+        : { year: this.data.currentYear };
+      const res: DrillDownLevel2Response = await drillDownLevel2(
+        this._familyId, scope, id, { limit: L2_VISIBLE + 1 },  // 多取 1 判断 has_more 简洁性
+      );
+      const l2Items: L2Display[] = res.items.slice(0, L2_VISIBLE).map((c) => ({
+        category_id: c.category_id || '',
+        category_name: c.category_name,
+        icon: c.icon,
+        amount: fmtYuan(c.amount),
+        amountCents: c.amount,
+        ratio_bps: c.ratio_bps,
+        expanded: false,
+        loadingL3: false,
+        l3Items: [],
+        l3HasMore: false,
+        l3MoreCount: 0,
+      }));
+      const hasMore = res.total_count > L2_VISIBLE;
+      // 重新读取 list（防止异步期间 setData 导致 stale）
+      const listLatest = (this.data as unknown as Record<string, L1Display[]>)[key];
+      const idxLatest = listLatest.findIndex((l) => l.category_id === id);
+      if (idxLatest >= 0) {
+        listLatest[idxLatest] = {
+          ...listLatest[idxLatest],
+          loadingL2: false,
+          l2Items,
+          l2HasMore: hasMore,
+          l2MoreCount: Math.max(0, res.total_count - L2_VISIBLE),
+        };
+        this.setData({ [key]: listLatest });
+      }
+    } catch (err) {
+      console.error('[statistics] drillDown L2 failed', err);
+      const listLatest = (this.data as unknown as Record<string, L1Display[]>)[key];
+      const idxLatest = listLatest.findIndex((l) => l.category_id === id);
+      if (idxLatest >= 0) {
+        listLatest[idxLatest] = { ...listLatest[idxLatest], loadingL2: false };
+        this.setData({ [key]: listLatest });
+      }
+      wx.showToast({ title: '加载失败', icon: 'none' });
+    }
+  },
+
+  // ─── 交互：L2 二级分类展开 → L3 单笔明细 ─────────────────────────────────
+
+  async onTapL2(e: WechatMiniprogram.TouchEvent) {
+    const dataset = e.currentTarget.dataset as Record<string, string>;
+    const l1Id = dataset.l1id;
+    const l2Id = dataset.id;
+    if (!l1Id || !l2Id) return;
+
+    const key = this.data.dimension === 'monthly' ? 'monthlyL1' : 'yearlyL1';
+    const list = (this.data as unknown as Record<string, L1Display[]>)[key];
+    const l1Idx = list.findIndex((l) => l.category_id === l1Id);
+    if (l1Idx < 0) return;
+    const l1 = list[l1Idx];
+    const l2Idx = l1.l2Items.findIndex((l) => l.category_id === l2Id);
+    if (l2Idx < 0) return;
+    const l2 = l1.l2Items[l2Idx];
+
+    if (l2.expanded) {
+      l1.l2Items[l2Idx] = { ...l2, expanded: false };
+      list[l1Idx] = { ...l1 };
+      this.setData({ [key]: list });
+      return;
+    }
+    if (l2.l3Items.length > 0) {
+      l1.l2Items[l2Idx] = { ...l2, expanded: true };
+      list[l1Idx] = { ...l1 };
+      this.setData({ [key]: list });
+      return;
+    }
+
+    // 拉 L3
+    l1.l2Items[l2Idx] = { ...l2, expanded: true, loadingL3: true };
+    list[l1Idx] = { ...l1 };
+    this.setData({ [key]: list });
+
+    try {
+      const scope = this.data.dimension === 'monthly'
+        ? { month: this.data.currentMonth }
+        : { year: this.data.currentYear };
+      const res: DrillDownLevel3Response = await drillDownLevel3(
+        this._familyId, scope, l2Id, { limit: L3_VISIBLE },
+      );
+      const l3Items: L3Display[] = res.items.map((it: DrillDownEntryItem) => ({
+        entry_id: it.entry_id,
+        amount: fmtYuan(it.amount),
+        note: it.note || '',
+        dateLabel: formatEntryDate(it.occurred_at),
+        shared: it.shared_type === 'shared',
+        nickname: it.nickname || '',
+        avatarUrl: it.avatar_url || '',
+        initial: (it.nickname || '?')[0],
+      }));
+      const listLatest = (this.data as unknown as Record<string, L1Display[]>)[key];
+      const l1IdxLatest = listLatest.findIndex((l) => l.category_id === l1Id);
+      if (l1IdxLatest >= 0) {
+        const l1Latest = listLatest[l1IdxLatest];
+        const l2IdxLatest = l1Latest.l2Items.findIndex((l) => l.category_id === l2Id);
+        if (l2IdxLatest >= 0) {
+          l1Latest.l2Items[l2IdxLatest] = {
+            ...l1Latest.l2Items[l2IdxLatest],
+            loadingL3: false,
+            l3Items,
+            l3HasMore: res.has_more,
+            l3MoreCount: Math.max(0, res.total_count - res.items.length),
+          };
+          listLatest[l1IdxLatest] = { ...l1Latest };
+          this.setData({ [key]: listLatest });
+        }
+      }
+    } catch (err) {
+      console.error('[statistics] drillDown L3 failed', err);
+      const listLatest = (this.data as unknown as Record<string, L1Display[]>)[key];
+      const l1IdxLatest = listLatest.findIndex((l) => l.category_id === l1Id);
+      if (l1IdxLatest >= 0) {
+        const l1Latest = listLatest[l1IdxLatest];
+        const l2IdxLatest = l1Latest.l2Items.findIndex((l) => l.category_id === l2Id);
+        if (l2IdxLatest >= 0) {
+          l1Latest.l2Items[l2IdxLatest] = { ...l1Latest.l2Items[l2IdxLatest], loadingL3: false };
+          listLatest[l1IdxLatest] = { ...l1Latest };
+          this.setData({ [key]: listLatest });
+        }
+      }
+      wx.showToast({ title: '加载失败', icon: 'none' });
+    }
+  },
+
+  // ─── 交互：账本切换（与明细页/家庭页一致）─────────────────────────────────
 
   async onTapLedgerName() {
     try {
@@ -92,34 +704,57 @@ Page({
         wx.showToast({ title: '当前只有一个账本', icon: 'none' });
         return;
       }
-
-      const items = families.map(f => {
+      const items = families.map((f: FamilyItem) => {
         const suffix = f.kind === 'personal' ? '（个人）' : `（${f.member_count}人）`;
         return f.name + suffix;
       });
-
       wx.showActionSheet({
         itemList: items,
         success: async (res) => {
           const selected = families[res.tapIndex];
           if (selected.ledger_id === this._ledgerId) return;
-
           await setActiveFamily({
             family_id: selected.id,
             ledger_id: selected.ledger_id,
             family_kind: selected.kind,
             ledger_name: selected.name,
           });
-
+          savePreferenceAsync(selected.id, selected.ledger_id);
+          this._familyId = selected.id;
           this._ledgerId = selected.ledger_id;
-          this.setData({ ledgerName: selected.name });
-          // 切换账本后主动拉取新账本数据
+          this.setData({
+            ledgerName: selected.name,
+            familyKind: selected.kind,
+            // 切换账本后清空 L1 折叠态
+            monthlyL1: [],
+            yearlyL1: [],
+          });
+          // 主动同步 + 重拉
           void syncOnce('ledger-switch');
-          // 未来统计页实装后这里刷新数据
+          await this._loadData();
         },
       });
     } catch {
       wx.showToast({ title: '获取账本列表失败', icon: 'none' });
     }
   },
+
+  // ─── 交互：成员 swiper（COSTRA-229 框架预留）─────────────────────────────
+
+  onSwiperChange(e: WechatMiniprogram.TouchEvent) {
+    const idx = (e.detail as unknown as { current: number }).current;
+    if (typeof idx === 'number' && idx !== this.data.memberTabIndex) {
+      this.setData({ memberTabIndex: idx });
+      // TODO(COSTRA-229 后续): 按 memberTabs[idx].key 拉成员维度数据
+    }
+  },
+
+  onTapMemberTab(e: WechatMiniprogram.TouchEvent) {
+    const idx = parseInt((e.currentTarget.dataset as Record<string, string>).index, 10);
+    if (Number.isNaN(idx) || idx === this.data.memberTabIndex) return;
+    this.setData({ memberTabIndex: idx });
+  },
+
+  /** 阻止穿透 */
+  noop() {},
 });
