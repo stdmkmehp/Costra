@@ -457,9 +457,10 @@ Page({
     const filtered = entries.filter(e => e.occurred_at < monthRange.until);
     const nextSig = this._computeEntriesSignature(filtered);
     if (nextSig === this._entriesSignature) {
-      // 当前展示月份的可见数据未变 · 跳过 setData
+      console.error(`[DEBUG:editNote] _refreshIfChanged · sig SAME → skip setData · ts=${Date.now()}`);
       return;
     }
+    console.error(`[DEBUG:editNote] _refreshIfChanged · sig CHANGED → rebuild display · ts=${Date.now()}`);
     this._allEntries = filtered;
     this._entriesSignature = nextSig;
     this._buildDisplay(targetMonth);
@@ -657,8 +658,9 @@ Page({
   // ─── COSTRA-227: 编辑保存后响应式刷新 ─────────────────────────────────────────
 
   async _onEntryUpdated() {
-    // 编辑保存后重新加载条目数据并刷新列表
+    console.error(`[DEBUG:editNote] _onEntryUpdated → _loadEntries START · ts=${Date.now()}`);
     await this._loadEntries();
+    console.error(`[DEBUG:editNote] _onEntryUpdated → _loadEntries DONE · ts=${Date.now()}`);
   },
 
   // ─── UX 增强（COSTRA-220）────────────────────────────────────────────────────
@@ -891,37 +893,56 @@ Page({
   },
 
   /** 分类面板：选中二级分类 → 保存并关闭 */
-  onEditTapSubCategory(e: WechatMiniprogram.TouchEvent) {
+  async onEditTapSubCategory(e: WechatMiniprogram.TouchEvent) {
     const catId = (e.currentTarget.dataset as Record<string, string>).id;
-    if (!catId || !this._editingRefId) return;
 
-    const entry = this._findRawEntry(this._editingRefId);
-    if (!entry) { this.setData({ editCategoryVisible: false }); eventBus.emit(EventNames.SHOW_TAB_BAR); return; }
+    // SOP 步骤 1: 幂等 guard
+    const refId = this._editingRefId;
+    this._editingRefId = '';
+    if (!catId || !refId) {
+      this.setData({ editCategoryVisible: false });
+      eventBus.emit(EventNames.SHOW_TAB_BAR);
+      return;
+    }
 
+    // SOP 步骤 2: 取内存对象
+    const entry = this._findRawEntry(refId);
+    if (!entry) {
+      this.setData({ editCategoryVisible: false });
+      eventBus.emit(EventNames.SHOW_TAB_BAR);
+      return;
+    }
+
+    // SOP 步骤 3: 同等性 guard
     if (entry.category_id === catId) {
       this.setData({ editCategoryVisible: false });
       eventBus.emit(EventNames.SHOW_TAB_BAR);
       return;
     }
 
-    // 保存分类变更
-    updateEntryFields(entry.client_ref_id, {
-      category_id: catId,
-      updated_at: new Date().toISOString(),
-    }).then(() => {
-      enqueue({
-        op: 'update',
-        entity: 'entry',
-        client_ref_id: entry.client_ref_id,
-        base_version: entry.version ?? null,
-        payload: { category_id: catId },
-      });
-    });
+    // SOP 步骤 4: 同步赋值内存
+    const now = new Date().toISOString();
+    entry.category_id = catId;
+    entry.updated_at = now;
 
+    // SOP 步骤 5: 关闭面板
     this.setData({ editCategoryVisible: false });
     eventBus.emit(EventNames.SHOW_TAB_BAR);
+
+    // SOP 步骤 6: 同步渲染
     this._buildDisplay();
-    eventBus.emit(EventNames.ENTRY_UPDATED);
+
+    // SOP 步骤 7: await 持久化
+    await updateEntryFields(entry.client_ref_id, { category_id: catId, updated_at: now });
+
+    // SOP 步骤 8: await 入队
+    await enqueue({
+      op: 'update',
+      entity: 'entry',
+      client_ref_id: entry.client_ref_id,
+      base_version: entry.version ?? null,
+      payload: { category_id: catId },
+    });
   },
 
   onCloseEditCategory() {
@@ -976,35 +997,47 @@ Page({
     this.setData({ editNoteValue: e.detail.value });
   },
 
-  onConfirmEditNote() {
-    if (!this._editingRefId) { this.setData({ editingNoteRefId: '' }); return; }
-    const entry = this._findRawEntry(this._editingRefId);
-    if (!entry) { this.setData({ editingNoteRefId: '' }); return; }
+  async onConfirmEditNote(_e?: WechatMiniprogram.TouchEvent) {
+    // SOP 步骤 1: 幂等 guard（首行清，任何二次触发立即 bail）
+    const refId = this._editingRefId;
+    this._editingRefId = '';
+    if (!refId) {
+      this.setData({ editingNoteRefId: '' });
+      return;
+    }
 
+    // SOP 步骤 2: 取内存对象
+    const entry = this._findRawEntry(refId);
+    if (!entry) {
+      this.setData({ editingNoteRefId: '' });
+      return;
+    }
+
+    // SOP 步骤 3: 同等性 guard
     const newNote = this.data.editNoteValue.trim();
     const oldNote = (entry.note || '').trim();
-
     this.setData({ editingNoteRefId: '' });
-
     if (newNote === oldNote) return;
 
+    // SOP 步骤 4: 同步赋值内存
+    const now = new Date().toISOString();
     entry.note = newNote;
-    entry.updated_at = new Date().toISOString();
-    updateEntryFields(entry.client_ref_id, {
-      note: newNote,
-      updated_at: new Date().toISOString(),
-    }).then(() => {
-      enqueue({
-        op: 'update',
-        entity: 'entry',
-        client_ref_id: entry.client_ref_id,
-        base_version: entry.version ?? null,
-        payload: { note: newNote },
-      });
-    });
+    entry.updated_at = now;
 
+    // SOP 步骤 6: 同步渲染（用户无感）
     this._buildDisplay();
-    eventBus.emit(EventNames.ENTRY_UPDATED);
+
+    // SOP 步骤 7: await 持久化
+    await updateEntryFields(entry.client_ref_id, { note: newNote, updated_at: now });
+
+    // SOP 步骤 8: await 入队
+    await enqueue({
+      op: 'update',
+      entity: 'entry',
+      client_ref_id: entry.client_ref_id,
+      base_version: entry.version ?? null,
+      payload: { note: newNote },
+    });
   },
 
   /** 点击金额区域 → 底部半屏键盘面板 */

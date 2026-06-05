@@ -267,6 +267,13 @@ Page({
   },
 
   onShow() {
+    // 分享完成后返回：微信已废弃 onShareAppMessage success 回调，
+    // 改为在 onShow 中检测"已触发分享"标记来自动关闭邀请遮罩
+    if (this._pendingInviteShared && this.data.inviteOverlayVisible) {
+      wx.showToast({ title: '邀请已发出', icon: 'success' });
+      this._closeInviteOverlay({ revokePendingInvite: false });
+    }
+
     // COSTRA-127 范式：onShow 加 bootstrapPromise gate · 主防线
     const app = getApp<AppWithBootstrap>();
     void app.bootstrapPromise.then(async () => {
@@ -800,17 +807,15 @@ Page({
       ? `/pages/invite-confirm/index?token=${inviteToken}`
       : '/pages/family/index';
 
-    const shareContent = {
+    // 标记已触发分享（微信已废弃 success/fail 回调，改由 onShow 检测此标记来关闭弹窗）
+    if (inviteToken) {
+      this._pendingInviteShared = true;
+    }
+
+    return {
       title: inviteToken ? `${familyName} 邀请你一起记账` : 'Costra 协作记账',
       path,
-      success: () => {
-        if (!inviteToken) return;
-        wx.showToast({ title: '邀请已发出', icon: 'success' });
-        this.onCloseInviteOverlay();
-      },
     };
-
-    return shareContent as WechatMiniprogram.Page.ICustomShareContent;
   },
 
   /** 阻止遮罩触摸穿透 */

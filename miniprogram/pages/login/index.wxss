@@ -49,7 +49,7 @@
   flex-direction: column;
   align-items: center;
   margin-top: auto;
-  padding-bottom: 60rpx;
+  padding-bottom: 100rpx;
 }
 
 .login__btn {
