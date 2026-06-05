@@ -9,6 +9,7 @@
 import { previewInvite, acceptInvite } from '../../services/familyApi';
 import { setActiveFamily } from '../../services/family';
 import { isLoggedIn } from '../../services/auth';
+import { maxSharedFamilies } from '../../config/defaults';
 
 interface AppWithBootstrap {
   bootstrapPromise: Promise<void>;
@@ -90,12 +91,19 @@ Page({
       closeToTab('/pages/family/index');
       wx.showToast({ title: `已加入「${family.name}」`, icon: 'success', duration: 1800 });
     } catch (e: unknown) {
-      const err = e as { code?: string; status?: number };
+      const err = e as { code?: string; status?: number; details?: { rule?: string } };
       if (err.code === 'ALREADY_MEMBER' || err.status === 409) {
         wx.showToast({ title: '你已在该家庭中', icon: 'none', duration: 2000 });
         setTimeout(() => { closeToTab('/pages/family/index'); }, 1500);
       } else if (err.code === 'INVITE_EXPIRED' || err.status === 410) {
         this.setData({ joining: false, expired: true, familyName: '' });
+      } else if (err.code === 'BUSINESS_RULE_VIOLATION' && err.details?.rule === 'shared_family_limit') {
+        this.setData({ joining: false });
+        wx.showModal({
+          title: '无法加入',
+          content: `你已加入 ${maxSharedFamilies} 个协作账本，无法再加入新的协作账本`,
+          showCancel: false,
+        });
       } else {
         this.setData({ joining: false });
         wx.showToast({ title: '加入失败，请稍后重试', icon: 'none' });

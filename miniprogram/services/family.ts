@@ -74,11 +74,11 @@ export async function getActiveFamilyKind(): Promise<FamilyKind | null> {
 
 /**
  * 取 active ledger_name（COSTRA-220: 替代 '我的账本' 硬编码）
- * 降级返回 '我的账本'
+ * 降级返回 '个人账本'
  */
 export async function getActiveLedgerName(): Promise<string> {
   const ctx = await getItem<FamilyContext>(FAMILY_CONTEXT_KEY);
-  return ctx?.ledger_name || '我的账本';
+  return ctx?.ledger_name || '个人账本';
 }
 
 // ─── 偏好持久化（migration 0011）──────────────────────────────────────────────

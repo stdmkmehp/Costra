@@ -259,7 +259,29 @@ export async function countOwnedSharedFamilies(
 }
 
 /**
- * 创建 shared family + family_members(owner) · 单事务 · kind 强制 'shared'
+ * 统计 user 当前作为 active member 加入的 shared family 总数（含 owned）
+ * 用于 acceptInvite 前的用户维度上限校验
+ * 条件：kind = 'shared' AND deleted_at IS NULL AND left_at IS NULL
+ */
+export async function countJoinedSharedFamilies(
+  userId: string,
+  client?: Runner,
+): Promise<number> {
+  const runner = client ?? exec();
+  const res = await runner.query(
+    `SELECT COUNT(*)::int AS cnt
+       FROM families f
+       JOIN family_members fm ON fm.family_id = f.id
+      WHERE fm.user_id = $1
+        AND fm.left_at IS NULL
+        AND f.kind = 'shared'
+        AND f.deleted_at IS NULL`,
+    [userId],
+  );
+  return (res.rows as unknown as { cnt: number }[])[0].cnt;
+}
+
+
  * COSTRA-221: 与 createPersonalFamily 同构，kind 硬编码 'shared'
  */
 export async function createSharedFamily(

@@ -112,10 +112,10 @@ describe('services/family · family-context core', () => {
     const name = await getActiveLedgerName();
     expect(name).toBe('日常账本');
 
-    // 无 ledger_name → 降级 '我的账本'
+    // 无 ledger_name → 降级 '个人账本'
     await setActiveFamily(testCtx);
     const fallback = await getActiveLedgerName();
-    expect(fallback).toBe('我的账本');
+    expect(fallback).toBe('个人账本');
   });
 
   // T10: getActiveFamilyKind/LedgerName 无 storage 返降级值
@@ -124,6 +124,6 @@ describe('services/family · family-context core', () => {
     expect(kind).toBeNull();
 
     const name = await getActiveLedgerName();
-    expect(name).toBe('我的账本');
+    expect(name).toBe('个人账本');
   });
 });

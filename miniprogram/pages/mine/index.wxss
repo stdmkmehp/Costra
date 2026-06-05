@@ -92,8 +92,8 @@
 .menu__arrow { color: var(--color-text-muted); font-size: 36rpx; }
 .menu__item--danger .menu__label { color: var(--color-danger); text-align: center; }
 
-/* ICP 备案号 footer · 12px 灰色居中 · 最后一行下划线点击态 */
+/* ICP 备案号 footer · 12px 灰色居中 */
 .footer { padding: 32rpx 0 64rpx; text-align: center; }
 .footer__text { font-size: 24rpx; color: #9E9E9E; line-height: 1.8; }
 .footer__icp { letter-spacing: 0.5rpx; }
-.footer__hint { text-decoration: underline; }
+.footer__version { opacity: 0.6; }

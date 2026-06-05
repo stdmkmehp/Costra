@@ -1,5 +1,5 @@
 // pages/mine/index.ts
-// 我的页（Tab5 / selected 4）：用户信息 + 家庭入口 + 统计入口 + 设置。
+// 我的页（Tab5 / selected 4）：用户信息 + 设置。
 // COSTRA-125: onLoad 加 bootstrapPromise gate
 // COSTRA-127: onShow 加 bootstrapPromise gate · 避免与 onLoad gate 形成 race
 // COSTRA-201: 适配 custom-tab-bar selected: 4 + 引入 expense-overlay
@@ -22,6 +22,7 @@ Page({
     statusBarHeight: 0,
     navBarHeight: 0,
     showProfileBadge: false,
+    appVersion: '',
   },
 
   _profileBadgeOnHandler: null as (() => void) | null,
@@ -35,6 +36,13 @@ Page({
       statusBarHeight: metrics.statusBarHeight,
       navBarHeight: metrics.navBarHeight,
     });
+
+    // 读取小程序版本号（线上版本有值，开发/体验版为空）
+    try {
+      const info = wx.getAccountInfoSync();
+      const ver = info?.miniProgram?.version;
+      if (ver) this.setData({ appVersion: ver });
+    } catch { /* 降级：不显示版本号 */ }
 
     // 订阅红点事件
     const badgeOnHandler = () => { this.setData({ showProfileBadge: true }); };
@@ -94,15 +102,10 @@ Page({
     wx.navigateTo({ url: '/pages/profile-setup/index' });
   },
 
-  onTapFamily() {
-    wx.navigateTo({ url: '/pages-family/home/index' });
-  },
-  onTapStat() {
-    wx.navigateTo({ url: '/pages-stat/month/index' });
-  },
   onTapSettings() {
     wx.navigateTo({ url: '/pages-family/settings/index' });
   },
+
   async onTapLogout() {
     const res = await wx.showModal({ title: '退出登录', content: '确定要退出吗？' });
     if (res.confirm) {

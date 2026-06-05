@@ -19,14 +19,6 @@
     </view>
 
     <view class="menu">
-      <view class="menu__item" bindtap="onTapFamily">
-        <view class="menu__label">家庭共享</view>
-        <view class="menu__arrow">›</view>
-      </view>
-      <view class="menu__item" bindtap="onTapStat">
-        <view class="menu__label">统计报表</view>
-        <view class="menu__arrow">›</view>
-      </view>
       <view class="menu__item" bindtap="onTapSettings">
         <view class="menu__label">设置</view>
         <view class="menu__arrow">›</view>
@@ -42,7 +34,7 @@
     <view class="footer" bindtap="onTapIcp">
       <view class="footer__text footer__icp">沪ICP备2026017253号-1X</view>
       <view class="footer__text">服务由 costra.cloud 提供 · 沪ICP备2026017253号-2</view>
-      <view class="footer__text footer__hint">点击复制备案号，前往 beian.miit.gov.cn 查询</view>
+      <view wx:if="{{appVersion}}" class="footer__text footer__version">v{{appVersion}}</view>
     </view>
   </view>
 </view>

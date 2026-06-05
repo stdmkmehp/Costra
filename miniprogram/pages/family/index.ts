@@ -172,7 +172,7 @@ Page({
 
     // ─── 家庭信息 ───
     familyId: '',
-    familyName: '我的账本',
+    familyName: '个人账本',
     familyKind: 'personal' as FamilyKind,
     isOwner: false,
     canInvite: false,
@@ -398,7 +398,7 @@ Page({
       this.setData({
         mode,
         familyId,
-        familyName: mode === 'solo' ? (targetFamily.ledger_name || '日常账本') : targetFamily.name,
+        familyName: mode === 'solo' ? (targetFamily.ledger_name || '个人账本') : targetFamily.name,
         familyKind: targetFamily.kind,
         familyList: families,
         isOwner: targetFamily.role === 'owner',
@@ -884,12 +884,17 @@ Page({
     wx.showModal({
       title: '创建协作账本',
       editable: true,
-      placeholderText: '输入账本名称',
+      placeholderText: '输入账本名称（最多20字）',
       success: async (res) => {
         if (!res.confirm || !res.content) return;
-        const name = res.content.trim();
+        // 去除换行符及首尾空格
+        const name = res.content.replace(/[\r\n]/g, '').trim();
         if (!name) {
           wx.showToast({ title: '请输入账本名称', icon: 'none' });
+          return;
+        }
+        if (name.length > 20) {
+          wx.showToast({ title: '名称最多20个字', icon: 'none' });
           return;
         }
         try {

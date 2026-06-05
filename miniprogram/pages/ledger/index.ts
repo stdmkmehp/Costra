@@ -186,7 +186,7 @@ Page({
     statusBarHeight: 0,
     navBarHeight: 44,
     navBarTotalHeight: 0,
-    ledgerName: '我的账本',
+    ledgerName: '个人账本',
 
     // ─── 头部汇总 ───
     currentMonth: getCurrentMonthValue(),
@@ -322,7 +322,9 @@ Page({
       return;
     }
     this.setData({ ready: true });
-    this.getTabBar?.()?.setData?.({ selected: 0, hidden: false });
+    // 从后台恢复时，若有面板正在展示则 tabbar 保持隐藏，否则解锁显示
+    const anyPanelOpen = this.data.editCategoryVisible || this.data.editAmountVisible;
+    this.getTabBar?.()?.setData?.({ selected: 0, hidden: anyPanelOpen });
     await this._loadContext();
     await this._loadEntries();
     // sync-refresh: 与其他 tab 页（statistics/family/mine）保持一致 · 切回明细页时触发同步（debounce 5s 内防重）
@@ -364,7 +366,7 @@ Page({
     this.setData({
       showMemberFilter: isMultiMember,
       // COSTRA-220: 从 FamilyContext 获取真实账本名称
-      ledgerName: ledgerName || '我的账本',
+      ledgerName: ledgerName || '个人账本',
     });
 
     // 切换到非共享账本时重置成员筛选

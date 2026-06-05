@@ -222,12 +222,12 @@ export async function doWxLogin(): Promise<Token> {
     await setItem(TOKEN_KEY, stored);  // COSTRA-125: async
 
     // COSTRA-165: mock 路径也写 family-context（让 T7/T8 在 mock 环境可跑 · R2 P2-2 实装期处理）
-    // COSTRA-220: 附带 family_kind + ledger_name（mock 路径默认 personal + '我的账本'）
+    // COSTRA-220: 附带 family_kind + ledger_name（mock 路径默认 personal + '个人账本'）
     await setActiveFamily({
       family_id: mock.default_family_id,
       ledger_id: mock.default_ledger_id,
       family_kind: 'personal',
-      ledger_name: '我的账本',
+      ledger_name: '个人账本',
     });
     const appMock = getApp();
     if (appMock?.globalData) {
@@ -271,7 +271,7 @@ export async function doWxLogin(): Promise<Token> {
       family_id: resp.default_family_id,
       ledger_id: resp.default_ledger_id,
       family_kind: 'personal',
-      ledger_name: '日常账本',
+      ledger_name: '个人账本',
     });
     const app = getApp();
     if (app?.globalData) {
@@ -309,7 +309,7 @@ export async function refreshToken(): Promise<void> {
       family_id: refreshed.default_family_id,
       ledger_id: refreshed.default_ledger_id,
       family_kind: 'personal',
-      ledger_name: '我的账本',
+      ledger_name: '个人账本',
     });
     const appMock = getApp();
     if (appMock?.globalData) {
@@ -338,7 +338,7 @@ export async function refreshToken(): Promise<void> {
         family_id: resp.default_family_id,
         ledger_id: resp.default_ledger_id,
         family_kind: 'personal',
-        ledger_name: '日常账本',
+        ledger_name: '个人账本',
       });
       const app = getApp();
       if (app?.globalData) {

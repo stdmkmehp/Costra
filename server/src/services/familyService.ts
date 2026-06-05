@@ -466,6 +466,15 @@ export async function acceptInvite(
     });
   }
 
+  // 用户维度：已加入（含 owned）的 shared family 总数上限
+  const joinedCount = await familyRepo.countJoinedSharedFamilies(userId);
+  if (joinedCount >= maxSharedFamilies) {
+    throw new AppError(ErrorCode.BUSINESS_RULE_VIOLATION, {
+      message: `shared family limit reached for invitee (max ${maxSharedFamilies})`,
+      details: { rule: 'shared_family_limit', current_count: joinedCount, max: maxSharedFamilies },
+    });
+  }
+
   // 成员上限（含 owner）
   const activeCount = await familyMemberRepo.countActiveMembers(invite.familyId);
   if (activeCount >= maxFamilyMembers) {

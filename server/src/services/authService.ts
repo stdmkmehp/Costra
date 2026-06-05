@@ -153,7 +153,7 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
         // ② 首登 / 边缘自愈：尝试 bootstrap · race condition 时由 catch 兜底
         try {
           personalFamily = await familyRepo.createPersonalFamily(
-            { ownerId: user.id, name: '我的账本' },
+            { ownerId: user.id, name: '个人账本' },
             client,
           );
         } catch (err) {
@@ -173,7 +173,7 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
         }
         // 同事务内建 ledger（family 已存在）
         defaultLedger = await ledgerRepo.createDefaultLedger(
-          { familyId: personalFamily.id, name: '日常账本', currency: 'CNY' },
+          { familyId: personalFamily.id, name: '个人账本', currency: 'CNY' },
           client,
         );
       } else {
@@ -182,7 +182,7 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
         if (!defaultLedger) {
           // 防御性：个人 family 存在但 ledger 缺失（数据异常 · 历史脏数据）→ 自愈补建
           defaultLedger = await ledgerRepo.createDefaultLedger(
-            { familyId: personalFamily.id, name: '日常账本', currency: 'CNY' },
+            { familyId: personalFamily.id, name: '个人账本', currency: 'CNY' },
             client,
           );
         }
