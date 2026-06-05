@@ -13,6 +13,7 @@
       <button
         class="avatar-btn"
         open-type="chooseAvatar"
+        bindtap="onTapChooseAvatar"
         bindchooseavatar="onChooseAvatar"
       >
         <view class="avatar-wrap">

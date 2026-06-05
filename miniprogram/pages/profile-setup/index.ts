@@ -77,31 +77,69 @@ Page({
       });
     }
 
-    // COSTRA-901: 注册隐私授权回调。
-    // 本页面使用了 chooseAvatar + type=nickname（隐私接口），微信基础库在用户首次触发前
-    // 会调用 onNeedPrivacyAuthorization。此处注册后，由本页面的 privacy-popup 组件弹窗处理。
-    // wx.onNeedPrivacyAuthorization 是覆盖式注册（最后一次 register 生效），这正是我们需要的。
+    // COSTRA-901: 隐私授权处理。
+    // 官方推荐主动查询 wx.getPrivacySetting：如果 needAuthorization=true，立即展示自定义弹窗。
+    // 同时保留 wx.onNeedPrivacyAuthorization 兜底，用于隐私接口被动触发时接住 resolve。
+    // 注意：<input type="nickname"> 聚焦不会触发 onNeedPrivacyAuthorization，会降级为 text；因此不能只依赖被动监听。
+    const showPrivacyPopup = (
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      resolve?: (opt: any) => void,
+      source = 'manual',
+    ) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const popup = (this as any).selectComponent('#privacy-popup');
+      console.info('[profile-setup/privacy] showPrivacyPopup', { source, hasPopup: Boolean(popup), hasResolve: typeof resolve === 'function' });
+      if (popup) {
+        popup.show(resolve);
+      } else if (resolve) {
+        console.warn('[profile-setup/privacy] privacy-popup not found; resolve disagree');
+        resolve({ event: 'disagree' });
+      }
+    };
+
+    console.info('[profile-setup/privacy] capability', {
+      hasGetPrivacySetting: typeof wx.getPrivacySetting === 'function',
+      hasOnNeedPrivacyAuthorization: typeof wx.onNeedPrivacyAuthorization === 'function',
+      hasOpenPrivacyContract: typeof wx.openPrivacyContract === 'function',
+    });
+
     if (typeof wx.onNeedPrivacyAuthorization === 'function') {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       wx.onNeedPrivacyAuthorization((resolve: any) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const popup = (this as any).selectComponent('#privacy-popup');
-        if (popup) {
-          popup.show(resolve);
-        } else {
-          // 极端 fallback：组件未渲染时保守 agree
-          console.warn('[profile-setup] privacy-popup not found');
-          resolve({ event: 'agree' });
-        }
+        console.info('[profile-setup/privacy] onNeedPrivacyAuthorization');
+        showPrivacyPopup(resolve, 'onNeedPrivacyAuthorization');
       });
     }
+
+    if (typeof wx.getPrivacySetting === 'function') {
+      wx.getPrivacySetting({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        success: (res: any) => {
+          console.info('[profile-setup/privacy] getPrivacySetting success', res);
+          if (res?.needAuthorization) {
+            showPrivacyPopup(undefined, 'getPrivacySetting');
+          }
+        },
+        fail: (err) => console.warn('[profile-setup/privacy] getPrivacySetting fail', err),
+      });
+    }
+  },
+
+  /** 头像按钮点击日志：用于区分“点击未命中”还是“chooseAvatar 未回调” */
+  onTapChooseAvatar() {
+    console.info('[profile-setup/avatar] tap chooseAvatar button');
   },
 
   /** 微信原生头像选择回调（open-type="chooseAvatar"） */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onChooseAvatar(e: any) {
+    console.info('[profile-setup/avatar] chooseAvatar callback', e?.detail);
     // e.detail.avatarUrl 由微信运行时注入 · 类型库暂无对应定义
     const avatarUrl = (e as { detail: { avatarUrl: string } }).detail.avatarUrl;
+    if (!avatarUrl) {
+      wx.showToast({ title: '未获取到头像，请重试', icon: 'none' });
+      return;
+    }
     this.setData({ avatarUrl });
   },
 

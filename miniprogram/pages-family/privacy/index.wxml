@@ -10,7 +10,7 @@
   <view class="privacy__section">
     <view class="privacy__section-title">二、我们收集的个人信息</view>
     <view class="privacy__body">为提供记账及家庭协作服务，我们可能收集以下信息：</view>
-    <view class="privacy__body privacy__body--indent">1. <text class="privacy__bold">微信头像与昵称</text>：用于展示您的用户身份，在您主动完善资料时收集，存储于我们的服务器。</view>
+    <view class="privacy__body privacy__body--indent">1. <text class="privacy__bold">昵称、头像</text>：通过微信头像昵称填写能力，在您主动完善资料时收集，用于展示您的用户身份及家庭协作账本中的成员身份，存储于我们的服务器。</view>
     <view class="privacy__body privacy__body--indent">2. <text class="privacy__bold">账单记录</text>：您主动输入的金额、分类、备注、时间等记账信息，用于提供记账及统计功能。</view>
     <view class="privacy__body privacy__body--indent">3. <text class="privacy__bold">微信登录凭证（OpenID）</text>：用于唯一标识您的账号，不会向任何第三方披露。</view>
     <view class="privacy__body privacy__body--indent">4. <text class="privacy__bold">设备信息</text>：系统版本、设备型号等，用于兼容性保障及问题排查。</view>

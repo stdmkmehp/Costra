@@ -55,14 +55,18 @@
  * 强制 inline-block + width:auto 让 button 收缩到内容尺寸，再靠父级 flex 居中。
  */
 .avatar-btn {
-  display: inline-block !important;
-  width: auto !important;
+  display: inline-flex !important;
+  width: 160rpx !important;
+  height: 160rpx !important;
+  align-items: center;
+  justify-content: center;
   background: transparent;
   border: none;
   padding: 0;
   margin: 0;
   line-height: 1;
   box-shadow: none;
+  overflow: visible;
 }
 
 .avatar-btn::after {
