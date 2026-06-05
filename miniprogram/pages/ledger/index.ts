@@ -425,7 +425,6 @@ Page({
     return entries
       .map(e => [
         e.client_ref_id,
-        e.version ?? 0,
         e.occurred_at,
         e.amount,
         e.type,
@@ -456,11 +455,7 @@ Page({
     });
     const filtered = entries.filter(e => e.occurred_at < monthRange.until);
     const nextSig = this._computeEntriesSignature(filtered);
-    if (nextSig === this._entriesSignature) {
-      console.error(`[DEBUG:editNote] _refreshIfChanged · sig SAME → skip setData · ts=${Date.now()}`);
-      return;
-    }
-    console.error(`[DEBUG:editNote] _refreshIfChanged · sig CHANGED → rebuild display · ts=${Date.now()}`);
+    if (nextSig === this._entriesSignature) return;
     this._allEntries = filtered;
     this._entriesSignature = nextSig;
     this._buildDisplay(targetMonth);
@@ -658,9 +653,7 @@ Page({
   // ─── COSTRA-227: 编辑保存后响应式刷新 ─────────────────────────────────────────
 
   async _onEntryUpdated() {
-    console.error(`[DEBUG:editNote] _onEntryUpdated → _loadEntries START · ts=${Date.now()}`);
     await this._loadEntries();
-    console.error(`[DEBUG:editNote] _onEntryUpdated → _loadEntries DONE · ts=${Date.now()}`);
   },
 
   // ─── UX 增强（COSTRA-220）────────────────────────────────────────────────────
@@ -1127,20 +1120,26 @@ Page({
     }
   },
 
-  _confirmEditAmount() {
+  async _confirmEditAmount() {
     const calc = this.data.editAmountCalc;
     const cents = calc.amountCents;
 
-    if (!this._editingRefId) { this._closeEditAmount(); return; }
-    const entry = this._findRawEntry(this._editingRefId);
+    // SOP 步骤 1: 幂等 guard
+    const refId = this._editingRefId;
+    this._editingRefId = '';
+    if (!refId) { this._closeEditAmount(); return; }
+
+    // SOP 步骤 2: 取内存对象
+    const entry = this._findRawEntry(refId);
     if (!entry) { this._closeEditAmount(); return; }
 
     if (cents <= 0) {
+      this._editingRefId = refId; // 恢复，允许重新输入
       wx.showToast({ title: '金额须大于0', icon: 'none' });
       return;
     }
 
-    // 收集所有变更
+    // SOP 步骤 3: 收集变更 + 同等性 guard
     const changedFields: Record<string, unknown> = {};
     if (cents !== entry.amount) changedFields.amount = cents;
 
@@ -1148,10 +1147,10 @@ Page({
     const origDate = new Date(entry.occurred_at);
     const origDateKey = `${origDate.getFullYear()}-${String(origDate.getMonth() + 1).padStart(2, '0')}-${String(origDate.getDate()).padStart(2, '0')}`;
     if (this.data.editAmountDate !== origDateKey) {
-      const now = new Date();
-      const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      const current = new Date();
+      const todayKey = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}-${String(current.getDate()).padStart(2, '0')}`;
       changedFields.occurred_at = this.data.editAmountDate === todayKey
-        ? now.toISOString()
+        ? current.toISOString()
         : `${this.data.editAmountDate}T12:00:00.000Z`;
     }
 
@@ -1168,25 +1167,31 @@ Page({
       return;
     }
 
+    // SOP 步骤 4: 同步赋值内存（多字段逐一赋值）
+    const now = new Date().toISOString();
     if (changedFields.amount) entry.amount = cents;
     if (changedFields.occurred_at) entry.occurred_at = changedFields.occurred_at as string;
     if (changedFields.shared_type) entry.shared_type = changedFields.shared_type as 'personal' | 'shared';
-    entry.updated_at = new Date().toISOString();
+    entry.updated_at = now;
 
-    const localFields: Record<string, unknown> = { ...changedFields, updated_at: new Date().toISOString() };
-    updateEntryFields(entry.client_ref_id, localFields).then(() => {
-      enqueue({
-        op: 'update',
-        entity: 'entry',
-        client_ref_id: entry.client_ref_id,
-        base_version: entry.version ?? null,
-        payload: changedFields,
-      });
-    });
-
+    // SOP 步骤 5: 关闭面板
     this._closeEditAmount();
+
+    // SOP 步骤 6: 同步渲染
     this._buildDisplay();
-    eventBus.emit(EventNames.ENTRY_UPDATED);
+
+    // SOP 步骤 7: await 持久化
+    const localFields: Record<string, unknown> = { ...changedFields, updated_at: now };
+    await updateEntryFields(entry.client_ref_id, localFields);
+
+    // SOP 步骤 8: await 入队
+    await enqueue({
+      op: 'update',
+      entity: 'entry',
+      client_ref_id: entry.client_ref_id,
+      base_version: entry.version ?? null,
+      payload: changedFields,
+    });
   },
 
   onCloseEditAmount() {
