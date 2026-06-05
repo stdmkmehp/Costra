@@ -27,3 +27,9 @@ export const maxSharedFamilies = 3;
  * ⚠️ 必须与 miniprogram/config/defaults.ts maxSharedFamiliesHardLimit 保持一致
  */
 export const maxSharedFamiliesHardLimit = 20;
+
+/**
+ * 每个家庭（shared family）的成员数上限（含 owner）
+ * ⚠️ 必须与 miniprogram/config/defaults.ts maxFamilyMembers 保持一致
+ */
+export const maxFamilyMembers = 8;

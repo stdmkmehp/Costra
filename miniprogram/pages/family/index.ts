@@ -8,7 +8,7 @@
 import { toYuan } from '../../utils/money';
 import { getSafeAreaMetrics } from '../../utils/safeArea';
 import { getCategoryIconById } from '../../services/categoryService';
-import { maxSharedFamilies } from '../../config/defaults';
+import { maxSharedFamilies, maxFamilyMembers } from '../../config/defaults';
 import { triggerOnPageShow } from '../../services/syncScheduler';
 import {
   getActiveFamilyId,
@@ -175,6 +175,7 @@ Page({
     familyName: '我的账本',
     familyKind: 'personal' as FamilyKind,
     isOwner: false,
+    canInvite: false,
     currentUserId: '',
 
     // ─── 家庭列表（多家庭切换用） ───
@@ -608,6 +609,7 @@ Page({
       isEmpty: totalExpense === 0 && totals.income === 0,
       familyName: summary.family_name,
       isOwner: isCurrentUserOwner,
+      canInvite: isCurrentUserOwner && activeMembers.length < maxFamilyMembers,
     });
   },
 

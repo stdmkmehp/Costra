@@ -79,9 +79,9 @@
               <text class="avatar-item__name" wx:if="{{item.status === 'left'}}">已退出</text>
               <view class="avatar-item__owner" wx:if="{{item.isOwner && item.status === 'active'}}"></view>
             </view>
-            <!-- 邀请按钮：仅 owner 可见；点击后打开邀请遮罩并准备 token -->
+            <!-- 邀请按钮：仅 owner 且成员未满时可见；点击后打开邀请遮罩并准备 token -->
             <button
-              wx:if="{{isOwner}}"
+              wx:if="{{canInvite}}"
               class="avatar-item avatar-item--invite"
               bind:tap="onOpenInviteOverlay"
             >

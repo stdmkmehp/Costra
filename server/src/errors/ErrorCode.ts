@@ -36,6 +36,7 @@ export enum ErrorCode {
   // --- 409 冲突 ---
   VERSION_CONFLICT = 'VERSION_CONFLICT',
   DUPLICATE_RESOURCE = 'DUPLICATE_RESOURCE',
+  ALREADY_MEMBER = 'ALREADY_MEMBER',
 
   // --- 410 已失效 ---
   INVITE_EXPIRED = 'INVITE_EXPIRED',
@@ -77,6 +78,7 @@ export const ErrorHttpStatus: Readonly<Record<ErrorCode, number>> = Object.freez
 
   [ErrorCode.VERSION_CONFLICT]: 409,
   [ErrorCode.DUPLICATE_RESOURCE]: 409,
+  [ErrorCode.ALREADY_MEMBER]: 409,
 
   [ErrorCode.INVITE_EXPIRED]: 410,
 
@@ -121,6 +123,7 @@ export const ErrorRetryStrategy: Readonly<Record<ErrorCode, RetryStrategy>> = Ob
 
   [ErrorCode.VERSION_CONFLICT]: 'none',
   [ErrorCode.DUPLICATE_RESOURCE]: 'none',
+  [ErrorCode.ALREADY_MEMBER]: 'none',
 
   [ErrorCode.INVITE_EXPIRED]: 'none',
 

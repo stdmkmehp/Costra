@@ -91,7 +91,10 @@ Page({
       wx.showToast({ title: `已加入「${family.name}」`, icon: 'success', duration: 1800 });
     } catch (e: unknown) {
       const err = e as { code?: string; status?: number };
-      if (err.code === 'INVITE_EXPIRED' || err.status === 410) {
+      if (err.code === 'ALREADY_MEMBER' || err.status === 409) {
+        wx.showToast({ title: '你已在该家庭中', icon: 'none', duration: 2000 });
+        setTimeout(() => { closeToTab('/pages/family/index'); }, 1500);
+      } else if (err.code === 'INVITE_EXPIRED' || err.status === 410) {
         this.setData({ joining: false, expired: true, familyName: '' });
       } else {
         this.setData({ joining: false });

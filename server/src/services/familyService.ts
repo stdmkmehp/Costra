@@ -31,7 +31,7 @@ import * as familyMemberRepo from '../repositories/familyMemberRepo.js';
 import type { FamilyRole } from '../repositories/familyMemberRepo.js';
 import * as familyInviteRepo from '../repositories/familyInviteRepo.js';
 import * as ledgerRepo from '../repositories/ledgerRepo.js';
-import { maxSharedFamilies, maxSharedFamiliesHardLimit } from '../config/defaults.js';
+import { maxSharedFamilies, maxSharedFamiliesHardLimit, maxFamilyMembers } from '../config/defaults.js';
 
 import * as userRepo from '../repositories/userRepo.js';
 
@@ -458,12 +458,20 @@ export async function acceptInvite(
     });
   }
 
-  // 成员上限 10（含 owner）
+  // 已是该家庭的 active member → 不允许重复加入
+  const alreadyMember = await familyMemberRepo.isActiveMember(userId, invite.familyId);
+  if (alreadyMember) {
+    throw new AppError(ErrorCode.ALREADY_MEMBER, {
+      message: 'you are already an active member of this family',
+    });
+  }
+
+  // 成员上限（含 owner）
   const activeCount = await familyMemberRepo.countActiveMembers(invite.familyId);
-  if (activeCount >= 10) {
+  if (activeCount >= maxFamilyMembers) {
     throw new AppError(ErrorCode.BUSINESS_RULE_VIOLATION, {
       message: 'family member limit reached',
-      details: { rule: 'family_member_limit', current_count: activeCount, max: 10 },
+      details: { rule: 'family_member_limit', current_count: activeCount, max: maxFamilyMembers },
     });
   }
 
