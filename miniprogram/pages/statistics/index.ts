@@ -66,7 +66,8 @@ Page({
         return;
       }
       this.setData({ ready: true });
-      this.getTabBar?.()?.setData?.({ selected: 1, hidden: false });
+      // tabbar 自治 hidden（由 _unlocked + _panelOpen 合成）· 此处仅同步 selected 并解锁
+      (this.getTabBar?.() as { markActive?: (idx: number) => void } | undefined)?.markActive?.(1);
       // 同步最新的 active family 名称（其他页面可能已切换）
       const name = await getActiveLedgerName();
       this.setData({ ledgerName: name });

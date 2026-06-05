@@ -347,9 +347,8 @@ Page({
       return;
     }
     this.setData({ ready: true });
-    // 从后台恢复时，若有面板正在展示则 tabbar 保持隐藏，否则解锁显示
-    const anyPanelOpen = this.data.editCategoryVisible || this.data.editAmountVisible;
-    this.getTabBar?.()?.setData?.({ selected: 0, hidden: anyPanelOpen });
+    // tabbar 自治 hidden（由 _unlocked + _panelOpen 合成）· 此处仅同步 selected 并解锁
+    (this.getTabBar?.() as { markActive?: (idx: number) => void } | undefined)?.markActive?.(0);
     await this._loadContext();
     await this._loadEntries();
     // sync-refresh: 与其他 tab 页（statistics/family/mine）保持一致 · 切回明细页时触发同步（debounce 5s 内防重）

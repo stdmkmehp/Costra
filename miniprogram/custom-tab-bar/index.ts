@@ -3,6 +3,18 @@
 // COSTRA-205: 覆盖层显隐时同步隐藏/显示 TabBar（解决键盘底部被遮挡）
 // 设计源: design/ui/design_spec.md §3 + design/ui/interaction_flow.md §2
 // 微信文档: https://developers.weixin.qq.com/miniprogram/dev/framework/ability/custom-tabbar.html
+//
+// hidden 状态机（2026-06-05 重构）：
+//   tabbar 是 hidden 真相源，外部不再直接 setData({hidden})。
+//   内部根据两个独立维度合成：
+//     _unlocked：页面 onShow 中 markUnlocked() 解锁，单向不可逆（防冷启动闪烁）
+//     _panelOpen：是否有任何全屏面板打开，由 HIDE_TAB_BAR/SHOW_TAB_BAR 事件维护
+//   hidden = !_unlocked || _panelOpen
+//
+//   优势：
+//   1. 解决退后台再前台时 page.onShow 与面板状态的 race（page.onShow 不再直接覆盖 hidden）
+//   2. tabbar 进后台不 detach，_panelOpen 在前后台切换时保留，无需 page 重新校正
+//   3. family/ledger 等 page.onShow 不再需要重复实现"是否有面板打开"的判断逻辑
 
 import { eventBus, EventNames } from '../services/eventBus';
 import { getItem, setItem } from '../services/storage';
@@ -28,11 +40,8 @@ Component({
     /** 当前选中 index（0-4）· index 2 是 [+] 不会被 selected */
     selected: 0,
     /**
-     * 是否隐藏 TabBar
-     * - 初始 true：冷启动时 bootstrap 尚未完成、登录态未确认前隐藏 tabBar，
-     *   防止未登录用户闪烁 tabBar 后再跳登录页
-     * - 覆盖层显示时也为 true
-     * - 由页面 onShow 的 bootstrapPromise gate 通过 getTabBar().setData({ hidden: false }) 解锁
+     * 是否隐藏 TabBar（由内部 _unlocked + _panelOpen 合成 · 外部不应直接 setData）
+     * 初始 true：冷启动时 _unlocked=false 即 hidden=true，防止未登录用户闪烁 tabBar 后再跳登录页。
      */
     hidden: true,
     /**
@@ -45,17 +54,24 @@ Component({
 
   lifetimes: {
     attached() {
-      // 隐藏 TabBar（记账覆盖层 + 任何全屏面板）
-      const hideHandler = () => { this.setData({ hidden: true }); };
+      // 初始化实例状态（Component 不支持顶层声明实例属性，挂在 this 上）
+      const self = this as unknown as Record<string, unknown>;
+      self._unlocked = false;
+      self._panelOpen = false;
+
+      // 隐藏 TabBar：记账覆盖层 SHOW + 任何全屏面板 HIDE_TAB_BAR
+      const hideHandler = () => {
+        (this as unknown as Record<string, unknown>)._panelOpen = true;
+        this._applyHidden();
+      };
       (this as unknown as Record<string, unknown>)._hideHandler = hideHandler;
       eventBus.on(EventNames.SHOW_EXPENSE_OVERLAY, hideHandler);
       eventBus.on(EventNames.HIDE_TAB_BAR, hideHandler);
 
-      // 恢复 TabBar · 仅在已被页面解锁后才响应（防止冷启动 bootstrap 前事件误触显示）
+      // 恢复 TabBar：覆盖层 HIDE + 全屏面板 SHOW_TAB_BAR
       const showHandler = () => {
-        if ((this as unknown as Record<string, boolean>)._unlocked) {
-          this.setData({ hidden: false });
-        }
+        (this as unknown as Record<string, unknown>)._panelOpen = false;
+        this._applyHidden();
       };
       (this as unknown as Record<string, unknown>)._showHandler = showHandler;
       eventBus.on(EventNames.HIDE_EXPENSE_OVERLAY, showHandler);
@@ -85,18 +101,6 @@ Component({
       const badgeOnHandler = (this as unknown as Record<string, unknown>)._badgeOnHandler as (() => void) | undefined;
       if (badgeOnHandler) {
         eventBus.off(EventNames.PROFILE_INCOMPLETE, badgeOnHandler);
-      }
-    },
-  },
-
-  observers: {
-    /**
-     * 监听 hidden 变化：页面首次通过 getTabBar().setData({ hidden: false }) 解锁后，
-     * 标记 _unlocked=true，此后 eventBus showHandler 才能恢复 TabBar 可见。
-     */
-    hidden(val: boolean) {
-      if (!val) {
-        (this as unknown as Record<string, boolean>)._unlocked = true;
       }
     },
   },
@@ -148,10 +152,28 @@ Component({
     },
 
     /**
-     * 外部调用 · 各 Tab 页 onShow 中通过 this.getTabBar()?.setData?.({ selected: n }) 更新选中态
+     * 各 Tab 页 onShow 调用：仅传 selected，不再传 hidden（hidden 由 tabbar 内部计算）。
+     * 调用此方法即视为"页面就绪"，会单向解锁 _unlocked。
      */
-    setSelected(idx: number) {
-      this.setData({ selected: idx });
+    markActive(idx: number) {
+      (this as unknown as Record<string, unknown>)._unlocked = true;
+      const panelOpen = (this as unknown as Record<string, unknown>)._panelOpen as boolean;
+      const patch: { selected: number; hidden?: boolean } = { selected: idx };
+      if (this.data.hidden !== panelOpen) {
+        patch.hidden = panelOpen;
+      }
+      this.setData(patch);
+    },
+
+    /** 内部：根据 _unlocked + _panelOpen 应用 hidden。 */
+    _applyHidden() {
+      const self = this as unknown as Record<string, unknown>;
+      const unlocked = self._unlocked as boolean;
+      const panelOpen = self._panelOpen as boolean;
+      const nextHidden = !unlocked || panelOpen;
+      if (this.data.hidden !== nextHidden) {
+        this.setData({ hidden: nextHidden });
+      }
     },
   },
 });

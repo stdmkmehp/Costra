@@ -193,19 +193,6 @@ Component({
     },
   },
 
-  pageLifetimes: {
-    /**
-     * 宿主页从后台恢复（onShow）时触发。
-     * 若覆盖层当前仍是 visible（用户进后台前面板打开），需补发 HIDE_TAB_BAR，
-     * 防止 onShow 无条件解锁 tabbar 后遮挡面板。
-     */
-    show() {
-      if (this.data.visible) {
-        eventBus.emit(EventNames.HIDE_TAB_BAR);
-      }
-    },
-  },
-
   methods: {
     // ─── 显隐控制 ─────────────────────────────────────────────────────────────
 

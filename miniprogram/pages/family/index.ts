@@ -305,7 +305,6 @@ Page({
     // 分享完成后返回：微信已废弃 onShareAppMessage success 回调，
     // 改为在 onShow 中检测"已触发分享"标记来自动关闭邀请遮罩
     if (this._pendingInviteShared && this.data.inviteOverlayVisible) {
-      wx.showToast({ title: '邀请已发出', icon: 'success' });
       this._closeInviteOverlay({ revokePendingInvite: false });
     }
 
@@ -318,7 +317,8 @@ Page({
       }
       this._syncCurrentUserIdFromToken();
       this.setData({ ready: true });
-      this.getTabBar?.()?.setData?.({ selected: 3, hidden: this.data.inviteOverlayVisible });
+      // tabbar 自治 hidden（由 _unlocked + _panelOpen 合成）· 此处仅同步 selected 并解锁
+      (this.getTabBar?.() as { markActive?: (idx: number) => void } | undefined)?.markActive?.(3);
       triggerOnPageShow('family');
       await this._loadPage();
     });
@@ -900,20 +900,34 @@ Page({
     });
   },
 
-  /** 自己头像 ActionSheet：根据是否 owner-单人 决定是"离开家庭"还是"解散账本" */
+  /** 自己头像 ActionSheet：owner 显示管理选项 + 退出/解散；非 owner 仅退出 */
   _showSelfActionSheet() {
     const activeMembers = this.data.members.filter(m => m.status === 'active');
     const isLoneOwner = this.data.isOwner && activeMembers.length === 1;
-    const itemText = isLoneOwner ? '解散账本' : '离开家庭';
+
+    // 构建选项
+    const items: string[] = [];
+    if (this.data.isOwner) {
+      items.push('重命名账本');
+    }
+    if (isLoneOwner) {
+      items.push('解散账本');
+    } else {
+      items.push('退出账本');
+      if (this.data.isOwner) {
+        items.push('解散账本');
+      }
+    }
 
     wx.showActionSheet({
-      itemList: [itemText],
-      itemColor: '#FA5151',
+      itemList: items,
       success: (res) => {
-        if (res.tapIndex !== 0) return;
-        if (isLoneOwner) {
+        const selected = items[res.tapIndex];
+        if (selected === '重命名账本') {
+          this.onTapRenameLedger();
+        } else if (selected === '解散账本') {
           this._confirmDissolveFamily();
-        } else {
+        } else if (selected === '退出账本') {
           this._confirmLeaveSelf();
         }
       },
@@ -950,8 +964,8 @@ Page({
   _confirmLeaveSelf() {
     const isOwner = this.data.isOwner;
     const content = isOwner
-      ? '离开后管理员身份会自动移交给最早加入的成员，确认离开？'
-      : '离开后将无法再访问该账本数据，确认离开？';
+      ? '退出后管理员身份会自动移交给最早加入的成员，确认退出？'
+      : '退出后将无法再访问该账本数据，确认退出？';
 
     wx.showModal({
       title: '',
@@ -961,12 +975,20 @@ Page({
         if (!res.confirm) return;
         try {
           await leaveFamily(this._familyId);
-          wx.showToast({ title: '已离开', icon: 'success' });
-          await this._fallbackToPersonalAndExit();
+          // 用 showModal 明确告知用户切回个人账本，避免突兀跳转
+          wx.showModal({
+            title: '已退出账本',
+            content: '将为你切换到个人账本',
+            showCancel: false,
+            confirmText: '好的',
+            success: async () => {
+              await this._fallbackToPersonalAndExit();
+            },
+          });
         } catch (err) {
           console.error('[family] leaveFamily failed', err);
           const mapped = mapError(err as ApiError);
-          wx.showToast({ title: mapped.desc || '离开失败', icon: 'none' });
+          wx.showToast({ title: mapped.desc || '退出失败', icon: 'none' });
         }
       },
     });
@@ -1077,7 +1099,23 @@ Page({
       wx.showToast({ title: '已修改', icon: 'success' });
     } catch (err) {
       console.error('[family] renameFamily failed', err);
-      const mapped = mapError(err as ApiError);
+      const apiErr = err as ApiError;
+      // VERSION_CONFLICT：本地 version 过期，静默刷新后自动重试一次
+      if (apiErr.code === 'VERSION_CONFLICT') {
+        try {
+          await this._loadPage();
+          const refreshed = this.data.familyList.find(f => f.id === this._familyId);
+          if (refreshed) {
+            const retried = await renameFamily(this._familyId, name, refreshed.version);
+            const newList = this.data.familyList.map(f => (f.id === retried.id ? { ...f, name: retried.name, version: retried.version } : f));
+            this.setData({ familyList: newList, familyName: name, renameOverlayVisible: false, renameLoading: false });
+            invalidateFamilyCache(this._familyId);
+            wx.showToast({ title: '已修改', icon: 'success' });
+            return;
+          }
+        } catch { /* 重试也失败，走下方兜底 */ }
+      }
+      const mapped = mapError(apiErr);
       this.setData({
         renameLoading: false,
         renameError: mapped.desc || '修改失败，请重试',
@@ -1142,46 +1180,30 @@ Page({
     }
   },
 
-  // ─── 交互：账本切换 + 重命名入口（P2-4: 复用明细页账本切换模式） ──────────
+  // ─── 交互：账本切换（P2-4: 复用明细页账本切换模式） ──────────────────────
   //
-  // 收纳两种操作到同一 ActionSheet：
-  //   - 末尾追加"重命名当前账本"项（仅当前用户为该账本 owner 时显示）
-  //   - 当用户只有一个账本且不是 owner 时，提示"当前只有一个账本"
-  //   - 当用户只有一个账本但是 owner 时，直接展示单项 ActionSheet[重命名当前账本]
+  // 重命名入口已移至 owner 点自己头像的 ActionSheet 中（_showSelfActionSheet）。
+  // 此处仅负责切换账本。
 
   onTapFamilyName() {
     const families = this.data.familyList;
-    const canRename = this.data.isOwner && this._familyId !== '';
     const switchable = families && families.length > 1;
 
-    if (!switchable && !canRename) {
+    if (!switchable) {
       wx.showToast({ title: '当前只有一个账本', icon: 'none' });
       return;
     }
 
-    // 构建 itemList：先列其他账本，最后追加"重命名当前账本"
+    // 构建 itemList：列出所有账本
     const items: string[] = [];
-    if (switchable) {
-      for (const f of families) {
-        const suffix = f.kind === 'personal' ? '（个人）' : `（${f.member_count}人）`;
-        items.push(f.name + suffix);
-      }
-    }
-    const renameItemIndex = canRename ? items.length : -1;
-    if (canRename) {
-      items.push('重命名当前账本');
+    for (const f of families) {
+      const suffix = f.kind === 'personal' ? '（个人）' : `（${f.member_count}人）`;
+      items.push(f.name + suffix);
     }
 
     wx.showActionSheet({
       itemList: items,
       success: async (res) => {
-        // 命中"重命名当前账本"
-        if (renameItemIndex >= 0 && res.tapIndex === renameItemIndex) {
-          this.onTapRenameLedger();
-          return;
-        }
-        // 命中其他账本切换
-        if (!switchable) return;
         const selected = families[res.tapIndex];
         if (selected.id === this._familyId) return;
 

@@ -131,9 +131,10 @@ Page({
       // 广播"画像已完善"·  tabBar 红点 + mine 页红点同步清除
       eventBus.emit(EventNames.PROFILE_COMPLETED);
 
+      // 体验优化：先返回上一页再弹 toast · toast 是全局浮层，会显示在栈顶（即上一页）上
+      // 这样用户点击保存后立即看到页面返回，"保存成功"提示在上一页继续显示
+      wx.navigateBack();
       wx.showToast({ title: '保存成功', icon: 'success', duration: 1200 });
-      // 短暂延迟后返回，让 toast 有时间显示
-      setTimeout(() => { wx.navigateBack(); }, 1300);
     } catch (e) {
       console.warn('[profile-setup] save failed', e);
       wx.showToast({ title: '保存失败，请重试', icon: 'none' });

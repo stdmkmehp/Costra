@@ -94,7 +94,8 @@ Page({
       triggerOnPageShow('mine');
 
       // COSTRA-201: 更新 custom-tab-bar 选中态为 index 4（我的）+ 解锁显示
-      this.getTabBar?.()?.setData?.({ selected: 4, hidden: false });
+      // tabbar 自治 hidden（由 _unlocked + _panelOpen 合成）· 此处仅同步 selected 并解锁
+      (this.getTabBar?.() as { markActive?: (idx: number) => void } | undefined)?.markActive?.(4);
     });
   },
 

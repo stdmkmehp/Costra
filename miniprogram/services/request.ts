@@ -61,10 +61,16 @@ export async function request<T = unknown>(opts: RequestOptions): Promise<T> {
     ...(opts.extraHeader || {})
   };
 
-  // 仅在有 body 时才设置 Content-Type（DELETE/GET 无 body 时不应发送 Content-Type，
-  // 否则 Fastify 会因 "Body cannot be empty when content-type is set" 返回 400）
+  // Content-Type 策略：
+  //   - 有 body → application/json（正常序列化）
+  //   - 无 body 且非 GET → 显式设为 text/plain 覆盖微信 wx.request 对非 GET 方法
+  //     自动添加 application/json 的默认行为（微信基础库行为：非 GET 且未设 Content-Type
+  //     时默认填 application/json）。若不覆盖，Fastify 收到 Content-Type: application/json
+  //     但无 body 的请求会抛 "Body cannot be empty when content-type is set to 'application/json'"。
   if (opts.body !== undefined) {
     header['Content-Type'] = 'application/json';
+  } else if (method !== 'GET') {
+    header['Content-Type'] = 'text/plain';
   }
 
   // P0-4: 非 GET 自动注入 Idempotency-Key（允许 caller 显式复用 key 用于 retry）

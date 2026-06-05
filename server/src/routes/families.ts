@@ -20,7 +20,7 @@
  * 幂等处理：POST/DELETE mutating endpoint 复用 idempotencyService。
  */
 
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { createHash } from 'node:crypto';
 import { AppError } from '../errors/AppError.js';
 import { ErrorCode } from '../errors/ErrorCode.js';
@@ -225,13 +225,33 @@ export async function registerFamiliesRoutes(app: FastifyInstance): Promise<void
   );
 
   // PATCH /families/{family_id}
+  const handlePatchFamily = async (req: FastifyRequest<{ Params: { family_id: string }; Body: { name?: string; version: number } }>, reply: FastifyReply) => {
+    const userId = await parseUserId(req);
+    const result = await familyService.updateFamily(userId, req.params.family_id, req.body);
+    reply.code(200).send(result);
+  };
+
   app.patch<{ Params: { family_id: string }; Body: { name?: string; version: number } }>(
     '/families/:family_id',
     { schema: { params: familyIdParamSchema, body: updateFamilyBodySchema } },
+    handlePatchFamily,
+  );
+
+  // POST /families/{family_id}（K3 method-override · wx.request 不支持 PATCH）
+  app.post<{ Params: { family_id: string }; Body: { name?: string; version: number } }>(
+    '/families/:family_id',
+    { schema: { params: familyIdParamSchema, body: updateFamilyBodySchema } },
     async (req, reply) => {
-      const userId = await parseUserId(req);
-      const result = await familyService.updateFamily(userId, req.params.family_id, req.body);
-      reply.code(200).send(result);
+      const override = req.headers['x-http-method-override'];
+      if (typeof override === 'string' && override.toUpperCase() === 'PATCH') {
+        return handlePatchFamily(req, reply);
+      }
+      reply.code(405).send({
+        error: {
+          code: 'METHOD_NOT_ALLOWED',
+          message: 'POST /families/{id} requires X-HTTP-Method-Override: PATCH',
+        },
+      });
     },
   );
 
