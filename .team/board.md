@@ -9,7 +9,7 @@
 > **🆕 验证问题响应 SOP（D-017 · 2026-04-28 13:59 Human 立案 · 14:15 落盘）**：项目遇到验证失败时标准流程 —— ① 责任领域识别（Orchestrator 30s） → ② 责任 Agent 根因分析（只诊断不改文件） → ③ 多方案对比（≥2~3 方案 · 列成本/价值/风险 + Human 决策点 Qn） → ④ Human 评估裁决 → ⑤ 派单实装。**禁止 Orchestrator 自行分析根因**（反模式 A） · E1/E2/E3 例外 · 反模式 ABCD 禁令 · COSTRA-120 首次实战。详见 `.team/decisions/D-017-verification-problem-response-sop.md`。
 > **🔄 D-011 实战验证三次通过**（2026-04-23）：COSTRA-100（2 轮 · 69 min） + Sprint-0 补审（7 卡 × 2 轮 · 29 min 并行） + **COSTRA-101 Round 1 刚自动拉起（22:49 · D-014-b 首次实战）**
 
-最后更新：`2026-06-02 17:03`（Orchestrator · `start:COSTRA-223` R1 实装完成 · 5 文件 1712 行 · typecheck/lint/test 全绿 · Card-Review P2 全兑现 · 下一步 review-tech 自动拉起）
+最后更新：`2026-06-05 17:30`（Orchestrator · `start:COSTRA-901` 合规前置实装 · AC-2/AC-3/AC-4 代码落地 · app.json requiredPrivateInfos + wx.onNeedPrivacyAuthorization + 隐私保护指引完整文案 + 审核自查清单 v2.0 填实）
 
 > （上一条归档）`2026-05-22 20:45`（Orchestrator · 🚀 **Sprint-3 头部双卡 152+153 R1 + R1.x.1 全闭环 · D-014 同轮范式第 3 次实战完美收官**（105+156 / 154+150 / 152+153 三连）· R1 实装 commit `513dd5a` + `ccd80b9` · R1.x.1 双胞胎 `167bf17` · review-tech 37+39/40 · 等 Human curl 实测 + approve）
 
@@ -105,7 +105,7 @@
 
 ## 🔄 Doing（当前无业务开发 in-flight）
 
-- 当前无业务开发卡 in-flight。
+- 🔄 **COSTRA-901** @miniapp-dev + qa-planner · 合规前置 AC-2/AC-3/AC-4 代码落地 · **AC-1（类目）+ 隐私指引上传 等 Human 操作** · 详见 `qa/checklists/wechat-review.md §3 Human 操作清单`
 - ✅ **sync-state:family-first-baseline** 已完成：`.team/STATE` / `.team/board.md` / `.team/backlog.json` / `.team/HANDOFF.md` 已同步。
 - ✅ **COSTRA-221** @backend-dev · Human T1 APPROVED CLOSED。
 - ✅ **COSTRA-222** @backend-dev · Human T1 APPROVED CLOSED；下一步建议：`plan-dispatch:COSTRA-223`。

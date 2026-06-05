@@ -3,6 +3,7 @@
 // 约束: 见 .team/decisions/ADR-0004-miniapp-runtime-details.md
 // COSTRA-124: onLaunch 首行加 ensureVersion() · 消除 storage.ts 模块顶层副作用的启动期时序风险（R1 部分闭合）
 // COSTRA-125: bootstrap Promise 统一门控（B'+E' 合并版）· async storage 全量化 · onLaunch 内串行 ensureVersion → initAuth
+// COSTRA-901: onLaunch 注册 wx.onNeedPrivacyAuthorization · 隐私授权弹窗 + 拒绝后只读演示
 // Refs:
 //   - FU-LAUNCH-FIRST-RENDER-RACE-A（COSTRA-124 已 close · 顶层副作用消除）
 //   - FU-LAUNCH-FIRST-RENDER-RACE-B（COSTRA-125 本卡 close · 渲染层 storage group `_prepare` 未就绪）
@@ -35,6 +36,13 @@ interface AppGlobalData {
    * 消费后须置 null，防止后续 onShow 重复触发。
    */
   pendingFamilyAction?: 'create' | null;
+  /**
+   * COSTRA-901: 用户隐私授权状态。
+   * - 'granted'：已授权，正常使用全部功能。
+   * - 'denied'：已拒绝，降级为只读演示模式（不写入服务器、不采集任何信息）。
+   * - undefined：尚未决策（首次启动 · 等待 wx.onNeedPrivacyAuthorization 触发）。
+   */
+  privacyAuthorized?: 'granted' | 'denied';
 }
 
 /**
@@ -65,6 +73,45 @@ App<AppOption>({
   onLaunch(options: WechatMiniprogram.App.LaunchShowOption) {
     this.globalData.bootAt = Date.now();
     console.info('[Costra] onLaunch env=', this.globalData.env.name);
+
+    // COSTRA-901: 注册隐私授权回调。
+    // 微信基础库 ≥ 2.32.3 起，使用了 requiredPrivateInfos 中声明的接口（chooseAvatar/nickname）
+    // 前，框架会先触发此回调，由此处决定弹窗展示时机与授权处理逻辑。
+    // 官方文档：https://developers.weixin.qq.com/miniprogram/dev/framework/user-privacy/PrivacyAuthorize.html
+    // Note: miniprogram-api-typings 对 resolve 参数的类型定义有误（标为 GeneralCallbackResult 而非函数），
+    //       用 any 绕过，实际运行时 resolve 是 (opt: { buttonId?: string, event: 'agree'|'disagree' }) => void
+    if (typeof wx.onNeedPrivacyAuthorization === 'function') {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      wx.onNeedPrivacyAuthorization((resolve: any) => {
+        wx.showModal({
+          title: '用户隐私保护提示',
+          content:
+            '在使用本应用前，请先阅读《用户隐私保护指引》。Costra 仅收集必要的头像、昵称及记账数据，不与第三方共享。',
+          confirmText: '同意',
+          cancelText: '拒绝',
+          success: (res) => {
+            if (res.confirm) {
+              this.globalData.privacyAuthorized = 'granted';
+              resolve({ buttonId: 'confirm', event: 'agree' });
+            } else {
+              // 用户拒绝：降级只读演示模式
+              this.globalData.privacyAuthorized = 'denied';
+              resolve({ event: 'disagree' });
+              wx.showToast({
+                title: '已进入只读演示模式',
+                icon: 'none',
+                duration: 2000,
+              });
+            }
+          },
+          fail: () => {
+            // 弹窗失败时保守处理：视为拒绝
+            this.globalData.privacyAuthorized = 'denied';
+            resolve({ event: 'disagree' });
+          },
+        });
+      });
+    }
 
     // 分享邀请链接携带的 invite token：存入 globalData 供登录流程消费
     // 落地页为 /pages/invite-confirm/index?token=xxx，query key 为 'token'
