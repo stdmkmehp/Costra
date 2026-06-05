@@ -144,10 +144,9 @@ describe('POST /sync/push', () => {
         ops: [{
           op: 'update',
           entity: 'entry',
-          client_ref_id: 'local-T2-update',
+          client_ref_id: 'local-T2-create', // 用创建时的 client_ref_id 定位 entry
           base_version: 99, // 故意错，真实 server_version=1
           payload: {
-            entry_id: serverId, // 用 T1 拿到的 server_id
             amount: 9999,
           },
         }],

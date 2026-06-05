@@ -87,7 +87,7 @@ describe('COSTRA-164 family bootstrap', () => {
       [body.user.id],
     );
     expect(famRes.rows).toHaveLength(1);
-    expect(famRes.rows[0].name).toBe('我的账本');
+    expect(famRes.rows[0].name).toBe('个人账本');
     expect(famRes.rows[0].kind).toBe('personal');
 
     // DB family_members 校验
@@ -105,7 +105,7 @@ describe('COSTRA-164 family bootstrap', () => {
       [body.default_family_id],
     );
     expect(ledRes.rows).toHaveLength(1);
-    expect(ledRes.rows[0].name).toBe('日常账本');
+    expect(ledRes.rows[0].name).toBe('个人账本');
     expect(ledRes.rows[0].currency).toBe('CNY');
   });
 
@@ -193,7 +193,7 @@ describe('COSTRA-164 family bootstrap', () => {
     try {
       await withTxTest(async (client) => {
         await familyRepo.createPersonalFamily(
-          { ownerId: userId, name: '我的账本' },
+          { ownerId: userId, name: '个人账本' },
           client as never,
         );
         // 模拟后续操作失败
@@ -242,14 +242,14 @@ describe('COSTRA-164 family bootstrap', () => {
 
     // 第一次创建成功
     const family1 = await familyRepo.createPersonalFamily(
-      { ownerId: userId, name: '我的账本' },
+      { ownerId: userId, name: '个人账本' },
     );
     expect(family1.kind).toBe('personal');
 
     // 第二次创建应抛 unique violation (pg error code 23505)
     try {
       await familyRepo.createPersonalFamily(
-        { ownerId: userId, name: '我的账本' },
+        { ownerId: userId, name: '个人账本' },
       );
       expect.unreachable('should have thrown unique violation');
     } catch (err) {
@@ -367,7 +367,7 @@ describe('COSTRA-164 family bootstrap', () => {
 
     // 创建 personal family（走 service 层接口 · 内部走 INSERT family + family_members）
     const personalFamily = await familyRepo.createPersonalFamily(
-      { ownerId: userId, name: '我的账本' },
+      { ownerId: userId, name: '个人账本' },
     );
 
     // ① softDelete personal family（owner 自己） → 抛 FAMILY_PERSONAL_NOT_DELETABLE

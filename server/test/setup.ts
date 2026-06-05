@@ -71,7 +71,10 @@ function applyMigrations(db: IMemoryDb): void {
       created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
       updated_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
       deleted_at              TIMESTAMPTZ,
-      version                 INTEGER NOT NULL DEFAULT 1
+      version                 INTEGER NOT NULL DEFAULT 1,
+      -- migration 0011_users_preferred_family.sql
+      preferred_family_id     UUID,
+      preferred_ledger_id     UUID
     );
     CREATE TABLE user_sessions (
       jti             UUID PRIMARY KEY,

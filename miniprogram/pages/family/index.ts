@@ -158,6 +158,8 @@ const MEMBER_COLOR_SLOTS: readonly string[] = [
   '#C2A878', // 5 赭石
   '#A4B07A', // 6 橄榄
   '#9FA0C2', // 7 薰衣草灰紫
+
+  // 备选色
   '#C29AA1', // 8 烟粉
   '#CCA98F', // 9 茶褐
 ] as const;

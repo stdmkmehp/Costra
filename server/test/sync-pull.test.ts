@@ -110,8 +110,9 @@ async function createEntryViaPush(
   app: FastifyInstance,
   token: string,
   overrides: Record<string, unknown> = {},
-): Promise<{ server_id: string; server_version: number }> {
+): Promise<{ server_id: string; server_version: number; client_ref_id: string }> {
   const idempotencyKey = `idemp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const clientRefId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const res = await app.inject({
     method: 'POST',
     url: '/v1/sync/push',
@@ -124,7 +125,7 @@ async function createEntryViaPush(
       ops: [{
         op: 'create',
         entity: 'entry',
-        client_ref_id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        client_ref_id: clientRefId,
         base_version: null,
         payload: {
           ledger_id: LEDGER_ID,
@@ -139,7 +140,7 @@ async function createEntryViaPush(
   expect(res.statusCode).toBe(200);
   const body = res.json() as { results: Array<{ status: string; server_id?: string; server_version?: number }> };
   expect(body.results[0].status).toBe('ok');
-  return { server_id: body.results[0].server_id!, server_version: body.results[0].server_version! };
+  return { server_id: body.results[0].server_id!, server_version: body.results[0].server_version!, client_ref_id: clientRefId };
 }
 
 describe('GET /sync/pull', () => {
@@ -295,9 +296,9 @@ describe('GET /sync/pull', () => {
 
   it('T11 含软删行 → entries 含 deleted_at !== null（协议 §3.5）', async () => {
     // 先创建 entry
-    const { server_id, server_version } = await createEntryViaPush(app, token, { amount: 5000 });
+    const { client_ref_id, server_version } = await createEntryViaPush(app, token, { amount: 5000 });
 
-    // 软删该 entry（sync/push delete 用 client_ref_id 作为 entry id）
+    // 软删该 entry（sync/push delete 用创建时的 client_ref_id 定位 entry）
     const delRes = await app.inject({
       method: 'POST',
       url: '/v1/sync/push',
@@ -310,7 +311,7 @@ describe('GET /sync/pull', () => {
         ops: [{
           op: 'delete',
           entity: 'entry',
-          client_ref_id: server_id,
+          client_ref_id: client_ref_id,
           base_version: server_version,
           payload: {},
         }],
@@ -493,7 +494,7 @@ describe('GET /sync/pull', () => {
 
   it('T18 同一行连续 UPDATE · change_seq 严格推进 · client 增量收到改动', async () => {
     // 1. INSERT 一条 entry · 拿初始 change_seq
-    const { server_id, server_version } = await createEntryViaPush(app, token, { amount: 1000 });
+    const { server_id, server_version, client_ref_id } = await createEntryViaPush(app, token, { amount: 1000 });
     expect(server_id).toBeTruthy();
 
     const r1 = await app.inject({
@@ -507,7 +508,7 @@ describe('GET /sync/pull', () => {
     const watermark1 = b1.watermark;
     expect(seq1).toBe(watermark1);
 
-    // 2. UPDATE 同一条 entry · 通过 sync/push update op
+    // 2. UPDATE 同一条 entry · 通过 sync/push update op（用创建时的 client_ref_id 定位）
     const updateRes = await app.inject({
       method: 'POST',
       url: '/v1/sync/push',
@@ -520,7 +521,7 @@ describe('GET /sync/pull', () => {
         ops: [{
           op: 'update',
           entity: 'entry',
-          client_ref_id: server_id,
+          client_ref_id: client_ref_id,
           base_version: server_version,
           payload: { amount: 9999 },
         }],
@@ -582,7 +583,7 @@ describe('GET /sync/pull', () => {
   });
 
   it('T20 软删触发 change_seq 推进 · client 增量收到 deleted_at（协议 §3.5）', async () => {
-    const { server_id, server_version } = await createEntryViaPush(app, token, { amount: 5000 });
+    const { server_id, server_version, client_ref_id } = await createEntryViaPush(app, token, { amount: 5000 });
 
     const r1 = await app.inject({
       method: 'GET',
@@ -592,7 +593,7 @@ describe('GET /sync/pull', () => {
     const b1 = r1.json() as { watermark: number };
     const watermark1 = b1.watermark;
 
-    // 软删
+    // 软删（用创建时的 client_ref_id 定位 entry）
     const delRes = await app.inject({
       method: 'POST',
       url: '/v1/sync/push',
@@ -602,7 +603,7 @@ describe('GET /sync/pull', () => {
         'idempotency-key': `idemp-del-${Date.now()}`,
       },
       payload: {
-        ops: [{ op: 'delete', entity: 'entry', client_ref_id: server_id, base_version: server_version, payload: {} }],
+        ops: [{ op: 'delete', entity: 'entry', client_ref_id: client_ref_id, base_version: server_version, payload: {} }],
       },
     });
     expect(delRes.statusCode).toBe(200);
