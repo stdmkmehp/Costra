@@ -57,10 +57,15 @@ export async function request<T = unknown>(opts: RequestOptions): Promise<T> {
   const method = opts.method || 'GET';
 
   const header: Record<string, string> = {
-    'Content-Type': 'application/json',
     'Accept': 'application/json',
     ...(opts.extraHeader || {})
   };
+
+  // 仅在有 body 时才设置 Content-Type（DELETE/GET 无 body 时不应发送 Content-Type，
+  // 否则 Fastify 会因 "Body cannot be empty when content-type is set" 返回 400）
+  if (opts.body !== undefined) {
+    header['Content-Type'] = 'application/json';
+  }
 
   // P0-4: 非 GET 自动注入 Idempotency-Key（允许 caller 显式复用 key 用于 retry）
   if (method !== 'GET') {

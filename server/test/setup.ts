@@ -114,8 +114,14 @@ function applyMigrations(db: IMemoryDb): void {
       role            family_role NOT NULL,
       joined_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
       left_at         TIMESTAMPTZ,
+      -- migration 0012_family_members_color_slot.sql
+      -- pg-mem 不支持 CHECK 含 BETWEEN OR NULL 复合表达式 · 改为应用层校验（familyMemberRepo selectAvailableSlot）
+      color_slot      SMALLINT,
       PRIMARY KEY (family_id, user_id)
     );
+    -- migration 0012: 同 family active 成员 slot 唯一 · left 成员 slot 为 NULL 不参与
+    CREATE UNIQUE INDEX uq_family_members_color_slot_active
+      ON family_members (family_id, color_slot) WHERE left_at IS NULL;
     CREATE TABLE entries (
       id              UUID PRIMARY KEY,
       ledger_id       UUID NOT NULL,

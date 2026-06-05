@@ -60,6 +60,8 @@ export interface FamilyMemberResponse {
   avatar_url: string | null;
   role: FamilyRole;
   status: 'active' | 'left';
+  /** 成员持久化配色槽位 0~7（migration 0012）· null = 已 left 的成员，slot 已释放 */
+  color_slot: number | null;
   joined_at: string;
   left_at: string | null;
 }
@@ -148,6 +150,7 @@ function toMemberResponse(m: {
   nickname: string;
   avatarUrl: string | null;
   role: FamilyRole;
+  colorSlot: number | null;
   joinedAt: Date;
   leftAt: Date | null;
 }): FamilyMemberResponse {
@@ -157,6 +160,7 @@ function toMemberResponse(m: {
     avatar_url: m.avatarUrl,
     role: m.role,
     status: m.leftAt ? 'left' : 'active',
+    color_slot: m.colorSlot,
     joined_at: m.joinedAt.toISOString(),
     left_at: m.leftAt ? m.leftAt.toISOString() : null,
   };

@@ -14,6 +14,8 @@ import { ensureVersion } from './services/storage';
 import { startScheduler, stopScheduler, syncOnce } from './services/syncScheduler';
 import { tokens } from './tokens/index';
 import { eventBus, EventNames } from './services/eventBus';
+import { getActiveFamilyId } from './services/family';
+import { prefetchCategories } from './services/categoryService';
 
 interface AppGlobalData {
   env: ReturnType<typeof getEnv>;
@@ -87,6 +89,14 @@ App<AppOption>({
       if (token && !token.raw.user.has_completed_profile) {
         eventBus.emit(EventNames.PROFILE_INCOMPLETE);
       }
+
+      // 2026-06-05: 分类数据预热（fire-and-forget · 不阻塞 bootstrap）
+      // 命中 storage 缓存秒级回写内存；无缓存则后台拉一次 API；全部失败用 fallback。
+      // 后续打开记账面板/分类编辑面板走 loadCategoriesSync 同步路径直接命中内存缓存，弱网 0 等待。
+      void getActiveFamilyId().then((fid) => {
+        if (fid) void prefetchCategories(fid);
+      });
+
       // 已登录用户从邀请链接冷启动/热切换：检测 pendingInviteToken 并跳转到邀请确认页
       // 微信小程序冷启动时先渲染 pages[0]（ledger/index），bootstrap 异步完成期间落地页自动导航
       // 可能被阻断，因此这里必须主动 reLaunch，确保邀请流程不丢失。

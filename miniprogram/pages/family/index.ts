@@ -137,19 +137,36 @@ function formatCentsDisplay(cents: number): string {
   return `${prefix}¥${formatCentsToYuan(cents)}`;
 }
 
-/** 成员色板（非公共段使用不同灰度） */
-const MEMBER_PALETTE = [
-  'rgba(28,27,26,0.22)',  // 浅灰 1
-  'rgba(28,27,26,0.36)',  // 中灰 2
-  'rgba(28,27,26,0.18)',  // 极浅灰 3
-  'rgba(28,27,26,0.28)',  // 灰 4
-  'rgba(28,27,26,0.14)',  // 极浅灰 5
-  'rgba(28,27,26,0.32)',  // 灰 6
-];
+/**
+ * 成员配色槽位色板 · 8 色莫兰迪
+ *
+ * 与后端 family_members.color_slot（0~7）一一对应（migration 0012）。
+ * 成员加入家庭时由后端在 0..7 中分配未占用的最小 slot；离开时 slot 释放。
+ * 同一 family 内 active 成员之间永不撞色（partial unique index 兜底）。
+ *
+ * 设计要求：低饱和（S≈25-35%）、中明度（L≈60-65%），
+ * 在米白底（#f1f2ec）+ 公共绿（#07C160）共存时不抢戏，相邻色相 ≥45°。
+ */
+const MEMBER_COLOR_SLOTS: readonly string[] = [
+  '#8AA9C4', // 0 雾霾蓝（owner 默认占）
+  '#E0A074', // 1 暖橘
+  '#B594B8', // 2 藕紫
+  '#7FB3A8', // 3 灰青
+  '#D49097', // 4 玫红
+  '#C2A878', // 5 赭石
+  '#A4B07A', // 6 橄榄
+  '#9CADBF', // 7 灰蓝
+] as const;
 
-/** 获取成员段颜色 */
-function getMemberColor(index: number): string {
-  return MEMBER_PALETTE[index % MEMBER_PALETTE.length];
+/**
+ * 按 color_slot 取成员段颜色。
+ * slot 缺失 / 越界 → 兜底 slot 0（仅用于兼容旧服务端响应，正常情况不会触发）。
+ */
+function getMemberColorBySlot(slot: number | null | undefined): string {
+  if (slot == null || slot < 0 || slot >= MEMBER_COLOR_SLOTS.length) {
+    return MEMBER_COLOR_SLOTS[0];
+  }
+  return MEMBER_COLOR_SLOTS[slot];
 }
 
 /** Segmented Bar 公共段颜色 */
@@ -530,15 +547,21 @@ Page({
       : this.data.isOwner;
 
     // 2. 构建 Segmented Bar
+    // 按 user_id 查 color_slot · 同成员跨月稳定取色，零值过滤不影响其他人配色
+    const slotByUserId = new Map<string, number | null>(
+      members.map(m => [m.user_id, m.color_slot]),
+    );
+
     const segmentDisplays: SegmentDisplay[] = [];
-    let memberIndex = 0;
     const totalExpense = totals.expense;
 
     for (const seg of segments) {
       // 零值排除
       if (seg.amount === 0) continue;
 
-      const color = seg.type === 'shared' ? SHARED_SEGMENT_COLOR : getMemberColor(memberIndex++);
+      const color = seg.type === 'shared'
+        ? SHARED_SEGMENT_COLOR
+        : getMemberColorBySlot(seg.user_id ? slotByUserId.get(seg.user_id) : null);
       segmentDisplays.push({
         key: seg.key,
         type: seg.type,

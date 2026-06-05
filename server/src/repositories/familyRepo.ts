@@ -91,9 +91,10 @@ export async function createPersonalFamily(
   const family = rowToEntity(res.rows[0]);
 
   // ② INSERT family_members(owner) · 同事务
+  // color_slot=0：owner 是 family 第一个成员 · 必占 slot 0（migration 0012）
   await runner.query(
-    `INSERT INTO family_members (family_id, user_id, role)
-          VALUES ($1, $2, 'owner')`,
+    `INSERT INTO family_members (family_id, user_id, role, color_slot)
+          VALUES ($1, $2, 'owner', 0)`,
     [family.id, input.ownerId],
   );
 
@@ -305,9 +306,10 @@ export async function createSharedFamily(
   const family = rowToEntity(res.rows[0]);
 
   // ② INSERT family_members(owner) · 同事务
+  // color_slot=0：owner 是 family 第一个成员 · 必占 slot 0（migration 0012）
   await runner.query(
-    `INSERT INTO family_members (family_id, user_id, role)
-          VALUES ($1, $2, 'owner')`,
+    `INSERT INTO family_members (family_id, user_id, role, color_slot)
+          VALUES ($1, $2, 'owner', 0)`,
     [family.id, input.ownerId],
   );
 

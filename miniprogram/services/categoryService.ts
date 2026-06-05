@@ -6,6 +6,7 @@
 
 import { request } from './request';
 import { getItem, setItem } from './storage';
+import { eventBus, EventNames } from './eventBus';
 
 // ─── 类型定义 ──────────────────────────────────────────────────────────────────
 
@@ -313,12 +314,16 @@ async function writeCache(familyId: string, items: CategoryItem[]): Promise<void
 
 /**
  * 获取分类列表：优先读缓存 → 过期/无缓存调 API → API 失败用 fallback
+ * 注：命中 storage 缓存后会自动预热内存缓存，便于下一次同步路径命中。
  * @param familyId 当前活跃家庭 ID
  */
 export async function getCategories(familyId: string): Promise<CategoryItem[]> {
   // 1. 优先读缓存
   const cached = await readCache(familyId);
-  if (cached && cached.length > 0) return cached;
+  if (cached && cached.length > 0) {
+    warmUpMemoryCache(familyId, cached);
+    return cached;
+  }
 
   // 2. 缓存无/过期 → 调 API
   try {
@@ -326,7 +331,9 @@ export async function getCategories(familyId: string): Promise<CategoryItem[]> {
   } catch {
     // 3. API 也失败 → 用 fallback
     console.warn('[categoryService] API failed, using fallback data');
-    return getFallbackItems();
+    const fallback = getFallbackItems();
+    warmUpMemoryCache(familyId, fallback);
+    return fallback;
   }
 }
 
@@ -347,10 +354,39 @@ export async function refreshCategories(familyId: string): Promise<CategoryItem[
   // 按 sortOrder 排序（保证一致展示顺序）
   items.sort((a, b) => a.sortOrder - b.sortOrder);
 
-  // 写缓存
+  // 写缓存 + 预热内存
   await writeCache(familyId, items);
+  warmUpMemoryCache(familyId, items);
 
   return items;
+}
+
+/**
+ * 启动期/登录期预热分类缓存（fire-and-forget 调）。
+ * 优先用 storage 缓存预热内存（无网络）；若 storage 也无，再调 API。
+ * 全部失败静默不抛，最后会用 fallback 预热内存（保证同步路径永远有数据）。
+ *
+ * 调用时机：
+ *   - app.ts bootstrap 完成后（已登录 + 已有 active family）
+ *   - 登录页登录成功后（拿到 default_family_id）
+ *
+ * @param familyId 当前活跃家庭 ID
+ */
+export async function prefetchCategories(familyId: string): Promise<void> {
+  try {
+    const cached = await readCache(familyId);
+    if (cached && cached.length > 0) {
+      warmUpMemoryCache(familyId, cached);
+      // 即便有 storage 缓存也异步刷一次（不 await），让下一次开面板拿到最新数据
+      void refreshCategories(familyId).catch(() => { /* 静默 */ });
+      return;
+    }
+    // 无 storage 缓存：直接调 API
+    await refreshCategories(familyId);
+  } catch {
+    // 网络也挂：用 fallback 预热内存（保证 getCategoriesSync 不为空）
+    warmUpMemoryCache(familyId, getFallbackItems());
+  }
 }
 
 /**
@@ -434,13 +470,75 @@ export function buildDedupMapping(items: CategoryItem[]): DedupMapping {
 
 /** 内存中缓存的分类平铺数组 */
 let _cachedFlatItems: CategoryItem[] = [];
+/** 内存缓存对应的 familyId（用于跨 family 切换时区分） */
+let _cachedFamilyId: string | null = null;
+/** 内存缓存数据签名（基于 UI 相关字段计算） */
+let _cachedSignature: string = '';
 
 /**
- * 将分类数组加载到内存缓存（每次 getCategories 成功后自动调）
- * 供 getCategoryById 使用
+ * 计算分类数据签名（仅基于会影响 UI 的字段）。
+ * 用于"刷新到的数据是否与当前展示一致"的快速判定。
  */
-export function warmUpMemoryCache(_familyId: string, items: CategoryItem[]): void {
+export function computeCategoriesSignature(items: CategoryItem[]): string {
+  // 排序键稳定（getCategories 已 sort by sortOrder，但防御性再排一次）
+  const sorted = items.slice().sort((a, b) => {
+    if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+    return a.id.localeCompare(b.id);
+  });
+  return sorted
+    .map(i => [
+      i.id,
+      i.parentId ?? '',
+      i.name,
+      i.icon,
+      i.type,
+      i.sortOrder,
+      i.isDirectDefault ? 1 : 0,
+    ].join('|'))
+    .join(';');
+}
+
+/**
+ * 将分类数组加载到内存缓存（每次 getCategories/refreshCategories 成功后自动调）
+ * 供 getCategoryById / getCategoriesSync 使用
+ *
+ * 副作用：当签名变化时广播 CATEGORIES_LOADED 事件，订阅方（如明细页）据此重渲，
+ * 避免清理数据/弱网首启场景下条目展示在 fallback 找不到的"未分类/?"状态。
+ */
+export function warmUpMemoryCache(familyId: string, items: CategoryItem[]): void {
+  const nextSignature = computeCategoriesSignature(items);
+  const changed =
+    _cachedFamilyId !== familyId ||
+    _cachedSignature !== nextSignature ||
+    _cachedFlatItems.length === 0;
   _cachedFlatItems = items;
+  _cachedFamilyId = familyId;
+  _cachedSignature = nextSignature;
+  if (changed) {
+    eventBus.emit(EventNames.CATEGORIES_LOADED, { familyId });
+  }
+}
+
+/**
+ * 同步获取分类列表（永不阻塞，永不查 storage 永不调 API）。
+ * 命中策略：
+ *   1. 内存缓存且 familyId 匹配 → 直接返回
+ *   2. 否则返回内嵌 fallback（不污染内存缓存，避免覆盖其它 family 的真数据）
+ *
+ * 用于"打开记账面板/分类编辑面板"等用户感知极敏感路径，确保 0 等待。
+ *
+ * 注意：调用方负责另行 fire-and-forget 调 refreshCategories 做后台增量刷新。
+ */
+export function getCategoriesSync(familyId: string): CategoryItem[] {
+  if (_cachedFlatItems.length > 0 && _cachedFamilyId === familyId) {
+    return _cachedFlatItems;
+  }
+  return getFallbackItems();
+}
+
+/** 读取内存缓存当前签名（用于增量刷新比对） */
+export function getCachedCategoriesSignature(): string {
+  return _cachedSignature;
 }
 
 /**

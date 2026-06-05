@@ -20,8 +20,10 @@ import { getFamilies } from '../../services/familyApi';
 import { getToken } from '../../services/auth';
 import { eventBus, EventNames } from '../../services/eventBus';
 import {
-  loadCategories,
-  type CategoryTier1, type CategoryTier2, type DedupMapping,
+  loadCategoriesSync,
+  refreshCategoryDataAsync,
+  type CategoryData,
+  type CategoryTier1, type CategoryTier2,
 } from './categories';
 import {
   INITIAL_CALC_STATE,
@@ -207,63 +209,53 @@ Component({
   methods: {
     // ─── 显隐控制 ─────────────────────────────────────────────────────────────
 
+    /**
+     * 显示记账面板。
+     *
+     * 设计原则（2026-06-05 重构）：
+     *   1. **永不 await 网络**：仅等本地 storage（毫秒级），同步用内存缓存的分类数据立即打开 UI
+     *   2. **后台增量刷新**：fire-and-forget 调 getFamilies / refreshCategoryDataAsync
+     *   3. **不覆盖用户选择**：刷新回来后基于签名 + 当前面板状态做最小 setData
+     *
+     * 弱网下用户感知：点 + 立刻看到面板（< 100ms），分类来自内存缓存或 fallback；
+     * 联网状态下后台刷新若发现新数据会做温和增量刷新。
+     */
     async _show() {
-      const ledgerId = await getActiveLedgerId() || '';
-      const familyKind = await getActiveFamilyKind();
-      const ledgerNameStored = await getActiveLedgerName();
+      // —— 阶段 1：同步可得的数据（仅 storage，无网络）——
+      const [ledgerId, familyKind, ledgerNameStored, familyId] = await Promise.all([
+        getActiveLedgerId(),
+        getActiveFamilyKind(),
+        getActiveLedgerName(),
+        getActiveFamilyId(),
+      ]);
 
-      // COSTRA-223: 从 API 获取真实家庭列表，构建账本选项
-      let ledgerOptions: LedgerOption[] = [
-        { id: ledgerId || 'default', name: ledgerNameStored || '我的账本', isMultiMember: familyKind === 'shared' },
+      const currentLedgerId = ledgerId || '';
+      const currentLedgerName = ledgerNameStored || '我的账本';
+      const isMultiMember = familyKind === 'shared';
+
+      // 账本选项初值：用本地 context 拼一个单元素列表，避免开屏空状态
+      // 真实多账本会由 _refreshLedgerOptionsAsync 后台拉到再合入
+      const initialLedgerOptions: LedgerOption[] = [
+        { id: currentLedgerId || 'default', name: currentLedgerName, isMultiMember },
       ];
-      let currentIsMultiMember = familyKind === 'shared';
 
-      try {
-        const { families } = await getFamilies();
-        if (families && families.length > 0) {
-          ledgerOptions = families.map(f => ({
-            id: f.ledger_id,
-            name: f.name,
-            isMultiMember: f.kind === 'shared',
-          }));
-          // 确定当前选中的 family
-          const activeFamily = families.find(f => f.ledger_id === ledgerId) || families[0];
-          currentIsMultiMember = activeFamily.kind === 'shared';
-        }
-      } catch {
-        // API 获取失败降级：使用本地存储的信息
-      }
-
-      // COSTRA-214: 读取统一安全区指标
-      const { safeAreaTop, safeAreaBottom, menuButtonTop } = getSafeAreaMetrics();
-
-      // COSTRA-209: 重置滚动位置到顶部
-      // 小程序 scroll-view 不会响应同值赋值，先设 1 再 nextTick 设 0
-      (this as unknown as Record<string, number>)._currentScrollTop = 0;
-
-      const recordDate = getLocalDateValue();
-
-      // COSTRA-219: 从 API 加载分类数据（降级: 缓存 → fallback）
-      let categoryData: {
-        expense: CategoryTier1[];
-        income: CategoryTier1[];
-        expenseDedupedSubs: CategoryTier2[];
-        incomeDedupedSubs: CategoryTier2[];
-        dedupMapping: DedupMapping;
-      };
-      try {
-        const familyId = await getActiveFamilyId();
-        categoryData = familyId
-          ? await loadCategories(familyId)
-          : { expense: [], income: [], expenseDedupedSubs: [], incomeDedupedSubs: [], dedupMapping: {} };
-      } catch {
-        // API 加载失败降级：空分类（categoryService 内部已有 fallback 兜底，此处是极端防御）
-        categoryData = { expense: [], income: [], expenseDedupedSubs: [], incomeDedupedSubs: [], dedupMapping: {} };
-      }
+      // —— 阶段 2：同步加载分类（内存缓存 → fallback，永不查 storage 永不调 API）——
+      const categoryData: CategoryData = familyId
+        ? loadCategoriesSync(familyId)
+        : { expense: [], income: [], expenseDedupedSubs: [], incomeDedupedSubs: [], dedupMapping: {}, signature: '' };
 
       // 存储分类数据到实例属性（供收支切换使用）
       (this as unknown as Record<string, unknown>)._categoryData = categoryData;
 
+      // 安全区
+      const { safeAreaTop, safeAreaBottom, menuButtonTop } = getSafeAreaMetrics();
+
+      // 重置滚动位置
+      (this as unknown as Record<string, number>)._currentScrollTop = 0;
+
+      const recordDate = getLocalDateValue();
+
+      // —— 阶段 3：同步 setData 立即显示面板 ——
       this.setData({
         visible: true,
         editMode: false,
@@ -274,11 +266,11 @@ Component({
         safeAreaTop,
         safeAreaBottom,
         menuButtonTop,
-        ledgerId: ledgerId || 'default',
-        ledgerName: ledgerNameStored || '我的账本',
-        isMultiMemberLedger: currentIsMultiMember,
-        ledgerOptions,
-        showSharedToggle: currentIsMultiMember,
+        ledgerId: currentLedgerId || 'default',
+        ledgerName: currentLedgerName,
+        isMultiMemberLedger: isMultiMember,
+        ledgerOptions: initialLedgerOptions,
+        showSharedToggle: isMultiMember,
         entryType: 'expense',
         tier1Categories: categoryData.expense,
         dedupedSubCategories: categoryData.expenseDedupedSubs,
@@ -302,6 +294,90 @@ Component({
       setTimeout(() => {
         this.setData({ categoryScrollTop: 0 });
       }, 50);
+
+      // —— 阶段 4：后台 fire-and-forget 刷新（不阻塞 UI）——
+      if (familyId) {
+        void this._refreshCategoriesAsync(familyId, categoryData.signature);
+      }
+      void this._refreshLedgerOptionsAsync(currentLedgerId);
+    },
+
+    /**
+     * 后台刷新账本选项。命中条件下增量 setData，不覆盖 ledgerId / ledgerName 等用户选择字段。
+     */
+    async _refreshLedgerOptionsAsync(currentLedgerId: string) {
+      let families: { id: string; ledger_id: string; name: string; kind: 'personal' | 'shared' }[];
+      try {
+        const resp = await getFamilies();
+        families = resp.families || [];
+      } catch {
+        return; // 静默：保持初始本地 context 即可
+      }
+      if (families.length === 0) return;
+      // 组件已关闭则不再刷新，避免无意义 setData
+      if (!this.data.visible) return;
+
+      const ledgerOptions: LedgerOption[] = families.map(f => ({
+        id: f.ledger_id,
+        name: f.name,
+        isMultiMember: f.kind === 'shared',
+      }));
+      const activeFamily = families.find(f => f.ledger_id === currentLedgerId) || families[0];
+      const currentIsMultiMember = activeFamily.kind === 'shared';
+
+      // 签名比较：仅 ledgerOptions 内容 + isMultiMember 变化才 setData
+      const oldSig = JSON.stringify(this.data.ledgerOptions) + '|' + this.data.isMultiMemberLedger;
+      const newSig = JSON.stringify(ledgerOptions) + '|' + currentIsMultiMember;
+      if (oldSig === newSig) return;
+
+      const showSharedToggle = currentIsMultiMember && this.data.entryType === 'expense';
+      this.setData({
+        ledgerOptions,
+        isMultiMemberLedger: currentIsMultiMember,
+        showSharedToggle,
+      });
+    },
+
+    /**
+     * 后台刷新分类数据。
+     *
+     * 守护规则：
+     *   - 签名相等 → 不 setData
+     *   - 签名变化 → 只刷新 tier1Categories / dedupedSubCategories（按当前 entryType）
+     *   - 不动 selected* / expanded* / keypadVisible / calc / note / recordDate / sharedType
+     *   - editMode 期间完全跳过（避免编辑期间分类列表换掉导致 selectedTier1Id 失配）
+     *   - 组件关闭后不刷新
+     *
+     * @param familyId 活跃 family
+     * @param oldSignature 同步打开时拿到的旧签名（用于比对）
+     */
+    async _refreshCategoriesAsync(familyId: string, oldSignature: string) {
+      let next: CategoryData;
+      try {
+        next = await refreshCategoryDataAsync(familyId);
+      } catch {
+        return; // 静默：保持当前缓存数据
+      }
+      // 签名相等 → 无需刷新
+      if (next.signature === oldSignature) return;
+      // 组件已关闭 / 编辑模式 / 保存中 → 跳过
+      if (!this.data.visible || this.data.editMode || this.data.saving) {
+        // 即便不 setData，也要更新实例属性，下一次开面板能拿到最新数据
+        (this as unknown as Record<string, unknown>)._categoryData = next;
+        return;
+      }
+
+      // 更新实例属性（供收支切换使用）
+      (this as unknown as Record<string, unknown>)._categoryData = next;
+
+      // 仅刷新与当前 entryType 对应的分类列表
+      const tier1Categories = this.data.entryType === 'expense' ? next.expense : next.income;
+      const dedupedSubCategories = this.data.entryType === 'expense' ? next.expenseDedupedSubs : next.incomeDedupedSubs;
+
+      this.setData({
+        tier1Categories,
+        dedupedSubCategories,
+      });
     },
 
     onClose() {
@@ -318,6 +394,9 @@ Component({
     /**
      * 打开编辑模式（由明细页 selectComponent 调用）。
      * 绕过 SHOW_EXPENSE_OVERLAY 事件和 _show() 全量重置路径。
+     *
+     * 设计原则（与 _show() 一致）：永不 await 网络，同步打开 UI；不在编辑期间做后台分类刷新
+     * （编辑模式守护：refreshCategoryDataAsync 内已通过 editMode 检查跳过 setData）。
      */
     async openEditMode(entry: Entry) {
       // COSTRA-227: 通知 tabbar 隐藏
@@ -326,49 +405,31 @@ Component({
       // 存储原始 entry 引用（用于后续 diff）
       (this as unknown as Record<string, unknown>)._editOriginalEntry = entry;
 
-      const ledgerId = entry.ledger_id || await getActiveLedgerId() || '';
-      const familyKind = await getActiveFamilyKind();
-      const ledgerNameStored = await getActiveLedgerName();
+      // —— 阶段 1：同步可得的数据（仅 storage，无网络）——
+      const [activeLedgerId, familyKind, ledgerNameStored, activeFamilyId] = await Promise.all([
+        getActiveLedgerId(),
+        getActiveFamilyKind(),
+        getActiveLedgerName(),
+        getActiveFamilyId(),
+      ]);
 
-      // 获取真实家庭列表
-      let ledgerOptions: LedgerOption[] = [
-        { id: ledgerId, name: ledgerNameStored || '我的账本', isMultiMember: familyKind === 'shared' },
+      const ledgerId = entry.ledger_id || activeLedgerId || '';
+      const ledgerName = ledgerNameStored || '我的账本';
+      const isMultiMember = familyKind === 'shared';
+
+      const initialLedgerOptions: LedgerOption[] = [
+        { id: ledgerId, name: ledgerName, isMultiMember },
       ];
-      let currentIsMultiMember = familyKind === 'shared';
 
-      try {
-        const { families } = await getFamilies();
-        if (families && families.length > 0) {
-          ledgerOptions = families.map(f => ({
-            id: f.ledger_id,
-            name: f.name,
-            isMultiMember: f.kind === 'shared',
-          }));
-          const activeFamily = families.find(f => f.ledger_id === ledgerId) || families[0];
-          currentIsMultiMember = activeFamily.kind === 'shared';
-        }
-      } catch { /* 降级 */ }
+      // —— 阶段 2：同步加载分类（内存缓存 → fallback）——
+      const categoryData: CategoryData = activeFamilyId
+        ? loadCategoriesSync(activeFamilyId)
+        : { expense: [], income: [], expenseDedupedSubs: [], incomeDedupedSubs: [], dedupMapping: {}, signature: '' };
+
+      (this as unknown as Record<string, unknown>)._categoryData = categoryData;
 
       // 安全区
       const { safeAreaTop, safeAreaBottom, menuButtonTop } = getSafeAreaMetrics();
-
-      // 加载分类数据
-      let categoryData: {
-        expense: CategoryTier1[];
-        income: CategoryTier1[];
-        expenseDedupedSubs: CategoryTier2[];
-        incomeDedupedSubs: CategoryTier2[];
-        dedupMapping: DedupMapping;
-      };
-      try {
-        const familyId = await getActiveFamilyId();
-        categoryData = familyId
-          ? await loadCategories(familyId)
-          : { expense: [], income: [], expenseDedupedSubs: [], incomeDedupedSubs: [], dedupMapping: {} };
-      } catch {
-        categoryData = { expense: [], income: [], expenseDedupedSubs: [], incomeDedupedSubs: [], dedupMapping: {} };
-      }
-      (this as unknown as Record<string, unknown>)._categoryData = categoryData;
 
       // 解析 entry 数据用于预填
       const entryType = entry.type || 'expense';
@@ -415,11 +476,12 @@ Component({
       const recordDate = `${occurredDate.getFullYear()}-${String(occurredDate.getMonth() + 1).padStart(2, '0')}-${String(occurredDate.getDate()).padStart(2, '0')}`;
 
       // shared_type 预填
-      const sharedType = entry.shared_type || (currentIsMultiMember ? 'shared' : 'shared');
-      const showSharedToggle = currentIsMultiMember && entryType === 'expense';
+      const sharedType = entry.shared_type || (isMultiMember ? 'shared' : 'shared');
+      const showSharedToggle = isMultiMember && entryType === 'expense';
 
       (this as unknown as Record<string, number>)._currentScrollTop = 0;
 
+      // —— 阶段 3：同步 setData 立即显示编辑面板 ——
       this.setData({
         visible: true,
         editMode: true,
@@ -431,9 +493,9 @@ Component({
         safeAreaBottom,
         menuButtonTop,
         ledgerId,
-        ledgerName: ledgerNameStored || '我的账本',
-        isMultiMemberLedger: currentIsMultiMember,
-        ledgerOptions,
+        ledgerName,
+        isMultiMemberLedger: isMultiMember,
+        ledgerOptions: initialLedgerOptions,
         showSharedToggle,
         entryType,
         tier1Categories,
@@ -457,6 +519,9 @@ Component({
       setTimeout(() => {
         this.setData({ categoryScrollTop: 0 });
       }, 50);
+
+      // —— 阶段 4：后台 fire-and-forget 刷新账本选项（编辑模式不刷分类，避免 selected 失配）——
+      void this._refreshLedgerOptionsAsync(ledgerId);
     },
 
     /** COSTRA-227: 编辑模式保存逻辑 */
@@ -725,13 +790,7 @@ Component({
      */
     _switchEntryType(type: 'expense' | 'income') {
       // COSTRA-219: 从实例属性读取动态分类数据
-      const categoryData = (this as unknown as Record<string, unknown>)._categoryData as {
-        expense: CategoryTier1[];
-        income: CategoryTier1[];
-        expenseDedupedSubs: CategoryTier2[];
-        incomeDedupedSubs: CategoryTier2[];
-        dedupMapping: DedupMapping;
-      } | undefined;
+      const categoryData = (this as unknown as Record<string, unknown>)._categoryData as CategoryData | undefined;
 
       const tier1Categories = type === 'expense'
         ? (categoryData?.expense || [])
@@ -815,9 +874,7 @@ Component({
       if (!subId) return;
 
       // COSTRA-219: 从实例属性读取去重映射
-      const categoryData = (this as unknown as Record<string, unknown>)._categoryData as {
-        dedupMapping: DedupMapping;
-      } | undefined;
+      const categoryData = (this as unknown as Record<string, unknown>)._categoryData as Pick<CategoryData, 'dedupMapping'> | undefined;
       const dedupMapping = categoryData?.dedupMapping || {};
 
       // 查找归属的一级分类：先查去重映射表，再遍历查找

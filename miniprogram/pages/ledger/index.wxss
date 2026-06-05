@@ -229,11 +229,67 @@
   line-height: 1;
 }
 
-.entry-avatar {
-  width: 32rpx;
-  height: 32rpx;
-  border-radius: 50%;
+/* ---- 成员头像（协作账本 · 金额左侧） ---- */
+.entry-member {
+  position: relative;
+  width: 48rpx;
+  height: 48rpx;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.entry-member__avatar {
+  width: 40rpx;
+  height: 40rpx;
+  border-radius: 50%;
+}
+
+.entry-member__fallback {
+  width: 40rpx;
+  height: 40rpx;
+  border-radius: 50%;
+  background: rgba(28, 27, 26, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.entry-member__initial {
+  font-size: 20rpx;
+  color: var(--color-role-text-secondary, rgba(28,27,26,0.48));
+  font-weight: 500;
+  line-height: 1;
+}
+
+/**
+ * 公共支出角标 · 仅文字浮于头像右下，不带背景/底圆，避免遮挡头像。
+ * 用 text-shadow 八向投影做外描边（仅向外扩展，不侵蚀字芯），
+ * 保证小字号下绿色字芯依然饱满可读。
+ */
+.entry-member__badge {
+  position: absolute;
+  right: -6rpx;
+  bottom: -6rpx;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.entry-member__badge-text {
+  font-size: 18rpx;
+  line-height: 1;
+  font-weight: 800;
+  color: #07C160;
+  text-shadow:
+    1rpx 0 0 var(--color-role-bg-app, #f1f2ec),
+    -1rpx 0 0 var(--color-role-bg-app, #f1f2ec),
+    0 1rpx 0 var(--color-role-bg-app, #f1f2ec),
+    0 -1rpx 0 var(--color-role-bg-app, #f1f2ec),
+    1rpx 1rpx 0 var(--color-role-bg-app, #f1f2ec),
+    -1rpx -1rpx 0 var(--color-role-bg-app, #f1f2ec),
+    1rpx -1rpx 0 var(--color-role-bg-app, #f1f2ec),
+    -1rpx 1rpx 0 var(--color-role-bg-app, #f1f2ec);
 }
 
 .entry-label {

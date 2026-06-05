@@ -85,13 +85,6 @@
             <view class="entry-icon" data-refid="{{entry.client_ref_id}}" catchtap="onTapEntryCategory">
               <text class="entry-icon__text">{{entry.icon}}</text>
             </view>
-            <!-- 成员头像（多人账本） -->
-            <image
-              wx:if="{{showMemberFilter && entry.avatarUrl}}"
-              class="entry-avatar"
-              src="{{entry.avatarUrl}}"
-              mode="aspectFill"
-            />
             <!-- 分类名/备注 · COSTRA-227: 点击原地编辑备注 -->
             <view class="entry-label grow" data-refid="{{entry.client_ref_id}}" catchtap="onTapEntryNote">
               <text wx:if="{{editingNoteRefId !== entry.client_ref_id}}" class="entry-label__text">{{entry.label}}</text>
@@ -108,6 +101,22 @@
               />
             </view>
             <!-- 金额 · COSTRA-227: 点击编辑金额 -->
+            <!-- 成员头像（协作账本 · 贴金额左侧） -->
+            <view wx:if="{{showMemberFilter}}" class="entry-member" data-refid="{{entry.client_ref_id}}" catchtap="onTapEntryAmount">
+              <image
+                wx:if="{{entry.avatarUrl}}"
+                class="entry-member__avatar"
+                src="{{entry.avatarUrl}}"
+                mode="aspectFill"
+              />
+              <view wx:elif="{{entry.memberInitial}}" class="entry-member__fallback">
+                <text class="entry-member__initial">{{entry.memberInitial}}</text>
+              </view>
+              <!-- 公共支出角标 -->
+              <view wx:if="{{entry.isShared}}" class="entry-member__badge">
+                <text class="entry-member__badge-text">公</text>
+              </view>
+            </view>
             <view class="entry-amount-wrap" data-refid="{{entry.client_ref_id}}" catchtap="onTapEntryAmount">
               <text class="entry-amount tnum {{entry.type === 'income' ? 'entry-amount--income' : ''}}">{{entry.amountText}}</text>
             </view>

@@ -31,6 +31,13 @@ export interface FamilyMember {
   avatar_url: string | null;
   role: 'owner' | 'member' | 'viewer';
   status: 'active' | 'left';
+  /**
+   * 持久化配色槽位 0~7（migration 0012_family_members_color_slot）。
+   * active 成员必非 null；status=left 时为 null（slot 已释放可被新人复用）。
+   * 前端按此索引到 8 色莫兰迪色板，保证同 family 内成员之间不撞色。
+   * 兼容旧服务端：若字段缺失视为 null，前端兜底落 slot 0。
+   */
+  color_slot: number | null;
   joined_at: string;
   left_at: string | null;
   personal_expense: number;
@@ -226,9 +233,11 @@ export async function getFamilySummary(
 /**
  * 获取家庭成员列表
  * GET /v1/families/{id}/members
+ *
+ * 后端返回成员数组（active + left，按 joined_at/left_at 排序）。
  */
-export async function getFamilyMembers(familyId: string): Promise<{ members: FamilyMember[] }> {
-  return request<{ members: FamilyMember[] }>({
+export async function getFamilyMembers(familyId: string): Promise<FamilyMember[]> {
+  return request<FamilyMember[]>({
     method: 'GET',
     path: `/families/${familyId}/members`,
   });

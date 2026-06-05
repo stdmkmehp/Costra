@@ -20,14 +20,13 @@ import { getToken, hasValidSession } from '../../services/auth';
 import { eventBus, EventNames, type SyncDonePayload } from '../../services/eventBus';
 import { triggerOnPageShow, syncOnce } from '../../services/syncScheduler';
 import { pickRandomSlogan } from '../../config/slogans';
-import { getFamilies } from '../../services/familyApi';
+import { getFamilies, getFamilyMembers, type FamilyMember } from '../../services/familyApi';
 import {
   getCategories,
-  warmUpMemoryCache,
   getCategoryIconById,
   getCategoryNameById,
 } from '../../services/categoryService';
-import { loadCategories } from '../../components/expense-overlay/categories';
+import { loadCategoriesSync, refreshCategoryDataAsync } from '../../components/expense-overlay/categories';
 import {
   INITIAL_CALC_STATE, inputDigit, inputDot,
   inputOperator, inputBackspace, pressEquals,
@@ -67,6 +66,10 @@ interface DisplayEntry {
   hasNote: boolean;
   /** 成员头像 URL（多人账本时） */
   avatarUrl: string;
+  /** 成员昵称首字（头像加载失败时的 fallback） */
+  memberInitial: string;
+  /** 是否为公共支出（仅公共显示角标） */
+  isShared: boolean;
   /** 滑动偏移量（左滑删除，rpx） */
   translateX: number;
 }
@@ -247,12 +250,16 @@ Page({
   _memberFilter: 'all' as MemberFilter,
   /** 当前用户 ID（COSTRA-220: 从 auth token 获取 · 用于成员筛选） */
   _currentUserId: '' as string,
+  /** 成员映射（user_id → nickname/avatar · 协作账本时构建） */
+  _memberMap: {} as Record<string, { nickname: string; avatarUrl: string }>,
   /** eventBus 订阅 handler（COSTRA-220: 防内存泄漏） */
   _entrySavedHandler: null as (() => void) | null,
   /** eventBus 订阅 handler（COSTRA-227: 编辑保存刷新） */
   _entryUpdatedHandler: null as (() => void) | null,
   /** eventBus 订阅 handler（sync-refresh: SYNC_DONE 后即时刷新） */
   _syncDoneHandler: null as ((payload?: unknown) => void) | null,
+  /** eventBus 订阅 handler（分类预热完成 · 触发条目展示重渲，避免 fallback UUID 不匹配的"未分类"残留） */
+  _categoriesLoadedHandler: null as (() => void) | null,
   /**
    * 当前已渲染 entries 的签名（sync-refresh: 签名 diff 跳过无效 setData，避免列表跳动）
    * 拼接字段：client_ref_id|version|occurred_at|amount|type|category_id|note|deleted_at|shared_type|created_by
@@ -285,6 +292,14 @@ Page({
       const token = getToken();
       if (token?.raw?.user?.id) {
         this._currentUserId = token.raw.user.id;
+        // 预填当前用户到 memberMap（协作账本条目头像不必等 getFamilyMembers 返回）
+        const u = token.raw.user;
+        if (!this._memberMap[u.id]) {
+          this._memberMap[u.id] = {
+            nickname: u.nickname || '我',
+            avatarUrl: u.avatar_url || '',
+          };
+        }
       }
     });
 
@@ -307,6 +322,16 @@ Page({
     };
     this._syncDoneHandler = syncDoneHandler;
     eventBus.on(EventNames.SYNC_DONE, syncDoneHandler);
+
+    // 2026-06-05: 订阅 CATEGORIES_LOADED 事件 → 分类预热完成后重渲展示
+    // 解决"清理数据/弱网首启时 fallback UUID 不匹配真实条目 category_id，导致全部显示'未分类'"问题
+    const categoriesLoadedHandler = () => {
+      if (this._allEntries.length > 0) {
+        this._buildDisplay();
+      }
+    };
+    this._categoriesLoadedHandler = categoriesLoadedHandler;
+    eventBus.on(EventNames.CATEGORIES_LOADED, categoriesLoadedHandler);
   },
 
   async onShow() {
@@ -347,6 +372,11 @@ Page({
       eventBus.off(EventNames.SYNC_DONE, this._syncDoneHandler);
       this._syncDoneHandler = null;
     }
+    // 2026-06-05: 取消订阅 CATEGORIES_LOADED 事件
+    if (this._categoriesLoadedHandler) {
+      eventBus.off(EventNames.CATEGORIES_LOADED, this._categoriesLoadedHandler);
+      this._categoriesLoadedHandler = null;
+    }
   },
 
   // ─── 数据加载 ────────────────────────────────────────────────────────────────
@@ -375,14 +405,42 @@ Page({
       this.setData({ memberFilterText: '全部成员' });
     }
 
+    // 协作账本: 加载成员映射（用于条目行头像展示）
+    if (isMultiMember && familyId) {
+      void this._loadMemberMap(familyId);
+    } else {
+      this._memberMap = {};
+    }
+
     // COSTRA-219: 预加载分类数据到内存缓存（供 getCategoryIconById/getCategoryNameById 查找）
+    // 2026-06-05: fire-and-forget，不阻塞明细页渲染。
+    // categoryService 内部命中 storage 缓存会立即 warmUpMemoryCache，否则走网络后再 warmUp；
+    // 全部失败时由 fallback 兜底（getCategoryIconById/getCategoryNameById 内部已处理）。
+    // 完成后由 CATEGORIES_LOADED 事件统一触发条目展示重渲（订阅在 onLoad 注册）。
     if (familyId) {
-      try {
-        const items = await getCategories(familyId);
-        warmUpMemoryCache(familyId, items);
-      } catch {
-        // 分类加载失败不阻塞明细页渲染（降级 fallback 在 categoryService 内处理）
+      void getCategories(familyId).catch(() => { /* 静默：fallback 兜底 */ });
+    }
+  },
+
+  /** 加载成员映射（协作账本条目行头像用） */
+  async _loadMemberMap(familyId: string) {
+    try {
+      const members = await getFamilyMembers(familyId);
+      const map: Record<string, { nickname: string; avatarUrl: string }> = {};
+      for (const m of members) {
+        map[m.user_id] = {
+          nickname: m.nickname || '成员',
+          avatarUrl: m.avatar_url || '',
+        };
       }
+      // 合并：保留 bootstrap 预填的当前用户信息，避免极端情况下覆盖丢失
+      this._memberMap = { ...this._memberMap, ...map };
+      // 成员信息到位后重新渲染（此时条目可能已渲染但头像为空）
+      if (this._allEntries.length > 0) {
+        this._buildDisplay();
+      }
+    } catch {
+      // 网络失败时静默，条目行不显示头像即可
     }
   },
 
@@ -506,6 +564,18 @@ Page({
         }
 
         const hasNote = !!e.note && e.note.trim().length > 0;
+        const member = e.created_by ? this._memberMap[e.created_by] : null;
+        // 协作账本: 头像 fallback · 即使 memberMap 未加载完也展示首字
+        const showMember = this.data.showMemberFilter;
+        let avatarUrl = '';
+        let memberInitial = '';
+        if (showMember && member) {
+          avatarUrl = member.avatarUrl;
+          memberInitial = member.nickname?.[0] || '?';
+        } else if (showMember && e.created_by) {
+          // memberMap 尚未就绪时给一个通用占位
+          memberInitial = '?';
+        }
         return {
           client_ref_id: e.client_ref_id,
           label: hasNote ? e.note : getCategoryName(e.category_id),
@@ -513,7 +583,9 @@ Page({
           amountText: formatEntryAmount(e.amount, e.type),
           type: e.type,
           hasNote,
-          avatarUrl: '',
+          avatarUrl,
+          memberInitial,
+          isShared: e.shared_type === 'shared',
           translateX: 0,
         };
       });
@@ -806,7 +878,12 @@ Page({
 
   // ─── COSTRA-227: 条目区域点击编辑 ────────────────────────────────────────────
 
-  /** 点击分类图标 → 全屏分类选择面板（和记账界面一致） */
+  /**
+   * 点击分类图标 → 全屏分类选择面板（和记账界面一致）。
+   *
+   * 设计原则（2026-06-05 重构）：永不 await 网络。
+   * 同步用 loadCategoriesSync 立即打开，再后台 fire-and-forget 调 refreshCategoryDataAsync 增量刷新。
+   */
   onTapEntryCategory(e: WechatMiniprogram.TouchEvent) {
     if (this.data.swipingRefId) { this._resetAllSwipe(); return; }
     const refId = (e.currentTarget.dataset as Record<string, string>).refid;
@@ -819,41 +896,71 @@ Page({
     const familyId = this._familyId;
     if (!familyId) return;
 
-    // 使用 categoryService 的 loadCategories（与 expense-overlay 相同）复用树形结构
-    loadCategories(familyId).then((categoryData) => {
-        // 存储供收支切换使用
-        (this as unknown as Record<string, unknown>)._editCategoryData = categoryData;
+    // —— 阶段 1：同步加载分类（内存缓存 → fallback）——
+    const categoryData = loadCategoriesSync(familyId);
+    (this as unknown as Record<string, unknown>)._editCategoryData = categoryData;
 
-        const entryType = entry.type || 'expense';
-        const tier1 = entryType === 'expense' ? categoryData.expense : categoryData.income;
-        const deduped = entryType === 'expense' ? categoryData.expenseDedupedSubs : categoryData.incomeDedupedSubs;
+    const entryType = entry.type || 'expense';
+    const tier1 = entryType === 'expense' ? categoryData.expense : categoryData.income;
+    const deduped = entryType === 'expense' ? categoryData.expenseDedupedSubs : categoryData.incomeDedupedSubs;
 
-        // 找到当前选中的分类
-        let selectedTier1Id = '';
-        const selectedTier2Id = entry.category_id || '';
-        if (selectedTier2Id) {
-          for (const t of tier1) {
-            if (t.children.some(c => c.id === selectedTier2Id)) {
-              selectedTier1Id = t.id;
-              break;
-            }
-          }
+    // 找到当前选中的分类
+    let selectedTier1Id = '';
+    const selectedTier2Id = entry.category_id || '';
+    if (selectedTier2Id) {
+      for (const t of tier1) {
+        if (t.children.some(c => c.id === selectedTier2Id)) {
+          selectedTier1Id = t.id;
+          break;
         }
+      }
+    }
 
-        // COSTRA-227: 通知 tabbar 隐藏
-        eventBus.emit(EventNames.HIDE_TAB_BAR);
+    // COSTRA-227: 通知 tabbar 隐藏
+    eventBus.emit(EventNames.HIDE_TAB_BAR);
 
-        this.setData({
-          editCategoryVisible: true,
-          editCategoryType: entryType,
-          editTier1Categories: tier1,
-          editDedupedSubCategories: deduped,
-          editExpandedTier1Id: null,
-          editExpandedChildren: [],
-          editSelectedTier1Id: selectedTier1Id,
-          editSelectedTier2Id: selectedTier2Id,
-          editDimmedTier1Ids: [],
-        });
+    // —— 阶段 2：同步打开面板 ——
+    this.setData({
+      editCategoryVisible: true,
+      editCategoryType: entryType,
+      editTier1Categories: tier1,
+      editDedupedSubCategories: deduped,
+      editExpandedTier1Id: null,
+      editExpandedChildren: [],
+      editSelectedTier1Id: selectedTier1Id,
+      editSelectedTier2Id: selectedTier2Id,
+      editDimmedTier1Ids: [],
+    });
+
+    // —— 阶段 3：后台 fire-and-forget 刷新（仅签名变化时增量更新列表，不动 selected*）——
+    void this._refreshEditCategoriesAsync(familyId, categoryData.signature);
+  },
+
+  /**
+   * 后台刷新分类编辑面板的分类列表。
+   * 守护：面板关闭/正在保存/签名相等 → 跳过。不覆盖 selected*。
+   */
+  async _refreshEditCategoriesAsync(familyId: string, oldSignature: string) {
+    let next: Awaited<ReturnType<typeof refreshCategoryDataAsync>>;
+    try {
+      next = await refreshCategoryDataAsync(familyId);
+    } catch {
+      return; // 静默
+    }
+    if (next.signature === oldSignature) return;
+    if (!this.data.editCategoryVisible) {
+      // 面板已关，仅更新实例属性
+      (this as unknown as Record<string, unknown>)._editCategoryData = next;
+      return;
+    }
+    (this as unknown as Record<string, unknown>)._editCategoryData = next;
+
+    const tier1 = this.data.editCategoryType === 'expense' ? next.expense : next.income;
+    const deduped = this.data.editCategoryType === 'expense' ? next.expenseDedupedSubs : next.incomeDedupedSubs;
+
+    this.setData({
+      editTier1Categories: tier1,
+      editDedupedSubCategories: deduped,
     });
   },
 
