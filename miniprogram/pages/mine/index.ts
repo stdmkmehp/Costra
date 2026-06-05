@@ -108,6 +108,10 @@ Page({
     wx.navigateTo({ url: '/pages-family/settings/index' });
   },
 
+  onTapPrivacy() {
+    wx.navigateTo({ url: '/pages-family/privacy/index' });
+  },
+
   onTapCreateFamily() {
     // 写入 pending action，让协作页 onShow 消费后自动打开创建弹窗
     const app = getApp<AppWithBootstrapAndGlobal>();

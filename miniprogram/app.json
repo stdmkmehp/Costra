@@ -61,5 +61,6 @@
   "requiredBackgroundModes": [],
   "requiredPrivateInfos": [],
   "permission": {},
-  "lazyCodeLoading": "requiredComponents"
+  "lazyCodeLoading": "requiredComponents",
+  "__usePrivacyCheck__": true
 }

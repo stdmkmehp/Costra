@@ -74,44 +74,9 @@ App<AppOption>({
     this.globalData.bootAt = Date.now();
     console.info('[Costra] onLaunch env=', this.globalData.env.name);
 
-    // COSTRA-901: 注册隐私授权回调。
-    // 微信基础库 ≥ 2.32.3 起，使用了 requiredPrivateInfos 中声明的接口（chooseAvatar/nickname）
-    // 前，框架会先触发此回调，由此处决定弹窗展示时机与授权处理逻辑。
-    // 官方文档：https://developers.weixin.qq.com/miniprogram/dev/framework/user-privacy/PrivacyAuthorize.html
-    // Note: miniprogram-api-typings 对 resolve 参数的类型定义有误（标为 GeneralCallbackResult 而非函数），
-    //       用 any 绕过，实际运行时 resolve 是 (opt: { buttonId?: string, event: 'agree'|'disagree' }) => void
-    if (typeof wx.onNeedPrivacyAuthorization === 'function') {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      wx.onNeedPrivacyAuthorization((resolve: any) => {
-        wx.showModal({
-          title: '用户隐私保护提示',
-          content:
-            '在使用本应用前，请先阅读《用户隐私保护指引》。Costra 仅收集必要的头像、昵称及记账数据，不与第三方共享。',
-          confirmText: '同意',
-          cancelText: '拒绝',
-          success: (res) => {
-            if (res.confirm) {
-              this.globalData.privacyAuthorized = 'granted';
-              resolve({ buttonId: 'confirm', event: 'agree' });
-            } else {
-              // 用户拒绝：降级只读演示模式
-              this.globalData.privacyAuthorized = 'denied';
-              resolve({ event: 'disagree' });
-              wx.showToast({
-                title: '已进入只读演示模式',
-                icon: 'none',
-                duration: 2000,
-              });
-            }
-          },
-          fail: () => {
-            // 弹窗失败时保守处理：视为拒绝
-            this.globalData.privacyAuthorized = 'denied';
-            resolve({ event: 'disagree' });
-          },
-        });
-      });
-    }
+    // COSTRA-901: 隐私授权回调不在此处全局注册。
+    // chooseAvatar/nickname 仅在 profile-setup 页面使用，弹窗由该页面的 privacy-popup 组件自行处理。
+    // 此 globalData.privacyAuthorized 由组件内 getApp() 更新，供其他模块读取降级判断。
 
     // 分享邀请链接携带的 invite token：存入 globalData 供登录流程消费
     // 落地页为 /pages/invite-confirm/index?token=xxx，query key 为 'token'

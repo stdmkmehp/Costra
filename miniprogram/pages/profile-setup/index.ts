@@ -76,6 +76,25 @@ Page({
         nickname: token.raw.user.nickname === '微信用户' ? '' : (token.raw.user.nickname || ''),
       });
     }
+
+    // COSTRA-901: 注册隐私授权回调。
+    // 本页面使用了 chooseAvatar + type=nickname（隐私接口），微信基础库在用户首次触发前
+    // 会调用 onNeedPrivacyAuthorization。此处注册后，由本页面的 privacy-popup 组件弹窗处理。
+    // wx.onNeedPrivacyAuthorization 是覆盖式注册（最后一次 register 生效），这正是我们需要的。
+    if (typeof wx.onNeedPrivacyAuthorization === 'function') {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      wx.onNeedPrivacyAuthorization((resolve: any) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const popup = (this as any).selectComponent('#privacy-popup');
+        if (popup) {
+          popup.show(resolve);
+        } else {
+          // 极端 fallback：组件未渲染时保守 agree
+          console.warn('[profile-setup] privacy-popup not found');
+          resolve({ event: 'agree' });
+        }
+      });
+    }
   },
 
   /** 微信原生头像选择回调（open-type="chooseAvatar"） */

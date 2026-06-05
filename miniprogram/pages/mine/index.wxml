@@ -40,6 +40,9 @@
       <view class="footer__text">服务由 costra.cloud 提供 · 沪ICP备2026017253号-2</view>
       <view wx:if="{{appVersion}}" class="footer__text footer__version">v{{appVersion}}</view>
     </view>
+    <view class="footer__privacy" bindtap="onTapPrivacy">
+      <text class="footer__privacy-link">用户隐私保护指引</text>
+    </view>
   </view>
 </view>
 
