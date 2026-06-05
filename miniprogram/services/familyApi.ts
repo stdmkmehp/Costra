@@ -17,6 +17,8 @@ export interface FamilyItem {
   ledger_name: string;
   member_count: number;
   created_at: string;
+  /** 乐观锁版本号（COSTRA-230 重命名 / 解散接口必填） */
+  version: number;
 }
 
 /** GET /v1/families 响应 */
@@ -316,5 +318,45 @@ export async function removeMember(familyId: string, userId: string): Promise<vo
   return request<void>({
     method: 'DELETE',
     path: `/families/${familyId}/members/${userId}`,
+  });
+}
+
+/**
+ * 当前用户主动离开家庭（COSTRA-229 / 230）
+ * POST /v1/families/{id}/members/me/leave
+ *
+ * 后端语义（D-029 §2.1）：
+ *   - 非 owner：直接 setLeftAt(self)
+ *   - owner 多人：单事务移交所有权（joined_at ASC 最早者）+ setLeftAt(self)
+ *   - owner 仅自己：单事务 softDelete + setAllActiveLeftAt
+ *   - personal family：403 FAMILY_PERSONAL_NOT_DELETABLE
+ *
+ * 调用方在三种情况下都应：clearActiveFamily + 切回 personal family。
+ */
+export async function leaveFamily(familyId: string): Promise<void> {
+  return request<void>({
+    method: 'POST',
+    path: `/families/${familyId}/members/me/leave`,
+    body: {},
+  });
+}
+
+/**
+ * 重命名 family（COSTRA-230）
+ * PATCH /v1/families/{id}
+ *
+ * - 仅 owner 允许调用（后端 assertOwner 守门）
+ * - 必须传 version（乐观锁）；返回新的 FamilyItem 含递增 version
+ * - personal family 也允许重命名（与 deleteFamily 不同语义）
+ */
+export async function renameFamily(
+  familyId: string,
+  name: string,
+  version: number,
+): Promise<FamilyItem> {
+  return request<FamilyItem>({
+    method: 'PATCH',
+    path: `/families/${familyId}`,
+    body: { name, version },
   });
 }

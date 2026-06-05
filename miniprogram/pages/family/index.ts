@@ -27,6 +27,8 @@ import {
   createInvite,
   revokeInvite,
   removeMember,
+  leaveFamily,
+  renameFamily,
   invalidateFamilyCache,
   type FamilyItem,
   type FamilySummary,
@@ -155,7 +157,9 @@ const MEMBER_COLOR_SLOTS: readonly string[] = [
   '#D49097', // 4 玫红
   '#C2A878', // 5 赭石
   '#A4B07A', // 6 橄榄
-  '#9CADBF', // 7 灰蓝
+  '#9FA0C2', // 7 薰衣草灰紫
+  '#C29AA1', // 8 烟粉
+  '#CCA98F', // 9 茶褐
 ] as const;
 
 /**
@@ -239,6 +243,12 @@ Page({
     createFamilyName: '',
     createFamilyLoading: false,
     createFamilyError: '',
+
+    // ─── 重命名账本弹窗（COSTRA-230 · 镜像 createOverlay 视觉） ───
+    renameOverlayVisible: false,
+    renameInput: '',
+    renameLoading: false,
+    renameError: '',
   },
 
   // 内部状态
@@ -851,6 +861,14 @@ Page({
   noop() {},
 
   // ─── 交互：成员头像点击 ────────────────────────────────────────────────────
+  //
+  // 三分支（COSTRA-230 · D-029 §3.1）：
+  //   1. 已 left 成员 / 非 owner 点击他人 → 无响应
+  //   2. owner 点击他人头像 → ActionSheet[移出家庭] → wx.showModal 二次确认
+  //   3. 任意角色点击自己头像 → ActionSheet[离开家庭] → wx.showModal 二次确认
+  //      · owner 单人 → 文案"解散账本"语义（后端走 dissolve 分支）
+  //      · owner 多人 → 文案"离开家庭"，会自动移交所有权
+  //      · 非 owner → 文案"离开家庭"
 
   onTapMember(e: WechatMiniprogram.TouchEvent) {
     const { userid, status } = e.currentTarget.dataset;
@@ -858,19 +876,43 @@ Page({
     // 已退出成员：点击无响应
     if (status === 'left') return;
 
-    // 自己：点击无响应
-    if (userid === this._currentUserId) return;
+    const isSelf = userid === this._currentUserId;
 
-    // 非创建者：点击无响应（只有 owner 能管理）
+    // 自己：所有角色都可触发"离开/解散"
+    if (isSelf) {
+      this._showSelfActionSheet();
+      return;
+    }
+
+    // 他人：只有 owner 能管理
     if (!this.data.isOwner) return;
 
-    // 创建者点击他人头像 → ActionSheet → 移出
     wx.showActionSheet({
       itemList: ['移出家庭'],
       itemColor: '#FA5151',
       success: (res) => {
         if (res.tapIndex === 0) {
           this._confirmRemoveMember(userid);
+        }
+      },
+    });
+  },
+
+  /** 自己头像 ActionSheet：根据是否 owner-单人 决定是"离开家庭"还是"解散账本" */
+  _showSelfActionSheet() {
+    const activeMembers = this.data.members.filter(m => m.status === 'active');
+    const isLoneOwner = this.data.isOwner && activeMembers.length === 1;
+    const itemText = isLoneOwner ? '解散账本' : '离开家庭';
+
+    wx.showActionSheet({
+      itemList: [itemText],
+      itemColor: '#FA5151',
+      success: (res) => {
+        if (res.tapIndex !== 0) return;
+        if (isLoneOwner) {
+          this._confirmDissolveFamily();
+        } else {
+          this._confirmLeaveSelf();
         }
       },
     });
@@ -897,6 +939,148 @@ Page({
         }
       },
     });
+  },
+
+  /**
+   * 当前用户离开家庭（非 owner / owner 多人均走此分支）
+   * 后端会按角色自动选择 setLeftAt 或 transferOwnership + setLeftAt
+   */
+  _confirmLeaveSelf() {
+    const isOwner = this.data.isOwner;
+    const content = isOwner
+      ? '离开后管理员身份会自动移交给最早加入的成员，确认离开？'
+      : '离开后将无法再访问该账本数据，确认离开？';
+
+    wx.showModal({
+      title: '',
+      content,
+      confirmColor: '#FA5151',
+      success: async (res) => {
+        if (!res.confirm) return;
+        try {
+          await leaveFamily(this._familyId);
+          wx.showToast({ title: '已离开', icon: 'success' });
+          await this._fallbackToPersonalAndExit();
+        } catch (err) {
+          console.error('[family] leaveFamily failed', err);
+          const mapped = mapError(err as ApiError);
+          wx.showToast({ title: mapped.desc || '离开失败', icon: 'none' });
+        }
+      },
+    });
+  },
+
+  /**
+   * owner 单人解散账本（语义同 leaveFamily，后端走 dissolve 分支）
+   * 文案不同：强调"解散"且不可恢复
+   */
+  _confirmDissolveFamily() {
+    wx.showModal({
+      title: '',
+      content: '解散后账本及所有数据将无法恢复，确认解散？',
+      confirmColor: '#FA5151',
+      success: async (res) => {
+        if (!res.confirm) return;
+        try {
+          await leaveFamily(this._familyId);
+          wx.showToast({ title: '已解散', icon: 'success' });
+          await this._fallbackToPersonalAndExit();
+        } catch (err) {
+          console.error('[family] dissolveFamily failed', err);
+          const mapped = mapError(err as ApiError);
+          wx.showToast({ title: mapped.desc || '解散失败', icon: 'none' });
+        }
+      },
+    });
+  },
+
+  /**
+   * 离开 / 解散后回到 personal family
+   * 复用 _doLoadPage 的 fallback 模式（清 active + 重置内部状态 + 重新加载）
+   * 注意：项目模式无 LEDGER_SWITCHED 事件，依赖目标页 onShow 自然读 active context
+   */
+  async _fallbackToPersonalAndExit() {
+    if (this._familyId) {
+      invalidateFamilyCache(this._familyId);
+    }
+    await clearActiveFamily();
+    this._familyId = '';
+    this._loadingPromise = null;
+    await this._loadPage();
+  },
+
+  // ─── 交互：重命名账本（COSTRA-230） ──────────────────────────────────────
+  //
+  // 仅 owner 可触发。视觉与"创建协作账本"完全镜像（invite-dialog__* token）。
+
+  onTapRenameLedger() {
+    if (!this.data.isOwner) {
+      wx.showToast({ title: '仅创建者可重命名', icon: 'none' });
+      return;
+    }
+    this.setData({
+      renameOverlayVisible: true,
+      renameInput: this.data.familyName,
+      renameLoading: false,
+      renameError: '',
+    });
+  },
+
+  onRenameFamilyInput(e: WechatMiniprogram.Input) {
+    this.setData({ renameInput: e.detail.value, renameError: '' });
+  },
+
+  onCancelRenameFamily() {
+    if (this.data.renameLoading) return;
+    this.setData({ renameOverlayVisible: false });
+  },
+
+  async onConfirmRenameFamily() {
+    if (this.data.renameLoading) return;
+    const name = this.data.renameInput.replace(/[\r\n]/g, '').trim();
+    if (!name) {
+      this.setData({ renameError: '请输入账本名称' });
+      return;
+    }
+    if (name.length > 20) {
+      this.setData({ renameError: '名称最多 20 个字' });
+      return;
+    }
+    if (name === this.data.familyName) {
+      // 无变化直接关弹窗，避免一次无意义的乐观锁版本递增
+      this.setData({ renameOverlayVisible: false });
+      return;
+    }
+
+    // 找当前 family 的 version（来自 familyList，从后端 GET /families 返回）
+    const family = this.data.familyList.find(f => f.id === this._familyId);
+    if (!family) {
+      this.setData({ renameError: '账本数据异常，请重试' });
+      return;
+    }
+
+    this.setData({ renameLoading: true, renameError: '' });
+    try {
+      const updated = await renameFamily(this._familyId, name, family.version);
+      // 更新内存中的 familyList（含 version 递增） + familyName
+      const newList = this.data.familyList.map(f => (f.id === updated.id ? { ...f, name: updated.name, version: updated.version } : f));
+      this.setData({
+        familyList: newList,
+        familyName: name,
+        renameOverlayVisible: false,
+        renameLoading: false,
+      });
+      // 失效缓存确保统计/明细页拉到新名称
+      invalidateFamilyCache(this._familyId);
+      wx.showToast({ title: '已修改', icon: 'success' });
+    } catch (err) {
+      console.error('[family] renameFamily failed', err);
+      const mapped = mapError(err as ApiError);
+      this.setData({
+        renameLoading: false,
+        renameError: mapped.desc || '修改失败，请重试',
+      });
+    }
   },
 
   // ─── 交互：创建家庭 ──────────────────────────────────────────────────────────
@@ -956,23 +1140,46 @@ Page({
     }
   },
 
-  // ─── 交互：多家庭切换（P2-4: 复用明细页账本切换模式）──────────────────────────
+  // ─── 交互：账本切换 + 重命名入口（P2-4: 复用明细页账本切换模式） ──────────
+  //
+  // 收纳两种操作到同一 ActionSheet：
+  //   - 末尾追加"重命名当前账本"项（仅当前用户为该账本 owner 时显示）
+  //   - 当用户只有一个账本且不是 owner 时，提示"当前只有一个账本"
+  //   - 当用户只有一个账本但是 owner 时，直接展示单项 ActionSheet[重命名当前账本]
 
   onTapFamilyName() {
     const families = this.data.familyList;
-    if (!families || families.length <= 1) {
+    const canRename = this.data.isOwner && this._familyId !== '';
+    const switchable = families && families.length > 1;
+
+    if (!switchable && !canRename) {
       wx.showToast({ title: '当前只有一个账本', icon: 'none' });
       return;
     }
 
-    const items = families.map(f => {
-      const suffix = f.kind === 'personal' ? '（个人）' : `（${f.member_count}人）`;
-      return f.name + suffix;
-    });
+    // 构建 itemList：先列其他账本，最后追加"重命名当前账本"
+    const items: string[] = [];
+    if (switchable) {
+      for (const f of families) {
+        const suffix = f.kind === 'personal' ? '（个人）' : `（${f.member_count}人）`;
+        items.push(f.name + suffix);
+      }
+    }
+    const renameItemIndex = canRename ? items.length : -1;
+    if (canRename) {
+      items.push('重命名当前账本');
+    }
 
     wx.showActionSheet({
       itemList: items,
       success: async (res) => {
+        // 命中"重命名当前账本"
+        if (renameItemIndex >= 0 && res.tapIndex === renameItemIndex) {
+          this.onTapRenameLedger();
+          return;
+        }
+        // 命中其他账本切换
+        if (!switchable) return;
         const selected = families[res.tapIndex];
         if (selected.id === this._familyId) return;
 

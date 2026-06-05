@@ -305,6 +305,38 @@
       </view>
     </view>
   </view>
+
+  <!-- 重命名账本弹窗（COSTRA-230 · 镜像 createOverlay 视觉，badge 字"名"） -->
+  <view wx:if="{{renameOverlayVisible}}" class="invite-dialog__mask" catchtouchmove="noop" catchtap="noop">
+    <view class="invite-dialog__card" catchtouchmove="noop" catchtap="noop">
+      <view class="invite-dialog__badge">名</view>
+      <text class="invite-dialog__title">重命名账本</text>
+      <text class="invite-dialog__desc">为账本起一个新名字，修改后所有成员都能看到。</text>
+      <input
+        class="create-family__input"
+        value="{{renameInput}}"
+        placeholder="输入账本名称（最多 20 字）"
+        placeholder-class="create-family__input-placeholder"
+        maxlength="20"
+        bindinput="onRenameFamilyInput"
+        disabled="{{renameLoading}}"
+      />
+      <text wx:if="{{renameError}}" class="create-family__error">{{renameError}}</text>
+      <view class="invite-dialog__actions">
+        <button
+          class="invite-dialog__btn invite-dialog__btn--secondary"
+          disabled="{{renameLoading}}"
+          bindtap="onCancelRenameFamily"
+        >取消</button>
+        <button
+          class="invite-dialog__btn invite-dialog__btn--primary"
+          loading="{{renameLoading}}"
+          disabled="{{renameLoading}}"
+          bindtap="onConfirmRenameFamily"
+        >保存</button>
+      </view>
+    </view>
+  </view>
 </view>
 
 <expense-overlay />
