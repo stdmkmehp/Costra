@@ -84,30 +84,20 @@ Page({
     const showPrivacyPopup = (
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       resolve?: (opt: any) => void,
-      source = 'manual',
     ) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const popup = (this as any).selectComponent('#privacy-popup');
-      console.info('[profile-setup/privacy] showPrivacyPopup', { source, hasPopup: Boolean(popup), hasResolve: typeof resolve === 'function' });
       if (popup) {
         popup.show(resolve);
       } else if (resolve) {
-        console.warn('[profile-setup/privacy] privacy-popup not found; resolve disagree');
         resolve({ event: 'disagree' });
       }
     };
 
-    console.info('[profile-setup/privacy] capability', {
-      hasGetPrivacySetting: typeof wx.getPrivacySetting === 'function',
-      hasOnNeedPrivacyAuthorization: typeof wx.onNeedPrivacyAuthorization === 'function',
-      hasOpenPrivacyContract: typeof wx.openPrivacyContract === 'function',
-    });
-
     if (typeof wx.onNeedPrivacyAuthorization === 'function') {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       wx.onNeedPrivacyAuthorization((resolve: any) => {
-        console.info('[profile-setup/privacy] onNeedPrivacyAuthorization');
-        showPrivacyPopup(resolve, 'onNeedPrivacyAuthorization');
+        showPrivacyPopup(resolve);
       });
     }
 
@@ -115,25 +105,22 @@ Page({
       wx.getPrivacySetting({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         success: (res: any) => {
-          console.info('[profile-setup/privacy] getPrivacySetting success', res);
           if (res?.needAuthorization) {
-            showPrivacyPopup(undefined, 'getPrivacySetting');
+            showPrivacyPopup();
           }
         },
-        fail: (err) => console.warn('[profile-setup/privacy] getPrivacySetting fail', err),
+        fail: () => {},
       });
     }
   },
 
-  /** 头像按钮点击日志：用于区分“点击未命中”还是“chooseAvatar 未回调” */
   onTapChooseAvatar() {
-    console.info('[profile-setup/avatar] tap chooseAvatar button');
+    // 仅用于触发按钮点击，无业务逻辑
   },
 
   /** 微信原生头像选择回调（open-type="chooseAvatar"） */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onChooseAvatar(e: any) {
-    console.info('[profile-setup/avatar] chooseAvatar callback', e?.detail);
     // e.detail.avatarUrl 由微信运行时注入 · 类型库暂无对应定义
     const avatarUrl = (e as { detail: { avatarUrl: string } }).detail.avatarUrl;
     if (!avatarUrl) {

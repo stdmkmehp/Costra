@@ -29,14 +29,12 @@ Component({
     /** 由外部（profile-setup page）调用：resolve 仅在 onNeedPrivacyAuthorization 被动触发时存在 */
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     show(resolve?: (opt: any) => void) {
-      console.info('[privacy-popup] show', { hasResolve: typeof resolve === 'function' });
       (this as any)._resolve = resolve;
       this.setData({ visible: true });
     },
 
     /** 用户点击"同意"按钮后微信回调（open-type="agreePrivacyAuthorization"） */
     onAgree() {
-      console.info('[privacy-popup] agree');
       this.setData({ visible: false });
       const app = getApp<AppWithPrivacy>();
       app.globalData.privacyAuthorized = 'granted';
@@ -49,7 +47,6 @@ Component({
 
     /** 用户点击"拒绝" */
     onTapReject() {
-      console.info('[privacy-popup] reject');
       this.setData({ visible: false });
       const app = getApp<AppWithPrivacy>();
       app.globalData.privacyAuthorized = 'denied';
