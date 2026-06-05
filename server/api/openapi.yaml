@@ -367,6 +367,129 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /families/{family_id}/statistics/monthly:
+    parameters:
+      - $ref: '#/components/parameters/FamilyId'
+    get:
+      tags: [families]
+      summary: 月度统计（统计页主数据）
+      description: |
+        COSTRA-224: 返回指定家庭某月的统计数据，包含 totals + 日维度趋势 + 极限值 + 一级分类排行。
+
+        时区固定 Asia/Shanghai。口径与 /summary 一致：
+          - 仅 type='expense' AND shared_type IS NOT NULL 计入支出聚合
+          - shared_type IS NULL 的 expense 不进入聚合（与 family summary 一致）
+          - transfer 不计入
+          - 已退出成员的历史 expense 仍计入（数据不可变原则）
+        category_ranks：按 categories.parent_id 折叠的"一级分类"排行（金额降序，amount > 0，top_n 截断）。
+      parameters:
+        - name: month
+          in: query
+          required: true
+          schema: { type: string, pattern: '^\d{4}-\d{2}$' }
+        - name: top_n
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MonthlyStatistics' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /families/{family_id}/statistics/yearly:
+    parameters:
+      - $ref: '#/components/parameters/FamilyId'
+    get:
+      tags: [families]
+      summary: 年度统计（统计页主数据）
+      description: |
+        COSTRA-224: 返回指定家庭某年的统计数据，包含 totals + 12 月维度趋势 + 极限值 + 一级分类排行。
+        时区固定 Asia/Shanghai。口径与 monthly 一致。
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema: { type: string, pattern: '^\d{4}$' }
+        - name: top_n
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/YearlyStatistics' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /families/{family_id}/statistics/drill-down:
+    parameters:
+      - $ref: '#/components/parameters/FamilyId'
+    get:
+      tags: [families]
+      summary: 统计排行下钻（L2 二级分类排行 / L3 单笔明细）
+      description: |
+        COSTRA-224: 三层下钻接口。
+
+        - level=2：返回指定一级分类下的二级分类排行（按金额降序）
+        - level=3：返回指定二级分类下的单笔明细（按 amount 降序，occurred_at 降序）
+
+        month 与 year 互斥：传 month 表示按月范围、传 year 表示按年范围。
+      parameters:
+        - name: month
+          in: query
+          required: false
+          schema: { type: string, pattern: '^\d{4}-\d{2}$' }
+          description: 'month 与 year 二选一'
+        - name: year
+          in: query
+          required: false
+          schema: { type: string, pattern: '^\d{4}$' }
+        - name: level
+          in: query
+          required: true
+          schema: { type: integer, enum: [2, 3] }
+        - name: parent_category_id
+          in: query
+          required: false
+          description: 'level=2 时必填'
+          schema: { type: string, format: uuid }
+        - name: category_id
+          in: query
+          required: false
+          description: 'level=3 时必填'
+          schema: { type: string, format: uuid }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+        - name: offset
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0, default: 0 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/DrillDownLevel2Response'
+                  - $ref: '#/components/schemas/DrillDownLevel3Response'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /families/{family_id}/members/{user_id}:
     parameters:
       - $ref: '#/components/parameters/FamilyId'
@@ -1180,6 +1303,162 @@ components:
         amount: { type: integer, format: int64, description: '金额（cents）' }
         entry_count: { type: integer, description: '该分类下 entry 数' }
         ratio_bps: { type: integer, minimum: 0, maximum: 10000, description: '占比万分比' }
+
+    StatCategoryRankItem:
+      type: object
+      required: [category_id, category_name, icon, amount, entry_count, ratio_bps]
+      description: 'COSTRA-224: 统计页通用分类排行项（用于 L1/L2 排行 + 月/年通用）'
+      properties:
+        category_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: 'L1 时为 parent_id；L2 时为 category_id；null 表示未分类（应不出现）'
+        category_name: { type: string }
+        icon: { type: string }
+        amount: { type: integer, format: int64, description: '金额（cents）' }
+        entry_count: { type: integer }
+        ratio_bps: { type: integer, minimum: 0, maximum: 10000, description: '占比万分比（基数因层级而异：L1 = 总支出 / L2 = 父级总额）' }
+
+    StatTotals:
+      type: object
+      required: [expense, income, balance, entry_count]
+      properties:
+        expense: { type: integer, format: int64 }
+        income: { type: integer, format: int64 }
+        balance: { type: integer, format: int64, description: 'income - expense' }
+        entry_count: { type: integer }
+
+    DailyTrendItem:
+      type: object
+      required: [day, expense, income]
+      properties:
+        day: { type: integer, minimum: 1, maximum: 31 }
+        expense: { type: integer, format: int64 }
+        income: { type: integer, format: int64 }
+
+    MonthlyExtremes:
+      type: object
+      required: [avg_daily_expense, max_single_expense, max_day_expense]
+      properties:
+        avg_daily_expense: { type: integer, format: int64, description: '日均支出 = expense / 当月天数' }
+        max_single_expense: { type: integer, format: int64 }
+        max_day_expense: { type: integer, format: int64, description: '当月单日最高支出' }
+
+    MonthlyStatistics:
+      type: object
+      required: [family_id, family_name, family_kind, ledger_id, ledger_name, month, timezone, range_start, range_end, currency, totals, daily_trend, extremes, category_ranks]
+      description: 'COSTRA-224: 月度统计响应'
+      properties:
+        family_id: { type: string, format: uuid }
+        family_name: { type: string }
+        family_kind: { type: string, enum: [personal, shared] }
+        ledger_id: { type: string, format: uuid }
+        ledger_name: { type: string }
+        month: { type: string, pattern: '^\d{4}-\d{2}$' }
+        timezone: { type: string, enum: [Asia/Shanghai] }
+        range_start: { type: string, format: date-time }
+        range_end: { type: string, format: date-time }
+        currency: { type: string, enum: [CNY] }
+        totals: { $ref: '#/components/schemas/StatTotals' }
+        daily_trend:
+          type: array
+          description: '当月每日趋势 · 长度 = 当月天数（28~31）'
+          items: { $ref: '#/components/schemas/DailyTrendItem' }
+        extremes: { $ref: '#/components/schemas/MonthlyExtremes' }
+        category_ranks:
+          type: array
+          description: 'L1 一级分类排行 · 金额降序'
+          items: { $ref: '#/components/schemas/StatCategoryRankItem' }
+
+    MonthlyTrendItem:
+      type: object
+      required: [month, expense, income, balance, entry_count]
+      properties:
+        month: { type: integer, minimum: 1, maximum: 12 }
+        expense: { type: integer, format: int64 }
+        income: { type: integer, format: int64 }
+        balance: { type: integer, format: int64 }
+        entry_count: { type: integer }
+
+    YearlyExtremes:
+      type: object
+      required: [avg_monthly_expense, max_single_expense, max_month_expense, max_month_label, top_category_amount]
+      properties:
+        avg_monthly_expense: { type: integer, format: int64, description: '月均 = 总支出 / 已过月份数' }
+        max_single_expense: { type: integer, format: int64 }
+        max_month_expense: { type: integer, format: int64 }
+        max_month_label: { type: string, description: '如「8月」· 无数据时空串' }
+        top_category_name: { type: string, nullable: true }
+        top_category_amount: { type: integer, format: int64 }
+
+    YearlyStatistics:
+      type: object
+      required: [family_id, family_name, family_kind, ledger_id, ledger_name, year, timezone, range_start, range_end, currency, totals, monthly_trend, extremes, category_ranks]
+      description: 'COSTRA-224: 年度统计响应'
+      properties:
+        family_id: { type: string, format: uuid }
+        family_name: { type: string }
+        family_kind: { type: string, enum: [personal, shared] }
+        ledger_id: { type: string, format: uuid }
+        ledger_name: { type: string }
+        year: { type: string, pattern: '^\d{4}$' }
+        timezone: { type: string, enum: [Asia/Shanghai] }
+        range_start: { type: string, format: date-time }
+        range_end: { type: string, format: date-time }
+        currency: { type: string, enum: [CNY] }
+        totals: { $ref: '#/components/schemas/StatTotals' }
+        monthly_trend:
+          type: array
+          description: '12 月趋势 · 长度恒为 12'
+          items: { $ref: '#/components/schemas/MonthlyTrendItem' }
+        extremes: { $ref: '#/components/schemas/YearlyExtremes' }
+        category_ranks:
+          type: array
+          items: { $ref: '#/components/schemas/StatCategoryRankItem' }
+
+    DrillDownLevel2Response:
+      type: object
+      required: [level, parent_category_id, parent_category_name, parent_amount, items, total_count, has_more]
+      properties:
+        level: { type: integer, enum: [2] }
+        parent_category_id: { type: string, format: uuid }
+        parent_category_name: { type: string }
+        parent_amount: { type: integer, format: int64, description: '一级分类总额（用于二级占比基数）' }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/StatCategoryRankItem' }
+        total_count: { type: integer }
+        has_more: { type: boolean }
+
+    DrillDownEntryItem:
+      type: object
+      required: [entry_id, amount, occurred_at, created_by, nickname]
+      properties:
+        entry_id: { type: string, format: uuid }
+        amount: { type: integer, format: int64 }
+        note: { type: string, nullable: true }
+        occurred_at: { type: string, format: date-time }
+        shared_type: { type: string, enum: [shared, personal], nullable: true }
+        created_by: { type: string, format: uuid }
+        nickname: { type: string }
+        avatar_url: { type: string, nullable: true }
+
+    DrillDownLevel3Response:
+      type: object
+      required: [level, category_id, category_name, category_amount, items, total_count, has_more]
+      properties:
+        level: { type: integer, enum: [3] }
+        category_id: { type: string, format: uuid }
+        category_name: { type: string }
+        parent_category_id: { type: string, format: uuid, nullable: true }
+        parent_category_name: { type: string, nullable: true }
+        category_amount: { type: integer, format: int64, description: '二级分类总额' }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/DrillDownEntryItem' }
+        total_count: { type: integer }
+        has_more: { type: boolean }
 
     Ledger:
       type: object

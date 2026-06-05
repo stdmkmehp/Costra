@@ -176,6 +176,10 @@ function applyMigrations(db: IMemoryDb): void {
     -- migration 0013: 每父级最多 1 个 is_parent_default=true 的 partial unique index
     -- pg-mem 实测：partial unique index 在 WHERE bool_col = true 谓词下会污染所有针对索引列的等值查询
     -- （详见 PROBE 记录 · 2026-06-05）· 改为应用层 + 真实 PG 约束兜底，pg-mem 跳过该 index
+    -- migration 0014: 统计页接口性能索引
+    -- pg-mem 对 partial index WHERE col IS NULL 谓词支持正常（与 0013 的 bool 不同）
+    CREATE INDEX idx_entries_category_id ON entries (category_id) WHERE deleted_at IS NULL;
+    CREATE INDEX idx_categories_parent_id ON categories (parent_id) WHERE deleted_at IS NULL;
     CREATE TABLE idempotency_keys (
       key             TEXT NOT NULL,
       endpoint        TEXT NOT NULL,

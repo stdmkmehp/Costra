@@ -31,6 +31,7 @@ import { registerLegalRoutes } from './routes/legal.js';
 import { registerUsersRoutes } from './routes/users.js';
 import { registerCategoriesRoutes } from './routes/categories.js';
 import { registerFamiliesRoutes } from './routes/families.js';
+import { registerStatisticsRoutes } from './routes/statistics.js';
 import { registerUploadRoutes } from './routes/upload.js';
 
 export interface BuildAppOptions {
@@ -85,6 +86,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
     await registerUsersRoutes(v1);
     await registerCategoriesRoutes(v1);
     await registerFamiliesRoutes(v1);
+    await registerStatisticsRoutes(v1);
     await registerUploadRoutes(v1);
   }, { prefix: '/v1' });
 
