@@ -15,7 +15,7 @@ import { newClientRefId } from '../../utils/id';
 import { getSafeAreaMetrics } from '../../utils/safeArea';
 import { putEntry, updateEntryFields, type Entry } from '../../services/db';
 import { enqueue } from '../../services/outbox';
-import { getActiveLedgerId, getActiveFamilyId, getActiveFamilyKind, getActiveLedgerName, setActiveFamily } from '../../services/family';
+import { getActiveLedgerId, getActiveFamilyId, getActiveFamilyKind, getActiveLedgerName } from '../../services/family';
 import { getFamilies } from '../../services/familyApi';
 import { getToken } from '../../services/auth';
 import { eventBus, EventNames } from '../../services/eventBus';
@@ -986,17 +986,17 @@ Component({
 
           const showSharedToggle = selected.isMultiMember && this.data.entryType === 'expense';
 
-          // COSTRA-223: 切换账本后同步更新 active family context
+          // 方案 B: 记账面板切账本仅影响本次记账，不改全局 active。
+          // 不调 setActiveFamily → 不写 storage → 其他页面不受影响。
+          // 组件内部的 ledgerId/ledgerName 已通过 this.setData 更新（下方），
+          // 提交 entry 时使用的就是 this.data.ledgerId（组件内部值）。
+          // 分类数据可能因家庭不同而不同，需要刷新：
           try {
             const { families } = await getFamilies();
             const targetFamily = families.find(f => f.ledger_id === selected.id);
             if (targetFamily) {
-              await setActiveFamily({
-                family_id: targetFamily.id,
-                ledger_id: targetFamily.ledger_id,
-                family_kind: targetFamily.kind,
-                ledger_name: targetFamily.name,
-              });
+              // 刷新分类数据到内存（不写 storage active，仅刷新分类供本次记账使用）
+              void refreshCategoryDataAsync(targetFamily.id);
             }
           } catch { /* 静默降级 */ }
 

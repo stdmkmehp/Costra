@@ -125,10 +125,9 @@
         </view>
 
         <!-- 备注（COSTRA-212: placeholder 与 input 同时保留，用 class 控制显隐，避免 wx:if 销毁 input 导致二次编辑焦点丢失） -->
-        <view class="keypad-note">
+        <view class="keypad-note" bindtap="onTapNote">
           <text
             class="keypad-note__placeholder {{noteFocused ? 'is-hidden' : ''}}"
-            bindtap="onTapNote"
           >{{note || '添加备注...'}}</text>
           <input
             class="keypad-note__input {{noteFocused ? 'is-visible' : ''}}"

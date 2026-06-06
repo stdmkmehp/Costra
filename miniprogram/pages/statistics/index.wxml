@@ -176,11 +176,12 @@
                               </view>
                               <view class="l3__main">
                                 <view class="l3__top">
-                                  <text class="l3__note">{{l3.note || l3.nickname}}</text>
+                                  <text class="l3__date">{{l3.dateLabel}}</text>
+                                  <text class="l3__note">{{l3.note || '-'}}</text>
                                   <text class="l3__amount tnum">{{l3.amount}}</text>
                                 </view>
                                 <view class="l3__bottom">
-                                  <text class="l3__date">{{l3.dateLabel}}</text>
+                                  <text class="l3__time">{{l3.timeLabel}}</text>
                                   <text class="l3__shared" wx:if="{{l3.shared}}">公共</text>
                                 </view>
                               </view>
@@ -309,11 +310,12 @@
                               </view>
                               <view class="l3__main">
                                 <view class="l3__top">
-                                  <text class="l3__note">{{l3.note || l3.nickname}}</text>
+                                  <text class="l3__date">{{l3.dateLabel}}</text>
+                                  <text class="l3__note">{{l3.note || '-'}}</text>
                                   <text class="l3__amount tnum">{{l3.amount}}</text>
                                 </view>
                                 <view class="l3__bottom">
-                                  <text class="l3__date">{{l3.dateLabel}}</text>
+                                  <text class="l3__time">{{l3.timeLabel}}</text>
                                   <text class="l3__shared" wx:if="{{l3.shared}}">公共</text>
                                 </view>
                               </view>

@@ -462,7 +462,14 @@ page {
 .l3__top {
   display: flex;
   align-items: baseline;
-  gap: 16rpx;
+  gap: 8rpx;
+}
+
+.l3__date {
+  flex: none;
+  font-size: 22rpx;
+  color: rgba(28, 27, 26, 0.5);
+  white-space: nowrap;
 }
 
 .l3__note {
@@ -486,6 +493,11 @@ page {
   display: flex;
   align-items: center;
   gap: 12rpx;
+  font-size: 20rpx;
+  color: rgba(28, 27, 26, 0.4);
+}
+
+.l3__time {
   font-size: 20rpx;
   color: rgba(28, 27, 26, 0.4);
 }

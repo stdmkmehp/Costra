@@ -86,6 +86,7 @@ interface L3Display {
   amount: string;          // 已格式化
   note: string;
   dateLabel: string;       // 6月3日
+  timeLabel: string;       // 14:30（24 小时制）
   shared: boolean;
   nickname: string;
   avatarUrl: string;
@@ -151,6 +152,13 @@ function formatEntryDate(isoUtc: string): string {
   const utc = new Date(isoUtc);
   const sh = new Date(utc.getTime() + 8 * 60 * 60 * 1000);
   return `${sh.getUTCMonth() + 1}月${sh.getUTCDate()}日`;
+}
+
+/** ISO UTC → 14:30 (Asia/Shanghai · 24 小时制) */
+function formatEntryTime(isoUtc: string): string {
+  const utc = new Date(isoUtc);
+  const sh = new Date(utc.getTime() + 8 * 60 * 60 * 1000);
+  return `${String(sh.getUTCHours()).padStart(2, '0')}:${String(sh.getUTCMinutes()).padStart(2, '0')}`;
 }
 
 /** L1 排行长列表省略：保留前 N 项 */
@@ -708,6 +716,7 @@ Page({
         amount: fmtYuan(it.amount),
         note: it.note || '',
         dateLabel: formatEntryDate(it.occurred_at),
+        timeLabel: formatEntryTime(it.occurred_at),
         shared: it.shared_type === 'shared',
         nickname: it.nickname || '',
         avatarUrl: it.avatar_url || '',
