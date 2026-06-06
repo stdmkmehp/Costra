@@ -1,5 +1,5 @@
 <!-- pages/statistics/index.wxml · 统计页（Tab2） -->
-<!-- 卡号: COSTRA-261 · 成员维度横滑切换改造 -->
+<!-- 卡号: COSTRA-263 · 成员横滑改为 native swiper + auto-height adapter -->
 <!-- 设计源: design/ui/design_spec.md §6.4 + interaction_flow.md §5 -->
 <!-- ready gate: bootstrap 完成且已登录前页面完全空白 -->
 
@@ -101,20 +101,20 @@
 
       <!-- ═══════ 数据区 ═══════ -->
 
-      <!-- 多人账本横向 scroll-view（scroll-snap 实现 pane 切换） -->
-      <scroll-view
+      <!-- 多人账本 native swiper（COSTRA-263 · auto-height adapter） -->
+      <swiper
         wx:if="{{familyKind === 'shared' && memberTabs.length > 1}}"
-        class="member-pages"
-        scroll-x
-        scroll-into-view="{{dataScrollIntoView}}"
-        scroll-with-animation
-        enhanced
-        show-scrollbar="{{false}}"
-        bindscroll="onPagesScroll"
+        class="member-pages-swiper"
+        current="{{memberTabIndex}}"
+        duration="{{memberSwiperDuration}}"
+        style="height: {{memberSwiperHeightPx}}px;"
+        bindtouchstart="onMemberSwiperTouchStart"
+        bindchange="onMemberSwiperChange"
+        bindanimationfinish="onMemberSwiperAnimationFinish"
       >
-        <view class="member-pages__track">
-          <block wx:for="{{memberTabs}}" wx:key="key" wx:for-item="member" wx:for-index="paneIdx">
-            <view id="mpane-{{paneIdx}}" class="member-pages__pane">
+        <swiper-item wx:for="{{memberTabs}}" wx:key="key" wx:for-item="member" wx:for-index="paneIdx">
+          <view id="mpane-{{paneIdx}}" class="member-pane">
+            <view class="member-pane-inner">
 
               <!-- 月度视角 -->
               <block wx:if="{{dimension === 'monthly'}}">
@@ -127,9 +127,9 @@
               </block>
 
             </view>
-          </block>
-        </view>
-      </scroll-view>
+          </view>
+        </swiper-item>
+      </swiper>
 
       <!-- 单人账本：直接渲染单 pane（无横向 scroll-view） -->
       <block wx:elif="{{memberTabs.length > 0}}">

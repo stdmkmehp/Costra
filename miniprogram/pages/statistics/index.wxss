@@ -1,5 +1,5 @@
 /* pages/statistics/index.wxss · 统计页（Tab2） */
-/* 卡号: COSTRA-261 · 成员维度横滑切换改造 */
+/* 卡号: COSTRA-263 · 成员横滑改为 native swiper + auto-height adapter */
 /* 设计源: design/ui/design_spec.md §6.4 */
 
 page {
@@ -210,22 +210,19 @@ page {
   background: #1c1b1a;
 }
 
-/* ─── 横向数据区（COSTRA-261） ───────────────────────────────────── */
-.member-pages {
+/* ─── 横向数据区 swiper（COSTRA-263 · native swiper + auto-height） ─── */
+.member-pages-swiper {
   width: 100%;
-  scroll-snap-type: x mandatory;
-  -webkit-overflow-scrolling: touch;
+  transition: height 180ms ease-out;
 }
 
-.member-pages__track {
-  display: flex;
-  flex-direction: row;
+.member-pane {
+  width: 100%;
+  min-height: 1px;
 }
 
-.member-pages__pane {
-  width: 100vw;
-  flex: none;
-  scroll-snap-align: start;
+.member-pane-inner {
+  width: 100%;
 }
 
 /* pane 内 loading */

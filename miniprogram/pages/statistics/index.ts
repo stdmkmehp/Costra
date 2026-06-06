@@ -1,9 +1,9 @@
 // pages/statistics/index.ts · 统计页（Tab2）
-// 卡号: COSTRA-262 · 缓存生命周期与下钻独立性收尾
+// 卡号: COSTRA-263 · 成员横滑改为 native swiper + auto-height adapter
 // 设计源: design/ui/design_spec.md §6.4 + design/ui/interaction_flow.md §5
 // 配套后端: COSTRA-260（统计 API user_id 参数）· 公共组件: trend-line-chart（COSTRA-230）
 // 金额 ADR-0002: 全部走 decimal.js（utils/money.ts toYuan）
-// Refs: COSTRA-262
+// Refs: COSTRA-263
 
 import { toYuan } from '../../utils/money';
 import { getSafeAreaMetrics } from '../../utils/safeArea';
@@ -162,7 +162,11 @@ Page({
     memberTabs: [] as MemberTabItem[],
     memberTabIndex: 0,
     memberScrollIntoView: '',
-    dataScrollIntoView: '',
+    currentMemberKey: 'all' as MemberKey,
+
+    // swiper auto-height adapter（COSTRA-263）
+    memberSwiperHeightPx: 800,
+    memberSwiperDuration: 240,
 
     // 按成员索引的视图数据
     monthlyByMember: {} as Record<MemberKey, MonthlyView>,
@@ -179,14 +183,22 @@ Page({
   _entrySavedHandler: null as (() => void) | null,
   _entryUpdatedHandler: null as (() => void) | null,
   _loadingPromise: null as Promise<void> | null,
-  _windowWidthPx: 375,
-  _lastScrollHandledIdx: -1,
+
+  // swiper auto-height adapter 实例字段（COSTRA-263）
+  _paneHeights: [] as number[],
+  _measureSeq: 0,
+  _pendingMeasure: false,
+  _pendingMeasureRetry: false,
+  _isTapSwitchingMember: false,
+
+  // 页面滚动位置策略
+  _pageScrollTop: 0,
+  _memberAnchorTopPx: 0,
 
   // ─── 生命周期 ──────────────────────────────────────────────────────────────
 
   onLoad() {
     const m = getSafeAreaMetrics();
-    this._windowWidthPx = wx.getWindowInfo().windowWidth;
     this.setData({
       statusBarHeight: m.statusBarHeight,
       navBarHeight: m.navBarHeight,
@@ -276,14 +288,15 @@ Page({
         this.setData({
           memberTabs: tabs,
           memberTabIndex: 0,
+          currentMemberKey: tabs[0]?.key ?? 'all',
           memberScrollIntoView: 'mtab-0',
-          dataScrollIntoView: 'mpane-0',
         });
       } catch {
         // 拉成员失败 → 降级为仅"全部"
         this.setData({
           memberTabs: [this._makeAllTab()],
           memberTabIndex: 0,
+          currentMemberKey: 'all',
         });
       }
     } else {
@@ -291,6 +304,7 @@ Page({
       this.setData({
         memberTabs: [this._makeAllTab()],
         memberTabIndex: 0,
+        currentMemberKey: 'all',
       });
     }
   },
@@ -359,14 +373,13 @@ Page({
     const memberKey = this._getCurrentMemberKey();
     await this._ensureMemberLoaded(memberKey);
     this.setData({ loading: false });
+    // 首次加载完成后测量成员条 anchor 位置（用于滚动位置策略）
+    this._measureMemberAnchor();
   },
 
   /** 获取当前选中的 memberKey */
   _getCurrentMemberKey(): MemberKey {
-    const tabs = this.data.memberTabs;
-    const idx = this.data.memberTabIndex;
-    if (!tabs.length) return 'all';
-    return tabs[idx]?.key ?? 'all';
+    return this.data.currentMemberKey || 'all';
   },
 
   /** 懒加载：如果该成员在当前维度还没 loaded 过则拉数据 */
@@ -476,7 +489,11 @@ Page({
       update.isEmpty = viewData.isEmpty;
       update.loading = false;
     }
-    this.setData(update);
+    this.setData(update, () => {
+      if (memberKey === this._getCurrentMemberKey()) {
+        this._scheduleMeasureCurrentPane('buildMonthly');
+      }
+    });
   },
 
   _buildL1Display(c: StatCategoryRankItem, prevList: L1Display[]): L1Display {
@@ -549,7 +566,11 @@ Page({
       update.isEmpty = viewData.isEmpty;
       update.loading = false;
     }
-    this.setData(update);
+    this.setData(update, () => {
+      if (memberKey === this._getCurrentMemberKey()) {
+        this._scheduleMeasureCurrentPane('buildYearly');
+      }
+    });
   },
 
   // ─── SYNC_DONE / ENTRY_SAVED / ENTRY_UPDATED 响应式刷新 ─────────────────────
@@ -641,7 +662,9 @@ Page({
   onSwitchDimension(e: WechatMiniprogram.TouchEvent) {
     const dim = (e.currentTarget.dataset as Record<string, string>).dim as 'monthly' | 'yearly';
     if (dim === this.data.dimension) return;
-    this.setData({ dimension: dim });
+    this.setData({ dimension: dim }, () => {
+      this._scheduleMeasureCurrentPane('switchDim');
+    });
     // 切维度后确保当前选中成员有数据
     void this._ensureMemberLoaded(this._getCurrentMemberKey());
   },
@@ -661,36 +684,99 @@ Page({
     void this._loadData();
   },
 
-  // ─── 交互：成员 Tab 点击 ────────────────────────────────────────────────────
+  // ─── 交互：成员 Tab 点击（duration=0 直接跳，不播放横跨多页动画） ──────────
 
   onTapMemberTab(e: WechatMiniprogram.TouchEvent) {
     const idx = parseInt((e.currentTarget.dataset as Record<string, string>).index, 10);
     if (Number.isNaN(idx) || idx === this.data.memberTabIndex) return;
+    const tab = this.data.memberTabs[idx];
+    if (!tab) return;
+
+    // 扩高到 max(current, target)
+    this._expandSwiperHeightForIndexes([this.data.memberTabIndex, idx]);
+
+    // 标记为 tap 切换（duration=0 直接跳）
+    this._isTapSwitchingMember = true;
     this.setData({
+      memberSwiperDuration: 0,
       memberTabIndex: idx,
-      dataScrollIntoView: `mpane-${idx}`,
+      currentMemberKey: tab.key,
       memberScrollIntoView: `mtab-${idx}`,
+    }, () => {
+      void this._ensureMemberLoaded(tab.key);
+      this._scheduleMeasureCurrentPane('tap');
+      this._handleMemberPageScrollPosition('tap');
+      // 恢复 duration
+      setTimeout(() => {
+        this._isTapSwitchingMember = false;
+        this.setData({ memberSwiperDuration: 240 });
+      }, 50);
     });
-    this._lastScrollHandledIdx = idx;
-    const mk = this.data.memberTabs[idx]?.key ?? 'all';
-    void this._ensureMemberLoaded(mk);
   },
 
-  // ─── 交互：数据区横向 scroll 节流（多人账本） ────────────────────────────────
+  // ─── 交互：swiper 手势事件（COSTRA-263） ──────────────────────────────────
 
-  onPagesScroll(e: WechatMiniprogram.ScrollViewScroll) {
-    const scrollLeft = e.detail.scrollLeft;
-    const paneIdx = Math.round(scrollLeft / this._windowWidthPx);
-    // 防抖：idx 没变则不 setData
-    if (paneIdx === this._lastScrollHandledIdx) return;
-    if (paneIdx < 0 || paneIdx >= this.data.memberTabs.length) return;
-    this._lastScrollHandledIdx = paneIdx;
+  /** 手势拖动开始：邻域高度保护 */
+  onMemberSwiperTouchStart() {
+    const cur = this.data.memberTabIndex;
+    this._expandSwiperHeightForIndexes([cur - 1, cur, cur + 1]);
+  },
+
+  /** swiper change：手势滑动完成切换 */
+  onMemberSwiperChange(e: WechatMiniprogram.SwiperChange) {
+    const idx = e.detail.current;
+    if (idx === this.data.memberTabIndex) return;
+    // tap 切换时 change 也会触发，忽略（已在 tap handler 处理）
+    if (this._isTapSwitchingMember) return;
+    const tab = this.data.memberTabs[idx];
+    if (!tab) return;
     this.setData({
-      memberTabIndex: paneIdx,
-      memberScrollIntoView: `mtab-${paneIdx}`,
+      memberTabIndex: idx,
+      currentMemberKey: tab.key,
+      memberScrollIntoView: `mtab-${idx}`,
+    }, () => {
+      void this._ensureMemberLoaded(tab.key);
+      this._handleMemberPageScrollPosition('swipe');
     });
-    const mk = this.data.memberTabs[paneIdx]?.key ?? 'all';
-    void this._ensureMemberLoaded(mk);
+  },
+
+  /** swiper animationfinish：收缩到目标真实高度 */
+  onMemberSwiperAnimationFinish(e: WechatMiniprogram.SwiperAnimationFinish) {
+    const idx = e.detail.current;
+    this._measurePaneHeightByIndex(idx, { applyIfCurrent: true, retry: true });
+  },
+
+  // ─── 页面滚动位置追踪（COSTRA-263） ─────────────────────────────────────────
+
+  onPageScroll(e: WechatMiniprogram.Page.IPageScrollOption) {
+    this._pageScrollTop = e.scrollTop;
+  },
+
+  /** 切成员时的页面滚动位置策略 */
+  _handleMemberPageScrollPosition(_trigger: 'tap' | 'swipe') {
+    // 单人账本不处理
+    if (this.data.familyKind !== 'shared' || this.data.memberTabs.length <= 1) return;
+    // 如果用户已经滚得很深（超过成员条 anchor + 120px），回到成员条附近
+    const threshold = this._memberAnchorTopPx + 120;
+    if (this._pageScrollTop > threshold && this._memberAnchorTopPx > 0) {
+      wx.pageScrollTo({
+        scrollTop: this._memberAnchorTopPx,
+        duration: 180,
+      });
+    }
+  },
+
+  /** 测量成员条 anchor 位置（首次渲染后调用） */
+  _measureMemberAnchor() {
+    this.createSelectorQuery()
+      .select('.member-strip')
+      .boundingClientRect((rect) => {
+        if (rect && rect.top > 0) {
+          // rect.top 是相对视口的，加上当前 scrollTop 得到绝对位置
+          this._memberAnchorTopPx = rect.top + this._pageScrollTop;
+        }
+      })
+      .exec();
   },
 
   // ─── 交互：L1 一级分类展开 ─────────────────────────────────────────────────
@@ -711,13 +797,17 @@ Page({
 
     if (item.expanded) {
       list[idx] = { ...item, expanded: false };
-      this.setData({ [`${dimKey}.${memberKey}.l1`]: list });
+      this.setData({ [`${dimKey}.${memberKey}.l1`]: list }, () => {
+        this._scheduleMeasureCurrentPane('l1-collapse');
+      });
       return;
     }
 
     if (item.l2Items.length > 0) {
       list[idx] = { ...item, expanded: true };
-      this.setData({ [`${dimKey}.${memberKey}.l1`]: list });
+      this.setData({ [`${dimKey}.${memberKey}.l1`]: list }, () => {
+        this._scheduleMeasureCurrentPane('l1-expand-cached');
+      });
       return;
     }
     list[idx] = { ...item, expanded: true, loadingL2: true };
@@ -758,7 +848,9 @@ Page({
           l2HasMore: hasMore,
           l2MoreCount: Math.max(0, res.total_count - L2_VISIBLE),
         };
-        this.setData({ [`${dimKey}.${memberKey}.l1`]: listLatest });
+        this.setData({ [`${dimKey}.${memberKey}.l1`]: listLatest }, () => {
+          this._scheduleMeasureCurrentPane('l1-l2-loaded');
+        });
       }
     } catch (err) {
       console.error('[statistics] drillDown L2 failed', err);
@@ -768,7 +860,9 @@ Page({
       const idxLatest = listLatest.findIndex((l) => l.category_id === id);
       if (idxLatest >= 0) {
         listLatest[idxLatest] = { ...listLatest[idxLatest], loadingL2: false };
-        this.setData({ [`${dimKey}.${memberKey}.l1`]: listLatest });
+        this.setData({ [`${dimKey}.${memberKey}.l1`]: listLatest }, () => {
+          this._scheduleMeasureCurrentPane('l1-l2-error');
+        });
       }
       wx.showToast({ title: '加载失败', icon: 'none' });
     }
@@ -797,13 +891,17 @@ Page({
     if (l2.expanded) {
       l1.l2Items[l2Idx] = { ...l2, expanded: false };
       list[l1Idx] = l1;
-      this.setData({ [`${dimKey}.${memberKey}.l1`]: list });
+      this.setData({ [`${dimKey}.${memberKey}.l1`]: list }, () => {
+        this._scheduleMeasureCurrentPane('l2-collapse');
+      });
       return;
     }
     if (l2.l3Items.length > 0) {
       l1.l2Items[l2Idx] = { ...l2, expanded: true };
       list[l1Idx] = l1;
-      this.setData({ [`${dimKey}.${memberKey}.l1`]: list });
+      this.setData({ [`${dimKey}.${memberKey}.l1`]: list }, () => {
+        this._scheduleMeasureCurrentPane('l2-expand-cached');
+      });
       return;
     }
 
@@ -847,7 +945,9 @@ Page({
             l3MoreCount: Math.max(0, res.total_count - res.items.length),
           };
           listLatest[l1IdxLatest] = l1Latest;
-          this.setData({ [`${dimKey}.${memberKey}.l1`]: listLatest });
+          this.setData({ [`${dimKey}.${memberKey}.l1`]: listLatest }, () => {
+            this._scheduleMeasureCurrentPane('l2-l3-loaded');
+          });
         }
       }
     } catch (err) {
@@ -862,10 +962,82 @@ Page({
         if (l2IdxLatest >= 0) {
           l1Latest.l2Items[l2IdxLatest] = { ...l1Latest.l2Items[l2IdxLatest], loadingL3: false };
           listLatest[l1IdxLatest] = l1Latest;
-          this.setData({ [`${dimKey}.${memberKey}.l1`]: listLatest });
+          this.setData({ [`${dimKey}.${memberKey}.l1`]: listLatest }, () => {
+            this._scheduleMeasureCurrentPane('l2-l3-error');
+          });
         }
       }
       wx.showToast({ title: '加载失败', icon: 'none' });
+    }
+  },
+
+  // ─── swiper auto-height adapter（COSTRA-263） ─────────────────────────────
+
+  /** 调度测量当前 pane 高度（合并同 tick 多次调用） */
+  _scheduleMeasureCurrentPane(reason?: string) {
+    if (this._pendingMeasure) return;
+    this._pendingMeasure = true;
+    // 下一 tick 执行，确保 setData 渲染完成
+    setTimeout(() => {
+      this._pendingMeasure = false;
+      this._measureCurrentPaneHeight(reason);
+    }, 30);
+  },
+
+  /** 测量当前 pane 高度并应用 */
+  _measureCurrentPaneHeight(reason?: string) {
+    const idx = this.data.memberTabIndex;
+    this._measurePaneHeightByIndex(idx, { applyIfCurrent: true, retry: true, reason });
+  },
+
+  /** 测量指定 index 的 pane 高度 */
+  _measurePaneHeightByIndex(
+    idx: number,
+    options?: { applyIfCurrent?: boolean; retry?: boolean; reason?: string },
+  ) {
+    const seq = ++this._measureSeq;
+    this.createSelectorQuery()
+      .select(`#mpane-${idx} .member-pane-inner`)
+      .boundingClientRect((rect) => {
+        // stale 回调防护
+        if (seq !== this._measureSeq) return;
+        if (rect && rect.height > 0) {
+          this._paneHeights[idx] = rect.height;
+          if (options?.applyIfCurrent && idx === this.data.memberTabIndex) {
+            this.setData({ memberSwiperHeightPx: rect.height });
+          }
+        } else if (options?.retry && !this._pendingMeasureRetry) {
+          // 首次测不到高度 → retry 一次
+          this._pendingMeasureRetry = true;
+          setTimeout(() => {
+            this._pendingMeasureRetry = false;
+            this._measurePaneHeightByIndex(idx, {
+              applyIfCurrent: options.applyIfCurrent,
+              retry: false,
+              reason: options.reason ? `${options.reason}-retry` : 'retry',
+            });
+          }, 50);
+        }
+      })
+      .exec();
+  },
+
+  /** 获取已知 pane 高度（未测过返回当前 swiper 高度） */
+  _getKnownPaneHeight(idx: number): number {
+    return this._paneHeights[idx] || this.data.memberSwiperHeightPx;
+  },
+
+  /** 扩展 swiper 高度到指定 indexes 中的最大值（仅向上扩，不缩） */
+  _expandSwiperHeightForIndexes(indexes: number[]) {
+    const len = this.data.memberTabs.length;
+    let maxH = this.data.memberSwiperHeightPx;
+    for (const i of indexes) {
+      if (i < 0 || i >= len) continue;
+      const h = this._getKnownPaneHeight(i);
+      if (h > maxH) maxH = h;
+    }
+    if (maxH > this.data.memberSwiperHeightPx) {
+      this.setData({ memberSwiperHeightPx: maxH });
     }
   },
 
@@ -903,6 +1075,7 @@ Page({
             monthlyByMember: {},
             yearlyByMember: {},
             memberTabIndex: 0,
+            currentMemberKey: 'all',
           });
           void syncOnce('ledger-switch');
           await this._loadContext();

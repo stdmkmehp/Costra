@@ -614,7 +614,7 @@ const syncDoneHandler = (payload?: SyncDonePayload) => {
 
 ### 4.7 R2 成员维度横滑切换
 
-> 卡号：COSTRA-260（后端 user_id）/ COSTRA-261（前端框架）/ COSTRA-262（收尾）
+> 卡号：COSTRA-260（后端 user_id）/ COSTRA-261（前端框架）/ COSTRA-262（收尾）/ COSTRA-263（native swiper 改造）
 
 **后端**：月度 / 年度 / drill-down 3 接口新增 `user_id` 可选查询参数（COSTRA-260 已落地）。不传或为空表示"全部"（原逻辑不变）。
 
@@ -623,7 +623,21 @@ const syncDoneHandler = (payload?: SyncDonePayload) => {
 - `yearlyByMember: Record<MemberKey, YearlyView>` — 同上
 - 每个 view 含 `loading` / `loaded` 状态位 + L1/L2/L3 展开态（嵌套在 `l1[].expanded` / `l1[].l2Items[].expanded` 中）
 
-**横滑 scroll-view**：多人账本使用 `scroll-snap-type: x mandatory` + `scroll-snap-align: start` 实现 pane 切换。scroll 事件通过 `Math.round(scrollLeft / windowWidth)` 计算当前 pane index，配合 `_lastScrollHandledIdx` 节流防止重复 setData。
+**横滑方案（COSTRA-263 改造）**：native `<swiper>` + auto-height adapter（邻域高度保护）。
+- 用 native swiper 负责跟手、方向锁、不可停中间、一次只滑一项
+- 不再使用数据区横向 scroll-view / scroll-snap / onPagesScroll
+- swiper 高度动态策略：
+  - **稳定态**：高度 = 当前 pane 实测高度（`_measureCurrentPaneHeight` → `memberSwiperHeightPx`）
+  - **手势拖动开始**（`onMemberSwiperTouchStart`）：高度扩到 `max(current, prev, next)`，防止滑动时邻居 pane 被裁
+  - **顶部点击跳成员**（`onTapMemberTab`）：高度扩到 `max(current, target)` + `duration=0` 直接切（不展示跨多页滑行动画）
+  - **`animationfinish`**：收缩到目标 pane 实测高度
+- 高度 CSS transition: `height 180ms ease-out`（视觉平滑）
+
+**页面滚动位置策略（COSTRA-263）**：
+- `onPageScroll` 持续追踪 `_pageScrollTop`
+- 首次加载后测量 `.member-strip` 绝对位置缓存为 `_memberAnchorTopPx`
+- 切成员时（tap 或 swipe），若 `_pageScrollTop > _memberAnchorTopPx + 120`，则 `wx.pageScrollTo` 回到成员条附近（duration=180ms）
+- 页面上半部切换不强行滚动，避免打断浏览
 
 **成员独立下钻态（D3 决策）**：每个成员维护独立的展开态。横滑切换成员不做 merge / 镜像，也不强制收起。通过 `data-memberkey` dataset 属性 + `${dimKey}.${memberKey}.l1` 路径写回实现隔离。
 
