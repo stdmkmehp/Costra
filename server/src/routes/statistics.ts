@@ -1,13 +1,13 @@
 /**
  * Costra · Server · 统计页路由
  *
- * 卡号：COSTRA-224
+ * 卡号：COSTRA-224 / COSTRA-260
  * 事实源：server/api/openapi.yaml /families/{family_id}/statistics/*
  *
  * 契约约束：
- *   - GET /families/{family_id}/statistics/monthly?month=YYYY-MM
- *   - GET /families/{family_id}/statistics/yearly?year=YYYY
- *   - GET /families/{family_id}/statistics/drill-down?...
+ *   - GET /families/{family_id}/statistics/monthly?month=YYYY-MM[&user_id=uuid]
+ *   - GET /families/{family_id}/statistics/yearly?year=YYYY[&user_id=uuid]
+ *   - GET /families/{family_id}/statistics/drill-down?...[&user_id=uuid]
  *
  * 路由层只做 "HTTP 参数解析 / 响应装配"，业务编排统一交给 statisticsService。
  */
@@ -44,6 +44,7 @@ const monthlyQuerySchema = {
   properties: {
     month: { type: 'string', pattern: '^\\d{4}-\\d{2}$' },
     top_n: { type: 'integer', minimum: 1, maximum: 50 },
+    user_id: { type: 'string', format: 'uuid' },
   },
 };
 
@@ -53,6 +54,7 @@ const yearlyQuerySchema = {
   properties: {
     year: { type: 'string', pattern: '^\\d{4}$' },
     top_n: { type: 'integer', minimum: 1, maximum: 50 },
+    user_id: { type: 'string', format: 'uuid' },
   },
 };
 
@@ -67,6 +69,7 @@ const drillDownQuerySchema = {
     category_id: { type: 'string', format: 'uuid' },
     limit: { type: 'integer', minimum: 1, maximum: 50 },
     offset: { type: 'integer', minimum: 0 },
+    user_id: { type: 'string', format: 'uuid' },
   },
 };
 
@@ -74,16 +77,17 @@ export async function registerStatisticsRoutes(app: FastifyInstance): Promise<vo
   // GET /families/{family_id}/statistics/monthly
   app.get<{
     Params: { family_id: string };
-    Querystring: { month: string; top_n?: number };
+    Querystring: { month: string; top_n?: number; user_id?: string };
   }>(
     '/families/:family_id/statistics/monthly',
     { schema: { params: familyIdParamSchema, querystring: monthlyQuerySchema } },
     async (req, reply) => {
-      const userId = await parseUserId(req);
-      const result = await statsService.getMonthlyStatistics(userId, {
+      const callerUserId = await parseUserId(req);
+      const result = await statsService.getMonthlyStatistics(callerUserId, {
         familyId: req.params.family_id,
         month: req.query.month,
         topN: req.query.top_n,
+        userId: req.query.user_id,
       });
       reply.code(200).send(result);
     },
@@ -92,16 +96,17 @@ export async function registerStatisticsRoutes(app: FastifyInstance): Promise<vo
   // GET /families/{family_id}/statistics/yearly
   app.get<{
     Params: { family_id: string };
-    Querystring: { year: string; top_n?: number };
+    Querystring: { year: string; top_n?: number; user_id?: string };
   }>(
     '/families/:family_id/statistics/yearly',
     { schema: { params: familyIdParamSchema, querystring: yearlyQuerySchema } },
     async (req, reply) => {
-      const userId = await parseUserId(req);
-      const result = await statsService.getYearlyStatistics(userId, {
+      const callerUserId = await parseUserId(req);
+      const result = await statsService.getYearlyStatistics(callerUserId, {
         familyId: req.params.family_id,
         year: req.query.year,
         topN: req.query.top_n,
+        userId: req.query.user_id,
       });
       reply.code(200).send(result);
     },
@@ -118,13 +123,14 @@ export async function registerStatisticsRoutes(app: FastifyInstance): Promise<vo
       category_id?: string;
       limit?: number;
       offset?: number;
+      user_id?: string;
     };
   }>(
     '/families/:family_id/statistics/drill-down',
     { schema: { params: familyIdParamSchema, querystring: drillDownQuerySchema } },
     async (req, reply) => {
-      const userId = await parseUserId(req);
-      const result = await statsService.getDrillDown(userId, {
+      const callerUserId = await parseUserId(req);
+      const result = await statsService.getDrillDown(callerUserId, {
         familyId: req.params.family_id,
         month: req.query.month,
         year: req.query.year,
@@ -133,6 +139,7 @@ export async function registerStatisticsRoutes(app: FastifyInstance): Promise<vo
         categoryId: req.query.category_id,
         limit: req.query.limit,
         offset: req.query.offset,
+        userId: req.query.user_id,
       });
       reply.code(200).send(result);
     },

@@ -391,6 +391,11 @@ paths:
           in: query
           required: false
           schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+        - name: user_id
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+          description: '成员维度筛选 · 仅返回 entries.created_by = user_id 的数据 · 不传 = 全部'
       responses:
         '200':
           description: OK
@@ -420,6 +425,11 @@ paths:
           in: query
           required: false
           schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+        - name: user_id
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+          description: '成员维度筛选 · 仅返回 entries.created_by = user_id 的数据 · 不传 = 全部'
       responses:
         '200':
           description: OK
@@ -476,6 +486,11 @@ paths:
           in: query
           required: false
           schema: { type: integer, minimum: 0, default: 0 }
+        - name: user_id
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+          description: '成员维度筛选 · 仅返回 entries.created_by = user_id 的数据 · 不传 = 全部'
       responses:
         '200':
           description: OK
@@ -1347,8 +1362,8 @@ components:
 
     MonthlyStatistics:
       type: object
-      required: [family_id, family_name, family_kind, ledger_id, ledger_name, month, timezone, range_start, range_end, currency, totals, daily_trend, extremes, category_ranks]
-      description: 'COSTRA-224: 月度统计响应'
+      required: [family_id, family_name, family_kind, ledger_id, ledger_name, month, timezone, range_start, range_end, currency, totals, daily_trend, extremes, category_ranks, filtered_user_id]
+      description: 'COSTRA-224/260: 月度统计响应'
       properties:
         family_id: { type: string, format: uuid }
         family_name: { type: string }
@@ -1360,6 +1375,11 @@ components:
         range_start: { type: string, format: date-time }
         range_end: { type: string, format: date-time }
         currency: { type: string, enum: [CNY] }
+        filtered_user_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: '当前结果的成员维度（null 表示"全部"）· COSTRA-260'
         totals: { $ref: '#/components/schemas/StatTotals' }
         daily_trend:
           type: array
@@ -1394,8 +1414,8 @@ components:
 
     YearlyStatistics:
       type: object
-      required: [family_id, family_name, family_kind, ledger_id, ledger_name, year, timezone, range_start, range_end, currency, totals, monthly_trend, extremes, category_ranks]
-      description: 'COSTRA-224: 年度统计响应'
+      required: [family_id, family_name, family_kind, ledger_id, ledger_name, year, timezone, range_start, range_end, currency, totals, monthly_trend, extremes, category_ranks, filtered_user_id]
+      description: 'COSTRA-224/260: 年度统计响应'
       properties:
         family_id: { type: string, format: uuid }
         family_name: { type: string }
@@ -1407,6 +1427,11 @@ components:
         range_start: { type: string, format: date-time }
         range_end: { type: string, format: date-time }
         currency: { type: string, enum: [CNY] }
+        filtered_user_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: '当前结果的成员维度（null 表示"全部"）· COSTRA-260'
         totals: { $ref: '#/components/schemas/StatTotals' }
         monthly_trend:
           type: array

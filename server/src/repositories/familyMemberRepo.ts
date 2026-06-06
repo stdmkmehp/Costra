@@ -1,8 +1,7 @@
 /**
  * Costra · Server · family_members DAO
  *
- * 卡号：COSTRA-221 · 事实源：server/db/migrations/0001_init.sql family_members 表
- *      + server/db/migrations/0012_family_members_color_slot.sql color_slot 列
+ * 卡号：COSTRA-221 · 事实源：server/db/migrations/0001_init.sql `family_members` 表
  *
  * 职责：封装 family_members 表的 SQL 访问；业务层禁止直接写 SQL。
  *
@@ -84,6 +83,27 @@ export async function isActiveMember(
   const res = await runner.query(
     `SELECT 1 FROM family_members
       WHERE family_id = $1 AND user_id = $2 AND left_at IS NULL
+      LIMIT 1`,
+    [familyId, userId],
+  );
+  return (res.rows as unknown[]).length > 0;
+}
+
+/**
+ * COSTRA-260: 校验 user 是否为 family 的成员（包含 active + left）
+ *
+ * 用途：统计接口的 user_id 维度越权防护 —— 允许查询已退出成员的历史数据，
+ * 但 user_id 必须是该 family 的历史或当前成员（防越权探测他人在别 family 的数据）。
+ */
+export async function isMemberIncludingLeft(
+  userId: string,
+  familyId: string,
+  client?: Runner,
+): Promise<boolean> {
+  const runner = client ?? exec();
+  const res = await runner.query(
+    `SELECT 1 FROM family_members
+      WHERE family_id = $1 AND user_id = $2
       LIMIT 1`,
     [familyId, userId],
   );

@@ -1,7 +1,7 @@
 /**
  * Costra · Server · 统计页 DAO
  *
- * 卡号：COSTRA-224 · 事实源：docs/design/statistics-page-tech-spec.md §3
+ * 卡号：COSTRA-224 / COSTRA-260 · 事实源：docs/design/statistics-page-tech-spec.md §3
  *
  * 职责：封装统计页所需的 SQL 查询；业务层禁止直接写 SQL。
  *
@@ -14,6 +14,8 @@
  * 性能边界：
  *   - 依赖 migration 0014 新增的 idx_entries_category_id + idx_categories_parent_id
  *   - 单月 entries ≤ 5000 时：monthly P95 ≤ 500ms · yearly P95 ≤ 800ms · drill-down ≤ 200ms
+ *
+ * COSTRA-260: 四个查询函数尾参重构为 opts 对象化模式，新增 createdBy 过滤支持。
  */
 
 import { getPool } from '../db/pool.js';
@@ -61,6 +63,12 @@ function exec(): Runner {
   return getPool() as unknown as Runner;
 }
 
+/** COSTRA-260: 统一 opts 类型 */
+export interface StatQueryOpts {
+  createdBy?: string;
+  client?: Runner;
+}
+
 /**
  * 拉取指定 ledger + 时间范围内的"原始 expense/income entry 数据"。
  *
@@ -72,14 +80,22 @@ function exec(): Runner {
  *
  * 单月 5000 条 entries 实测：JS 分桶 < 5ms，总开销主要在 SQL 拉取（~50ms）。
  * 此方案优于 SQL date_trunc + AT TIME ZONE（pg-mem 兼容性问题）。
+ *
+ * COSTRA-260: opts.createdBy 存在时拼 AND created_by = $N。
  */
 export async function listEntriesInRange(
   ledgerId: string,
   rangeStartUtc: string,
   rangeEndUtc: string,
-  client?: Runner,
+  opts?: StatQueryOpts,
 ): Promise<RawEntryForStat[]> {
-  const runner = client ?? exec();
+  const runner = opts?.client ?? exec();
+  const params: unknown[] = [ledgerId, rangeStartUtc, rangeEndUtc];
+  let createdByClause = '';
+  if (opts?.createdBy) {
+    params.push(opts.createdBy);
+    createdByClause = `AND e.created_by = $${params.length}`;
+  }
   const res = await runner.query(
     `SELECT
        e.amount AS amount,
@@ -94,8 +110,9 @@ export async function listEntriesInRange(
        AND e.occurred_at < $3
        AND e.type IN ('expense', 'income')
        -- 与 family summary 一致：expense 必须有 shared_type
-       AND (e.type = 'income' OR e.shared_type IS NOT NULL)`,
-    [ledgerId, rangeStartUtc, rangeEndUtc],
+       AND (e.type = 'income' OR e.shared_type IS NOT NULL)
+       ${createdByClause}`,
+    params,
   );
   return res.rows.map((r) => ({
     amount: Number(r.amount ?? 0),
@@ -116,14 +133,22 @@ export async function listEntriesInRange(
  * service 层负责"二级 → 一级"的折叠。
  *
  * 仅 expense + shared_type IS NOT NULL（与 family summary 一致）。
+ *
+ * COSTRA-260: opts.createdBy 存在时拼 AND created_by = $N。
  */
 export async function getCategoryAggregates(
   ledgerId: string,
   rangeStartUtc: string,
   rangeEndUtc: string,
-  client?: Runner,
+  opts?: StatQueryOpts,
 ): Promise<CategoryRankAggRow[]> {
-  const runner = client ?? exec();
+  const runner = opts?.client ?? exec();
+  const params: unknown[] = [ledgerId, rangeStartUtc, rangeEndUtc];
+  let createdByClause = '';
+  if (opts?.createdBy) {
+    params.push(opts.createdBy);
+    createdByClause = `AND e.created_by = $${params.length}`;
+  }
   const res = await runner.query(
     `SELECT
        e.category_id AS category_id,
@@ -137,8 +162,9 @@ export async function getCategoryAggregates(
        AND e.type = 'expense'
        AND e.shared_type IS NOT NULL
        AND e.category_id IS NOT NULL
+       ${createdByClause}
      GROUP BY e.category_id`,
-    [ledgerId, rangeStartUtc, rangeEndUtc],
+    params,
   );
   return res.rows.map((r) => ({
     category_id: String(r.category_id),
@@ -152,15 +178,23 @@ export async function getCategoryAggregates(
  *
  * 实现：先按 entries.category_id 聚合，再筛选出 parent_id = $4 的子分类。
  * 不带 LIMIT，由 service 层应用分页（避免 pg-mem 在某些 GROUP BY + LIMIT 场景下的兼容问题）。
+ *
+ * COSTRA-260: opts.createdBy 存在时拼 AND created_by = $N。
  */
 export async function getSubCategoryAggregates(
   ledgerId: string,
   rangeStartUtc: string,
   rangeEndUtc: string,
   parentCategoryId: string,
-  client?: Runner,
+  opts?: StatQueryOpts,
 ): Promise<CategoryRankAggRow[]> {
-  const runner = client ?? exec();
+  const runner = opts?.client ?? exec();
+  const params: unknown[] = [ledgerId, rangeStartUtc, rangeEndUtc, parentCategoryId];
+  let createdByClause = '';
+  if (opts?.createdBy) {
+    params.push(opts.createdBy);
+    createdByClause = `AND e.created_by = $${params.length}`;
+  }
   // 注意：JOIN categories 用 parent_id 筛选 · 子分类的 entries 才计入
   const res = await runner.query(
     `SELECT
@@ -177,8 +211,9 @@ export async function getSubCategoryAggregates(
        AND e.shared_type IS NOT NULL
        AND c.parent_id = $4
        AND c.deleted_at IS NULL
+       ${createdByClause}
      GROUP BY e.category_id`,
-    [ledgerId, rangeStartUtc, rangeEndUtc, parentCategoryId],
+    params,
   );
   return res.rows.map((r) => ({
     category_id: String(r.category_id),
@@ -224,10 +259,18 @@ export async function getCategoriesByIds(
   }));
 }
 
+/** COSTRA-260: listEntriesByCategory opts 类型（含分页参数外的 createdBy + client） */
+export interface ListEntriesByCategoryOpts {
+  createdBy?: string;
+  client?: Runner;
+}
+
 /**
  * L3 单笔明细：指定 category_id 下的 entry 列表，按金额降序、时间降序。
  *
  * JOIN users 一次性拿 nickname + avatar_url。
+ *
+ * COSTRA-260: opts.createdBy 存在时拼 AND created_by = $N。
  */
 export async function listEntriesByCategory(
   ledgerId: string,
@@ -236,9 +279,16 @@ export async function listEntriesByCategory(
   categoryId: string,
   limit: number,
   offset: number,
-  client?: Runner,
+  opts?: ListEntriesByCategoryOpts,
 ): Promise<{ items: EntryDetailRow[]; total: number }> {
-  const runner = client ?? exec();
+  const runner = opts?.client ?? exec();
+
+  const baseParams: unknown[] = [ledgerId, rangeStartUtc, rangeEndUtc, categoryId];
+  let createdByClause = '';
+  if (opts?.createdBy) {
+    baseParams.push(opts.createdBy);
+    createdByClause = `AND e.created_by = $${baseParams.length}`;
+  }
 
   // 总数（用于 has_more 判定）
   const countRes = await runner.query(
@@ -250,12 +300,16 @@ export async function listEntriesByCategory(
        AND e.occurred_at < $3
        AND e.type = 'expense'
        AND e.shared_type IS NOT NULL
-       AND e.category_id = $4`,
-    [ledgerId, rangeStartUtc, rangeEndUtc, categoryId],
+       AND e.category_id = $4
+       ${createdByClause}`,
+    baseParams,
   );
   const total = Number(countRes.rows[0]?.total ?? 0);
 
   // 数据
+  const dataParams: unknown[] = [...baseParams, limit, offset];
+  const limitIdx = baseParams.length + 1;
+  const offsetIdx = baseParams.length + 2;
   const dataRes = await runner.query(
     `SELECT
        e.id AS entry_id,
@@ -275,9 +329,10 @@ export async function listEntriesByCategory(
        AND e.type = 'expense'
        AND e.shared_type IS NOT NULL
        AND e.category_id = $4
+       ${createdByClause}
      ORDER BY e.amount DESC, e.occurred_at DESC
-     LIMIT $5 OFFSET $6`,
-    [ledgerId, rangeStartUtc, rangeEndUtc, categoryId, limit, offset],
+     LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+    dataParams,
   );
 
   const items: EntryDetailRow[] = dataRes.rows.map((r) => ({

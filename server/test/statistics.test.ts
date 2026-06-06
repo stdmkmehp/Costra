@@ -483,3 +483,207 @@ describe('COSTRA-224: Statistics API · drill-down', () => {
     expect(body.totals.expense).toBe(3000);
   });
 });
+
+// === COSTRA-260: user_id 维度过滤测试 ===
+
+describe('COSTRA-260: Statistics API · user_id dimension', () => {
+  // T15: monthly + user_id 仅该成员 entries 计入
+  it('T15: monthly + user_id filters only that member entries', async () => {
+    const { token: ownerToken, userId: ownerId } = await registerUser('s-t15-owner');
+    const { token: memberToken, userId: memberId } = await registerUser('s-t15-member');
+    const familyId = await createSharedFamilyWithMembers(ownerToken, [memberToken]);
+    const ledgerId = await getLedgerId(familyId);
+
+    const parent = await insertCategory({ name: '餐饮', type: 'expense', icon: '🍚' });
+    const sub = await insertCategory({ name: '外卖', type: 'expense', icon: '🥡', parentId: parent });
+
+    // owner entries
+    await insertEntry({ ledgerId, amount: 5000, type: 'expense', createdBy: ownerId, occurredAt: '2026-06-10T05:00:00.000Z', categoryId: sub, sharedType: 'shared' });
+    await insertEntry({ ledgerId, amount: 2000, type: 'income', createdBy: ownerId, occurredAt: '2026-06-10T06:00:00.000Z', categoryId: null, sharedType: null });
+    // member entries
+    await insertEntry({ ledgerId, amount: 3000, type: 'expense', createdBy: memberId, occurredAt: '2026-06-15T05:00:00.000Z', categoryId: sub, sharedType: 'personal' });
+    await insertEntry({ ledgerId, amount: 1000, type: 'income', createdBy: memberId, occurredAt: '2026-06-15T06:00:00.000Z', categoryId: null, sharedType: null });
+
+    // 不传 user_id → 全部
+    const resAll = await app.inject({
+      method: 'GET',
+      url: `/v1/families/${familyId}/statistics/monthly?month=2026-06`,
+      headers: authHeaders(ownerToken),
+    });
+    expect(resAll.statusCode).toBe(200);
+    const allBody = resAll.json();
+    expect(allBody.totals.expense).toBe(8000);
+    expect(allBody.totals.income).toBe(3000);
+    expect(allBody.filtered_user_id).toBeNull();
+
+    // 传 user_id = memberId → 仅 member 的 entries
+    const resMember = await app.inject({
+      method: 'GET',
+      url: `/v1/families/${familyId}/statistics/monthly?month=2026-06&user_id=${memberId}`,
+      headers: authHeaders(ownerToken),
+    });
+    expect(resMember.statusCode).toBe(200);
+    const memberBody = resMember.json();
+    expect(memberBody.totals.expense).toBe(3000);
+    expect(memberBody.totals.income).toBe(1000);
+    expect(memberBody.totals.entry_count).toBe(2);
+    expect(memberBody.filtered_user_id).toBe(memberId);
+    // daily_trend: day 15 = 3000 expense, day 10 = 0
+    const day15 = memberBody.daily_trend.find((d: { day: number }) => d.day === 15);
+    expect(day15.expense).toBe(3000);
+    const day10 = memberBody.daily_trend.find((d: { day: number }) => d.day === 10);
+    expect(day10.expense).toBe(0);
+    // category_ranks 仅 member 的 entries
+    expect(memberBody.category_ranks.length).toBeGreaterThanOrEqual(1);
+    expect(memberBody.category_ranks[0].amount).toBe(3000);
+    // extremes
+    expect(memberBody.extremes.max_single_expense).toBe(3000);
+  });
+
+  // T16: monthly + user_id = 已退出成员 → 返回其历史数据（不抛 403）
+  it('T16: monthly + user_id of left member returns historical data', async () => {
+    const { token: ownerToken, userId: ownerId } = await registerUser('s-t16-owner');
+    const { token: memberToken, userId: memberId } = await registerUser('s-t16-member');
+    const familyId = await createSharedFamilyWithMembers(ownerToken, [memberToken]);
+    const ledgerId = await getLedgerId(familyId);
+    const cat = await insertCategory({ name: '日用', type: 'expense', icon: '🧴' });
+
+    // member 记一笔
+    await insertEntry({ ledgerId, amount: 4000, type: 'expense', createdBy: memberId, occurredAt: '2026-06-08T05:00:00.000Z', categoryId: cat, sharedType: 'shared' });
+    // owner 也记一笔
+    await insertEntry({ ledgerId, amount: 1000, type: 'expense', createdBy: ownerId, occurredAt: '2026-06-09T05:00:00.000Z', categoryId: cat, sharedType: 'shared' });
+
+    // member 退出
+    await getPool().query(
+      `UPDATE family_members SET left_at = now() WHERE family_id = $1 AND user_id = $2`,
+      [familyId, memberId],
+    );
+
+    // owner 查已退出成员 → 正常返回数据
+    const res = await app.inject({
+      method: 'GET',
+      url: `/v1/families/${familyId}/statistics/monthly?month=2026-06&user_id=${memberId}`,
+      headers: authHeaders(ownerToken),
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.totals.expense).toBe(4000);
+    expect(body.filtered_user_id).toBe(memberId);
+  });
+
+  // T17: yearly + user_id 跨月聚合正确
+  it('T17: yearly + user_id aggregates correctly across months', async () => {
+    const { token: ownerToken, userId: ownerId } = await registerUser('s-t17-owner');
+    const { token: memberToken, userId: memberId } = await registerUser('s-t17-member');
+    const familyId = await createSharedFamilyWithMembers(ownerToken, [memberToken]);
+    const ledgerId = await getLedgerId(familyId);
+    const parent = await insertCategory({ name: '购物', type: 'expense', icon: '🛒' });
+    const sub = await insertCategory({ name: '网购', type: 'expense', icon: '📦', parentId: parent });
+
+    // owner: March 2000, June 6000
+    await insertEntry({ ledgerId, amount: 2000, type: 'expense', createdBy: ownerId, occurredAt: '2026-03-10T05:00:00.000Z', categoryId: sub, sharedType: 'shared' });
+    await insertEntry({ ledgerId, amount: 6000, type: 'expense', createdBy: ownerId, occurredAt: '2026-06-15T05:00:00.000Z', categoryId: sub, sharedType: 'shared' });
+    // member: March 3000, August 5000
+    await insertEntry({ ledgerId, amount: 3000, type: 'expense', createdBy: memberId, occurredAt: '2026-03-20T05:00:00.000Z', categoryId: sub, sharedType: 'personal' });
+    await insertEntry({ ledgerId, amount: 5000, type: 'expense', createdBy: memberId, occurredAt: '2026-08-10T05:00:00.000Z', categoryId: sub, sharedType: 'personal' });
+
+    // yearly + user_id = memberId
+    const res = await app.inject({
+      method: 'GET',
+      url: `/v1/families/${familyId}/statistics/yearly?year=2026&user_id=${memberId}`,
+      headers: authHeaders(ownerToken),
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.totals.expense).toBe(8000); // 3000 + 5000
+    expect(body.filtered_user_id).toBe(memberId);
+    // March = 3000, August = 5000
+    const march = body.monthly_trend.find((m: { month: number }) => m.month === 3);
+    expect(march.expense).toBe(3000);
+    const aug = body.monthly_trend.find((m: { month: number }) => m.month === 8);
+    expect(aug.expense).toBe(5000);
+    // June should be 0 for member
+    const june = body.monthly_trend.find((m: { month: number }) => m.month === 6);
+    expect(june.expense).toBe(0);
+    expect(body.extremes.max_month_expense).toBe(5000);
+    expect(body.extremes.max_month_label).toBe('8月');
+  });
+
+  // T18: user_id = 非家庭成员 → 403 FORBIDDEN
+  it('T18: user_id of non-member returns 403', async () => {
+    const { token: ownerToken } = await registerUser('s-t18-owner');
+    const { userId: outsiderId } = await registerUser('s-t18-outsider');
+    const familyId = await createSharedFamilyWithMembers(ownerToken, []);
+
+    // monthly
+    const r1 = await app.inject({
+      method: 'GET',
+      url: `/v1/families/${familyId}/statistics/monthly?month=2026-06&user_id=${outsiderId}`,
+      headers: authHeaders(ownerToken),
+    });
+    expect(r1.statusCode).toBe(403);
+    expect(r1.json().code).toBe('FAMILY_NOT_MEMBER');
+
+    // yearly
+    const r2 = await app.inject({
+      method: 'GET',
+      url: `/v1/families/${familyId}/statistics/yearly?year=2026&user_id=${outsiderId}`,
+      headers: authHeaders(ownerToken),
+    });
+    expect(r2.statusCode).toBe(403);
+
+    // drill-down
+    const r3 = await app.inject({
+      method: 'GET',
+      url: `/v1/families/${familyId}/statistics/drill-down?month=2026-06&level=2&parent_category_id=00000000-0000-0000-0000-000000000001&user_id=${outsiderId}`,
+      headers: authHeaders(ownerToken),
+    });
+    expect(r3.statusCode).toBe(403);
+  });
+
+  // T19: drill-down + user_id · L2 二级排行 / L3 单笔列表都过滤
+  it('T19: drill-down + user_id filters L2 and L3 correctly', async () => {
+    const { token: ownerToken, userId: ownerId } = await registerUser('s-t19-owner');
+    const { token: memberToken, userId: memberId } = await registerUser('s-t19-member');
+    const familyId = await createSharedFamilyWithMembers(ownerToken, [memberToken]);
+    const ledgerId = await getLedgerId(familyId);
+
+    const parent = await insertCategory({ name: '餐饮', type: 'expense', icon: '🍚' });
+    const sub1 = await insertCategory({ name: '外卖', type: 'expense', icon: '🥡', parentId: parent });
+    const sub2 = await insertCategory({ name: '堂食', type: 'expense', icon: '🍴', parentId: parent });
+
+    // owner: sub1=5000, sub2=2000
+    await insertEntry({ ledgerId, amount: 5000, type: 'expense', createdBy: ownerId, occurredAt: '2026-06-05T05:00:00.000Z', categoryId: sub1, sharedType: 'shared' });
+    await insertEntry({ ledgerId, amount: 2000, type: 'expense', createdBy: ownerId, occurredAt: '2026-06-06T05:00:00.000Z', categoryId: sub2, sharedType: 'shared' });
+    // member: sub1=3000
+    await insertEntry({ ledgerId, amount: 3000, type: 'expense', createdBy: memberId, occurredAt: '2026-06-07T05:00:00.000Z', categoryId: sub1, sharedType: 'personal' });
+
+    // L2 drill-down + user_id = memberId: 只有 sub1=3000
+    const resL2 = await app.inject({
+      method: 'GET',
+      url: `/v1/families/${familyId}/statistics/drill-down?month=2026-06&level=2&parent_category_id=${parent}&user_id=${memberId}`,
+      headers: authHeaders(ownerToken),
+    });
+    expect(resL2.statusCode).toBe(200);
+    const l2Body = resL2.json();
+    expect(l2Body.level).toBe(2);
+    expect(l2Body.items).toHaveLength(1);
+    expect(l2Body.items[0].category_id).toBe(sub1);
+    expect(l2Body.items[0].amount).toBe(3000);
+    expect(l2Body.parent_amount).toBe(3000);
+
+    // L3 drill-down + user_id = memberId: 只有 member 那条 entry
+    const resL3 = await app.inject({
+      method: 'GET',
+      url: `/v1/families/${familyId}/statistics/drill-down?month=2026-06&level=3&category_id=${sub1}&user_id=${memberId}`,
+      headers: authHeaders(ownerToken),
+    });
+    expect(resL3.statusCode).toBe(200);
+    const l3Body = resL3.json();
+    expect(l3Body.level).toBe(3);
+    expect(l3Body.items).toHaveLength(1);
+    expect(l3Body.items[0].amount).toBe(3000);
+    expect(l3Body.items[0].created_by).toBe(memberId);
+    expect(l3Body.category_amount).toBe(3000);
+  });
+});

@@ -1,7 +1,7 @@
 /**
  * Costra · Server · 统计页业务编排层
  *
- * 卡号：COSTRA-224 · 事实源：docs/design/statistics-page-tech-spec.md §3
+ * 卡号：COSTRA-224 / COSTRA-260 · 事实源：docs/design/statistics-page-tech-spec.md §3
  *
  * 职责：
  *   - getMonthlyStatistics: 月度统计主接口
@@ -17,6 +17,12 @@
  *   - 空月份/空年份返回全 0 与空数组，不返回 404
  *   - 与 family summary 口径一致：transfer 不计入；shared_type IS NULL 的 expense 不计入
  *   - 已退出成员的历史 expense 仍计入
+ *
+ * COSTRA-260: 新增 userId（成员维度过滤）支持：
+ *   - 不传 userId = 家庭总览（行为不变）
+ *   - 传 userId：按 entries.created_by = userId 过滤
+ *   - 越权防护：userId 必须是该 family 的成员（active 或 left），否则 FORBIDDEN
+ *   - 响应 payload 加 filtered_user_id 顶层字段（monthly / yearly）
  */
 
 import { AppError } from '../errors/AppError.js';
@@ -24,6 +30,7 @@ import { ErrorCode } from '../errors/ErrorCode.js';
 import * as familyService from './familyService.js';
 import * as familyRepo from '../repositories/familyRepo.js';
 import * as ledgerRepo from '../repositories/ledgerRepo.js';
+import * as familyMemberRepo from '../repositories/familyMemberRepo.js';
 import * as statsRepo from '../repositories/statisticsRepo.js';
 
 // === Wire 响应类型 ===
@@ -67,6 +74,7 @@ export interface MonthlyStatistics {
   range_start: string;
   range_end: string;
   currency: 'CNY';
+  filtered_user_id: string | null;
   totals: StatTotals;
   daily_trend: DailyTrendItem[];
   extremes: MonthlyExtremes;
@@ -101,6 +109,7 @@ export interface YearlyStatistics {
   range_start: string;
   range_end: string;
   currency: 'CNY';
+  filtered_user_id: string | null;
   totals: StatTotals;
   monthly_trend: MonthlyTrendItem[];
   extremes: YearlyExtremes;
@@ -233,6 +242,31 @@ function getDaysInMonth(year: number, month: number): number {
   return new Date(Date.UTC(year, month, 0)).getUTCDate();
 }
 
+/**
+ * COSTRA-260: 成员维度越权校验。
+ *
+ * 如果 input.userId 存在且不等于 callerUserId，
+ * 校验 input.userId 是否为 familyId 的成员（active 或 left 都算）。
+ * 不通过抛 FAMILY_NOT_MEMBER。
+ *
+ * userId === callerUserId 时跳过第二次校验（callerUserId 已经被 assertActiveMember 校验过）。
+ */
+async function assertUserIdBelongsToFamily(
+  callerUserId: string,
+  familyId: string,
+  targetUserId?: string,
+): Promise<void> {
+  if (!targetUserId) return;
+  if (targetUserId === callerUserId) return;
+  const belongs = await familyMemberRepo.isMemberIncludingLeft(targetUserId, familyId);
+  if (!belongs) {
+    throw new AppError(ErrorCode.FAMILY_NOT_MEMBER, {
+      message: 'target user_id is not a member of this family',
+      details: { family_id: familyId, user_id: targetUserId },
+    });
+  }
+}
+
 // === L1 排行构建（共享逻辑） ===
 
 interface L1AggMap {
@@ -295,7 +329,7 @@ function buildL1RankItems(
 
 export async function getMonthlyStatistics(
   userId: string,
-  input: { familyId: string; month: string; topN?: number },
+  input: { familyId: string; month: string; topN?: number; userId?: string },
 ): Promise<MonthlyStatistics> {
   validateMonth(input.month);
   const topN = input.topN ?? 20;
@@ -307,6 +341,7 @@ export async function getMonthlyStatistics(
   }
 
   await familyService.assertActiveMember(userId, input.familyId);
+  await assertUserIdBelongsToFamily(userId, input.familyId, input.userId);
 
   const family = await familyRepo.findById(input.familyId);
   if (!family) throw new AppError(ErrorCode.NOT_FOUND, { message: 'family not found' });
@@ -320,12 +355,13 @@ export async function getMonthlyStatistics(
   }
 
   const { rangeStartUtc, rangeEndUtc } = parseMonthRange(input.month);
+  const createdBy = input.userId;
 
   // 1) 拉取所有 entries（在 service 层做日分桶 + extremes 计算）
   // 2) 拉取分类聚合（用于 L1 排行）
   const [entries, l2Aggs] = await Promise.all([
-    statsRepo.listEntriesInRange(ledger.id, rangeStartUtc, rangeEndUtc),
-    statsRepo.getCategoryAggregates(ledger.id, rangeStartUtc, rangeEndUtc),
+    statsRepo.listEntriesInRange(ledger.id, rangeStartUtc, rangeEndUtc, { createdBy }),
+    statsRepo.getCategoryAggregates(ledger.id, rangeStartUtc, rangeEndUtc, { createdBy }),
   ]);
 
   // === totals + daily_trend + extremes（在 JS 中分桶） ===
@@ -393,6 +429,7 @@ export async function getMonthlyStatistics(
     range_start: rangeStartUtc,
     range_end: rangeEndUtc,
     currency: 'CNY',
+    filtered_user_id: input.userId ?? null,
     totals: {
       expense: totalExpense,
       income: totalIncome,
@@ -413,7 +450,7 @@ export async function getMonthlyStatistics(
 
 export async function getYearlyStatistics(
   userId: string,
-  input: { familyId: string; year: string; topN?: number },
+  input: { familyId: string; year: string; topN?: number; userId?: string },
 ): Promise<YearlyStatistics> {
   validateYear(input.year);
   const topN = input.topN ?? 20;
@@ -425,6 +462,7 @@ export async function getYearlyStatistics(
   }
 
   await familyService.assertActiveMember(userId, input.familyId);
+  await assertUserIdBelongsToFamily(userId, input.familyId, input.userId);
 
   const family = await familyRepo.findById(input.familyId);
   if (!family) throw new AppError(ErrorCode.NOT_FOUND, { message: 'family not found' });
@@ -438,10 +476,11 @@ export async function getYearlyStatistics(
   }
 
   const { rangeStartUtc, rangeEndUtc } = parseYearRange(input.year);
+  const createdBy = input.userId;
 
   const [entries, l2Aggs] = await Promise.all([
-    statsRepo.listEntriesInRange(ledger.id, rangeStartUtc, rangeEndUtc),
-    statsRepo.getCategoryAggregates(ledger.id, rangeStartUtc, rangeEndUtc),
+    statsRepo.listEntriesInRange(ledger.id, rangeStartUtc, rangeEndUtc, { createdBy }),
+    statsRepo.getCategoryAggregates(ledger.id, rangeStartUtc, rangeEndUtc, { createdBy }),
   ]);
 
   // === totals + monthly_trend + extremes ===
@@ -518,6 +557,7 @@ export async function getYearlyStatistics(
     range_start: rangeStartUtc,
     range_end: rangeEndUtc,
     currency: 'CNY',
+    filtered_user_id: input.userId ?? null,
     totals: {
       expense: totalExpense,
       income: totalIncome,
@@ -549,6 +589,8 @@ export interface DrillDownInput {
   categoryId?: string;
   limit?: number;
   offset?: number;
+  /** COSTRA-260: 成员维度过滤 */
+  userId?: string;
 }
 
 export async function getDrillDown(
@@ -602,6 +644,7 @@ export async function getDrillDown(
   }
 
   await familyService.assertActiveMember(userId, input.familyId);
+  await assertUserIdBelongsToFamily(userId, input.familyId, input.userId);
 
   const ledger = await ledgerRepo.findFirstByFamilyId(input.familyId);
   if (!ledger) {
@@ -615,6 +658,8 @@ export async function getDrillDown(
     ? parseMonthRange(input.month)
     : parseYearRange(input.year!);
 
+  const createdBy = input.userId;
+
   if (input.level === 2) {
     return await drillDownL2(
       ledger.id,
@@ -623,6 +668,7 @@ export async function getDrillDown(
       input.parentCategoryId!,
       limit,
       offset,
+      createdBy,
     );
   }
   return await drillDownL3(
@@ -632,6 +678,7 @@ export async function getDrillDown(
     input.categoryId!,
     limit,
     offset,
+    createdBy,
   );
 }
 
@@ -642,6 +689,7 @@ async function drillDownL2(
   parentCategoryId: string,
   limit: number,
   offset: number,
+  createdBy?: string,
 ): Promise<DrillDownLevel2Response> {
   // 拿 parent 元信息
   const parentMetas = await statsRepo.getCategoriesByIds([parentCategoryId]);
@@ -649,7 +697,7 @@ async function drillDownL2(
 
   // 拿子分类聚合
   const aggs = await statsRepo.getSubCategoryAggregates(
-    ledgerId, rangeStartUtc, rangeEndUtc, parentCategoryId,
+    ledgerId, rangeStartUtc, rangeEndUtc, parentCategoryId, { createdBy },
   );
   const subIds = aggs.map((a) => a.category_id);
   const subMetas = await statsRepo.getCategoriesByIds(subIds);
@@ -699,6 +747,7 @@ async function drillDownL3(
   categoryId: string,
   limit: number,
   offset: number,
+  createdBy?: string,
 ): Promise<DrillDownLevel3Response> {
   const categoryMetas = await statsRepo.getCategoriesByIds([categoryId]);
   const categoryMeta = categoryMetas[0];
@@ -707,11 +756,11 @@ async function drillDownL3(
   const parentMeta = parentMetas[0] ?? null;
 
   const { items, total } = await statsRepo.listEntriesByCategory(
-    ledgerId, rangeStartUtc, rangeEndUtc, categoryId, limit, offset,
+    ledgerId, rangeStartUtc, rangeEndUtc, categoryId, limit, offset, { createdBy },
   );
 
   // 分类总额：先单独查（不复用 items 的 SUM，因为 items 已分页）
-  const aggRow = await statsRepo.getCategoryAggregates(ledgerId, rangeStartUtc, rangeEndUtc);
+  const aggRow = await statsRepo.getCategoryAggregates(ledgerId, rangeStartUtc, rangeEndUtc, { createdBy });
   const thisCat = aggRow.find((a) => a.category_id === categoryId);
   const categoryAmount = thisCat?.amount ?? 0;
 
