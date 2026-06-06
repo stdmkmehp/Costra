@@ -647,6 +647,21 @@ const syncDoneHandler = (payload?: SyncDonePayload) => {
 - **维度切换**（月度 ↔ 年度）：不动 byMember，仅确保当前成员在新维度有数据。
 - **成员切换**（Tab 点击 / 横滑）：不动 byMember，仅 `_ensureMemberLoaded` 按需加载。
 
+**为什么统计页用 swiper 而记账页不用（COSTRA-264 补充）**：
+- 统计页需要跟手反馈 + 离散成员翻页（3~5 个成员 pane，每个 pane 内容可变高度）；native swiper 提供方向锁 + 不可停中间 + 一次只滑一项的原生体验
+- 记账页只有 expense/income 两态且已有轻量手势（横滑切换面板），无需 swiper 的重量级能力
+- 统计页通过 auto-height adapter（`_measurePaneHeightByIndex` + `_expandSwiperHeightForIndexes` + `_resetMemberSwiperHeightState`）解决可变高度问题
+
+**swiper 高度状态重置策略（COSTRA-264 P1 修复）**：
+- 新增 `_resetMemberSwiperHeightState(reason)` 统一方法，清理 `_paneHeights` / `_pendingMeasure` / `_pendingMeasureRetry` / `_measureSeq++` / `_memberAnchorTopPx` / `memberSwiperHeightPx`
+- 调用场景：`_loadContext()`（成员列表重建后）、`_clearCurrentDimViews()`（切月/年 scope）、`onSwitchDimension()`、`onTapYearlyMonth()`、`onTapLedgerName()`
+- 初始高度不再硬编码 800px，改用 `getInitialSwiperHeightPx()`（`windowHeight * 0.5`，兜底 420）
+
+**水平溢出防护（COSTRA-264 二指手势修复）**：
+- Root cause：`.l2` 使用 `margin: -32rpx`、`.l3` 使用 `margin: -56rpx` 负 margin 扩展宽度，导致页面实际内容宽度超过视口；二指手势触发 WebView 水平 scrollLeft
+- 修复：从 `page` → `.stat` → `.stat__content` → `.member-pages-swiper` → `.member-pane` → `.rank` 逐层加 `overflow-x: hidden` + `box-sizing: border-box` + `max-width: 100%`
+- `.member-strip` scroll-view 自身的横向滚动不受影响（scroll-x 属性在 scroll-view 内部生效，不影响外层 overflow）
+
 ---
 
 ### 5.1 Card 概览
@@ -858,6 +873,15 @@ F. **`statistics.test.ts` 集成测试**
 
 1. swiper 顶部显示 `[ 全部 | 史蒂夫 | 爱丽丝 ]`
 2. 左右滑动 · index 改变（数据先不变 · COSTRA-229 仅做框架）
+
+#### COSTRA-263 专项验收路径
+
+- **T-263-A 手势滑动基础体验**：慢推/快扫/边界（不可停中间、一次只滑一项、方向锁）
+- **T-263-B 顶部点击跳转**：无横跨多页动画（duration=0）、目标未加载有 loading 占位、快速连续点击不崩溃
+- **T-263-C auto-height**：长短 pane 切换高度平滑过渡、展开/收起 L1/L2 后高度正确更新、首屏 loading 无大空白（初始高度 ≈ windowHeight*0.5）
+- **T-263-D 深滚切成员回跳**：深滚超过成员条 120px 后切成员，自动回到成员条附近（扣除 fixed nav 高度），上半部不打断
+- **T-263-E 边界**：单人账本无 swiper、多成员正常、已退出成员灰化可滑、切账本后 swiper 状态重置、切月份后滑动正常
+- **T-263-F 二指/捏合/双指拖动后页面不发生水平偏移**：左边距保持一致，时间条/成员条/宏观区/排行区对齐不变
 
 ### 8.5 边界
 
