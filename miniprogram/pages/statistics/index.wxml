@@ -1,5 +1,6 @@
 <!-- pages/statistics/index.wxml · 统计页（Tab2） -->
-<!-- 卡号: COSTRA-225 · 设计源: design/ui/design_spec.md §6.4 + interaction_flow.md §5 -->
+<!-- 卡号: COSTRA-261 · 成员维度横滑切换改造 -->
+<!-- 设计源: design/ui/design_spec.md §6.4 + interaction_flow.md §5 -->
 <!-- ready gate: bootstrap 完成且已登录前页面完全空白 -->
 
 <view class="stat" wx:if="{{ready}}">
@@ -13,12 +14,6 @@
     </view>
   </view>
 
-  <!--
-    页面级滚动（不使用 scroll-view / swiper）。
-    swiper 必须定高、与下钻列表的可变高度冲突；scroll-view 在多成员维度
-    扩展前没有必要套一层。COSTRA-229 实装多成员滑动时，再决定用 scroll-view
-    横向 + scroll-into-view 或动态测量高度的 swiper 重构。
-  -->
   <view class="stat__content" style="padding-top: {{statusBarHeight + navBarHeight}}px;">
 
       <!-- ═══════ 时间维度 + 月/年切换 ═══════ -->
@@ -75,275 +70,82 @@
         </view>
       </view>
 
-      <!-- ═══════ 成员维度 tabs（COSTRA-229 框架预留 · 当前仅「全部」一档）═══════ -->
-      <view class="member-tabs" wx:if="{{familyKind === 'shared' && memberTabs.length > 1}}">
-        <view
-          wx:for="{{memberTabs}}"
-          wx:key="key"
-          class="member-tabs__item {{memberTabIndex === index ? 'member-tabs__item--active' : ''}}"
-          data-index="{{index}}"
-          bind:tap="onTapMemberTab"
-        >
-          <text>{{item.label}}</text>
+      <!-- ═══════ 成员指示器条（多人账本 + 成员 > 1 时显示）═══════ -->
+      <scroll-view
+        wx:if="{{familyKind === 'shared' && memberTabs.length > 1}}"
+        class="member-strip"
+        scroll-x
+        scroll-into-view="{{memberScrollIntoView}}"
+        scroll-with-animation
+        enhanced
+        show-scrollbar="{{false}}"
+      >
+        <view class="member-strip__inner">
+          <view
+            wx:for="{{memberTabs}}"
+            wx:key="key"
+            id="mtab-{{index}}"
+            class="member-strip__item {{memberTabIndex === index ? 'is-active' : ''}} {{item.status === 'left' ? 'is-left' : ''}}"
+            data-index="{{index}}"
+            bind:tap="onTapMemberTab"
+          >
+            <view wx:if="{{item.type === 'all'}}" class="member-strip__all">全部</view>
+            <view wx:else class="member-strip__avatar" style="background-color: {{item.color}};">
+              <image wx:if="{{item.avatarUrl}}" src="{{item.avatarUrl}}" class="member-strip__avatar-img" mode="aspectFill" lazy-load />
+              <text wx:else class="member-strip__avatar-fallback">{{item.initial}}</text>
+            </view>
+            <view class="member-strip__indicator"></view>
+          </view>
         </view>
-      </view>
+      </scroll-view>
 
-      <!--
-        数据视图区（不使用 swiper · 因 swiper 必须定高，会裁剪超出内容）。
-        COSTRA-229 实装多成员滑动时，再以 scroll-view 横向 + scroll-into-view
-        或动态测量高度的 swiper 重构（事实源: design_spec.md §6.4）。
-      -->
-      <!-- ═══════ 月度视角 ═══════ -->
-      <view wx:if="{{dimension === 'monthly'}}">
-            <!-- 宏观区 -->
-            <view class="macro" wx:if="{{!isEmpty || loading}}">
-              <view class="macro__primary tnum">{{monthlyTotalExpense}}</view>
-              <view class="macro__secondary">
-                <text class="macro__sec-label">收入</text>
-                <text class="macro__sec-value tnum">{{monthlyTotalIncome}}</text>
-                <text class="macro__sec-divider">·</text>
-                <text class="macro__sec-label">结余</text>
-                <text class="macro__sec-value tnum">{{monthlyTotalBalance}}</text>
-              </view>
-              <!-- 折线图（静态） -->
-              <view class="macro__chart">
-                <trend-line-chart
-                  data="{{monthlyTrend}}"
-                  height="{{160}}"
-                  color="#1c1b1a"
-                  fill-gradient="{{true}}"
-                />
-              </view>
+      <!-- ═══════ 数据区 ═══════ -->
+
+      <!-- 多人账本横向 scroll-view（scroll-snap 实现 pane 切换） -->
+      <scroll-view
+        wx:if="{{familyKind === 'shared' && memberTabs.length > 1}}"
+        class="member-pages"
+        scroll-x
+        scroll-into-view="{{dataScrollIntoView}}"
+        scroll-with-animation
+        enhanced
+        show-scrollbar="{{false}}"
+        bindscroll="onPagesScroll"
+      >
+        <view class="member-pages__track">
+          <block wx:for="{{memberTabs}}" wx:key="key" wx:for-item="member" wx:for-index="paneIdx">
+            <view id="mpane-{{paneIdx}}" class="member-pages__pane">
+
+              <!-- 月度视角 -->
+              <block wx:if="{{dimension === 'monthly'}}">
+                <include src="./tpl-monthly-pane.wxml" />
+              </block>
+
+              <!-- 年度视角 -->
+              <block wx:else>
+                <include src="./tpl-yearly-pane.wxml" />
+              </block>
+
             </view>
+          </block>
+        </view>
+      </scroll-view>
 
-            <!-- 摘要 4 格 -->
-            <view class="summary-grid" wx:if="{{!isEmpty}}">
-              <view class="summary-grid__item" wx:for="{{monthlySummary}}" wx:key="label">
-                <view class="summary-grid__value tnum">{{item.value}}</view>
-                <view class="summary-grid__label">{{item.label}}</view>
-              </view>
-            </view>
-
-            <!-- 一级分类排行 -->
-            <view class="rank" wx:if="{{!isEmpty && monthlyL1.length > 0}}">
-              <view class="rank__title">分类排行</view>
-              <view class="rank__list">
-                <block wx:for="{{monthlyL1}}" wx:key="category_id" wx:for-item="l1">
-                  <view
-                    class="rank__row {{l1.expanded ? 'rank__row--open' : ''}}"
-                    data-id="{{l1.category_id}}"
-                    bind:tap="onTapL1"
-                  >
-                    <view class="rank__row-main">
-                      <view class="rank__icon">{{l1.icon}}</view>
-                      <view class="rank__name">{{l1.category_name}}</view>
-                      <view class="rank__amount tnum">{{l1.amount}}</view>
-                    </view>
-                    <view class="rank__bar">
-                      <view class="rank__bar-fill" style="width: {{l1.ratio_bps / 100}}%;"></view>
-                    </view>
-                  </view>
-
-                  <!-- L2 二级展开 -->
-                  <view class="l2" wx:if="{{l1.expanded}}">
-                    <view class="l2__loading" wx:if="{{l1.loadingL2}}">加载中...</view>
-                    <block wx:elif="{{l1.l2Items.length > 0}}">
-                      <block wx:for="{{l1.l2Items}}" wx:key="category_id" wx:for-item="l2">
-                        <view
-                          class="l2__row {{l2.expanded ? 'l2__row--open' : ''}}"
-                          data-l1id="{{l1.category_id}}"
-                          data-id="{{l2.category_id}}"
-                          catch:tap="onTapL2"
-                        >
-                          <view class="l2__row-main">
-                            <view class="l2__icon">{{l2.icon}}</view>
-                            <view class="l2__name">{{l2.category_name}}</view>
-                            <view class="l2__amount tnum">{{l2.amount}}</view>
-                          </view>
-                          <view class="l2__bar">
-                            <view class="l2__bar-fill" style="width: {{l2.ratio_bps / 100}}%;"></view>
-                          </view>
-                        </view>
-
-                        <!-- L3 单笔明细 -->
-                        <view class="l3" wx:if="{{l2.expanded}}" catch:tap="noop">
-                          <view class="l3__loading" wx:if="{{l2.loadingL3}}">加载中...</view>
-                          <block wx:elif="{{l2.l3Items.length > 0}}">
-                            <view class="l3__row" wx:for="{{l2.l3Items}}" wx:key="entry_id" wx:for-item="l3">
-                              <view class="l3__avatar">
-                                <image wx:if="{{l3.avatarUrl}}" class="l3__avatar-img" src="{{l3.avatarUrl}}" mode="aspectFill" lazy-load />
-                                <view wx:else class="l3__avatar-placeholder">{{l3.initial}}</view>
-                              </view>
-                              <view class="l3__main">
-                                <view class="l3__top">
-                                  <text class="l3__date">{{l3.dateLabel}}</text>
-                                  <text class="l3__note">{{l3.note || '-'}}</text>
-                                  <text class="l3__amount tnum">{{l3.amount}}</text>
-                                </view>
-                                <view class="l3__bottom">
-                                  <text class="l3__time">{{l3.timeLabel}}</text>
-                                  <text class="l3__shared" wx:if="{{l3.shared}}">公共</text>
-                                </view>
-                              </view>
-                            </view>
-                            <view class="l3__more" wx:if="{{l2.l3HasMore}}">
-                              还有 {{l2.l3MoreCount}} 笔未显示...
-                            </view>
-                          </block>
-                          <view class="l3__empty" wx:else>暂无明细</view>
-                        </view>
-                      </block>
-                      <view class="l2__more" wx:if="{{l1.l2HasMore}}">
-                        还有 {{l1.l2MoreCount}} 项较小支出未显示...
-                      </view>
-                    </block>
-                    <view class="l2__empty" wx:else>暂无子分类</view>
-                  </view>
-                </block>
-              </view>
-              <view class="rank__more" wx:if="{{monthlyL1HasMore}}">
-                还有 {{monthlyL1MoreCount}} 项较小支出未显示...
-              </view>
-            </view>
-
-            <!-- 空态 -->
-            <view class="empty" wx:if="{{isEmpty && !loading}}">
-              <text class="empty__text">本月暂无收支记录</text>
-            </view>
-          </view>
-
-          <!-- ═══════ 年度视角 ═══════ -->
-          <view wx:else>
-            <view class="macro" wx:if="{{!isEmpty || loading}}">
-              <view class="macro__primary tnum">{{yearlyTotalExpense}}</view>
-              <view class="macro__secondary">
-                <text class="macro__sec-label">收入</text>
-                <text class="macro__sec-value tnum">{{yearlyTotalIncome}}</text>
-                <text class="macro__sec-divider">·</text>
-                <text class="macro__sec-label">结余</text>
-                <text class="macro__sec-value tnum">{{yearlyTotalBalance}}</text>
-              </view>
-              <view class="macro__chart">
-                <trend-line-chart
-                  data="{{yearlyTrend}}"
-                  height="{{160}}"
-                  color="#1c1b1a"
-                  fill-gradient="{{true}}"
-                />
-              </view>
-            </view>
-
-            <view class="summary-grid" wx:if="{{!isEmpty}}">
-              <view class="summary-grid__item" wx:for="{{yearlySummary}}" wx:key="label">
-                <view class="summary-grid__value tnum">{{item.value}}</view>
-                <view class="summary-grid__label">{{item.label}}</view>
-              </view>
-            </view>
-
-            <!-- 12 月简表 -->
-            <view class="month-list" wx:if="{{!isEmpty}}">
-              <view class="month-list__title">月度流水</view>
-              <view
-                wx:for="{{yearlyMonths}}"
-                wx:key="month"
-                class="month-list__row {{item.isEmpty ? 'month-list__row--empty' : ''}}"
-                data-month="{{item.month}}"
-                bind:tap="onTapYearlyMonth"
-              >
-                <text class="month-list__label">{{item.label}}</text>
-                <view class="month-list__metrics">
-                  <text class="month-list__metric tnum">支 {{item.expense}}</text>
-                  <text class="month-list__metric tnum">收 {{item.income}}</text>
-                  <text class="month-list__metric tnum">余 {{item.balance}}</text>
-                </view>
-                <text class="month-list__arrow">›</text>
-              </view>
-            </view>
-
-            <!-- 年度排行（同月度结构） -->
-            <view class="rank" wx:if="{{!isEmpty && yearlyL1.length > 0}}">
-              <view class="rank__title">分类排行</view>
-              <view class="rank__list">
-                <block wx:for="{{yearlyL1}}" wx:key="category_id" wx:for-item="l1">
-                  <view
-                    class="rank__row {{l1.expanded ? 'rank__row--open' : ''}}"
-                    data-id="{{l1.category_id}}"
-                    bind:tap="onTapL1"
-                  >
-                    <view class="rank__row-main">
-                      <view class="rank__icon">{{l1.icon}}</view>
-                      <view class="rank__name">{{l1.category_name}}</view>
-                      <view class="rank__amount tnum">{{l1.amount}}</view>
-                    </view>
-                    <view class="rank__bar">
-                      <view class="rank__bar-fill" style="width: {{l1.ratio_bps / 100}}%;"></view>
-                    </view>
-                  </view>
-
-                  <view class="l2" wx:if="{{l1.expanded}}">
-                    <view class="l2__loading" wx:if="{{l1.loadingL2}}">加载中...</view>
-                    <block wx:elif="{{l1.l2Items.length > 0}}">
-                      <block wx:for="{{l1.l2Items}}" wx:key="category_id" wx:for-item="l2">
-                        <view
-                          class="l2__row {{l2.expanded ? 'l2__row--open' : ''}}"
-                          data-l1id="{{l1.category_id}}"
-                          data-id="{{l2.category_id}}"
-                          catch:tap="onTapL2"
-                        >
-                          <view class="l2__row-main">
-                            <view class="l2__icon">{{l2.icon}}</view>
-                            <view class="l2__name">{{l2.category_name}}</view>
-                            <view class="l2__amount tnum">{{l2.amount}}</view>
-                          </view>
-                          <view class="l2__bar">
-                            <view class="l2__bar-fill" style="width: {{l2.ratio_bps / 100}}%;"></view>
-                          </view>
-                        </view>
-
-                        <view class="l3" wx:if="{{l2.expanded}}" catch:tap="noop">
-                          <view class="l3__loading" wx:if="{{l2.loadingL3}}">加载中...</view>
-                          <block wx:elif="{{l2.l3Items.length > 0}}">
-                            <view class="l3__row" wx:for="{{l2.l3Items}}" wx:key="entry_id" wx:for-item="l3">
-                              <view class="l3__avatar">
-                                <image wx:if="{{l3.avatarUrl}}" class="l3__avatar-img" src="{{l3.avatarUrl}}" mode="aspectFill" lazy-load />
-                                <view wx:else class="l3__avatar-placeholder">{{l3.initial}}</view>
-                              </view>
-                              <view class="l3__main">
-                                <view class="l3__top">
-                                  <text class="l3__date">{{l3.dateLabel}}</text>
-                                  <text class="l3__note">{{l3.note || '-'}}</text>
-                                  <text class="l3__amount tnum">{{l3.amount}}</text>
-                                </view>
-                                <view class="l3__bottom">
-                                  <text class="l3__time">{{l3.timeLabel}}</text>
-                                  <text class="l3__shared" wx:if="{{l3.shared}}">公共</text>
-                                </view>
-                              </view>
-                            </view>
-                            <view class="l3__more" wx:if="{{l2.l3HasMore}}">
-                              还有 {{l2.l3MoreCount}} 笔未显示...
-                            </view>
-                          </block>
-                          <view class="l3__empty" wx:else>暂无明细</view>
-                        </view>
-                      </block>
-                      <view class="l2__more" wx:if="{{l1.l2HasMore}}">
-                        还有 {{l1.l2MoreCount}} 项较小支出未显示...
-                      </view>
-                    </block>
-                    <view class="l2__empty" wx:else>暂无子分类</view>
-                  </view>
-                </block>
-              </view>
-              <view class="rank__more" wx:if="{{yearlyL1HasMore}}">
-                还有 {{yearlyL1MoreCount}} 项较小支出未显示...
-              </view>
-            </view>
-
-            <view class="empty" wx:if="{{isEmpty && !loading}}">
-              <text class="empty__text">本年暂无收支记录</text>
-            </view>
-          </view>
+      <!-- 单人账本：直接渲染单 pane（无横向 scroll-view） -->
+      <block wx:elif="{{memberTabs.length > 0}}">
+        <block wx:for="{{memberTabs}}" wx:key="key" wx:for-item="member" wx:for-index="paneIdx">
+          <block wx:if="{{paneIdx === 0}}">
+            <!-- 月度视角 -->
+            <block wx:if="{{dimension === 'monthly'}}">
+              <include src="./tpl-monthly-pane.wxml" />
+            </block>
+            <!-- 年度视角 -->
+            <block wx:else>
+              <include src="./tpl-yearly-pane.wxml" />
+            </block>
+          </block>
+        </block>
+      </block>
 
       <view class="bottom-spacer"></view>
   </view>

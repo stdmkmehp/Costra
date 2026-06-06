@@ -50,6 +50,8 @@ export interface MonthlyStatistics {
   daily_trend: DailyTrendItem[];
   extremes: MonthlyExtremes;
   category_ranks: StatCategoryRankItem[];
+  /** COSTRA-260: null 表示全部，string 表示按 user_id 过滤 */
+  filtered_user_id?: string | null;
 }
 
 export interface MonthlyTrendItem {
@@ -84,6 +86,8 @@ export interface YearlyStatistics {
   monthly_trend: MonthlyTrendItem[];
   extremes: YearlyExtremes;
   category_ranks: StatCategoryRankItem[];
+  /** COSTRA-260: null 表示全部，string 表示按 user_id 过滤 */
+  filtered_user_id?: string | null;
 }
 
 export interface DrillDownLevel2Response {
@@ -190,55 +194,58 @@ export function invalidateStatisticsCache(familyId: string): void {
 
 /**
  * 月度统计
- * GET /v1/families/{id}/statistics/monthly?month=YYYY-MM[&top_n=20]
+ * GET /v1/families/{id}/statistics/monthly?month=YYYY-MM[&top_n=20][&user_id=...]
  */
 export async function getMonthlyStatistics(
   familyId: string,
   month: string,
-  options?: { topN?: number },
+  options?: { topN?: number; userId?: string },
 ): Promise<MonthlyStatistics> {
   const params: Record<string, string | number> = { month };
   if (options?.topN) params.top_n = options.topN;
+  if (options?.userId) params.user_id = options.userId;
   const data = await request<MonthlyStatistics>({
     method: 'GET',
     path: `/families/${familyId}/statistics/monthly`,
     query: params,
   });
-  setCacheLRU(_monthlyCache, monthlyKey(familyId, month), data);
+  setCacheLRU(_monthlyCache, monthlyKey(familyId, month, options?.userId), data);
   return data;
 }
 
 /**
  * 年度统计
- * GET /v1/families/{id}/statistics/yearly?year=YYYY[&top_n=20]
+ * GET /v1/families/{id}/statistics/yearly?year=YYYY[&top_n=20][&user_id=...]
  */
 export async function getYearlyStatistics(
   familyId: string,
   year: string,
-  options?: { topN?: number },
+  options?: { topN?: number; userId?: string },
 ): Promise<YearlyStatistics> {
   const params: Record<string, string | number> = { year };
   if (options?.topN) params.top_n = options.topN;
+  if (options?.userId) params.user_id = options.userId;
   const data = await request<YearlyStatistics>({
     method: 'GET',
     path: `/families/${familyId}/statistics/yearly`,
     query: params,
   });
-  setCacheLRU(_yearlyCache, yearlyKey(familyId, year), data);
+  setCacheLRU(_yearlyCache, yearlyKey(familyId, year, options?.userId), data);
   return data;
 }
 
 /**
  * 下钻：二级分类排行
- * GET /v1/families/{id}/statistics/drill-down?month|year=...&level=2&parent_category_id=...
+ * GET /v1/families/{id}/statistics/drill-down?month|year=...&level=2&parent_category_id=...[&user_id=...]
  */
 export async function drillDownLevel2(
   familyId: string,
   scope: { month?: string; year?: string },
   parentCategoryId: string,
-  options?: { limit?: number; offset?: number },
+  options?: { limit?: number; offset?: number; userId?: string },
 ): Promise<DrillDownLevel2Response> {
-  const cacheKey = `${familyId}:${scope.month ?? scope.year}:L2:${parentCategoryId}:${options?.limit ?? 10}:${options?.offset ?? 0}`;
+  const userId = options?.userId;
+  const cacheKey = `${familyId}:${scope.month ?? scope.year}:L2:${parentCategoryId}:${userId ?? 'all'}:${options?.limit ?? 10}:${options?.offset ?? 0}`;
   const cached = _drillCache.get(cacheKey);
   if (cached && cached.level === 2) return cached;
 
@@ -250,6 +257,7 @@ export async function drillDownLevel2(
   if (scope.year) params.year = scope.year;
   if (options?.limit != null) params.limit = options.limit;
   if (options?.offset != null) params.offset = options.offset;
+  if (userId) params.user_id = userId;
 
   const data = await request<DrillDownLevel2Response>({
     method: 'GET',
@@ -262,15 +270,16 @@ export async function drillDownLevel2(
 
 /**
  * 下钻：单笔明细
- * GET /v1/families/{id}/statistics/drill-down?month|year=...&level=3&category_id=...
+ * GET /v1/families/{id}/statistics/drill-down?month|year=...&level=3&category_id=...[&user_id=...]
  */
 export async function drillDownLevel3(
   familyId: string,
   scope: { month?: string; year?: string },
   categoryId: string,
-  options?: { limit?: number; offset?: number },
+  options?: { limit?: number; offset?: number; userId?: string },
 ): Promise<DrillDownLevel3Response> {
-  const cacheKey = `${familyId}:${scope.month ?? scope.year}:L3:${categoryId}:${options?.limit ?? 10}:${options?.offset ?? 0}`;
+  const userId = options?.userId;
+  const cacheKey = `${familyId}:${scope.month ?? scope.year}:L3:${categoryId}:${userId ?? 'all'}:${options?.limit ?? 10}:${options?.offset ?? 0}`;
   const cached = _drillCache.get(cacheKey);
   if (cached && cached.level === 3) return cached;
 
@@ -282,6 +291,7 @@ export async function drillDownLevel3(
   if (scope.year) params.year = scope.year;
   if (options?.limit != null) params.limit = options.limit;
   if (options?.offset != null) params.offset = options.offset;
+  if (userId) params.user_id = userId;
 
   const data = await request<DrillDownLevel3Response>({
     method: 'GET',

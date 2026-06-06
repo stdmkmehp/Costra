@@ -1,5 +1,6 @@
 /* pages/statistics/index.wxss · 统计页（Tab2） */
-/* 卡号: COSTRA-225 · 设计源: design/ui/design_spec.md §6.4 */
+/* 卡号: COSTRA-261 · 成员维度横滑切换改造 */
+/* 设计源: design/ui/design_spec.md §6.4 */
 
 page {
   background: #f1f2ec;
@@ -53,13 +54,12 @@ page {
   color: var(--color-role-text-tertiary, rgba(28,27,26,0.28));
 }
 
-/* ─── 内容区（页面级滚动 · 不使用 scroll-view）───────────────────── */
+/* ─── 内容区（页面级滚动）───────────────────────────────────────── */
 .stat__content {
   padding: 24rpx 0 200rpx;
-  /* padding-top 由 wxml 内联补足导航栏高度 */
 }
 
-/* ─── 时间维度条 · 与家庭页严格一致 ─────────────────────────────────── */
+/* ─── 时间维度条 ─────────────────────────────────────────────────── */
 .time-bar {
   display: flex;
   align-items: center;
@@ -109,7 +109,7 @@ page {
   color: var(--color-role-text-tertiary, rgba(28,27,26,0.28));
 }
 
-/* 月度/年度切换 · 与家庭页一致 */
+/* 月度/年度切换 */
 .dim-switch {
   display: flex;
   align-items: center;
@@ -133,23 +133,107 @@ page {
   font-weight: 500;
 }
 
-/* ─── 成员 tabs（multi 模式 · 仅 1 屏时不显示） ────────────────────────── */
-.member-tabs {
-  display: flex;
-  padding: 0 32rpx 16rpx;
-  gap: 24rpx;
+/* ─── 成员指示器条（COSTRA-261） ─────────────────────────────────── */
+.member-strip {
+  white-space: nowrap;
+  padding: 0 16rpx 16rpx;
 }
 
-.member-tabs__item {
+.member-strip__inner {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 32rpx;
+  padding: 0 16rpx;
+}
+
+.member-strip__item {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 4rpx 0;
+  opacity: 0.45;
+  transition: opacity 0.2s;
+}
+
+.member-strip__item.is-active {
+  opacity: 1;
+}
+
+.member-strip__item.is-left {
+  filter: grayscale(1);
+  opacity: 0.35;
+}
+
+.member-strip__item.is-left.is-active {
+  opacity: 0.7;
+}
+
+.member-strip__all {
   font-size: 26rpx;
-  color: rgba(28, 27, 26, 0.4);
-  padding: 8rpx 0;
+  font-weight: 600;
+  color: #1c1b1a;
+  line-height: 56rpx;
+  padding: 0 8rpx;
 }
 
-.member-tabs__item--active {
-  color: #1c1b1a;
-  font-weight: 500;
-  border-bottom: 4rpx solid #1c1b1a;
+.member-strip__avatar {
+  width: 56rpx;
+  height: 56rpx;
+  border-radius: 50%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.member-strip__avatar-img {
+  width: 100%;
+  height: 100%;
+}
+
+.member-strip__avatar-fallback {
+  color: #fff;
+  font-size: 22rpx;
+  font-weight: 600;
+}
+
+.member-strip__indicator {
+  margin-top: 8rpx;
+  width: 24rpx;
+  height: 4rpx;
+  background: transparent;
+  border-radius: 2rpx;
+  transition: background 0.2s;
+}
+
+.member-strip__item.is-active .member-strip__indicator {
+  background: #1c1b1a;
+}
+
+/* ─── 横向数据区（COSTRA-261） ───────────────────────────────────── */
+.member-pages {
+  width: 100%;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+
+.member-pages__track {
+  display: flex;
+  flex-direction: row;
+}
+
+.member-pages__pane {
+  width: 100vw;
+  flex: none;
+  scroll-snap-align: start;
+}
+
+/* pane 内 loading */
+.pane-loading {
+  padding: 80rpx 0;
+  text-align: center;
+  font-size: 24rpx;
+  color: rgba(28, 27, 26, 0.4);
 }
 
 /* ─── 宏观区 ────────────────────────────────────────────────────────── */

@@ -1,11 +1,12 @@
 // pages/statistics/index.ts · 统计页（Tab2）
-// 卡号: COSTRA-225 · 统计页月度视角实装
+// 卡号: COSTRA-261 · 成员维度横滑切换主体改造
 // 设计源: design/ui/design_spec.md §6.4 + design/ui/interaction_flow.md §5
-// 配套后端: COSTRA-224（statistics API）· 公共组件: trend-line-chart（COSTRA-230）
+// 配套后端: COSTRA-260（统计 API user_id 参数）· 公共组件: trend-line-chart（COSTRA-230）
 // 金额 ADR-0002: 全部走 decimal.js（utils/money.ts toYuan）
 
 import { toYuan } from '../../utils/money';
 import { getSafeAreaMetrics } from '../../utils/safeArea';
+import { getMemberColorBySlot } from '../../utils/memberColor';
 import {
   getActiveFamilyId,
   getActiveLedgerId,
@@ -16,8 +17,8 @@ import {
 } from '../../services/family';
 import { triggerOnPageShow, syncOnce } from '../../services/syncScheduler';
 import { eventBus, EventNames, type SyncDonePayload } from '../../services/eventBus';
-import { hasValidSession } from '../../services/auth';
-import { getFamilies, type FamilyItem } from '../../services/familyApi';
+import { hasValidSession, getToken } from '../../services/auth';
+import { getFamilies, getFamilyMembers, type FamilyItem, type FamilyMember } from '../../services/familyApi';
 import {
   getMonthlyStatistics,
   getYearlyStatistics,
@@ -37,6 +38,8 @@ import {
 interface AppWithBootstrap { bootstrapPromise: Promise<void> }
 
 // ─── 类型 ────────────────────────────────────────────────────────────────────
+
+type MemberKey = string; // 'all' | userId
 
 interface SummaryGridItem {
   label: string;
@@ -61,7 +64,6 @@ interface L1Display {
   ratio_bps: number;
   expanded: boolean;
   loadingL2: boolean;
-  /** L2 子分类排行（展开后填充） */
   l2Items: L2Display[];
   l2HasMore: boolean;
   l2MoreCount: number;
@@ -83,10 +85,10 @@ interface L2Display {
 
 interface L3Display {
   entry_id: string;
-  amount: string;          // 已格式化
+  amount: string;
   note: string;
-  dateLabel: string;       // 6月3日
-  timeLabel: string;       // 14:30（24 小时制）
+  dateLabel: string;
+  timeLabel: string;
   shared: boolean;
   nickname: string;
   avatarUrl: string;
@@ -94,8 +96,42 @@ interface L3Display {
 }
 
 interface MemberTabItem {
-  key: string;       // 'all' | userId
-  label: string;
+  key: MemberKey;          // 'all' 或 userId
+  type: 'all' | 'member';
+  label: string;           // '全部' / nickname
+  avatarUrl: string;
+  initial: string;         // 头像兜底首字
+  color: string;           // 来自 getMemberColorBySlot
+  status: 'active' | 'left';
+}
+
+interface MonthlyView {
+  totalExpense: string;
+  totalIncome: string;
+  totalBalance: string;
+  trend: number[];
+  summary: SummaryGridItem[];
+  l1: L1Display[];
+  l1HasMore: boolean;
+  l1MoreCount: number;
+  isEmpty: boolean;
+  loading: boolean;
+  loaded: boolean;
+}
+
+interface YearlyView {
+  totalExpense: string;
+  totalIncome: string;
+  totalBalance: string;
+  trend: number[];
+  summary: SummaryGridItem[];
+  months: MonthRow[];
+  l1: L1Display[];
+  l1HasMore: boolean;
+  l1MoreCount: number;
+  isEmpty: boolean;
+  loading: boolean;
+  loaded: boolean;
 }
 
 // ─── 辅助函数 ────────────────────────────────────────────────────────────────
@@ -166,6 +202,24 @@ const L1_VISIBLE = 6;
 const L2_VISIBLE = 6;
 const L3_VISIBLE = 10;
 
+/** 初始 MonthlyView */
+function emptyMonthlyView(): MonthlyView {
+  return {
+    totalExpense: '¥0.00', totalIncome: '¥0.00', totalBalance: '¥0.00',
+    trend: [], summary: [], l1: [], l1HasMore: false, l1MoreCount: 0,
+    isEmpty: false, loading: false, loaded: false,
+  };
+}
+
+/** 初始 YearlyView */
+function emptyYearlyView(): YearlyView {
+  return {
+    totalExpense: '¥0.00', totalIncome: '¥0.00', totalBalance: '¥0.00',
+    trend: [], summary: [], months: [], l1: [], l1HasMore: false, l1MoreCount: 0,
+    isEmpty: false, loading: false, loaded: false,
+  };
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 Page({
@@ -186,35 +240,20 @@ Page({
     monthDisplay: '',
     yearDisplay: '',
 
-    // 加载状态
+    // 加载状态（全局，仅用于首屏 skeleton / 无成员条的单人账本）
     loading: true,
 
-    // 月度数据（rendered）
-    monthlyTotalExpense: '¥0.00',
-    monthlyTotalIncome: '¥0.00',
-    monthlyTotalBalance: '¥0.00',
-    monthlyTrend: [] as number[],     // 传给 trend-line-chart
-    monthlySummary: [] as SummaryGridItem[],
-    monthlyL1: [] as L1Display[],
-    monthlyL1HasMore: false,
-    monthlyL1MoreCount: 0,
-
-    // 年度数据
-    yearlyTotalExpense: '¥0.00',
-    yearlyTotalIncome: '¥0.00',
-    yearlyTotalBalance: '¥0.00',
-    yearlyTrend: [] as number[],
-    yearlySummary: [] as SummaryGridItem[],
-    yearlyMonths: [] as MonthRow[],
-    yearlyL1: [] as L1Display[],
-    yearlyL1HasMore: false,
-    yearlyL1MoreCount: 0,
-
-    // 成员 swiper 框架（COSTRA-229 框架预留 · 当前仅展示「全部」）
-    memberTabs: [{ key: 'all', label: '全部' }] as MemberTabItem[],
+    // 成员维度
+    memberTabs: [] as MemberTabItem[],
     memberTabIndex: 0,
+    memberScrollIntoView: '',
+    dataScrollIntoView: '',
 
-    // 空态
+    // 按成员索引的视图数据
+    monthlyByMember: {} as Record<MemberKey, MonthlyView>,
+    yearlyByMember: {} as Record<MemberKey, YearlyView>,
+
+    // 顶层空态（仅在当前选中成员维度判定）
     isEmpty: false,
   },
 
@@ -225,11 +264,14 @@ Page({
   _entrySavedHandler: null as (() => void) | null,
   _entryUpdatedHandler: null as (() => void) | null,
   _loadingPromise: null as Promise<void> | null,
+  _windowWidthPx: 375,
+  _lastScrollHandledIdx: -1,
 
   // ─── 生命周期 ──────────────────────────────────────────────────────────────
 
   onLoad() {
     const m = getSafeAreaMetrics();
+    this._windowWidthPx = wx.getWindowInfo().windowWidth;
     this.setData({
       statusBarHeight: m.statusBarHeight,
       navBarHeight: m.navBarHeight,
@@ -311,20 +353,80 @@ Page({
       familyKind: familyKind || 'personal',
     });
 
-    // 多人账本：构建 memberTabs 框架（仅"全部"一档 · 数据 R1 不按成员拉）
-    // COSTRA-229 后续扩展：从 getFamilyMembers 拉 active 成员填充 memberTabs，
-    // 触发 swiper change 时按成员拉数据。
-    if (familyKind === 'shared') {
-      this.setData({
-        memberTabs: [{ key: 'all', label: '全部' }],
-        memberTabIndex: 0,
-      });
+    // 构建 memberTabs
+    if (familyKind === 'shared' && this._familyId) {
+      try {
+        const members = await getFamilyMembers(this._familyId);
+        const tabs = this._buildMemberTabs(members);
+        this.setData({
+          memberTabs: tabs,
+          memberTabIndex: 0,
+          memberScrollIntoView: 'mtab-0',
+          dataScrollIntoView: 'mpane-0',
+        });
+      } catch {
+        // 拉成员失败 → 降级为仅"全部"
+        this.setData({
+          memberTabs: [this._makeAllTab()],
+          memberTabIndex: 0,
+        });
+      }
     } else {
+      // 单人账本：只有"全部"
       this.setData({
-        memberTabs: [{ key: 'all', label: '全部' }],
+        memberTabs: [this._makeAllTab()],
         memberTabIndex: 0,
       });
     }
+  },
+
+  /** 构造"全部"tab 项 */
+  _makeAllTab(): MemberTabItem {
+    return {
+      key: 'all', type: 'all', label: '全部',
+      avatarUrl: '', initial: '', color: '#1c1b1a', status: 'active',
+    };
+  },
+
+  /**
+   * 按 D5 排序规则构造 memberTabs：
+   * [全部] → 自己（优先） → active 成员（color_slot 升序） → left 成员（left_at 升序）
+   */
+  _buildMemberTabs(members: FamilyMember[]): MemberTabItem[] {
+    const currentUserId = getToken()?.raw?.user?.id || '';
+
+    const active = members.filter((m) => m.status === 'active');
+    const left = members.filter((m) => m.status === 'left');
+
+    // active 排序：自己优先 → color_slot 升序
+    active.sort((a, b) => {
+      if (a.user_id === currentUserId) return -1;
+      if (b.user_id === currentUserId) return 1;
+      return (a.color_slot ?? 99) - (b.color_slot ?? 99);
+    });
+
+    // left 排序：left_at 升序
+    left.sort((a, b) => {
+      const ta = a.left_at ? new Date(a.left_at).getTime() : 0;
+      const tb = b.left_at ? new Date(b.left_at).getTime() : 0;
+      return ta - tb;
+    });
+
+    const tabs: MemberTabItem[] = [this._makeAllTab()];
+
+    for (const m of [...active, ...left]) {
+      tabs.push({
+        key: m.user_id,
+        type: 'member',
+        label: m.nickname || '未知',
+        avatarUrl: m.avatar_url || '',
+        initial: (m.nickname || '?')[0],
+        color: getMemberColorBySlot(m.color_slot),
+        status: m.status,
+      });
+    }
+
+    return tabs;
   },
 
   async _loadData() {
@@ -339,53 +441,89 @@ Page({
       this.setData({ loading: false, isEmpty: true });
       return;
     }
+    const memberKey = this._getCurrentMemberKey();
+    await this._ensureMemberLoaded(memberKey);
+    this.setData({ loading: false });
+  },
+
+  /** 获取当前选中的 memberKey */
+  _getCurrentMemberKey(): MemberKey {
+    const tabs = this.data.memberTabs;
+    const idx = this.data.memberTabIndex;
+    if (!tabs.length) return 'all';
+    return tabs[idx]?.key ?? 'all';
+  },
+
+  /** 懒加载：如果该成员在当前维度还没 loaded 过则拉数据 */
+  async _ensureMemberLoaded(memberKey: MemberKey) {
     if (this.data.dimension === 'monthly') {
-      await this._loadMonthly();
+      const view = this.data.monthlyByMember[memberKey];
+      if (view && view.loaded) return;
+      await this._loadMonthlyForMember(memberKey);
     } else {
-      await this._loadYearly();
+      const view = this.data.yearlyByMember[memberKey];
+      if (view && view.loaded) return;
+      await this._loadYearlyForMember(memberKey);
     }
   },
 
-  async _loadMonthly() {
+  async _loadMonthlyForMember(memberKey: MemberKey) {
     const month = this.data.currentMonth;
+    const userId = memberKey === 'all' ? undefined : memberKey;
+
+    // 标记 loading
+    const viewInit = this.data.monthlyByMember[memberKey] || emptyMonthlyView();
+    viewInit.loading = true;
+    this.setData({ [`monthlyByMember.${memberKey}`]: viewInit });
+
     // SWR：先用缓存渲染
-    const cached = getCachedMonthly(this._familyId, month);
+    const cached = getCachedMonthly(this._familyId, month, userId);
     if (cached) {
-      this._buildMonthlyDisplay(cached);
-    } else {
-      this.setData({ loading: true });
+      this._buildMonthlyDisplay(cached, memberKey);
     }
+
     try {
-      const fresh = await getMonthlyStatistics(this._familyId, month);
-      this._buildMonthlyDisplay(fresh);
+      const fresh = await getMonthlyStatistics(this._familyId, month, { userId });
+      this._buildMonthlyDisplay(fresh, memberKey);
     } catch (err) {
       console.error('[statistics] loadMonthly failed', err);
-      this.setData({ loading: false });
+      this.setData({
+        [`monthlyByMember.${memberKey}.loading`]: false,
+        [`monthlyByMember.${memberKey}.loaded`]: true,
+      });
       wx.showToast({ title: '数据加载失败', icon: 'none' });
     }
   },
 
-  async _loadYearly() {
+  async _loadYearlyForMember(memberKey: MemberKey) {
     const year = this.data.currentYear;
-    const cached = getCachedYearly(this._familyId, year);
+    const userId = memberKey === 'all' ? undefined : memberKey;
+
+    const viewInit = this.data.yearlyByMember[memberKey] || emptyYearlyView();
+    viewInit.loading = true;
+    this.setData({ [`yearlyByMember.${memberKey}`]: viewInit });
+
+    const cached = getCachedYearly(this._familyId, year, userId);
     if (cached) {
-      this._buildYearlyDisplay(cached);
-    } else {
-      this.setData({ loading: true });
+      this._buildYearlyDisplay(cached, memberKey);
     }
+
     try {
-      const fresh = await getYearlyStatistics(this._familyId, year);
-      this._buildYearlyDisplay(fresh);
+      const fresh = await getYearlyStatistics(this._familyId, year, { userId });
+      this._buildYearlyDisplay(fresh, memberKey);
     } catch (err) {
       console.error('[statistics] loadYearly failed', err);
-      this.setData({ loading: false });
+      this.setData({
+        [`yearlyByMember.${memberKey}.loading`]: false,
+        [`yearlyByMember.${memberKey}.loaded`]: true,
+      });
       wx.showToast({ title: '数据加载失败', icon: 'none' });
     }
   },
 
   // ─── 月度展示构建 ──────────────────────────────────────────────────────────
 
-  _buildMonthlyDisplay(s: MonthlyStatistics) {
+  _buildMonthlyDisplay(s: MonthlyStatistics, memberKey: MemberKey) {
     const { totals, daily_trend, extremes, category_ranks } = s;
 
     const summary: SummaryGridItem[] = [
@@ -395,38 +533,37 @@ Page({
       { label: '记账笔数', value: `${totals.entry_count}` },
     ];
 
-    // 保留旧展开态：切 Tab 回到统计页时，新数据进来不应把已展开的下钻列表关掉。
-    // 参考家庭页 detailRows 的做法，用旧列表的 category_id 索引把展开相关字段（expanded
-    // / l2Items / l2HasMore / l2MoreCount）合并到新 L1 上。
-    // 月份/年份/维度切换、SYNC_DONE 等场景已在调用方主动清空展开态，此处的 merge 不会
-    // 错误地把陈旧的 L2/L3 数据带到新场景下。
+    // 保留旧展开态
+    const prevList = this.data.monthlyByMember[memberKey]?.l1 ?? [];
     const l1: L1Display[] = category_ranks
       .slice(0, L1_VISIBLE)
-      .map((c) => this._buildL1Display(c, this.data.monthlyL1));
+      .map((c) => this._buildL1Display(c, prevList));
 
-    this.setData({
-      monthlyTotalExpense: fmtYuan(totals.expense),
-      monthlyTotalIncome: fmtYuan(totals.income),
-      monthlyTotalBalance: fmtYuan(totals.balance),
-      monthlyTrend: daily_trend.map((d) => d.expense),
-      monthlySummary: summary,
-      monthlyL1: l1,
-      monthlyL1HasMore: category_ranks.length > L1_VISIBLE,
-      monthlyL1MoreCount: Math.max(0, category_ranks.length - L1_VISIBLE),
-      loading: false,
+    const viewData: MonthlyView = {
+      totalExpense: fmtYuan(totals.expense),
+      totalIncome: fmtYuan(totals.income),
+      totalBalance: fmtYuan(totals.balance),
+      trend: daily_trend.map((d) => d.expense),
+      summary,
+      l1,
+      l1HasMore: category_ranks.length > L1_VISIBLE,
+      l1MoreCount: Math.max(0, category_ranks.length - L1_VISIBLE),
       isEmpty: totals.expense === 0 && totals.income === 0,
-    });
+      loading: false,
+      loaded: true,
+    };
+
+    const update: Record<string, unknown> = {
+      [`monthlyByMember.${memberKey}`]: viewData,
+    };
+    // 更新顶层 isEmpty（仅当前选中 member 驱动）
+    if (memberKey === this._getCurrentMemberKey()) {
+      update.isEmpty = viewData.isEmpty;
+      update.loading = false;
+    }
+    this.setData(update);
   },
 
-  /**
-   * 构建单个 L1 显示对象。
-   *
-   * 新数据（金额/排名/icon/name）一律来自 API 返回的 c；展开相关字段
-   * （expanded / l2Items / l2HasMore / l2MoreCount）若旧列表存在同 category_id
-   * 的项则沿用其值，从而在 onShow → SWR 重渲染时不丢失下钻状态。
-   *
-   * 旧 L1 列表为空（如初次加载）时，展开态默认为 false（与全新进入页面一致）。
-   */
   _buildL1Display(c: StatCategoryRankItem, prevList: L1Display[]): L1Display {
     const id = c.category_id || '';
     const prev = prevList.find((p) => p.category_id === id);
@@ -447,7 +584,7 @@ Page({
 
   // ─── 年度展示构建 ──────────────────────────────────────────────────────────
 
-  _buildYearlyDisplay(s: YearlyStatistics) {
+  _buildYearlyDisplay(s: YearlyStatistics, memberKey: MemberKey) {
     const { totals, monthly_trend, extremes, category_ranks } = s;
 
     const summary: SummaryGridItem[] = [
@@ -470,23 +607,34 @@ Page({
       isEmpty: mt.expense === 0 && mt.income === 0,
     }));
 
+    const prevList = this.data.yearlyByMember[memberKey]?.l1 ?? [];
     const l1: L1Display[] = category_ranks
       .slice(0, L1_VISIBLE)
-      .map((c) => this._buildL1Display(c, this.data.yearlyL1));
+      .map((c) => this._buildL1Display(c, prevList));
 
-    this.setData({
-      yearlyTotalExpense: fmtYuan(totals.expense),
-      yearlyTotalIncome: fmtYuan(totals.income),
-      yearlyTotalBalance: fmtYuan(totals.balance),
-      yearlyTrend: monthly_trend.map((m) => m.expense),
-      yearlySummary: summary,
-      yearlyMonths: months,
-      yearlyL1: l1,
-      yearlyL1HasMore: category_ranks.length > L1_VISIBLE,
-      yearlyL1MoreCount: Math.max(0, category_ranks.length - L1_VISIBLE),
-      loading: false,
+    const viewData: YearlyView = {
+      totalExpense: fmtYuan(totals.expense),
+      totalIncome: fmtYuan(totals.income),
+      totalBalance: fmtYuan(totals.balance),
+      trend: monthly_trend.map((m) => m.expense),
+      summary,
+      months,
+      l1,
+      l1HasMore: category_ranks.length > L1_VISIBLE,
+      l1MoreCount: Math.max(0, category_ranks.length - L1_VISIBLE),
       isEmpty: totals.expense === 0 && totals.income === 0,
-    });
+      loading: false,
+      loaded: true,
+    };
+
+    const update: Record<string, unknown> = {
+      [`yearlyByMember.${memberKey}`]: viewData,
+    };
+    if (memberKey === this._getCurrentMemberKey()) {
+      update.isEmpty = viewData.isEmpty;
+      update.loading = false;
+    }
+    this.setData(update);
   },
 
   // ─── SYNC_DONE 响应式刷新 ──────────────────────────────────────────────────
@@ -495,35 +643,41 @@ Page({
     if (!this._familyId) return;
     if (this._loadingPromise) return;
     invalidateStatisticsCache(this._familyId);
-    // 收起所有展开（数据可能变 · 避免显示陈旧 L2/L3）
-    this._collapseCurrentDimL1();
+    // 当前选中成员的展开态收起（数据失效 · 避免显示陈旧 L2/L3）
+    this._collapseCurrentMemberL1();
+    // 标记当前选中成员为未 loaded（强制重拉）
+    const mk = this._getCurrentMemberKey();
+    if (this.data.dimension === 'monthly') {
+      this.setData({ [`monthlyByMember.${mk}.loaded`]: false });
+    } else {
+      this.setData({ [`yearlyByMember.${mk}.loaded`]: false });
+    }
     await this._loadData();
   },
 
   /**
-   * 收起当前维度（monthly/yearly）所有 L1 的展开态 + 清空已拉的 L2/L3。
-   *
-   * 调用场景（数据源已失效，旧下钻数据可能陈旧）：
-   *  - SYNC_DONE：服务端数据被修改
-   *  - 切月份 / 切年份：scope 变了，旧 L2/L3 不再适用
-   *
-   * 不调用场景（旧下钻数据仍有效，应保留以提升 UX）：
-   *  - onShow → _loadData：切 Tab 回来，scope 未变（_buildMonthlyDisplay 内做 merge）
-   *  - 切维度：另一维度自身的展开态用户切回时仍期望保留
+   * 收起当前选中成员（当前维度）的所有 L1 展开态。
    */
-  _collapseCurrentDimL1() {
+  _collapseCurrentMemberL1() {
+    const mk = this._getCurrentMemberKey();
     if (this.data.dimension === 'monthly') {
-      this.setData({
-        monthlyL1: this.data.monthlyL1.map((l1) => ({
-          ...l1, expanded: false, l2Items: [], l2HasMore: false, l2MoreCount: 0,
-        })),
-      });
+      const view = this.data.monthlyByMember[mk];
+      if (view && view.l1.length > 0) {
+        this.setData({
+          [`monthlyByMember.${mk}.l1`]: view.l1.map((l1) => ({
+            ...l1, expanded: false, l2Items: [], l2HasMore: false, l2MoreCount: 0,
+          })),
+        });
+      }
     } else {
-      this.setData({
-        yearlyL1: this.data.yearlyL1.map((l1) => ({
-          ...l1, expanded: false, l2Items: [], l2HasMore: false, l2MoreCount: 0,
-        })),
-      });
+      const view = this.data.yearlyByMember[mk];
+      if (view && view.l1.length > 0) {
+        this.setData({
+          [`yearlyByMember.${mk}.l1`]: view.l1.map((l1) => ({
+            ...l1, expanded: false, l2Items: [], l2HasMore: false, l2MoreCount: 0,
+          })),
+        });
+      }
     }
   },
 
@@ -537,7 +691,8 @@ Page({
       const prev = prevYear(this.data.currentYear);
       this.setData({ currentYear: prev, yearDisplay: formatYearDisplay(prev) });
     }
-    this._collapseCurrentDimL1();
+    // 切月/年 → 清空所有成员的当前维度视图（scope 变了，旧数据不适用）
+    this._clearCurrentDimViews();
     void this._loadData();
   },
 
@@ -549,34 +704,40 @@ Page({
       const nxt = nextYear(this.data.currentYear);
       this.setData({ currentYear: nxt, yearDisplay: formatYearDisplay(nxt) });
     }
-    this._collapseCurrentDimL1();
+    this._clearCurrentDimViews();
     void this._loadData();
   },
 
   onMonthChange(e: WechatMiniprogram.PickerChange) {
     const value = e.detail.value as string;
     this.setData({ currentMonth: value, monthDisplay: formatMonthDisplay(value) });
-    this._collapseCurrentDimL1();
+    this._clearCurrentDimViews();
     void this._loadData();
   },
 
   onYearChange(e: WechatMiniprogram.PickerChange) {
-    // year picker 用 fields=year，detail.value 形如 "2026"
     const value = e.detail.value as string;
-    // 微信 picker year mode 仅返回完整日期 yyyy-mm-dd 中的年部分，做兜底
     const y = value.split('-')[0] || value;
     this.setData({ currentYear: y, yearDisplay: formatYearDisplay(y) });
-    this._collapseCurrentDimL1();
+    this._clearCurrentDimViews();
     void this._loadData();
+  },
+
+  /** 切月/切年后清空当前维度所有成员的视图（byMember 全清） */
+  _clearCurrentDimViews() {
+    if (this.data.dimension === 'monthly') {
+      this.setData({ monthlyByMember: {} });
+    } else {
+      this.setData({ yearlyByMember: {} });
+    }
   },
 
   onSwitchDimension(e: WechatMiniprogram.TouchEvent) {
     const dim = (e.currentTarget.dataset as Record<string, string>).dim as 'monthly' | 'yearly';
     if (dim === this.data.dimension) return;
-    // 切维度只切 dimension · 不清任何展开态：用户在月度展开 A、切到年度查询、再切回月度时，
-    // 仍期望看到 A 是展开的（与"切 Tab 不丢"的诉求一致）。
     this.setData({ dimension: dim });
-    void this._loadData();
+    // 切维度后确保当前选中成员有数据
+    void this._ensureMemberLoaded(this._getCurrentMemberKey());
   },
 
   // ─── 交互：年度月度行点击 → 切回月度 ─────────────────────────────────────
@@ -585,50 +746,84 @@ Page({
     const month = (e.currentTarget.dataset as Record<string, number>).month as number;
     if (!month) return;
     const monthValue = `${this.data.currentYear}-${String(month).padStart(2, '0')}`;
-    // 改 dimension + currentMonth · 等价于"切到月度的某个具体月份"。
-    // 月度 L1 的 scope 变了（旧 L2/L3 是另一个月的），主动清空展开态后再 _loadData。
     this.setData({
       dimension: 'monthly',
       currentMonth: monthValue,
       monthDisplay: formatMonthDisplay(monthValue),
+      monthlyByMember: {},  // scope 变了，清月度视图
     });
-    this._collapseCurrentDimL1(); // 此时 dimension 已是 monthly · 清月度 L1
     void this._loadData();
+  },
+
+  // ─── 交互：成员 Tab 点击 ────────────────────────────────────────────────────
+
+  onTapMemberTab(e: WechatMiniprogram.TouchEvent) {
+    const idx = parseInt((e.currentTarget.dataset as Record<string, string>).index, 10);
+    if (Number.isNaN(idx) || idx === this.data.memberTabIndex) return;
+    this.setData({
+      memberTabIndex: idx,
+      dataScrollIntoView: `mpane-${idx}`,
+      memberScrollIntoView: `mtab-${idx}`,
+    });
+    this._lastScrollHandledIdx = idx;
+    const mk = this.data.memberTabs[idx]?.key ?? 'all';
+    void this._ensureMemberLoaded(mk);
+  },
+
+  // ─── 交互：数据区横向 scroll 节流（多人账本） ────────────────────────────────
+
+  onPagesScroll(e: WechatMiniprogram.ScrollViewScroll) {
+    const scrollLeft = e.detail.scrollLeft;
+    const paneIdx = Math.round(scrollLeft / this._windowWidthPx);
+    // 防抖：idx 没变则不 setData
+    if (paneIdx === this._lastScrollHandledIdx) return;
+    if (paneIdx < 0 || paneIdx >= this.data.memberTabs.length) return;
+    this._lastScrollHandledIdx = paneIdx;
+    this.setData({
+      memberTabIndex: paneIdx,
+      memberScrollIntoView: `mtab-${paneIdx}`,
+    });
+    const mk = this.data.memberTabs[paneIdx]?.key ?? 'all';
+    void this._ensureMemberLoaded(mk);
   },
 
   // ─── 交互：L1 一级分类展开 ─────────────────────────────────────────────────
 
   async onTapL1(e: WechatMiniprogram.TouchEvent) {
-    const id = (e.currentTarget.dataset as Record<string, string>).id;
+    const dataset = e.currentTarget.dataset as Record<string, string>;
+    const id = dataset.id;
+    const memberKey = dataset.memberkey || this._getCurrentMemberKey();
     if (!id) return;
-    const key = this.data.dimension === 'monthly' ? 'monthlyL1' : 'yearlyL1';
-    const list = (this.data as unknown as Record<string, L1Display[]>)[key];
+
+    const dimKey = this.data.dimension === 'monthly' ? 'monthlyByMember' : 'yearlyByMember';
+    const view = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
+    if (!view) return;
+    const list = [...view.l1];
     const idx = list.findIndex((l) => l.category_id === id);
     if (idx < 0) return;
     const item = list[idx];
 
     if (item.expanded) {
-      // 收起
       list[idx] = { ...item, expanded: false };
-      this.setData({ [key]: list });
+      this.setData({ [`${dimKey}.${memberKey}.l1`]: list });
       return;
     }
 
-    // 展开 · 已有 l2Items 则直接展示，否则拉
     if (item.l2Items.length > 0) {
       list[idx] = { ...item, expanded: true };
-      this.setData({ [key]: list });
+      this.setData({ [`${dimKey}.${memberKey}.l1`]: list });
       return;
     }
     list[idx] = { ...item, expanded: true, loadingL2: true };
-    this.setData({ [key]: list });
+    this.setData({ [`${dimKey}.${memberKey}.l1`]: list });
 
     try {
       const scope = this.data.dimension === 'monthly'
         ? { month: this.data.currentMonth }
         : { year: this.data.currentYear };
+      const userId = memberKey === 'all' ? undefined : memberKey;
       const res: DrillDownLevel2Response = await drillDownLevel2(
-        this._familyId, scope, id, { limit: L2_VISIBLE + 1 },  // 多取 1 判断 has_more 简洁性
+        this._familyId, scope, id, { limit: L2_VISIBLE + 1, userId },
       );
       const l2Items: L2Display[] = res.items.slice(0, L2_VISIBLE).map((c) => ({
         category_id: c.category_id || '',
@@ -645,7 +840,9 @@ Page({
       }));
       const hasMore = res.total_count > L2_VISIBLE;
       // 重新读取 list（防止异步期间 setData 导致 stale）
-      const listLatest = (this.data as unknown as Record<string, L1Display[]>)[key];
+      const latestView = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
+      if (!latestView) return;
+      const listLatest = [...latestView.l1];
       const idxLatest = listLatest.findIndex((l) => l.category_id === id);
       if (idxLatest >= 0) {
         listLatest[idxLatest] = {
@@ -655,15 +852,17 @@ Page({
           l2HasMore: hasMore,
           l2MoreCount: Math.max(0, res.total_count - L2_VISIBLE),
         };
-        this.setData({ [key]: listLatest });
+        this.setData({ [`${dimKey}.${memberKey}.l1`]: listLatest });
       }
     } catch (err) {
       console.error('[statistics] drillDown L2 failed', err);
-      const listLatest = (this.data as unknown as Record<string, L1Display[]>)[key];
+      const latestView = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
+      if (!latestView) return;
+      const listLatest = [...latestView.l1];
       const idxLatest = listLatest.findIndex((l) => l.category_id === id);
       if (idxLatest >= 0) {
         listLatest[idxLatest] = { ...listLatest[idxLatest], loadingL2: false };
-        this.setData({ [key]: listLatest });
+        this.setData({ [`${dimKey}.${memberKey}.l1`]: listLatest });
       }
       wx.showToast({ title: '加载失败', icon: 'none' });
     }
@@ -675,41 +874,45 @@ Page({
     const dataset = e.currentTarget.dataset as Record<string, string>;
     const l1Id = dataset.l1id;
     const l2Id = dataset.id;
+    const memberKey = dataset.memberkey || this._getCurrentMemberKey();
     if (!l1Id || !l2Id) return;
 
-    const key = this.data.dimension === 'monthly' ? 'monthlyL1' : 'yearlyL1';
-    const list = (this.data as unknown as Record<string, L1Display[]>)[key];
+    const dimKey = this.data.dimension === 'monthly' ? 'monthlyByMember' : 'yearlyByMember';
+    const view = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
+    if (!view) return;
+    const list = [...view.l1];
     const l1Idx = list.findIndex((l) => l.category_id === l1Id);
     if (l1Idx < 0) return;
-    const l1 = list[l1Idx];
+    const l1 = { ...list[l1Idx], l2Items: [...list[l1Idx].l2Items] };
     const l2Idx = l1.l2Items.findIndex((l) => l.category_id === l2Id);
     if (l2Idx < 0) return;
     const l2 = l1.l2Items[l2Idx];
 
     if (l2.expanded) {
       l1.l2Items[l2Idx] = { ...l2, expanded: false };
-      list[l1Idx] = { ...l1 };
-      this.setData({ [key]: list });
+      list[l1Idx] = l1;
+      this.setData({ [`${dimKey}.${memberKey}.l1`]: list });
       return;
     }
     if (l2.l3Items.length > 0) {
       l1.l2Items[l2Idx] = { ...l2, expanded: true };
-      list[l1Idx] = { ...l1 };
-      this.setData({ [key]: list });
+      list[l1Idx] = l1;
+      this.setData({ [`${dimKey}.${memberKey}.l1`]: list });
       return;
     }
 
     // 拉 L3
     l1.l2Items[l2Idx] = { ...l2, expanded: true, loadingL3: true };
-    list[l1Idx] = { ...l1 };
-    this.setData({ [key]: list });
+    list[l1Idx] = l1;
+    this.setData({ [`${dimKey}.${memberKey}.l1`]: list });
 
     try {
       const scope = this.data.dimension === 'monthly'
         ? { month: this.data.currentMonth }
         : { year: this.data.currentYear };
+      const userId = memberKey === 'all' ? undefined : memberKey;
       const res: DrillDownLevel3Response = await drillDownLevel3(
-        this._familyId, scope, l2Id, { limit: L3_VISIBLE },
+        this._familyId, scope, l2Id, { limit: L3_VISIBLE, userId },
       );
       const l3Items: L3Display[] = res.items.map((it: DrillDownEntryItem) => ({
         entry_id: it.entry_id,
@@ -722,10 +925,12 @@ Page({
         avatarUrl: it.avatar_url || '',
         initial: (it.nickname || '?')[0],
       }));
-      const listLatest = (this.data as unknown as Record<string, L1Display[]>)[key];
+      const latestView = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
+      if (!latestView) return;
+      const listLatest = [...latestView.l1];
       const l1IdxLatest = listLatest.findIndex((l) => l.category_id === l1Id);
       if (l1IdxLatest >= 0) {
-        const l1Latest = listLatest[l1IdxLatest];
+        const l1Latest = { ...listLatest[l1IdxLatest], l2Items: [...listLatest[l1IdxLatest].l2Items] };
         const l2IdxLatest = l1Latest.l2Items.findIndex((l) => l.category_id === l2Id);
         if (l2IdxLatest >= 0) {
           l1Latest.l2Items[l2IdxLatest] = {
@@ -735,28 +940,30 @@ Page({
             l3HasMore: res.has_more,
             l3MoreCount: Math.max(0, res.total_count - res.items.length),
           };
-          listLatest[l1IdxLatest] = { ...l1Latest };
-          this.setData({ [key]: listLatest });
+          listLatest[l1IdxLatest] = l1Latest;
+          this.setData({ [`${dimKey}.${memberKey}.l1`]: listLatest });
         }
       }
     } catch (err) {
       console.error('[statistics] drillDown L3 failed', err);
-      const listLatest = (this.data as unknown as Record<string, L1Display[]>)[key];
+      const latestView = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
+      if (!latestView) return;
+      const listLatest = [...latestView.l1];
       const l1IdxLatest = listLatest.findIndex((l) => l.category_id === l1Id);
       if (l1IdxLatest >= 0) {
-        const l1Latest = listLatest[l1IdxLatest];
+        const l1Latest = { ...listLatest[l1IdxLatest], l2Items: [...listLatest[l1IdxLatest].l2Items] };
         const l2IdxLatest = l1Latest.l2Items.findIndex((l) => l.category_id === l2Id);
         if (l2IdxLatest >= 0) {
           l1Latest.l2Items[l2IdxLatest] = { ...l1Latest.l2Items[l2IdxLatest], loadingL3: false };
-          listLatest[l1IdxLatest] = { ...l1Latest };
-          this.setData({ [key]: listLatest });
+          listLatest[l1IdxLatest] = l1Latest;
+          this.setData({ [`${dimKey}.${memberKey}.l1`]: listLatest });
         }
       }
       wx.showToast({ title: '加载失败', icon: 'none' });
     }
   },
 
-  // ─── 交互：账本切换（与明细页/家庭页一致）─────────────────────────────────
+  // ─── 交互：账本切换 ────────────────────────────────────────────────────────
 
   async onTapLedgerName() {
     try {
@@ -783,30 +990,22 @@ Page({
           savePreferenceAsync(selected.id, selected.ledger_id);
           this._familyId = selected.id;
           this._ledgerId = selected.ledger_id;
+          // 切账本 → 清空所有数据 + 重新加载上下文（含成员列表）
           this.setData({
             ledgerName: selected.name,
             familyKind: selected.kind,
-            // 切换账本后清空 L1 折叠态
-            monthlyL1: [],
-            yearlyL1: [],
+            monthlyByMember: {},
+            yearlyByMember: {},
+            memberTabIndex: 0,
           });
-          // 主动同步 + 重拉
           void syncOnce('ledger-switch');
+          await this._loadContext();
           await this._loadData();
         },
       });
     } catch {
       wx.showToast({ title: '获取账本列表失败', icon: 'none' });
     }
-  },
-
-  // ─── 交互：成员 tabs（COSTRA-229 框架预留 · 当前仅「全部」一档）─────────
-
-  onTapMemberTab(e: WechatMiniprogram.TouchEvent) {
-    const idx = parseInt((e.currentTarget.dataset as Record<string, string>).index, 10);
-    if (Number.isNaN(idx) || idx === this.data.memberTabIndex) return;
-    this.setData({ memberTabIndex: idx });
-    // TODO(COSTRA-229): 按 memberTabs[idx].key 拉成员维度数据
   },
 
   /** 阻止穿透 */
