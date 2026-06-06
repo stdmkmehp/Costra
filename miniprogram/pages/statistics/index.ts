@@ -1,8 +1,9 @@
 // pages/statistics/index.ts · 统计页（Tab2）
-// 卡号: COSTRA-261 · 成员维度横滑切换主体改造
+// 卡号: COSTRA-262 · 缓存生命周期与下钻独立性收尾
 // 设计源: design/ui/design_spec.md §6.4 + design/ui/interaction_flow.md §5
 // 配套后端: COSTRA-260（统计 API user_id 参数）· 公共组件: trend-line-chart（COSTRA-230）
 // 金额 ADR-0002: 全部走 decimal.js（utils/money.ts toYuan）
+// Refs: COSTRA-262
 
 import { toYuan } from '../../utils/money';
 import { getSafeAreaMetrics } from '../../utils/safeArea';
@@ -34,105 +35,19 @@ import {
   type DrillDownLevel3Response,
   type DrillDownEntryItem,
 } from '../../services/statisticsApi';
+import type {
+  MemberKey,
+  MemberTabItem,
+  MonthlyView,
+  YearlyView,
+  SummaryGridItem,
+  L1Display,
+  L2Display,
+  L3Display,
+  MonthRow,
+} from './types';
 
 interface AppWithBootstrap { bootstrapPromise: Promise<void> }
-
-// ─── 类型 ────────────────────────────────────────────────────────────────────
-
-type MemberKey = string; // 'all' | userId
-
-interface SummaryGridItem {
-  label: string;
-  value: string;
-}
-
-interface MonthRow {
-  month: number;
-  label: string;
-  expense: string;
-  income: string;
-  balance: string;
-  isEmpty: boolean;
-}
-
-interface L1Display {
-  category_id: string;
-  category_name: string;
-  icon: string;
-  amount: string;        // 已格式化
-  amountCents: number;
-  ratio_bps: number;
-  expanded: boolean;
-  loadingL2: boolean;
-  l2Items: L2Display[];
-  l2HasMore: boolean;
-  l2MoreCount: number;
-}
-
-interface L2Display {
-  category_id: string;
-  category_name: string;
-  icon: string;
-  amount: string;
-  amountCents: number;
-  ratio_bps: number;
-  expanded: boolean;
-  loadingL3: boolean;
-  l3Items: L3Display[];
-  l3HasMore: boolean;
-  l3MoreCount: number;
-}
-
-interface L3Display {
-  entry_id: string;
-  amount: string;
-  note: string;
-  dateLabel: string;
-  timeLabel: string;
-  shared: boolean;
-  nickname: string;
-  avatarUrl: string;
-  initial: string;
-}
-
-interface MemberTabItem {
-  key: MemberKey;          // 'all' 或 userId
-  type: 'all' | 'member';
-  label: string;           // '全部' / nickname
-  avatarUrl: string;
-  initial: string;         // 头像兜底首字
-  color: string;           // 来自 getMemberColorBySlot
-  status: 'active' | 'left';
-}
-
-interface MonthlyView {
-  totalExpense: string;
-  totalIncome: string;
-  totalBalance: string;
-  trend: number[];
-  summary: SummaryGridItem[];
-  l1: L1Display[];
-  l1HasMore: boolean;
-  l1MoreCount: number;
-  isEmpty: boolean;
-  loading: boolean;
-  loaded: boolean;
-}
-
-interface YearlyView {
-  totalExpense: string;
-  totalIncome: string;
-  totalBalance: string;
-  trend: number[];
-  summary: SummaryGridItem[];
-  months: MonthRow[];
-  l1: L1Display[];
-  l1HasMore: boolean;
-  l1MoreCount: number;
-  isEmpty: boolean;
-  loading: boolean;
-  loaded: boolean;
-}
 
 // ─── 辅助函数 ────────────────────────────────────────────────────────────────
 
@@ -637,47 +552,34 @@ Page({
     this.setData(update);
   },
 
-  // ─── SYNC_DONE 响应式刷新 ──────────────────────────────────────────────────
+  // ─── SYNC_DONE / ENTRY_SAVED / ENTRY_UPDATED 响应式刷新 ─────────────────────
 
   async _onSyncDone() {
     if (!this._familyId) return;
     if (this._loadingPromise) return;
     invalidateStatisticsCache(this._familyId);
-    // 当前选中成员的展开态收起（数据失效 · 避免显示陈旧 L2/L3）
-    this._collapseCurrentMemberL1();
-    // 标记当前选中成员为未 loaded（强制重拉）
-    const mk = this._getCurrentMemberKey();
-    if (this.data.dimension === 'monthly') {
-      this.setData({ [`monthlyByMember.${mk}.loaded`]: false });
-    } else {
-      this.setData({ [`yearlyByMember.${mk}.loaded`]: false });
-    }
+    // 数据变更场景：仅标记 loaded:false（保留展开态视觉）· 当前成员立即重拉
+    this._invalidateCurrentDimViews();
     await this._loadData();
   },
 
   /**
-   * 收起当前选中成员（当前维度）的所有 L1 展开态。
+   * 数据变更（SYNC_DONE / ENTRY_SAVED / ENTRY_UPDATED）场景：
+   * - 所有成员标记 loaded: false（不清空视图数据 → 保留展开态视觉）
+   * - 当前选中成员由 _loadData → _ensureMemberLoaded 立即重拉
+   * - 其他成员等切到时由 _ensureMemberLoaded 检测 loaded===false 重新拉
    */
-  _collapseCurrentMemberL1() {
-    const mk = this._getCurrentMemberKey();
-    if (this.data.dimension === 'monthly') {
-      const view = this.data.monthlyByMember[mk];
-      if (view && view.l1.length > 0) {
-        this.setData({
-          [`monthlyByMember.${mk}.l1`]: view.l1.map((l1) => ({
-            ...l1, expanded: false, l2Items: [], l2HasMore: false, l2MoreCount: 0,
-          })),
-        });
+  _invalidateCurrentDimViews() {
+    const byMemberKey = this.data.dimension === 'monthly' ? 'monthlyByMember' : 'yearlyByMember';
+    const byMember = this.data[byMemberKey] as Record<MemberKey, MonthlyView | YearlyView>;
+    const update: Record<string, unknown> = {};
+    for (const mk of Object.keys(byMember)) {
+      if (byMember[mk]) {
+        update[`${byMemberKey}.${mk}.loaded`] = false;
       }
-    } else {
-      const view = this.data.yearlyByMember[mk];
-      if (view && view.l1.length > 0) {
-        this.setData({
-          [`yearlyByMember.${mk}.l1`]: view.l1.map((l1) => ({
-            ...l1, expanded: false, l2Items: [], l2HasMore: false, l2MoreCount: 0,
-          })),
-        });
-      }
+    }
+    if (Object.keys(update).length > 0) {
+      this.setData(update);
     }
   },
 
@@ -723,7 +625,11 @@ Page({
     void this._loadData();
   },
 
-  /** 切月/切年后清空当前维度所有成员的视图（byMember 全清） */
+  /**
+   * Scope 变更（切月份 / 切年份）场景：全清当前维度所有成员视图。
+   * 旧数据不属于新 scope，留着会显示陈旧 → 整体清空。
+   * 仅重新拉当前选中成员的数据，其他成员等切到时由 _ensureMemberLoaded 懒加载。
+   */
   _clearCurrentDimViews() {
     if (this.data.dimension === 'monthly') {
       this.setData({ monthlyByMember: {} });

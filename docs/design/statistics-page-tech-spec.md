@@ -612,9 +612,28 @@ const syncDoneHandler = (payload?: SyncDonePayload) => {
 };
 ```
 
----
+### 4.7 R2 成员维度横滑切换
 
-## 5. 任务拆分（Card 划分）
+> 卡号：COSTRA-260（后端 user_id）/ COSTRA-261（前端框架）/ COSTRA-262（收尾）
+
+**后端**：月度 / 年度 / drill-down 3 接口新增 `user_id` 可选查询参数（COSTRA-260 已落地）。不传或为空表示"全部"（原逻辑不变）。
+
+**前端数据结构**：
+- `monthlyByMember: Record<MemberKey, MonthlyView>` — 按 memberKey（`'all'` | userId）索引
+- `yearlyByMember: Record<MemberKey, YearlyView>` — 同上
+- 每个 view 含 `loading` / `loaded` 状态位 + L1/L2/L3 展开态（嵌套在 `l1[].expanded` / `l1[].l2Items[].expanded` 中）
+
+**横滑 scroll-view**：多人账本使用 `scroll-snap-type: x mandatory` + `scroll-snap-align: start` 实现 pane 切换。scroll 事件通过 `Math.round(scrollLeft / windowWidth)` 计算当前 pane index，配合 `_lastScrollHandledIdx` 节流防止重复 setData。
+
+**成员独立下钻态（D3 决策）**：每个成员维护独立的展开态。横滑切换成员不做 merge / 镜像，也不强制收起。通过 `data-memberkey` dataset 属性 + `${dimKey}.${memberKey}.l1` 路径写回实现隔离。
+
+**失效策略**：
+- **scope 变更**（切月份 / 切年份 / 切账本）：`_clearCurrentDimViews()` 全清当前维度所有成员的 byMember，仅重拉当前选中成员；其他成员等切到时由 `_ensureMemberLoaded` 懒加载。
+- **数据变更**（SYNC_DONE / ENTRY_SAVED / ENTRY_UPDATED）：`_invalidateCurrentDimViews()` 仅将所有成员标记 `loaded: false`（不清空视图数据 → 保留展开态视觉），当前选中成员立即重拉。其他成员等切到时检测 `loaded === false` 重新拉。
+- **维度切换**（月度 ↔ 年度）：不动 byMember，仅确保当前成员在新维度有数据。
+- **成员切换**（Tab 点击 / 横滑）：不动 byMember，仅 `_ensureMemberLoaded` 按需加载。
+
+---
 
 ### 5.1 Card 概览
 
