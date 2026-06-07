@@ -1,9 +1,10 @@
 // pages/statistics/index.ts · 统计页（Tab2）
-// 卡号: COSTRA-264 · review 修复 + 二指手势后统计页左边距异常修复
-// 设计源: design/ui/design_spec.md §6.4 + design/ui/interaction_flow.md §5
+// 卡号: COSTRA-303 · 消费 pendingStatisticsAction（协作页 L1 跳转后的统计页联动）
+// 设计源: docs/design/family-page-tech-spec.md §4.2 / §4.6 / §5.2
 // 配套后端: COSTRA-260（统计 API user_id 参数）· 公共组件: trend-line-chart（COSTRA-230）
 // 金额 ADR-0002: 全部走 decimal.js（utils/money.ts toYuan）
-// Refs: COSTRA-264
+// 前置: COSTRA-302（协作页写入 pendingStatisticsAction）· COSTRA-264（拆分 + swiper height）
+// Refs: COSTRA-303
 
 import { getSafeAreaMetrics } from '../../utils/safeArea';
 import {
@@ -66,51 +67,40 @@ import {
   buildL1Display,
 } from './viewModels';
 import { makeAllTab, buildMemberTabs } from './memberHelpers';
+import type { PendingStatisticsAction } from '../family/index';
 
-interface AppWithBootstrap { bootstrapPromise: Promise<void> }
-
-// ─── Page ─────────────────────────────────────────────────────────────────────
+interface AppWithBootstrap {
+  bootstrapPromise: Promise<void>;
+  globalData: {
+    pendingStatisticsAction?: PendingStatisticsAction | null;
+  };
+}
 
 Page({
   data: {
-    // 首屏保护
     ready: false,
     statusBarHeight: 0,
     navBarHeight: 44,
-
-    // 账本
     ledgerName: '个人账本',
     familyKind: 'personal' as 'personal' | 'shared',
-
-    // 时间维度
     dimension: 'monthly' as 'monthly' | 'yearly',
     currentMonth: getCurrentMonthValue(),
     currentYear: getCurrentYearValue(),
     monthDisplay: '',
     yearDisplay: '',
-
-    // 加载状态（全局，仅用于首屏 skeleton / 无成员条的单人账本）
     loading: true,
-
-    // 成员维度
     memberTabs: [] as MemberTabItem[],
     memberTabIndex: 0,
     memberScrollIntoView: '',
     currentMemberKey: 'all' as MemberKey,
-
-    // swiper auto-height adapter（COSTRA-263）
     memberSwiperHeightPx: getInitialSwiperHeightPx(),
     memberSwiperDuration: 240,
-
-    // 按成员索引的视图数据
+    memberPaneScrollTops: {} as Record<string, number>,
     monthlyByMember: {} as Record<MemberKey, MonthlyView>,
     yearlyByMember: {} as Record<MemberKey, YearlyView>,
-
-    // 顶层空态（仅在当前选中成员维度判定）
     isEmpty: false,
   },
 
-  // 内部状态
   _familyId: '' as string,
   _ledgerId: '' as string,
   _syncDoneHandler: null as ((payload?: unknown) => void) | null,
@@ -118,16 +108,9 @@ Page({
   _entryUpdatedHandler: null as (() => void) | null,
   _loadingPromise: null as Promise<void> | null,
 
-  // swiper auto-height adapter 实例字段（COSTRA-263）
-  _paneHeights: [] as number[],
-  _measureSeq: 0,
-  _pendingMeasure: false,
-  _pendingMeasureRetry: false,
-  _isTapSwitchingMember: false,
-
-  // 页面滚动位置策略
-  _pageScrollTop: 0,
-  _memberAnchorTopPx: 0,
+  _initialized: false,
+  _memberPaneScrollTops: {} as Record<string, number>,
+  _lastPaneScrollSetDataAt: 0,
 
   // ─── 生命周期 ──────────────────────────────────────────────────────────────
 
@@ -136,6 +119,7 @@ Page({
     this.setData({
       statusBarHeight: m.statusBarHeight,
       navBarHeight: m.navBarHeight,
+      memberSwiperHeightPx: Math.max(320, m.windowHeight - m.navBarTotalHeight - 110),
       monthDisplay: formatMonthDisplay(this.data.currentMonth),
       yearDisplay: formatYearDisplay(this.data.currentYear),
     });
@@ -175,11 +159,36 @@ Page({
         wx.reLaunch({ url: '/pages/login/index' });
         return;
       }
-      this.setData({ ready: true, loading: true });
       (this.getTabBar?.() as { markActive?: (idx: number) => void } | undefined)?.markActive?.(1);
       triggerOnPageShow('statistics');
+
+      // ★ COSTRA-303：读取 pending action（首次/再次都读，协作页可能在已初始化后写入）
+      const hasPending = !!app.globalData.pendingStatisticsAction;
+
+      // 再次切回 Tab：DOM 已存在，不再 setData(loading) / 不重建 memberTabs / 不重置 swiper 高度，
+      // WebView 持有原 scroll 位置，用户看到的就是离开时的画面。
+      // 数据新鲜度由 SYNC_DONE / ENTRY_SAVED / ENTRY_UPDATED 事件链路兜底。
+      if (this._initialized) {
+        if (hasPending) {
+          // 有 pending：必须重建数据状态（dim/month/member 可能都变了）
+          await this._consumePendingAction();
+          this._scheduleMeasureCurrentPane('reShow-pending-consumed');
+        } else {
+          // 无 pending：保留现有"不重建 DOM"路径
+          this._scheduleMeasureCurrentPane('reShow');
+        }
+        return;
+      }
+
+      this._initialized = true;
+      this.setData({ ready: true, loading: true });
       await this._loadContext();
       await this._loadData();
+
+      // ★ 首次进入也消费 pending（用户从协作页 L1 跳进来时统计页可能首次初始化）
+      if (hasPending) {
+        await this._consumePendingAction();
+      }
     });
   },
 
@@ -258,9 +267,7 @@ Page({
     }
     const memberKey = this._getCurrentMemberKey();
     await this._ensureMemberLoaded(memberKey);
-    this.setData({ loading: false });
-    // 首次加载完成后测量成员条 anchor 位置（用于滚动位置策略）
-    this._measureMemberAnchor();
+    this.setData({ loading: false }, () => { this._settleSwiperHeight('loadData'); });
   },
 
   /** 获取当前选中的 memberKey */
@@ -502,10 +509,7 @@ Page({
     void this._loadData();
   },
 
-  /**
-   * Scope 变更（切月份 / 切年份）场景：全清当前维度所有成员视图。
-   * 同时重置 swiper 高度状态（COSTRA-264 P1 修复：_paneHeights 随 scope 重置）
-   */
+  /** Scope 变更（切月份 / 切年份）场景：全清当前维度所有成员视图与成员内滚动位置。 */
   _clearCurrentDimViews() {
     if (this.data.dimension === 'monthly') {
       this.setData({ monthlyByMember: {} });
@@ -513,12 +517,14 @@ Page({
       this.setData({ yearlyByMember: {} });
     }
     this._resetMemberSwiperHeightState('clearDimViews');
+    this._clearMemberScrollMemory();
   },
 
   onSwitchDimension(e: WechatMiniprogram.TouchEvent) {
     const dim = (e.currentTarget.dataset as Record<string, string>).dim as 'monthly' | 'yearly';
     if (dim === this.data.dimension) return;
     this._resetMemberSwiperHeightState('switchDim');
+    this._clearMemberScrollMemory();
     this.setData({ dimension: dim }, () => {
       this._scheduleMeasureCurrentPane('switchDim');
     });
@@ -532,6 +538,7 @@ Page({
     if (!month) return;
     const monthValue = `${this.data.currentYear}-${String(month).padStart(2, '0')}`;
     this._resetMemberSwiperHeightState('tapYearlyMonth');
+    this._clearMemberScrollMemory();
     this.setData({
       dimension: 'monthly',
       currentMonth: monthValue,
@@ -541,120 +548,64 @@ Page({
     void this._loadData();
   },
 
-  // ─── 交互：成员 Tab 点击（duration=0 直接跳，不播放横跨多页动画） ──────────
+  // ─── 交互：成员切换 + 成员内滚动 ───────────────────────────────────────────
 
   onTapMemberTab(e: WechatMiniprogram.TouchEvent) {
     const idx = parseInt((e.currentTarget.dataset as Record<string, string>).index, 10);
     if (Number.isNaN(idx) || idx === this.data.memberTabIndex) return;
     const tab = this.data.memberTabs[idx];
     if (!tab) return;
-
-    // COSTRA-264 P1-1 修复：切到目标前确保目标 view 有 loading 占位
     const dimKey = this.data.dimension === 'monthly' ? 'monthlyByMember' : 'yearlyByMember';
     const targetView = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][tab.key];
-    const setUpdate: Record<string, unknown> = {};
+    const update: Record<string, unknown> = { memberSwiperDuration: 0, memberTabIndex: idx, currentMemberKey: tab.key, memberScrollIntoView: `mtab-${idx}` };
     if (!targetView || !targetView.loaded) {
       const emptyView = this.data.dimension === 'monthly' ? emptyMonthlyView() : emptyYearlyView();
       emptyView.loading = true;
-      setUpdate[`${dimKey}.${tab.key}`] = emptyView;
+      update[`${dimKey}.${tab.key}`] = emptyView;
     }
-
-    // 扩高到 max(current, target)
-    this._expandSwiperHeightForIndexes([this.data.memberTabIndex, idx]);
-
-    // 标记为 tap 切换（duration=0 直接跳）
-    this._isTapSwitchingMember = true;
-    Object.assign(setUpdate, {
-      memberSwiperDuration: 0,
-      memberTabIndex: idx,
-      currentMemberKey: tab.key,
-      memberScrollIntoView: `mtab-${idx}`,
-    });
-    this.setData(setUpdate, () => {
+    this.setData(update, () => {
       void this._ensureMemberLoaded(tab.key);
-      this._scheduleMeasureCurrentPane('tap');
-      this._handleMemberPageScrollPosition('tap');
-      // 恢复 duration
-      setTimeout(() => {
-        this._isTapSwitchingMember = false;
-        this.setData({ memberSwiperDuration: 240 });
-      }, 50);
+      setTimeout(() => this.setData({ memberSwiperDuration: 240 }), 50);
     });
   },
 
-  // ─── 交互：swiper 手势事件（COSTRA-263） ──────────────────────────────────
-
-  /** 手势拖动开始：邻域高度保护 */
-  onMemberSwiperTouchStart() {
-    const cur = this.data.memberTabIndex;
-    this._expandSwiperHeightForIndexes([cur - 1, cur, cur + 1]);
-  },
-
-  /** swiper change：手势滑动完成切换 */
   onMemberSwiperChange(e: WechatMiniprogram.SwiperChange) {
     const idx = e.detail.current;
     if (idx === this.data.memberTabIndex) return;
-    if (this._isTapSwitchingMember) return;
     const tab = this.data.memberTabs[idx];
     if (!tab) return;
-    this.setData({
-      memberTabIndex: idx,
-      currentMemberKey: tab.key,
-      memberScrollIntoView: `mtab-${idx}`,
-    }, () => {
+    this.setData({ memberTabIndex: idx, currentMemberKey: tab.key, memberScrollIntoView: `mtab-${idx}` }, () => {
       void this._ensureMemberLoaded(tab.key);
-      this._handleMemberPageScrollPosition('swipe');
     });
   },
 
-  /** swiper animationfinish：收缩到目标真实高度 */
-  onMemberSwiperAnimationFinish(e: WechatMiniprogram.SwiperAnimationFinish) {
-    const idx = e.detail.current;
-    this._measurePaneHeightByIndex(idx, { applyIfCurrent: true, retry: true });
-  },
-
-  // ─── 页面滚动位置追踪（COSTRA-263） ─────────────────────────────────────────
-
-  onPageScroll(e: WechatMiniprogram.Page.IPageScrollOption) {
-    this._pageScrollTop = e.scrollTop;
-  },
-
-  /** 切成员时的页面滚动位置策略（COSTRA-264 P2 修复：扣除 fixed nav 高度） */
-  _handleMemberPageScrollPosition(_trigger: 'tap' | 'swipe') {
-    if (this.data.familyKind !== 'shared' || this.data.memberTabs.length <= 1) return;
-    const navOffset = this.data.statusBarHeight + this.data.navBarHeight + 8;
-    const threshold = this._memberAnchorTopPx + 120;
-    if (this._pageScrollTop > threshold && this._memberAnchorTopPx > 0) {
-      const targetTop = Math.max(0, this._memberAnchorTopPx - navOffset);
-      wx.pageScrollTo({
-        scrollTop: targetTop,
-        duration: 180,
-      });
+  _buildMemberSwitchUpdate(idx: number, memberKey: MemberKey, tap: boolean): Record<string, unknown> {
+    const dimKey = this.data.dimension === 'monthly' ? 'monthlyByMember' : 'yearlyByMember';
+    const targetView = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
+    const update: Record<string, unknown> = {
+      memberTabIndex: idx,
+      currentMemberKey: memberKey,
+      memberScrollIntoView: `mtab-${idx}`,
+      [`memberPaneScrollTops.${memberKey}`]: this._memberPaneScrollTops[memberKey] || 0,
+    };
+    if (tap) update.memberSwiperDuration = 0;
+    if (!targetView || !targetView.loaded) {
+      const emptyView = this.data.dimension === 'monthly' ? emptyMonthlyView() : emptyYearlyView();
+      emptyView.loading = true;
+      update[`${dimKey}.${memberKey}`] = emptyView;
     }
+    return update;
   },
 
-  /** 测量成员条 anchor 位置（COSTRA-264 P2 修复：不要求 rect.top > 0） */
-  _measureMemberAnchor() {
-    this.createSelectorQuery()
-      .select('.member-strip')
-      .boundingClientRect((rect) => {
-        if (rect) {
-          this._memberAnchorTopPx = rect.top + this._pageScrollTop;
-        } else {
-          // selector 未命中时 retry 一次（50ms）
-          setTimeout(() => {
-            this.createSelectorQuery()
-              .select('.member-strip')
-              .boundingClientRect((retryRect) => {
-                if (retryRect) {
-                  this._memberAnchorTopPx = retryRect.top + this._pageScrollTop;
-                }
-              })
-              .exec();
-          }, 50);
-        }
-      })
-      .exec();
+  onMemberPaneScroll(e: WechatMiniprogram.ScrollViewScroll) {
+    const memberKey = (e.currentTarget.dataset as Record<string, string>).memberkey;
+    if (!memberKey) return;
+    this._memberPaneScrollTops[memberKey] = e.detail.scrollTop || 0;
+  },
+
+  _clearMemberScrollMemory() {
+    this._memberPaneScrollTops = {};
+    this.setData({ memberPaneScrollTops: {} });
   },
 
   // ─── 交互：L1 一级分类展开 ─────────────────────────────────────────────────
@@ -664,12 +615,21 @@ Page({
     const id = dataset.id;
     const memberKey = dataset.memberkey || this._getCurrentMemberKey();
     if (!id) return;
+    await this._handleL1Tap(memberKey, id);
+  },
+
+  /**
+   * L1 展开/收起核心逻辑（程序可调）。
+   * @param silent 为 true 时 catch 块不弹 toast（程序触发场景避免无意义提示）
+   */
+  async _handleL1Tap(memberKey: string, l1Id: string, silent: boolean = false) {
+    if (!l1Id || !memberKey) return;
 
     const dimKey = this.data.dimension === 'monthly' ? 'monthlyByMember' : 'yearlyByMember';
     const view = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
     if (!view) return;
     const list = [...view.l1];
-    const idx = list.findIndex((l) => l.category_id === id);
+    const idx = list.findIndex((l) => l.category_id === l1Id);
     if (idx < 0) return;
     const item = list[idx];
 
@@ -697,7 +657,7 @@ Page({
         : { year: this.data.currentYear };
       const userId = memberKey === 'all' ? undefined : memberKey;
       const res: DrillDownLevel2Response = await drillDownLevel2(
-        this._familyId, scope, id, { limit: L2_VISIBLE + 1, userId },
+        this._familyId, scope, l1Id, { limit: L2_VISIBLE + 1, userId },
       );
       const l2Items: L2Display[] = res.items.slice(0, L2_VISIBLE).map((c) => ({
         category_id: c.category_id || '',
@@ -716,7 +676,7 @@ Page({
       const latestView = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
       if (!latestView) return;
       const listLatest = [...latestView.l1];
-      const idxLatest = listLatest.findIndex((l) => l.category_id === id);
+      const idxLatest = listLatest.findIndex((l) => l.category_id === l1Id);
       if (idxLatest >= 0) {
         listLatest[idxLatest] = {
           ...listLatest[idxLatest],
@@ -734,14 +694,16 @@ Page({
       const latestView = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
       if (!latestView) return;
       const listLatest = [...latestView.l1];
-      const idxLatest = listLatest.findIndex((l) => l.category_id === id);
+      const idxLatest = listLatest.findIndex((l) => l.category_id === l1Id);
       if (idxLatest >= 0) {
         listLatest[idxLatest] = { ...listLatest[idxLatest], loadingL2: false };
         this.setData({ [`${dimKey}.${memberKey}.l1`]: listLatest }, () => {
           this._scheduleMeasureCurrentPane('l1-l2-error');
         });
       }
-      wx.showToast({ title: '加载失败', icon: 'none' });
+      if (!silent) {
+        wx.showToast({ title: '加载失败', icon: 'none' });
+      }
     }
   },
 
@@ -847,87 +809,90 @@ Page({
     }
   },
 
-  // ─── swiper auto-height adapter（COSTRA-263 + COSTRA-264 P1 重置方法） ─────
+  // ─── 固定数据视口高度（控制区固定，pane 内部滚动）───────────────────────
 
-  /**
-   * 统一重置 swiper 高度状态（COSTRA-264 P1 修复）
-   * 调用场景：切账本/成员列表重建、切月/年 scope、切维度、点击年度月份行
-   */
   _resetMemberSwiperHeightState(_reason?: string) {
-    this._paneHeights = [];
-    this._pendingMeasure = false;
-    this._pendingMeasureRetry = false;
-    this._measureSeq++;
-    this._memberAnchorTopPx = 0;
-    this.setData({ memberSwiperHeightPx: getInitialSwiperHeightPx() });
+    this._scheduleMeasureCurrentPane(_reason || 'reset');
   },
 
-  /** 调度测量当前 pane 高度（合并同 tick 多次调用） */
-  _scheduleMeasureCurrentPane(reason?: string) {
-    if (this._pendingMeasure) return;
-    this._pendingMeasure = true;
-    setTimeout(() => {
-      this._pendingMeasure = false;
-      this._measureCurrentPaneHeight(reason);
-    }, 30);
+  _scheduleMeasureCurrentPane(_reason?: string) {
+    setTimeout(() => this._measureMemberSwiperViewport(), 30);
   },
 
-  /** 测量当前 pane 高度并应用 */
-  _measureCurrentPaneHeight(reason?: string) {
-    const idx = this.data.memberTabIndex;
-    this._measurePaneHeightByIndex(idx, { applyIfCurrent: true, retry: true, reason });
+  _settleSwiperHeight(reason: string) {
+    this._scheduleMeasureCurrentPane(reason);
   },
 
-  /** 测量指定 index 的 pane 高度 */
-  _measurePaneHeightByIndex(
-    idx: number,
-    options?: { applyIfCurrent?: boolean; retry?: boolean; reason?: string },
-  ) {
-    const seq = ++this._measureSeq;
+  _measureMemberSwiperViewport() {
+    const m = getSafeAreaMetrics();
     this.createSelectorQuery()
-      .select(`#mpane-${idx} .member-pane-inner`)
-      .boundingClientRect((rect) => {
-        if (seq !== this._measureSeq) return;
-        if (rect && rect.height > 0) {
-          this._paneHeights[idx] = rect.height;
-          if (options?.applyIfCurrent && idx === this.data.memberTabIndex) {
-            this.setData({ memberSwiperHeightPx: rect.height });
-          }
-        } else if (options?.retry && !this._pendingMeasureRetry) {
-          this._pendingMeasureRetry = true;
-          setTimeout(() => {
-            this._pendingMeasureRetry = false;
-            this._measurePaneHeightByIndex(idx, {
-              applyIfCurrent: options.applyIfCurrent,
-              retry: false,
-              reason: options.reason ? `${options.reason}-retry` : 'retry',
-            });
-          }, 50);
-        }
-      })
-      .exec();
+      .select('.time-bar').boundingClientRect()
+      .select('.member-strip').boundingClientRect()
+      .exec((res) => {
+        const timeRect = res[0] as WechatMiniprogram.BoundingClientRectCallbackResult | null;
+        const stripRect = res[1] as WechatMiniprogram.BoundingClientRectCallbackResult | null;
+        const h = Math.max(320, m.windowHeight - m.navBarTotalHeight - (timeRect?.height || 0) - (stripRect?.height || 0));
+        if (Math.abs(h - this.data.memberSwiperHeightPx) > 1) this.setData({ memberSwiperHeightPx: h });
+      });
   },
 
-  /** 获取已知 pane 高度（未测过返回当前 swiper 高度） */
-  _getKnownPaneHeight(idx: number): number {
-    return this._paneHeights[idx] || this.data.memberSwiperHeightPx;
-  },
+  // ─── COSTRA-303：消费 pendingStatisticsAction ─────────────────────────────
 
-  /** 扩展 swiper 高度到指定 indexes 中的最大值（仅向上扩，不缩） */
-  _expandSwiperHeightForIndexes(indexes: number[]) {
-    const len = this.data.memberTabs.length;
-    let maxH = this.data.memberSwiperHeightPx;
-    for (const i of indexes) {
-      if (i < 0 || i >= len) continue;
-      const h = this._getKnownPaneHeight(i);
-      if (h > maxH) maxH = h;
+  async _consumePendingAction(): Promise<void> {
+    const app = getApp<AppWithBootstrap>();
+    const action = app.globalData.pendingStatisticsAction;
+    if (!action) return;
+    app.globalData.pendingStatisticsAction = null; // 立即清空，防重入
+
+    // 1. 切维度（只在 dimension 不一致时切，避免无意义触发 _clearCurrentDimViews）
+    if (action.dimension !== this.data.dimension) {
+      this.setData({ dimension: action.dimension });
+      this._clearCurrentDimViews();
     }
-    if (maxH > this.data.memberSwiperHeightPx) {
-      this.setData({ memberSwiperHeightPx: maxH });
+
+    // 2. 切月/年（与 dimension 匹配，只在不一致时改）
+    if (action.dimension === 'monthly' && action.month && action.month !== this.data.currentMonth) {
+      this.setData({
+        currentMonth: action.month,
+        monthDisplay: formatMonthDisplay(action.month),
+      });
+      this._clearCurrentDimViews();
+    }
+    if (action.dimension === 'yearly' && action.year && action.year !== this.data.currentYear) {
+      this.setData({
+        currentYear: action.year,
+        yearDisplay: formatYearDisplay(action.year),
+      });
+      this._clearCurrentDimViews();
+    }
+
+    // 3. 切成员 tab（只在不一致时切）
+    const idx = this.data.memberTabs.findIndex(t => t.key === action.memberKey);
+    if (idx >= 0 && idx !== this.data.memberTabIndex) {
+      const update = this._buildMemberSwitchUpdate(idx, action.memberKey as MemberKey, true);
+      update.memberSwiperDuration = 0; // 程序触发：禁动画直接切
+      this.setData(update);
+    } else if (idx < 0) {
+      // 目标 memberKey 不存在（家庭成员变化）→ 降级到 'all'
+      const allIdx = this.data.memberTabs.findIndex(t => t.key === 'all');
+      if (allIdx >= 0 && allIdx !== this.data.memberTabIndex) {
+        const update = this._buildMemberSwitchUpdate(allIdx, 'all', true);
+        update.memberSwiperDuration = 0;
+        this.setData(update);
+      }
+    }
+
+    // 4. 拉数据（_loadData 判断当前 currentMemberKey 走对应分支）
+    await this._loadData();
+
+    // 5. 自动展开 L1（数据已落 byMember 后再展）
+    if (action.expandL1Id) {
+      const finalMemberKey = this._getCurrentMemberKey();
+      await this._handleL1Tap(finalMemberKey, action.expandL1Id, true);
     }
   },
 
-  // ─── 交互：账本切换 ────────────────────────────────────────────────────────
+  // ─── 交互：账本切换 ──────────────────────────────────────────────────────────
 
   async onTapLedgerName() {
     try {
@@ -956,6 +921,7 @@ Page({
           this._ledgerId = selected.ledger_id;
           // 切账本 → 清空所有数据 + 重置 swiper 高度 + 重新加载上下文（含成员列表）
           this._resetMemberSwiperHeightState('ledgerSwitch');
+          this._clearMemberScrollMemory();
           this.setData({
             ledgerName: selected.name,
             familyKind: selected.kind,
