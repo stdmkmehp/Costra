@@ -30,7 +30,7 @@ description: |
   </commentary>
   </example>
 tools: search_file, search_content, read_file, list_dir, read_lints, codebase_search, replace_in_file, write_to_file, delete_file, execute_command, web_fetch, web_search, preview_url, use_skill, connect_cloud_service, automation_update
-model: claude-opus-4.6-1m
+model: gpt-5.5
 color: blue
 permissionMode: bypassPermissions
 agentMode: agentic

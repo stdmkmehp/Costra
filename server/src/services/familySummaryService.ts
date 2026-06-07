@@ -101,7 +101,8 @@ export interface FamilySummaryResponse {
   family_kind: 'personal' | 'shared';
   ledger_id: string;
   ledger_name: string;
-  month: string;
+  month: string | null;
+  year: string | null;
   timezone: 'Asia/Shanghai';
   range_start: string;
   range_end: string;
@@ -168,6 +169,48 @@ function validateMonth(month: string): void {
   }
 }
 
+/**
+ * 解析 year=YYYY 为 UTC 区间 [rangeStart, rangeEnd)
+ * 固定时区 Asia/Shanghai (+08:00)
+ *
+ * 卡号：COSTRA-300
+ */
+function parseYearRange(year: string): { rangeStartUtc: string; rangeEndUtc: string } {
+  const y = Number(year);
+  // Asia/Shanghai 当年 1/1 00:00:00 → UTC 减 8 小时
+  const startShanghai = new Date(Date.UTC(y, 0, 1, 0, 0, 0));
+  const startUtc = new Date(startShanghai.getTime() - 8 * 60 * 60 * 1000);
+  // 次年 1/1 00:00:00 Asia/Shanghai
+  const endShanghai = new Date(Date.UTC(y + 1, 0, 1, 0, 0, 0));
+  const endUtc = new Date(endShanghai.getTime() - 8 * 60 * 60 * 1000);
+  return {
+    rangeStartUtc: startUtc.toISOString(),
+    rangeEndUtc: endUtc.toISOString(),
+  };
+}
+
+/**
+ * 校验 year 格式
+ *
+ * 卡号：COSTRA-300
+ */
+function validateYear(year: string): void {
+  const yearRegex = /^\d{4}$/;
+  if (!yearRegex.test(year)) {
+    throw new AppError(ErrorCode.INVALID_ARGUMENT, {
+      message: 'year must be YYYY format',
+      details: { field: 'year', value: year, constraint: 'YYYY' },
+    });
+  }
+  const y = Number(year);
+  if (y < 1970 || y > 2999) {
+    throw new AppError(ErrorCode.INVALID_ARGUMENT, {
+      message: 'year must be between 1970 and 2999',
+      details: { field: 'year', value: year, constraint: '1970-2999' },
+    });
+  }
+}
+
 /** 校验 topN 范围 */
 function validateTopN(topN: number): void {
   if (topN < 1 || topN > 20) {
@@ -178,29 +221,85 @@ function validateTopN(topN: number): void {
   }
 }
 
+/**
+ * L1 折叠纯函数：将 leaf 分类行按 parent_category_id 折叠为 L1 一级分类排行。
+ *
+ * 卡号：COSTRA-300 · 设计源：family-page-tech-spec.md §3.3.1
+ *
+ * 行为：
+ *   - L1 id 取 r.parent_category_id ?? r.category_id（leaf 即 L1 的情况）
+ *   - category_id === null（未分类）→ 跳过，不进 L1 排行
+ *   - 折叠后 filter(amount > 0) + 排序 + slice(0, topN)
+ *   - ratio_bps = calcBps(amount, totalForRatio)
+ *   - 排序键：amount DESC，并列时 category_name.localeCompare(_, 'zh-Hans-CN')
+ */
+function foldToL1(
+  rows: summaryRepo.CategoryRankRow[],
+  totalForRatio: number,
+  topN: number,
+): FamilyCategoryRankItem[] {
+  const map = new Map<string, FamilyCategoryRankItem>();
+  for (const r of rows) {
+    const l1Id = r.parent_category_id ?? r.category_id;
+    const l1Name = r.parent_category_name ?? r.category_name;
+    if (!l1Id) continue; // 未分类跳过
+    const cur = map.get(l1Id) ?? {
+      category_id: l1Id,
+      category_name: l1Name,
+      parent_category_id: null,
+      parent_category_name: null,
+      amount: 0,
+      entry_count: 0,
+      ratio_bps: 0,
+    };
+    cur.amount += r.amount;
+    cur.entry_count += r.entry_count;
+    map.set(l1Id, cur);
+  }
+  const list = [...map.values()]
+    .filter(x => x.amount > 0)
+    .sort((a, b) => (b.amount - a.amount)
+      || a.category_name.localeCompare(b.category_name, 'zh-Hans-CN'));
+  for (const it of list) it.ratio_bps = calcBps(it.amount, totalForRatio);
+  return list.slice(0, topN);
+}
+
 // --- 业务 API ---
 
 /**
- * 获取家庭月度财务聚合
+ * 获取家庭月度/年度财务聚合
  *
  * 步骤：
- *   1. 校验 month/topN
+ *   1. 校验 month/year xor + topN
  *   2. 权限守门 assertActiveMember
  *   3. 获取 family + ledger
- *   4. 计算月区间
+ *   4. 计算区间
  *   5. 获取聚合数据
- *   6. 组装 wire response
+ *   6. foldToL1 折叠 + 组装 wire response
+ *
+ * 卡号：COSTRA-300 · 扩展 year 支持 + L1 折叠
  */
 export async function getFamilySummary(
   userId: string,
   input: {
     familyId: string;
-    month: string;
+    month?: string;
+    year?: string;
     topN?: number;
   },
 ): Promise<FamilySummaryResponse> {
-  // 1. 参数校验
-  validateMonth(input.month);
+  // 1. 参数校验：month/year xor
+  const hasMonth = !!input.month;
+  const hasYear = !!input.year;
+  if (hasMonth === hasYear) {
+    throw new AppError(ErrorCode.INVALID_ARGUMENT, {
+      message: 'must provide exactly one of month or year',
+      details: { reason: 'month_year_xor', month: input.month ?? null, year: input.year ?? null },
+    });
+  }
+  if (hasMonth) validateMonth(input.month!);
+  else validateYear(input.year!);
+
   const topN = input.topN ?? 6;
   validateTopN(topN);
 
@@ -221,15 +320,16 @@ export async function getFamilySummary(
     });
   }
 
-  // 4. 计算月区间
-  const { rangeStartUtc, rangeEndUtc } = parseMonthRange(input.month);
+  // 4. 计算区间
+  const range = hasMonth ? parseMonthRange(input.month!) : parseYearRange(input.year!);
+  const { rangeStartUtc, rangeEndUtc } = range;
 
   // 5. 获取聚合数据
-  const [totals, memberAggs, members, sharedCategoryRanks] = await Promise.all([
+  const [totals, memberAggs, members, sharedCategoryRanksUntrimmed] = await Promise.all([
     summaryRepo.getTotals(ledger.id, rangeStartUtc, rangeEndUtc),
     summaryRepo.getMemberAggregates(ledger.id, rangeStartUtc, rangeEndUtc),
     familyMemberRepo.listMembersWithUsers(input.familyId),
-    summaryRepo.getCategoryRanks(ledger.id, rangeStartUtc, rangeEndUtc, 'shared', null, topN),
+    summaryRepo.getCategoryRanksUntrimmed(ledger.id, rangeStartUtc, rangeEndUtc, 'shared', null),
   ]);
 
   // 成员维度聚合 Map
@@ -301,7 +401,7 @@ export async function getFamilySummary(
     });
   }
 
-  // 6d. shared block
+  // 6d. shared block — L1 折叠
   const paidContributions: FamilyPaidContribution[] = members.map((m) => {
     const agg = memberAggMap.get(m.userId);
     const contribution = agg?.paid_contribution ?? 0;
@@ -315,23 +415,14 @@ export async function getFamilySummary(
     };
   });
 
-  const sharedCategoryItems: FamilyCategoryRankItem[] = sharedCategoryRanks.map((cr) => ({
-    category_id: cr.category_id,
-    category_name: cr.category_name,
-    parent_category_id: cr.parent_category_id,
-    parent_category_name: cr.parent_category_name,
-    amount: cr.amount,
-    entry_count: cr.entry_count,
-    ratio_bps: calcBps(cr.amount, totals.shared_expense),
-  }));
+  const sharedCategoryItems = foldToL1(sharedCategoryRanksUntrimmed, totals.shared_expense, topN);
 
-  // 6e. personal_by_member
-  // 批量获取所有成员的 personal 分类排行，避免按 member 循环查询形成 N+1。
-  const allPersonalCategoryRanks = await summaryRepo.getPersonalCategoryRanksByMember(
-    ledger.id, rangeStartUtc, rangeEndUtc, topN,
+  // 6e. personal_by_member — L1 折叠
+  const allPersonalCategoryRanksUntrimmed = await summaryRepo.getPersonalCategoryRanksByMemberUntrimmed(
+    ledger.id, rangeStartUtc, rangeEndUtc,
   );
   const personalCategoryRankMap = new Map<string, summaryRepo.MemberCategoryRankRow[]>();
-  for (const cr of allPersonalCategoryRanks) {
+  for (const cr of allPersonalCategoryRanksUntrimmed) {
     const list = personalCategoryRankMap.get(cr.user_id) ?? [];
     list.push(cr);
     personalCategoryRankMap.set(cr.user_id, list);
@@ -342,15 +433,7 @@ export async function getFamilySummary(
     const personalAmount = agg?.personal_expense ?? 0;
     const personalCategoryRanks = personalCategoryRankMap.get(m.userId) ?? [];
 
-    const personalCategoryItems: FamilyCategoryRankItem[] = personalCategoryRanks.map((cr) => ({
-      category_id: cr.category_id,
-      category_name: cr.category_name,
-      parent_category_id: cr.parent_category_id,
-      parent_category_name: cr.parent_category_name,
-      amount: cr.amount,
-      entry_count: cr.entry_count,
-      ratio_bps: calcBps(cr.amount, personalAmount),
-    }));
+    const personalCategoryItems = foldToL1(personalCategoryRanks, personalAmount, topN);
 
     return {
       user_id: m.userId,
@@ -369,7 +452,8 @@ export async function getFamilySummary(
     family_kind: family.kind,
     ledger_id: ledger.id,
     ledger_name: ledger.name,
-    month: input.month,
+    month: hasMonth ? input.month! : null,
+    year: hasYear ? input.year! : null,
     timezone: 'Asia/Shanghai',
     range_start: rangeStartUtc,
     range_end: rangeEndUtc,

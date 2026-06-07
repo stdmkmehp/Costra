@@ -1,7 +1,7 @@
 /**
  * Costra · Server · categories DAO
  *
- * 卡号：COSTRA-218 · 事实源：server/db/migrations/0008_categories_hierarchy_seed.sql
+ * 卡号：COSTRA-218 · 事实源：server/db/migrations/0001_init.sql `categories` 表
  *
  * 职责：封装 categories 表的 SQL 访问；业务层禁止直接写 SQL。
  *

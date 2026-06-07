@@ -6,6 +6,19 @@
 
 ---
 
+## [0.10.0] - 2026-06-11 · COSTRA-301
+
+### Changed
+
+- **GET /families/{family_id}/summary** `month` 参数从 required 改为 optional
+- **GET /families/{family_id}/summary** 新增 `year` 参数（optional，与 month 互斥，恰传一个）
+- **FamilySummary** schema: `month` 改为 nullable（年度调用时为 null）；新增 `year` 字段（nullable）
+- **FamilySummary** schema: `required` 列表移除 `month`（两者都不再无条件 required）
+- **FamilySummary** `range_start` / `range_end` description 补充"month 调用为该月，year 调用为整年"
+- **FamilyCategoryRankItem** description 补充 L1 一级分类排行语义说明 + ratio_bps 基数规则
+
+---
+
 ## [0.9.0] - 2026-06-01 · COSTRA-217
 
 ### Added

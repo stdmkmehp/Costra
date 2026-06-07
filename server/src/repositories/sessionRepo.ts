@@ -1,7 +1,7 @@
 /**
  * Costra · Server · user_sessions DAO
  *
- * 卡号：COSTRA-101 · 事实源：server/db/migrations/0003_user_sessions.sql
+ * 卡号：COSTRA-101 · 事实源：server/db/migrations/0001_init.sql `user_sessions` 表
  *
  * 职责：封装 user_sessions 表访问；与 Redis 的 `refresh:{jti}` 构成双写结构。
  *   - DB 为真源（source of truth）：登出、撤销、回收历史都从 DB 判定

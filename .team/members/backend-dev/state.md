@@ -16,6 +16,12 @@
 
 ## §2 当前关注（active tasks）
 
+- 🆕 **COSTRA-301 R1 实装完成**（2026-06-11 · OpenAPI 契约同步 month/year xor + miniprogram familyApi.ts 适配 · summary endpoint month optional + year 参数 + FamilySummary schema nullable month/year + FamilyCategoryRankItem L1 语义注释 · familyApi.ts scope 签名重构 + 缓存 key m:/y: 改造 · prefetch.ts + pages/family/index.ts 调用方适配 · api/CHANGELOG.md v0.10.0 · typecheck ✅ · lint 0 error · 179/179 全绿 · whitelist-check ✅）
+
+- 🆕 **COSTRA-300 R1 实装完成**（2026-06-10 · family summary L1 折叠 + year 支持 · parseYearRange/validateYear helper · foldToL1 纯函数 · repo getCategoryRanksUntrimmed/getPersonalCategoryRanksByMemberUntrimmed · routes summaryQuerySchema month/year xor · FamilySummaryResponse month|null + year|null · T-300-A1~A10 10 条新测 · 179/179 全绿 · typecheck ✅ · OpenAPI 暂不动留待 COSTRA-301）
+
+- 🆕 **COSTRA-260 R1 实装完成**（2026-06-06 · 统计接口增加 user_id 维度 · OpenAPI 3 端点 +user_id 参数 + filtered_user_id 响应字段 · statisticsRepo 4 函数尾参对象化重构 createdBy · familyMemberRepo +isMemberIncludingLeft · statisticsService assertUserIdBelongsToFamily 越权守门 · routes 透传 · T15~T19 5 条新测 · 169/169 全绿 · commit `f7db01d` · typecheck ✅）
+
 - ✅ **COSTRA-222 Human T1 APPROVED CLOSED**（2026-06-02 · Family Summary API · review-tech PASS 33/35 · FINAL 已落盘 · implementation commit `6bf431b` · typecheck ✅ · server 141/141 ✅ · 后续进入 COSTRA-223 派单规划）
 - ✅ **COSTRA-221 Human T1 APPROVED CLOSED**（2026-06-02 · Family Management API 全端点实装 + review-tech PASS 31/35 · FINAL 已落盘 · typecheck ✅ · 124/124 全绿 · 后续进入 COSTRA-222 派单规划）
 - 🆕 **COSTRA-218 R1 实装完成**（2026-06-09 · GET /v1/categories + POST /v1/categories 端点实装 · categoryRepo + categoryService + categories routes + app.ts 注册 + T1~T8 单测 · 权限守门 isUserInFamily · 层级校验禁止三层 · 同名去重应用层+DB双保险 · children_count 内存计算 · 108/108 测全绿 · typecheck ✅ · 等 review-tech R1 + Human T1 approve）
@@ -31,6 +37,12 @@
 - COSTRA-157 R1 实装进行中（backend 段完成 · 等 miniapp-dev 接手 B/C/D/E + 统一 commit）
 
 ## §3 交付历史索引
+
+- **2026-06-11** · **COSTRA-301 R1 实装**（OpenAPI 契约同步 month/year xor + miniprogram familyApi.ts scope 签名重构 + 缓存 key 改造 + 调用方适配 · api/CHANGELOG v0.10.0 · typecheck ✅ · 179/179 全绿 · whitelist-check ✅）· `history/2026-06-11-costra-301-openapi-familyapi-month-year-xor.md`
+
+- **2026-06-10** · **COSTRA-300 R1 实装**（family summary L1 折叠 + year 支持 · parseYearRange/validateYear · foldToL1 · repo *Untrimmed 2 函数 · routes month/year xor · response month|null + year|null · T-300-A1~A10 · 179/179 全绿）· `history/2026-06-10-costra-300-family-summary-l1-fold-year.md`
+
+- **2026-06-06** · **COSTRA-260 R1 实装**（统计接口 user_id 维度过滤 · 3 端点 +user_id 参数 · filtered_user_id 响应 · repo 4 函数 opts 对象化 · isMemberIncludingLeft 越权守门 · T15~T19 · 169/169 全绿 · commit `f7db01d`）· `history/2026-06-06-costra-260-statistics-user-id-dimension.md`
 
 - **2026-06-02** · **COSTRA-222 Human T1 APPROVED CLOSED**（Family Summary API · review-tech PASS 33/35 · FINAL 落盘 · commit `6bf431b` · server 141/141 ✅）· `history/2026-06-02-costra-222-family-summary-api.md` · `.team/reviews/COSTRA-222/FINAL.md`
 - **2026-06-02** · **COSTRA-221 Human T1 APPROVED CLOSED**（Family Management API 全端点 + review-tech PASS 31/35 · FINAL 落盘 · 124/124 全绿）· `history/2026-06-02-costra-221-family-mgmt.md` · `.team/reviews/COSTRA-221/FINAL.md`
@@ -84,6 +96,8 @@
   6. **version+1 显式 SET 规约**（pg-mem 不支持 trigger · entryRepo.updateEntryByVersion/softDeleteEntry 原注释误写"触发器自动 version+1" · 实际只有 updated_at 触发器 · 必须应用层显式 SET version = version + 1 · 候选写入 ADR）
 
 ## §7 最近更新时间戳
+
+- **2026-06-11T15:30:00+08:00 · COSTRA-301 R1 实装完成**（OpenAPI 契约同步 month/year xor + miniprogram familyApi.ts scope 签名重构 + 缓存 key 改造 + 调用方适配 · typecheck ✅ · 179/179 全绿 · whitelist-check ✅）
 
 - 2026-05-02T19:24:00+08:00 · 初始化骨架（by Orchestrator）
 - 2026-05-11T20:57:43+08:00 · COSTRA-104 R1.x 极窄修复收口（363efa1 · P1-1 T2 测 + P2-1 followup_id）

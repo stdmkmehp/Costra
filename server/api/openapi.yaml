@@ -327,15 +327,20 @@ paths:
       - $ref: '#/components/parameters/FamilyId'
     get:
       tags: [families]
-      summary: 家庭财务聚合（月度 summary）
+      summary: 家庭财务聚合（月度/年度 summary）
       description: |
-        COSTRA-222: 返回指定家庭某月的财务聚合数据，包含总支出/收入/结余、
+        COSTRA-222 / COSTRA-300: 返回指定家庭某月或某年的财务聚合数据，包含总支出/收入/结余、
         公共/个人支出拆解、垫付贡献比例、成员个人支出、分类排行。
+
+        调用模式：传 `month=YYYY-MM` 返回当月聚合；传 `year=YYYY` 返回当年聚合（与月度同口径，区间 12 个月）。两者互斥，必须恰传一个，违反返回 400 INVALID_ARGUMENT (details.reason='month_year_xor')。
 
         时区口径：MVP 固定 Asia/Shanghai (+08:00)。
         month=YYYY-MM 的闭区间 [start, end)：
           start = 当月 1 日 00:00:00 +08:00
           end   = 下月 1 日 00:00:00 +08:00
+        year=YYYY 的闭区间 [start, end)：
+          start = 当年 1 月 1 日 00:00:00 +08:00
+          end   = 次年 1 月 1 日 00:00:00 +08:00
         SQL 使用 UTC timestamp 比较：[start_utc, end_utc)
 
         口径规则：
@@ -348,9 +353,14 @@ paths:
       parameters:
         - name: month
           in: query
-          required: true
-          description: '月份（YYYY-MM，按 Asia/Shanghai 时区计算区间）'
+          required: false
+          description: '月份（YYYY-MM，按 Asia/Shanghai 时区计算区间）。与 year 互斥，恰传一个。'
           schema: { type: string, pattern: '^\d{4}-\d{2}$' }
+        - name: year
+          in: query
+          required: false
+          description: '年份（YYYY，按 Asia/Shanghai 时区计算区间）。与 month 互斥，恰传一个。'
+          schema: { type: string, pattern: '^\d{4}$' }
         - name: top_n
           in: query
           required: false
@@ -1194,19 +1204,20 @@ components:
 
     FamilySummary:
       type: object
-      required: [family_id, family_name, family_kind, ledger_id, ledger_name, month, timezone, range_start, range_end, currency, totals, members, segments, shared, personal_by_member]
+      required: [family_id, family_name, family_kind, ledger_id, ledger_name, timezone, range_start, range_end, currency, totals, members, segments, shared, personal_by_member]
       description: |
-        COSTRA-222: 家庭月度财务聚合。口径详见 GET /families/{family_id}/summary description。
+        COSTRA-222 / COSTRA-300: 家庭财务聚合（月度或年度）。口径详见 GET /families/{family_id}/summary description。
       properties:
         family_id: { type: string, format: uuid }
         family_name: { type: string }
         family_kind: { type: string, enum: [personal, shared] }
         ledger_id: { type: string, format: uuid }
         ledger_name: { type: string }
-        month: { type: string, description: 'YYYY-MM' }
+        month: { type: string, nullable: true, description: 'YYYY-MM；当请求传 year 时为 null' }
+        year: { type: string, nullable: true, description: 'YYYY；当请求传 month 时为 null' }
         timezone: { type: string, description: 'MVP 固定 Asia/Shanghai', example: Asia/Shanghai }
-        range_start: { type: string, format: date-time, description: '月区间起始 UTC（inclusive）' }
-        range_end: { type: string, format: date-time, description: '月区间结束 UTC（exclusive）' }
+        range_start: { type: string, format: date-time, description: '区间起始 UTC（inclusive）；month 调用为该月，year 调用为整年' }
+        range_end: { type: string, format: date-time, description: '区间结束 UTC（exclusive）；month 调用为该月，year 调用为整年' }
         currency: { type: string, example: CNY }
         totals:
           type: object
@@ -1309,7 +1320,10 @@ components:
     FamilyCategoryRankItem:
       type: object
       required: [category_id, category_name, amount, entry_count, ratio_bps]
-      description: COSTRA-222: 分类排行项
+      description: |
+        COSTRA-222 / COSTRA-300: 分类排行项。
+
+        **重构后语义**：family summary 接口返回的 categories 字段为 **L1 一级分类排行**：`category_id` 即一级分类 id，`parent_category_id` / `parent_category_name` 在该接口内**恒为 null**（已无父）。占比 ratio_bps 的基数：`shared.categories[i]` 以 `shared.expense` 为分母；`personal_by_member[i].categories[j]` 以该成员 amount 为分母。
       properties:
         category_id: { type: string, format: uuid, nullable: true, description: 'null 表示未分类' }
         category_name: { type: string }

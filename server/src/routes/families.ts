@@ -175,10 +175,10 @@ const inviteIdParamSchema = {
 
 const summaryQuerySchema = {
   type: 'object',
-  required: ['month'],
   additionalProperties: false,
   properties: {
     month: { type: 'string', pattern: '^\\d{4}-\\d{2}$' },
+    year: { type: 'string', pattern: '^\\d{4}$' },
     top_n: { type: 'integer', minimum: 1, maximum: 20 },
   },
 } as const;
@@ -287,8 +287,8 @@ export async function registerFamiliesRoutes(app: FastifyInstance): Promise<void
   );
 
   // GET /families/{family_id}/summary
-  // COSTRA-222: 家庭月度财务聚合
-  app.get<{ Params: { family_id: string }; Querystring: { month: string; top_n?: number } }>(
+  // COSTRA-222 + COSTRA-300: 家庭月度/年度财务聚合
+  app.get<{ Params: { family_id: string }; Querystring: { month?: string; year?: string; top_n?: number } }>(
     '/families/:family_id/summary',
     { schema: { params: familyIdParamSchema, querystring: summaryQuerySchema } },
     async (req, reply) => {
@@ -296,6 +296,7 @@ export async function registerFamiliesRoutes(app: FastifyInstance): Promise<void
       const result = await familySummaryService.getFamilySummary(userId, {
         familyId: req.params.family_id,
         month: req.query.month,
+        year: req.query.year,
         topN: req.query.top_n,
       });
       reply.code(200).send(result);

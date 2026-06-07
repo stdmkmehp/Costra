@@ -175,8 +175,8 @@ describe('COSTRA-222: Family Summary API · advanced', () => {
     expect(ownerBlock.categories[1].amount).toBe(3000);
   });
 
-  // T14: 二级分类 parent 信息
-  it('T14: category item contains parent_category_id and parent_category_name', async () => {
+  // T14: 二级分类 parent 信息 → L1 折叠后 category_id = L1(parent), parent_* = null
+  it('T14: L1 fold: child category folds into parent L1 with parent_* null', async () => {
     const { token: ownerToken, userId: ownerId } = await registerUser('t14-user');
 
     const listRes = await app.inject({
@@ -211,9 +211,13 @@ describe('COSTRA-222: Family Summary API · advanced', () => {
     );
     expect(ownerBlock.categories.length).toBe(1);
     const cat = ownerBlock.categories[0];
-    expect(cat.category_name).toBe('外卖');
-    expect(cat.parent_category_id).toBe(parentId);
-    expect(cat.parent_category_name).toBe('餐饮');
+    // COSTRA-300: L1 折叠后 category_id 为父级 id，name 为父级 name，parent_* 置 null
+    expect(cat.category_id).toBe(parentId);
+    expect(cat.category_name).toBe('餐饮');
+    expect(cat.parent_category_id).toBeNull();
+    expect(cat.parent_category_name).toBeNull();
+    expect(cat.amount).toBe(2000);
+    expect(cat.entry_count).toBe(1);
   });
 
   // T15: 月边界 Asia/Shanghai

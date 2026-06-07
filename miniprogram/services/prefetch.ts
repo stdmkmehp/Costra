@@ -44,7 +44,7 @@ export async function prefetchHomeData(): Promise<void> {
     void getMonthlyStatistics(familyId, month).catch((err) => {
       console.warn('[prefetch] monthly statistics failed', err);
     });
-    void getFamilySummary(familyId, month).catch((err) => {
+    void getFamilySummary(familyId, { month }).catch((err) => {
       console.warn('[prefetch] family summary failed', err);
     });
   } catch (err) {

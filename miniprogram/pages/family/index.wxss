@@ -379,7 +379,12 @@
 
 /* ─── 重构后下钻列表（COSTRA-302 · spec §4.8 · 统计页同款手风琴）─── */
 .family-rank { padding: 24rpx 0 8rpx; box-sizing: border-box; }
-.family-rank__row { padding: 16rpx 0 8rpx; border-bottom: 1rpx solid rgba(28,27,26,0.06); }
+.family-rank__row {
+  padding: 28rpx 0 24rpx;
+  border-bottom: 1rpx solid rgba(28,27,26,0.06);
+}
+.family-rank__row + .family-rank__row { margin-top: 8rpx; }
+.family-rank__row--open { padding-bottom: 16rpx; }
 .family-rank__head { display: flex; flex-direction: column; }
 .family-rank__head-main { display: flex; align-items: center; gap: 16rpx; }
 .family-rank__shared-icon {
@@ -399,7 +404,7 @@
 
 /* 公共行垫付贡献小字（行下常驻 · q4 决策 A） */
 .shared-contributions {
-  padding: 8rpx 0 4rpx; font-size: 22rpx; color: rgba(28,27,26,0.5);
+  padding: 12rpx 0 0; font-size: 22rpx; color: rgba(28,27,26,0.5);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 

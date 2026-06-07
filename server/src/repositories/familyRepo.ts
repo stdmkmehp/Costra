@@ -1,7 +1,7 @@
 /**
  * Costra · Server · families DAO
  *
- * 卡号：COSTRA-164 · 事实源：server/db/migrations/0001_init.sql + 0007_families_kind.sql
+ * 卡号：COSTRA-164 · 事实源：server/db/migrations/0001_init.sql `families` 表
  * 决策锚定：ADR-0007 family-ledger 关系模型 v1.1 §4.1 + §5.7
  *
  * 职责：封装 families 表 + family_members 表的 SQL 访问；业务层禁止直接写 SQL。

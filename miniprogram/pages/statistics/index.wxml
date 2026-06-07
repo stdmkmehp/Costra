@@ -101,53 +101,70 @@
 
       <!-- ═══════ 数据区 ═══════ -->
 
-      <!-- 多人账本 native swiper（COSTRA-263 · auto-height adapter） -->
+      <!-- 多人账本：固定高度 swiper + 每成员独立纵向 scroll-view -->
       <swiper
         wx:if="{{familyKind === 'shared' && memberTabs.length > 1}}"
         class="member-pages-swiper"
         current="{{memberTabIndex}}"
         duration="{{memberSwiperDuration}}"
         style="height: {{memberSwiperHeightPx}}px;"
-        bindtouchstart="onMemberSwiperTouchStart"
         bindchange="onMemberSwiperChange"
-        bindanimationfinish="onMemberSwiperAnimationFinish"
       >
         <swiper-item wx:for="{{memberTabs}}" wx:key="key" wx:for-item="member" wx:for-index="paneIdx">
-          <view id="mpane-{{paneIdx}}" class="member-pane">
-            <view class="member-pane-inner">
-
-              <!-- 月度视角 -->
-              <block wx:if="{{dimension === 'monthly'}}">
-                <include src="./tpl-monthly-pane.wxml" />
-              </block>
-
-              <!-- 年度视角 -->
-              <block wx:else>
-                <include src="./tpl-yearly-pane.wxml" />
-              </block>
-
+          <scroll-view
+            id="mpane-scroll-{{paneIdx}}"
+            class="member-pane-scroll"
+            scroll-y
+            enhanced
+            show-scrollbar="{{false}}"
+            scroll-top="{{memberPaneScrollTops[member.key] || 0}}"
+            data-memberkey="{{member.key}}"
+            bindscroll="onMemberPaneScroll"
+            style="height: {{memberSwiperHeightPx}}px;"
+          >
+            <view id="mpane-{{paneIdx}}" class="member-pane">
+              <view class="member-pane-inner">
+                <block wx:if="{{dimension === 'monthly'}}">
+                  <include src="./tpl-monthly-pane.wxml" />
+                </block>
+                <block wx:else>
+                  <include src="./tpl-yearly-pane.wxml" />
+                </block>
+                <view class="bottom-spacer"></view>
+              </view>
             </view>
-          </view>
+          </scroll-view>
         </swiper-item>
       </swiper>
 
-      <!-- 单人账本：直接渲染单 pane（无横向 scroll-view） -->
+      <!-- 单人账本：同样使用独立纵向 scroll-view -->
       <block wx:elif="{{memberTabs.length > 0}}">
         <block wx:for="{{memberTabs}}" wx:key="key" wx:for-item="member" wx:for-index="paneIdx">
-          <block wx:if="{{paneIdx === 0}}">
-            <!-- 月度视角 -->
-            <block wx:if="{{dimension === 'monthly'}}">
-              <include src="./tpl-monthly-pane.wxml" />
-            </block>
-            <!-- 年度视角 -->
-            <block wx:else>
-              <include src="./tpl-yearly-pane.wxml" />
-            </block>
-          </block>
+          <scroll-view
+            wx:if="{{paneIdx === 0}}"
+            class="member-pane-scroll"
+            scroll-y
+            enhanced
+            show-scrollbar="{{false}}"
+            scroll-top="{{memberPaneScrollTops[member.key] || 0}}"
+            data-memberkey="{{member.key}}"
+            bindscroll="onMemberPaneScroll"
+            style="height: {{memberSwiperHeightPx}}px;"
+          >
+            <view class="member-pane">
+              <view class="member-pane-inner">
+                <block wx:if="{{dimension === 'monthly'}}">
+                  <include src="./tpl-monthly-pane.wxml" />
+                </block>
+                <block wx:else>
+                  <include src="./tpl-yearly-pane.wxml" />
+                </block>
+                <view class="bottom-spacer"></view>
+              </view>
+            </view>
+          </scroll-view>
         </block>
       </block>
-
-      <view class="bottom-spacer"></view>
   </view>
 </view>
 

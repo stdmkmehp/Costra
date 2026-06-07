@@ -30,32 +30,35 @@ expense:
       - name: 餐饮
         sort_order: 1
         is_direct_default: true
-      - name: 外卖
+      - name: 三餐
         sort_order: 2
         is_direct_default: true
-      - name: 买菜
+      - name: 外卖
         sort_order: 3
         is_direct_default: true
-      - name: 水果
+      - name: 买菜
         sort_order: 4
         is_direct_default: true
-      - name: 零食
+      - name: 水果
         sort_order: 5
         is_direct_default: true
-      - name: 饮料
+      - name: 零食
         sort_order: 6
         is_direct_default: true
-      - name: 酒水
+      - name: 饮料
         sort_order: 7
+        is_direct_default: true
+      - name: 酒水
+        sort_order: 8
         is_direct_default: false
       - name: 柴米油盐
-        sort_order: 8
-        is_direct_default: true
-      - name: 聚餐
         sort_order: 9
         is_direct_default: true
-      - name: 宴请
+      - name: 聚餐
         sort_order: 10
+        is_direct_default: true
+      - name: 宴请
+        sort_order: 11
         is_direct_default: true
 
   - name: 交通
@@ -69,32 +72,29 @@ expense:
       - name: 打车
         sort_order: 2
         is_direct_default: true
-      - name: 公交
+      - name: 公交地铁
         sort_order: 3
         is_direct_default: true
-      - name: 地铁
+      - name: 加油
         sort_order: 4
         is_direct_default: true
-      - name: 加油
+      - name: 停车
         sort_order: 5
         is_direct_default: true
-      - name: 停车
+      - name: 火车高铁
         sort_order: 6
         is_direct_default: true
-      - name: 火车/高铁
+      - name: 机票
         sort_order: 7
         is_direct_default: true
-      - name: 机票
+      - name: 汽车保养
         sort_order: 8
         is_direct_default: true
-      - name: 汽车保养
+      - name: 保险
         sort_order: 9
         is_direct_default: true
-      - name: 保险
-        sort_order: 10
-        is_direct_default: true
       - name: 过路费
-        sort_order: 11
+        sort_order: 10
         is_direct_default: true
 
   - name: 购物
@@ -186,7 +186,7 @@ expense:
       - name: 交通
         sort_order: 4
         is_direct_default: false       # 默认归属到 交通-交通
-      - name: 火车/高铁
+      - name: 火车高铁
         sort_order: 5
         is_direct_default: false
       - name: 餐饮
@@ -234,6 +234,9 @@ expense:
       - name: 还贷
         sort_order: 2
         is_direct_default: true
+      - name: 垫付
+        sort_order: 3
+        is_direct_default: true
 
   - name: 其他
     icon: 他
@@ -261,7 +264,7 @@ expense:
       - name: 礼物
         sort_order: 7
         is_direct_default: true
-      - name: 垫付
+      - name: 罚款
         sort_order: 8
         is_direct_default: true
 
@@ -317,20 +320,23 @@ income:
       - name: 红包
         sort_order: 3
         is_direct_default: true
-      - name: 中奖
+      - name: 退款
         sort_order: 4
         is_direct_default: true
-      - name: 闲置出售
+      - name: 中奖
         sort_order: 5
         is_direct_default: true
-      - name: 礼金
+      - name: 闲置出售
         sort_order: 6
+        is_direct_default: true
+      - name: 礼金
+        sort_order: 7
         is_direct_default: true
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 统计摘要
 # ═══════════════════════════════════════════════════════════════════════════════
 # 一级分类: 11 条（支出 8 + 收入 3）
-# 二级分类: 78 条（支出 65 + 收入 13）
-# 总计: 89 条
-# is_direct_default=true 的二级: 68 条（支出 55 + 收入 13）
+# 二级分类: 80 条（支出 66 + 收入 14）
+# 总计: 91 条
+# is_direct_default=true 的二级: 71 条（支出 57 + 收入 14）

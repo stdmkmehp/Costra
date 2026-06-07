@@ -96,7 +96,8 @@ export interface FamilySummary {
   family_kind: 'personal' | 'shared';
   ledger_id: string;
   ledger_name: string;
-  month: string;          // "YYYY-MM"
+  month: string | null;   // "YYYY-MM"；当请求传 year 时为 null
+  year: string | null;    // "YYYY"；当请求传 month 时为 null
   timezone: 'Asia/Shanghai';
   range_start: string;    // UTC ISO
   range_end: string;      // UTC ISO
@@ -150,14 +151,19 @@ interface CacheEntry<T> {
 
 const _summaryCache = new Map<string, CacheEntry<FamilySummary>>();
 
-/** 构建 summary 缓存 key */
-function summaryCacheKey(familyId: string, month: string): string {
-  return `${familyId}:${month}`;
+/** 构建 summary 缓存 key（B3: month/year xor 改造） */
+function summaryCacheKey(familyId: string, scope: { month?: string; year?: string }): string {
+  return scope.month
+    ? `${familyId}:m:${scope.month}`
+    : `${familyId}:y:${scope.year!}`;
 }
 
 /** 从缓存取 summary（可能过期 · 供 _loadSummary stale-first 使用） */
-export function getCachedSummary(familyId: string, month: string): FamilySummary | null {
-  const key = summaryCacheKey(familyId, month);
+export function getCachedSummary(
+  familyId: string,
+  scope: { month?: string; year?: string },
+): FamilySummary | null {
+  const key = summaryCacheKey(familyId, scope);
   const entry = _summaryCache.get(key);
   if (!entry) return null;
   // 超过 TTL 的缓存视为过期，但仍保留在 Map 中（SWR 降级可用）
@@ -166,8 +172,8 @@ export function getCachedSummary(familyId: string, month: string): FamilySummary
 }
 
 /** 写入缓存（P1-4: 超上限时删除最旧条目） */
-function setCachedSummary(familyId: string, month: string, data: FamilySummary): void {
-  const key = summaryCacheKey(familyId, month);
+function setCachedSummary(familyId: string, scope: { month?: string; year?: string }, data: FamilySummary): void {
+  const key = summaryCacheKey(familyId, scope);
   // P1-4: 超过上限时删除最旧条目
   if (_summaryCache.size >= MAX_CACHE_SIZE && !_summaryCache.has(key)) {
     // 找到 timestamp 最小的条目删除
@@ -209,26 +215,33 @@ export async function getFamilies(): Promise<FamiliesResponse> {
 }
 
 /**
- * 获取家庭月度 summary
+ * 获取家庭 summary（月度或年度）
  * GET /v1/families/{id}/summary?month=YYYY-MM&top_n=6
- * 
- * P2-1 约束: 不支持年度维度，R1 只传 month=YYYY-MM
+ * GET /v1/families/{id}/summary?year=YYYY&top_n=6
+ *
+ * scope 必须恰传 month 或 year 之一（COSTRA-301 month/year xor 改造）。
  */
 export async function getFamilySummary(
   familyId: string,
-  month: string,
-  opts?: { topN?: number }
+  scope: { month?: string; year?: string },
+  opts?: { topN?: number },
 ): Promise<FamilySummary> {
+  const hasMonth = !!scope.month;
+  const hasYear = !!scope.year;
+  if (hasMonth === hasYear) {
+    throw new Error('getFamilySummary: scope must have exactly one of month/year');
+  }
+
   const summary = await request<FamilySummary>({
     method: 'GET',
     path: `/families/${familyId}/summary`,
     query: {
-      month,
+      ...(hasMonth ? { month: scope.month } : { year: scope.year }),
       top_n: opts?.topN ?? 6,
     },
   });
   // P1-2: 请求成功后写入缓存（stale-while-revalidate · COSTRA-223 R1.x.1）
-  setCachedSummary(familyId, month, summary);
+  setCachedSummary(familyId, scope, summary);
   return summary;
 }
 

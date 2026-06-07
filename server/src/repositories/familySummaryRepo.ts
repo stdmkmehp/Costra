@@ -1,7 +1,7 @@
 /**
  * Costra · Server · 家庭财务聚合 DAO
  *
- * 卡号：COSTRA-222 · 事实源：server/db/migrations/0001_init.sql + 0009_entries_shared_type.sql
+ * 卡号：COSTRA-222 · 事实源：server/db/migrations/0001_init.sql `entries` 表
  *
  * 职责：封装家庭月度聚合所需的 SQL 查询；业务层禁止直接写 SQL。
  *
@@ -371,4 +371,226 @@ export async function getPersonalCategoryRanksByMember(
     );
   }
   return result;
+}
+
+/**
+ * 获取分类排行（不截断版本）— 供 family summary L1 折叠使用。
+ *
+ * 与 getCategoryRanks 相同逻辑，但去掉最后的 .slice(0, topN)。
+ * service 层在拿到 untrimmed leaf 后再做 L1 折叠 + topN 截断。
+ *
+ * 卡号：COSTRA-300
+ */
+export async function getCategoryRanksUntrimmed(
+  ledgerId: string,
+  rangeStartUtc: string,
+  rangeEndUtc: string,
+  sharedType: 'shared' | 'personal',
+  createdByUserId: string | null,
+  client?: Runner,
+): Promise<CategoryRankRow[]> {
+  const runner = client ?? exec();
+  const conditions: string[] = [
+    'e.ledger_id = $1',
+    'e.deleted_at IS NULL',
+    'e.occurred_at >= $2',
+    'e.occurred_at < $3',
+    "e.type = 'expense'",
+    'e.shared_type = $4',
+  ];
+  const params: unknown[] = [ledgerId, rangeStartUtc, rangeEndUtc, sharedType];
+  let idx = 5;
+
+  if (createdByUserId) {
+    conditions.push(`e.created_by = $${idx++}`);
+    params.push(createdByUserId);
+  }
+
+  const aggRes = await runner.query(
+    `SELECT
+       e.category_id AS category_id,
+       SUM(e.amount) AS amount,
+       COUNT(*) AS entry_count
+     FROM entries e
+     WHERE ${conditions.join(' AND ')}
+     GROUP BY e.category_id`,
+    params,
+  );
+
+  type CategoryMeta = { id: string; name: string; parent_id: string | null };
+  const categoryIds = Array.from(new Set(
+    aggRes.rows
+      .map((r) => (r.category_id ? String(r.category_id) : null))
+      .filter((id): id is string => id !== null),
+  ));
+
+  const categoryMap = new Map<string, CategoryMeta>();
+  if (categoryIds.length > 0) {
+    const placeholders = categoryIds.map((_, i) => `$${i + 1}`).join(', ');
+    const catRes = await runner.query(
+      `SELECT id, name, parent_id FROM categories WHERE id IN (${placeholders})`,
+      categoryIds,
+    );
+    for (const row of catRes.rows) {
+      const id = String(row.id);
+      categoryMap.set(id, {
+        id,
+        name: String(row.name),
+        parent_id: row.parent_id ? String(row.parent_id) : null,
+      });
+    }
+  }
+
+  const parentIds = Array.from(new Set(
+    Array.from(categoryMap.values())
+      .map((c) => c.parent_id)
+      .filter((id): id is string => id !== null),
+  ));
+  const parentMap = new Map<string, CategoryMeta>();
+  if (parentIds.length > 0) {
+    const placeholders = parentIds.map((_, i) => `$${i + 1}`).join(', ');
+    const parentRes = await runner.query(
+      `SELECT id, name, parent_id FROM categories WHERE id IN (${placeholders})`,
+      parentIds,
+    );
+    for (const row of parentRes.rows) {
+      const id = String(row.id);
+      parentMap.set(id, {
+        id,
+        name: String(row.name),
+        parent_id: row.parent_id ? String(row.parent_id) : null,
+      });
+    }
+  }
+
+  return aggRes.rows
+    .map((r) => {
+      const categoryId = r.category_id ? String(r.category_id) : null;
+      const category = categoryId ? categoryMap.get(categoryId) : undefined;
+      const parent = category?.parent_id ? parentMap.get(category.parent_id) : undefined;
+      return {
+        category_id: categoryId,
+        category_name: category?.name ?? '未分类',
+        parent_category_id: category?.parent_id ?? null,
+        parent_category_name: parent?.name ?? null,
+        amount: Number(r.amount ?? 0),
+        entry_count: Number(r.entry_count ?? 0),
+      };
+    })
+    .filter((r) => r.amount > 0)
+    .sort((a, b) => (b.amount - a.amount) || a.category_name.localeCompare(b.category_name, 'zh-Hans-CN'));
+}
+
+/**
+ * 批量获取所有成员 personal expense 的分类排行（不截断版本）。
+ *
+ * 与 getPersonalCategoryRanksByMember 相同逻辑，但去掉成员级 .slice(0, topN)。
+ * service 层在拿到 untrimmed leaf 后再做 L1 折叠 + topN 截断。
+ *
+ * 卡号：COSTRA-300
+ */
+export async function getPersonalCategoryRanksByMemberUntrimmed(
+  ledgerId: string,
+  rangeStartUtc: string,
+  rangeEndUtc: string,
+  client?: Runner,
+): Promise<MemberCategoryRankRow[]> {
+  const runner = client ?? exec();
+  const aggRes = await runner.query(
+    `SELECT
+       e.created_by AS user_id,
+       e.category_id AS category_id,
+       SUM(e.amount) AS amount,
+       COUNT(*) AS entry_count
+     FROM entries e
+     WHERE e.ledger_id = $1
+       AND e.deleted_at IS NULL
+       AND e.occurred_at >= $2
+       AND e.occurred_at < $3
+       AND e.type = 'expense'
+       AND e.shared_type = 'personal'
+     GROUP BY e.created_by, e.category_id`,
+    [ledgerId, rangeStartUtc, rangeEndUtc],
+  );
+
+  type CategoryMeta = { id: string; name: string; parent_id: string | null };
+  const categoryIds = Array.from(new Set(
+    aggRes.rows
+      .map((r) => (r.category_id ? String(r.category_id) : null))
+      .filter((id): id is string => id !== null),
+  ));
+
+  const categoryMap = new Map<string, CategoryMeta>();
+  if (categoryIds.length > 0) {
+    const placeholders = categoryIds.map((_, i) => `$${i + 1}`).join(', ');
+    const catRes = await runner.query(
+      `SELECT id, name, parent_id FROM categories WHERE id IN (${placeholders})`,
+      categoryIds,
+    );
+    for (const row of catRes.rows) {
+      const id = String(row.id);
+      categoryMap.set(id, {
+        id,
+        name: String(row.name),
+        parent_id: row.parent_id ? String(row.parent_id) : null,
+      });
+    }
+  }
+
+  const parentIds = Array.from(new Set(
+    Array.from(categoryMap.values())
+      .map((c) => c.parent_id)
+      .filter((id): id is string => id !== null),
+  ));
+  const parentMap = new Map<string, CategoryMeta>();
+  if (parentIds.length > 0) {
+    const placeholders = parentIds.map((_, i) => `$${i + 1}`).join(', ');
+    const parentRes = await runner.query(
+      `SELECT id, name, parent_id FROM categories WHERE id IN (${placeholders})`,
+      parentIds,
+    );
+    for (const row of parentRes.rows) {
+      const id = String(row.id);
+      parentMap.set(id, {
+        id,
+        name: String(row.name),
+        parent_id: row.parent_id ? String(row.parent_id) : null,
+      });
+    }
+  }
+
+  const result: MemberCategoryRankRow[] = [];
+  for (const r of aggRes.rows) {
+    const userId = String(r.user_id);
+    const categoryId = r.category_id ? String(r.category_id) : null;
+    const category = categoryId ? categoryMap.get(categoryId) : undefined;
+    const parent = category?.parent_id ? parentMap.get(category.parent_id) : undefined;
+    const item: MemberCategoryRankRow = {
+      user_id: userId,
+      category_id: categoryId,
+      category_name: category?.name ?? '未分类',
+      parent_category_id: category?.parent_id ?? null,
+      parent_category_name: parent?.name ?? null,
+      amount: Number(r.amount ?? 0),
+      entry_count: Number(r.entry_count ?? 0),
+    };
+    if (item.amount <= 0) continue;
+    result.push(item);
+  }
+
+  // 按成员内排序（amount DESC, name ASC）但不截断
+  const grouped = new Map<string, MemberCategoryRankRow[]>();
+  for (const item of result) {
+    const list = grouped.get(item.user_id) ?? [];
+    list.push(item);
+    grouped.set(item.user_id, list);
+  }
+
+  const sorted: MemberCategoryRankRow[] = [];
+  for (const list of grouped.values()) {
+    sorted.push(
+      ...list.sort((a, b) => (b.amount - a.amount) || a.category_name.localeCompare(b.category_name, 'zh-Hans-CN')),
+    );
+  }
+  return sorted;
 }
