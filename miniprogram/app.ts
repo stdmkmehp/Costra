@@ -38,6 +38,17 @@ interface AppGlobalData {
    */
   pendingFamilyAction?: 'create' | null;
   /**
+   * 协作页 L1 点击后写入，switchTab 到统计页后由 onShow 消费（COSTRA-302 写入 · COSTRA-303 消费）。
+   * 消费后须置 null，防止后续 onShow 重复触发。
+   */
+  pendingStatisticsAction?: {
+    memberKey: string;
+    dimension: 'monthly' | 'yearly';
+    month?: string;
+    year?: string;
+    expandL1Id?: string;
+  } | null;
+  /**
    * COSTRA-901: 用户隐私授权状态。
    * - 'granted'：已授权，正常使用全部功能。
    * - 'denied'：已拒绝，降级为只读演示模式（不写入服务器、不采集任何信息）。

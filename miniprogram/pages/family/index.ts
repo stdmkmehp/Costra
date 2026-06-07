@@ -1,9 +1,9 @@
 // pages/family/index.ts · 家庭页（Tab4）
-// 卡号: COSTRA-223 · 家庭页全新开发 / API 接入 · R1 实装
-// 设计源: design/ui/design_spec.md §6.5 + design/ui/interaction_flow.md §6
+// 卡号: COSTRA-302 · 协作页 multi 模式重构（统计页同款手风琴 + 年度可用 + L1 跳转）
+// 设计源: docs/design/family-page-tech-spec.md §4 + design/ui/design_spec.md §6.5
 // 金额 ADR-0002: 全部走 decimal.js（utils/money.ts）
-// P2-1 约束: 年度维度 API 不支持 · R1 仅月度 · 年度 Tab 不展示
 // COSTRA-125 范式: onLoad + onShow 均加 bootstrapPromise gate，与 mine/ledger/statistics 对齐
+// Refs: COSTRA-302
 
 import { toYuan } from '../../utils/money';
 import { getSafeAreaMetrics } from '../../utils/safeArea';
@@ -40,9 +40,21 @@ import {
 import type { ApiError } from '../../services/request';
 import { mapError } from '../../utils/error-mapper';
 
+/** 跨页跳转统计页动作（COSTRA-302 写入 · COSTRA-303 消费） */
+export interface PendingStatisticsAction {
+  memberKey: string;
+  dimension: 'monthly' | 'yearly';
+  month?: string;
+  year?: string;
+  expandL1Id?: string;
+}
+
 interface AppWithBootstrap {
   bootstrapPromise: Promise<void>;
-  globalData: { pendingFamilyAction?: 'create' | null };
+  globalData: {
+    pendingFamilyAction?: 'create' | null;
+    pendingStatisticsAction?: PendingStatisticsAction | null;
+  };
 }
 
 // ─── 类型 ────────────────────────────────────────────────────────────────────────
@@ -77,28 +89,33 @@ interface ContributionDisplay {
   amount: string;       // 格式化后的元
 }
 
-/** 分类排行展示项 */
-interface CategoryDisplay {
-  categoryId: string | null;
-  categoryName: string;
-  icon: string;           // 分类图标首字
-  amount: string;         // 格式化后的元
+/** L1 一级分类展示项（spec §4.3） */
+interface L1Display {
+  category_id: string;
+  category_name: string;
+  icon: string;
+  amount: string;         // '¥xxx.xx'
   amountCents: number;
+  ratio_bps: number;
 }
 
-/** 数据明细行 */
-interface DetailRow {
-  key: string;              // 'shared' or 'member:{user_id}'
+/** 下钻行（替代旧 DetailRow · spec §4.3） */
+interface DrilldownRow {
+  key: string;                  // 'shared' or 'member:{user_id}'
   type: 'shared' | 'personal';
   label: string;
-  amount: string;           // 格式化后的元
+  amount: string;               // '¥1,234.56'
   amountCents: number;
-  avatarUrl: string;
+  ratio_bps: number;
+  color: string;
   contributions: ContributionDisplay[];
-  categories: CategoryDisplay[];
-  hasMoreCategories: boolean;
-  moreCategoriesCount: number;
+  avatarUrl: string;
+  userId: string;
+  memberStatus: 'active' | 'left' | null;
   expanded: boolean;
+  l1Items: L1Display[];
+  l1HasMore: boolean;
+  l1MoreCount: number;
 }
 
 // ─── 辅助函数 ────────────────────────────────────────────────────────────────────
@@ -145,6 +162,29 @@ function formatCentsDisplay(cents: number): string {
 
 // MEMBER_COLOR_SLOTS + getMemberColorBySlot 已迁移到 utils/memberColor.ts（唯一事实源 · COSTRA-261）
 
+/** L1 排行长列表省略：保留前 N 项（与统计页对齐 · spec §1.5） */
+const L1_VISIBLE = 6;
+
+/** 当前年份 → YYYY */
+function getCurrentYearValue(): string {
+  return `${new Date().getFullYear()}`;
+}
+
+/** YYYY → 显示文字: 2026年 */
+function formatYearDisplay(value: string): string {
+  return `${value}年`;
+}
+
+/** 上一年 */
+function prevYear(value: string): string {
+  return `${parseInt(value, 10) - 1}`;
+}
+
+/** 下一年 */
+function nextYear(value: string): string {
+  return `${parseInt(value, 10) + 1}`;
+}
+
 /** Segmented Bar 公共段颜色 */
 const SHARED_SEGMENT_COLOR = '#07C160';
 
@@ -179,7 +219,9 @@ Page({
 
     // ─── 时间维度 ───
     currentMonth: getCurrentMonthValue(),
+    currentYear: getCurrentYearValue(),
     monthDisplay: '',
+    yearDisplay: '',
     dimension: 'monthly' as 'monthly' | 'yearly',
 
     // ─── 摘要数据 ───
@@ -195,11 +237,8 @@ Page({
     segments: [] as SegmentDisplay[],
     totalExpenseCents: 0,
 
-    // ─── 数据明细行 ───
-    detailRows: [] as DetailRow[],
-
-    // ─── Accordion 展开 ───
-    expandedRow: '' as string,
+    // ─── 下钻列表（COSTRA-302 重构 · spec §4.3） ───
+    drilldownRows: [] as DrilldownRow[],
 
     // ─── 空态 ───
     isEmpty: false,
@@ -244,6 +283,7 @@ Page({
       statusBarHeight,
       navBarHeight,
       monthDisplay: formatMonthDisplay(this.data.currentMonth),
+      yearDisplay: formatYearDisplay(this.data.currentYear),
     });
 
     // sync-refresh: 订阅 SYNC_DONE → 失效服务端 summary 缓存 + 重拉当前月数据
@@ -334,7 +374,7 @@ Page({
     if (!this._familyId) return;
     if (this._loadingPromise) return;
     invalidateFamilyCache(this._familyId);
-    await this._loadSummary(this._familyId, this.data.currentMonth);
+    await this._loadSummary(this._familyId);
   },
 
   // ─── 数据加载 ────────────────────────────────────────────────────────────────
@@ -419,7 +459,7 @@ Page({
       });
 
       // 5. 加载 summary 数据
-      await this._loadSummary(familyId, this.data.currentMonth);
+      await this._loadSummary(familyId);
     } catch (err) {
       console.error('[family] loadPage failed', err);
 
@@ -443,9 +483,14 @@ Page({
     }
   },
 
-  async _loadSummary(familyId: string, month: string) {
+  async _loadSummary(familyId: string) {
+    // scope 由当前 dimension 决定（§C4）
+    const scope = this.data.dimension === 'monthly'
+      ? { month: this.data.currentMonth }
+      : { year: this.data.currentYear };
+
     // P1-2: SWR stale-first — 先取缓存立即渲染（COSTRA-223 R1.x.1）
-    const cached = getCachedSummary(familyId, month);
+    const cached = getCachedSummary(familyId, scope);
     if (cached) {
       this.setData({ summary: cached });
       if (this.data.mode === 'solo') {
@@ -458,7 +503,7 @@ Page({
     }
 
     try {
-      const summary = await getFamilySummary(familyId, month);
+      const summary = await getFamilySummary(familyId, scope);
 
       this.setData({ summary });
 
@@ -509,7 +554,7 @@ Page({
   // ─── Multi 态构建 ───────────────────────────────────────────────────────────
 
   _buildMultiDisplay(summary: FamilySummary) {
-    const { members, segments, shared, personal_by_member, totals } = summary;
+    const { members, segments, totals } = summary;
 
     // 1. 构建成员展示列表（活跃在前，已退出在后）
     const activeMembers: MemberDisplay[] = [];
@@ -538,7 +583,6 @@ Page({
       : this.data.isOwner;
 
     // 2. 构建 Segmented Bar
-    // 按 user_id 查 color_slot · 同成员跨月稳定取色，零值过滤不影响其他人配色
     const slotByUserId = new Map<string, number | null>(
       members.map(m => [m.user_id, m.color_slot]),
     );
@@ -547,7 +591,6 @@ Page({
     const totalExpense = totals.expense;
 
     for (const seg of segments) {
-      // 零值排除
       if (seg.amount === 0) continue;
 
       const color = seg.type === 'shared'
@@ -566,14 +609,38 @@ Page({
       });
     }
 
-    // 3. 构建数据明细行（保留旧的展开状态）
+    // 3. 构建下钻列表（COSTRA-302）
+    const drilldownRows = this._buildDrilldownRows(summary, slotByUserId);
+
+    this.setData({
+      members: memberDisplays,
+      segments: segmentDisplays,
+      totalExpenseCents: totalExpense,
+      drilldownRows,
+      loading: false,
+      isEmpty: totalExpense === 0 && totals.income === 0,
+      familyName: summary.family_name,
+      isOwner: isCurrentUserOwner,
+      canInvite: isCurrentUserOwner && activeMembers.length < maxFamilyMembers,
+    });
+  },
+
+  /** 构建下钻行列表（spec §4.3 / §4.4 · COSTRA-302） */
+  _buildDrilldownRows(
+    summary: FamilySummary,
+    slotByUserId: Map<string, number | null>,
+  ): DrilldownRow[] {
+    const { segments, shared, personal_by_member, members } = summary;
+
+    // 保留旧 expanded 状态
     const oldExpandedMap = new Map<string, boolean>();
-    for (const row of this.data.detailRows) {
+    for (const row of this.data.drilldownRows) {
       oldExpandedMap.set(row.key, row.expanded);
     }
-    const detailRows: DetailRow[] = [];
 
-    // 公共支出行
+    const rows: DrilldownRow[] = [];
+
+    // ── 公共支出行 ──
     if (shared.expense > 0) {
       const contributions: ContributionDisplay[] = shared.paid_contributions
         .filter(c => c.amount > 0)
@@ -583,74 +650,110 @@ Page({
           amount: `¥${formatCentsToYuan(c.amount)}`,
         }));
 
-      const categories = this._buildCategoryList(shared.categories);
-      const maxVisible = 5; // 最多展示5个，超出显示省略提示
-      const visibleCategories = categories.slice(0, maxVisible);
-      const hasMore = categories.length > maxVisible;
+      // ratio_bps 从 segments 取
+      const sharedSeg = segments.find(s => s.key === 'shared');
+      const ratioBps = sharedSeg ? sharedSeg.ratio_bps : 0;
 
-      detailRows.push({
+      // L1 列表
+      const allL1 = shared.categories
+        .filter(c => c.amount > 0)
+        .map(c => this._mapToL1Display(c));
+      const l1Items = allL1.slice(0, L1_VISIBLE);
+      const l1HasMore = allL1.length > L1_VISIBLE;
+      const l1MoreCount = allL1.length - L1_VISIBLE;
+
+      rows.push({
         key: 'shared',
         type: 'shared',
         label: '公共支出',
         amount: formatCentsDisplay(shared.expense),
         amountCents: shared.expense,
-        avatarUrl: '',
+        ratio_bps: ratioBps,
+        color: SHARED_SEGMENT_COLOR,
         contributions,
-        categories: visibleCategories,
-        hasMoreCategories: hasMore,
-        moreCategoriesCount: categories.length - maxVisible,
+        avatarUrl: '',
+        userId: '',
+        memberStatus: null,
         expanded: oldExpandedMap.get('shared') ?? false,
+        l1Items,
+        l1HasMore,
+        l1MoreCount,
       });
     }
 
-    // 各成员个人支出行（P1-1: pm.amount 对齐后端字段名）
+    // ── 各成员个人支出行 ──
     for (const pm of personal_by_member) {
       if (pm.amount <= 0) continue;
 
-      const categories = this._buildCategoryList(pm.categories);
-      const maxVisible = 5;
-      const visibleCategories = categories.slice(0, maxVisible);
-      const hasMore = categories.length > maxVisible;
+      const key = `member:${pm.user_id}`;
+      const memberInfo = members.find(m => m.user_id === pm.user_id);
+      const memberSeg = segments.find(s => s.key === key);
+      const ratioBps = memberSeg ? memberSeg.ratio_bps : 0;
+      const colorSlot = slotByUserId.get(pm.user_id) ?? null;
+      const color = getMemberColorBySlot(colorSlot);
 
-      detailRows.push({
-        key: `member:${pm.user_id}`,
+      // 已退出成员 label 加后缀
+      const statusSuffix = pm.status === 'left' ? '（已退出）' : '';
+      const label = `${pm.nickname}的个人支出${statusSuffix}`;
+
+      // L1 列表
+      const allL1 = pm.categories
+        .filter(c => c.amount > 0)
+        .map(c => this._mapToL1Display(c));
+      const l1Items = allL1.slice(0, L1_VISIBLE);
+      const l1HasMore = allL1.length > L1_VISIBLE;
+      const l1MoreCount = allL1.length - L1_VISIBLE;
+
+      rows.push({
+        key,
         type: 'personal',
-        label: `${pm.nickname}个人支出`,
+        label,
         amount: formatCentsDisplay(pm.amount),
         amountCents: pm.amount,
-        avatarUrl: pm.avatar_url || '',
+        ratio_bps: ratioBps,
+        color,
         contributions: [],
-        categories: visibleCategories,
-        hasMoreCategories: hasMore,
-        moreCategoriesCount: categories.length - maxVisible,
-        expanded: oldExpandedMap.get(`member:${pm.user_id}`) ?? false,
+        avatarUrl: pm.avatar_url || '',
+        userId: pm.user_id,
+        memberStatus: memberInfo?.status ?? pm.status,
+        expanded: oldExpandedMap.get(key) ?? false,
+        l1Items,
+        l1HasMore,
+        l1MoreCount,
       });
     }
 
-    this.setData({
-      members: memberDisplays,
-      segments: segmentDisplays,
-      totalExpenseCents: totalExpense,
-      detailRows,
-      loading: false,
-      isEmpty: totalExpense === 0 && totals.income === 0,
-      familyName: summary.family_name,
-      isOwner: isCurrentUserOwner,
-      canInvite: isCurrentUserOwner && activeMembers.length < maxFamilyMembers,
-    });
+    return rows;
   },
 
-  /** 构建分类排行列表（零值排除 + 分类图标） */
-  _buildCategoryList(categories: CategoryRankItem[]): CategoryDisplay[] {
-    return categories
-      .filter(c => c.amount > 0)
-      .map(c => ({
-        categoryId: c.category_id,
-        categoryName: c.category_name,
-        icon: getCategoryIconById(c.category_id),
-        amount: `¥${formatCentsToYuan(c.amount)}`,
-        amountCents: c.amount,
-      }));
+  /** CategoryRankItem → L1Display */
+  _mapToL1Display(c: CategoryRankItem): L1Display {
+    return {
+      category_id: c.category_id || '',
+      category_name: c.category_name,
+      icon: getCategoryIconById(c.category_id),
+      amount: `¥${formatCentsToYuan(c.amount)}`,
+      amountCents: c.amount,
+      ratio_bps: c.ratio_bps,
+    };
+  },
+
+  // ─── 交互：时间导航统一入口（与统计页 onPrevTime/onNextTime 对齐） ────────
+
+  onPrevTime() {
+    if (this.data.dimension === 'monthly') {
+      this.onPrevMonth();
+    } else {
+      this.onPrevYear();
+    }
+  },
+
+  onNextTime() {
+    if (this.data.dimension === 'monthly') {
+      this.onNextMonth();
+    } else {
+      this.onNextYear();
+    }
   },
 
   // ─── 交互：月份切换 ──────────────────────────────────────────────────────────
@@ -660,9 +763,9 @@ Page({
     this.setData({
       currentMonth: prev,
       monthDisplay: formatMonthDisplay(prev),
-      expandedRow: '',
     });
-    this._loadSummary(this._familyId, prev);
+    this._collapseAllRows();
+    void this._loadSummary(this._familyId);
   },
 
   onNextMonth() {
@@ -670,48 +773,102 @@ Page({
     this.setData({
       currentMonth: nxt,
       monthDisplay: formatMonthDisplay(nxt),
-      expandedRow: '',
     });
-    this._loadSummary(this._familyId, nxt);
+    this._collapseAllRows();
+    void this._loadSummary(this._familyId);
   },
 
-  /** picker mode="date" fields="month" 变更回调（统一与明细页一致） */
+  /** picker mode="date" fields="month" 变更回调 */
   onMonthChange(e: WechatMiniprogram.PickerChange) {
     const value = e.detail.value as string;
     this.setData({
       currentMonth: value,
       monthDisplay: formatMonthDisplay(value),
-      expandedRow: '',
     });
-    this._loadSummary(this._familyId, value);
+    this._collapseAllRows();
+    void this._loadSummary(this._familyId);
   },
 
-  /** 月度/年度切换 */
+  // ─── 交互：年份切换（COSTRA-302 新增） ────────────────────────────────────────
+
+  onPrevYear() {
+    const prev = prevYear(this.data.currentYear);
+    this.setData({
+      currentYear: prev,
+      yearDisplay: formatYearDisplay(prev),
+    });
+    this._collapseAllRows();
+    void this._loadSummary(this._familyId);
+  },
+
+  onNextYear() {
+    const nxt = nextYear(this.data.currentYear);
+    this.setData({
+      currentYear: nxt,
+      yearDisplay: formatYearDisplay(nxt),
+    });
+    this._collapseAllRows();
+    void this._loadSummary(this._familyId);
+  },
+
+  /** picker mode="date" fields="year" 变更回调 */
+  onYearChange(e: WechatMiniprogram.PickerChange) {
+    const raw = e.detail.value as string;
+    // picker fields="year" 可能返回 "YYYY" 或 "YYYY-MM-DD"，统一取前 4 位
+    const value = raw.split('-')[0] || raw;
+    this.setData({
+      currentYear: value,
+      yearDisplay: formatYearDisplay(value),
+    });
+    this._collapseAllRows();
+    void this._loadSummary(this._familyId);
+  },
+
+  /** 月度/年度切换（COSTRA-302 年度可用化 · 不再 toast 拦截） */
   onSwitchDimension(e: WechatMiniprogram.TouchEvent) {
     const dim = e.currentTarget.dataset.dim as 'monthly' | 'yearly';
-    if (dim === 'yearly') {
-      wx.showToast({ title: '年度统计即将上线', icon: 'none' });
-      return;
-    }
     if (dim === this.data.dimension) return;
     this.setData({ dimension: dim });
-    // 月度：刷新当前月数据
-    this._loadSummary(this._familyId, this.data.currentMonth);
+    this._collapseAllRows();
+    void this._loadSummary(this._familyId);
   },
 
-  // ─── 交互：Accordion 展开/收起 ─────────────────────────────────────────────
+  // ─── 交互：下钻行 展开/收起（手风琴 · COSTRA-302 · spec §4.5） ─────────────
 
-  onTapDetailRow(e: WechatMiniprogram.TouchEvent) {
+  /** 同时仅一行展开（手风琴） */
+  onTapDrilldownRow(e: WechatMiniprogram.TouchEvent) {
     const key = e.currentTarget.dataset.key as string;
+    const rows = this.data.drilldownRows.map(r => {
+      if (r.key === key) return { ...r, expanded: !r.expanded };
+      return { ...r, expanded: false };
+    });
+    this.setData({ drilldownRows: rows });
+  },
 
-    // 支持多个同时展开：toggle 当前行
-    const detailRows = this.data.detailRows;
-    for (const row of detailRows) {
-      if (row.key === key) {
-        row.expanded = !row.expanded;
-      }
-    }
-    this.setData({ detailRows });
+  /** L1 子项点击：公共行不响应，成员行 switchTab 到统计页（COSTRA-302 · spec §4.5.1） */
+  onTapL1(e: WechatMiniprogram.TouchEvent) {
+    const { rowkey, l1id } = e.currentTarget.dataset as Record<string, string>;
+    if (!rowkey || !l1id) return;
+    const row = this.data.drilldownRows.find(r => r.key === rowkey);
+    if (!row) return;
+    if (row.type === 'shared') return;  // 公共支出 L1 不下钻
+
+    // 成员行 → 写 globalData + switchTab
+    const app = getApp<AppWithBootstrap>();
+    app.globalData.pendingStatisticsAction = {
+      memberKey: row.userId,
+      dimension: this.data.dimension,
+      month: this.data.dimension === 'monthly' ? this.data.currentMonth : undefined,
+      year: this.data.dimension === 'yearly' ? this.data.currentYear : undefined,
+      expandL1Id: l1id,
+    };
+    wx.switchTab({ url: '/pages/statistics/index' });
+  },
+
+  /** 折叠所有行（时间切换 / 账本切换时使用） */
+  _collapseAllRows() {
+    const rows = this.data.drilldownRows.map(r => ({ ...r, expanded: false }));
+    this.setData({ drilldownRows: rows });
   },
 
   // ─── 交互：邀请成员 ──────────────────────────────────────────────────────────
@@ -927,7 +1084,7 @@ Page({
           await removeMember(this._familyId, userId);
           wx.showToast({ title: '已移出', icon: 'success' });
           // 刷新页面数据
-          await this._loadSummary(this._familyId, this.data.currentMonth);
+          await this._loadSummary(this._familyId);
         } catch (err) {
           console.error('[family] removeMember failed', err);
           wx.showToast({ title: '移出失败', icon: 'none' });
@@ -1228,11 +1385,11 @@ Page({
           familyKind: selected.kind,
           isOwner: selected.role === 'owner',
           mode: selected.kind === 'shared' ? 'multi' : 'solo',
-          expandedRow: '',
         });
+        this._collapseAllRows();
 
         // 切换家庭后重新加载
-        await this._loadSummary(selected.id, this.data.currentMonth);
+        await this._loadSummary(selected.id);
       },
     });
   },

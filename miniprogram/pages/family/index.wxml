@@ -1,7 +1,6 @@
 <!-- pages/family/index.wxml · 家庭页（Tab4） -->
-<!-- 卡号: COSTRA-223 · 家庭页全新开发 / API 接入 · R1 实装 -->
-<!-- 设计源: design/ui/design_spec.md §6.5 + design/ui/interaction_flow.md §6 -->
-<!-- P2-1: 年度维度 API 不支持 · R1 仅月度 · 不展示年度 Tab -->
+<!-- 卡号: COSTRA-302 · 协作页 multi 模式重构（统计页同款手风琴 + 年度可用 + L1 跳转） -->
+<!-- 设计源: docs/design/family-page-tech-spec.md §4.7 -->
 <!-- ready gate: bootstrap 完成且已登录前页面完全空白 -->
 
 <view class="family" wx:if="{{ready}}">
@@ -90,30 +89,51 @@
           </view>
         </scroll-view>
 
-        <!-- 时间导航区（统一使用 picker mode=date fields=month · 与明细页一致） -->
+        <!-- 时间导航区（COSTRA-302 年度可用化 · 参照统计页双 picker 写法） -->
         <view class="time-nav">
           <view class="time-nav__left">
-            <view class="time-nav__arrow" bind:tap="onPrevMonth">
+            <view class="time-nav__arrow" bind:tap="onPrevTime">
               <text class="time-nav__arrow-icon">‹</text>
             </view>
-            <picker mode="date" fields="month" value="{{currentMonth}}" bindchange="onMonthChange">
+
+            <picker
+              wx:if="{{dimension === 'monthly'}}"
+              mode="date"
+              fields="month"
+              value="{{currentMonth}}"
+              bindchange="onMonthChange"
+            >
               <view class="time-nav__month">
                 <text>{{monthDisplay}}</text>
                 <text class="time-nav__dropdown">▼</text>
               </view>
             </picker>
-            <view class="time-nav__arrow" bind:tap="onNextMonth">
+
+            <picker
+              wx:else
+              mode="date"
+              fields="year"
+              value="{{currentYear}}-01-01"
+              bindchange="onYearChange"
+            >
+              <view class="time-nav__month">
+                <text>{{yearDisplay}}</text>
+                <text class="time-nav__dropdown">▼</text>
+              </view>
+            </picker>
+
+            <view class="time-nav__arrow" bind:tap="onNextTime">
               <text class="time-nav__arrow-icon">›</text>
             </view>
           </view>
           <!-- 月度/年度切换 -->
           <view class="time-nav__dimension">
             <text class="time-nav__dim-btn {{dimension === 'monthly' ? 'time-nav__dim-btn--active' : ''}}" bind:tap="onSwitchDimension" data-dim="monthly">月度</text>
-            <text class="time-nav__dim-btn {{dimension === 'yearly' ? 'time-nav__dim-btn--active' : 'time-nav__dim-btn--disabled'}}" bind:tap="onSwitchDimension" data-dim="yearly">年度</text>
+            <text class="time-nav__dim-btn {{dimension === 'yearly' ? 'time-nav__dim-btn--active' : ''}}" bind:tap="onSwitchDimension" data-dim="yearly">年度</text>
           </view>
         </view>
 
-        <!-- P2-1: 年度 Tab 不展示（API 不支持） -->
+        <!-- P2-1 已移除：年度不再拦截 · COSTRA-302 年度可用化 -->
         <!-- Segmented Bar -->
         <view class="segment-bar" wx:if="{{segments.length > 0}}">
           <view class="segment-bar__track">
@@ -140,89 +160,84 @@
 
         <!-- 空态（Multi 模式下无收支记录） -->
         <view class="empty-state" wx:if="{{isEmpty && !loading}}">
-          <text class="empty-state__text">本月暂无收支记录</text>
+          <text class="empty-state__text">{{dimension === 'monthly' ? '本月暂无收支记录' : '本年暂无收支记录'}}</text>
         </view>
 
-        <!-- 数据明细列表 -->
-        <view class="detail-list" wx:if="{{detailRows.length > 0}}">
+        <!-- ★ 下钻列表（COSTRA-302 · spec §4.7 · 统计页同款手风琴） -->
+        <view class="family-rank" wx:if="{{drilldownRows.length > 0 && !loading}}">
           <view
-            wx:for="{{detailRows}}"
+            wx:for="{{drilldownRows}}"
             wx:key="key"
-            class="detail-row"
+            class="family-rank__row {{item.expanded ? 'family-rank__row--open' : ''}}"
           >
-            <!-- 行头（可点击展开） -->
+            <!-- 行主体 -->
             <view
-              class="detail-row__header"
+              class="family-rank__head"
               data-key="{{item.key}}"
-              bind:tap="onTapDetailRow"
+              bind:tap="onTapDrilldownRow"
             >
-              <view class="detail-row__header-left">
-                <!-- Mini 头像（个人行） -->
-                <!-- Mini 头像（个人行） -->
+              <view class="family-rank__head-main">
+                <!-- 公共标 / mini 头像 -->
+                <view wx:if="{{item.type === 'shared'}}" class="family-rank__shared-icon">
+                  <text>公</text>
+                </view>
                 <image
-                  wx:if="{{item.type === 'personal' && item.avatarUrl}}"
-                  class="detail-row__avatar"
+                  wx:elif="{{item.avatarUrl}}"
+                  class="family-rank__avatar"
                   src="{{item.avatarUrl}}"
                   mode="aspectFill"
                   lazy-load
                 />
-                <view
-                  wx:elif="{{item.type === 'personal' && !item.avatarUrl}}"
-                  class="detail-row__avatar detail-row__avatar--placeholder"
-                >
-                  <text class="detail-row__avatar-text">?</text>
+                <view wx:else class="family-rank__avatar family-rank__avatar--placeholder">
+                  <text>?</text>
                 </view>
-                <!-- 公共标记（公共行） -->
-                <view wx:if="{{item.type === 'shared'}}" class="detail-row__shared-icon">
-                  <text>公</text>
-                </view>
-                <text class="detail-row__label">{{item.label}}</text>
+
+                <view class="family-rank__name">{{item.label}}</view>
+                <view class="family-rank__amount tnum">{{item.amount}}</view>
               </view>
-              <view class="detail-row__header-right">
-                <text class="detail-row__amount tnum">{{item.amount}}</text>
-                <text class="detail-row__chevron {{item.expanded ? 'detail-row__chevron--open' : ''}}">›</text>
+              <view class="family-rank__bar">
+                <view
+                  class="family-rank__bar-fill"
+                  style="width: {{item.ratio_bps / 100}}%; background: {{item.color}};"
+                ></view>
               </view>
             </view>
 
-            <!-- 垫付贡献（公共行独有） -->
-            <view class="detail-row__contributions" wx:if="{{item.type === 'shared' && item.contributions.length > 0 && !item.expanded}}">
-              <view
+            <!-- 公共行：垫付贡献小字（行下常驻 · spec §1.4 q4 决策 A） -->
+            <view
+              class="shared-contributions"
+              wx:if="{{item.type === 'shared' && item.contributions.length > 0}}"
+            >
+              <text
                 wx:for="{{item.contributions}}"
                 wx:for-item="c"
                 wx:key="index"
-                class="contribution-item"
-              >
-                <image wx:if="{{c.avatarUrl}}" class="contribution-item__avatar" src="{{c.avatarUrl}}" mode="aspectFill" />
-                <view wx:else class="contribution-item__avatar contribution-item__avatar--placeholder">
-                  <text>{{c.nickname[0] || '?'}}</text>
-                </view>
-                <text class="contribution-item__name">{{c.nickname}}</text>
-                <text class="contribution-item__label">付</text>
-                <text class="contribution-item__amount tnum">{{c.amount}}</text>
-              </view>
+                class="shared-contributions__item"
+              >{{c.nickname}} 付 {{c.amount}}{{index < item.contributions.length - 1 ? ' · ' : ''}}</text>
             </view>
 
-            <!-- Accordion 下钻：分类排行 -->
-            <view class="detail-row__accordion" wx:if="{{item.expanded}}">
-              <view class="detail-row__categories">
-                <view
-                  wx:for="{{item.categories}}"
-                  wx:for-item="cat"
-                  wx:key="categoryId"
-                  class="category-item"
-                >
-                  <view class="category-item__left">
-                    <view class="category-item__icon">
-                      <text>{{cat.icon}}</text>
-                    </view>
-                    <text class="category-item__name">{{cat.categoryName}}</text>
-                  </view>
-                  <text class="category-item__amount tnum">{{cat.amount}}</text>
+            <!-- L1 列表（展开时） · 严格对齐统计页 .rank 子样式 -->
+            <view class="family-l1" wx:if="{{item.expanded}}">
+              <view
+                wx:for="{{item.l1Items}}"
+                wx:for-item="l1"
+                wx:key="category_id"
+                class="family-l1__row"
+                data-rowkey="{{item.key}}"
+                data-l1id="{{l1.category_id}}"
+                bind:tap="onTapL1"
+              >
+                <view class="family-l1__row-main">
+                  <view class="family-l1__icon">{{l1.icon}}</view>
+                  <view class="family-l1__name">{{l1.category_name}}</view>
+                  <view class="family-l1__amount tnum">{{l1.amount}}</view>
                 </view>
-                <!-- 长列表省略 -->
-                <view class="category-item category-item--more" wx:if="{{item.hasMoreCategories}}">
-                  <text class="category-item__more-text">还有部分较小支出未显示...</text>
+                <view class="family-l1__bar">
+                  <view class="family-l1__bar-fill" style="width: {{l1.ratio_bps / 100}}%;"></view>
                 </view>
+              </view>
+              <view class="family-l1__more" wx:if="{{item.l1HasMore}}">
+                还有 {{item.l1MoreCount}} 项较小支出未显示...
               </view>
             </view>
           </view>
