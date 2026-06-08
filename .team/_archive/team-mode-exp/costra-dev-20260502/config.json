@@ -1,0 +1,18 @@
+{
+  "name": "costra-dev",
+  "leadAgentId": "81977403dee44c1d891550b42f2498b2",
+  "workspacePath": "/Users/weizhao/Desktop/Costra",
+  "createdAt": "2026-05-01T13:44:52.622Z",
+  "options": {
+    "workspacePath": "/Users/weizhao/Desktop/Costra",
+    "isAutoTeam": false
+  },
+  "members": [
+    {
+      "memberId": "team-lead@costra-dev",
+      "name": "team-lead",
+      "role": "Team Lead - coordinates the team and interacts with the user"
+    }
+  ],
+  "isAutoTeam": false
+}

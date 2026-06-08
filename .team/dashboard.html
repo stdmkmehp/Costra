@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>Costra · Team Dashboard</title>
+<style>
+  :root{
+    --bg:#0f1117; --panel:#161a23; --border:#232836; --text:#e6e9ef; --muted:#8b93a7;
+    --accent:#7c9cff; --ok:#4ade80; --warn:#fbbf24; --err:#f87171; --info:#38bdf8;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.55 -apple-system,"SF Pro Text","PingFang SC",Segoe UI,Roboto,sans-serif}
+  header{padding:18px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+  header h1{margin:0;font-size:18px;letter-spacing:1px}
+  header .state{padding:4px 10px;border-radius:12px;font-size:12px;background:#1f2937}
+  header .state.RUNNING{background:#064e3b;color:var(--ok)}
+  header .state.PAUSED{background:#78350f;color:var(--warn)}
+  header .state.ABORTED{background:#7f1d1d;color:var(--err)}
+  main{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:16px}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px 16px;min-height:180px}
+  .panel h2{margin:0 0 10px;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:1px}
+  .panel.full{grid-column:1 / -1}
+  pre{white-space:pre-wrap;word-break:break-word;margin:0;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#c9d1d9}
+  .msg{padding:6px 8px;border-bottom:1px dashed #2a3040;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace}
+  .msg:last-child{border:none}
+  .tag{display:inline-block;padding:1px 6px;border-radius:4px;font-size:11px;margin-right:6px}
+  .t-task_assign{background:#1e3a8a;color:#bfdbfe}
+  .t-status_report{background:#064e3b;color:#a7f3d0}
+  .t-approval_request{background:#78350f;color:#fde68a}
+  .t-approval_response{background:#365314;color:#d9f99d}
+  .t-blocker{background:#7f1d1d;color:#fecaca}
+  .t-artifact_ready{background:#1e293b;color:#e2e8f0}
+  .t-intervention{background:#581c87;color:#f5d0fe}
+  .t-heartbeat{background:#1f2937;color:#9ca3af}
+  .k-col{display:flex;flex-direction:column;gap:6px}
+  .k-card{background:#1b2130;border:1px solid #2a3040;border-radius:6px;padding:8px 10px;font-size:12px}
+  .k-card .id{color:var(--accent);font-weight:600}
+  .k-card .meta{color:var(--muted);font-size:11px;margin-top:2px}
+  .metric{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px dashed #2a3040;font-size:13px}
+  .metric b{color:var(--accent)}
+  footer{color:var(--muted);text-align:center;padding:10px;font-size:12px}
+  button{background:#1f2937;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px}
+  button:hover{border-color:var(--accent)}
+  .pill{font-size:11px;padding:1px 6px;border-radius:10px;background:#1f2937;color:var(--muted);margin-left:6px}
+  .err{color:var(--err)}
+</style>
+</head>
+<body>
+<header>
+  <h1>🧭 Costra · Team Dashboard</h1>
+  <div>
+    <span id="state" class="state">LOADING</span>
+    <button onclick="loadAll()">🔄 刷新</button>
+    <span class="pill" id="ts">--</span>
+  </div>
+</header>
+
+<main>
+  <section class="panel">
+    <h2>📋 看板 (board.md)</h2>
+    <pre id="board">加载中...</pre>
+  </section>
+
+  <section class="panel">
+    <h2>📊 指标 (metrics.json)</h2>
+    <div id="metrics">加载中...</div>
+  </section>
+
+  <section class="panel">
+    <h2>⚠️ 风险 (risks.md)</h2>
+    <pre id="risks">加载中...</pre>
+  </section>
+
+  <section class="panel">
+    <h2>🗓 今日站会 (daily)</h2>
+    <pre id="daily">加载中...</pre>
+  </section>
+
+  <section class="panel full">
+    <h2>📨 实时消息流 (最新 50 条)</h2>
+    <div id="messages">加载中...</div>
+  </section>
+
+  <section class="panel full">
+    <h2>🛠 工具调用审计 (最新 30 条)</h2>
+    <div id="tools">加载中...</div>
+  </section>
+</main>
+
+<footer>
+  提示：用本地 HTTP 方式打开才能读同目录文件 →
+  <code>cd h:/Costra; python -m http.server 8787</code>，然后访问
+  <code>http://localhost:8787/.team/dashboard.html</code>
+</footer>
+
+<script>
+const pad = n => String(n).padStart(2,'0');
+function today(){
+  const d = new Date();
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+}
+
+async function fetchText(path){
+  try{ const r = await fetch(path + '?t=' + Date.now()); if(!r.ok) throw 0; return await r.text(); }
+  catch{ return null; }
+}
+
+async function loadState(){
+  const s = (await fetchText('./STATE')) || 'UNKNOWN';
+  const v = s.trim();
+  const el = document.getElementById('state');
+  el.textContent = v;
+  el.className = 'state ' + v;
+}
+
+async function loadBoard(){
+  const t = await fetchText('./board.md');
+  document.getElementById('board').textContent = t || '(board.md 不可读)';
+}
+
+async function loadRisks(){
+  const t = await fetchText('./risks.md');
+  document.getElementById('risks').textContent = t || '(risks.md 不可读)';
+}
+
+async function loadMetrics(){
+  const t = await fetchText('./metrics.json');
+  const el = document.getElementById('metrics');
+  if(!t){ el.textContent = '(metrics.json 不可读)'; return; }
+  try{
+    const m = JSON.parse(t);
+    const q = m.quality || {};
+    const d = m.delivery || {};
+    const s = m.sprint || {};
+    el.innerHTML = `
+      <div class="metric"><span>Sprint</span><b>${s.name || '-'}</b></div>
+      <div class="metric"><span>进度</span><b>${s.completed_points||0} / ${s.planned_points||0} pts</b></div>
+      <div class="metric"><span>iOS 覆盖率</span><b>${((q.ios_unit_coverage||0)*100).toFixed(1)}%</b></div>
+      <div class="metric"><span>后端覆盖率</span><b>${((q.backend_unit_coverage||0)*100).toFixed(1)}%</b></div>
+      <div class="metric"><span>P0/P1 缺陷</span><b>${(q.open_bugs?.P0||0)} / ${(q.open_bugs?.P1||0)}</b></div>
+      <div class="metric"><span>Crash-free</span><b>${((q.crash_free_rate||0)*100).toFixed(2)}%</b></div>
+      <div class="metric"><span>CI 均耗时</span><b>${d.cicd_avg_minutes ?? '-'} min</b></div>
+      <div class="metric"><span>Prod 可用性</span><b>${d.prod_availability ?? '-'}</b></div>
+      <div class="metric"><span>最近发布</span><b>${d.last_release_tag ?? '-'}</b></div>
+      <div class="metric"><span>风险数</span><b>${m.risks_open ?? '-'}</b></div>
+    `;
+  }catch(e){ el.innerHTML = `<span class="err">${e}</span>`; }
+}
+
+async function loadDaily(){
+  const day = today();
+  let t = await fetchText(`./daily/${day}.md`);
+  if(!t) t = await fetchText('./daily/TEMPLATE.md');
+  document.getElementById('daily').textContent = t || '(daily 不可读)';
+}
+
+async function loadMessages(){
+  const day = today();
+  const raw = await fetchText(`./messages/${day}.jsonl`);
+  const el = document.getElementById('messages');
+  if(!raw){ el.innerHTML = '<i style="color:var(--muted)">今日暂无消息（'+day+'）</i>'; return; }
+  const lines = raw.trim().split('\n').slice(-50).reverse();
+  el.innerHTML = lines.map(ln=>{
+    try{
+      const m = JSON.parse(ln);
+      return `<div class="msg">
+        <span class="tag t-${m.type}">${m.type}</span>
+        <b>${m.from}</b> → <b>${m.to}</b>
+        ${m.task_id?`<span class="pill">${m.task_id}</span>`:''}
+        <span style="color:var(--muted)"> · ${m.ts||''}</span>
+        <div>${escapeHtml(m.summary||'')}</div>
+      </div>`;
+    }catch{ return `<div class="msg err">${escapeHtml(ln)}</div>`; }
+  }).join('');
+}
+
+async function loadTools(){
+  const day = today();
+  const raw = await fetchText(`./tool_calls/${day}.jsonl`);
+  const el = document.getElementById('tools');
+  if(!raw){ el.innerHTML = '<i style="color:var(--muted)">今日暂无工具调用记录</i>'; return; }
+  const lines = raw.trim().split('\n').slice(-30).reverse();
+  el.innerHTML = lines.map(ln=>{
+    try{
+      const t = JSON.parse(ln);
+      return `<div class="msg">
+        <b>${t.agent}</b> · <span style="color:var(--accent)">${t.tool}</span>
+        <span class="pill">${t.action}</span>
+        ${t.task_id?`<span class="pill">${t.task_id}</span>`:''}
+        <span style="color:var(--muted)"> · ${t.ts||''}</span>
+        <div><code>${escapeHtml(t.target||'')}</code> — ${escapeHtml(t.diff_summary||'')}</div>
+      </div>`;
+    }catch{ return `<div class="msg err">${escapeHtml(ln)}</div>`; }
+  }).join('');
+}
+
+function escapeHtml(s){ return (s||'').replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+async function loadAll(){
+  document.getElementById('ts').textContent = new Date().toLocaleTimeString();
+  await Promise.all([loadState(),loadBoard(),loadRisks(),loadMetrics(),loadDaily(),loadMessages(),loadTools()]);
+}
+loadAll();
+setInterval(loadAll, 15000); // 每 15 秒自动刷新
+</script>
+</body>
+</html>

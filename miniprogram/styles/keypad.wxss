@@ -1,0 +1,206 @@
+/* styles/keypad.wxss · 计算器键盘公共样式 */
+/* COSTRA-227: 抽取自 expense-overlay · 供明细页金额编辑复用 */
+/* 包含：金额显示区 / 操作行（账本+备注+费用性质）/ 数字键盘网格 */
+/* 修改此文件即可同时影响记账面板和编辑金额面板 */
+
+/* ─── 金额显示区 ─── */
+
+.keypad-sheet__amount {
+  display: flex;
+  align-items: baseline;
+  padding: 24rpx 32rpx 16rpx;
+  min-height: 80rpx;
+}
+
+.keypad-sheet__prefix {
+  font-size: 32rpx;
+  color: rgba(28, 27, 26, 0.48);
+  margin-right: 8rpx;
+  font-weight: 500;
+}
+
+.keypad-sheet__value {
+  font-size: 56rpx;
+  font-weight: 600;
+  color: #1c1b1a;
+  line-height: 1.2;
+  letter-spacing: -1rpx;
+  word-break: break-all;
+}
+
+.keypad-sheet__value.is-result {
+  color: #07C160;
+}
+
+/* ─── 操作行容器 ─── */
+
+.keypad-sheet__actions {
+  display: flex;
+  align-items: center;
+  padding: 0 32rpx 16rpx;
+  gap: 16rpx;
+  min-height: 56rpx;
+}
+
+/* ─── 账本切换 ─── */
+
+.keypad-ledger {
+  flex-shrink: 0;
+}
+
+.keypad-ledger__text {
+  font-size: 26rpx;
+  color: rgba(28, 27, 26, 0.36);
+}
+
+/* ─── 备注输入（placeholder 与 input 叠放，class 控制显隐） ─── */
+
+.keypad-note {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  /* 扩大可点击热区：上下 padding 让整个区域都能触发 onTapNote */
+  padding: 12rpx 0;
+  min-height: 40rpx;
+  display: flex;
+  align-items: center;
+}
+
+.keypad-note__placeholder {
+  font-size: 26rpx;
+  color: rgba(28, 27, 26, 0.28);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: opacity 150ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.keypad-note__placeholder.is-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.keypad-note__input {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 100%;
+  font-size: 26rpx;
+  color: #1c1b1a;
+  min-height: 40rpx;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.keypad-note__input.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* ─── 费用性质开关（仅家庭账本+支出时可见 · is-visible 控制） ─── */
+/*   右对齐：margin-left:auto 推到操作行最右端                    */
+
+.keypad-shared {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  flex-shrink: 0;
+  margin-left: auto;
+  opacity: 0;
+  height: 0;
+  overflow: hidden;
+  transition: opacity 250ms cubic-bezier(0.25, 0.1, 0.25, 1),
+              height 250ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.keypad-shared.is-visible {
+  opacity: 1;
+  height: 40rpx;
+}
+
+.keypad-shared__text {
+  font-size: 26rpx;
+  color: rgba(28, 27, 26, 0.36);
+  transition: color 150ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.keypad-shared__text.is-active {
+  color: #1c1b1a;
+  font-weight: 600;
+}
+
+.keypad-shared__sep {
+  font-size: 26rpx;
+  color: rgba(28, 27, 26, 0.12);
+}
+
+/* ─── 数字键盘网格 ─── */
+
+.keypad {
+  padding: 0 8rpx 8rpx;
+}
+
+.keypad__row {
+  display: flex;
+  width: 100%;
+}
+
+.keypad__picker {
+  flex: 1;
+  margin: 4rpx;
+}
+
+.keypad__picker .keypad__key {
+  margin: 0;
+}
+
+.keypad__key {
+  flex: 1;
+  height: 96rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 4rpx;
+  border-radius: 12rpx;
+  background: rgba(28, 27, 26, 0.04);
+  font-size: 36rpx;
+  color: #1c1b1a;
+  font-weight: 500;
+  transition: background 150ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.keypad__key:active {
+  background: rgba(28, 27, 26, 0.1);
+}
+
+.keypad__key--fn {
+  background: rgba(28, 27, 26, 0.08);
+  font-size: 32rpx;
+}
+
+.keypad__key--date {
+  font-size: 24rpx;
+}
+
+.keypad__key--action {
+  font-size: 28rpx;
+  font-weight: 600;
+}
+
+.keypad__key--done {
+  background: #07C160;
+  color: #ffffff;
+}
+
+.keypad__key--done:active {
+  background: #06ad56;
+}
+
+.keypad__key--equals {
+  background: rgba(28, 27, 26, 0.12);
+  color: #1c1b1a;
+  font-size: 40rpx;
+  font-weight: 700;
+}

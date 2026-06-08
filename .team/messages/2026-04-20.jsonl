@@ -1,0 +1,1 @@
+{"msg_id":"00000000-0000-0000-0000-000000000000","ts":"2026-04-20T19:54:00+08:00","from":"Orchestrator","to":"ALL","type":"heartbeat","summary":"team bus initialized","payload":{"state":"RUNNING"}}

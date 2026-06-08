@@ -1,0 +1,27 @@
+<!-- pages-family/bulletin/index.wxml · 公告列表页 -->
+<view class="bulletin">
+  <view wx:if="{{loading}}" class="bulletin__loading">加载中…</view>
+
+  <view wx:elif="{{list.length === 0}}" class="bulletin__empty">暂无公告</view>
+
+  <view wx:else class="bulletin__list">
+    <view
+      wx:for="{{list}}"
+      wx:key="id"
+      class="bulletin__item {{item.expanded ? 'bulletin__item--expanded' : ''}} {{!item.is_read ? 'bulletin__item--unread' : ''}}"
+      bindtap="onTapItem"
+      data-index="{{index}}"
+    >
+      <view class="bulletin__header">
+        <view class="bulletin__title-row">
+          <view wx:if="{{!item.is_read}}" class="bulletin__dot"></view>
+          <text class="bulletin__title">{{item.title}}</text>
+        </view>
+        <text class="bulletin__date">{{item.published_at}}</text>
+      </view>
+      <view wx:if="{{item.expanded}}" class="bulletin__body">
+        <text class="bulletin__content">{{item.content}}</text>
+      </view>
+    </view>
+  </view>
+</view>

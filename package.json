@@ -1,0 +1,36 @@
+{
+  "name": "costra-miniapp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Costra 微信小程序（主包 + 分包 + TS 骨架）",
+  "scripts": {
+    "lint": "eslint \"miniprogram/**/*.{ts,js}\"",
+    "lint:fix": "eslint \"miniprogram/**/*.{ts,js}\" --fix",
+    "format": "prettier --write \"miniprogram/**/*.{ts,js,json,wxss,wxml}\"",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "mp:build:check": "node ./scripts/mp-ci/build-check.mjs",
+    "analyze": "node ./scripts/mp-ci/analyze.mjs",
+    "check:whitelist": "node ./scripts/devops/whitelist-check.mjs",
+    "check:appjson": "node ./scripts/devops/appjson-pages-check.mjs",
+    "check:tooling": "node ./scripts/devops/miniapp-tooling-check.mjs",
+    "prepare": "husky install"
+  },
+  "dependencies": {
+    "decimal.js": "^10.4.3"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.0.0",
+    "@commitlint/config-conventional": "^19.0.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "husky": "^9.0.0",
+    "miniprogram-api-typings": "^3.12.2",
+    "prettier": "^3.2.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  }
+}

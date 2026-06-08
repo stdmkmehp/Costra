@@ -1,0 +1,22 @@
+<!-- 登录页 · COSTRA-202 极简重做：暖灰白背景 + Wordmark + 随机格言 + 微信绿 CTA -->
+<!-- 设计规范：design/ui/design_spec.md §6.1 · 交互流程：design/ui/interaction_flow.md §1 -->
+<!-- 合规：不在登录主界面展示隐私协议勾选框 · 合规动作走微信原生授权流程 -->
+<view class="login">
+  <!-- 中心视觉区 -->
+  <view class="login__center">
+    <text class="login__wordmark">COSTRA</text>
+    <text class="login__slogan">{{slogan}}</text>
+  </view>
+
+  <!-- 底部操作区 -->
+  <view class="login__bottom">
+    <button
+      class="login__btn"
+      loading="{{loading}}"
+      disabled="{{loading}}"
+      bindtap="onTapLogin">
+      微信一键登录
+    </button>
+    <view wx:if="{{errMsg}}" class="login__err">{{errMsg}}</view>
+  </view>
+</view>

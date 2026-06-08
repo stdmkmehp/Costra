@@ -1,0 +1,6 @@
+# 此文件为 server/api/openapi.yaml 的共享镜像
+# 事实源：server/api/openapi.yaml
+# 镜像策略：CI 校验两份一致（diff 为空），破坏性变更走 ADR + G3 双签
+# 首次提交：2026-04-21 · Backend-Agent · COSTRA-020
+
+$ref: '../server/api/openapi.yaml'

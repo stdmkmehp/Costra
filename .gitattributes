@@ -1,0 +1,67 @@
+# Costra 行尾与文本归一化策略
+# 目的：Windows / macOS / Linux 混合开发时，仓库内统一以 LF 存盘；checkout 时由 core.autocrlf 决定工作区表现
+# 引入时间：2026-04-24（工程迁移 Windows → Mac 前）
+# 约定：
+#   - 文本文件一律 LF 存盘（eol=lf）
+#   - 二进制文件显式标注 binary，避免 Git 误判做 diff / 换行转换
+#   - shell / sh / mjs 脚本 LF 是硬要求（CRLF 的 shebang 会被 bash 拒绝）
+
+# 默认：自动识别 + LF 存盘
+* text=auto eol=lf
+
+# ────────── 脚本与源代码（强制 LF） ──────────
+*.sh        text eol=lf
+*.bash      text eol=lf
+*.mjs       text eol=lf
+*.cjs       text eol=lf
+*.js        text eol=lf
+*.jsx       text eol=lf
+*.ts        text eol=lf
+*.tsx       text eol=lf
+
+# ────────── 样式 / 模板 / 配置 ──────────
+*.css       text eol=lf
+*.wxss      text eol=lf
+*.wxml      text eol=lf
+*.html      text eol=lf
+*.htm       text eol=lf
+*.xml       text eol=lf
+*.svg       text eol=lf
+*.json      text eol=lf
+*.jsonc     text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.toml      text eol=lf
+*.ini       text eol=lf
+*.env       text eol=lf
+*.env.*     text eol=lf
+
+# ────────── 文档 ──────────
+*.md        text eol=lf
+*.markdown  text eol=lf
+*.txt       text eol=lf
+*.sql       text eol=lf
+
+# ────────── Windows 专属（保持 CRLF） ──────────
+# 当前仓库无 .bat / .cmd / .ps1，如后续引入放开下列规则
+# *.bat     text eol=crlf
+# *.cmd     text eol=crlf
+# *.ps1     text eol=crlf
+
+# ────────── 二进制（禁止 diff / 换行转换） ──────────
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.webp      binary
+*.ico       binary
+*.pdf       binary
+*.zip       binary
+*.gz        binary
+*.tar       binary
+*.key       binary
+*.pem       binary
+*.p12       binary
+
+# ────────── 生成物/锁文件：diff 可读即可，换行照常归一化 ──────────
+package-lock.json  text eol=lf linguist-generated=true

@@ -1,0 +1,26 @@
+<!-- COSTRA-901: 隐私授权弹窗组件
+     微信要求同意操作必须通过 open-type="agreePrivacyAuthorization" 的按钮完成，
+     基础库会校验 buttonId 对应的按钮是否被真实点击，wx.showModal 不符合要求。
+-->
+<view wx:if="{{visible}}" class="privacy-popup__mask">
+  <view class="privacy-popup__card">
+    <view class="privacy-popup__title">用户隐私保护提示</view>
+    <view class="privacy-popup__body">
+      感谢您使用 <text class="privacy-popup__brand">Costra</text>。
+      在使用头像、昵称等功能前，请阅读我们的《用户隐私保护指引》。
+      我们仅收集必要的头像、昵称及您主动输入的记账数据，不与第三方共享。
+    </view>
+    <view class="privacy-popup__link" bindtap="onTapPrivacy">查看《用户隐私保护指引》</view>
+    <view class="privacy-popup__actions">
+      <view class="privacy-popup__btn privacy-popup__btn--reject" bindtap="onTapReject">拒绝</view>
+      <!-- open-type="agreePrivacyAuthorization" 是微信基础库要求的同意按钮类型
+           bindagreeprivacyauthorization 回调触发后，调用 resolve 才有效 -->
+      <button
+        id="agree-privacy-btn"
+        class="privacy-popup__btn privacy-popup__btn--agree"
+        open-type="agreePrivacyAuthorization"
+        bindagreeprivacyauthorization="onAgree"
+      >同意</button>
+    </view>
+  </view>
+</view>

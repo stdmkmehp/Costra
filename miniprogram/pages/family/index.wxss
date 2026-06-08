@@ -1,0 +1,450 @@
+/* pages/family/index.wxss · 家庭页样式 */
+/* 卡号: COSTRA-302 · 协作页 multi 模式重构 */
+/* 设计源: docs/design/family-page-tech-spec.md §4.8 */
+
+@import '../../styles/invite-dialog.wxss';
+
+.family {
+  height: 100vh;
+  background: #f1f2ec;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 导航栏（与明细页一致） */
+.nav-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  background: rgba(241, 242, 236, 0.92);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .nav-bar {
+    background: #f1f2ec;
+  }
+}
+
+.nav-bar__content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 32rpx;
+}
+
+.nav-bar__center {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+}
+
+.nav-bar__title {
+  font-size: 36rpx;
+  font-weight: 600;
+  color: var(--color-role-text-primary, #1c1b1a);
+  line-height: 1.2;
+}
+
+.nav-bar__arrow {
+  font-size: 20rpx;
+  color: var(--color-role-text-tertiary, rgba(28,27,26,0.28));
+}
+
+/* 可滚动内容区 */
+.family__scroll {
+  flex: 1;
+  min-height: 0; /* flex 子项允许收缩 · 兼容真机 scroll-view 高度计算 */
+}
+
+.family__content {
+  padding: 0 32rpx 32rpx;
+}
+
+/* ═══════ Solo 态 ═══════ */
+
+.solo-summary {
+  display: flex;
+  align-items: center;
+  background: #ffffff;
+  border-radius: 12rpx;
+  padding: 28rpx 24rpx;
+  margin-top: 48rpx;
+  margin-bottom: 24rpx;
+  border: 1rpx solid var(--color-role-border-subtle, rgba(28,27,26,0.05));
+}
+
+.solo-summary__item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.solo-summary__label {
+  font-size: 24rpx;
+  color: var(--color-role-text-secondary, rgba(28,27,26,0.48));
+  margin-bottom: 8rpx;
+}
+
+.solo-summary__value {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--color-role-text-primary, #1c1b1a);
+}
+
+.solo-summary__divider {
+  width: 1rpx;
+  height: 48rpx;
+  background: var(--color-role-border-default, rgba(28,27,26,0.08));
+}
+
+.solo-cta-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 80rpx;
+}
+
+.solo-cta-area__hint {
+  font-size: 28rpx;
+  color: rgba(28,27,26,0.48);
+  text-align: center;
+  line-height: 1.6;
+  padding: 0 32rpx;
+  margin-bottom: 40rpx;
+}
+
+.solo-cta-area__btn {
+  width: 60%;
+  height: 80rpx;
+  line-height: 80rpx;
+  background: #07C160;
+  color: #ffffff;
+  font-size: 28rpx;
+  font-weight: 600;
+  border-radius: 8px;
+  text-align: center;
+  border: none;
+  padding: 0;
+}
+
+.solo-cta-area__btn::after {
+  border: none;
+}
+
+/* ═══════ Multi 态 ═══════ */
+
+/* 成员与邀请区 (Avatar Row) */
+.avatar-row {
+  white-space: nowrap;
+  width: 100%;
+  margin-bottom: 24rpx;
+}
+
+.avatar-row__inner {
+  display: inline-flex;
+  align-items: center;
+  padding: 8rpx 0;
+}
+
+.avatar-item {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  margin-right: 24rpx;
+  flex-shrink: 0;
+}
+
+.avatar-item__img {
+  width: 80rpx;
+  height: 80rpx;
+  border-radius: 50%;
+  background: var(--color-role-bg-surface, #ffffff);
+}
+
+.avatar-item__placeholder {
+  width: 80rpx;
+  height: 80rpx;
+  border-radius: 50%;
+  background: rgba(28,27,26,0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.avatar-item__placeholder-text {
+  font-size: 28rpx;
+  color: var(--color-role-text-secondary, rgba(28,27,26,0.48));
+  font-weight: 500;
+}
+
+.avatar-item--left .avatar-item__img {
+  filter: grayscale(1);
+  opacity: 0.4;
+}
+
+.avatar-item--left {
+  pointer-events: none;
+}
+
+.avatar-item__name {
+  font-size: 20rpx;
+  color: var(--color-role-text-tertiary, rgba(28,27,26,0.28));
+  margin-top: 4rpx;
+  white-space: nowrap;
+}
+
+/* 创建者标记（小绿点） */
+.avatar-item__owner {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 16rpx;
+  height: 16rpx;
+  border-radius: 50%;
+  background: #07C160;
+  border: 2rpx solid #f1f2ec;
+}
+
+/* 邀请按钮（强制覆盖 button 默认样式，与头像同等 80rpx 正圆） */
+.avatar-item--invite {
+  width: 80rpx !important;
+  height: 80rpx !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+  max-width: 80rpx !important;
+  max-height: 80rpx !important;
+  border-radius: 50% !important;
+  background: rgba(7,193,96,0.12);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 !important;
+  margin: 0;
+  margin-right: 0;
+  line-height: 1;
+  border: none;
+  box-sizing: border-box;
+  overflow: hidden;
+  font-size: 0;
+}
+
+.avatar-item--invite::after {
+  border: none;
+}
+
+.avatar-item__plus {
+  font-size: 36rpx;
+  color: #07C160;
+  font-weight: 300;
+  line-height: 1;
+}
+
+/* 时间导航区 */
+.time-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16rpx 0 24rpx;
+}
+
+.time-nav__left {
+  display: flex;
+  align-items: center;
+}
+
+.time-nav__arrow {
+  width: 56rpx;
+  height: 56rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.time-nav__arrow-icon {
+  font-size: 36rpx;
+  color: var(--color-role-text-secondary, rgba(28,27,26,0.38));
+  font-weight: 500;
+}
+
+.time-nav__month {
+  display: flex;
+  align-items: center;
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--color-role-text-primary, #1c1b1a);
+  padding: 0 8rpx;
+}
+
+.time-nav__dropdown {
+  font-size: 18rpx;
+  margin-left: 6rpx;
+  color: var(--color-role-text-tertiary, rgba(28,27,26,0.28));
+}
+
+/* 月度/年度切换 */
+.time-nav__dimension {
+  display: flex;
+  align-items: center;
+  gap: 4rpx;
+  background: rgba(28,27,26,0.05);
+  border-radius: 8rpx;
+  padding: 4rpx;
+}
+
+.time-nav__dim-btn {
+  font-size: 24rpx;
+  padding: 8rpx 16rpx;
+  border-radius: 6rpx;
+  color: var(--color-role-text-secondary, rgba(28,27,26,0.48));
+}
+
+.time-nav__dim-btn--active {
+  background: #ffffff;
+  color: var(--color-role-text-primary, #1c1b1a);
+  font-weight: 500;
+}
+
+.time-nav__dim-btn--disabled {
+  color: var(--color-role-text-tertiary, rgba(28,27,26,0.2));
+}
+
+/* Segmented Bar */
+.segment-bar {
+  margin-bottom: 24rpx;
+}
+
+.segment-bar__track {
+  display: flex;
+  height: 16rpx;
+  border-radius: 8rpx;
+  overflow: hidden;
+  background: rgba(28,27,26,0.05);
+}
+
+.segment-bar__segment {
+  min-width: 4rpx;
+  height: 100%;
+  transition: flex 0.3s ease;
+}
+
+.segment-bar__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+  margin-top: 16rpx;
+}
+
+.segment-bar__legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+}
+
+.segment-bar__legend-dot {
+  width: 12rpx;
+  height: 12rpx;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.segment-bar__legend-label {
+  font-size: 22rpx;
+  color: var(--color-role-text-secondary, rgba(28,27,26,0.48));
+}
+
+.segment-bar__legend-amount {
+  font-size: 22rpx;
+  color: var(--color-role-text-primary, #1c1b1a);
+  font-weight: 500;
+}
+
+/* 空态（与明细页统一） */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding-top: 200rpx;
+  gap: 16rpx;
+}
+
+.empty-state__title {
+  font-size: 30rpx;
+  font-weight: 500;
+  color: var(--color-role-text-secondary, rgba(28,27,26,0.48));
+}
+
+.empty-state__hint {
+  font-size: 26rpx;
+  color: var(--color-role-text-tertiary, rgba(28,27,26,0.28));
+}
+
+/* ─── 重构后下钻列表（COSTRA-302 · spec §4.8 · 统计页同款手风琴）─── */
+.family-rank { padding: 24rpx 0 8rpx; box-sizing: border-box; }
+.family-rank__row {
+  padding: 28rpx 0 24rpx;
+  border-bottom: 1rpx solid rgba(28,27,26,0.06);
+}
+.family-rank__row + .family-rank__row { margin-top: 8rpx; }
+.family-rank__row--open { padding-bottom: 16rpx; }
+.family-rank__head { display: flex; flex-direction: column; }
+.family-rank__head-main { display: flex; align-items: center; gap: 16rpx; }
+.family-rank__shared-icon {
+  flex: none; width: 40rpx; height: 40rpx; border-radius: 50%;
+  background: rgba(107,155,143,0.12); display: flex; align-items: center; justify-content: center;
+}
+.family-rank__shared-icon text { font-size: 20rpx; color: #6B9B8F; font-weight: 600; }
+.family-rank__avatar { flex: none; width: 40rpx; height: 40rpx; border-radius: 50%; background: rgba(28,27,26,0.06); }
+.family-rank__avatar--placeholder { display: flex; align-items: center; justify-content: center; color: rgba(28,27,26,0.48); font-size: 20rpx; }
+.family-rank__name { flex: 1; font-size: 28rpx; color: #1c1b1a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.family-rank__amount { flex: none; font-size: 28rpx; font-weight: 500; color: #1c1b1a; }
+.family-rank__ratio { flex: none; font-size: 22rpx; color: rgba(28,27,26,0.4); margin-left: 8rpx; min-width: 64rpx; text-align: right; }
+.family-rank__bar { margin-top: 8rpx; height: 4rpx; background: rgba(28,27,26,0.06); border-radius: 4rpx; overflow: hidden; }
+.family-rank__bar-fill { height: 100%; border-radius: 4rpx; transition: width 0.3s ease; }
+
+/* 等宽数字 */
+.tnum { font-variant-numeric: tabular-nums; }
+
+/* 公共行垫付贡献小字（行下常驻 · q4 决策 A） */
+.shared-contributions {
+  padding: 12rpx 0 0; font-size: 22rpx; color: rgba(28,27,26,0.5);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* L1 子列表（视觉与统计页 .rank 行一致，作为子层） */
+.family-l1 {
+  background: rgba(28,27,26,0.025);
+  margin: 12rpx 0 0;
+  padding: 8rpx 0 8rpx 56rpx;
+}
+.family-l1__row { padding: 16rpx 0 8rpx; }
+.family-l1__row + .family-l1__row { border-top: 1rpx solid rgba(28,27,26,0.04); }
+.family-l1__row-main { display: flex; align-items: center; gap: 16rpx; }
+.family-l1__icon { flex: none; font-size: 28rpx; }
+.family-l1__name { flex: 1; font-size: 28rpx; color: #1c1b1a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.family-l1__amount { flex: none; font-size: 28rpx; font-weight: 500; color: #1c1b1a; }
+.family-l1__ratio { flex: none; font-size: 20rpx; color: rgba(28,27,26,0.4); margin-left: 8rpx; min-width: 56rpx; text-align: right; }
+.family-l1__bar { margin-top: 8rpx; height: 4rpx; background: rgba(28,27,26,0.06); border-radius: 4rpx; overflow: hidden; }
+.family-l1__bar-fill { height: 100%; background: #1c1b1a; border-radius: 4rpx; }
+.family-l1__more {
+  padding: 16rpx 0 4rpx; font-size: 22rpx; color: rgba(28,27,26,0.4); text-align: center;
+}
+
+/* 加载态 */
+.loading-state {
+  display: flex;
+  justify-content: center;
+  padding: 80rpx 0;
+}
+
+.loading-state__text {
+  font-size: 28rpx;
+  color: var(--color-role-text-tertiary, rgba(28,27,26,0.28));
+}

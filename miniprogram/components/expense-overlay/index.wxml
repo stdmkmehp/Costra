@@ -1,0 +1,276 @@
+<!-- components/expense-overlay/index.wxml · 全屏记账覆盖层（COSTRA-208 完全重写 · COSTRA-209 防遮挡滚动 · COSTRA-214 安全区标准化） -->
+<!-- 卡号: COSTRA-208 / COSTRA-209 / COSTRA-214 · 分类防键盘遮挡滚动 + 打开重置 + 统一安全区 -->
+<!-- 设计源: design/ui/design_spec.md §6.3 + design/ui/interaction_flow.md §2/§3 -->
+<!-- 架构: overlay → shell(flex-column) → header + scroll-view(flex:1) + keypad-sheet -->
+<!-- COSTRA-214: 顶部安全区由 getSafeAreaMetrics() 驱动，不再依赖 CSS env(safe-area-inset-top) -->
+
+<view class="expense-overlay {{visible ? 'is-visible' : ''}}">
+  <view class="expense-shell">
+
+    <!-- ═══ 顶部区域：取消 + 支出/收入指示器 ═══ -->
+    <!-- padding-top = menuButtonTop：与胶囊按钮顶部精确对齐 -->
+    <view class="expense-header" style="padding-top: {{menuButtonTop}}px;" catchtouchmove="noop">
+      <text class="expense-header__close" bindtap="onClose">取消</text>
+      <view wx:if="{{!keypadOnly}}" class="expense-header__tabs {{typeSwipeDisabled ? 'is-disabled' : ''}}">
+        <view
+          class="expense-header__tab {{entryType === 'expense' ? 'is-active' : ''}}"
+          data-type="expense"
+          bindtap="onTapTab"
+        >
+          <text class="expense-header__tab-text">支出</text>
+          <view class="expense-header__tab-indicator"></view>
+        </view>
+        <text class="expense-header__sep">·</text>
+        <view
+          class="expense-header__tab {{entryType === 'income' ? 'is-active' : ''}}"
+          data-type="income"
+          bindtap="onTapTab"
+        >
+          <text class="expense-header__tab-text">收入</text>
+          <view class="expense-header__tab-indicator"></view>
+        </view>
+      </view>
+      <view wx:if="{{keypadOnly}}" class="expense-header__tabs">
+        <view class="expense-header__tab is-active">
+          <text class="expense-header__tab-text">编辑金额</text>
+        </view>
+      </view>
+      <!-- 右侧占位保持三栏平衡 -->
+      <view class="expense-header__placeholder"></view>
+    </view>
+
+    <!-- ═══ 分类滚动区（COSTRA-228: swiper + 两个 scroll-view 跟手横滑切换支出/收入） ═══ -->
+    <!-- keypadOnly 模式（编辑金额）下隐藏整个分类区 -->
+    <swiper
+      wx:if="{{!keypadOnly}}"
+      class="category-swiper"
+      current="{{entryTypeIndex}}"
+      duration="{{categorySwiperDuration}}"
+      bindchange="onCategorySwiperChange"
+    >
+      <!-- 支出 pane -->
+      <swiper-item>
+        <scroll-view
+          id="cat-scroll-expense"
+          class="category-scroll"
+          scroll-y
+          enhanced="{{true}}"
+          show-scrollbar="{{false}}"
+          scroll-top="{{entryType === 'expense' ? categoryScrollTop : 0}}"
+          bindscroll="onCategoryScroll"
+        >
+          <!-- 一级分类网格 -->
+          <view class="category-section category-section--tier1">
+            <view
+              wx:for="{{expenseTier1Categories}}"
+              wx:key="id"
+              id="cat-tier1-{{item.id}}"
+              class="category-tier1 {{entryType === 'expense' && selectedTier1Id === item.id ? 'is-selected' : ''}} {{entryType === 'expense' && dimmedTier1Ids.indexOf(item.id) >= 0 ? 'is-dimmed' : ''}}"
+              data-id="{{item.id}}"
+              bindtap="onTapTier1"
+            >
+              <view class="category-tier1__icon">{{item.icon}}</view>
+              <text class="category-tier1__name">{{item.name}}</text>
+            </view>
+          </view>
+
+          <!-- 分隔线 -->
+          <view class="category-divider"></view>
+
+          <!-- 展开的子分类（场景 A · 仅当前 pane 显示展开态） -->
+          <view
+            class="category-section category-section--tier2"
+            wx:if="{{entryType === 'expense' && expandedChildren.length > 0}}"
+          >
+            <view
+              wx:for="{{expandedChildren}}"
+              wx:key="id"
+              id="cat-sub-{{item.id}}"
+              class="category-item {{selectedTier2Id === item.id ? 'is-selected' : ''}}"
+              data-id="{{item.id}}"
+              bindtap="onTapExpandedChild"
+            >
+              <view class="category-item__icon">{{item.name[0]}}</view>
+              <text class="category-item__name">{{item.name}}</text>
+            </view>
+          </view>
+
+          <!-- 去重后的全局二级分类（无展开时显示） -->
+          <view
+            class="category-section category-section--tier2"
+            wx:if="{{entryType !== 'expense' || !expandedTier1Id}}"
+          >
+            <view
+              wx:for="{{expenseDedupedSubCategories}}"
+              wx:key="id"
+              id="{{entryType === 'expense' ? 'cat-sub-' + item.id : 'cat-sub-expense-' + item.id}}"
+              class="category-item {{entryType === 'expense' && selectedTier2Id === item.id ? 'is-selected' : ''}}"
+              data-id="{{item.id}}"
+              data-name="{{item.name}}"
+              bindtap="onTapSubCategory"
+            >
+              <view class="category-item__icon">{{item.name[0]}}</view>
+              <text class="category-item__name">{{item.name}}</text>
+            </view>
+          </view>
+          <view class="category-bottom-spacer" style="height: {{safeAreaBottom || 20}}px;"></view>
+        </scroll-view>
+      </swiper-item>
+
+      <!-- 收入 pane -->
+      <swiper-item>
+        <scroll-view
+          id="cat-scroll-income"
+          class="category-scroll"
+          scroll-y
+          enhanced="{{true}}"
+          show-scrollbar="{{false}}"
+          scroll-top="{{entryType === 'income' ? categoryScrollTop : 0}}"
+          bindscroll="onCategoryScroll"
+        >
+          <view class="category-section category-section--tier1">
+            <view
+              wx:for="{{incomeTier1Categories}}"
+              wx:key="id"
+              id="cat-tier1-{{item.id}}"
+              class="category-tier1 {{entryType === 'income' && selectedTier1Id === item.id ? 'is-selected' : ''}} {{entryType === 'income' && dimmedTier1Ids.indexOf(item.id) >= 0 ? 'is-dimmed' : ''}}"
+              data-id="{{item.id}}"
+              bindtap="onTapTier1"
+            >
+              <view class="category-tier1__icon">{{item.icon}}</view>
+              <text class="category-tier1__name">{{item.name}}</text>
+            </view>
+          </view>
+
+          <view class="category-divider"></view>
+
+          <view
+            class="category-section category-section--tier2"
+            wx:if="{{entryType === 'income' && expandedChildren.length > 0}}"
+          >
+            <view
+              wx:for="{{expandedChildren}}"
+              wx:key="id"
+              id="cat-sub-{{item.id}}"
+              class="category-item {{selectedTier2Id === item.id ? 'is-selected' : ''}}"
+              data-id="{{item.id}}"
+              bindtap="onTapExpandedChild"
+            >
+              <view class="category-item__icon">{{item.name[0]}}</view>
+              <text class="category-item__name">{{item.name}}</text>
+            </view>
+          </view>
+
+          <view
+            class="category-section category-section--tier2"
+            wx:if="{{entryType !== 'income' || !expandedTier1Id}}"
+          >
+            <view
+              wx:for="{{incomeDedupedSubCategories}}"
+              wx:key="id"
+              id="{{entryType === 'income' ? 'cat-sub-' + item.id : 'cat-sub-income-' + item.id}}"
+              class="category-item {{entryType === 'income' && selectedTier2Id === item.id ? 'is-selected' : ''}}"
+              data-id="{{item.id}}"
+              data-name="{{item.name}}"
+              bindtap="onTapSubCategory"
+            >
+              <view class="category-item__icon">{{item.name[0]}}</view>
+              <text class="category-item__name">{{item.name}}</text>
+            </view>
+          </view>
+          <view class="category-bottom-spacer" style="height: {{safeAreaBottom || 20}}px;"></view>
+        </scroll-view>
+      </swiper-item>
+    </swiper>
+
+    <!-- COSTRA-227: keypadOnly 模式下占位区，将键盘推到底部 -->
+    <view wx:if="{{keypadOnly}}" class="keypad-spacer"></view>
+
+    <!-- ═══ 数字键盘面板（键盘出现时作为 shell 最后一个 flex 子项） ═══ -->
+    <!-- COSTRA-214: 底部安全区由 JS safeAreaBottom 驱动 -->
+    <view wx:if="{{keypadVisible}}" class="keypad-sheet" style="padding-bottom: {{safeAreaBottom}}px;" catchtouchmove="noop">
+
+      <!-- 金额显示区 -->
+      <view class="keypad-sheet__amount">
+        <text class="keypad-sheet__prefix">¥</text>
+        <text class="keypad-sheet__value tnum {{calc.justEvaluated ? 'is-result' : ''}}">{{calc.display}}</text>
+      </view>
+
+      <!-- 操作行：账本归属 + 备注 + 费用性质（右对齐） -->
+      <view class="keypad-sheet__actions">
+        <!-- 账本切换 -->
+        <view class="keypad-ledger" bindtap="onTapLedgerSwitch">
+          <text class="keypad-ledger__text">记入: {{ledgerName}} ▼</text>
+        </view>
+
+        <!-- 备注（COSTRA-212: placeholder 与 input 同时保留，用 class 控制显隐，避免 wx:if 销毁 input 导致二次编辑焦点丢失） -->
+        <view class="keypad-note" bindtap="onTapNote">
+          <text
+            class="keypad-note__placeholder {{noteFocused ? 'is-hidden' : ''}}"
+          >{{note || '添加备注...'}}</text>
+          <input
+            class="keypad-note__input {{noteFocused ? 'is-visible' : ''}}"
+            value="{{note}}"
+            placeholder="添加备注..."
+            focus="{{noteFocused}}"
+            bindinput="onNoteInput"
+            bindconfirm="onNoteConfirm"
+            bindblur="onNoteBlur"
+            adjust-position="{{true}}"
+          />
+        </view>
+
+        <!-- 费用性质开关（仅多人+支出 · 右对齐） -->
+        <view
+          class="keypad-shared {{showSharedToggle ? 'is-visible' : ''}}"
+          bindtap="onTapSharedType"
+        >
+          <text class="keypad-shared__text {{sharedType === 'personal' ? 'is-active' : ''}}">个人支出</text>
+          <text class="keypad-shared__sep">|</text>
+          <text class="keypad-shared__text {{sharedType === 'shared' ? 'is-active' : ''}}">公共支出</text>
+        </view>
+      </view>
+
+      <!-- 数字键盘 -->
+      <view class="keypad" wx:if="{{!noteFocused}}">
+        <!-- 第一行：1 2 3 日期 -->
+        <view class="keypad__row">
+          <view class="keypad__key" data-key="1" bindtap="onKeypadTap"><text>1</text></view>
+          <view class="keypad__key" data-key="2" bindtap="onKeypadTap"><text>2</text></view>
+          <view class="keypad__key" data-key="3" bindtap="onKeypadTap"><text>3</text></view>
+          <picker class="keypad__picker" mode="date" value="{{recordDate}}" bindchange="onRecordDateChange">
+            <view class="keypad__key keypad__key--fn keypad__key--date"><text>{{recordDateText}}</text></view>
+          </picker>
+        </view>
+        <!-- 第二行：4 5 6 + -->
+        <view class="keypad__row">
+          <view class="keypad__key" data-key="4" bindtap="onKeypadTap"><text>4</text></view>
+          <view class="keypad__key" data-key="5" bindtap="onKeypadTap"><text>5</text></view>
+          <view class="keypad__key" data-key="6" bindtap="onKeypadTap"><text>6</text></view>
+          <view class="keypad__key keypad__key--fn" data-key="+" bindtap="onKeypadTap"><text>+</text></view>
+        </view>
+        <!-- 第三行：7 8 9 - -->
+        <view class="keypad__row">
+          <view class="keypad__key" data-key="7" bindtap="onKeypadTap"><text>7</text></view>
+          <view class="keypad__key" data-key="8" bindtap="onKeypadTap"><text>8</text></view>
+          <view class="keypad__key" data-key="9" bindtap="onKeypadTap"><text>9</text></view>
+          <view class="keypad__key keypad__key--fn" data-key="-" bindtap="onKeypadTap"><text>-</text></view>
+        </view>
+        <!-- 第四行：. 0 ⌫ [=|完成] -->
+        <view class="keypad__row">
+          <view class="keypad__key" data-key="." bindtap="onKeypadTap"><text>.</text></view>
+          <view class="keypad__key" data-key="0" bindtap="onKeypadTap"><text>0</text></view>
+          <view class="keypad__key keypad__key--fn" data-key="backspace" bindtap="onKeypadTap"><text>⌫</text></view>
+          <view
+            class="keypad__key keypad__key--action {{calc.actionState === 'done' ? 'keypad__key--done' : 'keypad__key--equals'}}"
+            data-key="action"
+            bindtap="onKeypadTap"
+          >
+            <text>{{calc.actionState === 'done' ? actionButtonLabel : '='}}</text>
+          </view>
+        </view>
+      </view>
+    </view>
+
+  </view>
+</view>

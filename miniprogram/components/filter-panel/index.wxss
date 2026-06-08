@@ -1,0 +1,188 @@
+/* components/filter-panel/index.wxss · 明细页筛选面板 */
+
+.filter-panel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 200ms ease-out;
+}
+
+.filter-panel.is-visible {
+  pointer-events: auto;
+  opacity: 1;
+}
+
+/* 透明蒙层 */
+.filter-panel__mask {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(28, 27, 26, 0.06);
+}
+
+/* 面板主体：从顶部浮出 */
+.filter-panel__body {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: var(--color-role-bg-app, #f1f2ec);
+  border-bottom-left-radius: 24rpx;
+  border-bottom-right-radius: 24rpx;
+  box-shadow: 0 4rpx 24rpx rgba(28, 27, 26, 0.08);
+  padding: 28rpx 32rpx 32rpx;
+  transform: translateY(-100%);
+  transition: transform 280ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.filter-panel.is-visible .filter-panel__body {
+  transform: translateY(0);
+}
+
+/* 区块 */
+.filter-section {
+  margin-bottom: 24rpx;
+}
+
+.filter-section:last-child {
+  margin-bottom: 0;
+}
+
+.filter-section__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.filter-section__title {
+  font-size: 24rpx;
+  color: rgba(28, 27, 26, 0.48);
+  font-weight: 500;
+  margin-bottom: 16rpx;
+}
+
+.filter-section__header .filter-section__title {
+  margin-bottom: 0;
+}
+
+.filter-section__action {
+  font-size: 24rpx;
+  color: #576B95;
+  font-weight: 500;
+  padding: 8rpx 0;
+}
+
+/* 费用性质胶囊标签 */
+.filter-chips {
+  display: flex;
+  gap: 16rpx;
+  flex-wrap: wrap;
+}
+
+.filter-chip {
+  padding: 12rpx 24rpx;
+  border-radius: 9999rpx;
+  background: rgba(28, 27, 26, 0.06);
+  transition: all 180ms ease;
+}
+
+.filter-chip.is-active {
+  background: #1c1b1a;
+}
+
+.filter-chip__text {
+  font-size: 24rpx;
+  color: #1c1b1a;
+  font-weight: 500;
+}
+
+.filter-chip.is-active .filter-chip__text {
+  color: #f1f2ec;
+}
+
+/* 成员头像网格：两行，每行最多 4 个 */
+.filter-members {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 24rpx 32rpx;
+  margin-top: 16rpx;
+  justify-items: center;
+}
+
+.filter-member {
+  position: relative;
+  width: 80rpx;
+  height: 80rpx;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 180ms ease;
+  opacity: 0.35;
+}
+
+.filter-member.is-selected {
+  opacity: 1;
+}
+
+.filter-member__avatar {
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 50%;
+  border: 3rpx solid transparent;
+  transition: border-color 180ms ease;
+}
+
+.filter-member.is-selected .filter-member__avatar {
+  border-color: #07C160;
+}
+
+.filter-member__fallback {
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 50%;
+  background: rgba(28, 27, 26, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 3rpx solid transparent;
+  transition: border-color 180ms ease;
+}
+
+.filter-member.is-selected .filter-member__fallback {
+  border-color: #07C160;
+}
+
+.filter-member__initial {
+  font-size: 28rpx;
+  color: rgba(28, 27, 26, 0.48);
+  font-weight: 500;
+}
+
+/* 选中对勾 */
+.filter-member__check {
+  position: absolute;
+  right: -2rpx;
+  bottom: -2rpx;
+  width: 28rpx;
+  height: 28rpx;
+  border-radius: 50%;
+  background: #07C160;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.filter-member__check-icon {
+  font-size: 18rpx;
+  color: #ffffff;
+  font-weight: 700;
+  line-height: 1;
+}

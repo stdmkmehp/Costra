@@ -1,0 +1,7 @@
+{
+  "navigationStyle": "custom",
+  "usingComponents": {
+    "expense-overlay": "/components/expense-overlay/index",
+    "trend-line-chart": "/components/trend-line-chart/index"
+  }
+}

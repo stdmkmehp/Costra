@@ -1,0 +1,96 @@
+name: mp-release
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '20.12.2'
+
+jobs:
+  release:
+    name: MP Release (placeholder)
+    runs-on: ubuntu-latest
+    # 需要在 GitHub Settings → Environments → production 中配置 required reviewers
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install
+        run: npm ci --ignore-scripts || npm install --ignore-scripts
+
+      - name: Guard secrets
+        id: guard
+        run: |
+          if [ -z "${{ secrets.MP_CI_KEY_PROD }}" ] || [ -z "${{ vars.MP_APPID }}" ]; then
+            echo "::warning::MP_CI_KEY_PROD / MP_APPID missing, skipping release upload (placeholder run OK)"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Extract version
+        id: ver
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          if ! [[ "$V" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME 不符合语义化版本 vMAJOR.MINOR.PATCH"
+            exit 1
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+
+      - name: Write robot key
+        if: steps.guard.outputs.skip == 'false'
+        run: |
+          mkdir -p /tmp/mpci
+          echo "${{ secrets.MP_CI_KEY_PROD }}" > /tmp/mpci/private.key
+          chmod 600 /tmp/mpci/private.key
+
+      - name: Run upload
+        if: steps.guard.outputs.skip == 'false'
+        env:
+          MP_APPID: ${{ vars.MP_APPID }}
+          MP_CI_KEY_PATH: /tmp/mpci/private.key
+          MP_PROJECT_PATH: ${{ github.workspace }}
+          MP_ENV: production
+          MP_VERSION: ${{ steps.ver.outputs.version }}
+          MP_DESC: "release v${{ steps.ver.outputs.version }}"
+          CI: 'true'
+        run: node scripts/mp-ci/upload.mjs --yes
+
+      - name: Upload report
+        if: steps.guard.outputs.skip == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mp-upload-report-v${{ steps.ver.outputs.version }}
+          path: reports/mp-upload-*.json
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            if [ "${{ steps.guard.outputs.skip }}" = "true" ]; then
+              echo "## mp-release Summary (placeholder)"
+              echo "- status: **skipped**"
+              echo "- reason: MP_CI_KEY_PROD / MP_APPID missing"
+              echo "- next: 按 \`docs/devops/secrets.md\` 激活清单补齐后重跑"
+            else
+              echo "## mp-release Summary"
+              echo "- status: **uploaded**"
+              echo "- version: v${{ steps.ver.outputs.version }}"
+              echo "- main package size check: 见 size-check.mjs 日志（超 1.5MB 会 fail）"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

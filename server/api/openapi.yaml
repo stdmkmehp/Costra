@@ -1,0 +1,2004 @@
+openapi: 3.0.3
+info:
+  title: Costra API
+  description: |
+    Costra 家庭财务记账小程序 · 后端 RESTful 契约 v0.1
+
+    **硬约束**（见 ADR-0004 / engineering-guidelines）：
+    - 所有金额字段使用 **整数分**（`int64`），不使用浮点。
+    - 所有时间字段使用 **ISO-8601 UTC**（`YYYY-MM-DDTHH:mm:ss.sssZ`），客户端本地化渲染。
+    - 命名：JSON 字段统一 `snake_case`；客户端映射至 `camelCase` 由 MiniApp 负责。
+    - 鉴权：JWT Bearer（access 2h / refresh 30d，见 `/auth/*`）。
+    - 幂等：所有写操作必须携带 `Idempotency-Key` 请求头（UUID v4）。
+    - 分页：游标分页 `cursor` + `limit`（默认 20，最大 100）。
+    - 冲突：乐观锁 `version` 字段 + 409 Conflict（冲突策略见 `docs/api/conflict-strategy.md`）。
+    - 审计：所有写操作由服务端记录 audit log（见 `docs/api/audit-log.md`）。
+  version: 0.1.0-draft
+  contact:
+    name: Costra Backend Team
+    url: https://github.com/costra/costra
+  license:
+    name: Internal
+servers:
+  - url: http://localhost:8080/v1
+    description: 本地开发（docker-compose 起；开发工具"不校验合法域名"模式）
+  - url: http://49.235.216.20:8080/v1
+    description: 开发服务器（D-009 锁定公网 IP；ICP 备案下证前临时开放）
+  - url: https://costra.cloud/v1
+    description: 预发布（D-023 临时复用 prod URL · 子域 api-staging 搁置至 Phase-2）
+  - url: https://costra.cloud/v1
+    description: 生产（D-009 §2.1 锁定主域 costra.cloud · D-023 prod 入口回归根域 · ICP 下证 2026-05-13）
+
+tags:
+  - name: auth
+    description: 登录、Token 刷新、登出
+  - name: users
+    description: 用户画像
+  - name: families
+    description: 家庭 / 成员 / 邀请
+  - name: accounts
+    description: 资金账户（现金 / 银行卡 / 电子钱包等）
+  - name: ledgers
+    description: 账本
+  - name: categories
+    description: 分类
+  - name: entries
+    description: 流水（记账条目）
+  - name: budgets
+    description: 预算
+  - name: sync
+    description: 离线同步（拉增量 / 推批量）
+  - name: reports
+    description: 统计报表
+  - name: notifications
+    description: 订阅消息触发
+  - name: legal
+    description: 法务披露（ICP 备案 / 主体信息 · 公开端点）
+
+security:
+  - BearerAuth: []
+
+paths:
+  # ============ auth ============
+  /auth/wx-login:
+    post:
+      tags: [auth]
+      summary: 微信 code 换 Token
+      description: 小程序 `wx.login()` 得到 `code` → 换取我方 access/refresh token。
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code:
+                  type: string
+                  description: 微信 wx.login() 返回的 code
+                encrypted_data:
+                  type: string
+                  description: 可选，getUserProfile 加密数据
+                iv:
+                  type: string
+                  description: 可选，配合 encrypted_data
+      responses:
+        '200':
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokenPair'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/refresh:
+    post:
+      tags: [auth]
+      summary: 刷新 access token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        '200':
+          description: 刷新成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthTokenPair' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: 登出（使 refresh_token 失效）
+      responses:
+        '204': { description: 成功 }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ============ users ============
+  /users/me:
+    get:
+      tags: [users]
+      summary: 当前用户画像
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    patch:
+      tags: [users]
+      summary: 更新当前用户资料
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                nickname: { type: string, maxLength: 32 }
+                avatar_url: { type: string, format: uri }
+                timezone: { type: string, example: Asia/Shanghai }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /users/me/overview:
+    get:
+      tags: [users]
+      summary: 当前用户宏观聚合（mine 页 · 跨所有账本）
+      description: |
+        返回当前用户跨所有账本的宏观计数（按 entries.created_by 聚合）。
+        - entry_count：未删除流水总数
+        - ledger_days：有记账记录的天数（occurred_at 在 Asia/Shanghai 时区下 DISTINCT date）
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [entry_count, ledger_days]
+                properties:
+                  entry_count: { type: integer, minimum: 0, description: 未删除流水总数 }
+                  ledger_days: { type: integer, minimum: 0, description: 有记账记录的天数（Asia/Shanghai） }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ============ families ============
+  /families:
+    get:
+      tags: [families]
+      summary: 我所属的家庭列表
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Family' }
+    post:
+      tags: [families]
+      summary: 创建家庭
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 32 }
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Family' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /families/{family_id}:
+    parameters:
+      - $ref: '#/components/parameters/FamilyId'
+    get:
+      tags: [families]
+      summary: 家庭详情
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FamilyDetail' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [families]
+      summary: 更新家庭（仅 owner）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version]
+              properties:
+                name: { type: string, maxLength: 32 }
+                version: { type: integer, description: 乐观锁 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Family' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [families]
+      summary: 解散家庭（仅 owner，软删，需带 version）
+      description: |
+        COSTRA-221：仅 owner 可操作，需 querystring version 做乐观锁。所有家庭成员关联、账本、流水、预算均级联软删。
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - name: version
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1 }
+          description: 当前客户端持有的 family version（乐观锁）
+      responses:
+        '204': { description: 成功 }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /families/{family_id}/members:
+    parameters:
+      - $ref: '#/components/parameters/FamilyId'
+    get:
+      tags: [families]
+      summary: 家庭成员列表（含 active + left）
+      description: |
+        COSTRA-221: 返回该 family 的所有成员（active + left）。
+        active members 按 joined_at ASC 排列在前；left members 按 left_at DESC 排列在后。
+        非 member 访问返回 403 FAMILY_NOT_MEMBER。
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/FamilyMember' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /families/{family_id}/invites:
+    parameters:
+      - $ref: '#/components/parameters/FamilyId'
+    post:
+      tags: [families]
+      summary: 生成邀请口令
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role:
+                  type: string
+                  enum: [member, viewer]
+                  default: member
+                ttl_hours:
+                  type: integer
+                  minimum: 1
+                  maximum: 168
+                  default: 24
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FamilyInvite' }
+
+  /families/invites/accept:
+    post:
+      tags: [families]
+      summary: 接受邀请（通过邀请 token）
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [invite_token]
+              properties:
+                invite_token: { type: string }
+      responses:
+        '200':
+          description: 加入成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Family' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '410':
+          description: 邀请已过期 / 已使用
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /families/{family_id}/summary:
+    parameters:
+      - $ref: '#/components/parameters/FamilyId'
+    get:
+      tags: [families]
+      summary: 家庭财务聚合（月度/年度 summary）
+      description: |
+        COSTRA-222 / COSTRA-300: 返回指定家庭某月或某年的财务聚合数据，包含总支出/收入/结余、
+        公共/个人支出拆解、垫付贡献比例、成员个人支出、分类排行。
+
+        调用模式：传 `month=YYYY-MM` 返回当月聚合；传 `year=YYYY` 返回当年聚合（与月度同口径，区间 12 个月）。两者互斥，必须恰传一个，违反返回 400 INVALID_ARGUMENT (details.reason='month_year_xor')。
+
+        时区口径：MVP 固定 Asia/Shanghai (+08:00)。
+        month=YYYY-MM 的闭区间 [start, end)：
+          start = 当月 1 日 00:00:00 +08:00
+          end   = 下月 1 日 00:00:00 +08:00
+        year=YYYY 的闭区间 [start, end)：
+          start = 当年 1 月 1 日 00:00:00 +08:00
+          end   = 次年 1 月 1 日 00:00:00 +08:00
+        SQL 使用 UTC timestamp 比较：[start_utc, end_utc)
+
+        口径规则：
+          - shared_type='shared' 的 expense → 公共支出
+          - shared_type='personal' 的 expense → 成员个人支出
+          - shared_type IS NULL 的 expense → 不进入聚合，登记 skipped_unclassified_expense_count
+          - income 只进入 totals.income / totals.balance，不进入支出/分类排行
+          - transfer 不进入任何聚合
+          - 金额全程 integer cents，ratio 使用 basis points (0~10000)
+      parameters:
+        - name: month
+          in: query
+          required: false
+          description: '月份（YYYY-MM，按 Asia/Shanghai 时区计算区间）。与 year 互斥，恰传一个。'
+          schema: { type: string, pattern: '^\d{4}-\d{2}$' }
+        - name: year
+          in: query
+          required: false
+          description: '年份（YYYY，按 Asia/Shanghai 时区计算区间）。与 month 互斥，恰传一个。'
+          schema: { type: string, pattern: '^\d{4}$' }
+        - name: top_n
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 20, default: 6 }
+          description: 分类排行返回条数（默认 6，最大 20）
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FamilySummary' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /families/{family_id}/statistics/monthly:
+    parameters:
+      - $ref: '#/components/parameters/FamilyId'
+    get:
+      tags: [families]
+      summary: 月度统计（统计页主数据）
+      description: |
+        COSTRA-224: 返回指定家庭某月的统计数据，包含 totals + 日维度趋势 + 极限值 + 一级分类排行。
+
+        时区固定 Asia/Shanghai。口径与 /summary 一致：
+          - 仅 type='expense' AND shared_type IS NOT NULL 计入支出聚合
+          - shared_type IS NULL 的 expense 不进入聚合（与 family summary 一致）
+          - transfer 不计入
+          - 已退出成员的历史 expense 仍计入（数据不可变原则）
+        category_ranks：按 categories.parent_id 折叠的"一级分类"排行（金额降序，amount > 0，top_n 截断）。
+      parameters:
+        - name: month
+          in: query
+          required: true
+          schema: { type: string, pattern: '^\d{4}-\d{2}$' }
+        - name: top_n
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+        - name: user_id
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+          description: '成员维度筛选 · 仅返回 entries.created_by = user_id 的数据 · 不传 = 全部'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MonthlyStatistics' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /families/{family_id}/statistics/yearly:
+    parameters:
+      - $ref: '#/components/parameters/FamilyId'
+    get:
+      tags: [families]
+      summary: 年度统计（统计页主数据）
+      description: |
+        COSTRA-224: 返回指定家庭某年的统计数据，包含 totals + 12 月维度趋势 + 极限值 + 一级分类排行。
+        时区固定 Asia/Shanghai。口径与 monthly 一致。
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema: { type: string, pattern: '^\d{4}$' }
+        - name: top_n
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+        - name: user_id
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+          description: '成员维度筛选 · 仅返回 entries.created_by = user_id 的数据 · 不传 = 全部'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/YearlyStatistics' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /families/{family_id}/statistics/drill-down:
+    parameters:
+      - $ref: '#/components/parameters/FamilyId'
+    get:
+      tags: [families]
+      summary: 统计排行下钻（L2 二级分类排行 / L3 单笔明细）
+      description: |
+        COSTRA-224: 三层下钻接口。
+
+        - level=2：返回指定一级分类下的二级分类排行（按金额降序）
+        - level=3：返回指定二级分类下的单笔明细（按 amount 降序，occurred_at 降序）
+
+        month 与 year 互斥：传 month 表示按月范围、传 year 表示按年范围。
+      parameters:
+        - name: month
+          in: query
+          required: false
+          schema: { type: string, pattern: '^\d{4}-\d{2}$' }
+          description: 'month 与 year 二选一'
+        - name: year
+          in: query
+          required: false
+          schema: { type: string, pattern: '^\d{4}$' }
+        - name: level
+          in: query
+          required: true
+          schema: { type: integer, enum: [2, 3] }
+        - name: parent_category_id
+          in: query
+          required: false
+          description: 'level=2 时必填'
+          schema: { type: string, format: uuid }
+        - name: category_id
+          in: query
+          required: false
+          description: 'level=3 时必填'
+          schema: { type: string, format: uuid }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+        - name: offset
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0, default: 0 }
+        - name: user_id
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+          description: '成员维度筛选 · 仅返回 entries.created_by = user_id 的数据 · 不传 = 全部'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/DrillDownLevel2Response'
+                  - $ref: '#/components/schemas/DrillDownLevel3Response'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /families/{family_id}/members/{user_id}:
+    parameters:
+      - $ref: '#/components/parameters/FamilyId'
+      - name: user_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      tags: [families]
+      summary: 移除成员（仅 owner）
+      responses:
+        '204': { description: 成功 }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /families/{family_id}/members/me/leave:
+    parameters:
+      - $ref: '#/components/parameters/FamilyId'
+    post:
+      tags: [families]
+      summary: 当前用户主动离开 family
+      description: |
+        语义（COSTRA-229 / D-029）：
+        - 非 owner：直接 setLeftAt(self)
+        - owner 多人：单事务内移交所有权给最早加入的 active 成员（joined_at ASC）+ setLeftAt(self)
+        - owner 仅一人：单事务内 softDelete(family) + setAllActiveLeftAt(family) → 自动解散
+        - personal family：拒绝（403 FAMILY_PERSONAL_NOT_DELETABLE）
+        - 已 left 重复调：assertActiveMember 拦截，返回 403 FAMILY_NOT_MEMBER（幂等语义）
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '204': { description: 离开成功（已写 left_at；如触发自动解散，family 同事务软删） }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: 不是 active member 或 personal family 拒绝离开
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  # ============ accounts ============
+  # COSTRA-020 Round-2 新增（P0-1）：覆盖 DB schema §3.4 accounts 表的 API 入口
+  /accounts:
+    get:
+      tags: [accounts]
+      summary: 账户列表（私有账户 + 家庭账户）
+      parameters:
+        - name: family_id
+          in: query
+          description: 指定 family_id 则返回家庭账户，留空返回当前用户私有账户
+          schema: { type: string, format: uuid }
+        - name: include_archived
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Account' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [accounts]
+      summary: 创建账户
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AccountCreate' }
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Account' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /accounts/{account_id}:
+    parameters:
+      - name: account_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [accounts]
+      summary: 账户详情
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Account' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [accounts]
+      summary: 修改账户（需带 version）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AccountUpdate' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Account' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [accounts]
+      summary: 软删除账户（需账户下无未软删流水）
+      responses:
+        '204': { description: 成功 }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422':
+          description: 业务规则拒绝（如账户仍有流水）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  # ============ ledgers ============
+  /ledgers:
+    get:
+      tags: [ledgers]
+      summary: 账本列表
+      parameters:
+        - name: family_id
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Ledger' }
+    post:
+      tags: [ledgers]
+      summary: 创建账本
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [family_id, name]
+              properties:
+                family_id: { type: string, format: uuid }
+                name: { type: string, maxLength: 32 }
+                currency: { type: string, default: CNY }
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ledger' }
+
+  # ============ categories ============
+  /categories:
+    get:
+      tags: [categories]
+      summary: 分类列表（系统预设 + 家庭自定义）
+      parameters:
+        - name: family_id
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Category' }
+    post:
+      tags: [categories]
+      summary: 创建自定义分类
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CategoryCreate' }
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Category' }
+
+  # ============ entries ============
+  /entries:
+    get:
+      tags: [entries]
+      summary: 流水列表（游标分页）
+      parameters:
+        - name: ledger_id
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+        - name: cursor
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: from
+          in: query
+          description: 起始时间（ISO-8601 UTC）
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          schema: { type: string, format: date-time }
+        - name: category_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: type
+          in: query
+          schema: { type: string, enum: [income, expense, transfer] }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Entry' }
+                  next_cursor:
+                    type: string
+                    nullable: true
+    post:
+      tags: [entries]
+      summary: 新增流水
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EntryCreate' }
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Entry' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /entries/{entry_id}:
+    parameters:
+      - name: entry_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [entries]
+      summary: 流水详情
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Entry' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [entries]
+      summary: 修改流水（需带 version）
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EntryUpdate' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Entry' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [entries]
+      summary: 软删除流水
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: version
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1 }
+          description: 当前客户端持有的 entry version（乐观锁）
+      responses:
+        '204': { description: 成功 }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  # ============ budgets ============
+  /budgets:
+    get:
+      tags: [budgets]
+      summary: 预算列表
+      parameters:
+        - name: ledger_id
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Budget' }
+    post:
+      tags: [budgets]
+      summary: 创建预算
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BudgetCreate' }
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Budget' }
+
+  # ============ sync ============
+  /sync/pull:
+    get:
+      tags: [sync]
+      summary: 增量拉取实体变更
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: family_id
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+        - name: since
+          in: query
+          required: true
+          description: |
+            上次同步水位（BIGINT change_seq · v1.2 升级）；首次拉取传 0
+            v1.0/v1.1 用 ISO-8601 时间戳 · 已废弃 · 详见 sync-protocol.md §6.3 v1.2
+          schema: { type: integer, minimum: 0 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 500, default: 200 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SyncPullResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /sync/push:
+    post:
+      tags: [sync]
+      summary: 推批量（离线本地变更）
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SyncPushRequest' }
+      responses:
+        '200':
+          description: OK（每条单独报告结果）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SyncPushResponse' }
+
+  # ============ reports ============
+  /reports/monthly:
+    get:
+      tags: [reports]
+      summary: 月度统计
+      parameters:
+        - name: ledger_id
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+        - name: month
+          in: query
+          required: true
+          description: YYYY-MM（按用户 timezone 计算区间）
+          schema: { type: string, pattern: '^\d{4}-\d{2}$' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MonthlyReport' }
+
+  # ============ notifications ============
+  /notifications/subscribe-template:
+    post:
+      tags: [notifications]
+      summary: 记录小程序订阅消息授权
+      description: |
+        客户端 `wx.requestSubscribeMessage()` 通过后调用，登记一次授权凭证（scene + template_id）。
+        COSTRA-020 Round-2 P1-3：服务端写入 `subscribe_message_jobs` 表作为"待发射令牌"，
+        有效窗口 7 天，期间最多 1 次被预算告警/家庭动态/周报消费。
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [template_id, scene]
+              properties:
+                template_id: { type: string }
+                scene:
+                  type: string
+                  enum: [budget_alert, family_activity, weekly_digest]
+      responses:
+        '201':
+          description: 授权已登记
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SubscribeMessageJob' }
+
+  # ============ legal ============
+  # COSTRA-ICP（备案下证 2026-05-13）：腾讯云规范要求"显著位置可查"，
+  # 后端纯 API 域名无 web 落地页，本端点充当程序化查询入口。
+  /legal/icp:
+    get:
+      tags: [legal]
+      summary: ICP 备案信息查询（公开 · 无鉴权）
+      description: |
+        返回当前服务备案号、小程序备案号、主体所在地、下证日期与工信部官方查询入口。
+        客户端 / 文档站均应优先消费此端点（而非硬编码备案号）以保证唯一事实源。
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IcpInfo' }
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    FamilyId:
+      name: family_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, format: uuid }
+      description: |
+        UUID v4。同一 `Idempotency-Key` + 相同 `body_hash` 在 24h 去重窗口内返回首次结果（原 HTTP 状态码与响应体）；
+        同 key 但 body_hash 不一致时返回 **409 IDEMPOTENCY_KEY_MISMATCH**。
+        详见 `docs/api/id-strategy.md §3`。
+
+  responses:
+    BadRequest:
+      description: 参数错误
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: 未授权 / Token 失效
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: 无权限
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: 资源不存在
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: 乐观锁冲突（version 不匹配）
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ConflictError' }
+
+  schemas:
+    ErrorCode:
+      type: string
+      description: |
+        所有 4xx/5xx 响应的统一错误码。事实源见 docs/api/error-codes.md；
+        TS 枚举镜像：server/src/errors/ErrorCode.ts。
+        客户端必须以 code 判分支（而非 HTTP status）。
+      enum:
+        - INVALID_ARGUMENT
+        - MALFORMED_JSON
+        - IDEMPOTENCY_KEY_REQUIRED
+        - IDEMPOTENCY_KEY_MISMATCH
+        - UNSUPPORTED_MEDIA_TYPE
+        - UNAUTHENTICATED
+        - TOKEN_EXPIRED
+        - REFRESH_TOKEN_INVALID
+        - WX_CODE_INVALID
+        - PERMISSION_DENIED
+        - FAMILY_NOT_MEMBER
+        - FAMILY_PERSONAL_NOT_DELETABLE
+        - NOT_FOUND
+        - VERSION_CONFLICT
+        - DUPLICATE_RESOURCE
+        - INVITE_EXPIRED
+        - BUSINESS_RULE_VIOLATION
+        - RATE_LIMITED
+        - INTERNAL
+        - UNAVAILABLE
+        - TIMEOUT
+        - NOT_IMPLEMENTED
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: { $ref: '#/components/schemas/ErrorCode' }
+        message:
+          type: string
+          example: 'field "amount" must be > 0'
+        trace_id:
+          type: string
+          description: 服务端追踪 ID（便于排障；4xx/5xx 必返回）
+        details:
+          type: object
+          description: |
+            可选附加信息。特定 code 约定结构：
+            - INVALID_ARGUMENT: { field, value, constraint }
+            - BUSINESS_RULE_VIOLATION: { rule: 'family_member_limit' | 'personal_family_not_invitable' | ... }
+            - VERSION_CONFLICT: { entity, entity_id }
+          additionalProperties: true
+
+    ConflictError:
+      allOf:
+        - $ref: '#/components/schemas/Error'
+        - type: object
+          properties:
+            server_version: { type: integer }
+            server_record:
+              type: object
+              description: 服务端当前版本（客户端据此决定合并策略）
+              additionalProperties: true
+
+    AuthTokenPair:
+      type: object
+      required: [access_token, refresh_token, access_token_ttl_sec, refresh_token_ttl_sec, user, default_family_id, default_ledger_id]
+      properties:
+        access_token: { type: string }
+        refresh_token: { type: string }
+        access_token_ttl_sec:
+          type: integer
+          description: access_token 自签发起的有效秒数（见 docs/api/ttl-policy.md）
+          example: 7200
+        refresh_token_ttl_sec:
+          type: integer
+          description: refresh_token 自签发起的有效秒数
+          example: 2592000
+        expires_in:
+          type: integer
+          deprecated: true
+          description: '【已废弃】等价于 access_token_ttl_sec，保留至 v0.2 移除'
+          example: 7200
+        user: { $ref: '#/components/schemas/User' }
+        default_family_id:
+          type: string
+          format: uuid
+          description: |
+            用户登录后的默认 family · 由 server 在首登时 atomic bootstrap 创建（"我的账本"）。
+            客户端应在登录成功后写入 storage 作为 active_family_id 兜底（COSTRA-165 family-context service 锚点）。
+            参考：ADR-0007 §5.6
+        default_ledger_id:
+          type: string
+          format: uuid
+          description: |
+            默认 family 的唯一 ledger id（产品语义 family:ledger=1:1）。
+            客户端记账时默认填充（COSTRA-165 home/entry 接入锚点）。
+
+    User:
+      type: object
+      required: [id, nickname, has_completed_profile, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        nickname: { type: string }
+        avatar_url: { type: string, format: uri, nullable: true }
+        timezone: { type: string, example: Asia/Shanghai }
+        has_completed_profile:
+          type: boolean
+          description: 'COSTRA-158: 用户是否完成资料补全（首登 false · PATCH /users/me 成功后 true）'
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    Family:
+      type: object
+      required: [id, name, owner_id, kind, ledger_id, ledger_name, member_count, created_at, updated_at, version]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        owner_id: { type: string, format: uuid }
+        kind: { type: string, enum: [personal, shared], description: 'COSTRA-221: family kind（ADR-0007 §5.7.2）' }
+        ledger_id: { type: string, format: uuid, description: 'COSTRA-221: 默认 ledger id（产品语义 family:ledger=1:1）' }
+        ledger_name: { type: string, description: 'COSTRA-221: 默认 ledger 名称' }
+        member_count: { type: integer, description: 'COSTRA-221: active member 数量' }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        version: { type: integer }
+
+    FamilyDetail:
+      allOf:
+        - $ref: '#/components/schemas/Family'
+        - type: object
+          properties:
+            members:
+              type: array
+              items: { $ref: '#/components/schemas/FamilyMember' }
+
+    FamilyMember:
+      type: object
+      required: [user_id, nickname, role, status, color_slot, joined_at]
+      properties:
+        user_id: { type: string, format: uuid }
+        nickname: { type: string, description: 'COSTRA-221: JOIN users 当前昵称' }
+        avatar_url: { type: string, format: uri, nullable: true, description: 'COSTRA-221: JOIN users 当前头像' }
+        role: { type: string, enum: [owner, member, viewer] }
+        status: { type: string, enum: [active, left], description: 'COSTRA-221: left_at IS NULL → active; left_at IS NOT NULL → left' }
+        color_slot:
+          type: integer
+          minimum: 0
+          maximum: 7
+          nullable: true
+          description: |
+            成员持久化配色槽位（migration 0012_family_members_color_slot）。
+            **应用层强保证**：status=active → 必非 null；status=left → 必为 null（slot 已释放可被新人复用）。
+            前端按此索引到 8 色莫兰迪色板，保证同 family 内 active 成员之间不撞色。
+        joined_at: { type: string, format: date-time }
+        left_at: { type: string, format: date-time, nullable: true, description: 'COSTRA-221: 退出时间; NULL = active' }
+
+    FamilyInvite:
+      type: object
+      required: [id, family_id, invite_token, role, expires_at, share_url]
+      properties:
+        id: { type: string, format: uuid, description: 'COSTRA-221: invite record id' }
+        family_id: { type: string, format: uuid, description: 'COSTRA-221: 所属 family id' }
+        invite_token: { type: string }
+        role: { type: string, enum: [member, viewer] }
+        expires_at: { type: string, format: date-time }
+        share_url:
+          type: string
+          description: 可在小程序内分享的短链（含 scene 参数）
+
+    FamilySummary:
+      type: object
+      required: [family_id, family_name, family_kind, ledger_id, ledger_name, timezone, range_start, range_end, currency, totals, members, segments, shared, personal_by_member]
+      description: |
+        COSTRA-222 / COSTRA-300: 家庭财务聚合（月度或年度）。口径详见 GET /families/{family_id}/summary description。
+      properties:
+        family_id: { type: string, format: uuid }
+        family_name: { type: string }
+        family_kind: { type: string, enum: [personal, shared] }
+        ledger_id: { type: string, format: uuid }
+        ledger_name: { type: string }
+        month: { type: string, nullable: true, description: 'YYYY-MM；当请求传 year 时为 null' }
+        year: { type: string, nullable: true, description: 'YYYY；当请求传 month 时为 null' }
+        timezone: { type: string, description: 'MVP 固定 Asia/Shanghai', example: Asia/Shanghai }
+        range_start: { type: string, format: date-time, description: '区间起始 UTC（inclusive）；month 调用为该月，year 调用为整年' }
+        range_end: { type: string, format: date-time, description: '区间结束 UTC（exclusive）；month 调用为该月，year 调用为整年' }
+        currency: { type: string, example: CNY }
+        totals:
+          type: object
+          required: [expense, income, balance, shared_expense, personal_expense, entry_count, skipped_unclassified_expense_count]
+          properties:
+            expense: { type: integer, format: int64, description: '总支出（cents）' }
+            income: { type: integer, format: int64, description: '总收入（cents）' }
+            balance: { type: integer, format: int64, description: '结余 = income - expense（cents，可为负）' }
+            shared_expense: { type: integer, format: int64, description: '公共支出（cents，shared_type=shared）' }
+            personal_expense: { type: integer, format: int64, description: '个人支出（cents，shared_type=personal）' }
+            entry_count: { type: integer, description: '非删除 entry 数（income + expense，不含 transfer）' }
+            skipped_unclassified_expense_count:
+              type: integer
+              description: 'shared_type IS NULL 的 expense 数量（不进入聚合，仅可观测）'
+        members:
+          type: array
+          items: { $ref: '#/components/schemas/FamilySummaryMember' }
+        segments:
+          type: array
+          items: { $ref: '#/components/schemas/FamilySummarySegment' }
+        shared:
+          type: object
+          required: [expense, paid_contributions, categories]
+          properties:
+            expense: { type: integer, format: int64, description: '公共支出总额（cents）' }
+            paid_contributions:
+              type: array
+              items: { $ref: '#/components/schemas/FamilyPaidContribution' }
+            categories:
+              type: array
+              items: { $ref: '#/components/schemas/FamilyCategoryRankItem' }
+        personal_by_member:
+          type: array
+          items: { $ref: '#/components/schemas/FamilyPersonalExpenseBlock' }
+
+    FamilySummaryMember:
+      type: object
+      required: [user_id, nickname, avatar_url, role, status, color_slot, joined_at, personal_expense, paid_contribution, expense_count]
+      description: |
+        COSTRA-222: 家庭成员在月度聚合中的数据。
+        expense_count 口径：该成员本月 expense entry 数（不含 income/transfer）。
+      properties:
+        user_id: { type: string, format: uuid }
+        nickname: { type: string }
+        avatar_url: { type: string, format: uri, nullable: true }
+        role: { type: string, enum: [owner, member, viewer] }
+        status: { type: string, enum: [active, left] }
+        color_slot:
+          type: integer
+          minimum: 0
+          maximum: 7
+          nullable: true
+          description: '同 FamilyMember.color_slot · status=active 必非 null，status=left 必为 null'
+        joined_at: { type: string, format: date-time }
+        left_at: { type: string, format: date-time, nullable: true }
+        personal_expense: { type: integer, format: int64, description: '个人支出（cents，shared_type=personal 且 created_by=该成员）' }
+        paid_contribution: { type: integer, format: int64, description: '对公共支出的付款贡献（cents，shared_type=shared 且 created_by=该成员）' }
+        expense_count: { type: integer, description: '该成员本月 expense entry 数（含 shared + personal，不含 income/transfer）' }
+
+    FamilySummarySegment:
+      type: object
+      required: [key, type, label, amount, ratio_bps]
+      description: |
+        COSTRA-222: 支出占比视窗段。key='shared' 为公共段；key='member:{user_id}' 为成员个人段。
+      properties:
+        key: { type: string, description: "'shared' 或 'member:{user_id}'" }
+        type: { type: string, enum: [shared, personal] }
+        label: { type: string, description: '展示用标签' }
+        user_id: { type: string, format: uuid, nullable: true, description: '个人段对应的 user_id；公共段为 null' }
+        amount: { type: integer, format: int64, description: '金额（cents）' }
+        ratio_bps: { type: integer, minimum: 0, maximum: 10000, description: '占比万分比（amount / totals.expense * 10000，expense=0 时为 0）' }
+        member_status: { type: string, enum: [active, left], nullable: true, description: '个人段的成员状态；公共段为 null' }
+
+    FamilyPaidContribution:
+      type: object
+      required: [user_id, nickname, avatar_url, status, amount, ratio_bps]
+      description: COSTRA-222: 公共支出垫付贡献
+      properties:
+        user_id: { type: string, format: uuid }
+        nickname: { type: string }
+        avatar_url: { type: string, format: uri, nullable: true }
+        status: { type: string, enum: [active, left] }
+        amount: { type: integer, format: int64, description: '贡献金额（cents）' }
+        ratio_bps: { type: integer, minimum: 0, maximum: 10000, description: '占比万分比（amount / shared_expense * 10000，shared_expense=0 时为 0）' }
+
+    FamilyPersonalExpenseBlock:
+      type: object
+      required: [user_id, nickname, avatar_url, status, amount, categories]
+      description: COSTRA-222: 成员个人支出块
+      properties:
+        user_id: { type: string, format: uuid }
+        nickname: { type: string }
+        avatar_url: { type: string, format: uri, nullable: true }
+        status: { type: string, enum: [active, left] }
+        amount: { type: integer, format: int64, description: '个人支出总额（cents）' }
+        categories:
+          type: array
+          items: { $ref: '#/components/schemas/FamilyCategoryRankItem' }
+
+    FamilyCategoryRankItem:
+      type: object
+      required: [category_id, category_name, amount, entry_count, ratio_bps]
+      description: |
+        COSTRA-222 / COSTRA-300: 分类排行项。
+
+        **重构后语义**：family summary 接口返回的 categories 字段为 **L1 一级分类排行**：`category_id` 即一级分类 id，`parent_category_id` / `parent_category_name` 在该接口内**恒为 null**（已无父）。占比 ratio_bps 的基数：`shared.categories[i]` 以 `shared.expense` 为分母；`personal_by_member[i].categories[j]` 以该成员 amount 为分母。
+      properties:
+        category_id: { type: string, format: uuid, nullable: true, description: 'null 表示未分类' }
+        category_name: { type: string }
+        parent_category_id: { type: string, format: uuid, nullable: true }
+        parent_category_name: { type: string, nullable: true }
+        amount: { type: integer, format: int64, description: '金额（cents）' }
+        entry_count: { type: integer, description: '该分类下 entry 数' }
+        ratio_bps: { type: integer, minimum: 0, maximum: 10000, description: '占比万分比' }
+
+    StatCategoryRankItem:
+      type: object
+      required: [category_id, category_name, icon, amount, entry_count, ratio_bps]
+      description: 'COSTRA-224: 统计页通用分类排行项（用于 L1/L2 排行 + 月/年通用）'
+      properties:
+        category_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: 'L1 时为 parent_id；L2 时为 category_id；null 表示未分类（应不出现）'
+        category_name: { type: string }
+        icon: { type: string }
+        amount: { type: integer, format: int64, description: '金额（cents）' }
+        entry_count: { type: integer }
+        ratio_bps: { type: integer, minimum: 0, maximum: 10000, description: '占比万分比（基数因层级而异：L1 = 总支出 / L2 = 父级总额）' }
+
+    StatTotals:
+      type: object
+      required: [expense, income, balance, entry_count]
+      properties:
+        expense: { type: integer, format: int64 }
+        income: { type: integer, format: int64 }
+        balance: { type: integer, format: int64, description: 'income - expense' }
+        entry_count: { type: integer }
+
+    DailyTrendItem:
+      type: object
+      required: [day, expense, income]
+      properties:
+        day: { type: integer, minimum: 1, maximum: 31 }
+        expense: { type: integer, format: int64 }
+        income: { type: integer, format: int64 }
+
+    MonthlyExtremes:
+      type: object
+      required: [avg_daily_expense, max_single_expense, max_day_expense]
+      properties:
+        avg_daily_expense: { type: integer, format: int64, description: '日均支出 = expense / 当月天数' }
+        max_single_expense: { type: integer, format: int64 }
+        max_day_expense: { type: integer, format: int64, description: '当月单日最高支出' }
+
+    MonthlyStatistics:
+      type: object
+      required: [family_id, family_name, family_kind, ledger_id, ledger_name, month, timezone, range_start, range_end, currency, totals, daily_trend, extremes, category_ranks, filtered_user_id]
+      description: 'COSTRA-224/260: 月度统计响应'
+      properties:
+        family_id: { type: string, format: uuid }
+        family_name: { type: string }
+        family_kind: { type: string, enum: [personal, shared] }
+        ledger_id: { type: string, format: uuid }
+        ledger_name: { type: string }
+        month: { type: string, pattern: '^\d{4}-\d{2}$' }
+        timezone: { type: string, enum: [Asia/Shanghai] }
+        range_start: { type: string, format: date-time }
+        range_end: { type: string, format: date-time }
+        currency: { type: string, enum: [CNY] }
+        filtered_user_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: '当前结果的成员维度（null 表示"全部"）· COSTRA-260'
+        totals: { $ref: '#/components/schemas/StatTotals' }
+        daily_trend:
+          type: array
+          description: '当月每日趋势 · 长度 = 当月天数（28~31）'
+          items: { $ref: '#/components/schemas/DailyTrendItem' }
+        extremes: { $ref: '#/components/schemas/MonthlyExtremes' }
+        category_ranks:
+          type: array
+          description: 'L1 一级分类排行 · 金额降序'
+          items: { $ref: '#/components/schemas/StatCategoryRankItem' }
+
+    MonthlyTrendItem:
+      type: object
+      required: [month, expense, income, balance, entry_count]
+      properties:
+        month: { type: integer, minimum: 1, maximum: 12 }
+        expense: { type: integer, format: int64 }
+        income: { type: integer, format: int64 }
+        balance: { type: integer, format: int64 }
+        entry_count: { type: integer }
+
+    YearlyExtremes:
+      type: object
+      required: [avg_monthly_expense, max_single_expense, max_month_expense, max_month_label, top_category_amount]
+      properties:
+        avg_monthly_expense: { type: integer, format: int64, description: '月均 = 总支出 / 已过月份数' }
+        max_single_expense: { type: integer, format: int64 }
+        max_month_expense: { type: integer, format: int64 }
+        max_month_label: { type: string, description: '如「8月」· 无数据时空串' }
+        top_category_name: { type: string, nullable: true }
+        top_category_amount: { type: integer, format: int64 }
+
+    YearlyStatistics:
+      type: object
+      required: [family_id, family_name, family_kind, ledger_id, ledger_name, year, timezone, range_start, range_end, currency, totals, monthly_trend, extremes, category_ranks, filtered_user_id]
+      description: 'COSTRA-224/260: 年度统计响应'
+      properties:
+        family_id: { type: string, format: uuid }
+        family_name: { type: string }
+        family_kind: { type: string, enum: [personal, shared] }
+        ledger_id: { type: string, format: uuid }
+        ledger_name: { type: string }
+        year: { type: string, pattern: '^\d{4}$' }
+        timezone: { type: string, enum: [Asia/Shanghai] }
+        range_start: { type: string, format: date-time }
+        range_end: { type: string, format: date-time }
+        currency: { type: string, enum: [CNY] }
+        filtered_user_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: '当前结果的成员维度（null 表示"全部"）· COSTRA-260'
+        totals: { $ref: '#/components/schemas/StatTotals' }
+        monthly_trend:
+          type: array
+          description: '12 月趋势 · 长度恒为 12'
+          items: { $ref: '#/components/schemas/MonthlyTrendItem' }
+        extremes: { $ref: '#/components/schemas/YearlyExtremes' }
+        category_ranks:
+          type: array
+          items: { $ref: '#/components/schemas/StatCategoryRankItem' }
+
+    DrillDownLevel2Response:
+      type: object
+      required: [level, parent_category_id, parent_category_name, parent_amount, items, total_count, has_more]
+      properties:
+        level: { type: integer, enum: [2] }
+        parent_category_id: { type: string, format: uuid }
+        parent_category_name: { type: string }
+        parent_amount: { type: integer, format: int64, description: '一级分类总额（用于二级占比基数）' }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/StatCategoryRankItem' }
+        total_count: { type: integer }
+        has_more: { type: boolean }
+
+    DrillDownEntryItem:
+      type: object
+      required: [entry_id, amount, occurred_at, created_by, nickname]
+      properties:
+        entry_id: { type: string, format: uuid }
+        amount: { type: integer, format: int64 }
+        note: { type: string, nullable: true }
+        occurred_at: { type: string, format: date-time }
+        shared_type: { type: string, enum: [shared, personal], nullable: true }
+        created_by: { type: string, format: uuid }
+        nickname: { type: string }
+        avatar_url: { type: string, nullable: true }
+
+    DrillDownLevel3Response:
+      type: object
+      required: [level, category_id, category_name, category_amount, items, total_count, has_more]
+      properties:
+        level: { type: integer, enum: [3] }
+        category_id: { type: string, format: uuid }
+        category_name: { type: string }
+        parent_category_id: { type: string, format: uuid, nullable: true }
+        parent_category_name: { type: string, nullable: true }
+        category_amount: { type: integer, format: int64, description: '二级分类总额' }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/DrillDownEntryItem' }
+        total_count: { type: integer }
+        has_more: { type: boolean }
+
+    Ledger:
+      type: object
+      required: [id, family_id, name, currency, created_at, version]
+      properties:
+        id: { type: string, format: uuid }
+        family_id: { type: string, format: uuid }
+        name: { type: string }
+        currency: { type: string, example: CNY }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        version: { type: integer }
+
+    # ---- accounts ----
+    # COSTRA-020 Round-2 P0-1：对齐 DB schema §3.4 accounts 表
+    Account:
+      type: object
+      required: [id, name, kind, currency, balance, is_archived, created_at, version]
+      properties:
+        id: { type: string, format: uuid }
+        user_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: 私有账户的归属用户；与 family_id 互斥（同一时刻只有一项非空）
+        family_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: 家庭账户的归属家庭；与 user_id 互斥
+        name: { type: string, maxLength: 32 }
+        kind:
+          type: string
+          enum: [cash, bank_card, credit_card, e_wallet, prepaid_card, other]
+          description: 账户类型（与 DB schema §3.4 对齐）
+        currency: { type: string, example: CNY }
+        balance:
+          type: integer
+          format: int64
+          description: 当前余额（单位：分；服务端基于流水聚合，客户端只读）
+        icon: { type: string, nullable: true, description: 图标 key（Design Token 映射） }
+        color: { type: string, nullable: true }
+        sort_order: { type: integer, default: 0 }
+        is_archived:
+          type: boolean
+          default: false
+          description: 归档后不出现在记账默认下拉，但历史流水仍保留
+        note: { type: string, maxLength: 200, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        deleted_at: { type: string, format: date-time, nullable: true }
+        version: { type: integer }
+
+    AccountCreate:
+      type: object
+      required: [name, kind, currency]
+      description: |
+        user_id 与 family_id 不在请求体中指定：
+        - 若未传 family_id query/context → 归属当前 user（私有）
+        - 若 path/query 指定 family_id → 归属该家庭（需成员权限）
+      properties:
+        family_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: 指定则创建家庭账户；不传则创建当前用户私有账户
+        name: { type: string, maxLength: 32 }
+        kind:
+          type: string
+          enum: [cash, bank_card, credit_card, e_wallet, prepaid_card, other]
+        currency: { type: string, default: CNY }
+        initial_balance:
+          type: integer
+          format: int64
+          default: 0
+          description: 建账初始余额（分）；内部写入一条 type=adjust 的系统流水
+        icon: { type: string }
+        color: { type: string }
+        sort_order: { type: integer }
+        note: { type: string, maxLength: 200 }
+
+    AccountUpdate:
+      type: object
+      required: [version]
+      description: |
+        可改字段：name / icon / color / sort_order / is_archived / note。
+        `kind` 和 `currency` 不可修改（与 DB schema §3.4 约束一致）；
+        `balance` 由流水聚合派生，永不可直接修改。
+      properties:
+        name: { type: string, maxLength: 32 }
+        icon: { type: string }
+        color: { type: string }
+        sort_order: { type: integer }
+        is_archived: { type: boolean }
+        note: { type: string, maxLength: 200 }
+        version: { type: integer, description: 当前服务端版本号 }
+
+    Category:
+      type: object
+      required: [id, name, type, icon, sort_order, parent_id, is_direct_default, is_parent_default, display_order, children_count]
+      properties:
+        id: { type: string, format: uuid }
+        family_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: null 表示系统预设
+        name: { type: string }
+        type: { type: string, enum: [income, expense] }
+        icon: { type: string, description: 图标 key（Design Token 映射） }
+        color: { type: string, description: 色值 key }
+        sort_order: { type: integer }
+        is_system: { type: boolean }
+        parent_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: |
+            父分类 ID；NULL 表示一级分类。
+            COSTRA-217 B1：二级分类体系，最多两层。
+        is_direct_default:
+          type: boolean
+          description: |
+            全局二级展示区直选默认归属标记。
+            仅二级分类有意义（一级分类恒为 false）。
+            同名二级分类在不同一级下时，只有最日常/最高频的那个为 true。
+            COSTRA-217 B1：对齐 design/ui/category_dictionary.md §默认直选归属映射表。
+        is_parent_default:
+          type: boolean
+          description: |
+            "点父一级时自动选中的默认子分类"标记（migration 0013）。
+            每个一级分类下最多一个（DB partial unique index 兜底）。
+            UI 据此过滤"全局二级展示区"——is_parent_default=true 的子分类不在该区出现，
+            因为用户点一级时已天然选中它。
+            一级分类（parent_id IS NULL）恒为 false。
+        display_order:
+          type: integer
+          nullable: true
+          minimum: 1
+          description: |
+            全局二级展示区的展示顺序（migration 0013）。
+            NULL = 不在全局展示区展示（含 is_parent_default=true 的子分类、同名重复中非主归属的副本等）。
+            有值时按升序展示。支出（type=expense）与收入（type=income）各自独立编号空间。
+            一级分类恒为 NULL。
+        children_count:
+          type: integer
+          minimum: 0
+          description: |
+            一级分类下二级数量；二级分类为 0。
+            客户端据此判断是否展示展开箭头。
+
+    CategoryCreate:
+      type: object
+      required: [family_id, name, type, icon]
+      properties:
+        family_id: { type: string, format: uuid }
+        name: { type: string, maxLength: 16 }
+        type: { type: string, enum: [income, expense] }
+        icon: { type: string }
+        color: { type: string }
+        parent_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: |
+            父分类 ID；不传表示创建一级分类，传入表示创建二级分类。
+            COSTRA-217 B1：家庭自定义分类不得绕过二级约束（最多两层）。
+            is_direct_default 与 children_count 为服务端只读字段，不允许客户端在 Create/Update 中传入。
+
+    Entry:
+      type: object
+      required: [id, ledger_id, amount, currency, type, occurred_at, created_by, created_at, version]
+      properties:
+        id: { type: string, format: uuid }
+        ledger_id: { type: string, format: uuid }
+        amount:
+          type: integer
+          format: int64
+          description: 金额（单位：分；正整数，方向由 type 决定）
+          example: 12345
+        currency: { type: string, example: CNY }
+        type: { type: string, enum: [income, expense, transfer] }
+        category_id: { type: string, format: uuid, nullable: true }
+        account_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: |
+            关联账户（income/expense 时的资金账户；transfer 时的转出账户）。
+            COSTRA-020 Round-2 P0-1 新增，对齐 DB §3.4 accounts。
+        to_account_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: |
+            仅 type=transfer 使用：转入账户。
+            与 account_id 一起刻画跨账户转账，两边各派生一条聚合。
+        note: { type: string, maxLength: 200, nullable: true }
+        occurred_at:
+          type: string
+          format: date-time
+          description: 发生时间（UTC）
+        created_by: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        deleted_at: { type: string, format: date-time, nullable: true }
+        version: { type: integer }
+        change_seq:
+          type: integer
+          format: int64
+          description: |
+            同步引擎一致性水位（v1.2 新增 · BUG-COSTRA-154）
+            PG SEQUENCE entries_change_seq 严格单调递增 · 不依赖时钟
+            sync/pull 用此字段推进 watermark · client 不直接使用（仅作调试）
+            详见 sync-protocol.md §6.3 v1.2
+        client_ref_id:
+          type: string
+          nullable: true
+          description: 客户端离线本地 id，用于 sync/push 去重
+        shared_type:
+          type: string
+          nullable: true
+          enum: [personal, shared]
+          description: |
+            公共/个人支出标记（COSTRA-217 B2）。
+            - expense: 允许 personal / shared；未传时由服务端默认
+              - 单人 personal family 账本默认 personal
+              - 多人 shared family 账本默认 shared
+            - income: 不适用公共收入概念，必须为 NULL
+            - transfer: 暂不进入公共/个人统计，必须为 NULL
+            非法组合（如 type=income 且 shared_type=shared）服务端返回 BUSINESS_RULE_VIOLATION。
+
+    EntryCreate:
+      type: object
+      required: [ledger_id, amount, type, occurred_at]
+      properties:
+        ledger_id: { type: string, format: uuid }
+        amount: { type: integer, format: int64, minimum: 1 }
+        currency: { type: string, default: CNY }
+        type: { type: string, enum: [income, expense, transfer] }
+        category_id: { type: string, format: uuid }
+        account_id:
+          type: string
+          format: uuid
+          description: |
+            income/expense 强烈建议提供（缺省走 ledger 默认账户）；
+            transfer 时为转出账户（必填）。
+        to_account_id:
+          type: string
+          format: uuid
+          description: 仅 transfer 必填：转入账户（不得与 account_id 相同）
+        note: { type: string, maxLength: 200 }
+        occurred_at: { type: string, format: date-time }
+        client_ref_id: { type: string }
+        shared_type:
+          type: string
+          nullable: true
+          enum: [personal, shared]
+          description: |
+            公共/个人支出标记（COSTRA-217 B2）。可选；缺省走服务端默认规则。
+            仅 type=expense 时有效；income/transfer 时传入非 NULL 将被拒绝。
+
+    EntryUpdate:
+      type: object
+      required: [version]
+      description: |
+        修改流水。注意：`type`（income/expense/transfer）**不可修改**，
+        若需改变 type 请先 delete 再 create。DB 层有相同约束。
+        COSTRA-020 Round-2 P1-4 明确此语义。
+      properties:
+        amount: { type: integer, format: int64, minimum: 1 }
+        category_id: { type: string, format: uuid }
+        note: { type: string, maxLength: 200 }
+        occurred_at: { type: string, format: date-time }
+        shared_type:
+          type: string
+          nullable: true
+          enum: [personal, shared]
+          description: |
+            公共/个人支出标记（COSTRA-217 B2）。仅 type=expense 时可修改。
+        version: { type: integer, description: 当前服务端版本号 }
+
+    Budget:
+      type: object
+      required: [id, ledger_id, period, amount, currency, used, created_at, version]
+      properties:
+        id: { type: string, format: uuid }
+        ledger_id: { type: string, format: uuid }
+        category_id: { type: string, format: uuid, nullable: true, description: null 表示总预算 }
+        period: { type: string, enum: [monthly], description: MVP 仅支持月度 }
+        month: { type: string, pattern: '^\d{4}-\d{2}$' }
+        amount: { type: integer, format: int64 }
+        used: { type: integer, format: int64, description: 服务端聚合的已用金额（分） }
+        currency: { type: string, example: CNY }
+        alert_threshold:
+          type: integer
+          minimum: 50
+          maximum: 100
+          default: 80
+          description: 百分比，触达后推送订阅消息
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        version: { type: integer }
+
+    BudgetCreate:
+      type: object
+      required: [ledger_id, month, amount]
+      properties:
+        ledger_id: { type: string, format: uuid }
+        category_id: { type: string, format: uuid }
+        month: { type: string, pattern: '^\d{4}-\d{2}$' }
+        amount: { type: integer, format: int64, minimum: 1 }
+        alert_threshold: { type: integer, minimum: 50, maximum: 100 }
+
+    SyncPullResponse:
+      type: object
+      required: [watermark, has_more, changes]
+      properties:
+        watermark:
+          type: integer
+          format: int64
+          description: |
+            本次返回数据的最大 change_seq · 客户端下次作为 since
+            v1.2 升级（BUG-COSTRA-154）：从 ISO 时间戳改为 BIGINT change_seq
+            PG SEQUENCE 严格单调 · 不依赖时钟 · 详见 sync-protocol.md §6.3 v1.2
+        has_more: { type: boolean }
+        changes:
+          type: object
+          description: 分实体返回变更集（含软删）
+          properties:
+            entries:
+              type: array
+              items: { $ref: '#/components/schemas/Entry' }
+            categories:
+              type: array
+              items: { $ref: '#/components/schemas/Category' }
+            budgets:
+              type: array
+              items: { $ref: '#/components/schemas/Budget' }
+            ledgers:
+              type: array
+              items: { $ref: '#/components/schemas/Ledger' }
+
+    SyncPushRequest:
+      type: object
+      required: [ops]
+      properties:
+        ops:
+          type: array
+          maxItems: 200
+          items:
+            type: object
+            required: [op, entity, client_ref_id, payload]
+            properties:
+              op: { type: string, enum: [create, update, delete] }
+              entity: { type: string, enum: [entry, category, budget] }
+              client_ref_id: { type: string, description: 客户端本地 id }
+              base_version:
+                type: integer
+                nullable: true
+                description: update/delete 时必填；客户端最后知晓的服务端版本
+              payload:
+                type: object
+                additionalProperties: true
+                description: |
+                  实体 payload。entry payload 含 shared_type 可选字段（COSTRA-217 B2）：
+                  - shared_type 缺省时走服务端默认规则
+                  - 非法组合（type=income 且 shared_type=shared）服务端返回 BUSINESS_RULE_VIOLATION
+
+    SyncPushResponse:
+      type: object
+      required: [results]
+      properties:
+        results:
+          type: array
+          items:
+            type: object
+            required: [client_ref_id, status]
+            properties:
+              client_ref_id: { type: string }
+              status: { type: string, enum: [ok, conflict, rejected] }
+              server_id: { type: string, format: uuid, nullable: true }
+              server_version: { type: integer, nullable: true }
+              error: { $ref: '#/components/schemas/Error' }
+
+    MonthlyReport:
+      type: object
+      required: [month, currency, total_income, total_expense, by_category]
+      properties:
+        month: { type: string, pattern: '^\d{4}-\d{2}$' }
+        currency: { type: string }
+        total_income: { type: integer, format: int64 }
+        total_expense: { type: integer, format: int64 }
+        by_category:
+          type: array
+          items:
+            type: object
+            properties:
+              category_id: { type: string, format: uuid, nullable: true }
+              category_name: { type: string }
+              type: { type: string, enum: [income, expense] }
+              amount: { type: integer, format: int64 }
+              ratio_bp:
+                type: integer
+                minimum: 0
+                maximum: 10000
+                description: |
+                  占比（万分比，basis points；0~10000 表示 0%~100%）。
+                  COSTRA-020 Round-2 P1-2：原 `ratio: float` 改为整数万分比，
+                  避免 JS 双精度 vs JVM float 跨端序列化差异。
+                  客户端展示时 = ratio_bp / 100（两位小数百分比）。
+        daily_trend:
+          type: array
+          items:
+            type: object
+            properties:
+              date: { type: string, format: date }
+              income: { type: integer, format: int64 }
+              expense: { type: integer, format: int64 }
+
+    # ---- notifications ----
+    # COSTRA-020 Round-2 P1-3：订阅消息 7 天时效 + 幂等刻画
+    SubscribeMessageJob:
+      type: object
+      required: [job_id, scene, template_id, created_at, expires_at, remaining_quota, status]
+      properties:
+        job_id:
+          type: string
+          format: uuid
+          description: 本次授权凭证 id；后续告警/动态/周报消费时通过 job_id 去重
+        scene:
+          type: string
+          enum: [budget_alert, family_activity, weekly_digest]
+        template_id: { type: string }
+        user_id: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        expires_at:
+          type: string
+          format: date-time
+          description: |
+            授权有效截止（created_at + 7 天，遵循微信订阅消息官方时效）。
+            超过后必须重新由用户触发授权，服务端发射时会校验并拒发。
+        remaining_quota:
+          type: integer
+          minimum: 0
+          description: 剩余可发射次数（当前 MVP 单次授权 = 1 条；保留字段以支持未来一次性多次）
+        status:
+          type: string
+          enum: [pending, sent, expired, revoked]
+          description: pending=可发；sent=已发；expired=超 7 天；revoked=用户撤回
+        last_sent_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    # ---- legal ----
+    # COSTRA-ICP（备案下证 2026-05-13）：与 server/src/config/icp.ts ICP_INFO 严格同源
+    IcpInfo:
+      type: object
+      required: [service, miniapp, subject, filedAt, verifyUrl]
+      properties:
+        service:
+          type: string
+          description: 后端服务备案号（域名 costra.cloud 主体备案）
+          example: 沪ICP备2026017253号-2
+        miniapp:
+          type: string
+          description: 小程序备案号
+          example: 沪ICP备2026017253号-1X
+        subject:
+          type: string
+          description: 备案主体所在地（行政区简称，与工信部公示一致）
+          example: 上海
+        filedAt:
+          type: string
+          format: date
+          description: 下证日期（ISO date · YYYY-MM-DD）
+          example: '2026-05-13'
+        verifyUrl:
+          type: string
+          format: uri
+          description: 工信部官方查询入口
+          example: https://beian.miit.gov.cn/

@@ -1,0 +1,128 @@
+<!-- pages/statistics/tpl-monthly-pane.wxml · 月度数据 pane 模板 -->
+<!-- 卡号: COSTRA-261 · 按成员维度渲染 · member 变量由外层 wx:for 提供 -->
+
+<!-- loading 态 -->
+<view wx:if="{{monthlyByMember[member.key].loading && !monthlyByMember[member.key].loaded}}" class="pane-loading">
+  <text>加载中...</text>
+</view>
+
+<!-- 空态 -->
+<view wx:elif="{{monthlyByMember[member.key].isEmpty && monthlyByMember[member.key].loaded}}" class="empty-state">
+  <text class="empty-state__title">{{monthlyByMember[member.key].emptyTitle}}</text>
+  <text class="empty-state__hint">{{monthlyByMember[member.key].emptyHint}}</text>
+</view>
+
+<!-- 有数据 -->
+<block wx:elif="{{monthlyByMember[member.key].loaded}}">
+  <!-- 宏观区 -->
+  <view class="macro">
+    <view class="macro__primary tnum">{{monthlyByMember[member.key].totalExpense}}</view>
+    <view class="macro__secondary">
+      <text class="macro__sec-label">收入</text>
+      <text class="macro__sec-value tnum">{{monthlyByMember[member.key].totalIncome}}</text>
+      <text class="macro__sec-divider">·</text>
+      <text class="macro__sec-label">结余</text>
+      <text class="macro__sec-value tnum">{{monthlyByMember[member.key].totalBalance}}</text>
+    </view>
+    <!-- 折线图 -->
+    <view class="macro__chart">
+      <trend-line-chart
+        data="{{monthlyByMember[member.key].trend}}"
+        height="{{160}}"
+        color="#1c1b1a"
+        fill-gradient="{{true}}"
+      />
+    </view>
+  </view>
+
+  <!-- 摘要 4 格 -->
+  <view class="summary-grid" wx:if="{{monthlyByMember[member.key].summary.length > 0}}">
+    <view class="summary-grid__item" wx:for="{{monthlyByMember[member.key].summary}}" wx:key="label">
+      <view class="summary-grid__value tnum">{{item.value}}</view>
+      <view class="summary-grid__label">{{item.label}}</view>
+    </view>
+  </view>
+
+  <!-- 一级分类排行 -->
+  <view class="rank" wx:if="{{monthlyByMember[member.key].l1.length > 0}}">
+    <view class="rank__title">分类排行</view>
+    <view class="rank__list">
+      <block wx:for="{{monthlyByMember[member.key].l1}}" wx:key="category_id" wx:for-item="l1">
+        <view
+          class="rank__row {{l1.expanded ? 'rank__row--open' : ''}}"
+          data-id="{{l1.category_id}}"
+          data-memberkey="{{member.key}}"
+          bind:tap="onTapL1"
+        >
+          <view class="rank__row-main">
+            <view class="rank__icon">{{l1.icon}}</view>
+            <view class="rank__name">{{l1.category_name}}</view>
+            <view class="rank__amount tnum">{{l1.amount}}</view>
+            <view class="rank__ratio">{{l1.ratioText}}</view>
+          </view>
+          <view class="rank__bar">
+            <view class="rank__bar-fill" style="width: {{l1.ratio_bps / 100}}%;"></view>
+          </view>
+        </view>
+
+        <!-- L2 二级展开 -->
+        <view class="l2" wx:if="{{l1.expanded}}">
+          <view class="l2__loading" wx:if="{{l1.loadingL2}}">加载中...</view>
+          <block wx:elif="{{l1.l2Items.length > 0}}">
+            <block wx:for="{{l1.l2Items}}" wx:key="category_id" wx:for-item="l2">
+              <view
+                class="l2__row {{l2.expanded ? 'l2__row--open' : ''}}"
+                data-l1id="{{l1.category_id}}"
+                data-id="{{l2.category_id}}"
+                data-memberkey="{{member.key}}"
+                catch:tap="onTapL2"
+              >
+                <view class="l2__row-main">
+                  <view class="l2__icon">{{l2.icon}}</view>
+                  <view class="l2__name">{{l2.category_name}}</view>
+                  <view class="l2__amount tnum">{{l2.amount}}</view>
+                  <view class="l2__ratio">{{l2.ratioText}}</view>
+                </view>
+                <view class="l2__bar">
+                  <view class="l2__bar-fill" style="width: {{l2.ratio_bps / 100}}%;"></view>
+                </view>
+              </view>
+
+              <!-- L3 单笔明细 -->
+              <view class="l3" wx:if="{{l2.expanded}}" catch:tap="noop">
+                <view class="l3__loading" wx:if="{{l2.loadingL3}}">加载中...</view>
+                <block wx:elif="{{l2.l3Items.length > 0}}">
+                  <view class="l3__row" wx:for="{{l2.l3Items}}" wx:key="entry_id" wx:for-item="l3">
+                    <view class="l3__avatar">
+                      <image wx:if="{{l3.avatarUrl}}" class="l3__avatar-img" src="{{l3.avatarUrl}}" mode="aspectFill" lazy-load />
+                      <view wx:else class="l3__avatar-placeholder">{{l3.initial}}</view>
+                    </view>
+                    <view class="l3__main">
+                      <view class="l3__top">
+                        <text class="l3__date">{{l3.dateLabel}}</text>
+                        <text class="l3__note">{{l3.note}}</text>
+                        <text class="l3__amount tnum">{{l3.amount}}</text>
+                      </view>
+                      <view class="l3__bottom">
+                        <text class="l3__time">{{l3.timeLabel}}</text>
+                        <text class="l3__shared" wx:if="{{l3.shared}}">公共</text>
+                      </view>
+                    </view>
+                  </view>
+                  <view class="l3__more" wx:if="{{l2.l3HasMore}}">
+                    还有部分较小支出未显示...
+                  </view>
+                </block>
+                <view class="l3__empty" wx:else>暂无明细</view>
+              </view>
+            </block>
+            <view class="l2__more" wx:if="{{l1.l2HasMore}}">
+              还有部分较小支出未显示...
+            </view>
+          </block>
+          <view class="l2__empty" wx:else>暂无子分类</view>
+        </view>
+      </block>
+    </view>
+  </view>
+</block>

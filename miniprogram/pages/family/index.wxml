@@ -1,0 +1,358 @@
+<!-- pages/family/index.wxml · 家庭页（Tab4） -->
+<!-- 卡号: COSTRA-302 · 协作页 multi 模式重构（统计页同款手风琴 + 年度可用 + L1 跳转） -->
+<!-- 设计源: docs/design/family-page-tech-spec.md §4.7 -->
+<!-- ready gate: bootstrap 完成且已登录前页面完全空白 -->
+
+<view class="family" wx:if="{{ready}}">
+  <!-- 导航栏：与明细页一致（居中账本名 + ▼ 切换） -->
+  <view class="nav-bar" style="padding-top: {{statusBarHeight}}px;">
+    <view class="nav-bar__content" style="height: {{navBarHeight}}px;">
+      <view class="nav-bar__center" bind:tap="onTapFamilyName">
+        <text class="nav-bar__title">{{familyName}}</text>
+        <text class="nav-bar__arrow">▼</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 页面内容区 -->
+  <scroll-view scroll-y class="family__scroll" enhanced show-scrollbar="{{false}}" style="padding-top: {{statusBarHeight + navBarHeight}}px;">
+    <view class="family__content">
+
+      <!-- ═══════ Solo Landing 态 ═══════ -->
+      <block wx:if="{{mode === 'solo'}}">
+
+        <!-- 个人摘要：loading 中不渲染，避免数据到位后 isEmpty 翻转导致布局跳动 -->
+        <view class="solo-summary" wx:if="{{!isEmpty && !loading}}">
+          <view class="solo-summary__item">
+            <text class="solo-summary__label">本月支出</text>
+            <text class="solo-summary__value tnum">{{soloExpense}}</text>
+          </view>
+          <view class="solo-summary__divider"></view>
+          <view class="solo-summary__item">
+            <text class="solo-summary__label">本月收入</text>
+            <text class="solo-summary__value tnum">{{soloIncome}}</text>
+          </view>
+          <view class="solo-summary__divider"></view>
+          <view class="solo-summary__item">
+            <text class="solo-summary__label">本月结余</text>
+            <text class="solo-summary__value tnum">{{soloBalance}}</text>
+          </view>
+        </view>
+
+        <!-- 空态（Solo 模式下无收支记录） -->
+        <view class="empty-state" wx:if="{{isEmpty && !loading}}">
+          <text class="empty-state__title">{{emptyTitle}}</text>
+          <text class="empty-state__hint">{{emptyHint}}</text>
+        </view>
+
+        <!-- 引导文案 + CTA：loading 中不渲染，避免位置跳变 -->
+        <view class="solo-cta-area" wx:if="{{!loading}}">
+          <text class="solo-cta-area__hint">财务独立，但不孤立。\n邀请其他用户，开启清晰的协作记账。</text>
+          <button class="solo-cta-area__btn" bind:tap="onCreateFamily">创建协作账本</button>
+        </view>
+      </block>
+
+      <!-- ═══════ Multi 态 ═══════ -->
+      <block wx:else>
+
+        <!-- 成员与邀请区 (Avatar Row) -->
+        <scroll-view scroll-x enhanced show-scrollbar="{{false}}" class="avatar-row">
+          <view class="avatar-row__inner">
+            <view
+              wx:for="{{members}}"
+              wx:key="userId"
+              class="avatar-item {{item.status === 'left' ? 'avatar-item--left' : ''}}"
+              data-userid="{{item.userId}}"
+              data-status="{{item.status}}"
+              bind:tap="onTapMember"
+            >
+              <image
+                wx:if="{{item.avatarUrl}}"
+                class="avatar-item__img"
+                src="{{item.avatarUrl}}"
+                mode="aspectFill"
+                lazy-load
+              />
+              <view wx:else class="avatar-item__placeholder">
+                <text class="avatar-item__placeholder-text">{{item.nickname[0] || '?'}}</text>
+              </view>
+              <text class="avatar-item__name" wx:if="{{item.status === 'left'}}">已退出</text>
+              <view class="avatar-item__owner" wx:if="{{item.isOwner && item.status === 'active'}}"></view>
+            </view>
+            <!-- 邀请按钮：仅 owner 且成员未满时可见；点击后打开邀请遮罩并准备 token -->
+            <button
+              wx:if="{{canInvite}}"
+              class="avatar-item avatar-item--invite"
+              bind:tap="onOpenInviteOverlay"
+            >
+              <text class="avatar-item__plus">+</text>
+            </button>
+          </view>
+        </scroll-view>
+
+        <!-- 时间导航区（COSTRA-302 年度可用化 · 参照统计页双 picker 写法） -->
+        <view class="time-nav">
+          <view class="time-nav__left">
+            <view class="time-nav__arrow" bind:tap="onPrevTime">
+              <text class="time-nav__arrow-icon">‹</text>
+            </view>
+
+            <picker
+              wx:if="{{dimension === 'monthly'}}"
+              mode="date"
+              fields="month"
+              value="{{currentMonth}}"
+              bindchange="onMonthChange"
+            >
+              <view class="time-nav__month">
+                <text>{{monthDisplay}}</text>
+                <text class="time-nav__dropdown">▼</text>
+              </view>
+            </picker>
+
+            <picker
+              wx:else
+              mode="date"
+              fields="year"
+              value="{{currentYear}}-01-01"
+              bindchange="onYearChange"
+            >
+              <view class="time-nav__month">
+                <text>{{yearDisplay}}</text>
+                <text class="time-nav__dropdown">▼</text>
+              </view>
+            </picker>
+
+            <view class="time-nav__arrow" bind:tap="onNextTime">
+              <text class="time-nav__arrow-icon">›</text>
+            </view>
+          </view>
+          <!-- 月度/年度切换 -->
+          <view class="time-nav__dimension">
+            <text class="time-nav__dim-btn {{dimension === 'monthly' ? 'time-nav__dim-btn--active' : ''}}" bind:tap="onSwitchDimension" data-dim="monthly">月度</text>
+            <text class="time-nav__dim-btn {{dimension === 'yearly' ? 'time-nav__dim-btn--active' : ''}}" bind:tap="onSwitchDimension" data-dim="yearly">年度</text>
+          </view>
+        </view>
+
+        <!-- P2-1 已移除：年度不再拦截 · COSTRA-302 年度可用化 -->
+        <!-- Segmented Bar -->
+        <view class="segment-bar" wx:if="{{segments.length > 0}}">
+          <view class="segment-bar__track">
+            <view
+              wx:for="{{segments}}"
+              wx:key="key"
+              class="segment-bar__segment"
+              style="flex: {{item.flexBps}}; background: {{item.color}};"
+            ></view>
+          </view>
+          <!-- Segmented Bar 图例 -->
+          <view class="segment-bar__legend">
+            <view
+              wx:for="{{segments}}"
+              wx:key="key"
+              class="segment-bar__legend-item"
+            >
+              <view class="segment-bar__legend-dot" style="background: {{item.color}};"></view>
+              <text class="segment-bar__legend-label">{{item.label}}</text>
+              <text class="segment-bar__legend-amount tnum">{{item.amount}}</text>
+            </view>
+          </view>
+        </view>
+
+        <!-- 空态（Multi 模式下无收支记录） -->
+        <view class="empty-state" wx:if="{{isEmpty && !loading}}">
+          <text class="empty-state__title">{{emptyTitle}}</text>
+          <text class="empty-state__hint">{{emptyHint}}</text>
+        </view>
+
+        <!-- ★ 下钻列表（COSTRA-302 · spec §4.7 · 统计页同款手风琴） -->
+        <view class="family-rank" wx:if="{{drilldownRows.length > 0 && !loading}}">
+          <view
+            wx:for="{{drilldownRows}}"
+            wx:key="key"
+            class="family-rank__row {{item.expanded ? 'family-rank__row--open' : ''}}"
+          >
+            <!-- 行主体 -->
+            <view
+              class="family-rank__head"
+              data-key="{{item.key}}"
+              bind:tap="onTapDrilldownRow"
+            >
+              <view class="family-rank__head-main">
+                <!-- 公共标 / mini 头像 -->
+                <view wx:if="{{item.type === 'shared'}}" class="family-rank__shared-icon">
+                  <text>公</text>
+                </view>
+                <image
+                  wx:elif="{{item.avatarUrl}}"
+                  class="family-rank__avatar"
+                  src="{{item.avatarUrl}}"
+                  mode="aspectFill"
+                  lazy-load
+                />
+                <view wx:else class="family-rank__avatar family-rank__avatar--placeholder">
+                  <text>?</text>
+                </view>
+
+                <view class="family-rank__name">{{item.label}}</view>
+                <view class="family-rank__amount tnum">{{item.amount}}</view>
+                <view class="family-rank__ratio">{{item.ratioText}}</view>
+              </view>
+              <view class="family-rank__bar">
+                <view
+                  class="family-rank__bar-fill"
+                  style="width: {{item.ratio_bps / 100}}%; background: {{item.color}};"
+                ></view>
+              </view>
+            </view>
+
+            <!-- 公共行：垫付贡献小字（行下常驻 · spec §1.4 q4 决策 A） -->
+            <view
+              class="shared-contributions"
+              wx:if="{{item.type === 'shared' && item.contributions.length > 0}}"
+            >
+              <text
+                wx:for="{{item.contributions}}"
+                wx:for-item="c"
+                wx:key="index"
+                class="shared-contributions__item"
+              >{{c.nickname}} 付 {{c.amount}}{{index < item.contributions.length - 1 ? ' · ' : ''}}</text>
+            </view>
+
+            <!-- L1 列表（展开时） · 严格对齐统计页 .rank 子样式 -->
+            <view class="family-l1" wx:if="{{item.expanded}}">
+              <view
+                wx:for="{{item.l1Items}}"
+                wx:for-item="l1"
+                wx:key="category_id"
+                class="family-l1__row"
+                data-rowkey="{{item.key}}"
+                data-l1id="{{l1.category_id}}"
+                bind:tap="onTapL1"
+              >
+                <view class="family-l1__row-main">
+                  <view class="family-l1__icon">{{l1.icon}}</view>
+                  <view class="family-l1__name">{{l1.category_name}}</view>
+                  <view class="family-l1__amount tnum">{{l1.amount}}</view>
+                  <view class="family-l1__ratio">{{l1.ratioText}}</view>
+                </view>
+                <view class="family-l1__bar">
+                  <view class="family-l1__bar-fill" style="width: {{l1.ratio_bps / 100}}%;"></view>
+                </view>
+              </view>
+            </view>
+          </view>
+        </view>
+
+        <!-- 加载态 -->
+        <view class="loading-state" wx:if="{{loading}}">
+          <text class="loading-state__text">加载中...</text>
+        </view>
+
+      </block>
+
+    </view>
+  </scroll-view>
+
+  <view wx:if="{{inviteOverlayVisible}}" class="invite-dialog__mask" catchtouchmove="noop" catchtap="noop">
+    <view class="invite-dialog__card" catchtouchmove="noop" catchtap="noop">
+      <block wx:if="{{invitePreparing}}">
+        <view class="invite-dialog__state">
+          <view class="invite-dialog__spinner"></view>
+          <text class="invite-dialog__title">正在准备邀请</text>
+          <text class="invite-dialog__desc">正在为「{{familyName}}」生成专属邀请链接，请稍候。</text>
+        </view>
+        <view class="invite-dialog__actions invite-dialog__actions--single">
+          <button class="invite-dialog__btn invite-dialog__btn--secondary" bindtap="onCloseInviteOverlay">取消</button>
+        </view>
+      </block>
+
+      <block wx:elif="{{inviteErrorText}}">
+        <view class="invite-dialog__badge invite-dialog__badge--warn">!</view>
+        <text class="invite-dialog__title">邀请暂时未准备好</text>
+        <text class="invite-dialog__desc">{{inviteErrorText}}</text>
+        <text class="invite-dialog__hint">你可以重试生成邀请，或先返回协作页继续浏览。</text>
+        <view class="invite-dialog__actions">
+          <button class="invite-dialog__btn invite-dialog__btn--secondary" bindtap="onCloseInviteOverlay">取消</button>
+          <button class="invite-dialog__btn invite-dialog__btn--primary" bindtap="onRetryInvite">重试</button>
+        </view>
+      </block>
+
+      <block wx:elif="{{inviteReady}}">
+        <view class="invite-dialog__badge">邀</view>
+        <text class="invite-dialog__title">邀请用户加入「{{familyName}}」</text>
+        <text class="invite-dialog__desc">邀请链接已准备完成，点击下方按钮即可发起分享。</text>
+        <view class="invite-dialog__actions">
+          <button class="invite-dialog__btn invite-dialog__btn--secondary" bindtap="onCloseInviteOverlay">取消</button>
+          <button class="invite-dialog__btn invite-dialog__btn--primary" open-type="share">分享邀请</button>
+        </view>
+      </block>
+    </view>
+  </view>
+
+  <!-- 创建协作账本弹窗 -->
+  <view wx:if="{{createOverlayVisible}}" class="invite-dialog__mask" catchtouchmove="noop" catchtap="noop">
+    <view class="invite-dialog__card" catchtouchmove="noop" catchtap="noop">
+      <view class="invite-dialog__badge">账</view>
+      <text class="invite-dialog__title">创建协作账本</text>
+      <text class="invite-dialog__desc">为新账本起一个名字，创建后可邀请其他用户一起记账。</text>
+      <input
+        class="create-family__input"
+        value="{{createFamilyName}}"
+        placeholder="输入账本名称（最多 20 字）"
+        placeholder-class="create-family__input-placeholder"
+        maxlength="20"
+        bindinput="onCreateFamilyInput"
+        disabled="{{createFamilyLoading}}"
+      />
+      <text wx:if="{{createFamilyError}}" class="create-family__error">{{createFamilyError}}</text>
+      <view class="invite-dialog__actions">
+        <button
+          class="invite-dialog__btn invite-dialog__btn--secondary"
+          disabled="{{createFamilyLoading}}"
+          bindtap="onCancelCreateFamily"
+        >取消</button>
+        <button
+          class="invite-dialog__btn invite-dialog__btn--primary"
+          loading="{{createFamilyLoading}}"
+          disabled="{{createFamilyLoading}}"
+          bindtap="onConfirmCreateFamily"
+        >创建</button>
+      </view>
+    </view>
+  </view>
+
+  <!-- 重命名账本弹窗（COSTRA-230 · 镜像 createOverlay 视觉，badge 字"名"） -->
+  <view wx:if="{{renameOverlayVisible}}" class="invite-dialog__mask" catchtouchmove="noop" catchtap="noop">
+    <view class="invite-dialog__card" catchtouchmove="noop" catchtap="noop">
+      <view class="invite-dialog__badge">名</view>
+      <text class="invite-dialog__title">重命名账本</text>
+      <text class="invite-dialog__desc">为账本起一个新名字，修改后所有成员都能看到。</text>
+      <input
+        class="create-family__input"
+        value="{{renameInput}}"
+        placeholder="输入账本名称（最多 20 字）"
+        placeholder-class="create-family__input-placeholder"
+        maxlength="20"
+        bindinput="onRenameFamilyInput"
+        disabled="{{renameLoading}}"
+      />
+      <text wx:if="{{renameError}}" class="create-family__error">{{renameError}}</text>
+      <view class="invite-dialog__actions">
+        <button
+          class="invite-dialog__btn invite-dialog__btn--secondary"
+          disabled="{{renameLoading}}"
+          bindtap="onCancelRenameFamily"
+        >取消</button>
+        <button
+          class="invite-dialog__btn invite-dialog__btn--primary"
+          loading="{{renameLoading}}"
+          disabled="{{renameLoading}}"
+          bindtap="onConfirmRenameFamily"
+        >保存</button>
+      </view>
+    </view>
+  </view>
+</view>
+
+<expense-overlay />

@@ -1,0 +1,11 @@
+/* components/trend-line-chart/index.wxss · 趋势折线图容器（SVG 渲染） */
+.chart-wrapper {
+  width: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+.chart-svg {
+  width: 100%;
+  display: block;
+}

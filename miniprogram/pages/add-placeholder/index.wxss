@@ -1,0 +1,11 @@
+/* pages/add-placeholder/index.wxss · 占位页 */
+/* 卡号: COSTRA-201 · COSTRA-216: 补齐 custom navigation 安全区占位 */
+
+.placeholder {
+  min-height: 100vh;
+  background: #f1f2ec;
+}
+
+.page-safe-top {
+  width: 100%;
+}
