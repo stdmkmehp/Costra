@@ -198,3 +198,174 @@ describe('POST /v1/users/me (K3 method-override)', () => {
     expect(res.statusCode).toBe(405);
   });
 });
+
+// ─── GET /v1/users/me/overview · mine 页宏观聚合 ──────────────────────────────
+describe('GET /v1/users/me/overview', () => {
+  // 复用模块级 app/token，并通过额外登录拿到 default_ledger_id + user.id
+  // 用直接 SQL 插 entries 来构造场景（绕过 sync/idempotency · 仅测聚合 SQL 正确）
+
+  async function loginAndGetContext(): Promise<{ token: string; userId: string; ledgerId: string }> {
+    setWxFetchForTests(
+      (async () =>
+        new Response(
+          JSON.stringify({ openid: 'openid-overview-test', session_key: 'sk' }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )) as unknown as typeof fetch,
+    );
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/wx-login',
+      payload: { code: 'overview-code' },
+      headers: { 'content-type': 'application/json' },
+    });
+    const body = res.json() as {
+      access_token: string;
+      user: { id: string };
+      default_ledger_id: string;
+    };
+    return { token: body.access_token, userId: body.user.id, ledgerId: body.default_ledger_id };
+  }
+
+  async function insertEntry(params: {
+    ledgerId: string;
+    createdBy: string;
+    occurredAt: string;
+    type?: 'expense' | 'income' | 'transfer';
+    amount?: number;
+    deletedAt?: string | null;
+  }): Promise<void> {
+    const { getPool } = await import('../src/db/pool.js');
+    const id = crypto.randomUUID();
+    await getPool().query(
+      `INSERT INTO entries (id, ledger_id, amount, currency, type, occurred_at, created_by, deleted_at)
+       VALUES ($1, $2, $3, 'CNY', $4, $5, $6, $7)`,
+      [
+        id,
+        params.ledgerId,
+        params.amount ?? 100,
+        params.type ?? 'expense',
+        params.occurredAt,
+        params.createdBy,
+        params.deletedAt ?? null,
+      ],
+    );
+  }
+
+  it('T11 未登录 → 401', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/users/me/overview',
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('T12 新登录用户无任何 entry → entry_count=0, ledger_days=0', async () => {
+    const { token: t } = await loginAndGetContext();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/users/me/overview',
+      headers: { authorization: `Bearer ${t}`, 'content-type': 'application/json' },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { entry_count: number; ledger_days: number };
+    expect(body.entry_count).toBe(0);
+    expect(body.ledger_days).toBe(0);
+  });
+
+  it('T13 多 entry 跨日 → entry_count 总和、ledger_days 按 Asia/Shanghai DISTINCT date', async () => {
+    const { token: t, userId, ledgerId } = await loginAndGetContext();
+
+    // 同一 Shanghai 日（2026-06-08）→ 两个 UTC 时间，但都在 Shanghai 同日
+    await insertEntry({ ledgerId, createdBy: userId, occurredAt: '2026-06-07T20:00:00.000Z' }); // Shanghai 06-08 04:00
+    await insertEntry({ ledgerId, createdBy: userId, occurredAt: '2026-06-08T05:00:00.000Z' }); // Shanghai 06-08 13:00
+
+    // 不同 Shanghai 日
+    await insertEntry({ ledgerId, createdBy: userId, occurredAt: '2026-06-10T05:00:00.000Z' }); // Shanghai 06-10
+    await insertEntry({ ledgerId, createdBy: userId, occurredAt: '2026-07-01T05:00:00.000Z' }); // Shanghai 07-01
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/users/me/overview',
+      headers: { authorization: `Bearer ${t}`, 'content-type': 'application/json' },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { entry_count: number; ledger_days: number };
+    expect(body.entry_count).toBe(4);
+    expect(body.ledger_days).toBe(3); // 06-08, 06-10, 07-01
+  });
+
+  it('T14 deleted_at 不计入', async () => {
+    const { token: t, userId, ledgerId } = await loginAndGetContext();
+    await insertEntry({ ledgerId, createdBy: userId, occurredAt: '2026-06-08T05:00:00.000Z' });
+    await insertEntry({
+      ledgerId,
+      createdBy: userId,
+      occurredAt: '2026-06-09T05:00:00.000Z',
+      deletedAt: '2026-06-09T06:00:00.000Z',
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/users/me/overview',
+      headers: { authorization: `Bearer ${t}`, 'content-type': 'application/json' },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { entry_count: number; ledger_days: number };
+    expect(body.entry_count).toBe(1);
+    expect(body.ledger_days).toBe(1);
+  });
+
+  it('T15 income / transfer / expense 都计入 entry_count', async () => {
+    const { token: t, userId, ledgerId } = await loginAndGetContext();
+    await insertEntry({ ledgerId, createdBy: userId, occurredAt: '2026-06-08T05:00:00.000Z', type: 'expense' });
+    await insertEntry({ ledgerId, createdBy: userId, occurredAt: '2026-06-08T06:00:00.000Z', type: 'income' });
+    await insertEntry({ ledgerId, createdBy: userId, occurredAt: '2026-06-08T07:00:00.000Z', type: 'transfer' });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/users/me/overview',
+      headers: { authorization: `Bearer ${t}`, 'content-type': 'application/json' },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { entry_count: number; ledger_days: number };
+    expect(body.entry_count).toBe(3);
+    expect(body.ledger_days).toBe(1);
+  });
+
+  it('T16 仅按 created_by 聚合（其他用户的 entry 不计入）', async () => {
+    const { token: tA, userId: userIdA, ledgerId: ledgerIdA } = await loginAndGetContext();
+
+    // 第二个用户登录拿独立 ledger
+    setWxFetchForTests(
+      (async () =>
+        new Response(
+          JSON.stringify({ openid: 'openid-overview-other', session_key: 'sk' }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )) as unknown as typeof fetch,
+    );
+    const otherRes = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/wx-login',
+      payload: { code: 'other-code' },
+      headers: { 'content-type': 'application/json' },
+    });
+    const otherBody = otherRes.json() as { user: { id: string } };
+    const userIdOther = otherBody.user.id;
+
+    await insertEntry({ ledgerId: ledgerIdA, createdBy: userIdA, occurredAt: '2026-06-08T05:00:00.000Z' });
+    // 在同一个 ledger 写"别人"创建的 entry → 仍按 created_by 过滤
+    await insertEntry({ ledgerId: ledgerIdA, createdBy: userIdOther, occurredAt: '2026-06-09T05:00:00.000Z' });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/users/me/overview',
+      headers: { authorization: `Bearer ${tA}`, 'content-type': 'application/json' },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { entry_count: number; ledger_days: number };
+    expect(body.entry_count).toBe(1);
+    expect(body.ledger_days).toBe(1);
+  });
+});
+

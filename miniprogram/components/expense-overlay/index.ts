@@ -118,8 +118,20 @@ Component({
 
     // ─── 收支类型 ───
     entryType: 'expense' as 'expense' | 'income',
+    /** COSTRA-228: swiper current 绑定（0=支出 / 1=收入） · 与 entryType 一一对应 */
+    entryTypeIndex: 0,
+    /** COSTRA-228: swiper 切换动画时长（程序触发收支切换时设 0 避免抖动） */
+    categorySwiperDuration: 240,
 
-    // ─── 分类网格（COSTRA-219: 动态从 API 加载，初始为空） ───
+    // ─── 分类网格（COSTRA-219: 动态从 API 加载，初始为空）───
+    // ─── COSTRA-228: 同时持有 expense / income 两套，让两个 swiper-item 各自渲染，
+    //     手势横滑过程中两个 pane 始终有内容（避免空白闪过）。
+    //     `tier1Categories` / `dedupedSubCategories` 仍代表"当前 entryType"对应的快照，
+    //     供内部 onTapTier1 / onTapSubCategory 等回调读取，不影响渲染。
+    expenseTier1Categories: [] as readonly CategoryTier1[],
+    incomeTier1Categories: [] as readonly CategoryTier1[],
+    expenseDedupedSubCategories: [] as readonly CategoryTier2[],
+    incomeDedupedSubCategories: [] as readonly CategoryTier2[],
     tier1Categories: [] as readonly CategoryTier1[],
     dedupedSubCategories: [] as readonly CategoryTier2[],
     /** 展开的一级分类 id（null = 无展开） */
@@ -259,6 +271,13 @@ Component({
         ledgerOptions: initialLedgerOptions,
         showSharedToggle: isMultiMember,
         entryType: 'expense',
+        entryTypeIndex: 0,
+        categorySwiperDuration: 0,
+        // COSTRA-228: 双 pane 数据
+        expenseTier1Categories: categoryData.expense,
+        incomeTier1Categories: categoryData.income,
+        expenseDedupedSubCategories: categoryData.expenseDedupedSubs,
+        incomeDedupedSubCategories: categoryData.incomeDedupedSubs,
         tier1Categories: categoryData.expense,
         dedupedSubCategories: categoryData.expenseDedupedSubs,
         expandedTier1Id: null,
@@ -279,7 +298,8 @@ Component({
 
       // nextTick 确保先渲染 categoryScrollTop:1，再设为 0 触发实际滚动
       setTimeout(() => {
-        this.setData({ categoryScrollTop: 0 });
+        // COSTRA-228: 同步恢复 swiper 动画时长，让后续手势/点击切换有 240ms 过渡
+        this.setData({ categoryScrollTop: 0, categorySwiperDuration: 240 });
       }, 50);
 
       // —— 阶段 4：后台 fire-and-forget 刷新（不阻塞 UI）——
@@ -361,7 +381,12 @@ Component({
       const tier1Categories = this.data.entryType === 'expense' ? next.expense : next.income;
       const dedupedSubCategories = this.data.entryType === 'expense' ? next.expenseDedupedSubs : next.incomeDedupedSubs;
 
+      // COSTRA-228: 两套 pane 数据同时刷新（手势期间另一 pane 也要保持最新）
       this.setData({
+        expenseTier1Categories: next.expense,
+        incomeTier1Categories: next.income,
+        expenseDedupedSubCategories: next.expenseDedupedSubs,
+        incomeDedupedSubCategories: next.incomeDedupedSubs,
         tier1Categories,
         dedupedSubCategories,
       });
@@ -485,6 +510,13 @@ Component({
         ledgerOptions: initialLedgerOptions,
         showSharedToggle,
         entryType,
+        entryTypeIndex: entryType === 'income' ? 1 : 0,
+        categorySwiperDuration: 0,
+        // COSTRA-228: 双 pane 数据（编辑模式下分类区被 keypadOnly 隐藏，但保持数据完整以备后续退化）
+        expenseTier1Categories: categoryData.expense,
+        incomeTier1Categories: categoryData.income,
+        expenseDedupedSubCategories: categoryData.expenseDedupedSubs,
+        incomeDedupedSubCategories: categoryData.incomeDedupedSubs,
         tier1Categories,
         dedupedSubCategories,
         expandedTier1Id: null,
@@ -504,7 +536,7 @@ Component({
       });
 
       setTimeout(() => {
-        this.setData({ categoryScrollTop: 0 });
+        this.setData({ categoryScrollTop: 0, categorySwiperDuration: 240 });
       }, 50);
 
       // —— 阶段 4：后台 fire-and-forget 刷新账本选项（编辑模式不刷分类，避免 selected 失配）——
@@ -649,9 +681,12 @@ Component({
      *   else → 不滚动
      */
     _ensureSelectedNearKeyboard(selector: string) {
+      // COSTRA-228: 现在有两个 .category-scroll（支出/收入各一），必须按当前 entryType
+      // 用 id 唯一定位当前可见 pane 的 scroll-view，否则 boundingClientRect 可能落在隐藏 pane。
+      const scrollSelector = `#cat-scroll-${this.data.entryType}`;
       const query = wx.createSelectorQuery().in(this);
       query.select(selector).boundingClientRect();
-      query.select('.category-scroll').boundingClientRect();
+      query.select(scrollSelector).boundingClientRect();
       query.exec((res) => {
         const targetRect = res[0] as WechatMiniprogram.BoundingClientRectCallbackResult | null;
         const scrollRect = res[1] as WechatMiniprogram.BoundingClientRectCallbackResult | null;
@@ -723,57 +758,39 @@ Component({
       step();
     },
 
-    // ─── 收支切换（轻量横滑手势 + 文字指示器点击）────────────────────────────
+    // ─── 收支切换（COSTRA-228: swiper 跟手横滑 + 文字指示器点击 + swiperChange 统一回调）────
 
-    /** 记录触摸起点（轻量横滑手势） */
-    onTouchStart(e: WechatMiniprogram.TouchEvent) {
-      const touch = e.touches[0];
-      if (touch) {
-        (this as unknown as Record<string, number>)._touchStartX = touch.pageX;
-        (this as unknown as Record<string, number>)._touchStartY = touch.pageY;
-      }
-    },
-
-    /** 判断是否切换收支面板（轻量横滑手势） */
-    onTouchEnd(e: WechatMiniprogram.TouchEvent) {
-      const touch = e.changedTouches[0];
-      if (!touch) return;
-
-      // COSTRA-227: 编辑模式下禁止收支切换
-      if (this.data.typeSwipeDisabled) return;
-
-      const startX = (this as unknown as Record<string, number>)._touchStartX;
-      const startY = (this as unknown as Record<string, number>)._touchStartY;
-      if (startX == null || startY == null) return;
-
-      const deltaX = touch.pageX - startX;
-      const deltaY = touch.pageY - startY;
-
-      // 横滑判定：水平位移 > 60px 且 水平明显大于纵向（避免误触纵向滚动）
-      if (Math.abs(deltaX) > 60 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
-        // 左滑→收入，右滑→支出
-        const nextType = deltaX < 0 ? 'income' : 'expense';
-        if (nextType !== this.data.entryType) {
-          this._switchEntryType(nextType);
-        }
-      }
-
-      // 清理
-      (this as unknown as Record<string, number>)._touchStartX = 0;
-      (this as unknown as Record<string, number>)._touchStartY = 0;
-    },
-
-    /** 点击顶部文字指示器切换收支 */
+    /**
+     * 文字指示器点击切换收支：仅修改 entryTypeIndex，由 swiper 走原生过渡，
+     * change 事件触发 onCategorySwiperChange 完成 entryType / 分类列表的实际切换。
+     */
     onTapTab(e: WechatMiniprogram.TouchEvent) {
       // COSTRA-227: 编辑模式下禁止收支切换
       if (this.data.typeSwipeDisabled) return;
       const type = e.currentTarget.dataset.type as 'expense' | 'income';
-      if (type === this.data.entryType) return;
-      this._switchEntryType(type);
+      const targetIdx = type === 'income' ? 1 : 0;
+      if (targetIdx === this.data.entryTypeIndex) return;
+      this.setData({ entryTypeIndex: targetIdx });
     },
 
     /**
-     * 收支切换核心逻辑（横滑手势 + 文字指示器共用）
+     * swiper 切换回调（用户手势横滑 / 程序化切 entryTypeIndex 都会触发）。
+     * 这里是收支切换的唯一落点，统一更新 entryType + 分类列表 + 联动状态。
+     */
+    onCategorySwiperChange(e: WechatMiniprogram.SwiperChange) {
+      // COSTRA-227: 编辑模式下禁止收支切换（理论上 keypadOnly 时 swiper 不渲染，但兜底保险）
+      if (this.data.typeSwipeDisabled) return;
+
+      const idx = e.detail.current;
+      const nextType: 'expense' | 'income' = idx === 1 ? 'income' : 'expense';
+      if (nextType === this.data.entryType) return;
+      this._switchEntryType(nextType);
+    },
+
+    /**
+     * 收支切换核心逻辑（手势 swiperChange / 编辑入口共用）。
+     * COSTRA-228: entryTypeIndex 总是与 entryType 同步写入，确保 swiper.current
+     * 始终反映真实状态（编辑模式 openEditMode 显式设置时也走这条）。
      */
     _switchEntryType(type: 'expense' | 'income') {
       // COSTRA-219: 从实例属性读取动态分类数据
@@ -793,6 +810,7 @@ Component({
 
       this.setData({
         entryType: type,
+        entryTypeIndex: type === 'income' ? 1 : 0,
         tier1Categories,
         dedupedSubCategories,
         expandedTier1Id: null,

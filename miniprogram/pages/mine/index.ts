@@ -1,15 +1,26 @@
 // pages/mine/index.ts
-// 我的页（Tab5 / selected 4）：用户信息 + 设置。
-// COSTRA-125: onLoad 加 bootstrapPromise gate
-// COSTRA-127: onShow 加 bootstrapPromise gate · 避免与 onLoad gate 形成 race
-// COSTRA-201: 适配 custom-tab-bar selected: 4 + 引入 expense-overlay
-// COSTRA-216: 补齐 custom navigation 安全区导航栏
-// Refs: COSTRA-030, docs/design/ia.md §我的 · .team/dispatch/COSTRA-125-miniapp-storage-async-migration.md §3 (e)
+// 我的页（Tab5 / selected 4）：用户信息 + 宏观数据 + 功能列表 + 合规 footer。
+//
+// 卡号：mine-overview（设计源 design/ui/design_spec.md §6.6）
+// 历史卡号：COSTRA-125（onLoad gate）/ COSTRA-127（onShow gate）/ COSTRA-201（custom-tab-bar + expense-overlay）/ COSTRA-216（safeArea）
+//
+// 改造要点（2026-06-08）：
+//   - 顶部用户区：头像居中放大（160rpx），昵称居中，下方"已记账 X 天"
+//   - 宏观数据：横向 2 列（记账天数 / 记账笔数）· 走 GET /users/me/overview
+//   - 功能列表：创建协作 / 公告 / 导入导出 / 意见反馈 / 设置 — 后三个为预留 toast「即将支持」
+//   - 退出登录 / 合规 footer 完整保留
+
 import { hasValidSession, getSession, logout, getToken } from '../../services/auth';
 import { defaultNickname } from '../../config/defaults';
 import { triggerOnPageShow, syncOnce, stopScheduler } from '../../services/syncScheduler';
 import { getSafeAreaMetrics } from '../../utils/safeArea';
-import { eventBus, EventNames } from '../../services/eventBus';
+import { eventBus, EventNames, type SyncDonePayload } from '../../services/eventBus';
+import {
+  getUserOverview,
+  getCachedUserOverview,
+  invalidateUserOverview,
+} from '../../services/userOverviewApi';
+import { hasUnreadAnnouncements } from '../../services/announcementApi';
 
 interface AppWithBootstrapAndGlobal {
   bootstrapPromise: Promise<void>;
@@ -21,13 +32,21 @@ Page({
     nickname: '',
     avatarUrl: '',
     statusBarHeight: 0,
-    navBarHeight: 0,
     showProfileBadge: false,
+    showBulletinBadge: false,
     appVersion: '',
+    // 宏观数据（mine-overview）
+    ledgerDays: 0,
+    entryCount: 0,
+    overviewLoaded: false,
   },
 
   _profileBadgeOnHandler: null as (() => void) | null,
   _profileBadgeOffHandler: null as (() => void) | null,
+  _announcementUnreadHandler: null as (() => void) | null,
+  _entrySavedHandler: null as (() => void) | null,
+  _entryUpdatedHandler: null as (() => void) | null,
+  _syncDoneHandler: null as ((payload?: unknown) => void) | null,
 
   // onLoad gate（冗余兜底 · onShow gate 是主防线）
   onLoad() {
@@ -35,7 +54,6 @@ Page({
     const metrics = getSafeAreaMetrics();
     this.setData({
       statusBarHeight: metrics.statusBarHeight,
-      navBarHeight: metrics.navBarHeight,
     });
 
     // 读取小程序版本号（线上版本有值，开发/体验版为空）
@@ -53,6 +71,30 @@ Page({
     const badgeOffHandler = () => { this.setData({ showProfileBadge: false }); };
     this._profileBadgeOffHandler = badgeOffHandler;
     eventBus.on(EventNames.PROFILE_COMPLETED, badgeOffHandler);
+
+    // 公告未读状态变更 → 刷新公告红点
+    const announcementUnreadHandler = () => { void this._checkBulletinBadge(); };
+    this._announcementUnreadHandler = announcementUnreadHandler;
+    eventBus.on(EventNames.ANNOUNCEMENT_UNREAD_CHANGED, announcementUnreadHandler);
+
+    // mine-overview: 数据变更 → 失效缓存 + 重拉
+    const entrySavedHandler = () => { void this._refreshOverview(); };
+    this._entrySavedHandler = entrySavedHandler;
+    eventBus.on(EventNames.ENTRY_SAVED, entrySavedHandler);
+
+    const entryUpdatedHandler = () => { void this._refreshOverview(); };
+    this._entryUpdatedHandler = entryUpdatedHandler;
+    eventBus.on(EventNames.ENTRY_UPDATED, entryUpdatedHandler);
+
+    // SYNC_DONE: 拉到/推送了数据时也刷新（其他端记账后下行同步会改变 entries）
+    const syncDoneHandler = (payload?: unknown) => {
+      const p = payload as SyncDonePayload | undefined;
+      if (!p) return;
+      if (p.pulled <= 0 && p.pushed <= 0) return;
+      void this._refreshOverview();
+    };
+    this._syncDoneHandler = syncDoneHandler;
+    eventBus.on(EventNames.SYNC_DONE, syncDoneHandler);
 
     // 等 bootstrap 完成再判登录态
     const app = getApp<AppWithBootstrapAndGlobal>();
@@ -72,9 +114,27 @@ Page({
   onUnload() {
     if (this._profileBadgeOnHandler) {
       eventBus.off(EventNames.PROFILE_INCOMPLETE, this._profileBadgeOnHandler);
+      this._profileBadgeOnHandler = null;
     }
     if (this._profileBadgeOffHandler) {
       eventBus.off(EventNames.PROFILE_COMPLETED, this._profileBadgeOffHandler);
+      this._profileBadgeOffHandler = null;
+    }
+    if (this._announcementUnreadHandler) {
+      eventBus.off(EventNames.ANNOUNCEMENT_UNREAD_CHANGED, this._announcementUnreadHandler);
+      this._announcementUnreadHandler = null;
+    }
+    if (this._entrySavedHandler) {
+      eventBus.off(EventNames.ENTRY_SAVED, this._entrySavedHandler);
+      this._entrySavedHandler = null;
+    }
+    if (this._entryUpdatedHandler) {
+      eventBus.off(EventNames.ENTRY_UPDATED, this._entryUpdatedHandler);
+      this._entryUpdatedHandler = null;
+    }
+    if (this._syncDoneHandler) {
+      eventBus.off(EventNames.SYNC_DONE, this._syncDoneHandler);
+      this._syncDoneHandler = null;
     }
   },
 
@@ -91,6 +151,23 @@ Page({
         nickname: s?.user?.nickname || defaultNickname,
         avatarUrl: s?.user?.avatarUrl || '',
       });
+
+      // 宏观数据：cache-first（首屏命中即渲染）+ 后台拉新校准
+      const cached = getCachedUserOverview();
+      if (cached) {
+        this.setData({
+          ledgerDays: cached.ledger_days,
+          entryCount: cached.entry_count,
+          overviewLoaded: true,
+        });
+      }
+      void this._refreshOverview();
+
+      // 公告红点：mine 页 onShow 时检查未读，显示红点
+      // mine 页红点点到 mine 页即消失（showBulletinBadge 重置），
+      // 但公告菜单项的红点需用户真正阅读后才消失（后端 is_read 驱动）
+      void this._checkBulletinBadge();
+
       // COSTRA-150: 页面 onShow 触发同步调度（debounce 5s）
       triggerOnPageShow('mine');
 
@@ -98,6 +175,28 @@ Page({
       // tabbar 自治 hidden（由 _unlocked + _panelOpen 合成）· 此处仅同步 selected 并解锁
       (this.getTabBar?.() as { markActive?: (idx: number) => void } | undefined)?.markActive?.(4);
     });
+  },
+
+  /** 拉取并写入宏观数据（可重入安全 · 失败静默不打扰） */
+  async _refreshOverview() {
+    try {
+      const fresh = await getUserOverview();
+      this.setData({
+        ledgerDays: fresh.ledger_days,
+        entryCount: fresh.entry_count,
+        overviewLoaded: true,
+      });
+    } catch {
+      // 静默：保持原值；首次失败时用 0 兜底（data 默认 0），不弹 toast 打扰
+    }
+  },
+
+  /** 检查公告未读红点 */
+  async _checkBulletinBadge() {
+    try {
+      const hasUnread = await hasUnreadAnnouncements();
+      this.setData({ showBulletinBadge: hasUnread });
+    } catch { /* 静默 */ }
   },
 
   onTapProfile() {
@@ -119,6 +218,15 @@ Page({
     wx.switchTab({ url: '/pages/family/index' });
   },
 
+  onTapBulletin() {
+    wx.navigateTo({ url: '/pages-family/bulletin/index' });
+  },
+
+  /** 导入导出 / 意见反馈 — 一期占位 */
+  onTapComingSoon() {
+    wx.showToast({ title: '即将支持', icon: 'none' });
+  },
+
   async onTapLogout() {
     const res = await wx.showModal({ title: '退出登录', content: '确定要退出吗？' });
     if (res.confirm) {
@@ -126,6 +234,8 @@ Page({
       // syncOnce 需要 familyId + 登录态，必须在 logout() 清除前调用
       try { await syncOnce('hide'); } catch { /* 吞错 · logout 必须成功 */ }
       stopScheduler();
+      // mine-overview: 退出登录时清缓存，避免下次冷启动登录后命中陈旧数据
+      invalidateUserOverview();
       // COSTRA-102 D2.2：logout 已改为 async（含真调 POST /auth/logout 204）
       // 内部已自带 wx.reLaunch，此处无需再跳
       await logout();

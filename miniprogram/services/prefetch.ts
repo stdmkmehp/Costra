@@ -41,10 +41,13 @@ export async function prefetchHomeData(): Promise<void> {
     const month = getCurrentMonthValue();
 
     // 并行触发，独立失败：任一接口出错不影响另一个
-    void getMonthlyStatistics(familyId, month).catch((err) => {
+    // 显式传 topN（与各页面调用对齐，避免缓存命中后字段缺失或排行截断不一致）：
+    //   - statistics: topN=50 与 viewModels.L1_VISIBLE 对齐（routes 上限 50）
+    //   - family-summary: topN=20 与 family 页 L1_VISIBLE 对齐（routes 上限 20）
+    void getMonthlyStatistics(familyId, month, { topN: 50 }).catch((err) => {
       console.warn('[prefetch] monthly statistics failed', err);
     });
-    void getFamilySummary(familyId, { month }).catch((err) => {
+    void getFamilySummary(familyId, { month }, { topN: 20 }).catch((err) => {
       console.warn('[prefetch] family summary failed', err);
     });
   } catch (err) {

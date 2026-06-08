@@ -1,49 +1,41 @@
 /* pages/mine/index.wxss · 我的页 */
-/* 卡号: COSTRA-201 · COSTRA-216: 补齐 custom navigation 安全区导航栏 */
+/* 卡号: COSTRA-201 · COSTRA-216: 自定义安全区导航栏 · mine-overview: 头像居中放大 + 数据网格 */
 
 .mine { background: var(--color-bg); min-height: 100vh; }
 
-/* 自定义导航栏 */
-.page-nav {
-  display: flex;
-  align-items: center;
-  padding-left: 32rpx;
-  background: #f1f2ec;
-  position: relative;
-  z-index: 10;
-}
-
-.page-nav__title {
-  font-size: 32rpx;
-  font-weight: 600;
-  color: var(--color-role-text-primary, #1c1b1a);
-}
-
-/* 页面内容区 */
+/* 页面内容区
+ * padding-top：由 inline style 注入 statusBarHeight px（仅覆盖状态栏，无导航条），
+ *              在状态栏正下方紧贴 16rpx 留白，让头像/昵称区整体上移；
+ * padding-bottom：底部预留 tabbar 高度（120rpx）+ Home Indicator 安全区，
+ *              避免 footer / 隐私链接被 tabbar 遮挡，也避免内容在 tabbar 半透明毛玻璃下方滑过
+ *              造成视觉抖动错觉（与 ledger 页 entry-list / statistics 页 bottom-spacer 范式一致）。
+ */
 .mine__content {
-  padding: 32rpx;
+  padding: 16rpx 32rpx calc(env(safe-area-inset-bottom) + 160rpx);
 }
 
-/* 用户信息卡片 */
+/* ─── 顶部用户信息区：居中放大 ────────────────────────────────────────────────── */
 .profile {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  background: var(--color-surface);
-  border-radius: var(--radius-lg);
-  padding: 32rpx;
-  /* 表示可点击 */
-  active-background-color: rgba(0,0,0,0.04);
+  padding: 32rpx 32rpx 24rpx;
+  /* 透明背景 · 让居中头像与暖灰白背景融为一体（design_spec §6.6 极简名片式） */
+  background: transparent;
+  border-radius: 0;
 }
+.profile--hover { opacity: 0.7; }
 
 /* 头像容器（相对定位，承载红点） */
 .profile__avatar-wrap {
   position: relative;
-  flex-shrink: 0;
+  width: 160rpx;
+  height: 160rpx;
 }
 
 .profile__avatar {
-  width: 112rpx;
-  height: 112rpx;
+  width: 160rpx;
+  height: 160rpx;
   border-radius: 50%;
   background: var(--color-divider);
   display: block;
@@ -52,47 +44,101 @@
 /* 头像右上角红点 */
 .profile__badge-dot {
   position: absolute;
-  top: 0;
-  right: 0;
-  width: 20rpx;
-  height: 20rpx;
+  top: 4rpx;
+  right: 4rpx;
+  width: 24rpx;
+  height: 24rpx;
   border-radius: 50%;
   background: #FF3B30;
-  border: 3rpx solid var(--color-surface, #fff);
-}
-
-/* 昵称 + 提示文字 */
-.profile__info {
-  flex: 1;
-  margin-left: 24rpx;
+  border: 4rpx solid #f1f2ec;
 }
 
 .profile__name {
-  font-size: 32rpx;
+  margin-top: 24rpx;
+  font-size: 36rpx;
   font-weight: 600;
   color: var(--color-text);
+  line-height: 1.2;
 }
 
 .profile__hint {
-  margin-top: 6rpx;
+  margin-top: 12rpx;
   font-size: 24rpx;
   color: #FF3B30;
 }
 
-.profile__arrow {
-  color: var(--color-text-muted);
-  font-size: 36rpx;
-  margin-left: 8rpx;
+.profile__sub {
+  margin-top: 12rpx;
+  font-size: 24rpx;
+  color: rgba(28, 27, 26, 0.48);
 }
 
-.menu { margin-top: 32rpx; background: var(--color-surface); border-radius: var(--radius-lg); overflow: hidden; }
-.menu__item { display: flex; align-items: center; padding: 28rpx 32rpx; border-bottom: 1rpx solid var(--color-divider); }
+/* ─── 宏观数据总览：2 列网格 + 无卡片底色 ──────────────────────────────────── */
+.overview {
+  display: flex;
+  align-items: center;
+  margin-top: 16rpx;
+  padding: 24rpx 0 32rpx;
+}
+
+.overview__cell {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.overview__num {
+  font-size: 56rpx;
+  font-weight: 600;
+  color: var(--color-text, #1c1b1a);
+  line-height: 1.07;
+  letter-spacing: -1rpx;
+}
+
+.overview__label {
+  margin-top: 12rpx;
+  font-size: 24rpx;
+  color: rgba(28, 27, 26, 0.48);
+}
+
+/* 中间分隔短线（极简 · design_spec §6.6 "极其微弱的垂直短线"） */
+.overview__divider {
+  width: 1rpx;
+  height: 56rpx;
+  background: rgba(28, 27, 26, 0.12);
+  flex-shrink: 0;
+}
+
+/* ─── 功能列表：圆角分组卡片 ──────────────────────────────────────────────── */
+.menu {
+  margin-top: 16rpx;
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.menu__item {
+  display: flex;
+  align-items: center;
+  padding: 28rpx 32rpx;
+  border-bottom: 1rpx solid var(--color-divider);
+}
+.menu__item--hover { background: rgba(0, 0, 0, 0.04); }
 .menu__item:last-child { border-bottom: none; }
 .menu__label { flex: 1; font-size: 28rpx; color: var(--color-text); }
+.menu__badge-dot {
+  display: inline-block;
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  background: #FF3B30;
+  vertical-align: middle;
+  margin-left: 8rpx;
+}
 .menu__arrow { color: var(--color-text-muted); font-size: 36rpx; }
 .menu__item--danger .menu__label { color: var(--color-danger); text-align: center; }
 
-/* ICP 备案号 footer · 12px 灰色居中 */
+/* ─── ICP 备案号 footer · 12px 灰色居中 ────────────────────────────────────── */
 .footer { padding: 32rpx 0 16rpx; text-align: center; }
 .footer__text { font-size: 24rpx; color: #9E9E9E; line-height: 1.8; }
 .footer__icp { letter-spacing: 0.5rpx; }

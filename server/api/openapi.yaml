@@ -157,6 +157,27 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /users/me/overview:
+    get:
+      tags: [users]
+      summary: 当前用户宏观聚合（mine 页 · 跨所有账本）
+      description: |
+        返回当前用户跨所有账本的宏观计数（按 entries.created_by 聚合）。
+        - entry_count：未删除流水总数
+        - ledger_days：有记账记录的天数（occurred_at 在 Asia/Shanghai 时区下 DISTINCT date）
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [entry_count, ledger_days]
+                properties:
+                  entry_count: { type: integer, minimum: 0, description: 未删除流水总数 }
+                  ledger_days: { type: integer, minimum: 0, description: 有记账记录的天数（Asia/Shanghai） }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
   # ============ families ============
   /families:
     get:

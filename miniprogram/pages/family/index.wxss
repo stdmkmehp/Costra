@@ -389,9 +389,9 @@
 .family-rank__head-main { display: flex; align-items: center; gap: 16rpx; }
 .family-rank__shared-icon {
   flex: none; width: 40rpx; height: 40rpx; border-radius: 50%;
-  background: rgba(7,193,96,0.08); display: flex; align-items: center; justify-content: center;
+  background: rgba(107,155,143,0.12); display: flex; align-items: center; justify-content: center;
 }
-.family-rank__shared-icon text { font-size: 20rpx; color: #07C160; font-weight: 600; }
+.family-rank__shared-icon text { font-size: 20rpx; color: #6B9B8F; font-weight: 600; }
 .family-rank__avatar { flex: none; width: 40rpx; height: 40rpx; border-radius: 50%; background: rgba(28,27,26,0.06); }
 .family-rank__avatar--placeholder { display: flex; align-items: center; justify-content: center; color: rgba(28,27,26,0.48); font-size: 20rpx; }
 .family-rank__name { flex: 1; font-size: 28rpx; color: #1c1b1a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

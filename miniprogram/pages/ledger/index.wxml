@@ -153,73 +153,155 @@
   </scroll-view>
   </view><!-- /.list-container -->
 
-  <!-- ═══ COSTRA-227: 全屏分类选择面板（和记账界面一致） ═══ -->
+  <!-- ═══ COSTRA-227: 全屏分类选择面板（和记账界面一致 · COSTRA-228 swiper 横滑切换） ═══ -->
   <view class="edit-category-overlay {{editCategoryVisible ? 'is-visible' : ''}}">
     <view class="edit-category-shell">
-      <!-- 顶部 header：和记账一样的支出·收入切换 -->
+      <!-- 顶部 header：支出·收入切换 + 短线指示器（对齐 expense-overlay） -->
       <view class="edit-category-header" style="padding-top: {{menuButtonTop || statusBarHeight}}px;">
         <text class="edit-category-header__close" bindtap="onCloseEditCategory">取消</text>
         <view class="edit-category-header__tabs">
-          <text
+          <view
             class="edit-category-header__tab {{editCategoryType === 'expense' ? 'is-active' : ''}}"
             data-type="expense"
             bindtap="onEditCategoryTypeTab"
-          >支出</text>
+          >
+            <text class="edit-category-header__tab-text">支出</text>
+            <view class="edit-category-header__tab-indicator"></view>
+          </view>
           <text class="edit-category-header__sep">·</text>
-          <text
+          <view
             class="edit-category-header__tab {{editCategoryType === 'income' ? 'is-active' : ''}}"
             data-type="income"
             bindtap="onEditCategoryTypeTab"
-          >收入</text>
+          >
+            <text class="edit-category-header__tab-text">收入</text>
+            <view class="edit-category-header__tab-indicator"></view>
+          </view>
         </view>
         <view class="edit-category-header__placeholder"></view>
       </view>
-      <!-- 分类滚动区 -->
-      <scroll-view class="edit-category-scroll" scroll-y enhanced="{{true}}" show-scrollbar="{{false}}">
-        <!-- 一级分类网格 -->
-        <view class="category-section category-section--tier1">
-          <view
-            wx:for="{{editTier1Categories}}"
-            wx:key="id"
-            class="category-tier1 {{editSelectedTier1Id === item.id ? 'is-selected' : ''}} {{editDimmedTier1Ids.indexOf(item.id) >= 0 ? 'is-dimmed' : ''}}"
-            data-id="{{item.id}}"
-            bindtap="onEditTapTier1"
+      <!-- 分类 swiper（COSTRA-228: 两个 swiper-item 各自持有独立 scroll-view，跟手横滑切换） -->
+      <swiper
+        class="edit-category-swiper"
+        current="{{editCategoryTypeIndex}}"
+        duration="{{editCategorySwiperDuration}}"
+        bindchange="onEditCategorySwiperChange"
+      >
+        <!-- 支出 pane -->
+        <swiper-item>
+          <scroll-view
+            id="edit-cat-scroll-expense"
+            class="edit-category-scroll"
+            scroll-y
+            enhanced="{{true}}"
+            show-scrollbar="{{false}}"
           >
-            <view class="category-tier1__icon">{{item.icon}}</view>
-            <text class="category-tier1__name">{{item.name}}</text>
-          </view>
-        </view>
-        <!-- 分隔线 -->
-        <view class="category-divider"></view>
-        <!-- 展开的子分类 -->
-        <view class="category-section category-section--tier2" wx:if="{{editExpandedChildren.length > 0}}">
-          <view
-            wx:for="{{editExpandedChildren}}"
-            wx:key="id"
-            class="category-item {{editSelectedTier2Id === item.id ? 'is-selected' : ''}}"
-            data-id="{{item.id}}"
-            bindtap="onEditTapSubCategory"
+            <view class="category-section category-section--tier1">
+              <view
+                wx:for="{{editExpenseTier1Categories}}"
+                wx:key="id"
+                class="category-tier1 {{editCategoryType === 'expense' && editSelectedTier1Id === item.id ? 'is-selected' : ''}} {{editCategoryType === 'expense' && editDimmedTier1Ids.indexOf(item.id) >= 0 ? 'is-dimmed' : ''}}"
+                data-id="{{item.id}}"
+                bindtap="onEditTapTier1"
+              >
+                <view class="category-tier1__icon">{{item.icon}}</view>
+                <text class="category-tier1__name">{{item.name}}</text>
+              </view>
+            </view>
+            <view class="category-divider"></view>
+            <view
+              class="category-section category-section--tier2"
+              wx:if="{{editCategoryType === 'expense' && editExpandedChildren.length > 0}}"
+            >
+              <view
+                wx:for="{{editExpandedChildren}}"
+                wx:key="id"
+                class="category-item {{editSelectedTier2Id === item.id ? 'is-selected' : ''}}"
+                data-id="{{item.id}}"
+                bindtap="onEditTapSubCategory"
+              >
+                <view class="category-item__icon">{{item.name[0]}}</view>
+                <text class="category-item__name">{{item.name}}</text>
+              </view>
+            </view>
+            <view
+              class="category-section category-section--tier2"
+              wx:if="{{editCategoryType !== 'expense' || !editExpandedTier1Id}}"
+            >
+              <view
+                wx:for="{{editExpenseDedupedSubCategories}}"
+                wx:key="id"
+                id="{{editCategoryType === 'expense' ? 'edit-cat-sub-' + item.id : 'edit-cat-sub-expense-' + item.id}}"
+                class="category-item {{editCategoryType === 'expense' && editSelectedTier2Id === item.id ? 'is-selected' : ''}}"
+                data-id="{{item.id}}"
+                data-name="{{item.name}}"
+                bindtap="onEditTapSubCategory"
+              >
+                <view class="category-item__icon">{{item.name[0]}}</view>
+                <text class="category-item__name">{{item.name}}</text>
+              </view>
+            </view>
+            <view style="height: 40rpx;"></view>
+          </scroll-view>
+        </swiper-item>
+        <!-- 收入 pane -->
+        <swiper-item>
+          <scroll-view
+            id="edit-cat-scroll-income"
+            class="edit-category-scroll"
+            scroll-y
+            enhanced="{{true}}"
+            show-scrollbar="{{false}}"
           >
-            <view class="category-item__icon">{{item.name[0]}}</view>
-            <text class="category-item__name">{{item.name}}</text>
-          </view>
-        </view>
-        <!-- 去重后全局二级分类 -->
-        <view class="category-section category-section--tier2" wx:if="{{!editExpandedTier1Id}}">
-          <view
-            wx:for="{{editDedupedSubCategories}}"
-            wx:key="id"
-            class="category-item {{editSelectedTier2Id === item.id ? 'is-selected' : ''}}"
-            data-id="{{item.id}}"
-            data-name="{{item.name}}"
-            bindtap="onEditTapSubCategory"
-          >
-            <view class="category-item__icon">{{item.name[0]}}</view>
-            <text class="category-item__name">{{item.name}}</text>
-          </view>
-        </view>
-        <view style="height: 40rpx;"></view>
-      </scroll-view>
+            <view class="category-section category-section--tier1">
+              <view
+                wx:for="{{editIncomeTier1Categories}}"
+                wx:key="id"
+                class="category-tier1 {{editCategoryType === 'income' && editSelectedTier1Id === item.id ? 'is-selected' : ''}} {{editCategoryType === 'income' && editDimmedTier1Ids.indexOf(item.id) >= 0 ? 'is-dimmed' : ''}}"
+                data-id="{{item.id}}"
+                bindtap="onEditTapTier1"
+              >
+                <view class="category-tier1__icon">{{item.icon}}</view>
+                <text class="category-tier1__name">{{item.name}}</text>
+              </view>
+            </view>
+            <view class="category-divider"></view>
+            <view
+              class="category-section category-section--tier2"
+              wx:if="{{editCategoryType === 'income' && editExpandedChildren.length > 0}}"
+            >
+              <view
+                wx:for="{{editExpandedChildren}}"
+                wx:key="id"
+                class="category-item {{editSelectedTier2Id === item.id ? 'is-selected' : ''}}"
+                data-id="{{item.id}}"
+                bindtap="onEditTapSubCategory"
+              >
+                <view class="category-item__icon">{{item.name[0]}}</view>
+                <text class="category-item__name">{{item.name}}</text>
+              </view>
+            </view>
+            <view
+              class="category-section category-section--tier2"
+              wx:if="{{editCategoryType !== 'income' || !editExpandedTier1Id}}"
+            >
+              <view
+                wx:for="{{editIncomeDedupedSubCategories}}"
+                wx:key="id"
+                id="{{editCategoryType === 'income' ? 'edit-cat-sub-' + item.id : 'edit-cat-sub-income-' + item.id}}"
+                class="category-item {{editCategoryType === 'income' && editSelectedTier2Id === item.id ? 'is-selected' : ''}}"
+                data-id="{{item.id}}"
+                data-name="{{item.name}}"
+                bindtap="onEditTapSubCategory"
+              >
+                <view class="category-item__icon">{{item.name[0]}}</view>
+                <text class="category-item__name">{{item.name}}</text>
+              </view>
+            </view>
+            <view style="height: 40rpx;"></view>
+          </scroll-view>
+        </swiper-item>
+      </swiper>
     </view>
   </view>
 

@@ -61,5 +61,5 @@
   </view>
 
   <!-- COSTRA-901: 隐私授权弹窗（仅此页面用到 chooseAvatar / type=nickname 隐私接口） -->
-  <privacy-popup id="privacy-popup" />
+  <privacy-popup id="privacy-popup" bind:reject="onPrivacyReject" />
 </view>

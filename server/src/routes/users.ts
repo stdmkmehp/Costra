@@ -17,6 +17,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { AppError } from '../errors/AppError.js';
 import { ErrorCode } from '../errors/ErrorCode.js';
 import * as userRepo from '../repositories/userRepo.js';
+import * as userOverviewRepo from '../repositories/userOverviewRepo.js';
 
 interface JwtPayload { sub: string; iat: number; exp: number }
 
@@ -182,4 +183,13 @@ export async function registerUsersRoutes(app: FastifyInstance): Promise<void> {
       reply.code(204).send();
     },
   );
+
+  // GET /users/me/overview
+  // 返回当前用户跨所有账本的宏观聚合：记账笔数 + 有记账的天数（Asia/Shanghai）。
+  // 用途：mine 页宏观数据区。前端 SWR 缓存，ENTRY_SAVED/UPDATED/SYNC_DONE 失效。
+  app.get('/users/me/overview', async (req, reply) => {
+    const userId = await parseUserId(req);
+    const overview = await userOverviewRepo.getUserOverview(userId);
+    reply.code(200).send(overview);
+  });
 }

@@ -25,7 +25,8 @@
       "pages": [
         "home/index",
         "settings/index",
-        "privacy/index"
+        "privacy/index",
+        "bulletin/index"
       ]
     }
   ],

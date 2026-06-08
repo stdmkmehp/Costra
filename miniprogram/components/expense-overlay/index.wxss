@@ -66,18 +66,46 @@
   pointer-events: none;
 }
 
+/* COSTRA-229: tab 改为 column flex 承载文字 + 短线指示器（仿 statistics member-strip）。
+ * 指示器用绝对定位脱离文档流，不参与 header 高度计算 → 避免顶部"取消"按钮被
+ * align-items:center 的 expense-header 父容器带偏（保持与改造前完全一致的纵向位置）。 */
 .expense-header__tab {
-  font-size: 34rpx;
-  color: rgba(28, 27, 26, 0.28);
-  font-weight: 400;
-  transition: color 150ms cubic-bezier(0.25, 0.1, 0.25, 1),
-              font-weight 150ms cubic-bezier(0.25, 0.1, 0.25, 1);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   padding: 4rpx 0;
 }
 
-.expense-header__tab.is-active {
+.expense-header__tab-text {
+  font-size: 34rpx;
+  color: rgba(28, 27, 26, 0.28);
+  font-weight: 400;
+  line-height: 1;
+  transition: color 150ms cubic-bezier(0.25, 0.1, 0.25, 1),
+              font-weight 150ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.expense-header__tab.is-active .expense-header__tab-text {
   color: #1c1b1a;
   font-weight: 600;
+}
+
+/* 黑色短线指示器：绝对定位悬挂在 tab 文字下方 8rpx，未激活透明 */
+.expense-header__tab-indicator {
+  position: absolute;
+  left: 50%;
+  bottom: -12rpx;
+  transform: translateX(-50%);
+  width: 24rpx;
+  height: 4rpx;
+  border-radius: 2rpx;
+  background: transparent;
+  transition: background 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.expense-header__tab.is-active .expense-header__tab-indicator {
+  background: #1c1b1a;
 }
 
 .expense-header__sep {
@@ -92,12 +120,23 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   分类滚动区（flex:1 自动填满剩余空间 · 禁止 JS 计算高度）
+   分类区 swiper（COSTRA-228）
+   收支跟手切换：swiper 占满 header 与 keypad 之间的弹性空间，
+   每个 swiper-item 内套独立 scroll-view 承载分类网格。
+   ═══════════════════════════════════════════════════════════════ */
+
+.category-swiper {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   分类滚动区（每个 swiper-item 内一个 · 高度 100% 撑满 swiper）
    ═══════════════════════════════════════════════════════════════ */
 
 .category-scroll {
-  flex: 1;
-  min-height: 0;
+  height: 100%;
   width: 100%;
   box-sizing: border-box;
   padding: 0 28rpx;

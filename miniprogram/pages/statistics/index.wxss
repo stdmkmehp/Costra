@@ -634,8 +634,8 @@ page {
 
 .l3__shared {
   font-size: 18rpx;
-  color: #07C160;
-  background: rgba(7, 193, 96, 0.08);
+  color: #6B9B8F;
+  background: rgba(107, 155, 143, 0.12);
   padding: 2rpx 8rpx;
   border-radius: 4rpx;
 }

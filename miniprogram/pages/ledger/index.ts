@@ -17,7 +17,7 @@ import {
 } from '../../services/family';
 import { enqueue } from '../../services/outbox';
 import { getToken, hasValidSession } from '../../services/auth';
-import { eventBus, EventNames, type SyncDonePayload } from '../../services/eventBus';
+import { eventBus, EventNames, type SyncDonePayload, type ActiveFamilyChangedPayload } from '../../services/eventBus';
 import { triggerOnPageShow, syncOnce } from '../../services/syncScheduler';
 import { pickRandomSlogan } from '../../config/slogans';
 import { getFamilies, getFamilyMembers, type FamilyMember } from '../../services/familyApi';
@@ -241,8 +241,17 @@ Page({
     editAmountDate: '',
     editAmountDateText: '今天',
     editCategoryType: 'expense' as 'expense' | 'income',
+    /** COSTRA-228: swiper current 绑定（0=支出 / 1=收入） */
+    editCategoryTypeIndex: 0,
+    /** COSTRA-228: swiper 切换动画时长 */
+    editCategorySwiperDuration: 240,
     editCategoryList: [] as { id: string; icon: string; name: string }[],
     editSelectedCategoryId: '',
+    // COSTRA-228: 双 pane 数据（手势横滑期间两个 pane 都已渲染）
+    editExpenseTier1Categories: [] as { id: string; icon: string; name: string; children: { id: string; name: string; icon: string }[] }[],
+    editIncomeTier1Categories: [] as { id: string; icon: string; name: string; children: { id: string; name: string; icon: string }[] }[],
+    editExpenseDedupedSubCategories: [] as { id: string; name: string; icon: string }[],
+    editIncomeDedupedSubCategories: [] as { id: string; name: string; icon: string }[],
 
     // ─── 列表滚动位置（COSTRA-220: 月份切换后滚动到顶部） ───
     listScrollTop: 0,
@@ -274,6 +283,8 @@ Page({
   _syncDoneHandler: null as ((payload?: unknown) => void) | null,
   /** eventBus 订阅 handler（分类预热完成 · 触发条目展示重渲，避免 fallback UUID 不匹配的"未分类"残留） */
   _categoriesLoadedHandler: null as (() => void) | null,
+  /** eventBus 订阅 handler（2026-06-08: 跨页面账本切换响应） */
+  _activeFamilyChangedHandler: null as ((payload?: unknown) => void) | null,
   /**
    * 当前已渲染 entries 的签名（sync-refresh: 签名 diff 跳过无效 setData，避免列表跳动）
    * 拼接字段：client_ref_id|version|occurred_at|amount|type|category_id|note|deleted_at|shared_type|created_by
@@ -346,6 +357,17 @@ Page({
     };
     this._categoriesLoadedHandler = categoriesLoadedHandler;
     eventBus.on(EventNames.CATEGORIES_LOADED, categoriesLoadedHandler);
+
+    // 2026-06-08: 订阅 ACTIVE_FAMILY_CHANGED · 跨页面账本切换响应
+    // 自身 onTapLedgerName 已就地刷新到目标 ledger_id，事件到达时 ID 比对自然 noop。
+    const activeFamilyChangedHandler = (payload?: unknown) => {
+      const p = payload as ActiveFamilyChangedPayload | undefined;
+      if (!p) return;
+      if (this._ledgerId === p.ledger_id) return;
+      void this._onActiveFamilyChanged();
+    };
+    this._activeFamilyChangedHandler = activeFamilyChangedHandler;
+    eventBus.on(EventNames.ACTIVE_FAMILY_CHANGED, activeFamilyChangedHandler);
   },
 
   async onShow() {
@@ -389,6 +411,11 @@ Page({
     if (this._categoriesLoadedHandler) {
       eventBus.off(EventNames.CATEGORIES_LOADED, this._categoriesLoadedHandler);
       this._categoriesLoadedHandler = null;
+    }
+    // 2026-06-08: 取消订阅 ACTIVE_FAMILY_CHANGED
+    if (this._activeFamilyChangedHandler) {
+      eventBus.off(EventNames.ACTIVE_FAMILY_CHANGED, this._activeFamilyChangedHandler);
+      this._activeFamilyChangedHandler = null;
     }
   },
 
@@ -697,7 +724,7 @@ Page({
             ledger_id: selected.ledger_id,
             family_kind: selected.kind,
             ledger_name: selected.name,
-          });
+          }, 'ledger-switch');
           savePreferenceAsync(selected.id, selected.ledger_id);
 
           this._familyId = selected.id;
@@ -840,6 +867,15 @@ Page({
   // ─── COSTRA-227: 编辑保存后响应式刷新 ─────────────────────────────────────────
 
   async _onEntryUpdated() {
+    await this._loadEntries();
+  },
+
+  // ─── 2026-06-08: 跨页面账本切换响应 ──────────────────────────────────────────
+
+  async _onActiveFamilyChanged() {
+    // 重新读 context（family/ledger/kind/name 全部重置）+ 重拉 entries
+    // 等价于明细页 onShow 的 _loadContext + _loadEntries 路径
+    await this._loadContext();
     await this._loadEntries();
   },
 
@@ -1036,6 +1072,13 @@ Page({
     this.setData({
       editCategoryVisible: true,
       editCategoryType: entryType,
+      editCategoryTypeIndex: entryType === 'income' ? 1 : 0,
+      editCategorySwiperDuration: 0,
+      // COSTRA-228: 双 pane 数据
+      editExpenseTier1Categories: categoryData.expense,
+      editIncomeTier1Categories: categoryData.income,
+      editExpenseDedupedSubCategories: categoryData.expenseDedupedSubs,
+      editIncomeDedupedSubCategories: categoryData.incomeDedupedSubs,
       editTier1Categories: tier1,
       editDedupedSubCategories: deduped,
       editExpandedTier1Id: null,
@@ -1044,6 +1087,11 @@ Page({
       editSelectedTier2Id: selectedTier2Id,
       editDimmedTier1Ids: [],
     });
+
+    // COSTRA-228: 50ms 后恢复 swiper 动画时长
+    setTimeout(() => {
+      this.setData({ editCategorySwiperDuration: 240 });
+    }, 50);
 
     // —— 阶段 3：后台 fire-and-forget 刷新（仅签名变化时增量更新列表，不动 selected*）——
     void this._refreshEditCategoriesAsync(familyId, categoryData.signature);
@@ -1071,7 +1119,12 @@ Page({
     const tier1 = this.data.editCategoryType === 'expense' ? next.expense : next.income;
     const deduped = this.data.editCategoryType === 'expense' ? next.expenseDedupedSubs : next.incomeDedupedSubs;
 
+    // COSTRA-228: 双 pane 数据同时刷新
     this.setData({
+      editExpenseTier1Categories: next.expense,
+      editIncomeTier1Categories: next.income,
+      editExpenseDedupedSubCategories: next.expenseDedupedSubs,
+      editIncomeDedupedSubCategories: next.incomeDedupedSubs,
       editTier1Categories: tier1,
       editDedupedSubCategories: deduped,
     });
@@ -1165,11 +1218,24 @@ Page({
     eventBus.emit(EventNames.SHOW_TAB_BAR);
   },
 
-  /** 分类面板：切换支出/收入分类 */
+  /** 分类面板：点击 tab 切换收支（仅修改 editCategoryTypeIndex，由 swiper 过渡） */
   onEditCategoryTypeTab(e: WechatMiniprogram.TouchEvent) {
     const type = (e.currentTarget.dataset as Record<string, string>).type as 'expense' | 'income';
-    if (type === this.data.editCategoryType) return;
+    const targetIdx = type === 'income' ? 1 : 0;
+    if (targetIdx === this.data.editCategoryTypeIndex) return;
+    this.setData({ editCategoryTypeIndex: targetIdx });
+  },
 
+  /** 分类面板：swiper 横滑切换回调（统一更新 editCategoryType + 分类列表） */
+  onEditCategorySwiperChange(e: WechatMiniprogram.SwiperChange) {
+    const idx = e.detail.current;
+    const nextType: 'expense' | 'income' = idx === 1 ? 'income' : 'expense';
+    if (nextType === this.data.editCategoryType) return;
+    this._switchEditCategoryType(nextType);
+  },
+
+  /** 分类面板：收支切换核心逻辑 */
+  _switchEditCategoryType(type: 'expense' | 'income') {
     const catData = (this as unknown as Record<string, unknown>)._editCategoryData as {
       expense: { id: string; icon: string; name: string; children: { id: string; name: string; icon: string }[] }[];
       income: { id: string; icon: string; name: string; children: { id: string; name: string; icon: string }[] }[];
@@ -1183,6 +1249,7 @@ Page({
 
     this.setData({
       editCategoryType: type,
+      editCategoryTypeIndex: type === 'income' ? 1 : 0,
       editTier1Categories: tier1,
       editDedupedSubCategories: deduped,
       editExpandedTier1Id: null,

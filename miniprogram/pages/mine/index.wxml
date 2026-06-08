@@ -1,44 +1,67 @@
 <view class="mine">
-  <!-- 自定义导航栏：状态栏 + 导航栏高度 -->
-  <view class="page-nav" style="padding-top: {{statusBarHeight}}px; height: {{navBarHeight}}px;">
-    <text class="page-nav__title">我的</text>
-  </view>
-
-  <!-- 页面内容区 -->
-  <view class="mine__content">
-    <view class="profile" bindtap="onTapProfile">
+  <!-- 内容区 · 顶部仅留状态栏安全区，无导航标题（"我的" Tab 已在 tabbar 体现）-->
+  <view class="mine__content" style="padding-top: {{statusBarHeight}}px;">
+    <!-- 顶部用户信息区：头像居中放大 · 昵称 · 已记账 X 天 -->
+    <view class="profile" bindtap="onTapProfile" hover-class="profile--hover" hover-stay-time="60">
       <view class="profile__avatar-wrap">
         <image class="profile__avatar" src="{{avatarUrl}}" mode="aspectFill"></image>
         <view wx:if="{{showProfileBadge}}" class="profile__badge-dot"></view>
       </view>
-      <view class="profile__info">
-        <view class="profile__name">{{nickname}}</view>
-        <view wx:if="{{showProfileBadge}}" class="profile__hint">点击完善头像和昵称</view>
-      </view>
-      <view class="profile__arrow">›</view>
+      <view class="profile__name">{{nickname}}</view>
+      <view wx:if="{{showProfileBadge}}" class="profile__hint">点击完善头像和昵称</view>
+      <view wx:elif="{{overviewLoaded}}" class="profile__sub">已记账 {{ledgerDays}} 天</view>
     </view>
 
+    <!-- 宏观数据总览：横向 2 列网格 · 无卡片底色 -->
+    <view class="overview">
+      <view class="overview__cell">
+        <text class="overview__num tnum">{{ledgerDays}}</text>
+        <text class="overview__label">记账天数</text>
+      </view>
+      <view class="overview__divider"></view>
+      <view class="overview__cell">
+        <text class="overview__num tnum">{{entryCount}}</text>
+        <text class="overview__label">记账笔数</text>
+      </view>
+    </view>
+
+    <!-- 功能列表：圆角分组卡片 -->
     <view class="menu">
-      <view class="menu__item" bindtap="onTapCreateFamily">
+      <view class="menu__item" bindtap="onTapCreateFamily" hover-class="menu__item--hover" hover-stay-time="60">
         <view class="menu__label">创建协作账本</view>
         <view class="menu__arrow">›</view>
       </view>
-      <view class="menu__item" bindtap="onTapSettings">
+      <view class="menu__item" bindtap="onTapComingSoon" hover-class="menu__item--hover" hover-stay-time="60">
+        <view class="menu__label">账本导入 / 导出</view>
+        <view class="menu__arrow">›</view>
+      </view>
+      <view class="menu__item" bindtap="onTapBulletin" hover-class="menu__item--hover" hover-stay-time="60">
+        <view class="menu__label">
+          公告
+          <view wx:if="{{showBulletinBadge}}" class="menu__badge-dot"></view>
+        </view>
+        <view class="menu__arrow">›</view>
+      </view>
+      <view class="menu__item" bindtap="onTapComingSoon" hover-class="menu__item--hover" hover-stay-time="60">
+        <view class="menu__label">意见反馈</view>
+        <view class="menu__arrow">›</view>
+      </view>
+      <view class="menu__item" bindtap="onTapSettings" hover-class="menu__item--hover" hover-stay-time="60">
         <view class="menu__label">设置</view>
         <view class="menu__arrow">›</view>
       </view>
     </view>
 
     <view class="menu" style="margin-top: 32rpx;">
-      <view class="menu__item menu__item--danger" bindtap="onTapLogout">
+      <view class="menu__item menu__item--danger" bindtap="onTapLogout" hover-class="menu__item--hover" hover-stay-time="60">
         <view class="menu__label">退出登录</view>
       </view>
     </view>
 
     <view class="footer" bindtap="onTapIcp">
+      <view wx:if="{{appVersion}}" class="footer__text footer__version">v{{appVersion}}</view>
       <view class="footer__text footer__icp">沪ICP备2026017253号-1X</view>
       <view class="footer__text">服务由 costra.cloud 提供 · 沪ICP备2026017253号-2</view>
-      <view wx:if="{{appVersion}}" class="footer__text footer__version">v{{appVersion}}</view>
     </view>
     <view class="footer__privacy" bindtap="onTapPrivacy">
       <text class="footer__privacy-link">用户隐私保护指引</text>

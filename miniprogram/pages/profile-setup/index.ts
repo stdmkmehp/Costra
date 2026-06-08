@@ -190,4 +190,12 @@ Page({
   onTapBack() {
     wx.navigateBack();
   },
+
+  /** 隐私授权被拒绝：先退回上一页再弹提示 */
+  onPrivacyReject() {
+    wx.navigateBack();
+    setTimeout(() => {
+      wx.showToast({ title: '完善资料失败，Costra可能无法提供完整的服务', icon: 'none', duration: 2000 });
+    }, 300);
+  },
 });

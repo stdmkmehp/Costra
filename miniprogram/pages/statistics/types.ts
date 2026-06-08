@@ -29,8 +29,16 @@ export interface L1Display {
   expanded: boolean;
   loadingL2: boolean;
   l2Items: L2Display[];
+  /** 是否还有更多 L2（前端不显示具体数量，仅用作"还有部分较小支出未显示..."提示开关） */
   l2HasMore: boolean;
-  l2MoreCount: number;
+  /**
+   * 2026-06-08：子树脏标记
+   * 当 SYNC_DONE / ENTRY_SAVED / ENTRY_UPDATED 触发 L1 重拉时，
+   * 旧 L1 节点上的 l2Items 不能再当新数据用——打此标记后：
+   *   - buildL1Display 合并时清空 l2Items（保留 expanded 让自动重拉接管）
+   *   - onTapL1 不再因 l2Items.length>0 早返回，强制走网络
+   */
+  subtreeStale?: boolean;
 }
 
 export interface L2Display {
@@ -43,8 +51,13 @@ export interface L2Display {
   expanded: boolean;
   loadingL3: boolean;
   l3Items: L3Display[];
+  /** 是否还有更多 L3（前端不显示具体数量，仅用作"还有部分较小支出未显示..."提示开关） */
   l3HasMore: boolean;
-  l3MoreCount: number;
+  /**
+   * 2026-06-08：子树脏标记（同 L1.subtreeStale）
+   * onTapL2 在 stale 时忽略 l3Items.length>0 早返回，强制重拉。
+   */
+  subtreeStale?: boolean;
 }
 
 export interface L3Display {
@@ -76,8 +89,6 @@ export interface MonthlyView {
   trend: number[];
   summary: SummaryGridItem[];
   l1: L1Display[];
-  l1HasMore: boolean;
-  l1MoreCount: number;
   isEmpty: boolean;
   loading: boolean;
   loaded: boolean;
@@ -91,8 +102,6 @@ export interface YearlyView {
   summary: SummaryGridItem[];
   months: MonthRow[];
   l1: L1Display[];
-  l1HasMore: boolean;
-  l1MoreCount: number;
   isEmpty: boolean;
   loading: boolean;
   loaded: boolean;

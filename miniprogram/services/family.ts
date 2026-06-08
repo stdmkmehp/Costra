@@ -8,6 +8,7 @@
 
 import { getItem, setItem, removeItem } from './storage';
 import { request } from './request';
+import { eventBus, EventNames, type ActiveFamilyChangedPayload } from './eventBus';
 
 /** family_kind 枚举（与 server 0007 migration family_kind ENUM 对齐 · ADR-0007 §5.7.2） */
 export type FamilyKind = 'personal' | 'shared';
@@ -25,14 +26,39 @@ const FAMILY_CONTEXT_KEY = '__costra_family_context_v1';
 // 旧 key 一次性清理（防陈旧值干扰 · 实测手册曾让 Human 手动 setStorage 此 key）
 const LEGACY_FAMILY_ID_KEY = '__costra_family_id_v1';
 
+/** ACTIVE_FAMILY_CHANGED 事件来源（与 eventBus.ts 对齐） */
+export type ActiveFamilySwitchSource = ActiveFamilyChangedPayload['source'];
+
 /**
  * 设置 active family + ledger（登录成功 / family 切换均调）
  * 对应 ADR-0007 §5.2 storage 主源
+ *
+ * 2026-06-08：写完 storage 后广播 ACTIVE_FAMILY_CHANGED 事件，
+ * 让常驻 Tab 页（如 statistics 页 reShow 短路路径）能即时响应账本切换。
+ *
+ * @param ctx     新的 active family context
+ * @param source  触发来源（用于订阅方区分行为；不传默认 'other'）
  */
-export async function setActiveFamily(ctx: FamilyContext): Promise<void> {
+export async function setActiveFamily(
+  ctx: FamilyContext,
+  source: ActiveFamilySwitchSource = 'other',
+): Promise<void> {
+  const prev = await getItem<FamilyContext>(FAMILY_CONTEXT_KEY);
   await setItem<FamilyContext>(FAMILY_CONTEXT_KEY, ctx);
   // 一次性迁移：清旧 key（如存在）防止 syncScheduler 走旧分支
   await removeItem(LEGACY_FAMILY_ID_KEY);
+
+  // 仅在 family_id 或 ledger_id 真正变化时广播，避免无意义刷新
+  if (!prev || prev.family_id !== ctx.family_id || prev.ledger_id !== ctx.ledger_id) {
+    const payload: ActiveFamilyChangedPayload = {
+      family_id: ctx.family_id,
+      ledger_id: ctx.ledger_id,
+      family_kind: ctx.family_kind || 'personal',
+      ledger_name: ctx.ledger_name || '个人账本',
+      source,
+    };
+    eventBus.emit(EventNames.ACTIVE_FAMILY_CHANGED, payload);
+  }
 }
 
 /**
@@ -156,7 +182,7 @@ export async function fetchAndRestorePreference(): Promise<FamilyContext | null>
       family_kind,
       ledger_name,
     };
-    await setActiveFamily(ctx);
+    await setActiveFamily(ctx, 'preference-restore');
     return ctx;
   } catch (e) {
     console.warn('[family] fetchAndRestorePreference failed', e);

@@ -16,7 +16,7 @@ import {
   savePreferenceAsync,
 } from '../../services/family';
 import { triggerOnPageShow, syncOnce } from '../../services/syncScheduler';
-import { eventBus, EventNames, type SyncDonePayload } from '../../services/eventBus';
+import { eventBus, EventNames, type SyncDonePayload, type ActiveFamilyChangedPayload } from '../../services/eventBus';
 import { hasValidSession } from '../../services/auth';
 import { getFamilies, getFamilyMembers, type FamilyItem } from '../../services/familyApi';
 import {
@@ -106,6 +106,7 @@ Page({
   _syncDoneHandler: null as ((payload?: unknown) => void) | null,
   _entrySavedHandler: null as (() => void) | null,
   _entryUpdatedHandler: null as (() => void) | null,
+  _activeFamilyChangedHandler: null as ((payload?: unknown) => void) | null,
   _loadingPromise: null as Promise<void> | null,
 
   _initialized: false,
@@ -143,6 +144,17 @@ Page({
     const updatedHandler = () => { void this._onSyncDone(); };
     this._entryUpdatedHandler = updatedHandler;
     eventBus.on(EventNames.ENTRY_UPDATED, updatedHandler);
+
+    // ★ 2026-06-08：订阅 ACTIVE_FAMILY_CHANGED · 跨 Tab 同步切账本
+    // 设计意图：让常驻 Tab 页（_initialized=true reShow 短路路径）也能即时响应
+    // 自身 onTapLedgerName 已就地刷新到目标 family/ledger，事件到达时 ID 比对会自然 noop。
+    const activeFamilyChangedHandler = (payload?: unknown) => {
+      const p = payload as ActiveFamilyChangedPayload | undefined;
+      if (!p) return;
+      void this._onActiveFamilyChanged(p);
+    };
+    this._activeFamilyChangedHandler = activeFamilyChangedHandler;
+    eventBus.on(EventNames.ACTIVE_FAMILY_CHANGED, activeFamilyChangedHandler);
 
     const app = getApp<AppWithBootstrap>();
     void app.bootstrapPromise.then(() => {
@@ -204,6 +216,10 @@ Page({
     if (this._entryUpdatedHandler) {
       eventBus.off(EventNames.ENTRY_UPDATED, this._entryUpdatedHandler);
       this._entryUpdatedHandler = null;
+    }
+    if (this._activeFamilyChangedHandler) {
+      eventBus.off(EventNames.ACTIVE_FAMILY_CHANGED, this._activeFamilyChangedHandler);
+      this._activeFamilyChangedHandler = null;
     }
   },
 
@@ -302,7 +318,7 @@ Page({
     }
 
     try {
-      const fresh = await getMonthlyStatistics(this._familyId, month, { userId });
+      const fresh = await getMonthlyStatistics(this._familyId, month, { userId, topN: L1_VISIBLE });
       this._buildMonthlyDisplay(fresh, memberKey);
     } catch (err) {
       console.error('[statistics] loadMonthly failed', err);
@@ -328,7 +344,7 @@ Page({
     }
 
     try {
-      const fresh = await getYearlyStatistics(this._familyId, year, { userId });
+      const fresh = await getYearlyStatistics(this._familyId, year, { userId, topN: L1_VISIBLE });
       this._buildYearlyDisplay(fresh, memberKey);
     } catch (err) {
       console.error('[statistics] loadYearly failed', err);
@@ -364,8 +380,6 @@ Page({
       trend: daily_trend.map((d) => d.expense),
       summary,
       l1,
-      l1HasMore: category_ranks.length > L1_VISIBLE,
-      l1MoreCount: Math.max(0, category_ranks.length - L1_VISIBLE),
       isEmpty: totals.expense === 0 && totals.income === 0,
       loading: false,
       loaded: true,
@@ -382,6 +396,9 @@ Page({
       if (memberKey === this._getCurrentMemberKey()) {
         this._scheduleMeasureCurrentPane('buildMonthly');
       }
+      // 2026-06-08：buildL1Display 已把脏 L1 的 l2Items 清空且保留 expanded，
+      // 此时对 expanded 节点 fire-and-forget 重拉 L2/L3 子树，做到"金额+下钻"全链路同步。
+      this._refreshExpandedSubtreesIfNeeded(memberKey);
     });
   },
 
@@ -423,8 +440,6 @@ Page({
       summary,
       months,
       l1,
-      l1HasMore: category_ranks.length > L1_VISIBLE,
-      l1MoreCount: Math.max(0, category_ranks.length - L1_VISIBLE),
       isEmpty: totals.expense === 0 && totals.income === 0,
       loading: false,
       loaded: true,
@@ -441,6 +456,8 @@ Page({
       if (memberKey === this._getCurrentMemberKey()) {
         this._scheduleMeasureCurrentPane('buildYearly');
       }
+      // 2026-06-08：年度同月度逻辑（见 _buildMonthlyDisplay 注释）
+      this._refreshExpandedSubtreesIfNeeded(memberKey);
     });
   },
 
@@ -454,14 +471,59 @@ Page({
     await this._loadData();
   },
 
+  /**
+   * ACTIVE_FAMILY_CHANGED（非自身触发）响应处理
+   * 设计意图：等价于 onTapLedgerName 的本地切换路径，但触发方在外部。
+   * 仅在页面已初始化时执行（_initialized=false 时 onShow 会自然走完整路径）。
+   */
+  async _onActiveFamilyChanged(payload: ActiveFamilyChangedPayload) {
+    if (!this._initialized) return;
+    if (this._familyId === payload.family_id && this._ledgerId === payload.ledger_id) return;
+
+    // 释放旧家庭统计缓存（避免跨家庭 key 占用 + 与切月/切账本路径行为对齐）
+    if (this._familyId) invalidateStatisticsCache(this._familyId);
+
+    this._familyId = payload.family_id;
+    this._ledgerId = payload.ledger_id;
+    this._resetMemberSwiperHeightState('activeFamilyChanged');
+    this._clearMemberScrollMemory();
+    this.setData({
+      ledgerName: payload.ledger_name,
+      familyKind: payload.family_kind,
+      monthlyByMember: {},
+      yearlyByMember: {},
+      memberTabIndex: 0,
+      currentMemberKey: 'all',
+      loading: true,
+    });
+    await this._loadContext();
+    await this._loadData();
+  },
+
+  /**
+   * 失效当前维度所有成员视图（数据变更场景：SYNC_DONE / ENTRY_SAVED / ENTRY_UPDATED）。
+   *
+   * 2026-06-08 子树脏标记机制：
+   *   - view.loaded=false：触发 _ensureMemberLoaded 重拉 L1。
+   *   - 每个 L1 节点 subtreeStale=true：buildL1Display 合并时清空 l2Items 让自动重拉。
+   *   - 每个嵌套 L2 节点 subtreeStale=true：onTapL2 在 stale 时强制重拉 L3。
+   * 不清空 view 本身（保留 expanded 等用户展开态体验）。
+   */
   _invalidateCurrentDimViews() {
     const byMemberKey = this.data.dimension === 'monthly' ? 'monthlyByMember' : 'yearlyByMember';
     const byMember = this.data[byMemberKey] as Record<MemberKey, MonthlyView | YearlyView>;
     const update: Record<string, unknown> = {};
     for (const mk of Object.keys(byMember)) {
-      if (byMember[mk]) {
-        update[`${byMemberKey}.${mk}.loaded`] = false;
-      }
+      const view = byMember[mk];
+      if (!view) continue;
+      update[`${byMemberKey}.${mk}.loaded`] = false;
+      // 标记 L1 子树及嵌套 L2 子树为 stale（保留 expanded · 仅清数据）
+      const stalifiedL1 = view.l1.map<L1Display>((l1) => ({
+        ...l1,
+        subtreeStale: true,
+        l2Items: l1.l2Items.map<L2Display>((l2) => ({ ...l2, subtreeStale: true })),
+      }));
+      update[`${byMemberKey}.${mk}.l1`] = stalifiedL1;
     }
     if (Object.keys(update).length > 0) {
       this.setData(update);
@@ -641,16 +703,29 @@ Page({
       return;
     }
 
-    if (item.l2Items.length > 0) {
+    // 2026-06-08：脏标记下绕过缓存早返回，强制重拉
+    const cacheUsable = item.l2Items.length > 0 && !item.subtreeStale;
+    if (cacheUsable) {
       list[idx] = { ...item, expanded: true };
       this.setData({ [`${dimKey}.${memberKey}.l1`]: list }, () => {
         this._scheduleMeasureCurrentPane('l1-expand-cached');
       });
       return;
     }
-    list[idx] = { ...item, expanded: true, loadingL2: true };
+    list[idx] = { ...item, expanded: true, loadingL2: true, subtreeStale: false };
     this.setData({ [`${dimKey}.${memberKey}.l1`]: list });
 
+    await this._loadL2Data(memberKey, l1Id, silent);
+  },
+
+  /**
+   * 拉取并写入 L2 子分类数据（不切换 expanded）。
+   * 复用方：
+   *   - _handleL1Tap 展开分支
+   *   - _refreshExpandedSubtreesIfNeeded 数据变更后重拉 expanded 子树
+   */
+  async _loadL2Data(memberKey: string, l1Id: string, silent: boolean = false): Promise<void> {
+    const dimKey = this.data.dimension === 'monthly' ? 'monthlyByMember' : 'yearlyByMember';
     try {
       const scope = this.data.dimension === 'monthly'
         ? { month: this.data.currentMonth }
@@ -659,7 +734,10 @@ Page({
       const res: DrillDownLevel2Response = await drillDownLevel2(
         this._familyId, scope, l1Id, { limit: L2_VISIBLE + 1, userId },
       );
-      const l2Items: L2Display[] = res.items.slice(0, L2_VISIBLE).map((c) => ({
+      // 前端切片成最多 L2_VISIBLE 项 + has_more 探测：limit 多查 1 条用于判断溢出。
+      const overflow = res.items.length > L2_VISIBLE;
+      const visibleItems = overflow ? res.items.slice(0, L2_VISIBLE) : res.items;
+      const l2Items: L2Display[] = visibleItems.map((c) => ({
         category_id: c.category_id || '',
         category_name: c.category_name,
         icon: c.icon,
@@ -670,24 +748,46 @@ Page({
         loadingL3: false,
         l3Items: [],
         l3HasMore: false,
-        l3MoreCount: 0,
       }));
-      const hasMore = res.total_count > L2_VISIBLE;
       const latestView = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
       if (!latestView) return;
       const listLatest = [...latestView.l1];
       const idxLatest = listLatest.findIndex((l) => l.category_id === l1Id);
-      if (idxLatest >= 0) {
-        listLatest[idxLatest] = {
-          ...listLatest[idxLatest],
-          loadingL2: false,
-          l2Items,
-          l2HasMore: hasMore,
-          l2MoreCount: Math.max(0, res.total_count - L2_VISIBLE),
+      if (idxLatest < 0) return;
+      // 保留旧 L2 节点的 expanded + l3 数据（按 category_id 合并）：
+      // 数据变更场景下用户已展开的 L2 不应被收起，l3Items 借助 subtreeStale 走 onTapL2 重拉。
+      const prevL2Map = new Map<string, L2Display>();
+      for (const oldL2 of listLatest[idxLatest].l2Items) {
+        if (oldL2.category_id) prevL2Map.set(oldL2.category_id, oldL2);
+      }
+      const mergedL2: L2Display[] = l2Items.map((freshL2) => {
+        const prev = prevL2Map.get(freshL2.category_id);
+        if (!prev) return freshL2;
+        // 继承用户展开态 + L3 数据（脏标记由 _invalidateCurrentDimViews 写在 prev 上）
+        return {
+          ...freshL2,
+          expanded: prev.expanded,
+          l3Items: prev.l3Items,
+          l3HasMore: prev.l3HasMore,
+          subtreeStale: prev.subtreeStale,
         };
-        this.setData({ [`${dimKey}.${memberKey}.l1`]: listLatest }, () => {
-          this._scheduleMeasureCurrentPane('l1-l2-loaded');
-        });
+      });
+      listLatest[idxLatest] = {
+        ...listLatest[idxLatest],
+        loadingL2: false,
+        l2Items: mergedL2,
+        l2HasMore: overflow,
+        subtreeStale: false,
+      };
+      this.setData({ [`${dimKey}.${memberKey}.l1`]: listLatest }, () => {
+        this._scheduleMeasureCurrentPane('l1-l2-loaded');
+      });
+
+      // L3 链路：对 expanded 且 stale（或空）的 L2 节点级联重拉
+      for (const l2 of mergedL2) {
+        if (l2.expanded && l2.category_id && (l2.subtreeStale || l2.l3Items.length === 0)) {
+          void this._loadL3Data(memberKey, l1Id, l2.category_id, true);
+        }
       }
     } catch (err) {
       console.error('[statistics] drillDown L2 failed', err);
@@ -735,7 +835,9 @@ Page({
       });
       return;
     }
-    if (l2.l3Items.length > 0) {
+    // 2026-06-08：脏标记下绕过缓存早返回，强制重拉 L3
+    const l3CacheUsable = l2.l3Items.length > 0 && !l2.subtreeStale;
+    if (l3CacheUsable) {
       l1.l2Items[l2Idx] = { ...l2, expanded: true };
       list[l1Idx] = l1;
       this.setData({ [`${dimKey}.${memberKey}.l1`]: list }, () => {
@@ -744,19 +846,34 @@ Page({
       return;
     }
 
-    l1.l2Items[l2Idx] = { ...l2, expanded: true, loadingL3: true };
+    l1.l2Items[l2Idx] = { ...l2, expanded: true, loadingL3: true, subtreeStale: false };
     list[l1Idx] = l1;
     this.setData({ [`${dimKey}.${memberKey}.l1`]: list });
 
+    await this._loadL3Data(memberKey, l1Id, l2Id, false);
+  },
+
+  /**
+   * 拉取并写入 L3 单笔明细数据（不切换 expanded）。
+   * 复用方：
+   *   - onTapL2 展开分支
+   *   - _loadL2Data 中 L2 重拉后级联触发
+   *   - _refreshExpandedSubtreesIfNeeded 数据变更后重拉 expanded L2 子树
+   */
+  async _loadL3Data(memberKey: string, l1Id: string, l2Id: string, silent: boolean = false): Promise<void> {
+    const dimKey = this.data.dimension === 'monthly' ? 'monthlyByMember' : 'yearlyByMember';
     try {
       const scope = this.data.dimension === 'monthly'
         ? { month: this.data.currentMonth }
         : { year: this.data.currentYear };
       const userId = memberKey === 'all' ? undefined : memberKey;
       const res: DrillDownLevel3Response = await drillDownLevel3(
-        this._familyId, scope, l2Id, { limit: L3_VISIBLE, userId },
+        this._familyId, scope, l2Id, { limit: L3_VISIBLE + 1, userId },
       );
-      const l3Items: L3Display[] = res.items.map((it: DrillDownEntryItem) => ({
+      // 前端切片成最多 L3_VISIBLE 项 + has_more 探测：limit 多查 1 条用于判断溢出。
+      const overflow = res.items.length > L3_VISIBLE;
+      const visibleItems = overflow ? res.items.slice(0, L3_VISIBLE) : res.items;
+      const l3Items: L3Display[] = visibleItems.map((it: DrillDownEntryItem) => ({
         entry_id: it.entry_id,
         amount: fmtYuan(it.amount),
         note: it.note || '',
@@ -771,23 +888,21 @@ Page({
       if (!latestView) return;
       const listLatest = [...latestView.l1];
       const l1IdxLatest = listLatest.findIndex((l) => l.category_id === l1Id);
-      if (l1IdxLatest >= 0) {
-        const l1Latest = { ...listLatest[l1IdxLatest], l2Items: [...listLatest[l1IdxLatest].l2Items] };
-        const l2IdxLatest = l1Latest.l2Items.findIndex((l) => l.category_id === l2Id);
-        if (l2IdxLatest >= 0) {
-          l1Latest.l2Items[l2IdxLatest] = {
-            ...l1Latest.l2Items[l2IdxLatest],
-            loadingL3: false,
-            l3Items,
-            l3HasMore: res.has_more,
-            l3MoreCount: Math.max(0, res.total_count - res.items.length),
-          };
-          listLatest[l1IdxLatest] = l1Latest;
-          this.setData({ [`${dimKey}.${memberKey}.l1`]: listLatest }, () => {
-            this._scheduleMeasureCurrentPane('l2-l3-loaded');
-          });
-        }
-      }
+      if (l1IdxLatest < 0) return;
+      const l1Latest = { ...listLatest[l1IdxLatest], l2Items: [...listLatest[l1IdxLatest].l2Items] };
+      const l2IdxLatest = l1Latest.l2Items.findIndex((l) => l.category_id === l2Id);
+      if (l2IdxLatest < 0) return;
+      l1Latest.l2Items[l2IdxLatest] = {
+        ...l1Latest.l2Items[l2IdxLatest],
+        loadingL3: false,
+        l3Items,
+        l3HasMore: overflow,
+        subtreeStale: false,
+      };
+      listLatest[l1IdxLatest] = l1Latest;
+      this.setData({ [`${dimKey}.${memberKey}.l1`]: listLatest }, () => {
+        this._scheduleMeasureCurrentPane('l2-l3-loaded');
+      });
     } catch (err) {
       console.error('[statistics] drillDown L3 failed', err);
       const latestView = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
@@ -805,7 +920,29 @@ Page({
           });
         }
       }
-      wx.showToast({ title: '加载失败', icon: 'none' });
+      if (!silent) {
+        wx.showToast({ title: '加载失败', icon: 'none' });
+      }
+    }
+  },
+
+  /**
+   * 2026-06-08：数据变更（SYNC_DONE/ENTRY_SAVED/ENTRY_UPDATED）后，
+   *   _buildMonthlyDisplay/_buildYearlyDisplay 已通过 buildL1Display 把脏 L1 的 l2Items 清空，
+   *   此时对 expanded 节点 fire-and-forget 重拉 L2，使下钻数据立即同步。
+   *   L3 由 _loadL2Data 内部级联触发。
+   * 仅刷新当前 currentMemberKey 对应的 view（其他成员等切到时由 _ensureMemberLoaded 走完整路径）。
+   */
+  _refreshExpandedSubtreesIfNeeded(memberKey: MemberKey): void {
+    const dimKey = this.data.dimension === 'monthly' ? 'monthlyByMember' : 'yearlyByMember';
+    const view = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
+    if (!view) return;
+    for (const l1 of view.l1) {
+      if (!l1.expanded || !l1.category_id) continue;
+      const needsRefresh = l1.subtreeStale || l1.l2Items.length === 0;
+      if (needsRefresh) {
+        void this._loadL2Data(memberKey, l1.category_id, true);
+      }
     }
   },
 
@@ -910,12 +1047,14 @@ Page({
         success: async (res) => {
           const selected = families[res.tapIndex];
           if (selected.ledger_id === this._ledgerId) return;
+          // 释放旧家庭统计缓存（与 _onActiveFamilyChanged 行为对齐 · 防长期占用）
+          if (this._familyId) invalidateStatisticsCache(this._familyId);
           await setActiveFamily({
             family_id: selected.id,
             ledger_id: selected.ledger_id,
             family_kind: selected.kind,
             ledger_name: selected.name,
-          });
+          }, 'ledger-switch');
           savePreferenceAsync(selected.id, selected.ledger_id);
           this._familyId = selected.id;
           this._ledgerId = selected.ledger_id;

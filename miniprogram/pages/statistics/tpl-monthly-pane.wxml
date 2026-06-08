@@ -97,7 +97,7 @@
                     <view class="l3__main">
                       <view class="l3__top">
                         <text class="l3__date">{{l3.dateLabel}}</text>
-                        <text class="l3__note">{{l3.note || '-'}}</text>
+                        <text class="l3__note" wx:if="{{l3.note}}">{{l3.note}}</text>
                         <text class="l3__amount tnum">{{l3.amount}}</text>
                       </view>
                       <view class="l3__bottom">
@@ -107,22 +107,19 @@
                     </view>
                   </view>
                   <view class="l3__more" wx:if="{{l2.l3HasMore}}">
-                    还有 {{l2.l3MoreCount}} 笔未显示...
+                    还有部分较小支出未显示...
                   </view>
                 </block>
                 <view class="l3__empty" wx:else>暂无明细</view>
               </view>
             </block>
             <view class="l2__more" wx:if="{{l1.l2HasMore}}">
-              还有 {{l1.l2MoreCount}} 项较小支出未显示...
+              还有部分较小支出未显示...
             </view>
           </block>
           <view class="l2__empty" wx:else>暂无子分类</view>
         </view>
       </block>
-    </view>
-    <view class="rank__more" wx:if="{{monthlyByMember[member.key].l1HasMore}}">
-      还有 {{monthlyByMember[member.key].l1MoreCount}} 项较小支出未显示...
     </view>
   </view>
 </block>

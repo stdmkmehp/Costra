@@ -83,7 +83,7 @@ Page({
         ledger_id: family.ledger_id,
         family_kind: family.kind,
         ledger_name: family.ledger_name,
-      });
+      }, 'invite-confirm');
       const app = getApp<AppWithBootstrap>();
       if (app?.globalData) {
         app.globalData.activeLedgerId = family.ledger_id;

@@ -308,7 +308,7 @@
   font-size: 18rpx;
   line-height: 1;
   font-weight: 800;
-  color: #07C160;
+  color: #6B9B8F;
   text-shadow:
     1rpx 0 0 var(--color-role-bg-app, #f1f2ec),
     -1rpx 0 0 var(--color-role-bg-app, #f1f2ec),
@@ -444,16 +444,43 @@
 .edit-category-header__tabs {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 20rpx;
 }
+/* COSTRA-228: tab 改为 column flex 承载文字 + 短线指示器（对齐 expense-overlay） */
 .edit-category-header__tab {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 4rpx 0;
+}
+.edit-category-header__tab-text {
   font-size: 34rpx;
   color: rgba(28, 27, 26, 0.28);
   font-weight: 400;
+  line-height: 1;
+  transition: color 150ms cubic-bezier(0.25, 0.1, 0.25, 1),
+              font-weight 150ms cubic-bezier(0.25, 0.1, 0.25, 1);
 }
-.edit-category-header__tab.is-active {
+.edit-category-header__tab.is-active .edit-category-header__tab-text {
   color: #1c1b1a;
   font-weight: 600;
+}
+/* 黑色短线指示器：绝对定位悬挂在 tab 文字下方 */
+.edit-category-header__tab-indicator {
+  position: absolute;
+  left: 50%;
+  bottom: -12rpx;
+  transform: translateX(-50%);
+  width: 24rpx;
+  height: 4rpx;
+  border-radius: 2rpx;
+  background: transparent;
+  transition: background 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+.edit-category-header__tab.is-active .edit-category-header__tab-indicator {
+  background: #1c1b1a;
 }
 .edit-category-header__sep {
   font-size: 28rpx;
@@ -462,9 +489,14 @@
 .edit-category-header__placeholder {
   width: 80rpx;
 }
-.edit-category-scroll {
+/* COSTRA-228: 分类区 swiper（跟手横滑切换支出/收入） */
+.edit-category-swiper {
   flex: 1;
   min-height: 0;
+  width: 100%;
+}
+.edit-category-scroll {
+  height: 100%;
   width: 100%;
   box-sizing: border-box;
   padding: 0 28rpx;

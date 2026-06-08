@@ -20,7 +20,7 @@ import {
   savePreferenceAsync,
   type FamilyKind,
 } from '../../services/family';
-import { eventBus, EventNames, type SyncDonePayload } from '../../services/eventBus';
+import { eventBus, EventNames, type SyncDonePayload, type ActiveFamilyChangedPayload } from '../../services/eventBus';
 import { getToken, hasValidSession } from '../../services/auth';
 import {
   getFamilies,
@@ -114,8 +114,6 @@ interface DrilldownRow {
   memberStatus: 'active' | 'left' | null;
   expanded: boolean;
   l1Items: L1Display[];
-  l1HasMore: boolean;
-  l1MoreCount: number;
 }
 
 // ─── 辅助函数 ────────────────────────────────────────────────────────────────────
@@ -162,8 +160,12 @@ function formatCentsDisplay(cents: number): string {
 
 // MEMBER_COLOR_SLOTS + getMemberColorBySlot 已迁移到 utils/memberColor.ts（唯一事实源 · COSTRA-261）
 
-/** L1 排行长列表省略：保留前 N 项（与统计页对齐 · spec §1.5） */
-const L1_VISIBLE = 6;
+/**
+ * L1 不限项（与统计页对齐 · 用户期望所有一级分类全部展示）。
+ * 取值与后端 family-summary topN 上限保持一致（routes/families.ts schema max=20）。
+ * 调用方（getFamilySummary）显式传 topN: L1_VISIBLE 让后端按上限返回。
+ */
+const L1_VISIBLE = 20;
 
 /** 当前年份 → YYYY */
 function getCurrentYearValue(): string {
@@ -185,8 +187,8 @@ function nextYear(value: string): string {
   return `${parseInt(value, 10) + 1}`;
 }
 
-/** Segmented Bar 公共段颜色 */
-const SHARED_SEGMENT_COLOR = '#07C160';
+/** Segmented Bar 公共段颜色 · 莫兰迪石青（与成员色板协调） */
+const SHARED_SEGMENT_COLOR = '#6B9B8F';
 
 // ─── Page ─────────────────────────────────────────────────────────────────────────
 
@@ -273,6 +275,8 @@ Page({
   _invitePrepareSeq: 0,
   /** eventBus 订阅 handler（sync-refresh: SYNC_DONE 后失效缓存 + 重拉 summary，防内存泄漏） */
   _syncDoneHandler: null as ((payload?: unknown) => void) | null,
+  /** eventBus 订阅 handler（2026-06-08: 跨页面账本切换响应） */
+  _activeFamilyChangedHandler: null as ((payload?: unknown) => void) | null,
 
   // ─── 生命周期 ────────────────────────────────────────────────────────────────
 
@@ -299,6 +303,18 @@ Page({
     };
     this._syncDoneHandler = syncDoneHandler;
     eventBus.on(EventNames.SYNC_DONE, syncDoneHandler);
+
+    // 2026-06-08: 订阅 ACTIVE_FAMILY_CHANGED · 跨页面账本切换响应
+    // 自身 onTapFamilyName / onConfirmCreateFamily / onTapRenameLedger / 邀请确认 等已就地刷新，
+    // 事件到达时 ID 比对自然 noop；仅当外部页面（明细/统计页 onTapLedgerName）切换时才会真正响应。
+    const activeFamilyChangedHandler = (payload?: unknown) => {
+      const p = payload as ActiveFamilyChangedPayload | undefined;
+      if (!p) return;
+      if (this._familyId === p.family_id) return;
+      void this._onActiveFamilyChanged();
+    };
+    this._activeFamilyChangedHandler = activeFamilyChangedHandler;
+    eventBus.on(EventNames.ACTIVE_FAMILY_CHANGED, activeFamilyChangedHandler);
 
     // 等 bootstrap 完成后补读 userId（bootstrap 前 token 可能未就绪）
     const app = getApp<AppWithBootstrap>();
@@ -349,6 +365,11 @@ Page({
       eventBus.off(EventNames.SYNC_DONE, this._syncDoneHandler);
       this._syncDoneHandler = null;
     }
+    // 2026-06-08: 取消订阅 ACTIVE_FAMILY_CHANGED
+    if (this._activeFamilyChangedHandler) {
+      eventBus.off(EventNames.ACTIVE_FAMILY_CHANGED, this._activeFamilyChangedHandler);
+      this._activeFamilyChangedHandler = null;
+    }
   },
 
   /** 同步当前登录用户 ID，供 owner 判定与成员管理使用 */
@@ -375,6 +396,16 @@ Page({
     if (this._loadingPromise) return;
     invalidateFamilyCache(this._familyId);
     await this._loadSummary(this._familyId);
+  },
+
+  /**
+   * 2026-06-08: 跨页面账本切换响应
+   * 触发场景：明细页/统计页 onTapLedgerName 切换账本，协作页常驻在内存里。
+   * 行为：等价于 _loadPage 全量刷新（重读 active context + 重拉 families + 重拉 summary）。
+   */
+  async _onActiveFamilyChanged() {
+    this._collapseAllRows();
+    await this._loadPage();
   },
 
   // ─── 数据加载 ────────────────────────────────────────────────────────────────
@@ -446,7 +477,7 @@ Page({
           ledger_id: targetFamily.ledger_id,
           family_kind: targetFamily.kind,
           ledger_name: targetFamily.ledger_name,
-        });
+        }, 'preference-restore');
       }
 
       this.setData({
@@ -503,7 +534,7 @@ Page({
     }
 
     try {
-      const summary = await getFamilySummary(familyId, scope);
+      const summary = await getFamilySummary(familyId, scope, { topN: L1_VISIBLE });
 
       this.setData({ summary });
 
@@ -654,13 +685,11 @@ Page({
       const sharedSeg = segments.find(s => s.key === 'shared');
       const ratioBps = sharedSeg ? sharedSeg.ratio_bps : 0;
 
-      // L1 列表
+      // L1 列表（topN=L1_VISIBLE 已让后端按上限返回，前端不再做"还有 N 项"省略 · 用户期望全显示）
       const allL1 = shared.categories
         .filter(c => c.amount > 0)
         .map(c => this._mapToL1Display(c));
       const l1Items = allL1.slice(0, L1_VISIBLE);
-      const l1HasMore = allL1.length > L1_VISIBLE;
-      const l1MoreCount = allL1.length - L1_VISIBLE;
 
       rows.push({
         key: 'shared',
@@ -676,8 +705,6 @@ Page({
         memberStatus: null,
         expanded: oldExpandedMap.get('shared') ?? false,
         l1Items,
-        l1HasMore,
-        l1MoreCount,
       });
     }
 
@@ -696,13 +723,11 @@ Page({
       const statusSuffix = pm.status === 'left' ? '（已退出）' : '';
       const label = `${pm.nickname}的个人支出${statusSuffix}`;
 
-      // L1 列表
+      // L1 列表（topN=L1_VISIBLE 已让后端按上限返回 · 用户期望全显示）
       const allL1 = pm.categories
         .filter(c => c.amount > 0)
         .map(c => this._mapToL1Display(c));
       const l1Items = allL1.slice(0, L1_VISIBLE);
-      const l1HasMore = allL1.length > L1_VISIBLE;
-      const l1MoreCount = allL1.length - L1_VISIBLE;
 
       rows.push({
         key,
@@ -718,8 +743,6 @@ Page({
         memberStatus: memberInfo?.status ?? pm.status,
         expanded: oldExpandedMap.get(key) ?? false,
         l1Items,
-        l1HasMore,
-        l1MoreCount,
       });
     }
 
@@ -833,14 +856,14 @@ Page({
     void this._loadSummary(this._familyId);
   },
 
-  // ─── 交互：下钻行 展开/收起（手风琴 · COSTRA-302 · spec §4.5） ─────────────
+  // ─── 交互：下钻行 展开/收起（多行可同时展开 · 与设计 §4.5 对齐） ──────────
 
-  /** 同时仅一行展开（手风琴） */
+  /** 仅切换被点击行的 expanded，不影响其他行（用户期望多个下钻列表可同时打开） */
   onTapDrilldownRow(e: WechatMiniprogram.TouchEvent) {
     const key = e.currentTarget.dataset.key as string;
     const rows = this.data.drilldownRows.map(r => {
       if (r.key === key) return { ...r, expanded: !r.expanded };
-      return { ...r, expanded: false };
+      return r;
     });
     this.setData({ drilldownRows: rows });
   },
@@ -1241,7 +1264,7 @@ Page({
           ledger_id: ledgerId,
           family_kind: familyKind,
           ledger_name: updated.ledger_name || name,
-        });
+        }, 'family-rename');
       }
       // 失效缓存确保统计/明细页拉到新名称
       invalidateFamilyCache(this._familyId);
@@ -1269,7 +1292,7 @@ Page({
                 ledger_id: ledgerId2,
                 family_kind: familyKind2,
                 ledger_name: retried.ledger_name || name,
-              });
+              }, 'family-rename');
             }
             invalidateFamilyCache(this._familyId);
             wx.showToast({ title: '已修改', icon: 'success' });
@@ -1331,7 +1354,7 @@ Page({
         ledger_id: newFamily.ledger_id,
         family_kind: 'shared',
         ledger_name: newFamily.ledger_name,
-      });
+      }, 'family-create');
       savePreferenceAsync(newFamily.id, newFamily.ledger_id);
       this.setData({ createOverlayVisible: false, createFamilyLoading: false });
       wx.showToast({ title: '创建成功', icon: 'success' });
@@ -1375,7 +1398,7 @@ Page({
           ledger_id: selected.ledger_id,
           family_kind: selected.kind,
           ledger_name: selected.ledger_name,
-        });
+        }, 'family-switch');
         savePreferenceAsync(selected.id, selected.ledger_id);
 
         this._familyId = selected.id;

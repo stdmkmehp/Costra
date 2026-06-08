@@ -12,97 +12,176 @@
     <view class="expense-header" style="padding-top: {{menuButtonTop}}px;" catchtouchmove="noop">
       <text class="expense-header__close" bindtap="onClose">取消</text>
       <view wx:if="{{!keypadOnly}}" class="expense-header__tabs {{typeSwipeDisabled ? 'is-disabled' : ''}}">
-        <text
+        <view
           class="expense-header__tab {{entryType === 'expense' ? 'is-active' : ''}}"
           data-type="expense"
           bindtap="onTapTab"
-        >支出</text>
+        >
+          <text class="expense-header__tab-text">支出</text>
+          <view class="expense-header__tab-indicator"></view>
+        </view>
         <text class="expense-header__sep">·</text>
-        <text
+        <view
           class="expense-header__tab {{entryType === 'income' ? 'is-active' : ''}}"
           data-type="income"
           bindtap="onTapTab"
-        >收入</text>
+        >
+          <text class="expense-header__tab-text">收入</text>
+          <view class="expense-header__tab-indicator"></view>
+        </view>
       </view>
       <view wx:if="{{keypadOnly}}" class="expense-header__tabs">
-        <text class="expense-header__tab is-active">编辑金额</text>
+        <view class="expense-header__tab is-active">
+          <text class="expense-header__tab-text">编辑金额</text>
+        </view>
       </view>
       <!-- 右侧占位保持三栏平衡 -->
       <view class="expense-header__placeholder"></view>
     </view>
 
-    <!-- ═══ 分类滚动区（flex:1 自动填满 header 到屏幕底部）· COSTRA-227: keypadOnly 模式下隐藏 ═══ -->
-    <scroll-view
+    <!-- ═══ 分类滚动区（COSTRA-228: swiper + 两个 scroll-view 跟手横滑切换支出/收入） ═══ -->
+    <!-- keypadOnly 模式（编辑金额）下隐藏整个分类区 -->
+    <swiper
       wx:if="{{!keypadOnly}}"
-      class="category-scroll"
-      scroll-y
-      enhanced="{{true}}"
-      show-scrollbar="{{false}}"
-      scroll-top="{{categoryScrollTop}}"
-      bindscroll="onCategoryScroll"
-      bindtouchstart="onTouchStart"
-      bindtouchend="onTouchEnd"
+      class="category-swiper"
+      current="{{entryTypeIndex}}"
+      duration="{{categorySwiperDuration}}"
+      bindchange="onCategorySwiperChange"
     >
-
-      <!-- 一级分类网格 -->
-      <view class="category-section category-section--tier1">
-        <view
-          wx:for="{{tier1Categories}}"
-          wx:key="id"
-          id="cat-tier1-{{item.id}}"
-          class="category-tier1 {{selectedTier1Id === item.id ? 'is-selected' : ''}} {{dimmedTier1Ids.indexOf(item.id) >= 0 ? 'is-dimmed' : ''}}"
-          data-id="{{item.id}}"
-          bindtap="onTapTier1"
+      <!-- 支出 pane -->
+      <swiper-item>
+        <scroll-view
+          id="cat-scroll-expense"
+          class="category-scroll"
+          scroll-y
+          enhanced="{{true}}"
+          show-scrollbar="{{false}}"
+          scroll-top="{{entryType === 'expense' ? categoryScrollTop : 0}}"
+          bindscroll="onCategoryScroll"
         >
-          <view class="category-tier1__icon">{{item.icon}}</view>
-          <text class="category-tier1__name">{{item.name}}</text>
-        </view>
-      </view>
+          <!-- 一级分类网格 -->
+          <view class="category-section category-section--tier1">
+            <view
+              wx:for="{{expenseTier1Categories}}"
+              wx:key="id"
+              id="cat-tier1-{{item.id}}"
+              class="category-tier1 {{entryType === 'expense' && selectedTier1Id === item.id ? 'is-selected' : ''}} {{entryType === 'expense' && dimmedTier1Ids.indexOf(item.id) >= 0 ? 'is-dimmed' : ''}}"
+              data-id="{{item.id}}"
+              bindtap="onTapTier1"
+            >
+              <view class="category-tier1__icon">{{item.icon}}</view>
+              <text class="category-tier1__name">{{item.name}}</text>
+            </view>
+          </view>
 
-      <!-- 分隔线 -->
-      <view class="category-divider"></view>
+          <!-- 分隔线 -->
+          <view class="category-divider"></view>
 
-      <!-- 展开的子分类（场景 A：点击一级分类后显示） -->
-      <view
-        class="category-section category-section--tier2"
-        wx:if="{{expandedChildren.length > 0}}"
-      >
-        <view
-          wx:for="{{expandedChildren}}"
-          wx:key="id"
-          id="cat-sub-{{item.id}}"
-          class="category-item {{selectedTier2Id === item.id ? 'is-selected' : ''}}"
-          data-id="{{item.id}}"
-          bindtap="onTapExpandedChild"
+          <!-- 展开的子分类（场景 A · 仅当前 pane 显示展开态） -->
+          <view
+            class="category-section category-section--tier2"
+            wx:if="{{entryType === 'expense' && expandedChildren.length > 0}}"
+          >
+            <view
+              wx:for="{{expandedChildren}}"
+              wx:key="id"
+              id="cat-sub-{{item.id}}"
+              class="category-item {{selectedTier2Id === item.id ? 'is-selected' : ''}}"
+              data-id="{{item.id}}"
+              bindtap="onTapExpandedChild"
+            >
+              <view class="category-item__icon">{{item.name[0]}}</view>
+              <text class="category-item__name">{{item.name}}</text>
+            </view>
+          </view>
+
+          <!-- 去重后的全局二级分类（无展开时显示） -->
+          <view
+            class="category-section category-section--tier2"
+            wx:if="{{entryType !== 'expense' || !expandedTier1Id}}"
+          >
+            <view
+              wx:for="{{expenseDedupedSubCategories}}"
+              wx:key="id"
+              id="{{entryType === 'expense' ? 'cat-sub-' + item.id : 'cat-sub-expense-' + item.id}}"
+              class="category-item {{entryType === 'expense' && selectedTier2Id === item.id ? 'is-selected' : ''}}"
+              data-id="{{item.id}}"
+              data-name="{{item.name}}"
+              bindtap="onTapSubCategory"
+            >
+              <view class="category-item__icon">{{item.name[0]}}</view>
+              <text class="category-item__name">{{item.name}}</text>
+            </view>
+          </view>
+          <view class="category-bottom-spacer" style="height: {{safeAreaBottom || 20}}px;"></view>
+        </scroll-view>
+      </swiper-item>
+
+      <!-- 收入 pane -->
+      <swiper-item>
+        <scroll-view
+          id="cat-scroll-income"
+          class="category-scroll"
+          scroll-y
+          enhanced="{{true}}"
+          show-scrollbar="{{false}}"
+          scroll-top="{{entryType === 'income' ? categoryScrollTop : 0}}"
+          bindscroll="onCategoryScroll"
         >
-          <view class="category-item__icon">{{item.name[0]}}</view>
-          <text class="category-item__name">{{item.name}}</text>
-        </view>
-      </view>
+          <view class="category-section category-section--tier1">
+            <view
+              wx:for="{{incomeTier1Categories}}"
+              wx:key="id"
+              id="cat-tier1-{{item.id}}"
+              class="category-tier1 {{entryType === 'income' && selectedTier1Id === item.id ? 'is-selected' : ''}} {{entryType === 'income' && dimmedTier1Ids.indexOf(item.id) >= 0 ? 'is-dimmed' : ''}}"
+              data-id="{{item.id}}"
+              bindtap="onTapTier1"
+            >
+              <view class="category-tier1__icon">{{item.icon}}</view>
+              <text class="category-tier1__name">{{item.name}}</text>
+            </view>
+          </view>
 
-      <!-- 去重后的全局二级分类（初始态 / 非展开时显示） -->
-      <view
-        class="category-section category-section--tier2"
-        wx:if="{{!expandedTier1Id}}"
-      >
-        <view
-          wx:for="{{dedupedSubCategories}}"
-          wx:key="id"
-          id="cat-sub-{{item.id}}"
-          class="category-item {{selectedTier2Id === item.id ? 'is-selected' : ''}}"
-          data-id="{{item.id}}"
-          data-name="{{item.name}}"
-          bindtap="onTapSubCategory"
-        >
-          <view class="category-item__icon">{{item.name[0]}}</view>
-          <text class="category-item__name">{{item.name}}</text>
-        </view>
-      </view>
+          <view class="category-divider"></view>
 
-      <!-- 底部安全区占位：确保无键盘时内容可滚动到底部 -->
-      <!-- COSTRA-214: 高度由 JS safeAreaBottom 驱动 -->
-      <view class="category-bottom-spacer" style="height: {{safeAreaBottom || 20}}px;"></view>
-    </scroll-view>
+          <view
+            class="category-section category-section--tier2"
+            wx:if="{{entryType === 'income' && expandedChildren.length > 0}}"
+          >
+            <view
+              wx:for="{{expandedChildren}}"
+              wx:key="id"
+              id="cat-sub-{{item.id}}"
+              class="category-item {{selectedTier2Id === item.id ? 'is-selected' : ''}}"
+              data-id="{{item.id}}"
+              bindtap="onTapExpandedChild"
+            >
+              <view class="category-item__icon">{{item.name[0]}}</view>
+              <text class="category-item__name">{{item.name}}</text>
+            </view>
+          </view>
+
+          <view
+            class="category-section category-section--tier2"
+            wx:if="{{entryType !== 'income' || !expandedTier1Id}}"
+          >
+            <view
+              wx:for="{{incomeDedupedSubCategories}}"
+              wx:key="id"
+              id="{{entryType === 'income' ? 'cat-sub-' + item.id : 'cat-sub-income-' + item.id}}"
+              class="category-item {{entryType === 'income' && selectedTier2Id === item.id ? 'is-selected' : ''}}"
+              data-id="{{item.id}}"
+              data-name="{{item.name}}"
+              bindtap="onTapSubCategory"
+            >
+              <view class="category-item__icon">{{item.name[0]}}</view>
+              <text class="category-item__name">{{item.name}}</text>
+            </view>
+          </view>
+          <view class="category-bottom-spacer" style="height: {{safeAreaBottom || 20}}px;"></view>
+        </scroll-view>
+      </swiper-item>
+    </swiper>
 
     <!-- COSTRA-227: keypadOnly 模式下占位区，将键盘推到底部 -->
     <view wx:if="{{keypadOnly}}" class="keypad-spacer"></view>

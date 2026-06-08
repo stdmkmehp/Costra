@@ -55,7 +55,7 @@ Component({
         resolve({ event: 'disagree' });
         (this as any)._resolve = undefined;
       }
-      wx.showToast({ title: '已进入只读演示模式', icon: 'none', duration: 2000 });
+      this.triggerEvent('reject');
     },
 
     /** 跳转查看隐私保护指引：优先打开微信后台配置的官方指引，失败则回落本地页面 */

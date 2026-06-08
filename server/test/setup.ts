@@ -201,6 +201,24 @@ function applyMigrations(db: IMemoryDb): void {
       used_by         UUID,
       created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
     );
+    -- 公告系统（migration 0002）
+    CREATE TABLE announcements (
+      id              UUID PRIMARY KEY,
+      title           TEXT NOT NULL,
+      content         TEXT NOT NULL,
+      published_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+      expires_at      TIMESTAMPTZ,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+      deleted_at      TIMESTAMPTZ
+    );
+    CREATE TABLE announcement_reads (
+      user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      announcement_id UUID NOT NULL REFERENCES announcements(id) ON DELETE CASCADE,
+      read_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (user_id, announcement_id)
+    );
+    CREATE INDEX idx_announcement_reads_user ON announcement_reads(user_id);
   `;
   db.public.none(ddl);
 
@@ -258,7 +276,7 @@ function registerPgMemFunctions(db: IMemoryDb): void {
 function resetPgMem(): void {
   if (memDb) {
     memDb.public.none(
-      'DELETE FROM entries; DELETE FROM categories; DELETE FROM family_invites; DELETE FROM family_members; DELETE FROM ledgers; DELETE FROM families; DELETE FROM user_sessions; DELETE FROM users; DELETE FROM idempotency_keys;',
+      'DELETE FROM entries; DELETE FROM categories; DELETE FROM family_invites; DELETE FROM family_members; DELETE FROM ledgers; DELETE FROM families; DELETE FROM user_sessions; DELETE FROM users; DELETE FROM idempotency_keys; DELETE FROM announcement_reads; DELETE FROM announcements;',
     );
   }
 }

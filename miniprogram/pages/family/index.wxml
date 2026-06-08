@@ -236,9 +236,6 @@
                   <view class="family-l1__bar-fill" style="width: {{l1.ratio_bps / 100}}%;"></view>
                 </view>
               </view>
-              <view class="family-l1__more" wx:if="{{item.l1HasMore}}">
-                还有 {{item.l1MoreCount}} 项较小支出未显示...
-              </view>
             </view>
           </view>
         </view>

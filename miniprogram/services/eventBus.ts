@@ -28,6 +28,14 @@ export const EventNames = {
   PROFILE_COMPLETED: 'profile-completed',
   /** 分类数据已加载/更新到内存缓存（订阅方据此重渲展示分类名/图标的页面） */
   CATEGORIES_LOADED: 'categories-loaded',
+  /**
+   * 全局 active family/ledger 已切换（setActiveFamily 写完 storage 后广播）
+   * 各 Tab 页订阅后重读 context 并刷新；统一收口"账本切换"反应链路。
+   * payload: ActiveFamilyChangedPayload
+   */
+  ACTIVE_FAMILY_CHANGED: 'active-family-changed',
+  /** 公告未读状态变更（有新公告或公告被标记已读后广播） */
+  ANNOUNCEMENT_UNREAD_CHANGED: 'announcement-unread-changed',
 } as const;
 
 export type EventName = typeof EventNames[keyof typeof EventNames];
@@ -44,6 +52,21 @@ export interface SyncDonePayload {
   pushed: number;
   /** 触发本次 sync 的来源 */
   trigger: 'launch' | 'network-recover' | 'page-show' | 'periodic' | 'mutation' | 'hide' | 'conflict-retry' | 'ledger-switch';
+}
+
+/**
+ * ACTIVE_FAMILY_CHANGED 事件 payload
+ * setActiveFamily 写完 storage 后广播，各 Tab 页据此同步切换。
+ * 设计意图：把"账本切换"从隐式懒同步（onShow 重读 storage）改为显式事件驱动，
+ *           让常驻 Tab 页（如 statistics 页 _initialized=true reShow 短路路径）也能即时响应。
+ */
+export interface ActiveFamilyChangedPayload {
+  family_id: string;
+  ledger_id: string;
+  family_kind: 'personal' | 'shared';
+  ledger_name: string;
+  /** 触发来源（用于调试 + 必要时区分行为，如自身页面发起的切换可跳过自刷新） */
+  source: 'ledger-switch' | 'family-switch' | 'family-create' | 'family-rename' | 'invite-confirm' | 'preference-restore' | 'logout' | 'other';
 }
 
 class EventBus {
