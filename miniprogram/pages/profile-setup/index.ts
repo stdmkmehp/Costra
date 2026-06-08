@@ -10,7 +10,7 @@
 //   再以持久 URL 调 PATCH /users/me，确保重装后仍能看到头像。
 import { getToken, updateLocalUserProfile } from '../../services/auth';
 import { request } from '../../services/request';
-import { eventBus, EventNames } from '../../services/eventBus';
+import { eventBus, EventNames, type ProfileUpdatedPayload } from '../../services/eventBus';
 import { getSafeAreaMetrics } from '../../utils/safeArea';
 import { getEnv } from '../../services/env';
 
@@ -174,6 +174,12 @@ Page({
 
       // 广播"画像已完善"·  tabBar 红点 + mine 页红点同步清除
       eventBus.emit(EventNames.PROFILE_COMPLETED);
+
+      // 广播"画像已更新"· 各 Tab 页即时刷新头像和昵称展示
+      eventBus.emit(EventNames.PROFILE_UPDATED, {
+        nickname: trimmedNickname,
+        avatarUrl: persistentAvatarUrl,
+      } satisfies ProfileUpdatedPayload);
 
       // 体验优化：先返回上一页再弹 toast · toast 是全局浮层，会显示在栈顶（即上一页）上
       // 这样用户点击保存后立即看到页面返回，"保存成功"提示在上一页继续显示

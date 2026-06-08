@@ -51,6 +51,25 @@ export function nextMonth(value: string): string {
 export function prevYear(v: string): string { return `${parseInt(v, 10) - 1}`; }
 export function nextYear(v: string): string { return `${parseInt(v, 10) + 1}`; }
 
+/** 判断给定月份值是否为本机当前自然月 */
+export function isCurrentMonth(value: string): boolean {
+  return value === getCurrentMonthValue();
+}
+
+/** 判断给定年份值是否为本机当前自然年 */
+export function isCurrentYear(value: string): boolean {
+  return value === getCurrentYearValue();
+}
+
+/** 构造空态标题：当前月/年简洁展示，历史/未来带时间提醒 */
+export function buildEmptyTitleMonth(monthValue: string): string {
+  return isCurrentMonth(monthValue) ? '暂无记录' : `${formatMonthDisplay(monthValue)} 暂无记录`;
+}
+
+export function buildEmptyTitleYear(yearValue: string): string {
+  return isCurrentYear(yearValue) ? '暂无记录' : `${formatYearDisplay(yearValue)} 暂无记录`;
+}
+
 /** ISO UTC → 6月3日 (Asia/Shanghai) */
 export function formatEntryDate(isoUtc: string): string {
   const utc = new Date(isoUtc);

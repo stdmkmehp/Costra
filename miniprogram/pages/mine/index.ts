@@ -7,14 +7,14 @@
 // 改造要点（2026-06-08）：
 //   - 顶部用户区：头像居中放大（160rpx），昵称居中，下方"已记账 X 天"
 //   - 宏观数据：横向 2 列（记账天数 / 记账笔数）· 走 GET /users/me/overview
-//   - 功能列表：创建协作 / 公告 / 导入导出 / 意见反馈 / 设置 — 后三个为预留 toast「即将支持」
+//   - 功能列表：创建协作 / 公告 / 导入导出 / 意见反馈 / 设置 — 导入导出为预留 toast「即将支持」，意见反馈使用无样式 button 承载 open-type=feedback，内层 view 复用普通菜单项布局
 //   - 退出登录 / 合规 footer 完整保留
 
 import { hasValidSession, getSession, logout, getToken } from '../../services/auth';
 import { defaultNickname } from '../../config/defaults';
 import { triggerOnPageShow, syncOnce, stopScheduler } from '../../services/syncScheduler';
 import { getSafeAreaMetrics } from '../../utils/safeArea';
-import { eventBus, EventNames, type SyncDonePayload } from '../../services/eventBus';
+import { eventBus, EventNames, type SyncDonePayload, type ProfileUpdatedPayload } from '../../services/eventBus';
 import {
   getUserOverview,
   getCachedUserOverview,
@@ -47,6 +47,7 @@ Page({
   _entrySavedHandler: null as (() => void) | null,
   _entryUpdatedHandler: null as (() => void) | null,
   _syncDoneHandler: null as ((payload?: unknown) => void) | null,
+  _profileUpdatedHandler: null as ((payload?: unknown) => void) | null,
 
   // onLoad gate（冗余兜底 · onShow gate 是主防线）
   onLoad() {
@@ -96,6 +97,18 @@ Page({
     this._syncDoneHandler = syncDoneHandler;
     eventBus.on(EventNames.SYNC_DONE, syncDoneHandler);
 
+    // PROFILE_UPDATED: 画像变更后即时刷新头像和昵称（不必等 onShow 重读 token）
+    const profileUpdatedHandler = (payload?: unknown) => {
+      const p = payload as ProfileUpdatedPayload | undefined;
+      if (!p) return;
+      this.setData({
+        nickname: p.nickname || defaultNickname,
+        avatarUrl: p.avatarUrl || '',
+      });
+    };
+    this._profileUpdatedHandler = profileUpdatedHandler;
+    eventBus.on(EventNames.PROFILE_UPDATED, profileUpdatedHandler);
+
     // 等 bootstrap 完成再判登录态
     const app = getApp<AppWithBootstrapAndGlobal>();
     void app.bootstrapPromise.then(() => {
@@ -135,6 +148,10 @@ Page({
     if (this._syncDoneHandler) {
       eventBus.off(EventNames.SYNC_DONE, this._syncDoneHandler);
       this._syncDoneHandler = null;
+    }
+    if (this._profileUpdatedHandler) {
+      eventBus.off(EventNames.PROFILE_UPDATED, this._profileUpdatedHandler);
+      this._profileUpdatedHandler = null;
     }
   },
 

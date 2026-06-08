@@ -655,16 +655,25 @@ page {
   text-align: center;
 }
 
-/* ─── 空态 ─────────────────────────────────────────────────────────── */
-.empty {
-  padding: 200rpx 32rpx;
+/* ─── 空态（与明细页统一）──────────────────────────────────────────── */
+.empty-state {
   display: flex;
+  flex-direction: column;
+  align-items: center;
   justify-content: center;
+  padding-top: 200rpx;
+  gap: 16rpx;
 }
 
-.empty__text {
+.empty-state__title {
+  font-size: 30rpx;
+  font-weight: 500;
+  color: var(--color-role-text-secondary, rgba(28,27,26,0.48));
+}
+
+.empty-state__hint {
   font-size: 26rpx;
-  color: rgba(28, 27, 26, 0.4);
+  color: var(--color-role-text-tertiary, rgba(28,27,26,0.28));
 }
 
 /* ─── 等宽数字（金额显示用） ─────────────────────────────────────── */

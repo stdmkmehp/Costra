@@ -26,6 +26,12 @@ export const EventNames = {
   PROFILE_INCOMPLETE: 'profile-incomplete',
   /** 用户画像已完善（PATCH /users/me 成功后广播 · 清除红点） */
   PROFILE_COMPLETED: 'profile-completed',
+  /**
+   * 用户画像已更新（PATCH /users/me 成功后广播 · 携带新的昵称/头像URL）
+   * 各 Tab 页订阅后即时刷新头像和昵称展示，无需等 onShow 重读 token 或重拉 API。
+   * payload: ProfileUpdatedPayload
+   */
+  PROFILE_UPDATED: 'profile-updated',
   /** 分类数据已加载/更新到内存缓存（订阅方据此重渲展示分类名/图标的页面） */
   CATEGORIES_LOADED: 'categories-loaded',
   /**
@@ -52,6 +58,16 @@ export interface SyncDonePayload {
   pushed: number;
   /** 触发本次 sync 的来源 */
   trigger: 'launch' | 'network-recover' | 'page-show' | 'periodic' | 'mutation' | 'hide' | 'conflict-retry' | 'ledger-switch';
+}
+
+/**
+ * PROFILE_UPDATED 事件 payload
+ * profile-setup 保存成功后广播，各 Tab 页据此即时刷新头像和昵称展示。
+ * 数据来源：本地 token（updateLocalUserProfile 已更新），无需再请求服务端。
+ */
+export interface ProfileUpdatedPayload {
+  nickname: string;
+  avatarUrl: string | null;
 }
 
 /**

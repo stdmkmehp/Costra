@@ -17,7 +17,7 @@ import {
 } from '../../services/family';
 import { enqueue } from '../../services/outbox';
 import { getToken, hasValidSession } from '../../services/auth';
-import { eventBus, EventNames, type SyncDonePayload, type ActiveFamilyChangedPayload } from '../../services/eventBus';
+import { eventBus, EventNames, type SyncDonePayload, type ActiveFamilyChangedPayload, type ProfileUpdatedPayload } from '../../services/eventBus';
 import { triggerOnPageShow, syncOnce } from '../../services/syncScheduler';
 import { pickRandomSlogan } from '../../config/slogans';
 import { getFamilies, getFamilyMembers, type FamilyMember } from '../../services/familyApi';
@@ -285,6 +285,8 @@ Page({
   _categoriesLoadedHandler: null as (() => void) | null,
   /** eventBus 订阅 handler（2026-06-08: 跨页面账本切换响应） */
   _activeFamilyChangedHandler: null as ((payload?: unknown) => void) | null,
+  /** eventBus 订阅 handler（画像变更后即时刷新 _memberMap 中当前用户头像） */
+  _profileUpdatedHandler: null as ((payload?: unknown) => void) | null,
   /**
    * 当前已渲染 entries 的签名（sync-refresh: 签名 diff 跳过无效 setData，避免列表跳动）
    * 拼接字段：client_ref_id|version|occurred_at|amount|type|category_id|note|deleted_at|shared_type|created_by
@@ -368,6 +370,22 @@ Page({
     };
     this._activeFamilyChangedHandler = activeFamilyChangedHandler;
     eventBus.on(EventNames.ACTIVE_FAMILY_CHANGED, activeFamilyChangedHandler);
+
+    // 画像变更后即时刷新 _memberMap 中当前用户头像（不必等 onShow 重拉 getFamilyMembers）
+    const profileUpdatedHandler = (payload?: unknown) => {
+      const p = payload as ProfileUpdatedPayload | undefined;
+      if (!p || !this._currentUserId) return;
+      if (this._memberMap[this._currentUserId]) {
+        this._memberMap[this._currentUserId].avatarUrl = p.avatarUrl || '';
+        this._memberMap[this._currentUserId].nickname = p.nickname || '我';
+        // 重渲列表（条目头像来自 _memberMap）
+        if (this._allEntries.length > 0) {
+          this._buildDisplay();
+        }
+      }
+    };
+    this._profileUpdatedHandler = profileUpdatedHandler;
+    eventBus.on(EventNames.PROFILE_UPDATED, profileUpdatedHandler);
   },
 
   async onShow() {
@@ -416,6 +434,11 @@ Page({
     if (this._activeFamilyChangedHandler) {
       eventBus.off(EventNames.ACTIVE_FAMILY_CHANGED, this._activeFamilyChangedHandler);
       this._activeFamilyChangedHandler = null;
+    }
+    // 画像变更：取消订阅 PROFILE_UPDATED
+    if (this._profileUpdatedHandler) {
+      eventBus.off(EventNames.PROFILE_UPDATED, this._profileUpdatedHandler);
+      this._profileUpdatedHandler = null;
     }
   },
 

@@ -7,8 +7,9 @@
 </view>
 
 <!-- 空态 -->
-<view wx:elif="{{yearlyByMember[member.key].isEmpty && yearlyByMember[member.key].loaded}}" class="empty">
-  <text class="empty__text">本年暂无收支记录</text>
+<view wx:elif="{{yearlyByMember[member.key].isEmpty && yearlyByMember[member.key].loaded}}" class="empty-state">
+  <text class="empty-state__title">{{yearlyByMember[member.key].emptyTitle}}</text>
+  <text class="empty-state__hint">{{yearlyByMember[member.key].emptyHint}}</text>
 </view>
 
 <!-- 有数据 -->

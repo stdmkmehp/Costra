@@ -16,8 +16,8 @@ import {
   savePreferenceAsync,
 } from '../../services/family';
 import { triggerOnPageShow, syncOnce } from '../../services/syncScheduler';
-import { eventBus, EventNames, type SyncDonePayload, type ActiveFamilyChangedPayload } from '../../services/eventBus';
-import { hasValidSession } from '../../services/auth';
+import { eventBus, EventNames, type SyncDonePayload, type ActiveFamilyChangedPayload, type ProfileUpdatedPayload } from '../../services/eventBus';
+import { hasValidSession, getToken } from '../../services/auth';
 import { getFamilies, getFamilyMembers, type FamilyItem } from '../../services/familyApi';
 import {
   getMonthlyStatistics,
@@ -56,7 +56,10 @@ import {
   nextYear,
   formatEntryDate,
   formatEntryTime,
+  buildEmptyTitleMonth,
+  buildEmptyTitleYear,
 } from './formatters';
+import { pickRandomSlogan } from '../../config/slogans';
 import {
   L1_VISIBLE,
   L2_VISIBLE,
@@ -107,6 +110,7 @@ Page({
   _entrySavedHandler: null as (() => void) | null,
   _entryUpdatedHandler: null as (() => void) | null,
   _activeFamilyChangedHandler: null as ((payload?: unknown) => void) | null,
+  _profileUpdatedHandler: null as ((payload?: unknown) => void) | null,
   _loadingPromise: null as Promise<void> | null,
 
   _initialized: false,
@@ -155,6 +159,23 @@ Page({
     };
     this._activeFamilyChangedHandler = activeFamilyChangedHandler;
     eventBus.on(EventNames.ACTIVE_FAMILY_CHANGED, activeFamilyChangedHandler);
+
+    // 画像变更后即时刷新 memberTabs 中当前用户的头像和昵称
+    const profileUpdatedHandler = (payload?: unknown) => {
+      const p = payload as ProfileUpdatedPayload | undefined;
+      if (!p) return;
+      const currentUserId = getToken()?.raw?.user?.id || '';
+      if (!currentUserId) return;
+      const tabs = this.data.memberTabs;
+      const idx = tabs.findIndex((t) => t.key === currentUserId);
+      if (idx >= 0) {
+        const updated = [...tabs];
+        updated[idx] = { ...updated[idx], avatarUrl: p.avatarUrl || '', label: p.nickname || updated[idx].label };
+        this.setData({ memberTabs: updated });
+      }
+    };
+    this._profileUpdatedHandler = profileUpdatedHandler;
+    eventBus.on(EventNames.PROFILE_UPDATED, profileUpdatedHandler);
 
     const app = getApp<AppWithBootstrap>();
     void app.bootstrapPromise.then(() => {
@@ -220,6 +241,10 @@ Page({
     if (this._activeFamilyChangedHandler) {
       eventBus.off(EventNames.ACTIVE_FAMILY_CHANGED, this._activeFamilyChangedHandler);
       this._activeFamilyChangedHandler = null;
+    }
+    if (this._profileUpdatedHandler) {
+      eventBus.off(EventNames.PROFILE_UPDATED, this._profileUpdatedHandler);
+      this._profileUpdatedHandler = null;
     }
   },
 
@@ -373,6 +398,7 @@ Page({
       .slice(0, L1_VISIBLE)
       .map((c) => buildL1Display(c, prevList));
 
+    const isEmpty = totals.expense === 0 && totals.income === 0;
     const viewData: MonthlyView = {
       totalExpense: fmtYuan(totals.expense),
       totalIncome: fmtYuan(totals.income),
@@ -380,9 +406,11 @@ Page({
       trend: daily_trend.map((d) => d.expense),
       summary,
       l1,
-      isEmpty: totals.expense === 0 && totals.income === 0,
+      isEmpty,
       loading: false,
       loaded: true,
+      emptyTitle: buildEmptyTitleMonth(this.data.currentMonth),
+      emptyHint: isEmpty ? pickRandomSlogan() : '',
     };
 
     const update: Record<string, unknown> = {
@@ -432,6 +460,7 @@ Page({
       .slice(0, L1_VISIBLE)
       .map((c) => buildL1Display(c, prevList));
 
+    const isEmpty = totals.expense === 0 && totals.income === 0;
     const viewData: YearlyView = {
       totalExpense: fmtYuan(totals.expense),
       totalIncome: fmtYuan(totals.income),
@@ -440,9 +469,11 @@ Page({
       summary,
       months,
       l1,
-      isEmpty: totals.expense === 0 && totals.income === 0,
+      isEmpty,
       loading: false,
       loaded: true,
+      emptyTitle: buildEmptyTitleYear(this.data.currentYear),
+      emptyHint: isEmpty ? pickRandomSlogan() : '',
     };
 
     const update: Record<string, unknown> = {

@@ -41,7 +41,8 @@
 
         <!-- 空态（Solo 模式下无收支记录） -->
         <view class="empty-state" wx:if="{{isEmpty && !loading}}">
-          <text class="empty-state__text">本月暂无收支记录</text>
+          <text class="empty-state__title">{{emptyTitle}}</text>
+          <text class="empty-state__hint">{{emptyHint}}</text>
         </view>
 
         <!-- 引导文案 + CTA：loading 中不渲染，避免位置跳变 -->
@@ -160,7 +161,8 @@
 
         <!-- 空态（Multi 模式下无收支记录） -->
         <view class="empty-state" wx:if="{{isEmpty && !loading}}">
-          <text class="empty-state__text">{{dimension === 'monthly' ? '本月暂无收支记录' : '本年暂无收支记录'}}</text>
+          <text class="empty-state__title">{{emptyTitle}}</text>
+          <text class="empty-state__hint">{{emptyHint}}</text>
         </view>
 
         <!-- ★ 下钻列表（COSTRA-302 · spec §4.7 · 统计页同款手风琴） -->

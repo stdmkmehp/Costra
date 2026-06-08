@@ -22,6 +22,7 @@ export function emptyMonthlyView(): MonthlyView {
     totalExpense: '¥0.00', totalIncome: '¥0.00', totalBalance: '¥0.00',
     trend: [], summary: [], l1: [],
     isEmpty: false, loading: false, loaded: false,
+    emptyTitle: '暂无记录', emptyHint: '',
   };
 }
 
@@ -31,6 +32,7 @@ export function emptyYearlyView(): YearlyView {
     totalExpense: '¥0.00', totalIncome: '¥0.00', totalBalance: '¥0.00',
     trend: [], summary: [], months: [], l1: [],
     isEmpty: false, loading: false, loaded: false,
+    emptyTitle: '暂无记录', emptyHint: '',
   };
 }
 

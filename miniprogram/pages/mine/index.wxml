@@ -42,9 +42,11 @@
         </view>
         <view class="menu__arrow">›</view>
       </view>
-      <view class="menu__item" bindtap="onTapComingSoon" hover-class="menu__item--hover" hover-stay-time="60">
-        <view class="menu__label">意见反馈</view>
-        <view class="menu__arrow">›</view>
+      <view class="menu__row-flex">
+        <button class="menu__item menu__item--feedback" open-type="feedback" hover-class="menu__item--hover" hover-stay-time="60">
+          <view class="menu__label">意见反馈</view>
+          <view class="menu__arrow">›</view>
+        </button>
       </view>
       <view class="menu__item" bindtap="onTapSettings" hover-class="menu__item--hover" hover-stay-time="60">
         <view class="menu__label">设置</view>

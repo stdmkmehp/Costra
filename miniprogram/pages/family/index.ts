@@ -10,6 +10,7 @@ import { getSafeAreaMetrics } from '../../utils/safeArea';
 import { getCategoryIconById } from '../../services/categoryService';
 import { getMemberColorBySlot } from '../../utils/memberColor';
 import { maxSharedFamilies, maxFamilyMembers } from '../../config/defaults';
+import { pickRandomSlogan } from '../../config/slogans';
 import { triggerOnPageShow } from '../../services/syncScheduler';
 import {
   getActiveFamilyId,
@@ -20,7 +21,7 @@ import {
   savePreferenceAsync,
   type FamilyKind,
 } from '../../services/family';
-import { eventBus, EventNames, type SyncDonePayload, type ActiveFamilyChangedPayload } from '../../services/eventBus';
+import { eventBus, EventNames, type SyncDonePayload, type ActiveFamilyChangedPayload, type ProfileUpdatedPayload } from '../../services/eventBus';
 import { getToken, hasValidSession } from '../../services/auth';
 import {
   getFamilies,
@@ -55,6 +56,29 @@ interface AppWithBootstrap {
     pendingFamilyAction?: 'create' | null;
     pendingStatisticsAction?: PendingStatisticsAction | null;
   };
+}
+
+// ─── 空态辅助 ────────────────────────────────────────────────────────────────────
+
+/** 判断给定月份值是否为本机当前自然月 */
+function isCurrentMonth(value: string): boolean {
+  const now = new Date();
+  return value === `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/** 判断给定年份值是否为本机当前自然年 */
+function isCurrentYear(value: string): boolean {
+  return value === `${new Date().getFullYear()}`;
+}
+
+/** 构造空态标题 */
+function buildEmptyTitle(dimension: 'monthly' | 'yearly', value: string): string {
+  if (dimension === 'monthly') {
+    const parts = value.split('-');
+    const label = `${parts[0]}年${parseInt(parts[1], 10)}月`;
+    return isCurrentMonth(value) ? '暂无记录' : `${label} 暂无记录`;
+  }
+  return isCurrentYear(value) ? '暂无记录' : `${value}年 暂无记录`;
 }
 
 // ─── 类型 ────────────────────────────────────────────────────────────────────────
@@ -244,6 +268,8 @@ Page({
 
     // ─── 空态 ───
     isEmpty: false,
+    emptyTitle: '',
+    emptyHint: '',
 
     // ─── 邀请遮罩 ───
     inviteOverlayVisible: false,
@@ -273,10 +299,14 @@ Page({
   _pendingInviteFamilyId: '' as string,
   _pendingInviteShared: false,
   _invitePrepareSeq: 0,
+  /** 空态格言刷新标记（切月/年/账本后下次空态换一条格言） */
+  _shouldRefreshEmptyHint: false,
   /** eventBus 订阅 handler（sync-refresh: SYNC_DONE 后失效缓存 + 重拉 summary，防内存泄漏） */
   _syncDoneHandler: null as ((payload?: unknown) => void) | null,
   /** eventBus 订阅 handler（2026-06-08: 跨页面账本切换响应） */
   _activeFamilyChangedHandler: null as ((payload?: unknown) => void) | null,
+  /** eventBus 订阅 handler（画像变更后即时刷新成员列表中当前用户头像） */
+  _profileUpdatedHandler: null as ((payload?: unknown) => void) | null,
 
   // ─── 生命周期 ────────────────────────────────────────────────────────────────
 
@@ -315,6 +345,21 @@ Page({
     };
     this._activeFamilyChangedHandler = activeFamilyChangedHandler;
     eventBus.on(EventNames.ACTIVE_FAMILY_CHANGED, activeFamilyChangedHandler);
+
+    // 画像变更后即时刷新 members 列表中当前用户的头像和昵称
+    const profileUpdatedHandler = (payload?: unknown) => {
+      const p = payload as ProfileUpdatedPayload | undefined;
+      if (!p || !this._currentUserId) return;
+      const members = this.data.members;
+      const idx = members.findIndex((m) => m.userId === this._currentUserId);
+      if (idx >= 0) {
+        const updated = [...members];
+        updated[idx] = { ...updated[idx], avatarUrl: p.avatarUrl || '', nickname: p.nickname || updated[idx].nickname };
+        this.setData({ members: updated });
+      }
+    };
+    this._profileUpdatedHandler = profileUpdatedHandler;
+    eventBus.on(EventNames.PROFILE_UPDATED, profileUpdatedHandler);
 
     // 等 bootstrap 完成后补读 userId（bootstrap 前 token 可能未就绪）
     const app = getApp<AppWithBootstrap>();
@@ -369,6 +414,11 @@ Page({
     if (this._activeFamilyChangedHandler) {
       eventBus.off(EventNames.ACTIVE_FAMILY_CHANGED, this._activeFamilyChangedHandler);
       this._activeFamilyChangedHandler = null;
+    }
+    // 画像变更：取消订阅 PROFILE_UPDATED
+    if (this._profileUpdatedHandler) {
+      eventBus.off(EventNames.PROFILE_UPDATED, this._profileUpdatedHandler);
+      this._profileUpdatedHandler = null;
     }
   },
 
@@ -463,7 +513,15 @@ Page({
       }
 
       if (!targetFamily) {
-        this.setData({ loading: false, mode: 'solo', isEmpty: true });
+        const dim = this.data.dimension;
+        const value = dim === 'monthly' ? this.data.currentMonth : this.data.currentYear;
+        this.setData({
+          loading: false,
+          mode: 'solo',
+          isEmpty: true,
+          emptyTitle: buildEmptyTitle(dim, value),
+          emptyHint: this._pickEmptyHint(),
+        });
         return;
       }
 
@@ -560,9 +618,13 @@ Page({
       }
 
       // 降级展示空态
+      const dim = this.data.dimension;
+      const value = dim === 'monthly' ? this.data.currentMonth : this.data.currentYear;
       this.setData({
         loading: false,
         isEmpty: true,
+        emptyTitle: buildEmptyTitle(dim, value),
+        emptyHint: this._pickEmptyHint(),
       });
       wx.showToast({ title: '数据加载失败', icon: 'none' });
     }
@@ -572,13 +634,18 @@ Page({
 
   _buildSoloDisplay(summary: FamilySummary) {
     const { totals } = summary;
+    const isEmpty = totals.expense === 0 && totals.income === 0;
+    const dim = this.data.dimension;
+    const value = dim === 'monthly' ? this.data.currentMonth : this.data.currentYear;
 
     this.setData({
       soloExpense: formatCentsDisplay(totals.expense),
       soloIncome: formatCentsDisplay(totals.income),
       soloBalance: formatCentsDisplay(totals.balance),
       loading: false,
-      isEmpty: totals.expense === 0 && totals.income === 0,
+      isEmpty,
+      emptyTitle: buildEmptyTitle(dim, value),
+      emptyHint: isEmpty ? this._pickEmptyHint() : '',
     });
   },
 
@@ -643,13 +710,19 @@ Page({
     // 3. 构建下钻列表（COSTRA-302）
     const drilldownRows = this._buildDrilldownRows(summary, slotByUserId);
 
+    const isEmpty = totalExpense === 0 && totals.income === 0;
+    const dim = this.data.dimension;
+    const value = dim === 'monthly' ? this.data.currentMonth : this.data.currentYear;
+
     this.setData({
       members: memberDisplays,
       segments: segmentDisplays,
       totalExpenseCents: totalExpense,
       drilldownRows,
       loading: false,
-      isEmpty: totalExpense === 0 && totals.income === 0,
+      isEmpty,
+      emptyTitle: buildEmptyTitle(dim, value),
+      emptyHint: isEmpty ? this._pickEmptyHint() : '',
       familyName: summary.family_name,
       isOwner: isCurrentUserOwner,
       canInvite: isCurrentUserOwner && activeMembers.length < maxFamilyMembers,
@@ -787,6 +860,7 @@ Page({
       currentMonth: prev,
       monthDisplay: formatMonthDisplay(prev),
     });
+    this._shouldRefreshEmptyHint = true;
     this._collapseAllRows();
     void this._loadSummary(this._familyId);
   },
@@ -797,6 +871,7 @@ Page({
       currentMonth: nxt,
       monthDisplay: formatMonthDisplay(nxt),
     });
+    this._shouldRefreshEmptyHint = true;
     this._collapseAllRows();
     void this._loadSummary(this._familyId);
   },
@@ -808,6 +883,7 @@ Page({
       currentMonth: value,
       monthDisplay: formatMonthDisplay(value),
     });
+    this._shouldRefreshEmptyHint = true;
     this._collapseAllRows();
     void this._loadSummary(this._familyId);
   },
@@ -820,6 +896,7 @@ Page({
       currentYear: prev,
       yearDisplay: formatYearDisplay(prev),
     });
+    this._shouldRefreshEmptyHint = true;
     this._collapseAllRows();
     void this._loadSummary(this._familyId);
   },
@@ -830,6 +907,7 @@ Page({
       currentYear: nxt,
       yearDisplay: formatYearDisplay(nxt),
     });
+    this._shouldRefreshEmptyHint = true;
     this._collapseAllRows();
     void this._loadSummary(this._familyId);
   },
@@ -843,6 +921,7 @@ Page({
       currentYear: value,
       yearDisplay: formatYearDisplay(value),
     });
+    this._shouldRefreshEmptyHint = true;
     this._collapseAllRows();
     void this._loadSummary(this._familyId);
   },
@@ -852,6 +931,7 @@ Page({
     const dim = e.currentTarget.dataset.dim as 'monthly' | 'yearly';
     if (dim === this.data.dimension) return;
     this.setData({ dimension: dim });
+    this._shouldRefreshEmptyHint = true;
     this._collapseAllRows();
     void this._loadSummary(this._familyId);
   },
@@ -892,6 +972,15 @@ Page({
   _collapseAllRows() {
     const rows = this.data.drilldownRows.map(r => ({ ...r, expanded: false }));
     this.setData({ drilldownRows: rows });
+  },
+
+  /** 挑选空态格言：切月/年/账本后换一条，避免重复 */
+  _pickEmptyHint(): string {
+    const hint = this._shouldRefreshEmptyHint
+      ? pickRandomSlogan(this.data.emptyHint)
+      : (this.data.emptyHint || pickRandomSlogan());
+    this._shouldRefreshEmptyHint = false;
+    return hint;
   },
 
   // ─── 交互：邀请成员 ──────────────────────────────────────────────────────────

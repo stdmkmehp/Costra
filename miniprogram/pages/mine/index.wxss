@@ -118,13 +118,14 @@
   overflow: hidden;
 }
 .menu__item {
+  position: relative;
   display: flex;
   align-items: center;
   padding: 28rpx 32rpx;
   border-bottom: 1rpx solid var(--color-divider);
 }
 .menu__item--hover { background: rgba(0, 0, 0, 0.04); }
-.menu__item:last-child { border-bottom: none; }
+.menu > .menu__item:last-child { border-bottom: none; }
 .menu__label { flex: 1; font-size: 28rpx; color: var(--color-text); }
 .menu__badge-dot {
   display: inline-block;
@@ -137,6 +138,26 @@
 }
 .menu__arrow { color: var(--color-text-muted); font-size: 36rpx; }
 .menu__item--danger .menu__label { color: var(--color-danger); text-align: center; }
+
+/* 意见反馈：照搬 privacy-popup 已验证的开放能力 button 模式
+ * —— flex 父容器(.menu__row-flex) + button flex:1 + margin:0，让 button 真实撑满整行
+ * (热区=整行)，避免微信 button 默认 margin:auto 把它收缩居中导致"只有中间可点"。
+ * 视觉完全复用 .menu__item，仅重置 button 原生默认样式。 */
+.menu__row-flex { display: flex; }
+.menu__item--feedback {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  background: transparent;
+  border-radius: 0;
+  font-size: 28rpx;
+  font-weight: normal;
+  line-height: normal;
+  color: var(--color-text);
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+}
+.menu__item--feedback::after { border: none; }
 
 /* ─── ICP 备案号 footer · 12px 灰色居中 ────────────────────────────────────── */
 .footer { padding: 32rpx 0 16rpx; text-align: center; }

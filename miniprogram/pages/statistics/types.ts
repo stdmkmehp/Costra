@@ -92,6 +92,10 @@ export interface MonthlyView {
   isEmpty: boolean;
   loading: boolean;
   loaded: boolean;
+  /** 空态标题（当前月简洁，历史月带时间） */
+  emptyTitle: string;
+  /** 空态格言 */
+  emptyHint: string;
 }
 
 export interface YearlyView {
@@ -105,4 +109,8 @@ export interface YearlyView {
   isEmpty: boolean;
   loading: boolean;
   loaded: boolean;
+  /** 空态标题（当前年简洁，历史年带时间） */
+  emptyTitle: string;
+  /** 空态格言 */
+  emptyHint: string;
 }
