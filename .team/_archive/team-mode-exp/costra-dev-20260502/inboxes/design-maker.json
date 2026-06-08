@@ -1,0 +1,11 @@
+[
+  {
+    "id": "shutdown-1777706357976",
+    "from": "team-lead",
+    "to": "design-maker",
+    "type": "shutdown_request",
+    "content": "{\"type\":\"shutdown_request\",\"request_id\":\"shutdown-1777706357976\",\"reason\":\"Human 2026-05-02 15:19 决策回滚 team agent 方案。D-018 v2.0 改走纯 SBAI。你的角色迁移至 `.team/members/design-maker/state.md` 承载。请 approve shutdown。\",\"from\":\"team-lead\",\"timestamp\":\"2026-05-02T07:19:17.976Z\"}",
+    "timestamp": "2026-05-02T07:19:17.976Z",
+    "read": true
+  }
+]

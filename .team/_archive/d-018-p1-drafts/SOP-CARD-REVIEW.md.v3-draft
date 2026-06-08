@@ -1,0 +1,236 @@
+# SOP · 卡定义 Review（SBAI 版 · v3.1）
+
+> 登记时间：2026-05-02 12:40（v3.1 β-3 对齐）· 继承 v3.0 草稿（2026-05-01 21:45）
+> 登记人：Orchestrator
+> 审批人：Human（✅ approve v3.1 all · 2026-05-02 12:38）
+> 适用范围：Orchestrator、所有 `card-reviewer-oneshot` 实例、卡主（pm-writer / backend-dev / Tech-Lead / Human）
+> 优先级：**P0 · 铁律** · 与 SOP-REVIEW / SOP-HUMAN-TRIGGER 并列
+> 依据：`.team/decisions/D-014-card-review-and-auto-review-kickoff.md` + `.team/decisions/D-018-spawn-based-agent-isolation.md` v0.4
+> **文件历史**：v1.0（2026-04-23 随 D-014）→ v3.0（2026-05-01 草稿 · SBAI 升级）→ **v3.1（2026-05-02 · β-3 软化 · 生效）**
+
+---
+
+## 1. 目标（与 v1.0 一致）
+
+在卡**进入执行（Todo → Doing）之前**，由 **card-reviewer-oneshot 实例**对卡定义本身做一次质量把关，确保：
+- 卡描述清晰、可执行
+- DoD 可度量、可验收
+- 依赖识别完整
+- 产出物具体不模糊
+- 无违反宪章 / Won't-Have / 红线
+- 估点合理
+
+**与产出 Review 的分工**：表格与 v1.0 一致；术语 "Review-Agent" → "card-reviewer-oneshot 实例"
+
+---
+
+## 2. 分流规则（与 v1.0 一致 · 术语更新）
+
+| 卡类型 | 判定特征 | 归属 oneshot |
+|---|---|---|
+| 技术向卡 | Owner ∈ {backend-dev, miniapp-dev, devops-ops, qa-planner}；主产物是代码/脚本/配置/CI/基建 | `card-reviewer-tech-{card}-r{N}` |
+| 产品向卡 | Owner ∈ {pm-writer, design-maker}；主产物是 PRD/文档/视觉稿/用户流程/运营材料 | `card-reviewer-product-{card}-r{N}` |
+| 混合卡 | 跨域产出 | 按主 Owner 归属，单侧审 |
+| 决策类 | `.team/decisions/D-xxx.md` / ADR | **不走** oneshot（Human 直接决策） |
+| Human 直发卡 | Human 命令"新增一张 COSTRA-xxx" 且明确免审 | 按 `skip-card-review` 处理 |
+
+**铁律**：禁止同时 spawn 两个 card-reviewer-oneshot 审同一张卡定义（单一归属，避免双头）。
+
+---
+
+## 3. Checklist（与 v1.0 一致）
+
+C1~C8 checklist 与打分规则**完全保留**，不在本版本改动。满分 30，阈值 PASS ≥ 27 / PASS-WITH-FOLLOWUP 24~26 / REVISE 18~23 / REJECT < 18 / C8 任一命中直接 REJECT。
+
+---
+
+## 4. 流程（SBAI 版）
+
+```text
+[卡创建] → 落盘到 backlog.json（或 board.md Todo 预备区）
+   │
+   ▼（Orchestrator 同轮识别到）
+[分流识别] → 按 Owner 判断技术向 / 产品向
+   │
+   ▼
+[Orchestrator task(name="card-reviewer-{tech|product}-{card}-r1", ...) spawn oneshot]
+   · prompt 按 §8.3 Context Injection Contract 生成（D-018 §3.3-Bis · MUST）
+   · D-014 规约 B：自动拉起
+   · 预算充足走加速路径 · 预算不足按 β-3 落 pending/COSTRA-xxx-card-review-r1.yaml 下轮消费（D-018 v0.4 §3.5）
+   │
+   ▼
+[oneshot 返回 card-review-round-1-{tech|product}.md 全文]
+   │
+   ▼
+[Orchestrator 原样落盘 + send_message(shutdown_request)]
+   │
+   ▼
+Verdict 分支：
+   ├─ PASS / PASS-WITH-FOLLOWUP → 卡进 Todo（PASS-WITH-FOLLOWUP 需卡主确认 follow-up）
+   ├─ REVISE → send_message 给卡主修订 → 修订后 spawn **新的** oneshot（round+1）
+   ├─ REJECT → 卡挂 Blocked + 冒泡 Human（incident 归档）
+   └─ ESCALATE → 冒泡 Human
+   │
+   ▼
+[修订闭环]
+   卡主产 card-review-round-N-response.md → spawn card-reviewer-*-r{N+1}
+   │
+   ▼
+[停止条件]
+   · PASS / PASS-WITH-FOLLOWUP → 写 card-review-FINAL.md，卡进 Todo
+   · round == 3（硬上限）→ 冒泡 Human
+   · 触发红线 → 立即停 + 冒泡
+   · Human 发 pause-review / skip-card-review / force-card-pass → 立即停并 shutdown 活跃 oneshot
+```
+
+**关键差异（相对 v1.0）**：
+- "自动拉起 Review-Agent" → "spawn card-reviewer-oneshot"
+- "Review-Agent 产出 md" → "oneshot 返回 md 全文 → Orchestrator 原样落盘 → shutdown_request"
+- 每轮 spawn **新** oneshot（绝不复用，防 R4 跨轮记忆泄漏）
+
+---
+
+## 5. 产物目录结构（与 v1.0 一致）
+
+与 v1.0 §5 完全一致。oneshot 实例不改变落盘文件名规范。
+
+---
+
+## 6. oneshot 报告格式（与 v1.0 一致）
+
+与 v1.0 §6 一致；差异仅在 header 行可选加 `review-instance: card-reviewer-tech-costra-xxx-r1`（便于追溯）。
+
+---
+
+## 7. 卡主回应格式（与 v1.0 一致）
+
+与 v1.0 §7 一致。
+
+---
+
+## 8. Orchestrator 调度规则（SBAI 版）
+
+### 8.1 何时自动 spawn（MUST）
+
+| 触发条件 | 动作 | 路径 |
+|---|---|---|
+| 新卡落盘到 `backlog.json` 或 `board.md` Todo 段 | 识别归属 → spawn `card-reviewer-{tech|product}-{card}-r1` oneshot，或落 pending 跨轮消费 | 加速（本轮）/ β-3（跨轮） |
+| 卡主产 `card-review-round-N-response.md` 且 round < 3 | spawn **新的** `card-reviewer-*-r{N+1}` oneshot，或落 pending | 同上 |
+
+**开工第一动作**（β-3 铁律 · D-018 v0.4 §3.5）：Orchestrator 每轮开工先 `ls .team/pending/*.yaml`，若有 `card-review` 类 pending 项，按 `.team/pending/README.md §3` 消费后再响应 Human。
+
+### 8.2 何时**不** spawn（MUST NOT）
+
+- 决策类卡（D-xxx / ADR-*）→ Human 直审
+- Human 显式 `skip-card-review COSTRA-XXX`（记 daily）
+- 历史卡（D-014 立案前创建）→ 豁免
+- DevOps / QA 的"纯操作 / 纯配置"卡且 Owner 在 backlog 标注 `no-card-review: true` → 豁免
+
+### 8.3 Spawn Prompt 模板（Context Injection Contract · D-018 §3.3-Bis · MUST）
+
+```
+你是 Card-Reviewer-{Tech|Product} · 一次性卡定义审核员。
+实例标识：card-reviewer-{tech|product}-costra-xxx-rN
+本实例仅审这一轮卡定义 · 审完将被 shutdown · 无历史记忆 · 无跨卡信息
+
+# §A 角色规则（完整 inline）
+[.team/agents/07-review-agent-tech.md 全文 + 本 SOP §3 Checklist · 或 08/product 对应]
+
+# §B Background · 背景（MUST）
+- 卡号：COSTRA-xxx
+- 卡主：{pm-writer | backend-dev | ...}
+- 所属 Sprint：Sprint-N
+- 卡类型：feature | fix | refactor | infra
+- 卡诞生缘由（一句话）：<从 Human 指令或 PM 产出中提取，不得 Orchestrator 编>
+- 相关历史决策：D-xxx / ADR-xxxx（逐条附一句 why-relevant）
+- 关联卡：COSTRA-yyy（上游/下游 · 状态）
+- 架构定位：docs/charter.md §7（本卡属于哪个工作区）
+
+# §C Content · 本次卡定义本体（MUST）
+- 卡全文（从 backlog.json 抽取）：
+  [JSON 片段 inline]
+- 卡在 board.md 上的段落引用：
+  [段落 inline]
+- 本轮是第 N/3 轮；若 N≥2：
+  - 上一轮 Review 报告：[card-review-round-(N-1)-{tech|product}.md 全文 inline]
+  - 卡主回应：[card-review-round-(N-1)-response.md 全文 inline]
+
+# §D Expected Approach · 卡应该长什么样（MUST）
+- DoD 可度量规范：.team/engineering-guidelines.md §3.2
+- 估点区间：本项目 1~8 点（D-018 仅作参考，不强制）
+- 依赖识别规范：COMMON-CONTRACT §0（工作区矩阵）
+- 硬编码红线：D-008 主体字样 / Won't-Have 清单 / AppID / secret
+- 相似历史卡参考：COSTRA-yyy（已 PASS）· 可直接对标 DoD 粒度
+
+# §E 强制阅读清单（给出 verdict 前 MUST 逐份读完）
+1. docs/charter.md（§7 工作区 / §Won't-Have）
+2. .team/engineering-guidelines.md
+3. .team/agents/COMMON-CONTRACT.md §0
+4. .team/decisions/D-008-subject-individual-first-with-corporate-compat.md
+5. .team/decisions/D-013-review-scenario-tiering.md
+6. .team/decisions/D-014-card-review-and-auto-review-kickoff.md
+7. .team/backlog.json（本卡位置 + 相邻卡对比）
+8. 本 SOP §3 Checklist
+
+# §F 产出要求
+- 产出路径：.team/reviews/COSTRA-xxx/card-review-round-N-{tech|product}.md
+- 格式：严格按本 SOP §6 模板
+- 产出方式：**返回完整 markdown 文本**，由 Orchestrator 原样落盘
+- Verdict 判定：按本 SOP §3 阈值硬性规则
+
+# §G 独立性硬约束
+- 你没参与过这张卡的任何创建讨论
+- 若 §B §C §D 信息不足以判断某 checklist 项 → 在"自我反思"明说"信息不足"，判该项置信度"低"，不得瞎猜
+- 禁止引用"记忆中"的任何东西；你只有本 prompt + 磁盘内容
+```
+
+---
+
+## 9. Human 介入窗口（与 v1.0 一致）
+
+与 v1.0 §9 一致；唯一差异：Human `pause-review` 时 Orchestrator 必须同轮对活跃的 card-reviewer-oneshot 实例发 `shutdown_request`。
+
+---
+
+## 10. 触发指令（与 v1.0 一致 · 合入 SOP-HUMAN-TRIGGER §3）
+
+指令语义完全保留；实现层"拉起 Review-Agent" → "spawn oneshot"。
+
+---
+
+## 11. 度量（新增 SBAI 合规字段）
+
+```json
+{
+  "card": "COSTRA-xxx",
+  "card_review_type": "tech",
+  "card_review_rounds": 2,
+  "card_review_terminal_verdict": "PASS-WITH-FOLLOWUP",
+  "card_review_score": 28,
+  "card_review_p0_caught": 1,
+  "card_review_p1_caught": 2,
+  "card_review_time_cost_minutes": 5,
+  "auto_kickoff": true,
+  "human_overrode": false,
+
+  "sbai_oneshot_instances_spawned": 2,
+  "sbai_oneshot_instances_shutdown": 2,
+  "sbai_context_contract_compliant": true
+}
+```
+
+---
+
+## 12. 版本与变更
+
+| 版本 | 日期 | 变更 |
+|---|---|---|
+| v1.0 | 2026-04-23 22:26 | 随 D-014 立案，Orchestrator 成文 |
+| v3.0（草稿 · 未生效） | 2026-05-01 21:45 | SBAI 升级（D-018 v0.2 / v0.3）：术语 "Review-Agent" → "card-reviewer-oneshot"；§4 流程加"原样落盘 + shutdown_request"；§8.3 Spawn Prompt 模板升级为 Context Injection Contract（§A~§G 七段）；§11 度量新增 SBAI 字段 |
+| **v3.1** | **2026-05-02 12:40（生效）** | **β-3 对齐**（D-018 v0.4 §3.5）：§4 流程去除"§3.4 同轮兑现"表述，改为"加速路径 / β-3 跨轮"双选；§8.1 调度规则增加"开工扫 pending"铁律；Human approve v3.1 all · 2026-05-02 12:38 |
+
+**注**：v3.0 是内部草稿，未单独生效；v3.1 是 v1.0 之后第一个正式生效版本。版本号与 SOP-REVIEW.md 主线对齐（D-018 是一揽子升级）。
+
+---
+
+**本 SOP v3.1 由 Human 2026-05-02 12:38 `approve v3.1 all` 批准生效，替代 v1.0。v1.0 归档于 `.team/_archive/sop-review-v2.0/SOP-CARD-REVIEW.md.v1.0`。**

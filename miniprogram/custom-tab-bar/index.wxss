@@ -1,0 +1,242 @@
+/* custom-tab-bar/index.wxss · 5 Tab 中置式毛玻璃 TabBar */
+/* 卡号: COSTRA-201 · 设计源: design/ui/design_spec.md §3 */
+/* 色值对齐 tokens/index.ts v2.0.0 */
+
+/* ---- 容器 ---- */
+.tab-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-around;
+  /* 毛玻璃效果 · 对齐 design_spec §2 + tokens blur.tabBar */
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  padding-bottom: env(safe-area-inset-bottom);
+  z-index: 999;
+  border-top: 1rpx solid rgba(28, 27, 26, 0.05);
+  /* COSTRA-205: 覆盖层显示时平滑隐藏 */
+  transform: translateY(0);
+  transition: transform var(--animation-fast, 150ms) var(--easing-default, cubic-bezier(0.25, 0.1, 0.25, 1));
+}
+
+/* 覆盖层显示时隐藏 TabBar（COSTRA-205） */
+.tab-bar--hidden {
+  transform: translateY(100%);
+  pointer-events: none;
+  /* COSTRA-206: 额外确保隐藏期间不可见、不参与布局 */
+  visibility: hidden;
+}
+
+/* 降级：不支持 backdrop-filter 的设备 */
+@supports not (backdrop-filter: blur(1px)) {
+  .tab-bar {
+    background: rgba(255, 255, 255, 0.95);
+  }
+}
+
+/* ---- 通用 tab 项 ---- */
+.tab-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  padding: 8rpx 0 12rpx;
+  /* 对齐 tokens role.icon.tabDefault */
+  color: rgba(28, 27, 26, 0.28);
+  transition: color var(--animation-fast, 150ms) var(--easing-default, cubic-bezier(0.25, 0.1, 0.25, 1));
+}
+
+/* 选中态 · 对齐 tokens role.icon.tabSelected */
+.tab-item--active {
+  color: #1c1b1a;
+}
+
+/* ---- icon 文字 ---- */
+.tab-item__icon {
+  width: 48rpx;
+  height: 48rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 4rpx;
+}
+
+.tab-item__text {
+  font-size: 20rpx;
+  line-height: 1.2;
+}
+
+/* ---- 中间 [+] 凸起按钮 ---- */
+.tab-item--center {
+  position: relative;
+  padding-bottom: 12rpx;
+}
+
+.tab-center-btn {
+  /* 对齐 tokens accent.wxGreen + design_spec §3 */
+  width: 96rpx;
+  height: 96rpx;
+  border-radius: 50%;
+  background: #07C160;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* 向上凸起于 tabBar 之上 */
+  margin-top: -48rpx;
+  /* 克制的阴影 */
+  box-shadow: 0 4rpx 16rpx rgba(7, 193, 96, 0.35);
+  transition: transform var(--animation-fast, 150ms) var(--easing-default, cubic-bezier(0.25, 0.1, 0.25, 1));
+}
+
+.tab-center-btn:active {
+  transform: scale(0.92);
+}
+
+.tab-center-btn__plus {
+  /* 对齐 tokens role.text.onGreen */
+  color: #ffffff;
+  font-size: 48rpx;
+  font-weight: 300;
+  line-height: 1;
+  margin-top: -4rpx;
+}
+
+/* ---- 图标：明细（横线列表） ---- */
+.icon-ledger {
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+  width: 36rpx;
+}
+
+.icon-ledger__line {
+  height: 4rpx;
+  background: currentColor;
+  border-radius: 2rpx;
+}
+
+.icon-ledger__line:nth-child(1) { width: 100%; }
+.icon-ledger__line:nth-child(2) { width: 70%; }
+.icon-ledger__line:nth-child(3) { width: 85%; }
+
+/* ---- 图标：统计（柱状图） ---- */
+.icon-stat {
+  display: flex;
+  align-items: flex-end;
+  gap: 5rpx;
+  height: 32rpx;
+}
+
+.icon-stat__bar {
+  width: 8rpx;
+  border-radius: 2rpx;
+  background: currentColor;
+}
+
+.icon-stat__bar--short  { height: 14rpx; }
+.icon-stat__bar--tall   { height: 32rpx; }
+.icon-stat__bar--medium { height: 22rpx; }
+
+/* ---- 图标：协作（双人前后叠站 · 一大一小） ---- */
+.icon-collab {
+  position: relative;
+  width: 36rpx;
+  height: 32rpx;
+}
+
+.icon-collab__person {
+  position: absolute;
+}
+
+.icon-collab__head {
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.icon-collab__body {
+  border-radius: 99rpx 99rpx 0 0;
+  background: currentColor;
+}
+
+/* 后排（较大） */
+.icon-collab__person--back {
+  right: 0;
+  bottom: 0;
+}
+
+.icon-collab__person--back .icon-collab__head {
+  width: 14rpx;
+  height: 14rpx;
+  margin: 0 auto 2rpx;
+}
+
+.icon-collab__person--back .icon-collab__body {
+  width: 24rpx;
+  height: 14rpx;
+}
+
+/* 前排（较小 · 偏左下叠在前面） */
+.icon-collab__person--front {
+  left: 0;
+  bottom: 0;
+  z-index: 1;
+}
+
+.icon-collab__person--front .icon-collab__head {
+  width: 10rpx;
+  height: 10rpx;
+  margin: 0 auto 2rpx;
+}
+
+.icon-collab__person--front .icon-collab__body {
+  width: 18rpx;
+  height: 10rpx;
+}
+
+/* ---- 图标：我的（单人） ---- */
+.icon-mine {
+  position: relative;
+  width: 28rpx;
+  height: 32rpx;
+}
+
+.icon-mine__head {
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  background: currentColor;
+  position: absolute;
+  top: 0;
+  left: 7rpx;
+}
+
+.icon-mine__body {
+  width: 22rpx;
+  height: 12rpx;
+  border-radius: 12rpx 12rpx 0 0;
+  background: currentColor;
+  position: absolute;
+  bottom: 0;
+  left: 3rpx;
+}
+
+/* ---- 红点（画像未完善弱引导） ---- */
+.tab-item__icon--badge-host {
+  position: relative;
+}
+
+.badge-dot {
+  position: absolute;
+  top: -4rpx;
+  right: -4rpx;
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  background: #FF3B30;
+  border: 2rpx solid rgba(255, 255, 255, 0.85);
+}

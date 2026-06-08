@@ -1,0 +1,11 @@
+[
+  {
+    "id": "shutdown-1777704134543",
+    "from": "team-lead",
+    "to": "card-reviewer-product-costra-126-r1",
+    "type": "shutdown_request",
+    "content": "{\"type\":\"shutdown_request\",\"request_id\":\"shutdown-1777704134543\",\"reason\":\"Review 报告已原样落盘至 `.team/reviews/COSTRA-126/card-review-round-1-product.md`；pending yaml 已按 PASS-WITH-FOLLOWUP 派生路径移至 `.team/pending/_done/`。oneshot 工作完成，按 D-018 SBAI 合规请关机。\",\"from\":\"team-lead\",\"timestamp\":\"2026-05-02T06:42:14.543Z\"}",
+    "timestamp": "2026-05-02T06:42:14.543Z",
+    "read": true
+  }
+]

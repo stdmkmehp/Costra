@@ -1,0 +1,3 @@
+/* pages/invite-confirm/index.wxss · 邀请确认页 */
+
+@import '../../styles/invite-dialog.wxss';

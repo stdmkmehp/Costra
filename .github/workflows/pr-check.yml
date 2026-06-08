@@ -1,0 +1,100 @@
+name: pr-check
+on:
+  pull_request:
+    branches: [main, dev]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '20.12.2'
+
+jobs:
+  pr-check:
+    name: Lint + Typecheck + Test + Build-Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts || npm install --ignore-scripts
+
+      # ---- Conventional Commits check (PR title + last commits) ----
+      - name: Commitlint (PR title)
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "${{ github.event.pull_request.title }}" | npx --no -- commitlint || true
+
+      # ---- Lint ----
+      - name: Lint (miniprogram)
+        run: npm run lint --if-present
+
+      - name: Lint (server)
+        if: hashFiles('server/package.json') != ''
+        working-directory: server
+        run: |
+          npm ci --ignore-scripts || npm install --ignore-scripts
+          npm run lint --if-present
+
+      # ---- Typecheck ----
+      - name: Typecheck (miniprogram)
+        run: npm run typecheck --if-present
+
+      - name: Typecheck (server)
+        if: hashFiles('server/package.json') != ''
+        working-directory: server
+        run: npm run typecheck --if-present
+
+      # ---- Whitelist Consistency Check (COSTRA-115) ----
+      # Cross-checks openapi.yaml servers + miniprogram/services/env.ts + infra/wechat/domains.md
+      # Fails the PR when the three sources drift (except documented exemptions).
+      - name: Whitelist Consistency Check
+        run: npm run check:whitelist
+
+      # ---- AppJson Pages Consistency Check (COSTRA-119) ----
+      # Cross-checks miniprogram/app.json pages & subpackages declarations with filesystem.
+      # Fails the PR when any declared page is missing its required files (.wxml/.json/.ts).
+      - name: AppJson Pages Consistency Check
+        if: success() || failure()
+        run: npm run check:appjson
+
+      # ---- Test ----
+      - name: Test (miniprogram)
+        run: npm test --if-present
+
+      - name: Test (server)
+        if: hashFiles('server/package.json') != ''
+        working-directory: server
+        run: npm test --if-present
+
+      # ---- MiniApp Build Check (size red line 1.5MB main pkg) ----
+      - name: MiniApp build check
+        if: hashFiles('miniprogram/project.config.json') != '' || hashFiles('project.config.json') != ''
+        run: node scripts/mp-ci/size-check.mjs
+
+      # ---- Job Summary ----
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## PR Check Summary"
+            echo ""
+            echo "| Step | Status |"
+            echo "|---|---|"
+            echo "| Lint | ${{ job.status }} |"
+            echo "| Typecheck | ${{ job.status }} |"
+            echo "| Test | ${{ job.status }} |"
+            echo "| MiniApp Size | see size-check.mjs output |"
+            echo ""
+            echo "_Status check name_: \`ci/pr-check\` (固定，供 QA Gate 模板引用)"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,12 @@
+{
+  "name": "costra-agents",
+  "version": "1.1.0",
+  "description": "Costra 项目本地插件 · 注册 SBAI v1.1 装扮/审查 subagents 共 10 个（5 被审 + 4 审查 + 1 样板）· 依据 .team/decisions/D-018-spawn-based-agent-isolation.md v1.1 § 3.6",
+  "author": {
+    "name": "Costra Team"
+  },
+  "license": "UNLICENSED",
+  "agents": [
+    "./.codebuddy/agents"
+  ]
+}

@@ -1,0 +1,66 @@
+/* pages/statistics/index.wxss · 统计页 */
+/* 卡号: COSTRA-201 / COSTRA-223 · 导航栏与明细页/家庭页一致 */
+
+.statistics {
+  min-height: 100vh;
+  background: #f1f2ec;
+}
+
+/* 导航栏（与明细页一致） */
+.nav-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  background: rgba(241, 242, 236, 0.92);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .nav-bar {
+    background: #f1f2ec;
+  }
+}
+
+.nav-bar__content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 32rpx;
+}
+
+.nav-bar__center {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+}
+
+.nav-bar__title {
+  font-size: 36rpx;
+  font-weight: 600;
+  color: var(--color-role-text-primary, #1c1b1a);
+  line-height: 1.2;
+}
+
+.nav-bar__arrow {
+  font-size: 20rpx;
+  color: var(--color-role-text-tertiary, rgba(28,27,26,0.28));
+}
+
+/* 页面内容区 */
+.statistics__content {
+  padding: 32rpx;
+}
+
+.statistics__empty {
+  display: flex;
+  justify-content: center;
+  padding: 120rpx 0;
+}
+
+.statistics__empty-text {
+  font-size: 28rpx;
+  color: var(--color-role-text-tertiary, rgba(28,27,26,0.28));
+}

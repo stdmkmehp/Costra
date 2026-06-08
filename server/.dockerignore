@@ -1,0 +1,57 @@
+# Costra Server · Docker build context 排除清单（v1.5 · 2026-05-25）
+# 配套 server/Dockerfile · 减小 build context + 防敏感文件进镜像
+# 参考：https://docs.docker.com/build/concepts/context/#dockerignore-files
+
+# ============== node 产物 ==============
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ============== 构建产物（Dockerfile 用 tsx 不预编译 · dist 不需进镜像）==============
+dist
+build
+*.tsbuildinfo
+coverage
+.nyc_output
+
+# ============== 测试 / dev 工具（prod 镜像不需要）==============
+test
+**/*.test.ts
+**/*.spec.ts
+vitest.config.ts
+tsconfig.test.json
+
+# ============== 敏感文件（绝对不能进镜像 · 与 D-026 §2.3 C2 关联）==============
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+**/secrets/**
+
+# ============== git / IDE / OS ==============
+.git
+.gitignore
+.gitattributes
+.husky
+.vscode
+.idea
+*.swp
+.DS_Store
+Thumbs.db
+
+# ============== docker 自身 ==============
+Dockerfile*
+.dockerignore
+docker-compose*.yml
+
+# ============== 文档（可选 · 不进镜像减小体积）==============
+README.md
+*.md
+docs/
+
+# ============== Costra 项目特殊 ==============
+# scripts/dev 目录（仅本机开发用 · 含 reset-data / seed-curl-test）
+scripts/dev/
+# 但 db/migrations 必须保留（容器内跑 migration 时要读）· 不写排除即默认包含

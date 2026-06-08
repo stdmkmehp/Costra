@@ -1,0 +1,153 @@
+/* components/expense-overlay/index.wxss · 全屏记账覆盖层（COSTRA-208 完全重写 · COSTRA-214 安全区标准化） */
+/* 卡号: COSTRA-208 / COSTRA-214 · 从需求出发重新实现 · flex scroll 布局 · 统一安全区 */
+/* 设计源: design/ui/design_spec.md §6.3 + design/ui/interaction_flow.md §2/§3 */
+
+/* ═══════════════════════════════════════════════════════════════
+   覆盖层容器
+   ═══════════════════════════════════════════════════════════════ */
+
+.expense-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: #f1f2ec;
+  transform: translateY(100%);
+  transition: transform 350ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.expense-overlay.is-visible {
+  transform: translateY(0);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Shell：flex column 主容器（100vh 高度锚定）
+   ═══════════════════════════════════════════════════════════════ */
+
+.expense-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: #f1f2ec;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   顶部 Header：取消按钮 | 支出·收入指示器 | 占位
+   COSTRA-214: padding-top 由 JS inline style 驱动（safeAreaTop + 4px），
+   不再使用 CSS env(safe-area-inset-top)（开发者工具与真机不一致）
+   ═══════════════════════════════════════════════════════════════ */
+
+.expense-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  padding: 0 32rpx 16rpx;
+  /* padding-top 完全由 inline style 控制（对齐胶囊按钮顶部） */
+}
+
+.expense-header__close {
+  color: rgba(28, 27, 26, 0.48);
+  font-size: 28rpx;
+  line-height: 1;
+  padding: 12rpx 8rpx;
+  margin-left: -8rpx;
+}
+
+.expense-header__tabs {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20rpx;
+}
+
+/* COSTRA-227: 编辑模式下收支切换禁用态 */
+.expense-header__tabs.is-disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.expense-header__tab {
+  font-size: 34rpx;
+  color: rgba(28, 27, 26, 0.28);
+  font-weight: 400;
+  transition: color 150ms cubic-bezier(0.25, 0.1, 0.25, 1),
+              font-weight 150ms cubic-bezier(0.25, 0.1, 0.25, 1);
+  padding: 4rpx 0;
+}
+
+.expense-header__tab.is-active {
+  color: #1c1b1a;
+  font-weight: 600;
+}
+
+.expense-header__sep {
+  font-size: 34rpx;
+  color: rgba(28, 27, 26, 0.18);
+  line-height: 1;
+  margin-top: 2rpx;
+}
+
+.expense-header__placeholder {
+  width: 80rpx;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   分类滚动区（flex:1 自动填满剩余空间 · 禁止 JS 计算高度）
+   ═══════════════════════════════════════════════════════════════ */
+
+.category-scroll {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0 28rpx;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   分类网格（公共样式 · COSTRA-227 抽取）
+   ═══════════════════════════════════════════════════════════════ */
+
+@import '../../styles/category-grid.wxss';
+
+/* ═══════════════════════════════════════════════════════════════
+   底部安全区占位（无键盘时让分类内容可以滚动到屏幕最底端）
+   COSTRA-214: 高度由 JS inline style 驱动（safeAreaBottom px），
+   不再使用 CSS env(safe-area-inset-bottom)
+   ═══════════════════════════════════════════════════════════════ */
+
+.category-bottom-spacer {
+  /* 高度由 inline style 覆盖，此处保留 min-height fallback */
+  min-height: 20rpx;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   键盘面板（作为 shell 最后一个 flex 子项，出现时 scroll-view 自动变矮）
+   COSTRA-214: padding-bottom 由 JS inline style 驱动（safeAreaBottom px），
+   不再使用 CSS env(safe-area-inset-bottom)
+   ═══════════════════════════════════════════════════════════════ */
+
+/* COSTRA-227: keypadOnly 模式占位（将键盘推到底部） */
+.keypad-spacer {
+  flex: 1;
+}
+
+.keypad-sheet {
+  flex-shrink: 0;
+  background: #ffffff;
+  border-top-left-radius: 24rpx;
+  border-top-right-radius: 24rpx;
+  /* padding-bottom 由 inline style 覆盖，此处保留 fallback 值 */
+  max-height: 70vh;
+  overflow: hidden;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   键盘面板（公共样式 · COSTRA-227 抽取）
+   ═══════════════════════════════════════════════════════════════ */
+
+@import '../../styles/keypad.wxss';
+
+/* ═══════════════════════════════════════════════════════════════
+   操作行业务样式已全部移至 styles/keypad.wxss
+   expense-overlay 与 ledger 编辑金额面板共享同一套样式
+   ═══════════════════════════════════════════════════════════════ */

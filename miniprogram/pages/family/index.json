@@ -1,0 +1,6 @@
+{
+  "navigationStyle": "custom",
+  "usingComponents": {
+    "expense-overlay": "/components/expense-overlay/index"
+  }
+}

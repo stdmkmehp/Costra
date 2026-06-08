@@ -1,0 +1,75 @@
+# Costra 本地开发 / E2E 依赖栈
+# 启动：  docker compose up -d
+# 应用：  迁移在服务启动脚本中按序执行 server/db/migrations/*.sql
+# 停止并清数据： docker compose down -v
+
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: costra-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: costra
+      POSTGRES_USER: costra
+      POSTGRES_PASSWORD: costra_dev_pw
+      TZ: UTC
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U costra -d costra"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: costra-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    image: minio/minio:RELEASE.2025-01-01T00-00-00Z
+    container_name: costra-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: costra
+      MINIO_ROOT_PASSWORD: costra_dev_pw
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Console
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  mailhog:
+    # 开发期假 SMTP（用于未来验证邮件/告警占位）
+    image: mailhog/mailhog:v1.0.1
+    container_name: costra-mailhog
+    restart: unless-stopped
+    ports:
+      - "1025:1025"   # SMTP
+      - "8025:8025"   # UI
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:

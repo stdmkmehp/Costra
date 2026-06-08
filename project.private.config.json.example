@@ -1,0 +1,22 @@
+{
+  "projectname": "costra",
+  "setting": {
+    "compileHotReLoad": true,
+    "urlCheck": false
+  },
+  "libVersion": "2.32.3",
+  "condition": {
+    "miniprogram": {
+      "list": [
+        {
+          "name": "登录闭环",
+          "pathName": "pages/login/index",
+          "query": "",
+          "launchMode": "default",
+          "scene": null
+        }
+      ]
+    }
+  },
+  "__comment__": "本文件应被 .gitignore 忽略；仓库仅提交 project.private.config.json.example"
+}

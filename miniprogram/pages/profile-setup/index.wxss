@@ -1,0 +1,203 @@
+/* pages/profile-setup/index.wxss · 完善资料页 */
+
+.profile-setup {
+  background: var(--color-bg);
+  min-height: 100vh;
+}
+
+/* ---- 导航栏 ---- */
+.page-nav {
+  display: flex;
+  align-items: center;
+  background: #f1f2ec;
+  position: relative;
+  z-index: 10;
+}
+
+.page-nav__back {
+  width: 88rpx;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 52rpx;
+  color: var(--color-role-text-primary, #1c1b1a);
+  font-weight: 300;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.page-nav__title {
+  flex: 1;
+  font-size: 32rpx;
+  font-weight: 600;
+  color: var(--color-role-text-primary, #1c1b1a);
+  text-align: center;
+  /* 左右各占 88rpx，视觉对称居中 */
+  margin-right: 88rpx;
+}
+
+/* ---- 页面主体 ---- */
+.setup-body {
+  padding: 64rpx 32rpx 0;
+}
+
+/* ---- 头像区 ---- */
+.avatar-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 56rpx;
+}
+
+/*
+ * button 默认 display:block 会撑满父宽，导致内容偏左。
+ * 强制 inline-block + width:auto 让 button 收缩到内容尺寸，再靠父级 flex 居中。
+ */
+.avatar-btn {
+  display: inline-flex !important;
+  width: 160rpx !important;
+  height: 160rpx !important;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  line-height: 1;
+  box-shadow: none;
+  overflow: visible;
+}
+
+.avatar-btn::after {
+  display: none;
+}
+
+.avatar-wrap {
+  position: relative;
+  width: 160rpx;
+  height: 160rpx;
+}
+
+.avatar-img {
+  width: 160rpx;
+  height: 160rpx;
+  border-radius: 50%;
+  display: block;
+}
+
+.avatar-placeholder {
+  width: 160rpx;
+  height: 160rpx;
+  border-radius: 50%;
+  background: var(--color-divider, #e8e9e3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.avatar-placeholder__icon {
+  position: relative;
+  width: 60rpx;
+  height: 68rpx;
+}
+
+.avatar-placeholder__head {
+  width: 30rpx;
+  height: 30rpx;
+  border-radius: 50%;
+  background: rgba(28, 27, 26, 0.28);
+  position: absolute;
+  top: 0;
+  left: 15rpx;
+}
+
+.avatar-placeholder__body {
+  width: 52rpx;
+  height: 28rpx;
+  border-radius: 28rpx 28rpx 0 0;
+  background: rgba(28, 27, 26, 0.28);
+  position: absolute;
+  bottom: 0;
+  left: 4rpx;
+}
+
+/* 右下角编辑徽标 */
+.avatar-edit-badge {
+  position: absolute;
+  right: -4rpx;
+  bottom: -4rpx;
+  width: 48rpx;
+  height: 48rpx;
+  border-radius: 50%;
+  background: #07C160;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 3rpx solid #f1f2ec;
+}
+
+.avatar-edit-badge__icon {
+  color: #fff;
+  font-size: 22rpx;
+  line-height: 1;
+}
+
+.avatar-tip {
+  margin-top: 20rpx;
+  font-size: 24rpx;
+  color: var(--color-text-muted, rgba(28,27,26,0.4));
+}
+
+/* ---- 昵称输入卡片 ---- */
+/*
+ * 使用单一卡片包裹 input，不加 label view。
+ * type="nickname" 需要 input 本身有足够的可见高度（≥ 80rpx），
+ * 微信才能正确渲染原生昵称选择面板。
+ */
+.field-card {
+  background: var(--color-surface);
+  border-radius: var(--radius-lg, 16rpx);
+  padding: 0 32rpx;
+}
+
+.field-input {
+  width: 100%;
+  height: 96rpx;          /* 足够高，微信原生面板能识别 */
+  font-size: 30rpx;
+  color: var(--color-text, #1c1b1a);
+  background: transparent;
+  border: none;
+  box-sizing: border-box;
+  line-height: 96rpx;
+}
+
+.field-placeholder {
+  color: rgba(28, 27, 26, 0.28);
+  font-size: 30rpx;
+}
+
+/* ---- 保存按钮 ---- */
+.save-btn {
+  margin-top: 48rpx;
+  width: 100%;
+  height: 88rpx;
+  border-radius: var(--radius-lg, 16rpx);
+  background: #07C160;
+  color: #fff;
+  font-size: 30rpx;
+  font-weight: 600;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 150ms;
+}
+
+.save-btn::after {
+  border: none;
+}
+
+.save-btn--loading {
+  opacity: 0.6;
+}

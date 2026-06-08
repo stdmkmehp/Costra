@@ -1,0 +1,81 @@
+<!-- custom-tab-bar/index.wxml · 5 Tab 中置式布局 -->
+<!-- 卡号: COSTRA-201 · 中间 [+] 凸起按钮触发记账覆盖层（不跳路由） -->
+<!-- 设计源: design/ui/design_spec.md §3 -->
+
+<view class="tab-bar {{hidden ? 'tab-bar--hidden' : ''}}">
+  <view
+    class="tab-item {{selected === 0 ? 'tab-item--active' : ''}}"
+    data-index="0"
+    bindtap="switchTab"
+  >
+    <view class="tab-item__icon">
+      <!-- 明细 icon · 简单横线列表 -->
+      <view class="icon-ledger">
+        <view class="icon-ledger__line"></view>
+        <view class="icon-ledger__line"></view>
+        <view class="icon-ledger__line"></view>
+      </view>
+    </view>
+    <text class="tab-item__text">明细</text>
+  </view>
+
+  <view
+    class="tab-item {{selected === 1 ? 'tab-item--active' : ''}}"
+    data-index="1"
+    bindtap="switchTab"
+  >
+    <view class="tab-item__icon">
+      <!-- 统计 icon · 简单柱状图 -->
+      <view class="icon-stat">
+        <view class="icon-stat__bar icon-stat__bar--short"></view>
+        <view class="icon-stat__bar icon-stat__bar--tall"></view>
+        <view class="icon-stat__bar icon-stat__bar--medium"></view>
+      </view>
+    </view>
+    <text class="tab-item__text">统计</text>
+  </view>
+
+  <!-- 中间 [+] 凸起记账按钮 -->
+  <view class="tab-item tab-item--center" data-index="2" bindtap="switchTab">
+    <view class="tab-center-btn">
+      <text class="tab-center-btn__plus">+</text>
+    </view>
+  </view>
+
+  <view
+    class="tab-item {{selected === 3 ? 'tab-item--active' : ''}}"
+    data-index="3"
+    bindtap="switchTab"
+  >
+    <view class="tab-item__icon">
+      <!-- 协作 icon · 双人前后叠站（一大一小） -->
+      <view class="icon-collab">
+        <view class="icon-collab__person icon-collab__person--back">
+          <view class="icon-collab__head"></view>
+          <view class="icon-collab__body"></view>
+        </view>
+        <view class="icon-collab__person icon-collab__person--front">
+          <view class="icon-collab__head"></view>
+          <view class="icon-collab__body"></view>
+        </view>
+      </view>
+    </view>
+    <text class="tab-item__text">协作</text>
+  </view>
+
+  <view
+    class="tab-item {{selected === 4 ? 'tab-item--active' : ''}}"
+    data-index="4"
+    bindtap="switchTab"
+  >
+    <view class="tab-item__icon tab-item__icon--badge-host">
+      <!-- 我的 icon · 简单人形 -->
+      <view class="icon-mine">
+        <view class="icon-mine__head"></view>
+        <view class="icon-mine__body"></view>
+      </view>
+      <view wx:if="{{showProfileBadge}}" class="badge-dot"></view>
+    </view>
+    <text class="tab-item__text">我的</text>
+  </view>
+</view>

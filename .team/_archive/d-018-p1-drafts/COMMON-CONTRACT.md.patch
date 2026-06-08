@@ -1,0 +1,160 @@
+# COMMON-CONTRACT.md · SBAI 补丁（D-018 · v3.0 草稿）
+
+> 草稿时间：2026-05-01 21:45
+> 草稿人：Orchestrator
+> 审批人：Human（**待审 · P1 阶段**）
+> 适用范围：本补丁为 `.team/agents/COMMON-CONTRACT.md` 的增量 diff，过稿后合入主文件
+> 依据：`.team/decisions/D-018-spawn-based-agent-isolation.md`
+
+---
+
+## 补丁说明
+
+D-018 SBAI 升级后，Costra 不再使用"Orchestrator 切角色扮演"模型；所有 Agent 以 **team member** 或 **oneshot 实例** 形态运行。本补丁：
+
+1. 升级 §0 的"目录权限矩阵"，新增 team member 与 oneshot 两类执行体的权限记录
+2. 新增 §0-Bis "工具白名单矩阵"（SBAI 的物理层硬隔离依据）
+3. 新增 §8ter "SBAI 执行层约定"（替代原"切角色"心智模型）
+4. 修订 §4 "任务卡生命周期" 中的状态变更发起方（从"Agent"改为具体执行体）
+
+---
+
+## 变更 1 · §0 目录权限矩阵（替换原表格）
+
+**原表**：
+
+```
+| Agent | 可写目录 |
+|---|---|
+| Orchestrator | .team/（除 interventions/ 的原始文件） |
+| PM-Agent | docs/、.team/board.md、.team/backlog.json、.team/risks.md |
+| Design-Agent | design/ |
+| MiniApp-Agent | miniapp/ |
+| Backend-Agent | server/、api/ |
+| DevOps-Agent | infra/、各模块 .github/workflows/ |
+| QA-Agent | qa/ |
+| Review-Agent-Tech | .team/reviews/（仅 round-N-tech.md 文件） |
+| Review-Agent-Product | .team/reviews/（仅 round-N-product.md 文件） |
+```
+
+**新表（SBAI 版）**：
+
+```
+| 执行体 | 类型 | 可写目录 | 备注 |
+|---|---|---|---|
+| Orchestrator | 主对话上下文 | `.team/`（除 `interventions/` 的原始文件 + 除业务产物目录） | **禁止**写 `server/` `miniprogram/` `design/` `docs/`；业务产物必须交由 team member 产出，Orchestrator 只做编排与原样落盘 review 报告 |
+| `pm-writer` | 持久 team member | `docs/`、`.team/board.md`、`.team/backlog.json`、`.team/risks.md` | 对应旧 PM-Agent |
+| `design-maker` | 持久 team member | `design/`、`docs/design/` | 对应旧 Design-Agent |
+| `miniapp-dev` | 持久 team member | `miniapp/`、`miniprogram/` | 对应旧 MiniApp-Agent |
+| `backend-dev` | 持久 team member | `server/`、`api/` | 对应旧 Backend-Agent |
+| `devops-ops` | 持久 team member | `infra/`、各模块 `.github/workflows/` | 对应旧 DevOps-Agent |
+| `qa-planner` | 持久 team member | `qa/`、`docs/qa/` | 对应旧 QA-Agent |
+| `review-tech-{card}-r{N}` | **一次性 oneshot** | **无写权**（审完返回 md 全文给 Orchestrator 原样落盘） | 每轮新实例，审完 shutdown |
+| `review-product-{card}-r{N}` | **一次性 oneshot** | **无写权**（同上） | 同上 |
+| `card-reviewer-{tech|product}-{card}-r{N}` | **一次性 oneshot** | **无写权**（同上） | 每张卡每轮新实例 |
+```
+
+---
+
+## 变更 2 · §0-Bis 工具白名单矩阵（新增章节）
+
+**新增在 §0 之后**：
+
+```markdown
+## 0-Bis. 工具白名单矩阵（D-018 · SBAI 物理层硬隔离）
+
+| 执行体 | 读工具 | 写工具 | 终端 | 备注 |
+|---|---|---|---|---|
+| Orchestrator | ✅ 限 `.team/` 内 | ✅ 限 `.team/`；**业务目录禁写** | ⚠️ 仅用于 git/自检，禁止 build/test（那是 devops-ops/qa-planner 的事） | 违规 = incident |
+| 持久 team member（pm-writer / design-maker / miniapp-dev / backend-dev / devops-ops / qa-planner） | ✅ 全 | ✅ 限自己可写目录 | ✅ 按需（Backend/DevOps 可跑 build/test） | 跨区写 = 直接 incident |
+| oneshot 实例（review-tech / review-product / card-reviewer-*） | ✅ read_file / search_content / search_file / codebase_search / list_dir | ❌ **硬禁**（spawn 时工具白名单就不给） | ❌ 硬禁 | 审完返回 final message，Orchestrator 原样落盘 |
+
+**Q**：若 `task` 工具层面无法细粒度配置白名单怎么办？
+**A**：降级路径——在 spawn prompt §G 里硬性声明"禁止调用 write_to_file / replace_in_file / execute_command / delete_file"，违反 = Orchestrator 判 incident 并 shutdown 实例重新 spawn。P3 冒烟时会实测（D-018 §6 Q1）。
+```
+
+---
+
+## 变更 3 · §4 任务卡生命周期（细化状态变更发起方）
+
+**原文**：
+
+```
+状态变更必须发 `status_report` 消息，并由 Orchestrator 更新 `board.md`。
+```
+
+**新文**：
+
+```
+状态变更必须发 `status_report` 消息（由对应 team member 发起，oneshot 实例因生命周期太短不参与状态机），并由 Orchestrator 更新 `board.md`。
+
+具体对应关系：
+- Backlog → Todo：`pm-writer` 的 `card_ready` 消息（或卡定义 Review PASS 后 Orchestrator 落盘）
+- Todo → Doing：被审 team member 的 `task_started` 消息
+- Doing → Review：被审 team member 的 `status_report(task_done, awaiting_review)` 消息
+- Review → Done：Orchestrator 在 Human `approve:*` 后更新
+- Doing → Blocked：任一 team member 的 `blocker` 消息
+- 任意 → Cancelled：PM + Human 双签
+```
+
+---
+
+## 变更 4 · §8ter SBAI 执行层约定（新增章节）
+
+**新增在 §8bis 之后**：
+
+```markdown
+## 8ter. SBAI 执行层约定（D-018 · 2026-05-01）
+
+### 执行体三分法
+
+- **Orchestrator**（主对话上下文）：只做分派 / 追踪 / 闸门 / 归档四件事；不扮演业务角色、不写业务代码、不生成 Review 意见
+- **持久 team member**：写代码/文档的业务产出体；一个 Sprint 起一个实例，跨轮连续，便于保留实现上下文
+- **一次性 oneshot 实例**：Review / 卡定义 Review；每轮新 spawn，审完 shutdown，彻底防自审污染与跨卡记忆泄漏
+
+### 核心硬约束
+
+1. **Orchestrator 不做业务产出**：禁止读 `server/ miniprogram/ design/ docs/`（除非通过 oneshot 的 final message 间接路径）；禁止自己写 Review 意见；禁止自己扮演任何被审 Agent
+2. **oneshot 无写权**：spawn 时工具层面硬限或 prompt 硬性声明；产出走 "返回 md 全文 → Orchestrator 原样落盘" 路径
+3. **oneshot 审完必 shutdown**：同一实例不得连续审多轮、不得跨卡复用；违规 = 自审回归 = incident
+4. **Context Injection Contract**（D-018 §3.3-Bis）：每次 spawn review-oneshot，prompt 必须含 BCE 三段（Background / Content / Expected Approach）+ 强制阅读清单；缺段 = incident
+5. **同轮兑现铁律 v2**（D-018 §3.4）：Orchestrator 声明自动拉起 Review 后必须同轮完成"spawn → 接收 → 落盘 → shutdown"四步；不得跨轮异步承诺
+
+详见 `.team/SOP-REVIEW.md §7 §10`、`.team/SOP-CARD-REVIEW.md §4 §8`、`.team/decisions/D-018-spawn-based-agent-isolation.md`。
+```
+
+---
+
+## 变更 5 · §8bis Review 闭环（细化术语）
+
+**原文**：
+
+```
+- Backend / MiniApp 产出进 Review 列前，**必须**先走 `Review-Agent-Tech` 预审
+- PM / Design 产出进 Review 列前，**必须**先走 `Review-Agent-Product` 预审
+...
+- Review-Agent **不写代码/文档**，只出报告；被审 Agent 必须回 `round-N-{agent}-response.md`
+```
+
+**新文**：
+
+```
+- `backend-dev` / `miniapp-dev` 产出进 Review 列前，**必须**先走 `review-tech-{card}-r{N}` oneshot 预审
+- `pm-writer` / `design-maker` 产出进 Review 列前，**必须**先走 `review-product-{card}-r{N}` oneshot 预审
+- `devops-ops` / `qa-planner` / 决策类文档 **不走** oneshot（Human 直审）
+- 完整规则与迭代机制见 [`.team/SOP-REVIEW.md`](../SOP-REVIEW.md)（2026-05-01 SBAI 版 v3.0）
+- 最多 5 轮迭代；出 `ESCALATE` 或 round==5 强制停并冒泡给 Human
+- oneshot 实例**无写权限**，只出报告文本；被审 team member 必须回 `round-N-{agent}-response.md`
+```
+
+---
+
+## 版本记录
+
+| 版本 | 日期 | 变更 |
+|---|---|---|
+| v1.0 | 2026-04-21 | 初版 |
+| v1.1 | 2026-04-23 | §8bis Review 闭环新增 |
+| **v2.0（待合入）** | **2026-05-01（草稿）** | **SBAI 补丁**：§0 权限矩阵扩展 + §0-Bis 工具白名单 + §4 状态机发起方细化 + §8bis 术语更新 + §8ter SBAI 执行层约定 |
+
+**本补丁待 Human 过稿后合入主文件。**

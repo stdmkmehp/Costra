@@ -1,0 +1,513 @@
+/* pages/ledger/index.wxss · 明细页 */
+/* 卡号: COSTRA-203 · 设计源: design/ui/design_spec.md §6.2 */
+/* 色值对齐 tokens/index.ts v2.0.0 + app.wxss CSS 变量 */
+
+/* ---- 页面容器 ---- */
+.ledger {
+  min-height: 100vh;
+  background: var(--color-role-bg-app, #f1f2ec);
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- 自定义导航栏 ---- */
+.nav-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  background: rgba(241, 242, 236, 0.92);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .nav-bar {
+    background: #f1f2ec;
+  }
+}
+
+.nav-bar__content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 32rpx;
+}
+
+.nav-bar__center {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+}
+
+.nav-bar__title {
+  font-size: 36rpx;
+  font-weight: 600;
+  color: var(--color-role-text-primary, #1c1b1a);
+  line-height: 1.2;
+}
+
+.nav-bar__arrow {
+  font-size: 18rpx;
+  color: var(--color-role-text-secondary, rgba(28,27,26,0.48));
+}
+
+/* ---- 头部汇总区 ---- */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding-left: 32rpx;
+  padding-right: 32rpx;
+  padding-bottom: 24rpx;
+}
+
+.header__left {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+  flex: 1;
+  min-width: 0;
+}
+
+.header__total-expense {
+  font-size: 80rpx;
+  font-weight: 600;
+  line-height: 1.07;
+  letter-spacing: -2rpx;
+  color: var(--color-role-amount-expense, #1c1b1a);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+  word-break: break-all;
+}
+
+.header__sub {
+  font-size: 28rpx;
+  line-height: 1.5;
+  color: var(--color-role-text-secondary, rgba(28,27,26,0.48));
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* ---- 时间导航 + 筛选行 ---- */
+.filter-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 32rpx 16rpx;
+}
+
+.filter-row__left {
+  display: flex;
+  align-items: center;
+}
+
+.filter-row__arrow {
+  width: 48rpx;
+  height: 48rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.filter-row__arrow-icon {
+  font-size: 32rpx;
+  color: var(--color-role-text-secondary, rgba(28,27,26,0.48));
+  font-weight: 300;
+}
+
+.filter-row__month {
+  display: flex;
+  align-items: center;
+  padding: 0 8rpx;
+}
+
+.filter-row__month-text {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--color-role-text-primary, #1c1b1a);
+}
+
+.filter-row__dropdown {
+  font-size: 16rpx;
+  margin-left: 6rpx;
+  color: var(--color-role-text-tertiary, rgba(28,27,26,0.28));
+}
+
+.filter-row__right {
+  display: flex;
+  align-items: center;
+  gap: 4rpx;
+  padding: 8rpx 16rpx;
+  border-radius: var(--radius-pill, 9999rpx);
+  background: rgba(28, 27, 26, 0.04);
+  transition: all 180ms ease;
+}
+
+.filter-row__right.is-active {
+  background: #07C160;
+}
+
+.filter-row__member-text {
+  font-size: 24rpx;
+  color: var(--color-role-text-primary, #1c1b1a);
+  font-weight: 500;
+  transition: color 180ms ease;
+}
+
+.filter-row__right.is-active .filter-row__member-text {
+  color: #ffffff;
+}
+
+.filter-row__member-arrow {
+  font-size: 16rpx;
+  color: var(--color-role-text-secondary, rgba(28,27,26,0.48));
+  transition: transform 280ms ease, color 180ms ease;
+}
+
+.filter-row__member-arrow.is-rotated {
+  transform: rotate(180deg);
+}
+
+.filter-row__right.is-active .filter-row__member-arrow {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* ─── 列表容器（筛选面板的定位参照） ─── */
+.list-container {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- 流水列表 ---- */
+.entry-list {
+  flex: 1;
+  padding-bottom: calc(env(safe-area-inset-bottom) + 120rpx);
+}
+
+/* ---- 日期分组头（sticky 吸顶） ---- */
+.date-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16rpx 32rpx;
+  background: rgba(241, 242, 236, 0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .date-header {
+    background: #f1f2ec;
+  }
+}
+
+.date-header__label {
+  font-size: 24rpx;
+  font-weight: 500;
+  color: var(--color-role-text-secondary, rgba(28,27,26,0.48));
+}
+
+.date-header__summary {
+  font-size: 22rpx;
+  color: var(--color-role-text-tertiary, rgba(28,27,26,0.28));
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* ---- 条目行 ---- */
+.entry-item-wrap {
+  position: relative;
+  overflow: hidden;
+}
+
+.entry-item {
+  display: flex;
+  align-items: center;
+  padding: 18rpx 32rpx;
+  transition: transform 150ms cubic-bezier(0.25, 0.1, 0.25, 1);
+  background: var(--color-role-bg-app, #f1f2ec);
+  position: relative;
+  z-index: 2;
+  gap: 12rpx;
+}
+
+.entry-icon {
+  width: 48rpx;
+  height: 48rpx;
+  border-radius: 50%;
+  background: rgba(28, 27, 26, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.entry-icon__text {
+  font-size: 22rpx;
+  color: var(--color-role-text-primary, #1c1b1a);
+  font-weight: 500;
+  line-height: 1;
+}
+
+/* ---- 成员头像（协作账本 · 金额左侧） ---- */
+.entry-member {
+  position: relative;
+  width: 48rpx;
+  height: 48rpx;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.entry-member__avatar {
+  width: 40rpx;
+  height: 40rpx;
+  border-radius: 50%;
+}
+
+.entry-member__fallback {
+  width: 40rpx;
+  height: 40rpx;
+  border-radius: 50%;
+  background: rgba(28, 27, 26, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.entry-member__initial {
+  font-size: 20rpx;
+  color: var(--color-role-text-secondary, rgba(28,27,26,0.48));
+  font-weight: 500;
+  line-height: 1;
+}
+
+/**
+ * 公共支出角标 · 仅文字浮于头像右下，不带背景/底圆，避免遮挡头像。
+ * 用 text-shadow 八向投影做外描边（仅向外扩展，不侵蚀字芯），
+ * 保证小字号下绿色字芯依然饱满可读。
+ */
+.entry-member__badge {
+  position: absolute;
+  right: -6rpx;
+  bottom: -6rpx;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.entry-member__badge-text {
+  font-size: 18rpx;
+  line-height: 1;
+  font-weight: 800;
+  color: #07C160;
+  text-shadow:
+    1rpx 0 0 var(--color-role-bg-app, #f1f2ec),
+    -1rpx 0 0 var(--color-role-bg-app, #f1f2ec),
+    0 1rpx 0 var(--color-role-bg-app, #f1f2ec),
+    0 -1rpx 0 var(--color-role-bg-app, #f1f2ec),
+    1rpx 1rpx 0 var(--color-role-bg-app, #f1f2ec),
+    -1rpx -1rpx 0 var(--color-role-bg-app, #f1f2ec),
+    1rpx -1rpx 0 var(--color-role-bg-app, #f1f2ec),
+    -1rpx 1rpx 0 var(--color-role-bg-app, #f1f2ec);
+}
+
+.entry-label {
+  height: 48rpx;
+  overflow: hidden;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.entry-label__text {
+  display: block;
+  font-size: 28rpx;
+  line-height: 28rpx;
+  color: var(--color-role-text-primary, #1c1b1a);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entry-amount {
+  display: block;
+  height: 48rpx;
+  font-size: 32rpx;
+  line-height: 48rpx;
+  font-weight: 500;
+  color: var(--color-role-amount-expense, #1c1b1a);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+  flex-shrink: 0;
+}
+
+.entry-amount--income {
+  color: var(--color-role-amount-income, #07C160);
+}
+
+.entry-delete {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 160rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-semantic-danger, #FA5151);
+  z-index: 1;
+}
+
+.entry-delete__text {
+  color: #ffffff;
+  font-size: 28rpx;
+  font-weight: 500;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding-top: 200rpx;
+  gap: 16rpx;
+}
+
+.empty-state__title {
+  font-size: 30rpx;
+  font-weight: 500;
+  color: var(--color-role-text-secondary, rgba(28,27,26,0.48));
+}
+
+.empty-state__hint {
+  font-size: 26rpx;
+  color: var(--color-role-text-tertiary, rgba(28,27,26,0.28));
+}
+
+/* ─── COSTRA-227: 金额包装层（用于点击区域扩大） ─── */
+.entry-amount-wrap {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 8rpx 0 8rpx 16rpx;
+}
+
+/* ─── COSTRA-227: inline 备注输入 ─── */
+.entry-label__input {
+  font-size: 28rpx;
+  color: #1c1b1a;
+  width: 100%;
+  height: 48rpx;
+  line-height: 48rpx;
+}
+
+/* ─── COSTRA-227: 全屏分类选择面板 ─── */
+.edit-category-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: var(--color-role-bg-app, #f1f2ec);
+  transform: translateY(100%);
+  transition: transform 350ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+.edit-category-overlay.is-visible {
+  transform: translateY(0);
+}
+.edit-category-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--color-role-bg-app, #f1f2ec);
+}
+.edit-category-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  padding: 0 32rpx 16rpx;
+}
+.edit-category-header__close {
+  color: rgba(28, 27, 26, 0.48);
+  font-size: 28rpx;
+  padding: 12rpx 8rpx;
+}
+.edit-category-header__tabs {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+}
+.edit-category-header__tab {
+  font-size: 34rpx;
+  color: rgba(28, 27, 26, 0.28);
+  font-weight: 400;
+}
+.edit-category-header__tab.is-active {
+  color: #1c1b1a;
+  font-weight: 600;
+}
+.edit-category-header__sep {
+  font-size: 28rpx;
+  color: rgba(28, 27, 26, 0.2);
+}
+.edit-category-header__placeholder {
+  width: 80rpx;
+}
+.edit-category-scroll {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0 28rpx;
+}
+
+/* 分类网格（公共样式 · COSTRA-227 抽取） */
+@import '../../styles/category-grid.wxss';
+
+/* ─── COSTRA-227: 金额编辑半屏底部面板 ─── */
+
+/* 键盘公共样式 */
+@import '../../styles/keypad.wxss';
+
+.edit-amount-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 200ms;
+}
+.edit-amount-panel.is-visible {
+  pointer-events: auto;
+  opacity: 1;
+}
+.edit-amount-panel__mask {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: transparent;
+}
+.edit-amount-panel__sheet {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #ffffff;
+  border-top-left-radius: 24rpx;
+  border-top-right-radius: 24rpx;
+  transform: translateY(100%);
+  transition: transform 250ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+.edit-amount-panel.is-visible .edit-amount-panel__sheet {
+  transform: translateY(0);
+}
+
+/* 费用性质开关样式已移至 styles/keypad.wxss，此处无需重复定义 */

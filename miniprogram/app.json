@@ -1,0 +1,66 @@
+{
+  "pages": [
+    "pages/ledger/index",
+    "pages/statistics/index",
+    "pages/add-placeholder/index",
+    "pages/family/index",
+    "pages/mine/index",
+    "pages/login/index",
+    "pages/family-dashboard/index",
+    "pages/stat-overview/index",
+    "pages/profile-setup/index",
+    "pages/invite-confirm/index"
+  ],
+  "subpackages": [
+    {
+      "root": "pages-stat/",
+      "name": "stat",
+      "pages": [
+        "month/index"
+      ]
+    },
+    {
+      "root": "pages-family/",
+      "name": "family",
+      "pages": [
+        "home/index",
+        "settings/index",
+        "privacy/index"
+      ]
+    }
+  ],
+  "preloadRule": {
+    "pages/ledger/index": {
+      "network": "all",
+      "packages": ["stat", "family"]
+    }
+  },
+  "window": {
+    "navigationBarTitleText": "Costra",
+    "navigationBarBackgroundColor": "#f1f2ec",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#f1f2ec",
+    "enablePullDownRefresh": false
+  },
+  "tabBar": {
+    "custom": true,
+    "color": "#9E9E9E",
+    "selectedColor": "#1c1b1a",
+    "backgroundColor": "#f1f2ec",
+    "borderStyle": "black",
+    "list": [
+      { "pagePath": "pages/ledger/index",        "text": "明细" },
+      { "pagePath": "pages/statistics/index",     "text": "统计" },
+      { "pagePath": "pages/add-placeholder/index", "text": "记账" },
+      { "pagePath": "pages/family/index",         "text": "协作" },
+      { "pagePath": "pages/mine/index",           "text": "我的" }
+    ]
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json",
+  "requiredBackgroundModes": [],
+  "requiredPrivateInfos": [],
+  "permission": {},
+  "lazyCodeLoading": "requiredComponents",
+  "__usePrivacyCheck__": true
+}
