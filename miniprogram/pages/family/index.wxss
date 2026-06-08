@@ -405,6 +405,7 @@
 .family-rank__avatar--placeholder { display: flex; align-items: center; justify-content: center; color: rgba(28,27,26,0.48); font-size: 20rpx; }
 .family-rank__name { flex: 1; font-size: 28rpx; color: #1c1b1a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .family-rank__amount { flex: none; font-size: 28rpx; font-weight: 500; color: #1c1b1a; }
+.family-rank__ratio { flex: none; font-size: 22rpx; color: rgba(28,27,26,0.4); margin-left: 8rpx; min-width: 64rpx; text-align: right; }
 .family-rank__bar { margin-top: 8rpx; height: 4rpx; background: rgba(28,27,26,0.06); border-radius: 4rpx; overflow: hidden; }
 .family-rank__bar-fill { height: 100%; border-radius: 4rpx; transition: width 0.3s ease; }
 
@@ -429,6 +430,7 @@
 .family-l1__icon { flex: none; font-size: 28rpx; }
 .family-l1__name { flex: 1; font-size: 28rpx; color: #1c1b1a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .family-l1__amount { flex: none; font-size: 28rpx; font-weight: 500; color: #1c1b1a; }
+.family-l1__ratio { flex: none; font-size: 20rpx; color: rgba(28,27,26,0.4); margin-left: 8rpx; min-width: 56rpx; text-align: right; }
 .family-l1__bar { margin-top: 8rpx; height: 4rpx; background: rgba(28,27,26,0.06); border-radius: 4rpx; overflow: hidden; }
 .family-l1__bar-fill { height: 100%; background: #1c1b1a; border-radius: 4rpx; }
 .family-l1__more {

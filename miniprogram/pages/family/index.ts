@@ -121,6 +121,7 @@ interface L1Display {
   amount: string;         // '¥xxx.xx'
   amountCents: number;
   ratio_bps: number;
+  ratioText: string;
 }
 
 /** 下钻行（替代旧 DetailRow · spec §4.3） */
@@ -131,6 +132,7 @@ interface DrilldownRow {
   amount: string;               // '¥1,234.56'
   amountCents: number;
   ratio_bps: number;
+  ratioText: string;
   color: string;
   contributions: ContributionDisplay[];
   avatarUrl: string;
@@ -180,6 +182,12 @@ function formatCentsToYuan(cents: number): string {
 function formatCentsDisplay(cents: number): string {
   const prefix = cents < 0 ? '-' : '';
   return `${prefix}¥${formatCentsToYuan(cents)}`;
+}
+
+/** 万分比 → 百分比文本，如 4250 → "42.5%"；整数时省略小数，如 10000 → "100%" */
+function fmtRatio(bps: number): string {
+  const pct = bps / 100;
+  return pct === Math.floor(pct) ? `${pct}%` : `${pct.toFixed(1)}%`;
 }
 
 // MEMBER_COLOR_SLOTS + getMemberColorBySlot 已迁移到 utils/memberColor.ts（唯一事实源 · COSTRA-261）
@@ -771,6 +779,7 @@ Page({
         amount: formatCentsDisplay(shared.expense),
         amountCents: shared.expense,
         ratio_bps: ratioBps,
+        ratioText: fmtRatio(ratioBps),
         color: SHARED_SEGMENT_COLOR,
         contributions,
         avatarUrl: '',
@@ -809,6 +818,7 @@ Page({
         amount: formatCentsDisplay(pm.amount),
         amountCents: pm.amount,
         ratio_bps: ratioBps,
+        ratioText: fmtRatio(ratioBps),
         color,
         contributions: [],
         avatarUrl: pm.avatar_url || '',
@@ -831,6 +841,7 @@ Page({
       amount: `¥${formatCentsToYuan(c.amount)}`,
       amountCents: c.amount,
       ratio_bps: c.ratio_bps,
+      ratioText: fmtRatio(c.ratio_bps),
     };
   },
 

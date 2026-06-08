@@ -447,6 +447,15 @@ page {
   color: #1c1b1a;
 }
 
+.rank__ratio {
+  flex: none;
+  font-size: 22rpx;
+  color: rgba(28, 27, 26, 0.4);
+  margin-left: 8rpx;
+  min-width: 64rpx;
+  text-align: right;
+}
+
 .rank__bar {
   margin-top: 8rpx;
   height: 4rpx;
@@ -510,6 +519,15 @@ page {
   font-size: 26rpx;
   color: rgba(28, 27, 26, 0.85);
   font-weight: 500;
+}
+
+.l2__ratio {
+  flex: none;
+  font-size: 20rpx;
+  color: rgba(28, 27, 26, 0.4);
+  margin-left: 8rpx;
+  min-width: 56rpx;
+  text-align: right;
 }
 
 .l2__bar {

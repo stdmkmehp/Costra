@@ -58,6 +58,7 @@
             <view class="rank__icon">{{l1.icon}}</view>
             <view class="rank__name">{{l1.category_name}}</view>
             <view class="rank__amount tnum">{{l1.amount}}</view>
+            <view class="rank__ratio">{{l1.ratioText}}</view>
           </view>
           <view class="rank__bar">
             <view class="rank__bar-fill" style="width: {{l1.ratio_bps / 100}}%;"></view>
@@ -80,6 +81,7 @@
                   <view class="l2__icon">{{l2.icon}}</view>
                   <view class="l2__name">{{l2.category_name}}</view>
                   <view class="l2__amount tnum">{{l2.amount}}</view>
+                  <view class="l2__ratio">{{l2.ratioText}}</view>
                 </view>
                 <view class="l2__bar">
                   <view class="l2__bar-fill" style="width: {{l2.ratio_bps / 100}}%;"></view>
@@ -98,7 +100,7 @@
                     <view class="l3__main">
                       <view class="l3__top">
                         <text class="l3__date">{{l3.dateLabel}}</text>
-                        <text class="l3__note" wx:if="{{l3.note}}">{{l3.note}}</text>
+                        <text class="l3__note">{{l3.note}}</text>
                         <text class="l3__amount tnum">{{l3.amount}}</text>
                       </view>
                       <view class="l3__bottom">

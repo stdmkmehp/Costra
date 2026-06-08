@@ -46,6 +46,7 @@ import type {
 } from './types';
 import {
   fmtYuan,
+  fmtRatio,
   getCurrentMonthValue,
   getCurrentYearValue,
   formatMonthDisplay,
@@ -775,6 +776,7 @@ Page({
         amount: fmtYuan(c.amount),
         amountCents: c.amount,
         ratio_bps: c.ratio_bps,
+        ratioText: fmtRatio(c.ratio_bps),
         expanded: false,
         loadingL3: false,
         l3Items: [],

@@ -26,6 +26,8 @@ export interface L1Display {
   amount: string;        // 已格式化
   amountCents: number;
   ratio_bps: number;
+  /** 格式化后的百分比文本，如 "42.5%" */
+  ratioText: string;
   expanded: boolean;
   loadingL2: boolean;
   l2Items: L2Display[];
@@ -48,6 +50,8 @@ export interface L2Display {
   amount: string;
   amountCents: number;
   ratio_bps: number;
+  /** 格式化后的百分比文本，如 "42.5%" */
+  ratioText: string;
   expanded: boolean;
   loadingL3: boolean;
   l3Items: L3Display[];

@@ -4,7 +4,7 @@
 
 import type { MonthlyView, YearlyView, L1Display } from './types';
 import type { StatCategoryRankItem } from '../../services/statisticsApi';
-import { fmtYuan } from './formatters';
+import { fmtYuan, fmtRatio } from './formatters';
 
 /**
  * L1 不限项：用户期望统计页所有一级分类全部展示（数据量天然受控，design/categories.yaml ~15 项）。
@@ -78,6 +78,7 @@ export function buildL1Display(c: StatCategoryRankItem, prevList: L1Display[]): 
     amount: fmtYuan(c.amount),
     amountCents: c.amount,
     ratio_bps: c.ratio_bps,
+    ratioText: fmtRatio(c.ratio_bps),
     expanded: prev?.expanded ?? false,
     loadingL2: false,
     // B1：stale 时也保留旧 L2 子树（含每个 L2 的 subtreeStale 标记），让自动重拉路径

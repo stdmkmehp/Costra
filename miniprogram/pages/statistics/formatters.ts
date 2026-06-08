@@ -18,6 +18,12 @@ export function fmtYuan(cents: number): string {
   return `${sign}¥${fmtAmount(cents)}`;
 }
 
+/** 万分比 → 百分比文本，如 4250 → "42.5%"；整数时省略小数，如 10000 → "100%" */
+export function fmtRatio(bps: number): string {
+  const pct = bps / 100;
+  return pct === Math.floor(pct) ? `${pct}%` : `${pct.toFixed(1)}%`;
+}
+
 export function getCurrentMonthValue(): string {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
