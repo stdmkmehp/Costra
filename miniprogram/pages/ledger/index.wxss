@@ -374,12 +374,118 @@
   font-weight: 500;
 }
 
+.ledger-loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 96rpx 32rpx 32rpx;
+  gap: 20rpx;
+}
+
+.ledger-loading-state__spinner {
+  width: 36rpx;
+  height: 36rpx;
+  border-radius: 50%;
+  border: 4rpx solid rgba(28, 27, 26, 0.08);
+  border-top-color: rgba(28, 27, 26, 0.36);
+  animation: ledger-spin 900ms linear infinite;
+}
+
+.ledger-loading-state__text {
+  font-size: 26rpx;
+  color: var(--color-role-text-secondary, rgba(28,27,26,0.48));
+}
+
+.ledger-skeleton {
+  width: 100%;
+  margin-top: 16rpx;
+}
+
+.ledger-skeleton__row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 20rpx 0;
+}
+
+.ledger-skeleton__icon,
+.ledger-skeleton__line,
+.ledger-skeleton__amount {
+  background: rgba(28, 27, 26, 0.06);
+  overflow: hidden;
+  position: relative;
+}
+
+.ledger-skeleton__icon::after,
+.ledger-skeleton__line::after,
+.ledger-skeleton__amount::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.45), transparent);
+  animation: ledger-shimmer 1400ms ease-in-out infinite;
+}
+
+.ledger-skeleton__icon {
+  width: 48rpx;
+  height: 48rpx;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.ledger-skeleton__content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+}
+
+.ledger-skeleton__line {
+  height: 24rpx;
+  border-radius: 999rpx;
+}
+
+.ledger-skeleton__line--main {
+  width: 56%;
+}
+
+.ledger-skeleton__line--sub {
+  width: 34%;
+  opacity: 0.72;
+}
+
+.ledger-skeleton__amount {
+  width: 116rpx;
+  height: 28rpx;
+  border-radius: 999rpx;
+  flex-shrink: 0;
+}
+
+.ledger-partial-hint {
+  margin: 12rpx 32rpx 8rpx;
+  padding: 12rpx 20rpx;
+  border-radius: var(--radius-card, 24rpx);
+  background: rgba(28, 27, 26, 0.04);
+  color: var(--color-role-text-secondary, rgba(28,27,26,0.48));
+  font-size: 24rpx;
+}
+
+@keyframes ledger-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes ledger-shimmer {
+  100% { transform: translateX(100%); }
+}
+
 .empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding-top: 200rpx;
+  padding: 200rpx 48rpx 0;
   gap: 16rpx;
 }
 
@@ -392,6 +498,27 @@
 .empty-state__hint {
   font-size: 26rpx;
   color: var(--color-role-text-tertiary, rgba(28,27,26,0.28));
+  text-align: center;
+}
+
+.empty-state--failed .empty-state__title {
+  color: var(--color-role-text-primary, #1c1b1a);
+}
+
+.empty-state__retry {
+  margin-top: 16rpx;
+  min-width: 160rpx;
+  height: 64rpx;
+  line-height: 64rpx;
+  border-radius: var(--radius-pill, 9999rpx);
+  background: #1c1b1a;
+  color: #ffffff;
+  font-size: 26rpx;
+  padding: 0 32rpx;
+}
+
+.empty-state__retry::after {
+  border: none;
 }
 
 /* ─── COSTRA-227: 金额包装层（用于点击区域扩大） ─── */

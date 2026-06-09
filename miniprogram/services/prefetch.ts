@@ -21,11 +21,90 @@
 import { getActiveFamilyId } from './family';
 import { getMonthlyStatistics } from './statisticsApi';
 import { getFamilySummary } from './familyApi';
+import { getUserOverview } from './userOverviewApi';
+import { eventBus, EventNames } from './eventBus';
+import { markPerf, markPerfError } from './perf';
+import { buildMonthlyView } from '../pages/statistics/viewModels';
+import type { MonthlyView } from '../pages/statistics/types';
+
+interface PrefetchedMonthlyView {
+  familyId: string;
+  month: string;
+  view: MonthlyView;
+  generatedAt: number;
+}
+
+/**
+ * 首屏未结算时的兜底等待时长。
+ * LEDGER_DISPLAY_READY（成功/失败都会发）通常在数百毫秒内到达；
+ * 但仍存在「首屏页根本不是 ledger」「极端异常路径连失败信号都没发」等情况，
+ * 这种时候若一直挂在事件上等待，非首屏预热会被永久阻塞。
+ * 因此加一个 3s 兜底定时器：超时仍未收到结算信号则直接放行预热。
+ */
+const PREFETCH_FALLBACK_DELAY_MS = 3000;
+
+let homePrefetchScheduled = false;
+let homePrefetchStarted = false;
+let ledgerReadyHandler: (() => void) | null = null;
+let prefetchFallbackTimer: ReturnType<typeof setTimeout> | null = null;
+let prefetchedMonthlyView: PrefetchedMonthlyView | null = null;
 
 /** YYYY-MM（与统计/家庭页 currentMonth 计算逻辑一致） */
 function getCurrentMonthValue(): string {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
+export function consumePrefetchedMonthlyView(familyId: string, month: string): MonthlyView | null {
+  if (!prefetchedMonthlyView) return null;
+  if (prefetchedMonthlyView.familyId !== familyId || prefetchedMonthlyView.month !== month) return null;
+  const view = prefetchedMonthlyView.view;
+  prefetchedMonthlyView = null;
+  markPerf('prefetch.monthly-view.consume', { familyId, month });
+  return view;
+}
+
+export function scheduleHomeDataPrefetchAfterLedgerReady(source: 'app-bootstrap' | 'login-success' = 'app-bootstrap'): void {
+  if (homePrefetchScheduled || homePrefetchStarted) {
+    markPerf('prefetch.schedule.skip', { source, reason: homePrefetchStarted ? 'started' : 'scheduled' });
+    return;
+  }
+  homePrefetchScheduled = true;
+  markPerf('prefetch.schedule.after-ledger', { source });
+
+  /**
+   * 统一放行入口：无论由 LEDGER_DISPLAY_READY 事件触发，还是 3s 兜底定时器触发，
+   * 都收口到这里。内部先清理事件订阅与兜底定时器，再做幂等放行，
+   * 保证「事件 / 超时」二者先到先触发、且预热最多只启动一次。
+   */
+  const release = (reason: 'ledger-ready' | 'fallback-timeout'): void => {
+    if (ledgerReadyHandler) {
+      eventBus.off(EventNames.LEDGER_DISPLAY_READY, ledgerReadyHandler);
+      ledgerReadyHandler = null;
+    }
+    if (prefetchFallbackTimer) {
+      clearTimeout(prefetchFallbackTimer);
+      prefetchFallbackTimer = null;
+    }
+    if (!homePrefetchScheduled) return; // 已被另一路径放行 · 幂等保护
+    homePrefetchScheduled = false;
+    if (homePrefetchStarted) return;
+    homePrefetchStarted = true;
+    markPerf('prefetch.schedule.release', { source, reason });
+    void prefetchHomeData().finally(() => {
+      homePrefetchStarted = false;
+    });
+  };
+
+  // 首选触发源：明细页首屏结算信号（_emitLedgerDisplayReady 成功/失败都会发）
+  ledgerReadyHandler = () => release('ledger-ready');
+  eventBus.on(EventNames.LEDGER_DISPLAY_READY, ledgerReadyHandler);
+
+  // 兜底触发源：超时仍未收到结算信号 → 直接放行，避免非首屏预热永久挂起
+  prefetchFallbackTimer = setTimeout(() => {
+    prefetchFallbackTimer = null;
+    release('fallback-timeout');
+  }, PREFETCH_FALLBACK_DELAY_MS);
 }
 
 /**
@@ -35,23 +114,62 @@ function getCurrentMonthValue(): string {
  * 调用方应包成 `void prefetchHomeData()`，无需 await。
  */
 export async function prefetchHomeData(): Promise<void> {
+  markPerf('prefetch.after-ledger.start');
   try {
     const familyId = await getActiveFamilyId();
-    if (!familyId) return;
+    if (!familyId) {
+      markPerf('prefetch.after-ledger.done', { skipped: 'no-family' });
+      return;
+    }
     const month = getCurrentMonthValue();
 
     // 并行触发，独立失败：任一接口出错不影响另一个
     // 显式传 topN（与各页面调用对齐，避免缓存命中后字段缺失或排行截断不一致）：
     //   - statistics: topN=50 与 viewModels.L1_VISIBLE 对齐（routes 上限 50）
     //   - family-summary: topN=20 与 family 页 L1_VISIBLE 对齐（routes 上限 20）
-    void getMonthlyStatistics(familyId, month, { topN: 50 }).catch((err) => {
+    const monthlyTask = getMonthlyStatistics(familyId, month, { topN: 50 }).then((stats) => {
+      prefetchedMonthlyView = {
+        familyId,
+        month,
+        view: buildMonthlyView(stats, [], month, ''),
+        generatedAt: Date.now(),
+      };
+      markPerf('prefetch.monthly-view.ready', { familyId, month });
+    }).catch((err) => {
       console.warn('[prefetch] monthly statistics failed', err);
     });
-    void getFamilySummary(familyId, { month }, { topN: 20 }).catch((err) => {
+    const summaryTask = getFamilySummary(familyId, { month }, { topN: 20 }).catch((err) => {
       console.warn('[prefetch] family summary failed', err);
     });
+    const overviewTask = getUserOverview().catch((err) => {
+      console.warn('[prefetch] user overview failed', err);
+    });
+    await Promise.allSettled([monthlyTask, summaryTask, overviewTask]);
+    markPerf('prefetch.after-ledger.done', { familyId, month });
   } catch (err) {
     // getActiveFamilyId() 自身出错（storage 异常等）· 静默
+    markPerfError('prefetch.after-ledger.failed', err);
     console.warn('[prefetch] home data skipped', err);
   }
 }
+
+// ─── testing-only 重置 ───────────────────────────────────────────────────────
+
+export const __test__ = {
+  reset(): void {
+    if (ledgerReadyHandler) {
+      eventBus.off(EventNames.LEDGER_DISPLAY_READY, ledgerReadyHandler);
+      ledgerReadyHandler = null;
+    }
+    if (prefetchFallbackTimer) {
+      clearTimeout(prefetchFallbackTimer);
+      prefetchFallbackTimer = null;
+    }
+    homePrefetchScheduled = false;
+    homePrefetchStarted = false;
+    prefetchedMonthlyView = null;
+  },
+  getScheduled(): boolean {
+    return homePrefetchScheduled;
+  },
+};

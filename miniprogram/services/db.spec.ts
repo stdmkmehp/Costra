@@ -6,7 +6,10 @@ import {
   putEntry,
   getEntry,
   listEntries,
+  listMonthEntries,
   deleteEntry,
+  updateEntryFields,
+  applyServerChanges,
   getWatermark,
   setWatermark,
 } from './db';
@@ -118,5 +121,72 @@ describe('services/db · 模拟 wx.storage（mock 环境）', () => {
     const got = await getEntry('dup-1');
     expect(got?.amount).toBe(200);
     expect(got?.note).toBe('v2');
+  });
+
+  it('listMonthEntries 使用月索引按时间倒序读取最近 N 条', async () => {
+    await putEntry({ client_ref_id: 'm1', ledger_id: 'l1', amount: 100, currency: 'CNY', type: 'expense', category_id: null, note: '', occurred_at: '2026-06-01T00:00:00.000Z' });
+    await putEntry({ client_ref_id: 'm2', ledger_id: 'l1', amount: 200, currency: 'CNY', type: 'expense', category_id: null, note: '', occurred_at: '2026-06-03T00:00:00.000Z' });
+    await putEntry({ client_ref_id: 'm3', ledger_id: 'l1', amount: 300, currency: 'CNY', type: 'expense', category_id: null, note: '', occurred_at: '2026-06-02T00:00:00.000Z' });
+    await putEntry({ client_ref_id: 'other-month', ledger_id: 'l1', amount: 400, currency: 'CNY', type: 'expense', category_id: null, note: '', occurred_at: '2026-07-01T00:00:00.000Z' });
+
+    const recent = await listMonthEntries({ ledger_id: 'l1', month: '2026-06', limit: 2 });
+
+    expect(recent.source).toBe('month-index');
+    expect(recent.complete).toBe(false);
+    expect(recent.totalIndexed).toBe(3);
+    expect(recent.entries.map(e => e.client_ref_id)).toEqual(['m2', 'm3']);
+  });
+
+  it('updateEntryFields 修改 occurred_at 时迁移月索引', async () => {
+    await putEntry({ client_ref_id: 'move-1', ledger_id: 'l1', amount: 100, currency: 'CNY', type: 'expense', category_id: null, note: '', occurred_at: '2026-06-15T00:00:00.000Z' });
+    await updateEntryFields('move-1', { occurred_at: '2026-07-01T00:00:00.000Z' });
+
+    const june = await listMonthEntries({ ledger_id: 'l1', month: '2026-06' });
+    const july = await listMonthEntries({ ledger_id: 'l1', month: '2026-07' });
+
+    expect(june.entries.map(e => e.client_ref_id)).not.toContain('move-1');
+    expect(july.entries.map(e => e.client_ref_id)).toContain('move-1');
+  });
+
+  it('deleteEntry 从月索引移除', async () => {
+    await putEntry({ client_ref_id: 'month-del', ledger_id: 'l1', amount: 100, currency: 'CNY', type: 'expense', category_id: null, note: '', occurred_at: '2026-06-15T00:00:00.000Z' });
+    await deleteEntry('month-del');
+
+    const june = await listMonthEntries({ ledger_id: 'l1', month: '2026-06' });
+
+    expect(june.entries.map(e => e.client_ref_id)).not.toContain('month-del');
+  });
+
+  it('listMonthEntries 在月索引缺失时懒重建', async () => {
+    await putEntry({ client_ref_id: 'legacy-indexed', ledger_id: 'l1', amount: 100, currency: 'CNY', type: 'expense', category_id: null, note: '', occurred_at: '2026-06-20T00:00:00.000Z' });
+    await wx.removeStorage({ key: 'entry:index:l1:2026-06' });
+
+    const june = await listMonthEntries({ ledger_id: 'l1', month: '2026-06' });
+
+    expect(june.source).toBe('rebuilt-month-index');
+    expect(june.complete).toBe(true);
+    expect(june.entries.map(e => e.client_ref_id)).toEqual(['legacy-indexed']);
+  });
+
+  it('applyServerChanges 维护服务端拉取 entries 的月索引', async () => {
+    await applyServerChanges({
+      entries: [{
+        id: 'server-1',
+        client_ref_id: 'server-ref-1',
+        ledger_id: 'l1',
+        amount: 100,
+        currency: 'CNY',
+        type: 'expense',
+        category_id: null,
+        note: '',
+        occurred_at: '2026-06-22T00:00:00.000Z',
+        server_version: 1,
+        user_id: 'u1',
+      }],
+    });
+
+    const june = await listMonthEntries({ ledger_id: 'l1', month: '2026-06' });
+
+    expect(june.entries.map(e => e.client_ref_id)).toEqual(['server-ref-1']);
   });
 });

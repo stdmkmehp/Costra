@@ -12,8 +12,8 @@ import {
   getActiveLedgerId,
   getActiveLedgerName,
   getActiveFamilyKind,
-  setActiveFamily,
-  savePreferenceAsync,
+  switchActiveFamily,
+  fallbackToPersonalFamily,
 } from '../../services/family';
 import { triggerOnPageShow, syncOnce } from '../../services/syncScheduler';
 import { eventBus, EventNames, type SyncDonePayload, type ActiveFamilyChangedPayload, type ProfileUpdatedPayload } from '../../services/eventBus';
@@ -57,10 +57,10 @@ import {
   nextYear,
   formatEntryDate,
   formatEntryTime,
-  buildEmptyTitleMonth,
   buildEmptyTitleYear,
 } from './formatters';
 import { pickRandomSlogan } from '../../config/slogans';
+import { consumePrefetchedMonthlyView } from '../../services/prefetch';
 import {
   L1_VISIBLE,
   L2_VISIBLE,
@@ -69,6 +69,7 @@ import {
   emptyYearlyView,
   getInitialSwiperHeightPx,
   buildL1Display,
+  buildMonthlyView,
 } from './viewModels';
 import { makeAllTab, buildMemberTabs } from './memberHelpers';
 import type { PendingStatisticsAction } from '../family/index';
@@ -217,7 +218,11 @@ Page({
       this._initialized = true;
       this.setData({ ready: true, loading: true });
       await this._loadContext();
+      const consumedPrefetch = this._consumePrefetchedMonthlyView();
       await this._loadData();
+      if (consumedPrefetch) {
+        void this._refreshMonthlyForMember('all');
+      }
 
       // ★ 首次进入也消费 pending（用户从协作页 L1 跳进来时统计页可能首次初始化）
       if (hasPending) {
@@ -260,13 +265,37 @@ Page({
     ]);
     this._familyId = familyId || '';
     this._ledgerId = ledgerId || '';
+    let effectiveFamilyKind = familyKind;
+    let displayLedgerName = ledgerName || (familyKind === 'personal' ? '个人账本' : '账本待同步');
+
+    if (familyKind === 'shared' && familyId) {
+      try {
+        const { families } = await getFamilies();
+        const matched = families.find((f) => f.id === familyId && f.ledger_id === ledgerId);
+        if (!matched) {
+          const fallback = await fallbackToPersonalFamily('ledger-switch');
+          if (fallback) {
+            this._familyId = fallback.family_id;
+            this._ledgerId = fallback.ledger_id;
+            effectiveFamilyKind = fallback.family_kind || 'personal';
+            displayLedgerName = fallback.ledger_name || '个人账本';
+          }
+          wx.showToast({ title: '你已不在该账本中', icon: 'none' });
+        } else {
+          displayLedgerName = matched.ledger_name || matched.name || displayLedgerName;
+        }
+      } catch {
+        displayLedgerName = ledgerName ? `${ledgerName}（离线）` : '协作账本（离线）';
+      }
+    }
+
     this.setData({
-      ledgerName: ledgerName || '个人账本',
-      familyKind: familyKind || 'personal',
+      ledgerName: displayLedgerName,
+      familyKind: effectiveFamilyKind || 'personal',
     });
 
     // 构建 memberTabs
-    if (familyKind === 'shared' && this._familyId) {
+    if (effectiveFamilyKind === 'shared' && this._familyId) {
       try {
         const members = await getFamilyMembers(this._familyId);
         const tabs = buildMemberTabs(members);
@@ -317,6 +346,48 @@ Page({
     return this.data.currentMemberKey || 'all';
   },
 
+  _monthlyViewSignature(view: MonthlyView): string {
+    return JSON.stringify({
+      totalExpense: view.totalExpense,
+      totalIncome: view.totalIncome,
+      totalBalance: view.totalBalance,
+      trend: view.trend,
+      summary: view.summary,
+      l1: view.l1.map((item) => ({
+        category_id: item.category_id,
+        amountCents: item.amountCents,
+        ratio_bps: item.ratio_bps,
+      })),
+      isEmpty: view.isEmpty,
+    });
+  },
+
+  _consumePrefetchedMonthlyView(): boolean {
+    const view = consumePrefetchedMonthlyView(this._familyId, this.data.currentMonth);
+    if (!view) return false;
+    const memberKey: MemberKey = 'all';
+    this.setData({
+      [`monthlyByMember.${memberKey}`]: view,
+      currentMemberKey: memberKey,
+      isEmpty: view.isEmpty,
+      loading: false,
+    }, () => {
+      this._scheduleMeasureCurrentPane('prefetchedMonthly');
+    });
+    return true;
+  },
+
+  async _refreshMonthlyForMember(memberKey: MemberKey) {
+    const month = this.data.currentMonth;
+    const userId = memberKey === 'all' ? undefined : memberKey;
+    try {
+      const fresh = await getMonthlyStatistics(this._familyId, month, { userId, topN: L1_VISIBLE });
+      this._buildMonthlyDisplay(fresh, memberKey);
+    } catch (err) {
+      console.warn('[statistics] refreshMonthly failed', err);
+    }
+  },
+
   /** 懒加载：如果该成员在当前维度还没 loaded 过则拉数据 */
   async _ensureMemberLoaded(memberKey: MemberKey) {
     if (this.data.dimension === 'monthly') {
@@ -334,14 +405,16 @@ Page({
     const month = this.data.currentMonth;
     const userId = memberKey === 'all' ? undefined : memberKey;
 
-    const viewInit = this.data.monthlyByMember[memberKey] || emptyMonthlyView();
-    viewInit.loading = true;
-    this.setData({ [`monthlyByMember.${memberKey}`]: viewInit });
-
     const cached = getCachedMonthly(this._familyId, month, userId);
     if (cached) {
       this._buildMonthlyDisplay(cached, memberKey);
+      void this._refreshMonthlyForMember(memberKey);
+      return;
     }
+
+    const viewInit = this.data.monthlyByMember[memberKey] || emptyMonthlyView();
+    viewInit.loading = true;
+    this.setData({ [`monthlyByMember.${memberKey}`]: viewInit });
 
     try {
       const fresh = await getMonthlyStatistics(this._familyId, month, { userId, topN: L1_VISIBLE });
@@ -385,34 +458,23 @@ Page({
   // ─── 月度展示构建 ──────────────────────────────────────────────────────────
 
   _buildMonthlyDisplay(s: MonthlyStatistics, memberKey: MemberKey) {
-    const { totals, daily_trend, extremes, category_ranks } = s;
+    const prevView = this.data.monthlyByMember[memberKey];
+    const prevList = prevView?.l1 ?? [];
+    const viewData = buildMonthlyView(
+      s,
+      prevList,
+      this.data.currentMonth,
+      pickRandomSlogan(),
+    );
 
-    const summary: SummaryGridItem[] = [
-      { label: '日均支出', value: fmtYuan(extremes.avg_daily_expense) },
-      { label: '最大单笔', value: fmtYuan(extremes.max_single_expense) },
-      { label: '单日最高', value: fmtYuan(extremes.max_day_expense) },
-      { label: '记账笔数', value: `${totals.entry_count}` },
-    ];
-
-    const prevList = this.data.monthlyByMember[memberKey]?.l1 ?? [];
-    const l1: L1Display[] = category_ranks
-      .slice(0, L1_VISIBLE)
-      .map((c) => buildL1Display(c, prevList));
-
-    const isEmpty = totals.expense === 0 && totals.income === 0;
-    const viewData: MonthlyView = {
-      totalExpense: fmtYuan(totals.expense),
-      totalIncome: fmtYuan(totals.income),
-      totalBalance: fmtYuan(totals.balance),
-      trend: daily_trend.map((d) => d.expense),
-      summary,
-      l1,
-      isEmpty,
-      loading: false,
-      loaded: true,
-      emptyTitle: buildEmptyTitleMonth(this.data.currentMonth),
-      emptyHint: isEmpty ? pickRandomSlogan() : '',
-    };
+    if (prevView && this._monthlyViewSignature(prevView) === this._monthlyViewSignature(viewData)) {
+      const update: Record<string, unknown> = {};
+      if (prevView.loading) update[`monthlyByMember.${memberKey}.loading`] = false;
+      if (!prevView.loaded) update[`monthlyByMember.${memberKey}.loaded`] = true;
+      if (memberKey === this._getCurrentMemberKey() && this.data.loading) update.loading = false;
+      if (Object.keys(update).length > 0) this.setData(update);
+      return;
+    }
 
     const update: Record<string, unknown> = {
       [`monthlyByMember.${memberKey}`]: viewData,
@@ -1082,20 +1144,19 @@ Page({
           if (selected.ledger_id === this._ledgerId) return;
           // 释放旧家庭统计缓存（与 _onActiveFamilyChanged 行为对齐 · 防长期占用）
           if (this._familyId) invalidateStatisticsCache(this._familyId);
-          await setActiveFamily({
+          await switchActiveFamily({
             family_id: selected.id,
             ledger_id: selected.ledger_id,
             family_kind: selected.kind,
-            ledger_name: selected.name,
+            ledger_name: selected.ledger_name || selected.name,
           }, 'ledger-switch');
-          savePreferenceAsync(selected.id, selected.ledger_id);
           this._familyId = selected.id;
           this._ledgerId = selected.ledger_id;
           // 切账本 → 清空所有数据 + 重置 swiper 高度 + 重新加载上下文（含成员列表）
           this._resetMemberSwiperHeightState('ledgerSwitch');
           this._clearMemberScrollMemory();
           this.setData({
-            ledgerName: selected.name,
+            ledgerName: selected.ledger_name || selected.name,
             familyKind: selected.kind,
             monthlyByMember: {},
             yearlyByMember: {},

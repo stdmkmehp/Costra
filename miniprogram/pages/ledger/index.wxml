@@ -69,7 +69,29 @@
       scroll-top="{{listScrollTop}}"
       bindscroll="onListScroll"
     >
-    <block wx:if="{{!isEmpty}}">
+    <view
+      class="ledger-loading-state"
+      wx:if="{{ledgerLoadingState === 'validating-ledger' || ledgerLoadingState === 'loading-cache' || ledgerLoadingState === 'loading-remote'}}"
+    >
+      <view class="ledger-loading-state__spinner"></view>
+      <text class="ledger-loading-state__text">{{ledgerLoadingText}}</text>
+      <view class="ledger-skeleton">
+        <view wx:for="{{ledgerSkeletonRows}}" wx:key="*this" class="ledger-skeleton__row">
+          <view class="ledger-skeleton__icon"></view>
+          <view class="ledger-skeleton__content">
+            <view class="ledger-skeleton__line ledger-skeleton__line--main"></view>
+            <view class="ledger-skeleton__line ledger-skeleton__line--sub"></view>
+          </view>
+          <view class="ledger-skeleton__amount"></view>
+        </view>
+      </view>
+    </view>
+
+    <view class="ledger-partial-hint" wx:if="{{ledgerLoadingState === 'ready-partial'}}">
+      <text>{{ledgerLoadingText}}</text>
+    </view>
+
+    <block wx:if="{{ledgerLoadingState !== 'validating-ledger' && ledgerLoadingState !== 'loading-cache' && ledgerLoadingState !== 'loading-remote' && !isEmpty}}">
       <block wx:for="{{dateGroups}}" wx:key="dateKey" wx:for-item="group">
         <!-- 日期分组头（sticky 吸顶） -->
         <view class="date-header">
@@ -145,10 +167,16 @@
       </block>
     </block>
 
-    <!-- ─── 空状态 ──────────────────── -->
-    <view class="empty-state" wx:if="{{isEmpty}}">
+    <!-- ─── 空状态 / 失败状态 ──────────────────── -->
+    <view class="empty-state" wx:if="{{ledgerLoadingState === 'empty-confirmed'}}">
       <text class="empty-state__title">{{emptyTitle}}</text>
       <text class="empty-state__hint">{{emptyHint}}</text>
+    </view>
+
+    <view class="empty-state empty-state--failed" wx:if="{{ledgerLoadingState === 'failed'}}">
+      <text class="empty-state__title">{{ledgerLoadingText}}</text>
+      <text class="empty-state__hint">{{ledgerLoadError || '检查网络后再试一次'}}</text>
+      <button class="empty-state__retry" bindtap="onRetryLedgerLoad">重试</button>
     </view>
   </scroll-view>
   </view><!-- /.list-container -->

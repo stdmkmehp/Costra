@@ -142,6 +142,8 @@ export interface InvitePreviewResponse {
 // ─── 缓存层（stale-while-revalidate · P1-2 重构 COSTRA-223 R1.x.1）──────────────────
 
 const SUMMARY_CACHE_TTL = 5 * 60 * 1000; // 5 分钟
+const FAMILY_LIST_CACHE_TTL = 60 * 1000; // M1-B: families 短缓存
+const FAMILY_MEMBERS_CACHE_TTL = 30 * 1000; // M1-B: members 短缓存
 const MAX_CACHE_SIZE = 20; // P1-4: 缓存上限
 
 interface CacheEntry<T> {
@@ -150,6 +152,10 @@ interface CacheEntry<T> {
 }
 
 const _summaryCache = new Map<string, CacheEntry<FamilySummary>>();
+let _familiesCache: CacheEntry<FamiliesResponse> | null = null;
+let _familiesInflight: Promise<FamiliesResponse> | null = null;
+const _membersCache = new Map<string, CacheEntry<FamilyMember[]>>();
+const _membersInflight = new Map<string, Promise<FamilyMember[]>>();
 
 /** 构建 summary 缓存 key（B3: month/year xor 改造） */
 function summaryCacheKey(familyId: string, scope: { month?: string; year?: string }): string {
@@ -199,6 +205,31 @@ export function invalidateFamilyCache(familyId: string): void {
   }
 }
 
+export function invalidateFamiliesCache(): void {
+  _familiesCache = null;
+  _familiesInflight = null;
+}
+
+export function invalidateFamilyMembersCache(familyId?: string): void {
+  if (familyId) {
+    _membersCache.delete(familyId);
+    _membersInflight.delete(familyId);
+    return;
+  }
+  _membersCache.clear();
+  _membersInflight.clear();
+}
+
+function invalidateFamilyStructureCache(familyId?: string): void {
+  invalidateFamiliesCache();
+  invalidateFamilyMembersCache(familyId);
+  if (familyId) invalidateFamilyCache(familyId);
+}
+
+function isFresh(timestamp: number, ttl: number): boolean {
+  return Date.now() - timestamp <= ttl;
+}
+
 // ─── API 函数 ────────────────────────────────────────────────────────────────────
 
 /**
@@ -207,11 +238,23 @@ export function invalidateFamilyCache(familyId: string): void {
  * 后端返回 FamilyItem[]（数组），前端包装为 FamiliesResponse
  */
 export async function getFamilies(): Promise<FamiliesResponse> {
-  const data = await request<FamilyItem[]>({
+  if (_familiesCache && isFresh(_familiesCache.timestamp, FAMILY_LIST_CACHE_TTL)) {
+    return _familiesCache.data;
+  }
+  if (_familiesInflight) return _familiesInflight;
+
+  _familiesInflight = request<FamilyItem[]>({
     method: 'GET',
     path: '/families',
+  }).then((data) => {
+    const response = { families: data };
+    _familiesCache = { data: response, timestamp: Date.now() };
+    return response;
+  }).finally(() => {
+    _familiesInflight = null;
   });
-  return { families: data };
+
+  return _familiesInflight;
 }
 
 /**
@@ -252,10 +295,26 @@ export async function getFamilySummary(
  * 后端返回成员数组（active + left，按 joined_at/left_at 排序）。
  */
 export async function getFamilyMembers(familyId: string): Promise<FamilyMember[]> {
-  return request<FamilyMember[]>({
+  const cached = _membersCache.get(familyId);
+  if (cached && isFresh(cached.timestamp, FAMILY_MEMBERS_CACHE_TTL)) {
+    return cached.data;
+  }
+
+  const inflight = _membersInflight.get(familyId);
+  if (inflight) return inflight;
+
+  const requestPromise = request<FamilyMember[]>({
     method: 'GET',
     path: `/families/${familyId}/members`,
+  }).then((members) => {
+    _membersCache.set(familyId, { data: members, timestamp: Date.now() });
+    return members;
+  }).finally(() => {
+    _membersInflight.delete(familyId);
   });
+
+  _membersInflight.set(familyId, requestPromise);
+  return requestPromise;
 }
 
 /**
@@ -263,11 +322,13 @@ export async function getFamilyMembers(familyId: string): Promise<FamilyMember[]
  * POST /v1/families
  */
 export async function createFamily(name: string): Promise<FamilyItem> {
-  return request<FamilyItem>({
+  const family = await request<FamilyItem>({
     method: 'POST',
     path: '/families',
     body: { name, kind: 'shared' },
   });
+  invalidateFamilyStructureCache(family.id);
+  return family;
 }
 
 /**
@@ -316,11 +377,13 @@ export async function previewInvite(inviteToken: string): Promise<InvitePreviewR
  *   两者在前端统一用 mapError INVITE_EXPIRED 文案处理
  */
 export async function acceptInvite(inviteToken: string): Promise<FamilyItem> {
-  return request<FamilyItem>({
+  const family = await request<FamilyItem>({
     method: 'POST',
     path: '/families/invites/accept',
     body: { invite_token: inviteToken },
   });
+  invalidateFamilyStructureCache(family.id);
+  return family;
 }
 
 /**
@@ -328,10 +391,11 @@ export async function acceptInvite(inviteToken: string): Promise<FamilyItem> {
  * DELETE /v1/families/{id}/members/{userId}
  */
 export async function removeMember(familyId: string, userId: string): Promise<void> {
-  return request<void>({
+  await request<void>({
     method: 'DELETE',
     path: `/families/${familyId}/members/${userId}`,
   });
+  invalidateFamilyStructureCache(familyId);
 }
 
 /**
@@ -347,11 +411,31 @@ export async function removeMember(familyId: string, userId: string): Promise<vo
  * 调用方在三种情况下都应：clearActiveFamily + 切回 personal family。
  */
 export async function leaveFamily(familyId: string): Promise<void> {
-  return request<void>({
+  await request<void>({
     method: 'POST',
     path: `/families/${familyId}/members/me/leave`,
     body: {},
   });
+  invalidateFamilyStructureCache(familyId);
+}
+
+/**
+ * 解散家庭（仅 owner）
+ * DELETE /v1/families/{id}?version=X
+ *
+ * 后端语义（D-029 §2.3）：
+ *   - 单事务内先 setAllActiveLeftAt（所有成员 left_at=now）再 softDelete
+ *   - personal family 不可解散
+ *   - 乐观锁：必须传 version
+ *
+ * 调用方应在成功后：clearActiveFamily + 切回 personal family。
+ */
+export async function dissolveFamily(familyId: string, version: number): Promise<void> {
+  await request<void>({
+    method: 'DELETE',
+    path: `/families/${familyId}?version=${version}`,
+  });
+  invalidateFamilyStructureCache(familyId);
 }
 
 /**
@@ -367,9 +451,19 @@ export async function renameFamily(
   name: string,
   version: number,
 ): Promise<FamilyItem> {
-  return request<FamilyItem>({
+  const family = await request<FamilyItem>({
     method: 'PATCH',
     path: `/families/${familyId}`,
     body: { name, version },
   });
+  invalidateFamilyStructureCache(familyId);
+  return family;
 }
+
+export const __test__ = {
+  resetCaches(): void {
+    _summaryCache.clear();
+    invalidateFamiliesCache();
+    invalidateFamilyMembersCache();
+  },
+};

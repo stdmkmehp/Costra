@@ -81,6 +81,26 @@ function watermarkKey(familyId: string): string {
   return `watermark:${familyId}`;
 }
 
+function entryMonthIndexKey(ledgerId: string, month: string): string {
+  return `entry:index:${ledgerId}:${month}`;
+}
+
+function entryMonthValue(entry: Entry): string {
+  return entry.occurred_at.slice(0, 7);
+}
+
+interface EntryMonthIndexItem {
+  client_ref_id: string;
+  occurred_at: string;
+}
+
+export interface MonthEntriesResult {
+  entries: Entry[];
+  source: 'month-index' | 'rebuilt-month-index';
+  totalIndexed: number;
+  complete: boolean;
+}
+
 // ─── internal helpers ─────────────────────────────────────────────────────────
 
 async function readIndex(entity: Entity): Promise<string[]> {
@@ -99,6 +119,58 @@ async function removeFromIndex(entity: Entity, clientRefId: string): Promise<voi
   const idx = await readIndex(entity);
   const next = idx.filter(id => id !== clientRefId);
   await setItem(indexKey(entity), next);
+}
+
+async function readEntryMonthIndex(ledgerId: string, month: string): Promise<EntryMonthIndexItem[] | null> {
+  return await getItem<EntryMonthIndexItem[]>(entryMonthIndexKey(ledgerId, month));
+}
+
+function sortEntryMonthIndex(items: EntryMonthIndexItem[]): EntryMonthIndexItem[] {
+  return items.slice().sort((a, b) => {
+    const byTime = b.occurred_at.localeCompare(a.occurred_at);
+    if (byTime !== 0) return byTime;
+    return b.client_ref_id.localeCompare(a.client_ref_id);
+  });
+}
+
+async function removeFromEntryMonthIndex(entry: Entry | null | undefined): Promise<void> {
+  if (!entry?.ledger_id || !entry.occurred_at) return;
+  const month = entryMonthValue(entry);
+  const idx = await readEntryMonthIndex(entry.ledger_id, month);
+  if (!idx) return;
+  const next = idx.filter((item) => item.client_ref_id !== entry.client_ref_id);
+  await setItem(entryMonthIndexKey(entry.ledger_id, month), next);
+}
+
+async function upsertEntryMonthIndex(entry: Entry): Promise<void> {
+  if (entry.deleted_at) return;
+  const month = entryMonthValue(entry);
+  const idx = await readEntryMonthIndex(entry.ledger_id, month) || [];
+  const next = sortEntryMonthIndex([
+    ...idx.filter((item) => item.client_ref_id !== entry.client_ref_id),
+    { client_ref_id: entry.client_ref_id, occurred_at: entry.occurred_at },
+  ]);
+  await setItem(entryMonthIndexKey(entry.ledger_id, month), next);
+}
+
+async function reindexEntry(previous: Entry | null | undefined, next: Entry | null | undefined): Promise<void> {
+  if (previous) await removeFromEntryMonthIndex(previous);
+  if (next && !next.deleted_at) await upsertEntryMonthIndex(next);
+}
+
+async function rebuildEntryMonthIndex(ledgerId: string, month: string): Promise<EntryMonthIndexItem[]> {
+  const ids = await readIndex('entry');
+  const next: EntryMonthIndexItem[] = [];
+  for (const id of ids) {
+    const entry = await getEntry(id);
+    if (!entry || entry.deleted_at) continue;
+    if (entry.ledger_id !== ledgerId) continue;
+    if (entryMonthValue(entry) !== month) continue;
+    next.push({ client_ref_id: entry.client_ref_id, occurred_at: entry.occurred_at });
+  }
+  const sorted = sortEntryMonthIndex(next);
+  await setItem(entryMonthIndexKey(ledgerId, month), sorted);
+  return sorted;
 }
 
 async function getEntity<T extends { client_ref_id: string }>(
@@ -145,8 +217,10 @@ function wireToEntry(wire: Record<string, unknown>): Entry {
 // ─── Entry API ────────────────────────────────────────────────────────────────
 
 export async function putEntry(entry: Entry): Promise<void> {
+  const previous = await getEntry(entry.client_ref_id);
   await putEntity('entry', entry);
   await appendToIndex('entry', entry.client_ref_id);
+  await reindexEntry(previous, entry);
 }
 
 /**
@@ -167,6 +241,7 @@ export async function updateEntryFields(
   }
   const updated = { ...current, ...cleaned } as Entry;
   await putEntity('entry', updated);
+  await reindexEntry(current, updated);
   return updated;
 }
 
@@ -196,13 +271,49 @@ export async function listEntries(filter?: {
   return results;
 }
 
+export async function listMonthEntries(opts: {
+  ledger_id: string;
+  month: string;
+  limit?: number;
+}): Promise<MonthEntriesResult> {
+  let idx = await readEntryMonthIndex(opts.ledger_id, opts.month);
+  let source: MonthEntriesResult['source'] = 'month-index';
+  if (!idx) {
+    idx = await rebuildEntryMonthIndex(opts.ledger_id, opts.month);
+    source = 'rebuilt-month-index';
+  }
+
+  const entries: Entry[] = [];
+  const max = opts.limit && opts.limit > 0 ? opts.limit : Infinity;
+  for (const item of idx) {
+    if (entries.length >= max) break;
+    const entry = await getEntry(item.client_ref_id);
+    if (!entry || entry.deleted_at) continue;
+    if (entry.ledger_id !== opts.ledger_id) continue;
+    if (entryMonthValue(entry) !== opts.month) continue;
+    entries.push(entry);
+  }
+
+  return {
+    entries,
+    source,
+    totalIndexed: idx.length,
+    complete: entries.length >= idx.length || !opts.limit,
+  };
+}
+
 export async function deleteEntry(clientRefId: string): Promise<void> {
   const entry = await getEntry(clientRefId);
   if (!entry) return;
-  entry.deleted_at = new Date().toISOString();
-  entry.updated_at = entry.deleted_at;
-  await putEntry(entry);
+  const deletedAt = new Date().toISOString();
+  const deleted: Entry = {
+    ...entry,
+    deleted_at: deletedAt,
+    updated_at: deletedAt,
+  };
+  await putEntity('entry', deleted);
   await removeFromIndex('entry', clientRefId);
+  await reindexEntry(entry, deleted);
 }
 
 // ─── applyServerChanges ──────────────────────────────────────────────────────
@@ -278,10 +389,12 @@ export async function applyServerChanges(
       if (!local || localVer <= serverVer) {
         await putEntity('entry', item);
         await removeFromIndex('entry', item.client_ref_id);
+        await reindexEntry(local, item);
       }
     } else if (!local || serverVer >= localVer) {
       await putEntity('entry', item);
       await appendToIndex('entry', item.client_ref_id);
+      await reindexEntry(local, item);
     }
   }
 }

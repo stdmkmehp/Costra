@@ -17,8 +17,8 @@ import {
   getActiveLedgerId,
   getActiveFamilyKind,
   setActiveFamily,
-  clearActiveFamily,
-  savePreferenceAsync,
+  switchActiveFamily,
+  fallbackToPersonalFamily,
   type FamilyKind,
 } from '../../services/family';
 import { eventBus, EventNames, type SyncDonePayload, type ActiveFamilyChangedPayload, type ProfileUpdatedPayload } from '../../services/eventBus';
@@ -32,6 +32,7 @@ import {
   revokeInvite,
   removeMember,
   leaveFamily,
+  dissolveFamily,
   renameFamily,
   invalidateFamilyCache,
   type FamilyItem,
@@ -395,16 +396,15 @@ Page({
         return;
       }
       this._syncCurrentUserIdFromToken();
-      // ready=true 的同时设 loading=true，保证在 _loadPage setData 到达前不会有中间帧
-      // 渲染出旧的 isEmpty+loading=false 状态（避免 CTA 按钮闪烁）
-      this.setData({ ready: true, loading: true });
+      const hasPendingCreate = app.globalData.pendingFamilyAction === 'create';
+      const preserveExistingView = this.data.ready && !!this.data.summary && !hasPendingCreate;
+      this.setData(preserveExistingView ? { ready: true } : { ready: true, loading: true });
       // tabbar 自治 hidden（由 _unlocked + _panelOpen 合成）· 此处仅同步 selected 并解锁
       (this.getTabBar?.() as { markActive?: (idx: number) => void } | undefined)?.markActive?.(3);
       triggerOnPageShow('family');
-      await this._loadPage();
+      await this._loadPage({ preserveExistingView });
 
       // 消费跨页面 pending action（如 mine 页"创建协作账本"触发的跳转）
-      const app = getApp<AppWithBootstrap>();
       if (app.globalData.pendingFamilyAction === 'create') {
         app.globalData.pendingFamilyAction = null;
         this.onCreateFamily();
@@ -468,10 +468,10 @@ Page({
 
   // ─── 数据加载 ────────────────────────────────────────────────────────────────
 
-  async _loadPage() {
+  async _loadPage(opts?: { preserveExistingView?: boolean }) {
     if (this._loadingPromise) return this._loadingPromise;
 
-    this._loadingPromise = this._doLoadPage();
+    this._loadingPromise = this._doLoadPage(opts);
     try {
       await this._loadingPromise;
     } finally {
@@ -479,8 +479,10 @@ Page({
     }
   },
 
-  async _doLoadPage() {
-    this.setData({ loading: true });
+  async _doLoadPage(opts?: { preserveExistingView?: boolean }) {
+    if (!opts?.preserveExistingView) {
+      this.setData({ loading: true });
+    }
 
     try {
       // 1. 获取家庭列表 → 判断 solo/multi 模式
@@ -534,6 +536,10 @@ Page({
       }
 
       const familyId = targetFamily.id;
+      const preserveSummary = !!opts?.preserveExistingView && this._canPreserveSummaryFor(familyId);
+      if (opts?.preserveExistingView && !preserveSummary) {
+        this.setData({ loading: true });
+      }
       this._familyId = familyId;
 
       // 更新 active family context（如果切换了）
@@ -556,7 +562,7 @@ Page({
       });
 
       // 5. 加载 summary 数据
-      await this._loadSummary(familyId);
+      await this._loadSummary(familyId, { preserveExistingView: preserveSummary });
     } catch (err) {
       console.error('[family] loadPage failed', err);
 
@@ -566,7 +572,7 @@ Page({
         if (this._familyId) {
           invalidateFamilyCache(this._familyId);
         }
-        await clearActiveFamily();
+        await fallbackToPersonalFamily('family-switch');
         wx.showToast({ title: '你已不在该家庭中', icon: 'none' });
         // 切回 personal family 重新加载
         this._familyId = '';
@@ -580,7 +586,47 @@ Page({
     }
   },
 
-  async _loadSummary(familyId: string) {
+  _canPreserveSummaryFor(familyId: string): boolean {
+    const summary = this.data.summary;
+    if (!summary || summary.family_id !== familyId) return false;
+    if (this.data.dimension === 'monthly') return summary.month === this.data.currentMonth;
+    return summary.year === this.data.currentYear;
+  },
+
+  _summarySignature(summary: FamilySummary): string {
+    return JSON.stringify({
+      family_id: summary.family_id,
+      month: summary.month,
+      year: summary.year,
+      totals: summary.totals,
+      members: summary.members.map((m) => ({
+        user_id: m.user_id,
+        nickname: m.nickname,
+        avatar_url: m.avatar_url,
+        role: m.role,
+        status: m.status,
+        color_slot: m.color_slot,
+      })),
+      segments: summary.segments,
+      shared: summary.shared,
+      personal_by_member: summary.personal_by_member,
+    });
+  },
+
+  _applySummary(summary: FamilySummary): void {
+    const previous = this.data.summary;
+    if (previous && this._summarySignature(previous) === this._summarySignature(summary) && !this.data.loading) {
+      return;
+    }
+    this.setData({ summary });
+    if (this.data.mode === 'solo') {
+      this._buildSoloDisplay(summary);
+    } else {
+      this._buildMultiDisplay(summary);
+    }
+  },
+
+  async _loadSummary(familyId: string, opts?: { preserveExistingView?: boolean }) {
     // scope 由当前 dimension 决定（§C4）
     const scope = this.data.dimension === 'monthly'
       ? { month: this.data.currentMonth }
@@ -589,26 +635,14 @@ Page({
     // P1-2: SWR stale-first — 先取缓存立即渲染（COSTRA-223 R1.x.1）
     const cached = getCachedSummary(familyId, scope);
     if (cached) {
-      this.setData({ summary: cached });
-      if (this.data.mode === 'solo') {
-        this._buildSoloDisplay(cached);
-      } else {
-        this._buildMultiDisplay(cached);
-      }
-    } else {
+      this._applySummary(cached);
+    } else if (!opts?.preserveExistingView) {
       this.setData({ loading: true });
     }
 
     try {
       const summary = await getFamilySummary(familyId, scope, { topN: L1_VISIBLE });
-
-      this.setData({ summary });
-
-      if (this.data.mode === 'solo') {
-        this._buildSoloDisplay(summary);
-      } else {
-        this._buildMultiDisplay(summary);
-      }
+      this._applySummary(summary);
     } catch (err) {
       console.error('[family] loadSummary failed', err);
 
@@ -616,12 +650,18 @@ Page({
       const apiErr = err as ApiError;
       if (apiErr.status === 403 || apiErr.code === 'FAMILY_NOT_MEMBER') {
         invalidateFamilyCache(familyId);
-        await clearActiveFamily();
+        await fallbackToPersonalFamily('family-switch');
         wx.showToast({ title: '你已不在该家庭中', icon: 'none' });
         // 切回 personal family 重新加载
         this._familyId = '';
         this._loadingPromise = null;
         await this._doLoadPage();
+        return;
+      }
+
+      if (opts?.preserveExistingView && this.data.summary) {
+        this.setData({ loading: false });
+        wx.showToast({ title: '更新失败，已保留当前数据', icon: 'none' });
         return;
       }
 
@@ -1254,8 +1294,8 @@ Page({
   },
 
   /**
-   * owner 单人解散账本（语义同 leaveFamily，后端走 dissolve 分支）
-   * 文案不同：强调"解散"且不可恢复
+   * owner 解散账本（调用 DELETE /families/{id}?version=X）
+   * 后端会单事务内将所有成员 left_at=now + family softDelete
    */
   _confirmDissolveFamily() {
     wx.showModal({
@@ -1265,7 +1305,12 @@ Page({
       success: async (res) => {
         if (!res.confirm) return;
         try {
-          await leaveFamily(this._familyId);
+          const family = this.data.familyList.find(f => f.id === this._familyId);
+          if (!family) {
+            wx.showToast({ title: '账本数据异常，请重试', icon: 'none' });
+            return;
+          }
+          await dissolveFamily(this._familyId, family.version);
           wx.showToast({ title: '已解散', icon: 'success' });
           await this._fallbackToPersonalAndExit();
         } catch (err) {
@@ -1286,7 +1331,7 @@ Page({
     if (this._familyId) {
       invalidateFamilyCache(this._familyId);
     }
-    await clearActiveFamily();
+    await fallbackToPersonalFamily('family-switch');
     this._familyId = '';
     this._loadingPromise = null;
     await this._loadPage();
@@ -1449,13 +1494,12 @@ Page({
     this.setData({ createFamilyLoading: true, createFamilyError: '' });
     try {
       const newFamily = await createFamily(name);
-      await setActiveFamily({
+      await switchActiveFamily({
         family_id: newFamily.id,
         ledger_id: newFamily.ledger_id,
         family_kind: 'shared',
-        ledger_name: newFamily.ledger_name,
+        ledger_name: newFamily.ledger_name || newFamily.name,
       }, 'family-create');
-      savePreferenceAsync(newFamily.id, newFamily.ledger_id);
       this.setData({ createOverlayVisible: false, createFamilyLoading: false });
       wx.showToast({ title: '创建成功', icon: 'success' });
       await this._loadPage();
@@ -1492,14 +1536,13 @@ Page({
         const selected = families[res.tapIndex];
         if (selected.id === this._familyId) return;
 
-        // 切换 active family context + 持久化偏好（migration 0011）
-        await setActiveFamily({
+        // 统一切换 active family context + 可靠持久化服务端偏好
+        await switchActiveFamily({
           family_id: selected.id,
           ledger_id: selected.ledger_id,
           family_kind: selected.kind,
-          ledger_name: selected.ledger_name,
+          ledger_name: selected.ledger_name || selected.name,
         }, 'family-switch');
-        savePreferenceAsync(selected.id, selected.ledger_id);
 
         this._familyId = selected.id;
         this.setData({

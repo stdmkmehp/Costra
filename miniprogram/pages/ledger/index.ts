@@ -6,21 +6,22 @@
 import Decimal from '../../utils/vendor/decimal';
 import { toYuan } from '../../utils/money';
 import { getSafeAreaMetrics } from '../../utils/safeArea';
-import { listEntries, deleteEntry, putEntry, updateEntryFields, type Entry } from '../../services/db';
+import { listMonthEntries, deleteEntry, updateEntryFields, type Entry, type MonthEntriesResult } from '../../services/db';
 import {
   getActiveLedgerId,
   getActiveFamilyId,
   getActiveFamilyKind,
   getActiveLedgerName,
-  setActiveFamily,
-  savePreferenceAsync,
+  switchActiveFamily,
+  fallbackToPersonalFamily,
 } from '../../services/family';
 import { enqueue } from '../../services/outbox';
 import { getToken, hasValidSession } from '../../services/auth';
-import { eventBus, EventNames, type SyncDonePayload, type ActiveFamilyChangedPayload, type ProfileUpdatedPayload } from '../../services/eventBus';
+import { eventBus, EventNames, type SyncDonePayload, type ActiveFamilyChangedPayload, type ProfileUpdatedPayload, type LedgerDisplayReadyPayload } from '../../services/eventBus';
 import { triggerOnPageShow, syncOnce } from '../../services/syncScheduler';
+import { markPerf, markPerfError, setPerfContext } from '../../services/perf';
 import { pickRandomSlogan } from '../../config/slogans';
-import { getFamilies, getFamilyMembers, type FamilyMember } from '../../services/familyApi';
+import { getFamilies, getFamilyMembers } from '../../services/familyApi';
 import {
   getCategories,
   getCategoryIconById,
@@ -84,6 +85,16 @@ interface FilterMemberItem {
   initial: string;
   selected: boolean;
 }
+
+type LedgerLoadingState =
+  | 'bootstrapping'
+  | 'validating-ledger'
+  | 'loading-cache'
+  | 'loading-remote'
+  | 'ready-partial'
+  | 'ready-full'
+  | 'empty-confirmed'
+  | 'failed';
 
 // ─── 辅助函数 ────────────────────────────────────────────────────────────────────
 
@@ -173,17 +184,7 @@ function buildEmptyTitle(monthValue: string): string {
   return isCurrentMonth(monthValue) ? '暂无记录' : `${formatMonthDisplay(monthValue)} 暂无记录`;
 }
 
-/** picker 值 → 范围过滤 */
-function getMonthRange(value: string): { since: string; until: string } {
-  const parts = value.split('-');
-  const year = parseInt(parts[0], 10);
-  const month = parseInt(parts[1], 10);
-  const since = `${year}-${String(month).padStart(2, '0')}-01T00:00:00.000Z`;
-  const nextMonth = month === 12 ? 1 : month + 1;
-  const nextYear = month === 12 ? year + 1 : year;
-  const until = `${nextYear}-${String(nextMonth).padStart(2, '0')}-01T00:00:00.000Z`;
-  return { since, until };
-}
+const LEDGER_RECENT_ENTRY_LIMIT = 50;
 
 // ─── Page ─────────────────────────────────────────────────────────────────────────
 
@@ -218,6 +219,10 @@ Page({
     isEmpty: true,
     emptyTitle: buildEmptyTitle(getCurrentMonthValue()),
     emptyHint: '',
+    ledgerLoadingState: 'bootstrapping' as LedgerLoadingState,
+    ledgerLoadingText: '正在准备账本…',
+    ledgerLoadError: '',
+    ledgerSkeletonRows: [1, 2, 3, 4],
 
     // ─── 左滑 ───
     swipingRefId: '',
@@ -292,6 +297,12 @@ Page({
    * 拼接字段：client_ref_id|version|occurred_at|amount|type|category_id|note|deleted_at|shared_type|created_by
    */
   _entriesSignature: '' as string,
+  /** 当前已渲染内容所属账本，用于切回时保留旧画面但避免账本切换误展示 */
+  _renderedLedgerId: '' as string,
+  /** 当前已渲染内容所属月份 */
+  _renderedMonth: '' as string,
+  /** 首次首屏完成事件是否已发出 */
+  _displayReadyEmitted: false as boolean,
   /** COSTRA-227: 当前正在编辑的条目 client_ref_id */
   _editingRefId: '' as string,
 
@@ -403,10 +414,17 @@ Page({
     this.setData({ ready: true });
     // tabbar 自治 hidden（由 _unlocked + _panelOpen 合成）· 此处仅同步 selected 并解锁
     (this.getTabBar?.() as { markActive?: (idx: number) => void } | undefined)?.markActive?.(0);
-    await this._loadContext();
-    await this._loadEntries();
-    // sync-refresh: 与其他 tab 页（statistics/family/mine）保持一致 · 切回明细页时触发同步（debounce 5s 内防重）
-    triggerOnPageShow('ledger');
+    try {
+      await this._loadContext();
+      await this._loadEntries();
+      // sync-refresh: 与其他 tab 页（statistics/family/mine）保持一致 · 切回明细页时触发同步（debounce 5s 内防重）
+      triggerOnPageShow('ledger');
+    } catch (err) {
+      markPerfError('ledger.load.failed', err);
+      this._setLedgerLoadingState('failed', '流水加载失败，请稍后重试', err instanceof Error ? err.message : String(err));
+      // 首屏以失败态结算 · 释放后台预热，避免失败阻塞非首屏预热
+      this._emitLedgerDisplayFailed();
+    }
   },
 
   onUnload() {
@@ -444,7 +462,28 @@ Page({
 
   // ─── 数据加载 ────────────────────────────────────────────────────────────────
 
+  _setLedgerLoadingState(state: LedgerLoadingState, text?: string, error?: string) {
+    const fallbackText: Record<LedgerLoadingState, string> = {
+      'bootstrapping': '正在准备账本…',
+      'validating-ledger': '正在验证账本…',
+      'loading-cache': '正在读取本地流水…',
+      'loading-remote': '正在同步最近流水…',
+      'ready-partial': '统计更新中…',
+      'ready-full': '',
+      'empty-confirmed': '',
+      'failed': '流水加载失败，请稍后重试',
+    };
+    this.setData({
+      ledgerLoadingState: state,
+      ledgerLoadingText: text ?? fallbackText[state],
+      ledgerLoadError: error || '',
+    });
+    markPerf('ledger.loading-state', { state });
+  },
+
   async _loadContext() {
+    markPerf('ledger.context.start');
+    this._setLedgerLoadingState('validating-ledger');
     const [ledgerId, familyId, familyKind, ledgerName] = await Promise.all([
       getActiveLedgerId(),
       getActiveFamilyId(),
@@ -456,10 +495,48 @@ Page({
 
     // COSTRA-220: 用 family_kind 替代 !== 'solo' 硬编码判断
     const isMultiMember = familyKind === 'shared';
+    setPerfContext({
+      ledger: familyKind || 'unknown',
+      activeContext: ledgerId && familyId ? 'present' : 'missing',
+    });
+    let displayLedgerName = ledgerName || (familyKind === 'personal' ? '个人账本' : '账本待同步');
+
+    // 协作账本需确认当前用户仍在 family 列表中；被移出时立即回退 personal，避免展示旧协作账本数据。
+    if (isMultiMember && familyId) {
+      try {
+        const { families } = await getFamilies();
+        const matched = families.find((f) => f.id === familyId && f.ledger_id === ledgerId);
+        if (!matched) {
+          const fallback = await fallbackToPersonalFamily('family-switch');
+          if (fallback) {
+            this._familyId = fallback.family_id;
+            this._ledgerId = fallback.ledger_id;
+            this.setData({ showMemberFilter: false, ledgerName: fallback.ledger_name || '个人账本' });
+            setPerfContext({ ledger: fallback.family_kind || 'personal', activeContext: 'fallback-personal' });
+          } else {
+            this._familyId = '';
+            this._ledgerId = '';
+            this._setLedgerLoadingState('failed', '账本待同步，请稍后重试');
+            // 首屏校验失败且无法回退 · 释放后台预热
+            this._emitLedgerDisplayFailed();
+          }
+          markPerf('ledger.context.done', { result: fallback ? 'fallback-personal' : 'family-missing' });
+          wx.showToast({ title: '你已不在该账本中', icon: 'none' });
+          return;
+        }
+        displayLedgerName = matched.ledger_name || matched.name || displayLedgerName;
+      } catch {
+        displayLedgerName = ledgerName ? `${ledgerName}（离线）` : '协作账本（离线）';
+        if (!ledgerId) {
+          wx.showToast({ title: '网络异常，账本待验证', icon: 'none' });
+        }
+      }
+    }
+
     this.setData({
       showMemberFilter: isMultiMember,
-      // COSTRA-220: 从 FamilyContext 获取真实账本名称
-      ledgerName: ledgerName || '个人账本',
+      // 仅明确 personal 时 fallback 为“个人账本”；unknown/partial context 不再误显示个人账本。
+      ledgerName: displayLedgerName,
     });
 
     // 切换到非共享账本时重置筛选
@@ -490,6 +567,12 @@ Page({
     if (familyId) {
       void getCategories(familyId).catch(() => { /* 静默：fallback 兜底 */ });
     }
+    markPerf('ledger.context.done', {
+      ledger: familyKind || 'unknown',
+      shared: isMultiMember,
+      hasLedgerId: !!this._ledgerId,
+      hasFamilyId: !!this._familyId,
+    });
   },
 
   /** 加载成员映射（协作账本条目行头像用） */
@@ -529,34 +612,120 @@ Page({
 
   async _loadEntries(monthValue?: string) {
     const targetMonth = monthValue || this.data.currentMonth;
+    markPerf('ledger.entries.start', { month: targetMonth, hasLedgerId: !!this._ledgerId });
     if (!this._ledgerId) {
-      const emptyHint = this._shouldRefreshEmptyHintOnNextEmpty
-        ? pickRandomSlogan(this.data.emptyHint)
-        : this.data.emptyHint || pickRandomSlogan();
+      this._allEntries = [];
+      this._entriesSignature = '';
+      this._renderedLedgerId = '';
+      this._renderedMonth = '';
       this.setData({
         dateGroups: [],
         isEmpty: true,
         emptyTitle: buildEmptyTitle(targetMonth),
-        emptyHint,
+        emptyHint: this.data.emptyHint || pickRandomSlogan(),
         totalExpense: '¥0.00',
         totalBalance: '',
         totalExpenseCents: 0,
         totalIncomeCents: 0,
       });
-      this._shouldRefreshEmptyHintOnNextEmpty = false;
+      this._setLedgerLoadingState('failed', '账本还没准备好，请稍后重试');
+      markPerf('ledger.entries.done', { skipped: 'no-ledger' });
+      // 首屏无可用账本同样视为「已结算」· 释放后台预热
+      this._emitLedgerDisplayFailed();
       return;
     }
 
-    const monthRange = getMonthRange(targetMonth);
-    const entries = await listEntries({
+    const canKeepCurrentView = this._renderedLedgerId === this._ledgerId
+      && this._renderedMonth === targetMonth
+      && this.data.dateGroups.length > 0;
+    if (canKeepCurrentView) {
+      markPerf('ledger.loading-state', { state: 'loading-cache', preserve: 'existing-view' });
+    } else {
+      this._setLedgerLoadingState('loading-cache');
+    }
+    const recentResult = await listMonthEntries({
       ledger_id: this._ledgerId,
-      since: monthRange.since,
+      month: targetMonth,
+      limit: LEDGER_RECENT_ENTRY_LIMIT,
     });
 
-    this._allEntries = entries.filter(e => e.occurred_at < monthRange.until);
+    this._allEntries = recentResult.entries;
+    setPerfContext({
+      entryCache: recentResult.source,
+      dataState: recentResult.complete
+        ? (recentResult.entries.length > 0 ? 'full' : 'empty')
+        : 'partial',
+    });
     // sync-refresh: 维护签名 · 后续 SYNC_DONE 触发的 _refreshIfChanged 据此判断是否真的有变化
     this._entriesSignature = this._computeEntriesSignature(this._allEntries);
     this._buildDisplay(targetMonth);
+    if (recentResult.complete) {
+      this._setLedgerLoadingState(this._allEntries.length > 0 ? 'ready-full' : 'empty-confirmed');
+    } else {
+      this.setData({
+        totalExpense: '统计更新中',
+        totalBalance: `已先展示最近 ${this._allEntries.length} 条流水`,
+      });
+      this._setLedgerLoadingState('ready-partial', '整月统计更新中…');
+      void this._loadFullMonthEntries(targetMonth, this._ledgerId, recentResult);
+    }
+    markPerf('ledger.entries.done', {
+      month: targetMonth,
+      count: this._allEntries.length,
+      totalIndexed: recentResult.totalIndexed,
+      source: recentResult.source,
+      complete: recentResult.complete,
+      limit: LEDGER_RECENT_ENTRY_LIMIT,
+    });
+    markPerf('ledger.display.done', {
+      month: targetMonth,
+      count: this._allEntries.length,
+      empty: this._allEntries.length === 0,
+      partial: !recentResult.complete,
+    });
+    this._emitLedgerDisplayReady(targetMonth, this._allEntries.length);
+  },
+
+  async _loadFullMonthEntries(monthValue: string, ledgerId: string, recentResult?: MonthEntriesResult) {
+    markPerf('ledger.entries.full.start', { month: monthValue, ledgerId, recentCount: recentResult?.entries.length ?? 0 });
+    try {
+      const fullResult = await listMonthEntries({ ledger_id: ledgerId, month: monthValue });
+      if (this._ledgerId !== ledgerId || this.data.currentMonth !== monthValue) {
+        markPerf('ledger.entries.full.skip', { reason: 'context-changed', month: monthValue });
+        return;
+      }
+      const nextSig = this._computeEntriesSignature(fullResult.entries);
+      this._setLedgerLoadingState(fullResult.entries.length > 0 ? 'ready-full' : 'empty-confirmed');
+      if (nextSig === this._entriesSignature) {
+        markPerf('ledger.entries.full.done', {
+          month: monthValue,
+          count: fullResult.entries.length,
+          unchanged: true,
+          source: fullResult.source,
+        });
+        return;
+      }
+      this._allEntries = fullResult.entries;
+      this._entriesSignature = nextSig;
+      this._buildDisplay(monthValue);
+      setPerfContext({
+        entryCache: fullResult.source,
+        dataState: fullResult.entries.length > 0 ? 'full' : 'empty',
+      });
+      markPerf('ledger.display.done', {
+        source: 'full-month',
+        month: monthValue,
+        count: fullResult.entries.length,
+        empty: fullResult.entries.length === 0,
+      });
+      markPerf('ledger.entries.full.done', {
+        month: monthValue,
+        count: fullResult.entries.length,
+        source: fullResult.source,
+      });
+    } catch (err) {
+      markPerfError('ledger.entries.full.failed', err, { month: monthValue });
+    }
   },
 
   /**
@@ -591,17 +760,20 @@ Page({
   async _refreshIfChanged() {
     if (!this._ledgerId) return;
     const targetMonth = this.data.currentMonth;
-    const monthRange = getMonthRange(targetMonth);
-    const entries = await listEntries({
-      ledger_id: this._ledgerId,
-      since: monthRange.since,
-    });
-    const filtered = entries.filter(e => e.occurred_at < monthRange.until);
-    const nextSig = this._computeEntriesSignature(filtered);
+    const fullResult = await listMonthEntries({ ledger_id: this._ledgerId, month: targetMonth });
+    const nextSig = this._computeEntriesSignature(fullResult.entries);
     if (nextSig === this._entriesSignature) return;
-    this._allEntries = filtered;
+    this._allEntries = fullResult.entries;
     this._entriesSignature = nextSig;
     this._buildDisplay(targetMonth);
+    this._setLedgerLoadingState(fullResult.entries.length > 0 ? 'ready-full' : 'empty-confirmed');
+    markPerf('ledger.display.done', {
+      source: 'sync-refresh',
+      month: targetMonth,
+      count: fullResult.entries.length,
+      empty: fullResult.entries.length === 0,
+    });
+    this._emitLedgerDisplayReady(targetMonth, fullResult.entries.length);
   },
 
   /** 从 _allEntries 构建 dateGroups + 汇总 */
@@ -717,7 +889,52 @@ Page({
       totalIncomeCents: totalIncomeCents.toNumber(),
       totalBalance: `收入 ¥${formatAmountShort(totalIncomeCents.toNumber())} · 结余 ${balanceStr}`,
     });
+    this._renderedLedgerId = this._ledgerId;
+    this._renderedMonth = targetMonth;
     this._shouldRefreshEmptyHintOnNextEmpty = false;
+  },
+
+  _emitLedgerDisplayReady(month: string, entryCount: number) {
+    this._emitLedgerDisplaySettled(month, entryCount, false);
+  },
+
+  /**
+   * 首屏「已结算」信号 · 成功/失败都发，且全程只发一次。
+   * 这是非首屏预热（services/prefetch.ts）的放行点：无论首屏渲染成功还是加载失败，
+   * 都必须释放预热调度，避免失败态把后台预热永久阻塞。
+   * failed=true 时 ledger_id/family_id/entry_count 不保证可信，订阅方仅据此放行即可。
+   */
+  _emitLedgerDisplaySettled(month: string, entryCount: number, failed: boolean) {
+    if (this._displayReadyEmitted) return;
+    this._displayReadyEmitted = true;
+    const payload: LedgerDisplayReadyPayload = {
+      ledger_id: this._ledgerId,
+      family_id: this._familyId,
+      month,
+      entry_count: entryCount,
+      empty: entryCount === 0,
+      failed,
+    };
+    eventBus.emit(EventNames.LEDGER_DISPLAY_READY, payload);
+    markPerf('ledger.display-ready.emit', { month, count: entryCount, empty: entryCount === 0, failed });
+  },
+
+  /** 首屏以失败态结算 · 当前展示月份、计数置 0、failed=true（仅用于放行预热） */
+  _emitLedgerDisplayFailed() {
+    this._emitLedgerDisplaySettled(this.data.currentMonth, 0, true);
+  },
+
+  async onRetryLedgerLoad() {
+    markPerf('ledger.retry-load');
+    try {
+      await this._loadContext();
+      await this._loadEntries();
+    } catch (err) {
+      markPerfError('ledger.retry-load.failed', err);
+      this._setLedgerLoadingState('failed', '流水加载失败，请稍后重试', err instanceof Error ? err.message : String(err));
+      // 重试仍失败也要结算 · 释放后台预热（_emitLedgerDisplaySettled 幂等，首次已发则 noop）
+      this._emitLedgerDisplayFailed();
+    }
   },
 
   // ─── 交互：账本切换 ──────────────────────────────────────────────────────────
@@ -741,18 +958,17 @@ Page({
           const selected = families[res.tapIndex];
           if (selected.ledger_id === this._ledgerId) return;
 
-          // 切换 active family context + 持久化偏好（migration 0011）
-          await setActiveFamily({
+          // 统一切换 active family context + 可靠持久化服务端偏好
+          await switchActiveFamily({
             family_id: selected.id,
             ledger_id: selected.ledger_id,
             family_kind: selected.kind,
-            ledger_name: selected.name,
+            ledger_name: selected.ledger_name || selected.name,
           }, 'ledger-switch');
-          savePreferenceAsync(selected.id, selected.ledger_id);
 
           this._familyId = selected.id;
           this._ledgerId = selected.ledger_id;
-          this.setData({ ledgerName: selected.name });
+          this.setData({ ledgerName: selected.ledger_name || selected.name });
           await this._loadEntries();
           // 切换账本后主动拉取新账本数据 · 其他成员可能已记账但本地未同步
           void syncOnce('ledger-switch');

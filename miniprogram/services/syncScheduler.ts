@@ -11,6 +11,7 @@ import { isLoggedIn } from './auth';
 import { getActiveFamilyId as familyContextGetActiveFamilyId } from './family';
 import { eventBus, EventNames, type SyncDonePayload } from './eventBus';
 import { deadLetterSize } from './outbox';
+import { markPerf, markPerfError } from './perf';
 
 // ─── 类型 ─────────────────────────────────────────────────────────────────────
 
@@ -53,15 +54,18 @@ export async function syncOnce(trigger: TriggerSource): Promise<SyncResult | nul
 
   isRunning = true;
   const t0 = Date.now();
+  markPerf(`sync.${trigger}.start`);
   console.log(`[sync] ▶ start · trigger=${trigger}`);
   try {
     if (!isLoggedIn()) {
+      markPerf(`sync.${trigger}.done`, { skipped: 'not-logged-in' });
       console.log(`[sync] skip · not logged in (trigger=${trigger})`);
       return null;
     }
 
     const familyId = await familyContextGetActiveFamilyId();
     if (!familyId) {
+      markPerf(`sync.${trigger}.done`, { skipped: 'no-family' });
       console.log(`[sync] skip · no active family (trigger=${trigger})`);
       return null;
     }
@@ -72,6 +76,14 @@ export async function syncOnce(trigger: TriggerSource): Promise<SyncResult | nul
 
     const pulled = pullResult.changes?.entries?.length || 0;
     const elapsed = Date.now() - t0;
+    markPerf(`sync.${trigger}.done`, {
+      elapsed,
+      pushed: pushResult.pushed,
+      pulled,
+      conflicts: pushResult.conflicts,
+      rejected: pushResult.rejected,
+      failed: pushResult.failed,
+    });
     console.log(
       `[sync] ✓ ok · pushed=${pushResult.pushed} conflicts=${pushResult.conflicts} rejected=${pushResult.rejected} failed=${pushResult.failed} pulled=${pulled} watermark=${pullResult.watermark} (trigger=${trigger}) [${elapsed}ms]`
     );
@@ -151,6 +163,7 @@ export async function syncOnce(trigger: TriggerSource): Promise<SyncResult | nul
     };
   } catch (e: any) {
     const elapsed = Date.now() - t0;
+    markPerfError(`sync.${trigger}.failed`, e, { elapsed });
     console.warn(`[sync] ✗ fail · ${e?.code || 'unknown'} ${e?.message || e} (trigger=${trigger}) [${elapsed}ms]`);
     return null;
   } finally {

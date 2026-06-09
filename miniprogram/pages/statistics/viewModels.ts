@@ -2,9 +2,9 @@
 // 卡号: COSTRA-264 · P0 拆分 index.ts 低于 1000 行
 // Refs: COSTRA-264
 
-import type { MonthlyView, YearlyView, L1Display } from './types';
-import type { StatCategoryRankItem } from '../../services/statisticsApi';
-import { fmtYuan, fmtRatio } from './formatters';
+import type { MonthlyView, YearlyView, L1Display, SummaryGridItem } from './types';
+import type { MonthlyStatistics, StatCategoryRankItem } from '../../services/statisticsApi';
+import { fmtYuan, fmtRatio, buildEmptyTitleMonth } from './formatters';
 
 /**
  * L1 不限项：用户期望统计页所有一级分类全部展示（数据量天然受控，design/categories.yaml ~15 项）。
@@ -86,5 +86,37 @@ export function buildL1Display(c: StatCategoryRankItem, prevList: L1Display[]): 
     l2Items: prev?.l2Items ?? [],
     l2HasMore: prev?.l2HasMore ?? false,
     subtreeStale: stale,
+  };
+}
+
+export function buildMonthlyView(
+  stats: MonthlyStatistics,
+  prevList: L1Display[],
+  month: string,
+  emptyHint: string,
+): MonthlyView {
+  const { totals, daily_trend, extremes, category_ranks } = stats;
+  const summary: SummaryGridItem[] = [
+    { label: '日均支出', value: fmtYuan(extremes.avg_daily_expense) },
+    { label: '最大单笔', value: fmtYuan(extremes.max_single_expense) },
+    { label: '单日最高', value: fmtYuan(extremes.max_day_expense) },
+    { label: '记账笔数', value: `${totals.entry_count}` },
+  ];
+  const l1: L1Display[] = category_ranks
+    .slice(0, L1_VISIBLE)
+    .map((c) => buildL1Display(c, prevList));
+  const isEmpty = totals.expense === 0 && totals.income === 0;
+  return {
+    totalExpense: fmtYuan(totals.expense),
+    totalIncome: fmtYuan(totals.income),
+    totalBalance: fmtYuan(totals.balance),
+    trend: daily_trend.map((d) => d.expense),
+    summary,
+    l1,
+    isEmpty,
+    loading: false,
+    loaded: true,
+    emptyTitle: buildEmptyTitleMonth(month),
+    emptyHint: isEmpty ? emptyHint : '',
   };
 }

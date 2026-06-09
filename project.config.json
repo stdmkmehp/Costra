@@ -7,7 +7,9 @@
       { "type": "folder", "value": ".git" },
       { "type": "folder", "value": "node_modules" },
       { "type": "folder", "value": "tests" },
-      { "type": "file",   "value": "README.md" }
+      { "type": "file",   "value": "README.md" },
+      { "type": "regexp", "value": "\\.spec\\.ts$" },
+      { "type": "regexp", "value": "\\.spec\\.js$" }
     ]
   },
   "setting": {

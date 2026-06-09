@@ -8,6 +8,7 @@
 
 import { getItem, setItem, removeItem } from './storage';
 import { request } from './request';
+import { getFamilies as requestCachedFamilies } from './familyApi';
 import { eventBus, EventNames, type ActiveFamilyChangedPayload } from './eventBus';
 
 /** family_kind 枚举（与 server 0007 migration family_kind ENUM 对齐 · ADR-0007 §5.7.2） */
@@ -20,11 +21,29 @@ export interface FamilyContext {
   family_kind?: FamilyKind;
   /** 账本名称（COSTRA-220: 替代 '我的账本' 硬编码） */
   ledger_name?: string;
+  /** 服务端偏好 revision（用于防旧请求覆盖） */
+  preference_revision?: number;
+  /** 服务端偏好更新时间 */
+  preference_updated_at?: string | null;
 }
 
 const FAMILY_CONTEXT_KEY = '__costra_family_context_v1';
+const PENDING_PREFERENCE_KEY = '__costra_pending_preference_v1';
 // 旧 key 一次性清理（防陈旧值干扰 · 实测手册曾让 Human 手动 setStorage 此 key）
 const LEGACY_FAMILY_ID_KEY = '__costra_family_id_v1';
+
+let lastPreferenceRevision = 0;
+
+function syncGlobalActiveLedgerId(ledgerId: string | undefined): void {
+  try {
+    const app = getApp<{ globalData?: { activeLedgerId?: string } }>();
+    if (app?.globalData) {
+      app.globalData.activeLedgerId = ledgerId;
+    }
+  } catch {
+    // 单测 / 非小程序环境下忽略 globalData 同步
+  }
+}
 
 /** ACTIVE_FAMILY_CHANGED 事件来源（与 eventBus.ts 对齐） */
 export type ActiveFamilySwitchSource = ActiveFamilyChangedPayload['source'];
@@ -47,6 +66,7 @@ export async function setActiveFamily(
   await setItem<FamilyContext>(FAMILY_CONTEXT_KEY, ctx);
   // 一次性迁移：清旧 key（如存在）防止 syncScheduler 走旧分支
   await removeItem(LEGACY_FAMILY_ID_KEY);
+  syncGlobalActiveLedgerId(ctx.ledger_id);
 
   // 仅在 family_id 或 ledger_id 真正变化时广播，避免无意义刷新
   if (!prev || prev.family_id !== ctx.family_id || prev.ledger_id !== ctx.ledger_id) {
@@ -84,9 +104,17 @@ export async function getActiveLedgerId(): Promise<string | null> {
  * 清除 active context（logout 时调）
  * 注意：不清除偏好（偏好独立于登录态，重新登录后可恢复）
  */
-export async function clearActiveFamily(): Promise<void> {
+export async function clearActiveFamily(source: ActiveFamilySwitchSource = 'other'): Promise<void> {
   await removeItem(FAMILY_CONTEXT_KEY);
   await removeItem(LEGACY_FAMILY_ID_KEY);
+  syncGlobalActiveLedgerId(undefined);
+  eventBus.emit(EventNames.ACTIVE_FAMILY_CHANGED, {
+    family_id: '',
+    ledger_id: '',
+    family_kind: 'personal',
+    ledger_name: '个人账本',
+    source,
+  });
 }
 
 /**
@@ -100,52 +128,243 @@ export async function getActiveFamilyKind(): Promise<FamilyKind | null> {
 
 /**
  * 取 active ledger_name（COSTRA-220: 替代 '我的账本' 硬编码）
- * 降级返回 '个人账本'
+ * 仅明确 personal 时降级返回“个人账本”；unknown/partial context 返回空串。
  */
 export async function getActiveLedgerName(): Promise<string> {
   const ctx = await getItem<FamilyContext>(FAMILY_CONTEXT_KEY);
-  return ctx?.ledger_name || '个人账本';
+  if (ctx?.ledger_name) return ctx.ledger_name;
+  return ctx?.family_kind === 'personal' ? '个人账本' : '';
 }
 
-// ─── 偏好持久化（migration 0011）──────────────────────────────────────────────
+export async function getActiveFamilyContext(): Promise<FamilyContext | null> {
+  return await getItem<FamilyContext>(FAMILY_CONTEXT_KEY);
+}
+
+function isCompleteFamilyContext(ctx: FamilyContext | null | undefined): ctx is FamilyContext & { family_kind: FamilyKind; ledger_name: string } {
+  return !!ctx?.family_id && !!ctx.ledger_id && !!ctx.family_kind && !!ctx.ledger_name;
+}
+
+function nextPreferenceRevision(): number {
+  const now = Date.now();
+  lastPreferenceRevision = Math.max(lastPreferenceRevision + 1, now);
+  return lastPreferenceRevision;
+}
+
+// ─── 偏好持久化（migration 0011 + revision 保护）──────────────────────────────
 
 /** 服务端偏好响应结构（GET /users/me/preference） */
 interface ServerPreference {
   preferred_family_id: string | null;
   preferred_ledger_id:  string | null;
+  preferred_family_kind?: FamilyKind | null;
+  preferred_ledger_name?: string | null;
+  preferred_revision?: number;
+  preferred_updated_at?: string | null;
 }
 
-/**
- * 保存用户账本偏好：
- *   1. 立即更新本地 storage（setActiveFamily 已完成 · 此处追加服务端同步）
- *   2. fire-and-forget 写服务端（网络失败不影响本地体验）
- *
- * 调用时机：用户主动切换账本（ledger 页 / family 页切换）
- */
-export function savePreferenceAsync(familyId: string, ledgerId: string): void {
-  void request<void>({
+interface PendingPreference {
+  family_id: string;
+  ledger_id: string;
+  family_kind?: FamilyKind;
+  ledger_name?: string;
+  client_revision: number;
+  source: ActiveFamilySwitchSource;
+  retry_count: number;
+  last_error_code?: string;
+  updated_at: number;
+}
+
+async function requestFamilies(): Promise<{ id: string; kind: FamilyKind; name: string; ledger_id: string; ledger_name: string }[]> {
+  const resp = await requestCachedFamilies();
+  return resp.families;
+}
+
+function isNonRetryablePreferenceError(apiErr: { code?: string; status?: number }): boolean {
+  return !!apiErr.status && apiErr.status >= 400 && apiErr.status < 500 && apiErr.code !== 'CLIENT_NETWORK_ERROR';
+}
+
+async function setPendingPreferenceIfNewer(next: PendingPreference): Promise<void> {
+  const previous = await getItem<PendingPreference>(PENDING_PREFERENCE_KEY);
+  if (previous && previous.client_revision > next.client_revision) {
+    console.warn('[family] skip stale pending preference', {
+      previousRevision: previous.client_revision,
+      nextRevision: next.client_revision,
+    });
+    return;
+  }
+  await setItem<PendingPreference>(PENDING_PREFERENCE_KEY, next);
+}
+
+async function removePendingPreferenceUpToRevision(revision: number): Promise<void> {
+  const pending = await getItem<PendingPreference>(PENDING_PREFERENCE_KEY);
+  if (pending && pending.client_revision <= revision) {
+    await removeItem(PENDING_PREFERENCE_KEY);
+  }
+}
+
+async function savePreference(ctx: FamilyContext & { family_kind: FamilyKind; ledger_name: string }, source: ActiveFamilySwitchSource, revision: number): Promise<void> {
+  await request<void>({
     method: 'PUT',
     path: '/users/me/preference',
     body: {
-      preferred_family_id: familyId,
-      preferred_ledger_id: ledgerId,
+      preferred_family_id: ctx.family_id,
+      preferred_ledger_id: ctx.ledger_id,
+      client_revision: revision,
     },
-  }).catch((e) => {
-    // fire-and-forget · 网络失败静默 warn，不阻断 UI
-    console.warn('[family] savePreference server sync failed', e);
   });
+  await removePendingPreferenceUpToRevision(revision);
+  console.info('[family] preference saved', { source, familyKind: ctx.family_kind });
+}
+
+async function queuePendingPreference(
+  ctx: FamilyContext & { family_kind: FamilyKind; ledger_name: string },
+  source: ActiveFamilySwitchSource,
+  revision: number,
+  err: unknown,
+): Promise<void> {
+  const apiErr = err as { code?: string; status?: number };
+  if (isNonRetryablePreferenceError(apiErr)) {
+    console.warn('[family] preference save rejected, skip retry', { source, code: apiErr.code, status: apiErr.status });
+    return;
+  }
+  const previous = await getItem<PendingPreference>(PENDING_PREFERENCE_KEY);
+  await setPendingPreferenceIfNewer({
+    family_id: ctx.family_id,
+    ledger_id: ctx.ledger_id,
+    family_kind: ctx.family_kind,
+    ledger_name: ctx.ledger_name,
+    client_revision: revision,
+    source,
+    retry_count: previous?.client_revision === revision ? previous.retry_count + 1 : 0,
+    last_error_code: apiErr.code,
+    updated_at: Date.now(),
+  });
+  console.warn('[family] preference save queued', { source, code: apiErr.code, status: apiErr.status });
+}
+
+/**
+ * 保存用户账本偏好（兼容旧调用方）。
+ * 网络失败时写 pending preference，后续由 flushPendingPreference 重试。
+ */
+export function savePreferenceAsync(
+  familyId: string,
+  ledgerId: string,
+  source: ActiveFamilySwitchSource = 'other',
+): void {
+  void (async () => {
+    const active = await getActiveFamilyContext();
+    const revision = nextPreferenceRevision();
+    if (!isCompleteFamilyContext(active) || active.family_id !== familyId || active.ledger_id !== ledgerId) {
+      try {
+        await request<void>({
+          method: 'PUT',
+          path: '/users/me/preference',
+          body: {
+            preferred_family_id: familyId,
+            preferred_ledger_id: ledgerId,
+            client_revision: revision,
+          },
+        });
+        await removePendingPreferenceUpToRevision(revision);
+      } catch (e) {
+        const apiErr = e as { code?: string; status?: number };
+        if (isNonRetryablePreferenceError(apiErr)) {
+          console.warn('[family] preference save rejected with ids only, skip retry', { source, code: apiErr.code, status: apiErr.status });
+          return;
+        }
+        const previous = await getItem<PendingPreference>(PENDING_PREFERENCE_KEY);
+        await setPendingPreferenceIfNewer({
+          family_id: familyId,
+          ledger_id: ledgerId,
+          client_revision: revision,
+          source,
+          retry_count: previous?.client_revision === revision ? previous.retry_count + 1 : 0,
+          last_error_code: apiErr.code,
+          updated_at: Date.now(),
+        });
+        console.warn('[family] preference save queued with ids only', { source, code: apiErr.code, status: apiErr.status });
+      }
+      return;
+    }
+    const ctx = active;
+    try {
+      await savePreference(ctx, source, revision);
+    } catch (e) {
+      await queuePendingPreference(ctx, source, revision, e);
+    }
+  })();
+}
+
+/** 统一切换 active family + ledger：写本地完整 context，并可靠保存服务端 preference。 */
+export async function switchActiveFamily(
+  ctx: FamilyContext & { family_kind: FamilyKind; ledger_name: string },
+  source: ActiveFamilySwitchSource = 'other',
+): Promise<FamilyContext> {
+  const revision = nextPreferenceRevision();
+  const nextCtx: FamilyContext = { ...ctx, preference_revision: revision };
+  await setActiveFamily(nextCtx, source);
+  syncGlobalActiveLedgerId(ctx.ledger_id);
+  void savePreference(ctx, source, revision).catch((e) => queuePendingPreference(ctx, source, revision, e));
+  return nextCtx;
+}
+
+export async function flushPendingPreference(): Promise<void> {
+  const pending = await getItem<PendingPreference>(PENDING_PREFERENCE_KEY);
+  if (!pending) return;
+  try {
+    if (pending.family_kind && pending.ledger_name) {
+      await savePreference({
+        family_id: pending.family_id,
+        ledger_id: pending.ledger_id,
+        family_kind: pending.family_kind,
+        ledger_name: pending.ledger_name,
+      }, pending.source, pending.client_revision);
+    } else {
+      await request<void>({
+        method: 'PUT',
+        path: '/users/me/preference',
+        body: {
+          preferred_family_id: pending.family_id,
+          preferred_ledger_id: pending.ledger_id,
+          client_revision: pending.client_revision,
+        },
+      });
+      await removePendingPreferenceUpToRevision(pending.client_revision);
+    }
+    console.info('[family] pending preference flushed', { source: pending.source });
+  } catch (e) {
+    const apiErr = e as { code?: string; status?: number };
+    if (isNonRetryablePreferenceError(apiErr)) {
+      console.warn('[family] pending preference rejected, drop retry', { source: pending.source, code: apiErr.code, status: apiErr.status });
+      await removePendingPreferenceUpToRevision(pending.client_revision);
+      return;
+    }
+    await setPendingPreferenceIfNewer({
+      ...pending,
+      retry_count: pending.retry_count + 1,
+      last_error_code: apiErr.code,
+      updated_at: Date.now(),
+    });
+  }
+}
+
+async function completeContextFromFamilies(ctx: FamilyContext): Promise<FamilyContext | null> {
+  const families = await requestFamilies();
+  const matched = families.find((f) => f.id === ctx.family_id && f.ledger_id === ctx.ledger_id);
+  if (!matched) return null;
+  return {
+    family_id: matched.id,
+    ledger_id: matched.ledger_id,
+    family_kind: matched.kind,
+    ledger_name: matched.ledger_name || matched.name,
+    preference_revision: ctx.preference_revision,
+    preference_updated_at: ctx.preference_updated_at,
+  };
 }
 
 /**
  * 从服务端拉取偏好并还原本地 context。
- *
- * 调用时机：本地 storage 中无 active family context 时（storage 被清除 / 首次安装）
- *
- * 双层策略：
- *   - 本地有值 → 调用方直接用本地，不调此函数
- *   - 本地无值 → 调此函数从服务端恢复，写入本地 storage，再用
- *
- * 返回 null 表示服务端也无偏好（真正的首次登录 / 偏好未设置）
+ * 不落盘缺少 family_kind/ledger_name 的半残 context，避免页面视觉误判为个人账本。
  */
 export async function fetchAndRestorePreference(): Promise<FamilyContext | null> {
   try {
@@ -157,35 +376,85 @@ export async function fetchAndRestorePreference(): Promise<FamilyContext | null>
       return null;
     }
 
-    // 拉 families 列表补全 family_kind + ledger_name（避免显示"我的账本"兜底）
-    let family_kind: FamilyKind | undefined;
-    let ledger_name: string | undefined;
-    try {
-      const resp = await request<{ id: string; kind: FamilyKind; name: string; ledger_id: string; ledger_name: string }[]>({
-        method: 'GET',
-        path: '/families',
+    let ctx: FamilyContext | null = null;
+    if (pref.preferred_family_kind && pref.preferred_ledger_name) {
+      ctx = {
+        family_id: pref.preferred_family_id,
+        ledger_id: pref.preferred_ledger_id,
+        family_kind: pref.preferred_family_kind,
+        ledger_name: pref.preferred_ledger_name,
+        preference_revision: pref.preferred_revision,
+        preference_updated_at: pref.preferred_updated_at ?? null,
+      };
+    } else {
+      ctx = await completeContextFromFamilies({
+        family_id: pref.preferred_family_id,
+        ledger_id: pref.preferred_ledger_id,
+        preference_revision: pref.preferred_revision,
+        preference_updated_at: pref.preferred_updated_at ?? null,
       });
-      const matched = Array.isArray(resp)
-        ? resp.find((f) => f.id === pref.preferred_family_id)
-        : null;
-      if (matched) {
-        family_kind = matched.kind;
-        ledger_name = matched.ledger_name || matched.name;
-      }
-    } catch {
-      // 补全失败不影响主流程，kind/name 由页面层 _doLoadPage 修正
     }
 
-    const ctx: FamilyContext = {
-      family_id: pref.preferred_family_id,
-      ledger_id:  pref.preferred_ledger_id,
-      family_kind,
-      ledger_name,
-    };
+    if (!isCompleteFamilyContext(ctx)) {
+      console.warn('[family] preference restore rejected partial context');
+      return null;
+    }
+
     await setActiveFamily(ctx, 'preference-restore');
     return ctx;
   } catch (e) {
     console.warn('[family] fetchAndRestorePreference failed', e);
+    return null;
+  }
+}
+
+/** 登录后合并本地 context 与服务端 preference：本地完整且仍有效时优先。 */
+export async function restoreActiveFamilyAfterLogin(defaultCtx: FamilyContext & { family_kind: FamilyKind; ledger_name: string }): Promise<FamilyContext> {
+  const local = await getActiveFamilyContext();
+  if (isCompleteFamilyContext(local)) {
+    try {
+      const completed = await completeContextFromFamilies(local);
+      if (completed) {
+        await setActiveFamily(completed, 'preference-restore');
+        savePreferenceAsync(completed.family_id, completed.ledger_id, 'preference-restore');
+        return completed;
+      }
+      console.warn('[family] local active context invalid after login, fallback to server preference');
+    } catch (e) {
+      console.warn('[family] local active context validation failed, keep local as offline-unverified', e);
+      await setActiveFamily(local, 'preference-restore');
+      if (local.family_kind === 'personal') {
+        savePreferenceAsync(local.family_id, local.ledger_id, 'preference-restore');
+      }
+      return local;
+    }
+  }
+
+  const restored = await fetchAndRestorePreference();
+  if (restored) return restored;
+
+  await switchActiveFamily(defaultCtx, 'preference-restore');
+  return defaultCtx;
+}
+
+/** 当前 active family 失效时安全回退到 personal family，并同步服务端 preference。 */
+export async function fallbackToPersonalFamily(source: ActiveFamilySwitchSource = 'other'): Promise<FamilyContext | null> {
+  try {
+    const families = await requestFamilies();
+    const personal = families.find((f) => f.kind === 'personal');
+    if (!personal) {
+      await clearActiveFamily(source);
+      return null;
+    }
+    return await switchActiveFamily({
+      family_id: personal.id,
+      ledger_id: personal.ledger_id,
+      family_kind: 'personal',
+      ledger_name: personal.ledger_name || personal.name || '个人账本',
+    }, source);
+  } catch (e) {
+    console.warn('[family] fallbackToPersonalFamily failed', e);
+    await clearActiveFamily(source);
     return null;
   }
 }

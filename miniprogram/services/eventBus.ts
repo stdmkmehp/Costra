@@ -35,6 +35,12 @@ export const EventNames = {
   /** 分类数据已加载/更新到内存缓存（订阅方据此重渲展示分类名/图标的页面） */
   CATEGORIES_LOADED: 'categories-loaded',
   /**
+   * 明细页首屏首次内容渲染完成（非首屏预热放行点）。
+   * 卡: 启动性能 M1。语义为「首屏已结算」——无论加载成功还是失败都会发一次（failed 区分），
+   * 用于释放后台预热调度，避免失败路径阻塞非首屏预热。
+   */
+  LEDGER_DISPLAY_READY: 'ledger-display-ready',
+  /**
    * 全局 active family/ledger 已切换（setActiveFamily 写完 storage 后广播）
    * 各 Tab 页订阅后重读 context 并刷新；统一收口"账本切换"反应链路。
    * payload: ActiveFamilyChangedPayload
@@ -68,6 +74,16 @@ export interface SyncDonePayload {
 export interface ProfileUpdatedPayload {
   nickname: string;
   avatarUrl: string | null;
+}
+
+export interface LedgerDisplayReadyPayload {
+  ledger_id: string;
+  family_id: string;
+  month: string;
+  entry_count: number;
+  empty: boolean;
+  /** 首屏是否以失败态结算（true 时 ledger/family/entry_count 不可信，仅作放行预热用） */
+  failed: boolean;
 }
 
 /**

@@ -18,6 +18,9 @@ import { AppError } from '../errors/AppError.js';
 import { ErrorCode } from '../errors/ErrorCode.js';
 import * as userRepo from '../repositories/userRepo.js';
 import * as userOverviewRepo from '../repositories/userOverviewRepo.js';
+import * as familyRepo from '../repositories/familyRepo.js';
+import * as familyMemberRepo from '../repositories/familyMemberRepo.js';
+import * as ledgerRepo from '../repositories/ledgerRepo.js';
 
 interface JwtPayload { sub: string; iat: number; exp: number }
 
@@ -81,12 +84,14 @@ const preferenceBodySchema = {
   properties: {
     preferred_family_id: { type: 'string', format: 'uuid', nullable: true },
     preferred_ledger_id:  { type: 'string', format: 'uuid', nullable: true },
+    client_revision: { type: 'integer', minimum: 0 },
   },
 } as const;
 
 type PreferenceBody = {
   preferred_family_id: string | null;
   preferred_ledger_id:  string | null;
+  client_revision?: number;
 };
 
 // --- 注册 ---
@@ -154,31 +159,95 @@ export async function registerUsersRoutes(app: FastifyInstance): Promise<void> {
   );
 
   // GET /users/me/preference
-  // 返回用户上次选择的 family_id + ledger_id（可为 null）
-  // 设备清除本地 storage 后调此接口恢复偏好
+  // 返回用户上次选择的完整 active context；若偏好已失效则返回 null，避免客户端落盘半残 context。
   app.get('/users/me/preference', async (req, reply) => {
     const userId = await parseUserId(req);
     const user = await userRepo.findById(userId);
     if (!user) {
       throw new AppError(ErrorCode.UNAUTHENTICATED, { message: 'user not found' });
     }
+
+    if (!user.preferredFamilyId || !user.preferredLedgerId) {
+      reply.code(200).send({
+        preferred_family_id: null,
+        preferred_ledger_id: null,
+        preferred_family_kind: null,
+        preferred_ledger_name: null,
+        preferred_revision: user.preferredRevision,
+        preferred_updated_at: user.preferredUpdatedAt?.toISOString() ?? null,
+      });
+      return;
+    }
+
+    const [family, ledger, isMember] = await Promise.all([
+      familyRepo.findById(user.preferredFamilyId),
+      ledgerRepo.findById(user.preferredLedgerId),
+      familyMemberRepo.isActiveMember(userId, user.preferredFamilyId),
+    ]);
+
+    if (!family || !ledger || ledger.familyId !== family.id || !isMember) {
+      reply.code(200).send({
+        preferred_family_id: null,
+        preferred_ledger_id: null,
+        preferred_family_kind: null,
+        preferred_ledger_name: null,
+        preferred_revision: user.preferredRevision,
+        preferred_updated_at: user.preferredUpdatedAt?.toISOString() ?? null,
+      });
+      return;
+    }
+
     reply.code(200).send({
-      preferred_family_id: user.preferredFamilyId,
-      preferred_ledger_id:  user.preferredLedgerId,
+      preferred_family_id: family.id,
+      preferred_ledger_id: ledger.id,
+      preferred_family_kind: family.kind,
+      preferred_ledger_name: ledger.name || family.name,
+      preferred_revision: user.preferredRevision,
+      preferred_updated_at: user.preferredUpdatedAt?.toISOString() ?? null,
     });
   });
 
   // PUT /users/me/preference
-  // 覆盖写用户偏好（切换账本时调，fire-and-forget 可接受）
+  // 保存用户偏好：校验 family/ledger/member 有效性，并用 client_revision 防旧请求覆盖新选择。
   app.put<{ Body: PreferenceBody }>(
     '/users/me/preference',
     { schema: { body: preferenceBodySchema } },
     async (req, reply) => {
       const userId = await parseUserId(req);
       const body = req.body;
+
+      const bothNull = body.preferred_family_id === null && body.preferred_ledger_id === null;
+      const bothPresent = !!body.preferred_family_id && !!body.preferred_ledger_id;
+      if (!bothNull && !bothPresent) {
+        throw new AppError(ErrorCode.INVALID_ARGUMENT, {
+          message: 'preferred_family_id and preferred_ledger_id must be both null or both present',
+        });
+      }
+
+      if (bothPresent) {
+        const [family, ledger, isMember] = await Promise.all([
+          familyRepo.findById(body.preferred_family_id!),
+          ledgerRepo.findById(body.preferred_ledger_id!),
+          familyMemberRepo.isActiveMember(userId, body.preferred_family_id!),
+        ]);
+        if (!family || !isMember) {
+          throw new AppError(ErrorCode.FAMILY_NOT_MEMBER, {
+            message: 'cannot set preference to a family you are not an active member of',
+            details: { family_id: body.preferred_family_id },
+          });
+        }
+        if (!ledger || ledger.familyId !== family.id) {
+          throw new AppError(ErrorCode.INVALID_ARGUMENT, {
+            message: 'preferred_ledger_id does not belong to preferred_family_id',
+            details: { preferred_family_id: body.preferred_family_id, preferred_ledger_id: body.preferred_ledger_id },
+          });
+        }
+      }
+
       await userRepo.updatePreference(userId, {
         preferredFamilyId: body.preferred_family_id,
         preferredLedgerId:  body.preferred_ledger_id,
+        clientRevision: body.client_revision,
       });
       reply.code(204).send();
     },

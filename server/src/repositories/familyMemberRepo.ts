@@ -316,10 +316,11 @@ export async function findNextOwnerCandidate(
  *
  * 卡号：COSTRA-229 · 决策：D-029 §2.2
  *
- * 调用方 MUST 在事务内调用并传入 client（PoolClient），保证以下三步要么全成功要么全回滚：
+ * 调用方 MUST 在事务内调用并传入 client（PoolClient），保证以下四步要么全成功要么全回滚：
  *   1) 旧 owner SET role='member'
  *   2) 新 owner SET role='owner'
- *   3) （由调用方）setLeftAt(fromUserId)
+ *   3) 同步更新 families.owner_id = toUserId（保证两表 owner 一致）
+ *   4) （由调用方）setLeftAt(fromUserId)
  *
  * 防御：两条 UPDATE 都加 `AND left_at IS NULL`，防御「极小窗口内目标成员先离开」的竞态
  *   —— 若任一行命中 0 行（理论上不会，因为 leaveFamily 入口 assertActiveMember 已守门），
@@ -362,6 +363,14 @@ export async function transferOwnership(
       details: { family_id: familyId, user_id: toUserId },
     });
   }
+
+  // 同步 families.owner_id，保证 family_members.role 与 families.owner_id 一致
+  await client.query(
+    `UPDATE families
+        SET owner_id = $2, updated_at = now()
+      WHERE id = $1 AND deleted_at IS NULL`,
+    [familyId, toUserId],
+  );
 }
 
 /**

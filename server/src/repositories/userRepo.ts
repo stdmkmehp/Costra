@@ -30,6 +30,10 @@ export interface UserEntity {
   preferredFamilyId: string | null;
   /** migration 0011: 用户上次选择的 ledger（可 null） */
   preferredLedgerId: string | null;
+  /** 用户偏好最后一次写入 revision（客户端单调递增，防旧请求覆盖） */
+  preferredRevision: number;
+  /** 用户偏好最后一次成功写入时间 */
+  preferredUpdatedAt: Date | null;
 }
 
 interface UserRow {
@@ -46,6 +50,8 @@ interface UserRow {
   version: number;
   preferred_family_id: string | null;
   preferred_ledger_id: string | null;
+  preferred_revision: number | string | null;
+  preferred_updated_at: Date | null;
 }
 
 function rowToEntity(r: UserRow): UserEntity {
@@ -63,6 +69,8 @@ function rowToEntity(r: UserRow): UserEntity {
     version: r.version,
     preferredFamilyId: r.preferred_family_id ?? null,
     preferredLedgerId: r.preferred_ledger_id ?? null,
+    preferredRevision: Number(r.preferred_revision ?? 0),
+    preferredUpdatedAt: r.preferred_updated_at ?? null,
   };
 }
 
@@ -84,7 +92,7 @@ export async function findByOpenid(openid: string, client?: Runner): Promise<Use
     `SELECT id, wx_openid, wx_unionid, nickname, avatar_url, timezone,
             has_completed_profile,
             created_at, updated_at, deleted_at, version,
-            preferred_family_id, preferred_ledger_id
+            preferred_family_id, preferred_ledger_id, preferred_revision, preferred_updated_at
        FROM users
       WHERE wx_openid = $1 AND deleted_at IS NULL
       LIMIT 1`,
@@ -100,7 +108,7 @@ export async function findById(id: string, client?: Runner): Promise<UserEntity 
     `SELECT id, wx_openid, wx_unionid, nickname, avatar_url, timezone,
             has_completed_profile,
             created_at, updated_at, deleted_at, version,
-            preferred_family_id, preferred_ledger_id
+            preferred_family_id, preferred_ledger_id, preferred_revision, preferred_updated_at
        FROM users
       WHERE id = $1 AND deleted_at IS NULL
       LIMIT 1`,
@@ -129,7 +137,7 @@ export async function create(input: CreateUserInput, client?: Runner): Promise<U
           VALUES ($1, $2, $3, $4, $5, COALESCE($6, 'Asia/Shanghai'))
         RETURNING id, wx_openid, wx_unionid, nickname, avatar_url, timezone,
                   has_completed_profile, created_at, updated_at, deleted_at, version,
-                  preferred_family_id, preferred_ledger_id`,
+                  preferred_family_id, preferred_ledger_id, preferred_revision, preferred_updated_at`,
     [
       id,
       input.wxOpenid,
@@ -194,7 +202,7 @@ export async function updateProfile(
       WHERE id = $1 AND deleted_at IS NULL
       RETURNING id, wx_openid, wx_unionid, nickname, avatar_url, timezone,
                 has_completed_profile, created_at, updated_at, deleted_at, version,
-                preferred_family_id, preferred_ledger_id`,
+                preferred_family_id, preferred_ledger_id, preferred_revision, preferred_updated_at`,
     [
       userId,
       input.nickname ?? null,
@@ -211,12 +219,18 @@ export async function updateProfile(
 export interface UpdatePreferenceInput {
   preferredFamilyId: string | null;
   preferredLedgerId: string | null;
+  /** 客户端生成的单调 revision；旧客户端不传时由服务端生成 */
+  clientRevision?: number;
 }
 
 /**
  * 更新用户的偏好 family + ledger（PUT /users/me/preference 路径消费）
- * 不走 version 乐观锁（preference 为低优先级用户偏好 · 覆盖写语义）
- * ON DELETE SET NULL 约束：被移出 / family 删除时自动清空，安全无副作用
+ *
+ * 防旧覆盖：
+ * - 新客户端传 clientRevision 时，仅允许 revision 不小于当前值的请求覆盖。
+ * - 旧客户端不传 revision 时，服务端生成递增 revision，保持兼容。
+ *
+ * 返回 null 表示用户不存在或传入 revision 已过期；路由层对 stale 按幂等成功处理。
  */
 export async function updatePreference(
   userId: string,
@@ -224,16 +238,63 @@ export async function updatePreference(
   client?: Runner,
 ): Promise<UserEntity | null> {
   const runner = client ?? exec();
+  const clientRevision = input.clientRevision ?? null;
   const res = await runner.query(
     `UPDATE users
         SET preferred_family_id = $2,
             preferred_ledger_id  = $3,
+            preferred_revision   = COALESCE($4::BIGINT, preferred_revision + 1),
+            preferred_updated_at = now(),
             updated_at = now()
-      WHERE id = $1 AND deleted_at IS NULL
+      WHERE id = $1
+        AND deleted_at IS NULL
+        AND ($4::BIGINT IS NULL OR preferred_revision <= $4::BIGINT)
       RETURNING id, wx_openid, wx_unionid, nickname, avatar_url, timezone,
                 has_completed_profile, created_at, updated_at, deleted_at, version,
-                preferred_family_id, preferred_ledger_id`,
-    [userId, input.preferredFamilyId, input.preferredLedgerId],
+                preferred_family_id, preferred_ledger_id, preferred_revision, preferred_updated_at`,
+    [userId, input.preferredFamilyId, input.preferredLedgerId, clientRevision],
   );
   return res.rows[0] ? rowToEntity(res.rows[0]) : null;
+}
+
+/** 清除指定用户指向某 family 的偏好（离开/被移出当前 active family 时调用） */
+export async function clearPreferenceForFamily(
+  userId: string,
+  familyId: string,
+  client?: Runner,
+): Promise<UserEntity | null> {
+  const runner = client ?? exec();
+  const res = await runner.query(
+    `UPDATE users
+        SET preferred_family_id = NULL,
+            preferred_ledger_id  = NULL,
+            preferred_revision   = preferred_revision + 1,
+            preferred_updated_at = now(),
+            updated_at = now()
+      WHERE id = $1 AND deleted_at IS NULL AND preferred_family_id = $2
+      RETURNING id, wx_openid, wx_unionid, nickname, avatar_url, timezone,
+                has_completed_profile, created_at, updated_at, deleted_at, version,
+                preferred_family_id, preferred_ledger_id, preferred_revision, preferred_updated_at`,
+    [userId, familyId],
+  );
+  return res.rows[0] ? rowToEntity(res.rows[0]) : null;
+}
+
+/** 清除所有指向某 family 的用户偏好（解散 family 时调用） */
+export async function clearAllPreferencesForFamily(
+  familyId: string,
+  client?: Runner,
+): Promise<number> {
+  const runner = client ?? exec();
+  const res = await runner.query(
+    `UPDATE users
+        SET preferred_family_id = NULL,
+            preferred_ledger_id  = NULL,
+            preferred_revision   = preferred_revision + 1,
+            preferred_updated_at = now(),
+            updated_at = now()
+      WHERE preferred_family_id = $1 AND deleted_at IS NULL`,
+    [familyId],
+  );
+  return res.rowCount ?? 0;
 }

@@ -65,11 +65,20 @@ CREATE TABLE IF NOT EXISTS users (
     has_completed_profile  BOOLEAN NOT NULL DEFAULT FALSE,
     preferred_family_id    UUID,   -- FK 延迟到 families 建表后添加
     preferred_ledger_id    UUID,   -- FK 延迟到 ledgers 建表后添加
+    preferred_revision     BIGINT NOT NULL DEFAULT 0,
+    preferred_updated_at   TIMESTAMPTZ,
     created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
     deleted_at             TIMESTAMPTZ,
     version                INTEGER NOT NULL DEFAULT 1
 );
+-- CREATE TABLE IF NOT EXISTS 不会补齐已有 users 表的新增列；幂等重跑时显式 ADD COLUMN。
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS preferred_family_id UUID,
+  ADD COLUMN IF NOT EXISTS preferred_ledger_id UUID,
+  ADD COLUMN IF NOT EXISTS preferred_revision BIGINT NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS preferred_updated_at TIMESTAMPTZ;
+
 CREATE INDEX IF NOT EXISTS idx_users_updated_at ON users (updated_at);
 
 COMMENT ON COLUMN users.has_completed_profile IS
@@ -96,10 +105,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_families_one_personal_per_owner
   WHERE kind = 'personal' AND deleted_at IS NULL;
 
 -- users.preferred_family_id FK（延迟添加）
-ALTER TABLE users
-  ADD CONSTRAINT fk_users_preferred_family
-  FOREIGN KEY (preferred_family_id) REFERENCES families(id) ON DELETE SET NULL
-  NOT VALID;
+DO $$ BEGIN
+  ALTER TABLE users
+    ADD CONSTRAINT fk_users_preferred_family
+    FOREIGN KEY (preferred_family_id) REFERENCES families(id) ON DELETE SET NULL
+    NOT VALID;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- family_members
@@ -154,10 +166,13 @@ CREATE INDEX IF NOT EXISTS idx_ledgers_family ON ledgers (family_id);
 CREATE INDEX IF NOT EXISTS idx_ledgers_updated_at ON ledgers (updated_at);
 
 -- users.preferred_ledger_id FK（延迟添加）
-ALTER TABLE users
-  ADD CONSTRAINT fk_users_preferred_ledger
-  FOREIGN KEY (preferred_ledger_id) REFERENCES ledgers(id) ON DELETE SET NULL
-  NOT VALID;
+DO $$ BEGIN
+  ALTER TABLE users
+    ADD CONSTRAINT fk_users_preferred_ledger
+    FOREIGN KEY (preferred_ledger_id) REFERENCES ledgers(id) ON DELETE SET NULL
+    NOT VALID;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- categories（含二级分类体系 + display_order）

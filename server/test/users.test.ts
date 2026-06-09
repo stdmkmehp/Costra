@@ -24,11 +24,11 @@ import { setWxFetchForTests } from '../src/wx/code2Session.js';
 let app: FastifyInstance;
 let token: string;
 
-async function login(app: FastifyInstance): Promise<string> {
+async function login(app: FastifyInstance, openid = 'openid-users-test'): Promise<string> {
   setWxFetchForTests(
     (async () =>
       new Response(
-        JSON.stringify({ openid: 'openid-users-test', session_key: 'sk' }),
+        JSON.stringify({ openid, session_key: 'sk' }),
         { status: 200, headers: { 'content-type': 'application/json' } },
       )) as unknown as typeof fetch,
   );
@@ -196,6 +196,126 @@ describe('POST /v1/users/me (K3 method-override)', () => {
       headers: authHeader(),
     });
     expect(res.statusCode).toBe(405);
+  });
+});
+
+// ─── GET/PUT /v1/users/me/preference · active 账本恢复偏好 ─────────────────────
+describe('GET/PUT /v1/users/me/preference', () => {
+  async function listFamilies(t = token): Promise<Array<{ id: string; kind: 'personal' | 'shared'; ledger_id: string; ledger_name: string; name: string }>> {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/families',
+      headers: { authorization: `Bearer ${t}`, 'content-type': 'application/json' },
+    });
+    expect(res.statusCode).toBe(200);
+    return res.json() as Array<{ id: string; kind: 'personal' | 'shared'; ledger_id: string; ledger_name: string; name: string }>;
+  }
+
+  it('T11 新用户 preference 为空但返回 revision 字段', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/users/me/preference',
+      headers: authHeader(),
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { preferred_family_id: string | null; preferred_ledger_id: string | null; preferred_revision: number };
+    expect(body.preferred_family_id).toBeNull();
+    expect(body.preferred_ledger_id).toBeNull();
+    expect(body.preferred_revision).toBe(0);
+  });
+
+  it('T12 PUT preference 校验通过后 GET 返回完整 context', async () => {
+    const families = await listFamilies();
+    const personal = families.find((f) => f.kind === 'personal')!;
+
+    const put = await app.inject({
+      method: 'PUT',
+      url: '/v1/users/me/preference',
+      payload: {
+        preferred_family_id: personal.id,
+        preferred_ledger_id: personal.ledger_id,
+        client_revision: 100,
+      },
+      headers: authHeader(),
+    });
+    expect(put.statusCode).toBe(204);
+
+    const get = await app.inject({
+      method: 'GET',
+      url: '/v1/users/me/preference',
+      headers: authHeader(),
+    });
+    expect(get.statusCode).toBe(200);
+    const body = get.json() as { preferred_family_id: string; preferred_ledger_id: string; preferred_family_kind: string; preferred_ledger_name: string; preferred_revision: number };
+    expect(body.preferred_family_id).toBe(personal.id);
+    expect(body.preferred_ledger_id).toBe(personal.ledger_id);
+    expect(body.preferred_family_kind).toBe('personal');
+    expect(body.preferred_ledger_name).toBe(personal.ledger_name || personal.name);
+    expect(body.preferred_revision).toBe(100);
+  });
+
+  it('T13 旧 client_revision 不覆盖新 preference', async () => {
+    const created = await app.inject({
+      method: 'POST',
+      url: '/v1/families',
+      payload: { name: '家庭账本' },
+      headers: authHeader(),
+    });
+    expect(created.statusCode).toBe(201);
+    const shared = created.json() as { id: string; ledger_id: string };
+
+    const families = await listFamilies();
+    const personal = families.find((f) => f.kind === 'personal')!;
+
+    const stale = await app.inject({
+      method: 'PUT',
+      url: '/v1/users/me/preference',
+      payload: {
+        preferred_family_id: personal.id,
+        preferred_ledger_id: personal.ledger_id,
+        client_revision: 0,
+      },
+      headers: authHeader(),
+    });
+    expect(stale.statusCode).toBe(204);
+
+    const get = await app.inject({
+      method: 'GET',
+      url: '/v1/users/me/preference',
+      headers: authHeader(),
+    });
+    const body = get.json() as { preferred_family_id: string; preferred_ledger_id: string };
+    expect(body.preferred_family_id).toBe(shared.id);
+    expect(body.preferred_ledger_id).toBe(shared.ledger_id);
+  });
+
+  it('T14 非成员不能把 preference 写到他人 family', async () => {
+    const created = await app.inject({
+      method: 'POST',
+      url: '/v1/families',
+      payload: { name: 'A 的家庭' },
+      headers: authHeader(),
+    });
+    expect(created.statusCode).toBe(201);
+    const familyA = created.json() as { id: string; ledger_id: string };
+
+    const tokenB = await login(app, 'openid-users-test-B');
+
+    const res = await app.inject({
+      method: 'PUT',
+      url: '/v1/users/me/preference',
+      payload: {
+        preferred_family_id: familyA.id,
+        preferred_ledger_id: familyA.ledger_id,
+        client_revision: 1,
+      },
+      headers: { authorization: `Bearer ${tokenB}`, 'content-type': 'application/json' },
+    });
+
+    expect(res.statusCode).toBe(403);
+    const body = res.json() as { code: string };
+    expect(body.code).toBe('FAMILY_NOT_MEMBER');
   });
 });
 

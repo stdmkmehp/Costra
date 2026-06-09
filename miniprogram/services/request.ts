@@ -5,6 +5,7 @@
 // 承接 COSTRA-118 路径 A: E.P0-4（Idempotency-Key 自动注入）/ E.P0-5（错误响应顶层字段解析）/ E.P1-2（CLIENT_NETWORK_ERROR 前缀）
 import { getEnv } from './env';
 import { getToken, refreshToken, clearToken } from './auth';
+import { recordNetworkRequest } from './perf';
 
 /**
  * 客户端错误对象
@@ -84,6 +85,7 @@ export async function request<T = unknown>(opts: RequestOptions): Promise<T> {
   }
 
   return new Promise<T>((resolve, reject) => {
+    const requestStartedAt = Date.now();
     // wx.request 的 method 类型不支持 PATCH（微信平台限制）；
     // 我们在客户端层用 X-HTTP-Method-Override: PATCH + 真实 POST 做降级。
     // 后端若未实现该头识别：PATCH 请求会被当作 POST 处理，属已知失败模式（FU-102-PATCH-METHOD 登记）。
@@ -108,6 +110,13 @@ export async function request<T = unknown>(opts: RequestOptions): Promise<T> {
         const body = res.data as any;
 
         if (status >= 200 && status < 300) {
+          recordNetworkRequest({
+            method,
+            path: opts.path,
+            status,
+            ok: true,
+            elapsed: Date.now() - requestStartedAt,
+          });
           resolve(body as T);
           return;
         }
@@ -125,14 +134,35 @@ export async function request<T = unknown>(opts: RequestOptions): Promise<T> {
             // COSTRA-125: clearToken 已改 async · 必须 await（否则 reject 在 storage 写入前就抛 · race）
             await clearToken();
             try { wx.reLaunch({ url: '/pages/login/index' }); } catch { /* noop */ }
+            recordNetworkRequest({
+              method,
+              path: opts.path,
+              status,
+              ok: false,
+              elapsed: Date.now() - requestStartedAt,
+            });
             reject(toApiError(status, body));
           }
           return;
         }
 
+        recordNetworkRequest({
+          method,
+          path: opts.path,
+          status,
+          ok: false,
+          elapsed: Date.now() - requestStartedAt,
+        });
         reject(toApiError(status, body));
       },
       fail: (err) => {
+        recordNetworkRequest({
+          method,
+          path: opts.path,
+          status: 0,
+          ok: false,
+          elapsed: Date.now() - requestStartedAt,
+        });
         // P1-2: CLIENT_NETWORK_ERROR 前缀显式与后端 21 条错误码隔离
         const e = new Error(err.errMsg || 'network error') as ApiError;
         e.code = 'CLIENT_NETWORK_ERROR';

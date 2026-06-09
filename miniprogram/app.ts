@@ -15,9 +15,10 @@ import { ensureVersion } from './services/storage';
 import { startScheduler, stopScheduler, syncOnce } from './services/syncScheduler';
 import { tokens } from './tokens/index';
 import { eventBus, EventNames } from './services/eventBus';
-import { getActiveFamilyId } from './services/family';
+import { flushPendingPreference, getActiveFamilyId } from './services/family';
 import { prefetchCategories } from './services/categoryService';
-import { prefetchHomeData } from './services/prefetch';
+import { scheduleHomeDataPrefetchAfterLedgerReady } from './services/prefetch';
+import { captureNetworkType, markPerf, resetPerfSession, setPerfContext } from './services/perf';
 
 interface AppGlobalData {
   env: ReturnType<typeof getEnv>;
@@ -84,6 +85,9 @@ App<AppOption>({
 
   onLaunch(options: WechatMiniprogram.App.LaunchShowOption) {
     this.globalData.bootAt = Date.now();
+    resetPerfSession(this.globalData.bootAt);
+    setPerfContext({ appEnv: this.globalData.env.name, launch: 'cold' });
+    captureNetworkType();
     console.info('[Costra] onLaunch env=', this.globalData.env.name);
 
     // COSTRA-901: 隐私授权回调不在此处全局注册。
@@ -105,14 +109,24 @@ App<AppOption>({
     //   阶段 2 · initAuth()       → 内部 await getItem(TOKEN_KEY) · 必在阶段 1 之后
     //   末尾若无登录态 → wx.reLaunch 跳 login（保持原 R1 行为）
     this.bootstrapPromise = (async () => {
+      markPerf('app.bootstrap.start');
+      markPerf('app.ensure-version.start');
       await ensureVersion();
+      markPerf('app.ensure-version.done');
+      markPerf('app.init-auth.start');
       await initAuth();
+      markPerf('app.init-auth.done');
       // 启动期兜底 · entry page 渲染前先定登录态（与 Page.onLoad/onShow gate 形成多层保险）
       const loggedIn = isLoggedIn();
+      setPerfContext({ session: loggedIn ? 'logged-in' : 'guest' });
       if (!loggedIn) {
+        markPerf('app.bootstrap.done', { session: 'guest' });
         try { wx.reLaunch({ url: '/pages/login/index' }); } catch { /* 单测 / 非 wx 环境 noop */ }
         return;
       }
+      // 登录态已就绪：补偿上次未保存成功的 active ledger preference
+      void flushPendingPreference();
+
       // 登录态已就绪：检测画像完善状态，驱动 tabBar 红点弱引导
       const token = getToken();
       if (token && !token.raw.user.has_completed_profile) {
@@ -126,11 +140,11 @@ App<AppOption>({
         if (fid) void prefetchCategories(fid);
       });
 
-      // 2026-06-06: 统计/协作页首屏数据预热（fire-and-forget · 不阻塞 bootstrap）
-      // 提前拉当月统计 + 当月家庭汇总，写入各自 SWR 缓存。用户切到 [统计]/[协作] Tab 时
-      // 走 cache-first 立即渲染，消除"切 Tab 后 200~600ms 白屏 loading"的体感延迟。
-      // 仅当月、仅 active family；接口失败静默；与上方 prefetchCategories 互不依赖。
-      void prefetchHomeData();
+      // 2026-06-09: 统计/协作页数据预热改为 ledger 首屏完成后触发。
+      // 原先 bootstrap 后立即预热可能与首屏 storage/渲染/同步竞争；M1 将其挂到 LEDGER_DISPLAY_READY。
+      scheduleHomeDataPrefetchAfterLedgerReady('app-bootstrap');
+
+      markPerf('app.bootstrap.done', { session: 'logged-in' });
 
       // 已登录用户从邀请链接冷启动/热切换：检测 pendingInviteToken 并跳转到邀请确认页
       // 微信小程序冷启动时先渲染 pages[0]（ledger/index），bootstrap 异步完成期间落地页自动导航
@@ -144,6 +158,7 @@ App<AppOption>({
         return;
       }
     })().catch((err) => {
+      markPerf('app.bootstrap.failed', { error: err instanceof Error ? err.message : String(err) });
       console.error('[Costra] bootstrap failed', err);
       try { wx.reLaunch({ url: '/pages/login/index' }); } catch { /* noop */ }
     });
@@ -158,6 +173,7 @@ App<AppOption>({
     // COSTRA-125: 等 bootstrap 完成才检查续签 · 避免与 onLaunch 路径并发触发 storage 调用
     void this.bootstrapPromise.then(() => {
       if (isLoggedIn()) {
+        void flushPendingPreference();
         const token = getToken();
         if (token && token.shouldRefresh()) {
           // services/auth 负责静默续签，失败时兜底跳 login

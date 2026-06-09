@@ -227,6 +227,11 @@ export async function createFamily(
       { familyId: family.id, name: payload.name, currency: 'CNY' },
       client,
     );
+    // 3. 创建协作账本是用户主动选择，应同步成为服务端偏好
+    await userRepo.updatePreference(userId, {
+      preferredFamilyId: family.id,
+      preferredLedgerId: ledger.id,
+    }, client);
     return { family, ledger };
   });
 
@@ -335,6 +340,7 @@ export async function deleteFamily(
   await withTx(async (client) => {
     await familyMemberRepo.setAllActiveLeftAt(familyId, client);
     await familyRepo.softDelete({ familyId, version, ownerId: userId }, client);
+    await userRepo.clearAllPreferencesForFamily(familyId, client);
   });
 }
 
@@ -410,6 +416,8 @@ export async function leaveFamily(
       // 非 owner：直接离开
       await familyMemberRepo.setLeftAt(familyId, userId, client);
     }
+
+    await userRepo.clearPreferenceForFamily(userId, familyId, client);
   });
 }
 
@@ -584,8 +592,8 @@ export async function acceptInvite(
     });
   }
 
-  // 事务：标记邀请已使用 + 加入 family
-  const family = await withTx(async (client) => {
+  // 事务：标记邀请已使用 + 加入 family + 同步服务端偏好
+  const result = await withTx(async (client) => {
     // 标记邀请已使用
     await familyInviteRepo.markUsed(invite.id, userId, client);
 
@@ -595,14 +603,29 @@ export async function acceptInvite(
       client,
     );
 
-    return await familyRepo.findById(invite.familyId, client);
+    const family = await familyRepo.findById(invite.familyId, client);
+    if (!family) return null;
+
+    const ledger = await ledgerRepo.findFirstByFamilyId(invite.familyId, client);
+    if (!ledger) {
+      throw new AppError(ErrorCode.INTERNAL, { message: 'ledger not found after invite accept' });
+    }
+    await userRepo.updatePreference(userId, {
+      preferredFamilyId: invite.familyId,
+      preferredLedgerId: ledger.id,
+    }, client);
+
+    return { family, ledger };
   });
 
-  if (!family) {
+  if (!result?.family) {
     throw new AppError(ErrorCode.INTERNAL, { message: 'family not found after invite accept' });
   }
 
-  return await toFamilyResponse(family);
+  return await toFamilyResponse(
+    result.family,
+    result.ledger ? { id: result.ledger.id, name: result.ledger.name } : null,
+  );
 }
 
 /**
@@ -625,6 +648,9 @@ export async function removeMember(
     });
   }
 
-  // 设置 left_at（不物理删除）
-  await familyMemberRepo.setLeftAt(familyId, targetUserId);
+  // 设置 left_at（不物理删除）并清理被移出成员指向该 family 的偏好
+  await withTx(async (client) => {
+    await familyMemberRepo.setLeftAt(familyId, targetUserId, client);
+    await userRepo.clearPreferenceForFamily(targetUserId, familyId, client);
+  });
 }

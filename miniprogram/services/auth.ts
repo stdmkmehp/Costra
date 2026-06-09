@@ -8,7 +8,7 @@
 import { getEnv } from './env';
 import { setItem, getItem, removeItem } from './storage';
 import { request } from './request';
-import { setActiveFamily, getActiveFamilyId, getActiveLedgerId, clearActiveFamily, fetchAndRestorePreference } from './family';
+import { setActiveFamily, getActiveFamilyId, getActiveLedgerId, fetchAndRestorePreference, restoreActiveFamilyAfterLogin, flushPendingPreference } from './family';
 
 const TOKEN_KEY = '__costra_token_v1';
 const REFRESH_WINDOW_MS = 5 * 60 * 1000; // 距过期 < 5 分钟触发续签
@@ -85,43 +85,70 @@ function buildStored(raw: TokenRaw): TokenStored {
 export async function initAuth(): Promise<void> {
   // COSTRA-125: getItem 已改 async · 必须 await · 否则 saved 是 Promise 永不等于 TokenStored
   const saved = await getItem<TokenStored>(TOKEN_KEY);
-  if (saved && saved.access_expires_at > Date.now()) {
+  const now = Date.now();
+  if (saved && saved.access_expires_at > now) {
     current = wrap(saved);
+    await restoreFamilyContextForCurrentSession();
+    await flushPendingPreference();
+    return;
+  }
 
-    const familyId = await getActiveFamilyId();
-    if (!familyId) {
-      // 本地无 family context（storage 被清 / 首次安装 / 旧版升级）
-      // 策略：先从服务端偏好恢复，成功则直接用（避免 refresh 请求）
-      const restored = await fetchAndRestorePreference();
-      if (restored) {
-        // 偏好已写回 storage · 同步 globalData
-        const app = getApp();
-        if (app?.globalData) {
-          app.globalData.activeLedgerId = restored.ledger_id;
+  // access token 过期但 refresh token 仍有效时，冷启动优先静默续签，避免强制重新登录后用旧服务端偏好覆盖本地 context。
+  if (saved && saved.refresh_expires_at > now) {
+    current = wrap(saved);
+    try {
+      await refreshToken();
+      await restoreFamilyContextForCurrentSession();
+      await flushPendingPreference();
+      return;
+    } catch (e) {
+      console.warn('[auth] initAuth refresh expired access failed', e);
+      await clearToken();
+      current = null;
+      return;
+    }
+  }
+
+  // 无 token 或 refresh 也过期 → 待页面层触发 wx.login（见 pages/login），保留 family-context 供登录后合并。
+  current = null;
+}
+
+function syncGlobalActiveLedgerId(ledgerId: string): void {
+  const app = getApp();
+  if (app?.globalData) {
+    app.globalData.activeLedgerId = ledgerId;
+  }
+}
+
+async function restoreFamilyContextForCurrentSession(): Promise<void> {
+  const familyId = await getActiveFamilyId();
+  if (!familyId) {
+    const restored = await fetchAndRestorePreference();
+    const fallback = restored ?? (current?.raw.default_family_id && current.raw.default_ledger_id
+      ? {
+          family_id: current.raw.default_family_id,
+          ledger_id: current.raw.default_ledger_id,
+          family_kind: 'personal' as const,
+          ledger_name: '个人账本',
         }
-      } else {
-        // 服务端也无偏好（或请求失败）→ refresh 触发 default_family_id 兜底
-        try {
-          await refreshToken();
-        } catch (e) {
-          console.warn('[auth] initAuth fallback refresh failed', e);
-          await clearToken();
-          await clearActiveFamily();
-          return;
-        }
-      }
-    } else {
-      // 正常路径：family-context 已存在 · 同步 globalData
-      const ledgerId = await getActiveLedgerId();
+      : null);
+    if (fallback && !restored) {
+      await setActiveFamily(fallback, 'preference-restore');
+    }
+    if (fallback) {
       const app = getApp();
-      if (app?.globalData && ledgerId) {
-        app.globalData.activeLedgerId = ledgerId;
+      if (app?.globalData) {
+        app.globalData.activeLedgerId = fallback.ledger_id;
       }
     }
     return;
   }
-  // 无 token 或已过期 → 待页面层触发 wx.login（见 pages/login）
-  current = null;
+
+  const ledgerId = await getActiveLedgerId();
+  const app = getApp();
+  if (app?.globalData && ledgerId) {
+    app.globalData.activeLedgerId = ledgerId;
+  }
 }
 
 export function isLoggedIn(): boolean {
@@ -221,20 +248,16 @@ export async function doWxLogin(): Promise<Token> {
     current = wrap(stored);
     await setItem(TOKEN_KEY, stored);  // COSTRA-125: async
 
-    // COSTRA-165: mock 路径也写 family-context（让 T7/T8 在 mock 环境可跑 · R2 P2-2 实装期处理）
-    // COSTRA-220: 附带 family_kind + ledger_name（mock 路径默认 personal + '个人账本'）
-    await setActiveFamily({
+    const restoredMock = await restoreActiveFamilyAfterLogin({
       family_id: mock.default_family_id,
       ledger_id: mock.default_ledger_id,
       family_kind: 'personal',
       ledger_name: '个人账本',
     });
-    const appMock = getApp();
-    if (appMock?.globalData) {
-      appMock.globalData.activeLedgerId = mock.default_ledger_id;
-    }
+    syncGlobalActiveLedgerId(restoredMock.ledger_id);
+    await flushPendingPreference();
 
-    console.info('[auth] login success', { userId: mock.user.id, familyId: mock.default_family_id });
+    console.info('[auth] login success', { userId: mock.user.id, familyId: restoredMock.family_id });
     return current;
   }
 
@@ -249,39 +272,20 @@ export async function doWxLogin(): Promise<Token> {
   current = wrap(stored);
   await setItem(TOKEN_KEY, stored);  // COSTRA-125: async
 
-  // 登录后恢复账本偏好策略（migration 0011）：
-  //   1. 先尝试从服务端拉偏好（fetchAndRestorePreference）
-  //   2. 若服务端有偏好 → 使用偏好（用户上次选择的 family/ledger）
-  //   3. 若无偏好（首次登录）→ 写入 default_family_id（personal family）
-  const restored = await fetchAndRestorePreference();
-  if (restored) {
-    // 服务端有偏好，同步 globalData
-    const appRestored = getApp();
-    if (appRestored?.globalData) {
-      appRestored.globalData.activeLedgerId = restored.ledger_id;
-    }
-    console.info('[auth] login success · preference restored', {
-      userId: resp.user.id,
-      activeFamilyId: restored.family_id,
-      activeLedgerId: restored.ledger_id,
-    });
-  } else {
-    // 首次登录 / 无偏好 → 用服务端 default（personal family）
-    await setActiveFamily({
-      family_id: resp.default_family_id,
-      ledger_id: resp.default_ledger_id,
-      family_kind: 'personal',
-      ledger_name: '个人账本',
-    });
-    const app = getApp();
-    if (app?.globalData) {
-      app.globalData.activeLedgerId = resp.default_ledger_id;
-    }
-    console.info('[auth] login success · using default family', {
-      userId: resp.user.id,
-      activeFamilyId: resp.default_family_id,
-    });
-  }
+  // 登录后恢复账本偏好策略：本地完整 active context 优先，服务端 preference 次之，default personal 最后兜底。
+  const restored = await restoreActiveFamilyAfterLogin({
+    family_id: resp.default_family_id,
+    ledger_id: resp.default_ledger_id,
+    family_kind: 'personal',
+    ledger_name: '个人账本',
+  });
+  syncGlobalActiveLedgerId(restored.ledger_id);
+  await flushPendingPreference();
+  console.info('[auth] login success · active ledger restored', {
+    userId: resp.user.id,
+    activeFamilyId: restored.family_id,
+    activeLedgerId: restored.ledger_id,
+  });
   return current;
 }
 
@@ -303,18 +307,6 @@ export async function refreshToken(): Promise<void> {
     current = wrap(stored);
     await setItem(TOKEN_KEY, stored);  // COSTRA-125: async
 
-    // COSTRA-165: mock 路径也写 family-context（R2 P2-2 实装期处理 · 让 T8 在 mock 环境可跑）
-    // COSTRA-220: 附带 family_kind + ledger_name
-    await setActiveFamily({
-      family_id: refreshed.default_family_id,
-      ledger_id: refreshed.default_ledger_id,
-      family_kind: 'personal',
-      ledger_name: '个人账本',
-    });
-    const appMock = getApp();
-    if (appMock?.globalData) {
-      appMock.globalData.activeLedgerId = refreshed.default_ledger_id;
-    }
     return;
   }
   const resp = await request<TokenRaw>({
@@ -327,25 +319,8 @@ export async function refreshToken(): Promise<void> {
   current = wrap(stored);
   await setItem(TOKEN_KEY, stored);  // COSTRA-125: async
 
-  // COSTRA-165 v1.1 P1-1: 续签时不覆盖已有 family-context（migration 0011 优化）
-  // 仅在本地 context 完全缺失时才用 default_family_id 兜底
-  // 避免续签请求把用户精心切换的 shared family 覆盖回 personal
-  if (resp.default_family_id && resp.default_ledger_id) {
-    const existingFamilyId = await getActiveFamilyId();
-    if (!existingFamilyId) {
-      // 本地无 context → 用 default 填充（最后兜底）
-      await setActiveFamily({
-        family_id: resp.default_family_id,
-        ledger_id: resp.default_ledger_id,
-        family_kind: 'personal',
-        ledger_name: '个人账本',
-      });
-      const app = getApp();
-      if (app?.globalData) {
-        app.globalData.activeLedgerId = resp.default_ledger_id;
-      }
-    }
-  }
+  // refreshToken 只负责续签 token；active family 恢复由 initAuth/doWxLogin 的 restore 流程统一处理。
+  // 这样 access 过期冷启动时不会先写 default personal，从而跳过服务端 preference 恢复。
 }
 
 // ---- helpers ----

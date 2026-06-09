@@ -51,8 +51,14 @@ vi.mock('./family', () => ({
     familyState.ctx = null;
     storageMap.delete('__costra_family_context_v1');
   }),
-  // migration 0011: mock fetchAndRestorePreference → 返回 null，让 T8/T9 走 fallback refresh 路径
+  // migration 0011: mock fetchAndRestorePreference → 返回 null，让无偏好路径走 default family 兜底
   fetchAndRestorePreference: vi.fn(async () => null),
+  restoreActiveFamilyAfterLogin: vi.fn(async (ctx: { family_id: string; ledger_id: string }) => {
+    familyState.ctx = ctx;
+    storageMap.set('__costra_family_context_v1', { v: 1, t: Date.now(), d: ctx });
+    return ctx;
+  }),
+  flushPendingPreference: vi.fn(async () => undefined),
 }));
 
 // wx 运行时在单测环境不存在 · 仅 buildStored 与 wrap 逻辑不依赖 wx，直接测即可
@@ -282,46 +288,54 @@ describe('services/auth · COSTRA-165 family-context integration', () => {
     expect(sharedGlobalData.activeLedgerId).toBeTruthy();
   });
 
-  // T9: initAuth 升级 + refresh 失败 → clearToken + clearActiveFamily
-  it('T9: initAuth 升级 + refresh 失败 → clearToken + clearActiveFamily', async () => {
+  // T9: initAuth 旧 token + 无 family-context → 使用 token default family 兜底，不强制重新登录
+  it('T9: initAuth 旧 token + 无 family-context → 使用 default family 兜底', async () => {
     // 1. 先 doWxLogin 建立 token
-    await doWxLogin();
+    const token = await doWxLogin();
 
     // 2. 清 family-context
     storageMap.delete('__costra_family_context_v1');
     familyState.ctx = null;
 
-    // 3. 让 refreshToken 抛错（通过临时让 current 的 refresh_token 为空触发 NO_TOKEN 或其他错误）
-    //    更好的方式：让 mock 的 refreshToken 抛错。但 refreshToken 依赖 current
-    //    所以：设置 current 有 token 但 mock env 让 refreshToken 走 mock 路径（正常不会抛错）
-    //    要让 refresh 失败，需要让 mockExchange 不可达——最简单的办法是临时设 current=null
-    //    但 initAuth 内部会先 wrap(saved) 再调 refreshToken，所以 current 不会是 null
-    //    折中：通过 mock request 让 refreshToken 在"真链路"下抛错
-    //    但当前 env mockLogin=true 所以走 mock 路径不会抛错
-    //    解决方案：直接 mock env 返回 mockLogin=false · 再 mock request 抛错
-    const { getEnv } = await import('./env');
-    vi.mocked(getEnv).mockReturnValueOnce({
-      name: 'staging',
-      apiBaseUrl: 'https://costra.cloud/v1',
-      mockLogin: false,  // 强制走真链路
-      flags: {},
-    });
-
-    // mock request 抛错
-    const { request } = await import('./request');
-    vi.mocked(request).mockRejectedValueOnce(new Error('network error'));
-
-    // 4. 重置内存 + 再 initAuth
+    // 3. 重置内存 + 再 initAuth
     authTest.reset();
     await initAuth();
 
-    // 5. 期望 current=null（clearToken 被调）+ family-context 被清
-    expect(getToken()).toBeNull();
-    expect(familyState.ctx).toBeNull();
+    // 4. 期望 token 保持有效，family-context 用 token default 兜底
+    expect(getToken()).not.toBeNull();
+    expect(familyState.ctx).not.toBeNull();
+    expect(familyState.ctx!.family_id).toBe(token.raw.default_family_id);
+    expect(familyState.ctx!.ledger_id).toBe(token.raw.default_ledger_id);
   });
 
-  // T10: refreshToken 空字符串保护
-  it('T10: refreshToken 极边缘 · response 含空字符串 default_family_id → 跳过写入', async () => {
+  it('T10: access 过期 refresh 后本地无 context → 优先恢复服务端 preference', async () => {
+    const token = await doWxLogin();
+    const tokenEnv = storageMap.get('__costra_token_v1') as { d: TokenStored };
+    tokenEnv.d.access_expires_at = Date.now() - 1_000;
+    tokenEnv.d.refresh_expires_at = Date.now() + 60_000;
+    storageMap.set('__costra_token_v1', tokenEnv);
+    storageMap.delete('__costra_family_context_v1');
+    familyState.ctx = null;
+
+    const { fetchAndRestorePreference } = await import('./family');
+    vi.mocked(fetchAndRestorePreference).mockImplementationOnce(async () => {
+      const ctx = { family_id: 'f-shared-preferred', ledger_id: 'l-shared-preferred' };
+      familyState.ctx = ctx;
+      storageMap.set('__costra_family_context_v1', { v: 1, t: Date.now(), d: ctx });
+      return ctx;
+    });
+
+    authTest.reset();
+    await initAuth();
+
+    expect(getToken()).not.toBeNull();
+    expect(familyState.ctx).toMatchObject({ family_id: 'f-shared-preferred', ledger_id: 'l-shared-preferred' });
+    expect(familyState.ctx!.family_id).not.toBe(token.raw.default_family_id);
+    expect(sharedGlobalData.activeLedgerId).toBe('l-shared-preferred');
+  });
+
+  // T11: refreshToken 空字符串保护
+  it('T11: refreshToken 极边缘 · response 含空字符串 default_family_id → 跳过写入', async () => {
     // 1. 先 doWxLogin 建立 token + family-context
     await doWxLogin();
     const originalFamilyCtx = { ...familyState.ctx! };

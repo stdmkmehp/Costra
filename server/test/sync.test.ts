@@ -128,7 +128,7 @@ describe('POST /sync/push', () => {
     expect(createRes.statusCode).toBe(200);
     const createBody = createRes.json() as { results: Array<{ status: string; server_id: string; server_version: number }> };
     expect(createBody.results[0].status).toBe('ok');
-    const serverId = createBody.results[0].server_id;
+    expect(createBody.results[0].server_id).toBeTruthy();
     expect(createBody.results[0].server_version).toBe(1);
 
     // 再用错的 base_version=99 update 同一 entry，期望 conflict

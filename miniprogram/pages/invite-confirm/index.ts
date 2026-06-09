@@ -7,7 +7,7 @@
 // ⚠️ 本页进入时必然已登录（两条路径均保证），onLoad 加 bootstrapPromise 兜底防止异常情形
 
 import { previewInvite, acceptInvite } from '../../services/familyApi';
-import { setActiveFamily } from '../../services/family';
+import { switchActiveFamily } from '../../services/family';
 import { isLoggedIn } from '../../services/auth';
 import { maxSharedFamilies } from '../../config/defaults';
 
@@ -77,17 +77,13 @@ Page({
     this.setData({ joining: true });
     try {
       const family = await acceptInvite(this._inviteToken);
-      // 更新 active family context 到刚加入的家庭
-      await setActiveFamily({
+      // 更新 active family context 到刚加入的家庭，并同步服务端 preference
+      await switchActiveFamily({
         family_id: family.id,
         ledger_id: family.ledger_id,
         family_kind: family.kind,
-        ledger_name: family.ledger_name,
+        ledger_name: family.ledger_name || family.name,
       }, 'invite-confirm');
-      const app = getApp<AppWithBootstrap>();
-      if (app?.globalData) {
-        app.globalData.activeLedgerId = family.ledger_id;
-      }
       closeToTab('/pages/family/index');
       wx.showToast({ title: `已加入「${family.name}」`, icon: 'success', duration: 1800 });
     } catch (e: unknown) {
