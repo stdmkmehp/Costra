@@ -71,6 +71,7 @@
           class="rank__row {{l1.expanded ? 'rank__row--open' : ''}}"
           data-id="{{l1.category_id}}"
           data-memberkey="{{member.key}}"
+          bind:touchstart="onTouchStartL1"
           bind:tap="onTapL1"
         >
           <view class="rank__row-main">
@@ -94,6 +95,7 @@
                 data-l1id="{{l1.category_id}}"
                 data-id="{{l2.category_id}}"
                 data-memberkey="{{member.key}}"
+                bind:touchstart="onTouchStartL2"
                 catch:tap="onTapL2"
               >
                 <view class="l2__row-main">

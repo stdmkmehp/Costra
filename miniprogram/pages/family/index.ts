@@ -992,11 +992,11 @@ Page({
   /** 仅切换被点击行的 expanded，不影响其他行（用户期望多个下钻列表可同时打开） */
   onTapDrilldownRow(e: WechatMiniprogram.TouchEvent) {
     const key = e.currentTarget.dataset.key as string;
-    const rows = this.data.drilldownRows.map(r => {
-      if (r.key === key) return { ...r, expanded: !r.expanded };
-      return r;
-    });
-    this.setData({ drilldownRows: rows });
+    if (!key) return;
+    const idx = this.data.drilldownRows.findIndex(r => r.key === key);
+    if (idx < 0) return;
+    // 仅写被点击行的 expanded 字段：避免整列 read-modify-write 触发整张排行重渲染（与统计页 A1 一致）
+    this.setData({ [`drilldownRows[${idx}].expanded`]: !this.data.drilldownRows[idx].expanded });
   },
 
   /** L1 子项点击：公共行不响应，成员行 switchTab 到统计页（COSTRA-302 · spec §4.5.1） */
@@ -1021,8 +1021,12 @@ Page({
 
   /** 折叠所有行（时间切换 / 账本切换时使用） */
   _collapseAllRows() {
-    const rows = this.data.drilldownRows.map(r => ({ ...r, expanded: false }));
-    this.setData({ drilldownRows: rows });
+    // 仅写当前处于展开态的行，避免整列重写；无展开行时直接跳过 setData
+    const update: Record<string, boolean> = {};
+    this.data.drilldownRows.forEach((r, idx) => {
+      if (r.expanded) update[`drilldownRows[${idx}].expanded`] = false;
+    });
+    if (Object.keys(update).length > 0) this.setData(update);
   },
 
   /** 挑选空态格言：切月/年/账本后换一条，避免重复 */

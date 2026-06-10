@@ -784,14 +784,15 @@ Page({
     const dimKey = this.data.dimension === 'monthly' ? 'monthlyByMember' : 'yearlyByMember';
     const view = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
     if (!view) return;
-    const list = [...view.l1];
-    const idx = list.findIndex((l) => l.category_id === l1Id);
+    const idx = view.l1.findIndex((l) => l.category_id === l1Id);
     if (idx < 0) return;
-    const item = list[idx];
+    const item = view.l1[idx];
+    // A1：仅写最小数据路径，避免整列 read-modify-write 引发并发覆盖 / 整表重渲染吞点击
+    const base = `${dimKey}.${memberKey}.l1[${idx}]`;
 
     if (item.expanded) {
-      list[idx] = { ...item, expanded: false };
-      this.setData({ [`${dimKey}.${memberKey}.l1`]: list }, () => {
+      // 收起：同时清 loadingL2，作为"用户主动收起"信号（B 兜底据此区分"被覆盖"与"主动收起"）
+      this.setData({ [`${base}.expanded`]: false, [`${base}.loadingL2`]: false }, () => {
         this._scheduleMeasureCurrentPane('l1-collapse');
       });
       return;
@@ -800,16 +801,19 @@ Page({
     // 2026-06-08：脏标记下绕过缓存早返回，强制重拉
     const cacheUsable = item.l2Items.length > 0 && !item.subtreeStale;
     if (cacheUsable) {
-      list[idx] = { ...item, expanded: true };
-      this.setData({ [`${dimKey}.${memberKey}.l1`]: list }, () => {
+      this.setData({ [`${base}.expanded`]: true }, () => {
         this._scheduleMeasureCurrentPane('l1-expand-cached');
       });
       return;
     }
-    list[idx] = { ...item, expanded: true, loadingL2: true, subtreeStale: false };
-    this.setData({ [`${dimKey}.${memberKey}.l1`]: list });
+    this.setData({
+      [`${base}.expanded`]: true,
+      [`${base}.loadingL2`]: true,
+      [`${base}.subtreeStale`]: false,
+    });
 
-    await this._loadL2Data(memberKey, l1Id, silent);
+    // B：ensureExpanded=true · 数据到达时幂等兜底展开
+    await this._loadL2Data(memberKey, l1Id, silent, true);
   },
 
   /**
@@ -818,7 +822,7 @@ Page({
    *   - _handleL1Tap 展开分支
    *   - _refreshExpandedSubtreesIfNeeded 数据变更后重拉 expanded 子树
    */
-  async _loadL2Data(memberKey: string, l1Id: string, silent: boolean = false): Promise<void> {
+  async _loadL2Data(memberKey: string, l1Id: string, silent: boolean = false, ensureExpanded: boolean = false): Promise<void> {
     const dimKey = this.data.dimension === 'monthly' ? 'monthlyByMember' : 'yearlyByMember';
     try {
       const scope = this.data.dimension === 'monthly'
@@ -846,13 +850,13 @@ Page({
       }));
       const latestView = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
       if (!latestView) return;
-      const listLatest = [...latestView.l1];
-      const idxLatest = listLatest.findIndex((l) => l.category_id === l1Id);
+      const idxLatest = latestView.l1.findIndex((l) => l.category_id === l1Id);
       if (idxLatest < 0) return;
+      const l1Latest = latestView.l1[idxLatest];
       // 保留旧 L2 节点的 expanded + l3 数据（按 category_id 合并）：
       // 数据变更场景下用户已展开的 L2 不应被收起，l3Items 借助 subtreeStale 走 onTapL2 重拉。
       const prevL2Map = new Map<string, L2Display>();
-      for (const oldL2 of listLatest[idxLatest].l2Items) {
+      for (const oldL2 of l1Latest.l2Items) {
         if (oldL2.category_id) prevL2Map.set(oldL2.category_id, oldL2);
       }
       const mergedL2: L2Display[] = l2Items.map((freshL2) => {
@@ -867,14 +871,17 @@ Page({
           subtreeStale: prev.subtreeStale,
         };
       });
-      listLatest[idxLatest] = {
-        ...listLatest[idxLatest],
-        loadingL2: false,
-        l2Items: mergedL2,
-        l2HasMore: overflow,
-        subtreeStale: false,
+      // A1：仅写本 L1 节点的子树字段，不触碰兄弟节点（杜绝并发整列覆盖）
+      const base = `${dimKey}.${memberKey}.l1[${idxLatest}]`;
+      const update: Record<string, unknown> = {
+        [`${base}.loadingL2`]: false,
+        [`${base}.l2Items`]: mergedL2,
+        [`${base}.l2HasMore`]: overflow,
+        [`${base}.subtreeStale`]: false,
       };
-      this.setData({ [`${dimKey}.${memberKey}.l1`]: listLatest }, () => {
+      // B：仅当本次展开意图仍有效（loadingL2 仍为 true，即用户未中途收起）时兜底展开
+      if (ensureExpanded && l1Latest.loadingL2) update[`${base}.expanded`] = true;
+      this.setData(update, () => {
         this._scheduleMeasureCurrentPane('l1-l2-loaded');
       });
 
@@ -888,11 +895,9 @@ Page({
       console.error('[statistics] drillDown L2 failed', err);
       const latestView = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
       if (!latestView) return;
-      const listLatest = [...latestView.l1];
-      const idxLatest = listLatest.findIndex((l) => l.category_id === l1Id);
+      const idxLatest = latestView.l1.findIndex((l) => l.category_id === l1Id);
       if (idxLatest >= 0) {
-        listLatest[idxLatest] = { ...listLatest[idxLatest], loadingL2: false };
-        this.setData({ [`${dimKey}.${memberKey}.l1`]: listLatest }, () => {
+        this.setData({ [`${dimKey}.${memberKey}.l1[${idxLatest}].loadingL2`]: false }, () => {
           this._scheduleMeasureCurrentPane('l1-l2-error');
         });
       }
@@ -914,18 +919,17 @@ Page({
     const dimKey = this.data.dimension === 'monthly' ? 'monthlyByMember' : 'yearlyByMember';
     const view = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
     if (!view) return;
-    const list = [...view.l1];
-    const l1Idx = list.findIndex((l) => l.category_id === l1Id);
+    const l1Idx = view.l1.findIndex((l) => l.category_id === l1Id);
     if (l1Idx < 0) return;
-    const l1 = { ...list[l1Idx], l2Items: [...list[l1Idx].l2Items] };
-    const l2Idx = l1.l2Items.findIndex((l) => l.category_id === l2Id);
+    const l2Idx = view.l1[l1Idx].l2Items.findIndex((l) => l.category_id === l2Id);
     if (l2Idx < 0) return;
-    const l2 = l1.l2Items[l2Idx];
+    const l2 = view.l1[l1Idx].l2Items[l2Idx];
+    // A1：仅写最小数据路径
+    const base = `${dimKey}.${memberKey}.l1[${l1Idx}].l2Items[${l2Idx}]`;
 
     if (l2.expanded) {
-      l1.l2Items[l2Idx] = { ...l2, expanded: false };
-      list[l1Idx] = l1;
-      this.setData({ [`${dimKey}.${memberKey}.l1`]: list }, () => {
+      // 收起：同时清 loadingL3，作为"用户主动收起"信号
+      this.setData({ [`${base}.expanded`]: false, [`${base}.loadingL3`]: false }, () => {
         this._scheduleMeasureCurrentPane('l2-collapse');
       });
       return;
@@ -933,19 +937,20 @@ Page({
     // 2026-06-08：脏标记下绕过缓存早返回，强制重拉 L3
     const l3CacheUsable = l2.l3Items.length > 0 && !l2.subtreeStale;
     if (l3CacheUsable) {
-      l1.l2Items[l2Idx] = { ...l2, expanded: true };
-      list[l1Idx] = l1;
-      this.setData({ [`${dimKey}.${memberKey}.l1`]: list }, () => {
+      this.setData({ [`${base}.expanded`]: true }, () => {
         this._scheduleMeasureCurrentPane('l2-expand-cached');
       });
       return;
     }
 
-    l1.l2Items[l2Idx] = { ...l2, expanded: true, loadingL3: true, subtreeStale: false };
-    list[l1Idx] = l1;
-    this.setData({ [`${dimKey}.${memberKey}.l1`]: list });
+    this.setData({
+      [`${base}.expanded`]: true,
+      [`${base}.loadingL3`]: true,
+      [`${base}.subtreeStale`]: false,
+    });
 
-    await this._loadL3Data(memberKey, l1Id, l2Id, false);
+    // B：ensureExpanded=true · 数据到达时幂等兜底展开
+    await this._loadL3Data(memberKey, l1Id, l2Id, false, true);
   },
 
   /**
@@ -955,7 +960,7 @@ Page({
    *   - _loadL2Data 中 L2 重拉后级联触发
    *   - _refreshExpandedSubtreesIfNeeded 数据变更后重拉 expanded L2 子树
    */
-  async _loadL3Data(memberKey: string, l1Id: string, l2Id: string, silent: boolean = false): Promise<void> {
+  async _loadL3Data(memberKey: string, l1Id: string, l2Id: string, silent: boolean = false, ensureExpanded: boolean = false): Promise<void> {
     const dimKey = this.data.dimension === 'monthly' ? 'monthlyByMember' : 'yearlyByMember';
     try {
       const scope = this.data.dimension === 'monthly'
@@ -981,36 +986,33 @@ Page({
       }));
       const latestView = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
       if (!latestView) return;
-      const listLatest = [...latestView.l1];
-      const l1IdxLatest = listLatest.findIndex((l) => l.category_id === l1Id);
+      const l1IdxLatest = latestView.l1.findIndex((l) => l.category_id === l1Id);
       if (l1IdxLatest < 0) return;
-      const l1Latest = { ...listLatest[l1IdxLatest], l2Items: [...listLatest[l1IdxLatest].l2Items] };
-      const l2IdxLatest = l1Latest.l2Items.findIndex((l) => l.category_id === l2Id);
+      const l2IdxLatest = latestView.l1[l1IdxLatest].l2Items.findIndex((l) => l.category_id === l2Id);
       if (l2IdxLatest < 0) return;
-      l1Latest.l2Items[l2IdxLatest] = {
-        ...l1Latest.l2Items[l2IdxLatest],
-        loadingL3: false,
-        l3Items,
-        l3HasMore: overflow,
-        subtreeStale: false,
+      const l2Latest = latestView.l1[l1IdxLatest].l2Items[l2IdxLatest];
+      // A1：仅写本 L2 节点字段
+      const base = `${dimKey}.${memberKey}.l1[${l1IdxLatest}].l2Items[${l2IdxLatest}]`;
+      const update: Record<string, unknown> = {
+        [`${base}.loadingL3`]: false,
+        [`${base}.l3Items`]: l3Items,
+        [`${base}.l3HasMore`]: overflow,
+        [`${base}.subtreeStale`]: false,
       };
-      listLatest[l1IdxLatest] = l1Latest;
-      this.setData({ [`${dimKey}.${memberKey}.l1`]: listLatest }, () => {
+      // B：仅当本次展开意图仍有效（loadingL3 仍为 true）时兜底展开
+      if (ensureExpanded && l2Latest.loadingL3) update[`${base}.expanded`] = true;
+      this.setData(update, () => {
         this._scheduleMeasureCurrentPane('l2-l3-loaded');
       });
     } catch (err) {
       console.error('[statistics] drillDown L3 failed', err);
       const latestView = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
       if (!latestView) return;
-      const listLatest = [...latestView.l1];
-      const l1IdxLatest = listLatest.findIndex((l) => l.category_id === l1Id);
+      const l1IdxLatest = latestView.l1.findIndex((l) => l.category_id === l1Id);
       if (l1IdxLatest >= 0) {
-        const l1Latest = { ...listLatest[l1IdxLatest], l2Items: [...listLatest[l1IdxLatest].l2Items] };
-        const l2IdxLatest = l1Latest.l2Items.findIndex((l) => l.category_id === l2Id);
+        const l2IdxLatest = latestView.l1[l1IdxLatest].l2Items.findIndex((l) => l.category_id === l2Id);
         if (l2IdxLatest >= 0) {
-          l1Latest.l2Items[l2IdxLatest] = { ...l1Latest.l2Items[l2IdxLatest], loadingL3: false };
-          listLatest[l1IdxLatest] = l1Latest;
-          this.setData({ [`${dimKey}.${memberKey}.l1`]: listLatest }, () => {
+          this.setData({ [`${dimKey}.${memberKey}.l1[${l1IdxLatest}].l2Items[${l2IdxLatest}].loadingL3`]: false }, () => {
             this._scheduleMeasureCurrentPane('l2-l3-error');
           });
         }
@@ -1039,6 +1041,47 @@ Page({
         void this._loadL2Data(memberKey, l1.category_id, true);
       }
     }
+  },
+
+  // ─── P1：触摸预取（touchstart 即 fire-and-forget 预热 _drillCache）─────────
+  // 手指按下到 tap 触发约有 100~200ms，足够把 drill-down 请求发出去；
+  // tap 真正执行 _loadL2Data/_loadL3Data 时多半已命中 _drillCache，几乎零等待。
+  // 仅预取"用户正要点"的节点，不产生无效请求；已有可用缓存时直接跳过。
+
+  onTouchStartL1(e: WechatMiniprogram.TouchEvent) {
+    if (!this._familyId) return;
+    const dataset = e.currentTarget.dataset as Record<string, string>;
+    const id = dataset.id;
+    if (!id) return;
+    const memberKey = dataset.memberkey || this._getCurrentMemberKey();
+    const dimKey = this.data.dimension === 'monthly' ? 'monthlyByMember' : 'yearlyByMember';
+    const view = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
+    const item = view?.l1.find((l) => l.category_id === id);
+    if (item && item.l2Items.length > 0 && !item.subtreeStale) return; // 已有可用缓存
+    const scope = this.data.dimension === 'monthly'
+      ? { month: this.data.currentMonth }
+      : { year: this.data.currentYear };
+    const userId = memberKey === 'all' ? undefined : memberKey;
+    void drillDownLevel2(this._familyId, scope, id, { limit: L2_VISIBLE + 1, userId }).catch(() => { /* 预取失败静默，tap 时正常重试 */ });
+  },
+
+  onTouchStartL2(e: WechatMiniprogram.TouchEvent) {
+    if (!this._familyId) return;
+    const dataset = e.currentTarget.dataset as Record<string, string>;
+    const l1Id = dataset.l1id;
+    const l2Id = dataset.id;
+    if (!l2Id) return;
+    const memberKey = dataset.memberkey || this._getCurrentMemberKey();
+    const dimKey = this.data.dimension === 'monthly' ? 'monthlyByMember' : 'yearlyByMember';
+    const view = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
+    const l1 = l1Id ? view?.l1.find((l) => l.category_id === l1Id) : undefined;
+    const l2 = l1?.l2Items.find((l) => l.category_id === l2Id);
+    if (l2 && l2.l3Items.length > 0 && !l2.subtreeStale) return; // 已有可用缓存
+    const scope = this.data.dimension === 'monthly'
+      ? { month: this.data.currentMonth }
+      : { year: this.data.currentYear };
+    const userId = memberKey === 'all' ? undefined : memberKey;
+    void drillDownLevel3(this._familyId, scope, l2Id, { limit: L3_VISIBLE + 1, userId }).catch(() => { /* 预取失败静默，tap 时正常重试 */ });
   },
 
   // ─── 固定数据视口高度（控制区固定，pane 内部滚动）───────────────────────
