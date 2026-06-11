@@ -95,12 +95,15 @@ if [[ "${ASSUME_YES}" != "1" ]]; then
 fi
 
 TOTAL_STEPS=4
-[[ "${SKIP_BUILD}" == "1" ]] && ((TOTAL_STEPS--))
-[[ "${SKIP_MIGRATE}" == "1" ]] && ((TOTAL_STEPS--))
+[[ "${SKIP_BUILD}" == "1" ]]   && TOTAL_STEPS=$((TOTAL_STEPS - 1))
+[[ "${SKIP_MIGRATE}" == "1" ]] && TOTAL_STEPS=$((TOTAL_STEPS - 1))
 CURRENT=0
 
+# 注意：bash `set -e` 下 `((var++))` 当 var 自增前为 0 时整条命令退出码为 1，
+# 会触发 ERR trap。统一改用 `var=$((var + 1))` 形式（赋值语句退出码恒为 0）。
+
 # --- Step 1: 停止服务 ---
-((CURRENT++))
+CURRENT=$((CURRENT + 1))
 log_step "[${CURRENT}/${TOTAL_STEPS}] 停止服务"
 
 cd "${COSTRA_INFRA}"
@@ -117,7 +120,7 @@ fi
 
 # --- Step 2: git pull（可选）+ 构建 ---
 if [[ "${SKIP_BUILD}" != "1" ]]; then
-  ((CURRENT++))
+  CURRENT=$((CURRENT + 1))
   log_step "[${CURRENT}/${TOTAL_STEPS}] 构建镜像"
 
   # git pull（可选）
@@ -140,7 +143,7 @@ if [[ "${SKIP_BUILD}" != "1" ]]; then
 fi
 
 # --- Step 3: 启动服务 ---
-((CURRENT++))
+CURRENT=$((CURRENT + 1))
 log_step "[${CURRENT}/${TOTAL_STEPS}] 启动服务"
 
 cd "${COSTRA_INFRA}"
@@ -190,7 +193,7 @@ fi
 
 # --- Step 4: 跑 migrations ---
 if [[ "${SKIP_MIGRATE}" != "1" ]]; then
-  ((CURRENT++))
+  CURRENT=$((CURRENT + 1))
   log_step "[${CURRENT}/${TOTAL_STEPS}] 跑 migrations（幂等）"
 
   if ! "${SCRIPT_DIR}/06-migrate.sh" "${COMMON_FLAGS[@]}"; then

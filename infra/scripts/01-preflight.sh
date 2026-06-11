@@ -72,11 +72,11 @@ if command -v docker >/dev/null 2>&1; then
   DOCKER_MAJOR=$(echo "${DOCKER_VER}" | cut -d. -f1)
   if [[ "${DOCKER_MAJOR}" -lt 20 ]]; then
     log_error "Docker 版本过低（${DOCKER_VER}）· 期望 ≥20.10"
-    ((FAIL_COUNT++))
+    FAIL_COUNT=$((FAIL_COUNT + 1))
   fi
 else
   log_error "未安装 docker"
-  ((FAIL_COUNT++))
+  FAIL_COUNT=$((FAIL_COUNT + 1))
 fi
 
 # --- 3. docker compose v2 ---
@@ -87,7 +87,7 @@ if docker compose version >/dev/null 2>&1; then
 else
   log_error "未安装 docker compose v2 · 不接受 docker-compose v1"
   log_info "  → 安装方法：dnf install -y docker-compose-plugin"
-  ((FAIL_COUNT++))
+  FAIL_COUNT=$((FAIL_COUNT + 1))
 fi
 
 # --- 4. DNS ---
@@ -120,14 +120,14 @@ if command -v ss >/dev/null 2>&1; then
     if ss -tlnp 2>/dev/null | grep -E ":${port}\b" | grep -v 'docker-proxy' | grep -qE 'LISTEN'; then
       log_warn "端口 ${port} 被非 docker 进程占用："
       ss -tlnp 2>/dev/null | grep -E ":${port}\b" | grep -v 'docker-proxy' >&2
-      ((PORT_BUSY++))
+      PORT_BUSY=$((PORT_BUSY + 1))
     fi
   done
   if [[ "${PORT_BUSY}" == "0" ]]; then
     log_success "5 个关键端口全空闲（或仅被 docker 占用 · 预期内）"
   else
     log_error "${PORT_BUSY} 个端口被占用 · 部署前需要让出"
-    ((FAIL_COUNT++))
+    FAIL_COUNT=$((FAIL_COUNT + 1))
   fi
 else
   log_warn "未装 ss 命令 · 跳过端口检查"
@@ -147,7 +147,7 @@ if [[ ${#MISSING_TOOLS[@]} -eq 0 ]]; then
 else
   log_error "缺少工具：${MISSING_TOOLS[*]}"
   log_info "  → 安装：dnf install -y ${MISSING_TOOLS[*]}"
-  ((FAIL_COUNT++))
+  FAIL_COUNT=$((FAIL_COUNT + 1))
 fi
 
 # =============================================================================

@@ -93,13 +93,16 @@ if [[ "${ASSUME_YES}" != "1" ]]; then
 fi
 
 TOTAL_STEPS=3
-[[ "${GIT_PULL}" == "1" ]] && ((TOTAL_STEPS++))
-[[ "${SKIP_BUILD}" == "1" ]] && ((TOTAL_STEPS--))
+[[ "${GIT_PULL}" == "1" ]]   && TOTAL_STEPS=$((TOTAL_STEPS + 1))
+[[ "${SKIP_BUILD}" == "1" ]] && TOTAL_STEPS=$((TOTAL_STEPS - 1))
 CURRENT=0
+
+# 注意：bash `set -e` 下 `((var++))` 当 var 自增前为 0 时整条命令退出码为 1，
+# 会触发 ERR trap。统一改用 `var=$((var + 1))` 形式（赋值语句退出码恒为 0）。
 
 # --- Step (可选): git pull ---
 if [[ "${GIT_PULL}" == "1" ]]; then
-  ((CURRENT++))
+  CURRENT=$((CURRENT + 1))
   log_step "[${CURRENT}/${TOTAL_STEPS}] git pull"
   cd "${COSTRA_ROOT}"
   run_cmd git pull --ff-only
@@ -108,7 +111,7 @@ fi
 
 # --- Step: 构建镜像 ---
 if [[ "${SKIP_BUILD}" != "1" ]]; then
-  ((CURRENT++))
+  CURRENT=$((CURRENT + 1))
   log_step "[${CURRENT}/${TOTAL_STEPS}] 构建 server 镜像（mode=${BUILD_MODE}）"
 
   BUILD_ARGS=("${COMMON_FLAGS[@]}" --mode "${BUILD_MODE}")
@@ -122,7 +125,7 @@ if [[ "${SKIP_BUILD}" != "1" ]]; then
 fi
 
 # --- Step: stop server ---
-((CURRENT++))
+CURRENT=$((CURRENT + 1))
 log_step "[${CURRENT}/${TOTAL_STEPS}] 停止 ${SERVER_CONTAINER}"
 
 cd "${COSTRA_INFRA}"
@@ -130,7 +133,7 @@ run_cmd docker compose -f "${COSTRA_COMPOSE_FILE}" --env-file "${COSTRA_ENV_FILE
 log_success "server 已停止（postgres/redis/nginx 保持运行）"
 
 # --- Step: up server ---
-((CURRENT++))
+CURRENT=$((CURRENT + 1))
 log_step "[${CURRENT}/${TOTAL_STEPS}] 启动 ${SERVER_CONTAINER}"
 
 # 用 up -d 而不是 start：up 会用最新镜像重新创建容器（拿到刚 build 的新镜像）

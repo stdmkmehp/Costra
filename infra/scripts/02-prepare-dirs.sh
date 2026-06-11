@@ -107,7 +107,7 @@ else
       log_success "  ${dir} owner=${OWNER} ✓"
     else
       log_error "  ${dir} owner=${OWNER}（期望 999:999）"
-      ((VERIFY_FAIL++))
+      VERIFY_FAIL=$((VERIFY_FAIL + 1))
     fi
   done
   for dir in "${RUN_AS_1000[@]}"; do
@@ -116,7 +116,7 @@ else
       log_success "  ${dir} owner=${OWNER} ✓"
     else
       log_error "  ${dir} owner=${OWNER}（期望 1000:1000）"
-      ((VERIFY_FAIL++))
+      VERIFY_FAIL=$((VERIFY_FAIL + 1))
     fi
   done
 

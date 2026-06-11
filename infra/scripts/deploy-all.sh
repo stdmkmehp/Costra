@@ -168,9 +168,12 @@ fi
 TOTAL_STEPS=${#STEPS[@]}
 CURRENT=0
 
+# 注意：bash `set -e` 下 `((var++))` 当 var 自增前为 0 时整条命令退出码为 1，
+# 会触发 ERR trap。统一改用 `var=$((var + 1))` 形式（赋值语句退出码恒为 0）。
+
 for entry in "${STEPS[@]}"; do
   IFS=':' read -r step_id script <<< "${entry}"
-  ((CURRENT++))
+  CURRENT=$((CURRENT + 1))
 
   # from 跳过
   if [[ "${SKIP_BEFORE_FROM}" == "1" ]]; then
