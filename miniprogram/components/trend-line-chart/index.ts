@@ -36,8 +36,8 @@ const VIEW_W = 750;
 /** 上下 padding（viewBox 单位）· 避免线贴边 */
 const PAD_TOP = 12;
 const PAD_BOTTOM = 8;
-const PERIOD_LINE_OPACITY = 0.08;
-const CURRENT_LINE_OPACITY = 0.18;
+const PERIOD_LINE_OPACITY = 0.24;
+const CURRENT_LINE_OPACITY = 0.32;
 const PEAK_LABEL_FONT_SIZE = 24;
 const PEAK_LABEL_HEIGHT = 30;
 const PEAK_LABEL_GAP = 14;
@@ -265,7 +265,7 @@ function buildGuideLines(
 
   if (validCurrentIndex >= 0) {
     const x = (validCurrentIndex * stepX).toFixed(2);
-    out += `<line x1="${x}" y1="${y1}" x2="${x}" y2="${y2}" stroke="${color}" stroke-width="1" stroke-opacity="${CURRENT_LINE_OPACITY}" stroke-dasharray="5,5" stroke-linecap="round"/>`;
+    out += `<line x1="${x}" y1="${y1}" x2="${x}" y2="${y2}" stroke="${color}" stroke-width="1" stroke-opacity="${CURRENT_LINE_OPACITY}" stroke-dasharray="8,4" stroke-linecap="round"/>`;
   }
 
   return out;
@@ -309,10 +309,10 @@ function choosePeakLabelBox(
   const below = { x: point.x - width / 2, y: point.y + PEAK_LABEL_GAP, width, height: PEAK_LABEL_HEIGHT };
 
   const preferred = point.x < VIEW_W * 0.2
-    ? [rightDown, right, below, leftDown, left]
+    ? [right, rightDown, below, left, leftDown]
     : point.x > VIEW_W * 0.8
-      ? [leftDown, left, below, rightDown, right]
-      : [leftDown, left, rightDown, right, below];
+      ? [left, leftDown, below, right, rightDown]
+      : [right, rightDown, left, leftDown, below];
 
   const clamped = preferred.map((box) => clampLabelBox(box, viewH));
   return clamped.find((box) => !labelBoxHitsLine(box, points)) || clamped[0];
