@@ -10,6 +10,13 @@ export interface SummaryGridItem {
   value: string;
 }
 
+export interface TrendChartMeta {
+  periodDividers: number[];
+  currentIndex: number;
+  peakIndex: number;
+  peakLabel: string;
+}
+
 export interface MonthRow {
   month: number;
   label: string;
@@ -91,6 +98,7 @@ export interface MonthlyView {
   totalIncome: string;
   totalBalance: string;
   trend: number[];
+  chartMeta: TrendChartMeta;
   summary: SummaryGridItem[];
   l1: L1Display[];
   isEmpty: boolean;
@@ -107,6 +115,7 @@ export interface YearlyView {
   totalIncome: string;
   totalBalance: string;
   trend: number[];
+  chartMeta: TrendChartMeta;
   summary: SummaryGridItem[];
   months: MonthRow[];
   l1: L1Display[];

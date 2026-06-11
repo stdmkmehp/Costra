@@ -3,6 +3,7 @@
 //
 // 职责：接收 number[] 数据，绘制平滑 Bezier 曲线 + 可选底部渐变。
 //   - 不响应任何手势（明确为「Static Visual Trend」)
+//   - 以极弱辅助线提示周期节奏，以唯一峰值标注补充关键信息
 //   - 容错：data 为空 / 全 0 / 单点 → 绘制平直中线（不报错）
 //
 // 实现：将 SVG 字符串编码为 data:image/svg+xml;base64,… URI，作为 <image> 的 src。
@@ -16,10 +17,14 @@
 // 性能：data 长度 ≤ 31（月度）或 12（年度），单次 setData 字符串约 ~2KB · 不做动画。
 //
 // 接口（保持稳定 · 与 v1 canvas 版本一致）：
-//   data: number[]    — 数据点
-//   height: number    — 高度（rpx）
-//   color: string     — 折线颜色
-//   fillGradient: bool — 底部渐变填充
+//   data: number[]        — 数据点
+//   height: number        — 高度（rpx）
+//   color: string         — 折线颜色
+//   fillGradient: bool    — 底部渐变填充
+//   periodDividers: int[] — 周期分隔线索引（极淡虚线）
+//   currentIndex: int     — 当前日/月索引（稍强虚线，-1 不显示）
+//   peakIndex: int        — 峰值点索引（-1 不显示）
+//   peakLabel: string     — 峰值标签文本
 
 /**
  * SVG viewBox 尺寸（虚拟单位 · 不是物理像素）。
@@ -31,6 +36,12 @@ const VIEW_W = 750;
 /** 上下 padding（viewBox 单位）· 避免线贴边 */
 const PAD_TOP = 12;
 const PAD_BOTTOM = 8;
+const PERIOD_LINE_OPACITY = 0.08;
+const CURRENT_LINE_OPACITY = 0.18;
+const PEAK_LABEL_FONT_SIZE = 24;
+const PEAK_LABEL_HEIGHT = 30;
+const PEAK_LABEL_GAP = 14;
+const PEAK_LABEL_MARGIN = 8;
 
 Component({
   properties: {
@@ -54,6 +65,26 @@ Component({
       type: Boolean,
       value: true,
     },
+    /** 周期分隔线索引（极淡虚线） */
+    periodDividers: {
+      type: Array,
+      value: [] as number[],
+    },
+    /** 当前日/月索引（稍强虚线，-1 不显示） */
+    currentIndex: {
+      type: Number,
+      value: -1,
+    },
+    /** 峰值点索引（-1 不显示） */
+    peakIndex: {
+      type: Number,
+      value: -1,
+    },
+    /** 峰值标签文本 */
+    peakLabel: {
+      type: String,
+      value: '',
+    },
   },
 
   data: {
@@ -74,7 +105,7 @@ Component({
   },
 
   observers: {
-    'data, color, fillGradient, height': function () {
+    'data, color, fillGradient, height, periodDividers, currentIndex, peakIndex, peakLabel': function () {
       // instanceId 在 attached 中先设；之后任何 prop 变化都重新生成 SVG
       if (this.data.instanceId) this._render();
     },
@@ -88,12 +119,27 @@ Component({
         height: number;
         color: string;
         fillGradient: boolean;
+        periodDividers: number[];
+        currentIndex: number;
+        peakIndex: number;
+        peakLabel: string;
       };
       const data = Array.isArray(props.data) ? props.data : [];
       const heightRpx = props.height || 160;
       const color = props.color || '#1c1b1a';
       const fillGradient = props.fillGradient !== false;
-      const svg = buildSvg(data, heightRpx, color, fillGradient, this.data.instanceId);
+      const periodDividers = Array.isArray(props.periodDividers) ? props.periodDividers : [];
+      const svg = buildSvg({
+        data,
+        heightRpx,
+        color,
+        fillGradient,
+        instanceId: this.data.instanceId,
+        periodDividers,
+        currentIndex: props.currentIndex,
+        peakIndex: props.peakIndex,
+        peakLabel: props.peakLabel || '',
+      });
       this.setData({ svgUri: svgToDataUri(svg) });
     },
   },
@@ -103,22 +149,29 @@ Component({
 // 纯函数：构造 SVG 字符串
 // ═══════════════════════════════════════════════════════════════
 
+interface BuildSvgOptions {
+  data: number[];
+  heightRpx: number;
+  color: string;
+  fillGradient: boolean;
+  instanceId: string;
+  periodDividers: number[];
+  currentIndex: number;
+  peakIndex: number;
+  peakLabel: string;
+}
+
 /**
  * 根据数据点生成 SVG 字符串。
  * 容错：
  *  - data 为空 → 半透明中线
- *  - data 全 0 → 底部 30% 透明度直线
+ *  - data 全 0 → 底部 30% 透明度直线 + 周期辅助线
  *  - data 单点 → 中线
  *
  * viewBox = "0 0 750 height"（与小程序 rpx 坐标系 1:1）
  */
-function buildSvg(
-  data: number[],
-  heightRpx: number,
-  color: string,
-  fillGradient: boolean,
-  instanceId: string,
-): string {
+function buildSvg(options: BuildSvgOptions): string {
+  const { data, heightRpx, color, fillGradient, instanceId, periodDividers, currentIndex, peakIndex, peakLabel } = options;
   const viewH = heightRpx;
   const drawH = viewH - PAD_TOP - PAD_BOTTOM;
   const gradId = `g${instanceId || '0'}`;
@@ -135,8 +188,8 @@ function buildSvg(
 
   const max = Math.max(...data);
 
-  // 单点 / 全 0：扁平基线（max=0 时使用底部 85% 处的浅色线）
-  if (data.length === 1 || max === 0) {
+  // 单点：无可读趋势，仅画中线。
+  if (data.length === 1) {
     const y = max === 0 ? PAD_TOP + drawH * 0.85 : PAD_TOP + drawH * (1 - data[0] / Math.max(max, 1));
     const opacity = max === 0 ? 0.3 : 1;
     return wrapSvg(viewH,
@@ -144,13 +197,13 @@ function buildSvg(
     );
   }
 
-  // 多点：计算坐标
+  // 多点：计算坐标；全 0 时压到底部 85% 处，保留周期辅助线但不显示峰值标注。
   const stepX = VIEW_W / (data.length - 1);
   const points: Array<{ x: number; y: number }> = [];
   for (let i = 0; i < data.length; i++) {
-    const ratio = data[i] / max;
+    const ratio = max === 0 ? 0 : data[i] / max;
     const x = i * stepX;
-    const y = PAD_TOP + drawH * (1 - ratio);
+    const y = max === 0 ? PAD_TOP + drawH * 0.85 : PAD_TOP + drawH * (1 - ratio);
     points.push({ x, y });
   }
 
@@ -160,7 +213,7 @@ function buildSvg(
   let inner = '';
 
   // 渐变填充（底部柔和阴影感）
-  if (fillGradient) {
+  if (fillGradient && max > 0) {
     const fillPath =
       `${linePath} ` +
       `L${points[points.length - 1].x.toFixed(2)},${(PAD_TOP + drawH).toFixed(2)} ` +
@@ -175,11 +228,150 @@ function buildSvg(
       `<path d="${fillPath}" fill="url(#${gradId})" stroke="none"/>`;
   }
 
+  inner += buildGuideLines(data.length, periodDividers, currentIndex, color, drawH);
+
   // 折线本身
   inner +=
-    `<path d="${linePath}" fill="none" stroke="${color}" stroke-width="${lineWidth}" stroke-linecap="round" stroke-linejoin="round"/>`;
+    `<path d="${linePath}" fill="none" stroke="${color}" stroke-width="${lineWidth}" stroke-opacity="${max === 0 ? '0.3' : '1'}" stroke-linecap="round" stroke-linejoin="round"/>`;
+
+  if (max > 0) {
+    inner += buildPeakAnnotation(points, peakIndex, peakLabel, color, viewH);
+  }
 
   return wrapSvg(viewH, inner);
+}
+
+function buildGuideLines(
+  dataLength: number,
+  periodDividers: number[],
+  currentIndex: number,
+  color: string,
+  drawH: number,
+): string {
+  if (dataLength < 2) return '';
+  const stepX = VIEW_W / (dataLength - 1);
+  const validCurrentIndex = normalizeIndex(currentIndex, dataLength);
+  const uniquePeriodIndexes = Array.from(new Set(periodDividers
+    .map((idx) => normalizeIndex(idx, dataLength))
+    .filter((idx) => idx >= 0 && idx !== validCurrentIndex)));
+  const y1 = PAD_TOP;
+  const y2 = PAD_TOP + drawH;
+  let out = '';
+
+  for (const idx of uniquePeriodIndexes) {
+    const x = (idx * stepX).toFixed(2);
+    out += `<line x1="${x}" y1="${y1}" x2="${x}" y2="${y2}" stroke="${color}" stroke-width="1" stroke-opacity="${PERIOD_LINE_OPACITY}" stroke-dasharray="2,6" stroke-linecap="round"/>`;
+  }
+
+  if (validCurrentIndex >= 0) {
+    const x = (validCurrentIndex * stepX).toFixed(2);
+    out += `<line x1="${x}" y1="${y1}" x2="${x}" y2="${y2}" stroke="${color}" stroke-width="1" stroke-opacity="${CURRENT_LINE_OPACITY}" stroke-dasharray="5,5" stroke-linecap="round"/>`;
+  }
+
+  return out;
+}
+
+function buildPeakAnnotation(
+  points: Array<{ x: number; y: number }>,
+  peakIndex: number,
+  peakLabel: string,
+  color: string,
+  viewH: number,
+): string {
+  const idx = normalizeIndex(peakIndex, points.length);
+  const label = peakLabel.trim();
+  if (idx < 0 || !label) return '';
+
+  const point = points[idx];
+  const labelWidth = estimateLabelWidth(label);
+  const labelBox = choosePeakLabelBox(point, labelWidth, points, viewH);
+  const textX = labelBox.x;
+  const textY = labelBox.y + PEAK_LABEL_FONT_SIZE;
+  const escapedLabel = escapeXmlText(label);
+
+  return (
+    `<circle cx="${point.x.toFixed(2)}" cy="${point.y.toFixed(2)}" r="11" fill="${color}" fill-opacity="0.10"/>` +
+    `<circle cx="${point.x.toFixed(2)}" cy="${point.y.toFixed(2)}" r="4.8" fill="${color}"/>` +
+    `<text x="${textX.toFixed(2)}" y="${textY.toFixed(2)}" fill="${color}" fill-opacity="0.56" font-size="${PEAK_LABEL_FONT_SIZE}" font-family="-apple-system, BlinkMacSystemFont, sans-serif">${escapedLabel}</text>`
+  );
+}
+
+function choosePeakLabelBox(
+  point: { x: number; y: number },
+  width: number,
+  points: Array<{ x: number; y: number }>,
+  viewH: number,
+): { x: number; y: number; width: number; height: number } {
+  const left = { x: point.x - width - PEAK_LABEL_GAP, y: point.y - PEAK_LABEL_HEIGHT / 2, width, height: PEAK_LABEL_HEIGHT };
+  const leftDown = { x: point.x - width - PEAK_LABEL_GAP, y: point.y + PEAK_LABEL_GAP, width, height: PEAK_LABEL_HEIGHT };
+  const rightDown = { x: point.x + PEAK_LABEL_GAP, y: point.y + PEAK_LABEL_GAP, width, height: PEAK_LABEL_HEIGHT };
+  const right = { x: point.x + PEAK_LABEL_GAP, y: point.y - PEAK_LABEL_HEIGHT / 2, width, height: PEAK_LABEL_HEIGHT };
+  const below = { x: point.x - width / 2, y: point.y + PEAK_LABEL_GAP, width, height: PEAK_LABEL_HEIGHT };
+
+  const preferred = point.x < VIEW_W * 0.2
+    ? [rightDown, right, below, leftDown, left]
+    : point.x > VIEW_W * 0.8
+      ? [leftDown, left, below, rightDown, right]
+      : [leftDown, left, rightDown, right, below];
+
+  const clamped = preferred.map((box) => clampLabelBox(box, viewH));
+  return clamped.find((box) => !labelBoxHitsLine(box, points)) || clamped[0];
+}
+
+function clampLabelBox<T extends { x: number; y: number; width: number; height: number }>(box: T, viewH: number): T {
+  return {
+    ...box,
+    x: clamp(box.x, PEAK_LABEL_MARGIN, VIEW_W - box.width - PEAK_LABEL_MARGIN),
+    y: clamp(box.y, PEAK_LABEL_MARGIN, viewH - box.height - PEAK_LABEL_MARGIN),
+  };
+}
+
+function labelBoxHitsLine(
+  box: { x: number; y: number; width: number; height: number },
+  points: Array<{ x: number; y: number }>,
+): boolean {
+  const margin = 6;
+  return points.some((p) => (
+    p.x >= box.x - margin
+    && p.x <= box.x + box.width + margin
+    && p.y >= box.y - margin
+    && p.y <= box.y + box.height + margin
+  ));
+}
+
+function estimateLabelWidth(label: string): number {
+  let width = 0;
+  for (const ch of label) {
+    if (/\d/.test(ch)) width += 12;
+    else if (ch === ' ' || ch === '/' || ch === '.' || ch === '·') width += 7;
+    else if (ch === ',' || ch === '-') width += 6;
+    else width += 14;
+  }
+  return Math.max(72, Math.min(180, width));
+}
+
+function normalizeIndex(index: number, length: number): number {
+  if (!Number.isInteger(index) || index < 0 || index >= length) return -1;
+  return index;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  if (value < min) return min;
+  if (value > max) return max;
+  return value;
+}
+
+function escapeXmlText(text: string): string {
+  return text.replace(/[&<>"'\u0080-\uffff]/g, (ch) => {
+    switch (ch) {
+      case '&': return '&amp;';
+      case '<': return '&lt;';
+      case '>': return '&gt;';
+      case '"': return '&quot;';
+      case "'": return '&apos;';
+      default: return `&#${ch.charCodeAt(0)};`;
+    }
+  });
 }
 
 /** 把 inner 内容包到 SVG 根元素里 · viewBox 与传入 height 1:1 配比，避免线宽被非均匀缩放 */
@@ -213,8 +405,8 @@ function buildSmoothPath(points: Array<{ x: number; y: number }>): string {
  * 注意：必须用 base64 编码，不能用 utf8/URL 编码。
  * 微信小程序 <image> 仅识别 data:image/svg+xml;base64,… 形式。
  *
- * SVG 字符串均为 ASCII 字符（路径数字 + 标签 + 颜色 hex），
- * 直接 btoa 即可；如未来引入中文（如 <text> 标签）需要先 encodeURIComponent。
+ * SVG 字符串保持 ASCII：路径数字 + 颜色 hex + 已转义为 numeric entity 的文本，
+ * 因此可直接走轻量 Base64 编码。
  */
 function svgToDataUri(svg: string): string {
   return `data:image/svg+xml;base64,${b64Encode(svg)}`;

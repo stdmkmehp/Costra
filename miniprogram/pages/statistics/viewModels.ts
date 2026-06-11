@@ -2,8 +2,8 @@
 // 卡号: COSTRA-264 · P0 拆分 index.ts 低于 1000 行
 // Refs: COSTRA-264
 
-import type { MonthlyView, YearlyView, L1Display, SummaryGridItem } from './types';
-import type { MonthlyStatistics, StatCategoryRankItem } from '../../services/statisticsApi';
+import type { MonthlyView, YearlyView, L1Display, SummaryGridItem, TrendChartMeta } from './types';
+import type { MonthlyStatistics, StatCategoryRankItem, DailyTrendItem, MonthlyTrendItem } from '../../services/statisticsApi';
 import { fmtYuan, fmtRatio, buildEmptyTitleMonth } from './formatters';
 
 /**
@@ -16,11 +16,15 @@ export const L1_VISIBLE = 50;
 export const L2_VISIBLE = 5;
 export const L3_VISIBLE = 5;
 
+export function emptyTrendChartMeta(): TrendChartMeta {
+  return { periodDividers: [], currentIndex: -1, peakIndex: -1, peakLabel: '' };
+}
+
 /** 初始 MonthlyView */
 export function emptyMonthlyView(): MonthlyView {
   return {
     totalExpense: '¥0.00', totalIncome: '¥0.00', totalBalance: '¥0.00',
-    trend: [], summary: [], l1: [],
+    trend: [], chartMeta: emptyTrendChartMeta(), summary: [], l1: [],
     isEmpty: false, loading: false, loaded: false,
     emptyTitle: '暂无记录', emptyHint: '',
   };
@@ -30,7 +34,7 @@ export function emptyMonthlyView(): MonthlyView {
 export function emptyYearlyView(): YearlyView {
   return {
     totalExpense: '¥0.00', totalIncome: '¥0.00', totalBalance: '¥0.00',
-    trend: [], summary: [], months: [], l1: [],
+    trend: [], chartMeta: emptyTrendChartMeta(), summary: [], months: [], l1: [],
     isEmpty: false, loading: false, loaded: false,
     emptyTitle: '暂无记录', emptyHint: '',
   };
@@ -50,6 +54,78 @@ export function getInitialSwiperHeightPx(): number {
     // fallback
   }
   return 420;
+}
+
+export function buildMonthlyTrendChartMeta(month: string, dailyTrend: DailyTrendItem[]): TrendChartMeta {
+  const parsed = parseMonthValue(month);
+  if (!parsed || dailyTrend.length === 0) return emptyTrendChartMeta();
+
+  const { year, monthNum } = parsed;
+  const periodDividers = dailyTrend
+    .map((item, index) => (new Date(year, monthNum - 1, item.day).getDay() === 1 ? index : -1))
+    .filter((index) => index >= 0);
+  const today = getTodayParts();
+  const currentIndex = today.year === year && today.month === monthNum
+    ? dailyTrend.findIndex((item) => item.day === today.day)
+    : -1;
+  const peakIndex = findPeakIndex(dailyTrend.map((item) => item.expense));
+  const peakItem = peakIndex >= 0 ? dailyTrend[peakIndex] : null;
+
+  return {
+    periodDividers,
+    currentIndex,
+    peakIndex,
+    peakLabel: peakItem ? `${monthNum}/${peakItem.day} · ${fmtYuan(peakItem.expense)}` : '',
+  };
+}
+
+export function buildYearlyTrendChartMeta(year: string, monthlyTrend: MonthlyTrendItem[]): TrendChartMeta {
+  const yearNum = parseInt(year, 10);
+  if (!Number.isFinite(yearNum) || monthlyTrend.length === 0) return emptyTrendChartMeta();
+
+  const periodDividers = monthlyTrend
+    .map((item, index) => ([3, 6, 9].includes(item.month) ? index : -1))
+    .filter((index) => index >= 0);
+  const today = getTodayParts();
+  const currentIndex = today.year === yearNum
+    ? monthlyTrend.findIndex((item) => item.month === today.month)
+    : -1;
+  const peakIndex = findPeakIndex(monthlyTrend.map((item) => item.expense));
+  const peakItem = peakIndex >= 0 ? monthlyTrend[peakIndex] : null;
+
+  return {
+    periodDividers,
+    currentIndex,
+    peakIndex,
+    peakLabel: peakItem ? `${peakItem.month}月 · ${fmtYuan(peakItem.expense)}` : '',
+  };
+}
+
+function parseMonthValue(month: string): { year: number; monthNum: number } | null {
+  const matched = /^(\d{4})-(\d{2})$/.exec(month);
+  if (!matched) return null;
+  const year = parseInt(matched[1], 10);
+  const monthNum = parseInt(matched[2], 10);
+  if (!Number.isFinite(year) || monthNum < 1 || monthNum > 12) return null;
+  return { year, monthNum };
+}
+
+function getTodayParts(): { year: number; month: number; day: number } {
+  const today = new Date();
+  return { year: today.getFullYear(), month: today.getMonth() + 1, day: today.getDate() };
+}
+
+function findPeakIndex(values: number[]): number {
+  let peakIndex = -1;
+  let peakValue = 0;
+  for (let i = 0; i < values.length; i++) {
+    const value = values[i];
+    if (value > peakValue) {
+      peakValue = value;
+      peakIndex = i;
+    }
+  }
+  return peakIndex;
 }
 
 /**
@@ -111,6 +187,7 @@ export function buildMonthlyView(
     totalIncome: fmtYuan(totals.income),
     totalBalance: fmtYuan(totals.balance),
     trend: daily_trend.map((d) => d.expense),
+    chartMeta: buildMonthlyTrendChartMeta(month, daily_trend),
     summary,
     l1,
     isEmpty,

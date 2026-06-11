@@ -7,6 +7,7 @@
 // Refs: COSTRA-303
 
 import { getSafeAreaMetrics } from '../../utils/safeArea';
+import { scheduleDeferredLoading, type DeferredLoadingHandle } from '../../utils/deferredLoading';
 import {
   getActiveFamilyId,
   getActiveLedgerId,
@@ -70,6 +71,7 @@ import {
   getInitialSwiperHeightPx,
   buildL1Display,
   buildMonthlyView,
+  buildYearlyTrendChartMeta,
 } from './viewModels';
 import { makeAllTab, buildMemberTabs } from './memberHelpers';
 import type { PendingStatisticsAction } from '../family/index';
@@ -118,6 +120,14 @@ Page({
   _initialized: false,
   _memberPaneScrollTops: {} as Record<string, number>,
   _lastPaneScrollSetDataAt: 0,
+
+  /**
+   * Deferred-loading 句柄表（key = `${memberKey}::${l1Id}` 或 `${memberKey}::${l1Id}::${l2Id}`）。
+   * "点击下钻 → loading 文案" 不立即写入，等 LOADING_DELAY_MS 仍未拿到数据再显示。
+   * 数据到达 / 错误 / 用户主动收起 / 视图失效 / onUnload 任意路径都必须 cancel，
+   * 并据 handle.fired 决定是否需要写回 loading:false（未 fired 则全程不写 loading 字段）。
+   */
+  _deferredLoadingHandles: {} as Record<string, DeferredLoadingHandle>,
 
   // ─── 生命周期 ──────────────────────────────────────────────────────────────
 
@@ -252,6 +262,42 @@ Page({
       eventBus.off(EventNames.PROFILE_UPDATED, this._profileUpdatedHandler);
       this._profileUpdatedHandler = null;
     }
+    // INV-2：onUnload 路径必须 cancel 所有 in-flight deferred handle，避免 page 销毁后 setData 报错
+    this._cancelAllDeferredLoadingHandles();
+  },
+
+  // ─── Deferred loading 工具方法 ──────────────────────────────────────────
+
+  /**
+   * 启动一次按 key 隔离的 deferred loading。
+   * 若同 key 已有 in-flight handle，先 cancel 它（INV-1：同节点同时只允许一个 timer）。
+   */
+  _startDeferredLoading(key: string, onFire: () => void): void {
+    const existing = this._deferredLoadingHandles[key];
+    if (existing) existing.cancel();
+    this._deferredLoadingHandles[key] = scheduleDeferredLoading(onFire);
+  },
+
+  /**
+   * 取消并消费一个 deferred loading handle。
+   * @returns 该 handle 是否已经 fire 过（决定 settle 时是否需要写 loading:false）。
+   *          若 key 上没有 handle，返回 false。
+   */
+  _consumeDeferredLoading(key: string): boolean {
+    const handle = this._deferredLoadingHandles[key];
+    if (!handle) return false;
+    handle.cancel();
+    const fired = handle.fired;
+    delete this._deferredLoadingHandles[key];
+    return fired;
+  },
+
+  /** 取消所有 in-flight deferred loading handle（onUnload / 视图全清场景使用） */
+  _cancelAllDeferredLoadingHandles(): void {
+    for (const key in this._deferredLoadingHandles) {
+      this._deferredLoadingHandles[key].cancel();
+    }
+    this._deferredLoadingHandles = {};
   },
 
   // ─── 数据加载 ──────────────────────────────────────────────────────────────
@@ -352,6 +398,7 @@ Page({
       totalIncome: view.totalIncome,
       totalBalance: view.totalBalance,
       trend: view.trend,
+      chartMeta: view.chartMeta,
       summary: view.summary,
       l1: view.l1.map((item) => ({
         category_id: item.category_id,
@@ -529,6 +576,7 @@ Page({
       totalIncome: fmtYuan(totals.income),
       totalBalance: fmtYuan(totals.balance),
       trend: monthly_trend.map((m) => m.expense),
+      chartMeta: buildYearlyTrendChartMeta(this.data.currentYear, monthly_trend),
       summary,
       months,
       l1,
@@ -581,6 +629,8 @@ Page({
     this._ledgerId = payload.ledger_id;
     this._resetMemberSwiperHeightState('activeFamilyChanged');
     this._clearMemberScrollMemory();
+    // INV-2：切账本后旧 family 的 in-flight deferred handle 已无意义，全部 cancel
+    this._cancelAllDeferredLoadingHandles();
     this.setData({
       ledgerName: payload.ledger_name,
       familyKind: payload.family_kind,
@@ -622,6 +672,9 @@ Page({
     if (Object.keys(update).length > 0) {
       this.setData(update);
     }
+    // INV-2：视图失效后所有 in-flight deferred handle 都已无意义。
+    // 接下来 _refreshExpandedSubtreesIfNeeded 会重新发起 _loadL2/_loadL3 并各自启动新 handle。
+    this._cancelAllDeferredLoadingHandles();
   },
 
   // ─── 交互：时间维度 ────────────────────────────────────────────────────────
@@ -674,6 +727,8 @@ Page({
     }
     this._resetMemberSwiperHeightState('clearDimViews');
     this._clearMemberScrollMemory();
+    // INV-2：scope 变更后旧维度的 deferred handle 不再有效，全部 cancel。
+    this._cancelAllDeferredLoadingHandles();
   },
 
   onSwitchDimension(e: WechatMiniprogram.TouchEvent) {
@@ -789,10 +844,15 @@ Page({
     const item = view.l1[idx];
     // A1：仅写最小数据路径，避免整列 read-modify-write 引发并发覆盖 / 整表重渲染吞点击
     const base = `${dimKey}.${memberKey}.l1[${idx}]`;
+    const deferredKey = `${memberKey}::${l1Id}`;
 
     if (item.expanded) {
-      // 收起：同时清 loadingL2，作为"用户主动收起"信号（B 兜底据此区分"被覆盖"与"主动收起"）
-      this.setData({ [`${base}.expanded`]: false, [`${base}.loadingL2`]: false }, () => {
+      // 收起：cancel 任何 in-flight deferred handle（INV-2），同时清 loadingL2 兜底既有显示
+      const wasFired = this._consumeDeferredLoading(deferredKey);
+      const update: Record<string, unknown> = { [`${base}.expanded`]: false };
+      // 仅当 loading 已经显示或可能显示过时才写 false（未 fire 的 deferred 路径下省一次 setData）
+      if (wasFired || item.loadingL2) update[`${base}.loadingL2`] = false;
+      this.setData(update, () => {
         this._scheduleMeasureCurrentPane('l1-collapse');
       });
       return;
@@ -806,10 +866,26 @@ Page({
       });
       return;
     }
+
+    // ─── deferred loading 路径 ───
+    // 立即写 expanded:true（用户操作必须立即反馈）+ subtreeStale:false，但**不写 loadingL2**。
+    // 启动 LOADING_DELAY_MS 定时器：到点未 settle 才显示"加载中..."。
+    // 数据先到则 cancel handle 让 loading 永不出现（COSTRA-304 防闪）。
     this.setData({
       [`${base}.expanded`]: true,
-      [`${base}.loadingL2`]: true,
       [`${base}.subtreeStale`]: false,
+    });
+
+    this._startDeferredLoading(deferredKey, () => {
+      // INV-3 自校验：fire 时检查节点仍存在 + expanded 仍为 true（用户没收起）+ 仍未拿到数据
+      const latestView = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
+      if (!latestView) return;
+      const idxLatest = latestView.l1.findIndex((l) => l.category_id === l1Id);
+      if (idxLatest < 0) return;
+      const l1Latest = latestView.l1[idxLatest];
+      if (!l1Latest.expanded) return;          // 用户已收起
+      if (l1Latest.l2Items.length > 0 && !l1Latest.subtreeStale) return; // 数据已到达
+      this.setData({ [`${dimKey}.${memberKey}.l1[${idxLatest}].loadingL2`]: true });
     });
 
     // B：ensureExpanded=true · 数据到达时幂等兜底展开
@@ -824,6 +900,7 @@ Page({
    */
   async _loadL2Data(memberKey: string, l1Id: string, silent: boolean = false, ensureExpanded: boolean = false): Promise<void> {
     const dimKey = this.data.dimension === 'monthly' ? 'monthlyByMember' : 'yearlyByMember';
+    const deferredKey = `${memberKey}::${l1Id}`;
     try {
       const scope = this.data.dimension === 'monthly'
         ? { month: this.data.currentMonth }
@@ -849,9 +926,15 @@ Page({
         l3HasMore: false,
       }));
       const latestView = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
-      if (!latestView) return;
+      if (!latestView) {
+        this._consumeDeferredLoading(deferredKey);
+        return;
+      }
       const idxLatest = latestView.l1.findIndex((l) => l.category_id === l1Id);
-      if (idxLatest < 0) return;
+      if (idxLatest < 0) {
+        this._consumeDeferredLoading(deferredKey);
+        return;
+      }
       const l1Latest = latestView.l1[idxLatest];
       // 保留旧 L2 节点的 expanded + l3 数据（按 category_id 合并）：
       // 数据变更场景下用户已展开的 L2 不应被收起，l3Items 借助 subtreeStale 走 onTapL2 重拉。
@@ -871,16 +954,20 @@ Page({
           subtreeStale: prev.subtreeStale,
         };
       });
+      // COSTRA-304：cancel deferred handle，按 fired 决定是否需要写 loadingL2:false
+      const loadingWasShown = this._consumeDeferredLoading(deferredKey);
       // A1：仅写本 L1 节点的子树字段，不触碰兄弟节点（杜绝并发整列覆盖）
       const base = `${dimKey}.${memberKey}.l1[${idxLatest}]`;
       const update: Record<string, unknown> = {
-        [`${base}.loadingL2`]: false,
         [`${base}.l2Items`]: mergedL2,
         [`${base}.l2HasMore`]: overflow,
         [`${base}.subtreeStale`]: false,
       };
-      // B：仅当本次展开意图仍有效（loadingL2 仍为 true，即用户未中途收起）时兜底展开
-      if (ensureExpanded && l1Latest.loadingL2) update[`${base}.expanded`] = true;
+      // 仅当 loading 已实际显示过（fired），或当前节点 loadingL2 已为 true（被其他路径触发），才写回 false
+      if (loadingWasShown || l1Latest.loadingL2) update[`${base}.loadingL2`] = false;
+      // B：兜底展开。判据从 `loadingL2 仍为 true` 改为 `expanded 仍为 true`：
+      // deferred 路径下 loadingL2 在快路径中**始终为 false**，但 expanded 仍是"用户没主动收起"的可靠信号。
+      if (ensureExpanded && l1Latest.expanded) update[`${base}.expanded`] = true;
       this.setData(update, () => {
         this._scheduleMeasureCurrentPane('l1-l2-loaded');
       });
@@ -893,13 +980,19 @@ Page({
       }
     } catch (err) {
       console.error('[statistics] drillDown L2 failed', err);
+      // INV-2：错误路径也必须 cancel deferred handle，避免 LOADING_DELAY_MS 后才闪一下加载中再消失
+      const loadingWasShown = this._consumeDeferredLoading(deferredKey);
       const latestView = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
-      if (!latestView) return;
-      const idxLatest = latestView.l1.findIndex((l) => l.category_id === l1Id);
-      if (idxLatest >= 0) {
-        this.setData({ [`${dimKey}.${memberKey}.l1[${idxLatest}].loadingL2`]: false }, () => {
-          this._scheduleMeasureCurrentPane('l1-l2-error');
-        });
+      if (latestView) {
+        const idxLatest = latestView.l1.findIndex((l) => l.category_id === l1Id);
+        if (idxLatest >= 0) {
+          // 仅当 loading 实际显示过或字段已被外部翻起时才写 false（省一次无效 setData）
+          if (loadingWasShown || latestView.l1[idxLatest].loadingL2) {
+            this.setData({ [`${dimKey}.${memberKey}.l1[${idxLatest}].loadingL2`]: false }, () => {
+              this._scheduleMeasureCurrentPane('l1-l2-error');
+            });
+          }
+        }
       }
       if (!silent) {
         wx.showToast({ title: '加载失败', icon: 'none' });
@@ -926,10 +1019,14 @@ Page({
     const l2 = view.l1[l1Idx].l2Items[l2Idx];
     // A1：仅写最小数据路径
     const base = `${dimKey}.${memberKey}.l1[${l1Idx}].l2Items[${l2Idx}]`;
+    const deferredKey = `${memberKey}::${l1Id}::${l2Id}`;
 
     if (l2.expanded) {
-      // 收起：同时清 loadingL3，作为"用户主动收起"信号
-      this.setData({ [`${base}.expanded`]: false, [`${base}.loadingL3`]: false }, () => {
+      // 收起：cancel deferred handle（INV-2），同时清 loadingL3 兜底既有显示
+      const wasFired = this._consumeDeferredLoading(deferredKey);
+      const update: Record<string, unknown> = { [`${base}.expanded`]: false };
+      if (wasFired || l2.loadingL3) update[`${base}.loadingL3`] = false;
+      this.setData(update, () => {
         this._scheduleMeasureCurrentPane('l2-collapse');
       });
       return;
@@ -943,10 +1040,25 @@ Page({
       return;
     }
 
+    // ─── deferred loading 路径 ───
+    // 立即写 expanded:true（用户操作必须立即反馈）+ subtreeStale:false，但**不写 loadingL3**。
     this.setData({
       [`${base}.expanded`]: true,
-      [`${base}.loadingL3`]: true,
       [`${base}.subtreeStale`]: false,
+    });
+
+    this._startDeferredLoading(deferredKey, () => {
+      // INV-3 自校验：节点仍存在 + expanded 仍为 true + 数据仍未到达
+      const latestView = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
+      if (!latestView) return;
+      const l1IdxLatest = latestView.l1.findIndex((l) => l.category_id === l1Id);
+      if (l1IdxLatest < 0) return;
+      const l2IdxLatest = latestView.l1[l1IdxLatest].l2Items.findIndex((l) => l.category_id === l2Id);
+      if (l2IdxLatest < 0) return;
+      const l2Latest = latestView.l1[l1IdxLatest].l2Items[l2IdxLatest];
+      if (!l2Latest.expanded) return;
+      if (l2Latest.l3Items.length > 0 && !l2Latest.subtreeStale) return;
+      this.setData({ [`${dimKey}.${memberKey}.l1[${l1IdxLatest}].l2Items[${l2IdxLatest}].loadingL3`]: true });
     });
 
     // B：ensureExpanded=true · 数据到达时幂等兜底展开
@@ -962,6 +1074,7 @@ Page({
    */
   async _loadL3Data(memberKey: string, l1Id: string, l2Id: string, silent: boolean = false, ensureExpanded: boolean = false): Promise<void> {
     const dimKey = this.data.dimension === 'monthly' ? 'monthlyByMember' : 'yearlyByMember';
+    const deferredKey = `${memberKey}::${l1Id}::${l2Id}`;
     try {
       const scope = this.data.dimension === 'monthly'
         ? { month: this.data.currentMonth }
@@ -985,36 +1098,52 @@ Page({
         initial: (it.nickname || '?')[0],
       }));
       const latestView = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
-      if (!latestView) return;
+      if (!latestView) {
+        this._consumeDeferredLoading(deferredKey);
+        return;
+      }
       const l1IdxLatest = latestView.l1.findIndex((l) => l.category_id === l1Id);
-      if (l1IdxLatest < 0) return;
+      if (l1IdxLatest < 0) {
+        this._consumeDeferredLoading(deferredKey);
+        return;
+      }
       const l2IdxLatest = latestView.l1[l1IdxLatest].l2Items.findIndex((l) => l.category_id === l2Id);
-      if (l2IdxLatest < 0) return;
+      if (l2IdxLatest < 0) {
+        this._consumeDeferredLoading(deferredKey);
+        return;
+      }
       const l2Latest = latestView.l1[l1IdxLatest].l2Items[l2IdxLatest];
+      // COSTRA-304：cancel deferred handle，按 fired 决定是否需要写 loadingL3:false
+      const loadingWasShown = this._consumeDeferredLoading(deferredKey);
       // A1：仅写本 L2 节点字段
       const base = `${dimKey}.${memberKey}.l1[${l1IdxLatest}].l2Items[${l2IdxLatest}]`;
       const update: Record<string, unknown> = {
-        [`${base}.loadingL3`]: false,
         [`${base}.l3Items`]: l3Items,
         [`${base}.l3HasMore`]: overflow,
         [`${base}.subtreeStale`]: false,
       };
-      // B：仅当本次展开意图仍有效（loadingL3 仍为 true）时兜底展开
-      if (ensureExpanded && l2Latest.loadingL3) update[`${base}.expanded`] = true;
+      if (loadingWasShown || l2Latest.loadingL3) update[`${base}.loadingL3`] = false;
+      // B：兜底展开。判据从 `loadingL3 仍为 true` 改为 `expanded 仍为 true`：
+      // deferred 路径下 loadingL3 在快路径中始终为 false，但 expanded 仍是"用户没主动收起"的可靠信号。
+      if (ensureExpanded && l2Latest.expanded) update[`${base}.expanded`] = true;
       this.setData(update, () => {
         this._scheduleMeasureCurrentPane('l2-l3-loaded');
       });
     } catch (err) {
       console.error('[statistics] drillDown L3 failed', err);
+      const loadingWasShown = this._consumeDeferredLoading(deferredKey);
       const latestView = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
-      if (!latestView) return;
-      const l1IdxLatest = latestView.l1.findIndex((l) => l.category_id === l1Id);
-      if (l1IdxLatest >= 0) {
-        const l2IdxLatest = latestView.l1[l1IdxLatest].l2Items.findIndex((l) => l.category_id === l2Id);
-        if (l2IdxLatest >= 0) {
-          this.setData({ [`${dimKey}.${memberKey}.l1[${l1IdxLatest}].l2Items[${l2IdxLatest}].loadingL3`]: false }, () => {
-            this._scheduleMeasureCurrentPane('l2-l3-error');
-          });
+      if (latestView) {
+        const l1IdxLatest = latestView.l1.findIndex((l) => l.category_id === l1Id);
+        if (l1IdxLatest >= 0) {
+          const l2IdxLatest = latestView.l1[l1IdxLatest].l2Items.findIndex((l) => l.category_id === l2Id);
+          if (l2IdxLatest >= 0) {
+            if (loadingWasShown || latestView.l1[l1IdxLatest].l2Items[l2IdxLatest].loadingL3) {
+              this.setData({ [`${dimKey}.${memberKey}.l1[${l1IdxLatest}].l2Items[${l2IdxLatest}].loadingL3`]: false }, () => {
+                this._scheduleMeasureCurrentPane('l2-l3-error');
+              });
+            }
+          }
         }
       }
       if (!silent) {
@@ -1198,6 +1327,8 @@ Page({
           // 切账本 → 清空所有数据 + 重置 swiper 高度 + 重新加载上下文（含成员列表）
           this._resetMemberSwiperHeightState('ledgerSwitch');
           this._clearMemberScrollMemory();
+          // INV-2：切账本后旧 family 的 in-flight deferred handle 已无意义，全部 cancel
+          this._cancelAllDeferredLoadingHandles();
           this.setData({
             ledgerName: selected.ledger_name || selected.name,
             familyKind: selected.kind,

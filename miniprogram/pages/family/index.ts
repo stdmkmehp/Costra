@@ -7,6 +7,7 @@
 
 import { toYuan } from '../../utils/money';
 import { getSafeAreaMetrics } from '../../utils/safeArea';
+import { scheduleDeferredLoading, type DeferredLoadingHandle } from '../../utils/deferredLoading';
 import { getCategoryIconById } from '../../services/categoryService';
 import { getMemberColorBySlot } from '../../utils/memberColor';
 import { maxSharedFamilies, maxFamilyMembers } from '../../config/defaults';
@@ -230,6 +231,8 @@ Page({
     // ─── 首屏保护 ───
     /** bootstrap 完成且已登录后才设为 true · 防止页面框架提前渲染 */
     ready: false,
+    /** 至少完成一次真实 summary/空态结算后才渲染业务内容，避免 ready=true 后默认假内容闪屏 */
+    contentReady: false,
 
     // ─── 导航栏 ───
     statusBarHeight: 0,
@@ -260,7 +263,9 @@ Page({
     dimension: 'monthly' as 'monthly' | 'yearly',
 
     // ─── 摘要数据 ───
-    loading: true,
+    // COSTRA-304：默认 false。冷启动 ready=false 期间 wxml 整体不渲染（外层 wx:if="{{ready}}"），
+    // ready=true 后由 _doLoadPage 内部 _deferLoading() 决定 275ms 内是否需要翻 loading。
+    loading: false,
     summary: null as FamilySummary | null,
 
     // ─── Solo 态摘要 ───
@@ -303,6 +308,12 @@ Page({
   _familyId: '' as string,
   _currentUserId: '' as string,
   _loadingPromise: null as Promise<void> | null,
+  /**
+   * 页级 loading 的 deferred handle（COSTRA-304 防闪烁）。
+   * 切月/切年/切账本等"无法保留旧视图"的场景下，loading 不立即翻 true，
+   * 等 LOADING_DELAY_MS 仍未拿到数据再显示。settle 路径必须 cancel。
+   */
+  _loadingDeferredHandle: null as DeferredLoadingHandle | null,
   _pendingInviteId: '' as string,
   _pendingInviteToken: '' as string,
   _pendingInviteFamilyId: '' as string,
@@ -398,7 +409,9 @@ Page({
       this._syncCurrentUserIdFromToken();
       const hasPendingCreate = app.globalData.pendingFamilyAction === 'create';
       const preserveExistingView = this.data.ready && !!this.data.summary && !hasPendingCreate;
-      this.setData(preserveExistingView ? { ready: true } : { ready: true, loading: true });
+      // COSTRA-304：仅写 ready 同步标志；loading 交由 _doLoadPage 内部按需 deferred 显示，
+      // 避免首次切到协作 Tab 立即闪一下"加载中"（数据快路径直接命中 SWR 缓存或 275ms 内拿到）。
+      this.setData({ ready: true });
       // tabbar 自治 hidden（由 _unlocked + _panelOpen 合成）· 此处仅同步 selected 并解锁
       (this.getTabBar?.() as { markActive?: (idx: number) => void } | undefined)?.markActive?.(3);
       triggerOnPageShow('family');
@@ -428,6 +441,60 @@ Page({
       eventBus.off(EventNames.PROFILE_UPDATED, this._profileUpdatedHandler);
       this._profileUpdatedHandler = null;
     }
+    // INV-2：onUnload 路径必须 cancel in-flight deferred handle，避免页销毁后 setData 报错
+    if (this._loadingDeferredHandle) {
+      this._loadingDeferredHandle.cancel();
+      this._loadingDeferredHandle = null;
+    }
+  },
+
+  // ─── Deferred loading 工具方法（COSTRA-304） ──────────────────────────────
+
+  /**
+   * 启动一次"页级 loading"延迟显示。
+   *
+   * 调用语义：声明"接下来要发起一次有可能耗时的加载，先不要显示加载中"。
+   * - 数据在 LOADING_DELAY_MS 内通过 _settleLoading 回到 → loading 文案永不显示，
+   *   原视图保留至新数据替换。
+   * - 超时仍未 settle → 到点后翻 loading:true 显示加载中。
+   *
+   * 重入安全：若已有 in-flight handle，复用原计时，不重新起 275ms 窗口，避免前置请求耗时叠加后反馈过晚。
+   */
+  _deferLoading(opts?: { hideContent?: boolean }): void {
+    if (opts?.hideContent && this.data.contentReady) {
+      this.setData({ contentReady: false });
+    }
+    if (this._loadingDeferredHandle) return;
+    this._loadingDeferredHandle = scheduleDeferredLoading(() => {
+      // INV-3 自校验：若 loading 已为 true（其他路径已翻起），无需重复 setData
+      if (this.data.loading) return;
+      this.setData({ loading: true });
+    });
+  },
+
+  /**
+   * 结算页级 loading（数据到达 / 失败 / 切回 personal 等终态场景）。
+   *
+   * - cancel deferred handle（INV-2），防止后续 fire 误翻 loading；
+   * - 仅当 fired（timer 已到点，loading 可能显示过）或当前 loading 仍为 true（其他路径翻起的），
+   *   才写 loading:false。否则不写 loading 字段，让 "loading 从未显示过"。
+   * - 调用方可传 extra payload 与 loading:false 合并写入，省一次 setData。
+   */
+  _settleLoading(extra?: Record<string, unknown>): void {
+    const handle = this._loadingDeferredHandle;
+    let needWriteFalse = false;
+    if (handle) {
+      handle.cancel();
+      needWriteFalse = handle.fired;
+      this._loadingDeferredHandle = null;
+    }
+    // 兜底：若当前 loading 仍为 true（外部路径翻起的），也要关闭
+    if (!needWriteFalse && this.data.loading) needWriteFalse = true;
+    if (needWriteFalse) {
+      this.setData({ ...(extra || {}), loading: false });
+    } else if (extra && Object.keys(extra).length > 0) {
+      this.setData(extra);
+    }
   },
 
   /** 同步当前登录用户 ID，供 owner 判定与成员管理使用 */
@@ -453,7 +520,7 @@ Page({
     if (!this._familyId) return;
     if (this._loadingPromise) return;
     invalidateFamilyCache(this._familyId);
-    await this._loadSummary(this._familyId);
+    await this._loadSummary(this._familyId, { preserveExistingView: this.data.contentReady && !!this.data.summary });
   },
 
   /**
@@ -481,7 +548,9 @@ Page({
 
   async _doLoadPage(opts?: { preserveExistingView?: boolean }) {
     if (!opts?.preserveExistingView) {
-      this.setData({ loading: true });
+      // COSTRA-304：不立即翻 loading:true，等 LOADING_DELAY_MS 仍未拿到数据再显示。
+      // 首屏/切账本等无法证明旧内容仍匹配当前 scope 的路径，先隐藏业务内容，避免默认假内容或旧账本内容闪屏。
+      this._deferLoading({ hideContent: true });
     }
 
     try {
@@ -525,9 +594,9 @@ Page({
       if (!targetFamily) {
         const dim = this.data.dimension;
         const value = dim === 'monthly' ? this.data.currentMonth : this.data.currentYear;
-        this.setData({
-          loading: false,
+        this._settleLoading({
           mode: 'solo',
+          contentReady: true,
           isEmpty: true,
           emptyTitle: buildEmptyTitle(dim, value),
           emptyHint: this._pickEmptyHint(),
@@ -538,7 +607,9 @@ Page({
       const familyId = targetFamily.id;
       const preserveSummary = !!opts?.preserveExistingView && this._canPreserveSummaryFor(familyId);
       if (opts?.preserveExistingView && !preserveSummary) {
-        this.setData({ loading: true });
+        // 即便外层声明了 preserveExistingView，但目标 family / scope 已变化无法保留旧 summary →
+        // 隐藏旧内容后退化到 deferred loading 路径，避免旧账本/旧月份内容与新标题短暂错配。
+        this._deferLoading({ hideContent: true });
       }
       this._familyId = familyId;
 
@@ -581,7 +652,7 @@ Page({
         return;
       }
 
-      this.setData({ loading: false });
+      this._settleLoading();
       wx.showToast({ title: '加载失败', icon: 'none' });
     }
   },
@@ -616,6 +687,9 @@ Page({
   _applySummary(summary: FamilySummary): void {
     const previous = this.data.summary;
     if (previous && this._summarySignature(previous) === this._summarySignature(summary) && !this.data.loading) {
+      // 视图无需更新；但仍需 settle 任何 in-flight deferred handle，
+      // 否则 275ms 后会误翻 loading（INV-2）。若内容 gate 此前被隐藏，也要恢复展示。
+      this._settleLoading(this.data.contentReady ? undefined : { contentReady: true });
       return;
     }
     this.setData({ summary });
@@ -626,7 +700,7 @@ Page({
     }
   },
 
-  async _loadSummary(familyId: string, opts?: { preserveExistingView?: boolean }) {
+  async _loadSummary(familyId: string, opts?: { preserveExistingView?: boolean; hideContentWhileLoading?: boolean }) {
     // scope 由当前 dimension 决定（§C4）
     const scope = this.data.dimension === 'monthly'
       ? { month: this.data.currentMonth }
@@ -637,7 +711,8 @@ Page({
     if (cached) {
       this._applySummary(cached);
     } else if (!opts?.preserveExistingView) {
-      this.setData({ loading: true });
+      // COSTRA-304：不立即翻 loading，等 LOADING_DELAY_MS 仍未拿到数据再显示
+      this._deferLoading({ hideContent: !!opts?.hideContentWhileLoading });
     }
 
     try {
@@ -660,7 +735,7 @@ Page({
       }
 
       if (opts?.preserveExistingView && this.data.summary) {
-        this.setData({ loading: false });
+        this._settleLoading();
         wx.showToast({ title: '更新失败，已保留当前数据', icon: 'none' });
         return;
       }
@@ -668,8 +743,8 @@ Page({
       // 降级展示空态
       const dim = this.data.dimension;
       const value = dim === 'monthly' ? this.data.currentMonth : this.data.currentYear;
-      this.setData({
-        loading: false,
+      this._settleLoading({
+        contentReady: true,
         isEmpty: true,
         emptyTitle: buildEmptyTitle(dim, value),
         emptyHint: this._pickEmptyHint(),
@@ -686,11 +761,11 @@ Page({
     const dim = this.data.dimension;
     const value = dim === 'monthly' ? this.data.currentMonth : this.data.currentYear;
 
-    this.setData({
+    this._settleLoading({
+      contentReady: true,
       soloExpense: formatCentsDisplay(totals.expense),
       soloIncome: formatCentsDisplay(totals.income),
       soloBalance: formatCentsDisplay(totals.balance),
-      loading: false,
       isEmpty,
       emptyTitle: buildEmptyTitle(dim, value),
       emptyHint: isEmpty ? this._pickEmptyHint() : '',
@@ -762,12 +837,12 @@ Page({
     const dim = this.data.dimension;
     const value = dim === 'monthly' ? this.data.currentMonth : this.data.currentYear;
 
-    this.setData({
+    this._settleLoading({
+      contentReady: true,
       members: memberDisplays,
       segments: segmentDisplays,
       totalExpenseCents: totalExpense,
       drilldownRows,
-      loading: false,
       isEmpty,
       emptyTitle: buildEmptyTitle(dim, value),
       emptyHint: isEmpty ? this._pickEmptyHint() : '',
@@ -913,7 +988,7 @@ Page({
     });
     this._shouldRefreshEmptyHint = true;
     this._collapseAllRows();
-    void this._loadSummary(this._familyId);
+    void this._loadSummary(this._familyId, { hideContentWhileLoading: true });
   },
 
   onNextMonth() {
@@ -924,7 +999,7 @@ Page({
     });
     this._shouldRefreshEmptyHint = true;
     this._collapseAllRows();
-    void this._loadSummary(this._familyId);
+    void this._loadSummary(this._familyId, { hideContentWhileLoading: true });
   },
 
   /** picker mode="date" fields="month" 变更回调 */
@@ -936,7 +1011,7 @@ Page({
     });
     this._shouldRefreshEmptyHint = true;
     this._collapseAllRows();
-    void this._loadSummary(this._familyId);
+    void this._loadSummary(this._familyId, { hideContentWhileLoading: true });
   },
 
   // ─── 交互：年份切换（COSTRA-302 新增） ────────────────────────────────────────
@@ -949,7 +1024,7 @@ Page({
     });
     this._shouldRefreshEmptyHint = true;
     this._collapseAllRows();
-    void this._loadSummary(this._familyId);
+    void this._loadSummary(this._familyId, { hideContentWhileLoading: true });
   },
 
   onNextYear() {
@@ -960,7 +1035,7 @@ Page({
     });
     this._shouldRefreshEmptyHint = true;
     this._collapseAllRows();
-    void this._loadSummary(this._familyId);
+    void this._loadSummary(this._familyId, { hideContentWhileLoading: true });
   },
 
   /** picker mode="date" fields="year" 变更回调 */
@@ -974,7 +1049,7 @@ Page({
     });
     this._shouldRefreshEmptyHint = true;
     this._collapseAllRows();
-    void this._loadSummary(this._familyId);
+    void this._loadSummary(this._familyId, { hideContentWhileLoading: true });
   },
 
   /** 月度/年度切换（COSTRA-302 年度可用化 · 不再 toast 拦截） */
@@ -984,7 +1059,7 @@ Page({
     this.setData({ dimension: dim });
     this._shouldRefreshEmptyHint = true;
     this._collapseAllRows();
-    void this._loadSummary(this._familyId);
+    void this._loadSummary(this._familyId, { hideContentWhileLoading: true });
   },
 
   // ─── 交互：下钻行 展开/收起（多行可同时展开 · 与设计 §4.5 对齐） ──────────

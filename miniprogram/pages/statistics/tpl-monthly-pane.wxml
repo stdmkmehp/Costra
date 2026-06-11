@@ -31,6 +31,10 @@
         height="{{160}}"
         color="#1c1b1a"
         fill-gradient="{{true}}"
+        period-dividers="{{monthlyByMember[member.key].chartMeta.periodDividers}}"
+        current-index="{{monthlyByMember[member.key].chartMeta.currentIndex}}"
+        peak-index="{{monthlyByMember[member.key].chartMeta.peakIndex}}"
+        peak-label="{{monthlyByMember[member.key].chartMeta.peakLabel}}"
       />
     </view>
   </view>
