@@ -16,14 +16,15 @@
 # 用法：
 #   # 重放备份到默认验证库 costra_verify（隔离容器内）
 #   ./replay-db.sh /data/backups/pre-migrate-20260610-172000.sql
+#   ./replay-db.sh /data/backups/scheduled-20260611-011700.sql.gz
 #
 #   # 指定自定义验证库名（影响容器名 / 数据目录 / 库名）
 #   ./replay-db.sh --db-name costra_verify_migration_test /data/backups/xxx.sql
 #
 #   # 预览模式
-#   ./replay-db.sh --dry-run /data/backups/xxx.sql
+#   ./replay-db.sh --dry-run /data/backups/xxx.sql.gz
 #
-#   # 列出可用备份
+#   # 列出可用备份（.sql / .sql.gz）
 #   ./replay-db.sh --list
 #
 # 退出码：
@@ -48,23 +49,44 @@ REPLAY_PIDS_LIMIT="256"
 PG_USER="costra"
 
 # --- 解析参数 ---
-parse_common_args "$@"
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --backup-file)  BACKUP_FILE=$2; shift 2 ;;
-    --db-name)      DB_VERIFY=$2; shift 2 ;;
-    --list)         LIST_MODE=1; shift ;;
-    --dry-run|-y|--yes) shift ;;
+    --backup-file)
+      [[ $# -ge 2 ]] || die "--backup-file 需要一个备份文件路径"
+      BACKUP_FILE=$2
+      shift 2
+      ;;
+    --db-name)
+      [[ $# -ge 2 ]] || die "--db-name 需要一个数据库名"
+      DB_VERIFY=$2
+      shift 2
+      ;;
+    --list)
+      LIST_MODE=1
+      shift
+      ;;
+    --dry-run)
+      DRY_RUN=1
+      shift
+      ;;
+    -y|--yes)
+      ASSUME_YES=1
+      shift
+      ;;
     -h|--help)
       grep '^#' "$0" | sed 's/^# \{0,1\}//' | head -42
       exit 0
       ;;
-    -*)  die "未知参数: $1 · 用 --help 查看" ;;
+    -*)
+      die "未知参数: $1 · 用 --help 查看"
+      ;;
     *)
       if [[ -z "${BACKUP_FILE}" ]]; then
         BACKUP_FILE=$1
+        shift
+      else
+        die "多余的位置参数: $1 · 仅允许一个备份文件路径"
       fi
-      shift
       ;;
   esac
 done
@@ -74,7 +96,15 @@ if [[ "${LIST_MODE}" == "1" ]]; then
   echo "可用备份（${BACKUP_DIR}）："
   echo ""
   if [[ -d "${BACKUP_DIR}" ]]; then
-    ls -lhtr "${BACKUP_DIR}"/*.sql 2>/dev/null || echo "  （无 .sql 备份文件）"
+    FOUND=0
+    while IFS= read -r file; do
+      FOUND=1
+      ls -lh "$file"
+    done < <(find "${BACKUP_DIR}" -maxdepth 1 -type f \( -name '*.sql' -o -name '*.sql.gz' \) | sort)
+
+    if [[ "${FOUND}" != "1" ]]; then
+      echo "  （无 .sql / .sql.gz 备份文件）"
+    fi
   else
     echo "  备份目录不存在：${BACKUP_DIR}"
   fi
@@ -86,8 +116,15 @@ require_root
 require_cmd docker
 require_cmd openssl
 
-[[ -n "${BACKUP_FILE}" ]] || die "请指定备份文件路径 · 用法：./replay-db.sh /data/backups/xxx.sql · 或 --list 查看可用备份"
+[[ -n "${BACKUP_FILE}" ]] || die "请指定备份文件路径 · 用法：./replay-db.sh /data/backups/xxx.sql(.gz) · 或 --list 查看可用备份"
 [[ -f "${BACKUP_FILE}" ]] || die "备份文件不存在：${BACKUP_FILE}"
+case "${BACKUP_FILE}" in
+  *.sql) ;;
+  *.sql.gz)
+    require_cmd gzip
+    ;;
+  *) die "不支持的备份格式：${BACKUP_FILE} · 仅支持 .sql / .sql.gz" ;;
+esac
 [[ "${DB_VERIFY}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || die "db-name 不合法：${DB_VERIFY} · 仅允许字母/数字/下划线，且不能数字开头"
 
 FILE_SIZE=$(stat -c%s "${BACKUP_FILE}" 2>/dev/null || stat -f%z "${BACKUP_FILE}" 2>/dev/null || echo "0")
@@ -157,6 +194,12 @@ log_success "隔离目录已准备好"
 # --- Step 2: 启动隔离 PostgreSQL 容器 ---
 log_step "[2/5] 启动隔离 PostgreSQL 容器"
 
+# 确保镜像在本地（--network none 启动后没法再去拉镜像）
+if ! docker image inspect "${REPLAY_IMAGE}" >/dev/null 2>&1; then
+  log_info "本地未找到镜像 ${REPLAY_IMAGE} · 拉取中..."
+  run_cmd docker pull "${REPLAY_IMAGE}"
+fi
+
 run_cmd docker run -d \
   --name "${REPLAY_CONTAINER}" \
   --hostname "${REPLAY_CONTAINER}" \
@@ -192,11 +235,18 @@ log_success "隔离容器已启动"
 # --- Step 3: 恢复备份 ---
 log_step "[3/5] 恢复备份到隔离容器（--single-transaction · 原子性）"
 
-run_cmd bash -c "docker exec -i -e PGPASSWORD='${REPLAY_PASSWORD}' '${REPLAY_CONTAINER}' \
-  psql -h 127.0.0.1 -U '${PG_USER}' -d '${DB_VERIFY}' \
-  --single-transaction \
-  -v ON_ERROR_STOP=1 \
-  < '${BACKUP_FILE}'"
+if [[ "${BACKUP_FILE}" == *.sql.gz ]]; then
+  run_cmd bash -c "gzip -dc '${BACKUP_FILE}' | docker exec -i -e PGPASSWORD='${REPLAY_PASSWORD}' '${REPLAY_CONTAINER}' \
+    psql -h 127.0.0.1 -U '${PG_USER}' -d '${DB_VERIFY}' \
+    --single-transaction \
+    -v ON_ERROR_STOP=1"
+else
+  run_cmd bash -c "docker exec -i -e PGPASSWORD='${REPLAY_PASSWORD}' '${REPLAY_CONTAINER}' \
+    psql -h 127.0.0.1 -U '${PG_USER}' -d '${DB_VERIFY}' \
+    --single-transaction \
+    -v ON_ERROR_STOP=1 \
+    < '${BACKUP_FILE}'"
+fi
 
 log_success "备份重放完成"
 
@@ -226,8 +276,8 @@ if [[ "${DRY_RUN}" != "1" ]]; then
   fi
 
   log_info "已恢复的表："
-  docker exec -e PGPASSWORD="${REPLAY_PASSWORD}" "${REPLAY_CONTAINER}" \
-    psql -h 127.0.0.1 -U "${PG_USER}" -d "${DB_VERIFY}" -c '\dt' | head -25
+  { docker exec -e PGPASSWORD="${REPLAY_PASSWORD}" "${REPLAY_CONTAINER}" \
+    psql -h 127.0.0.1 -U "${PG_USER}" -d "${DB_VERIFY}" -c '\dt' || true; } | head -25
 
   echo ""
   log_info "数据抽检："

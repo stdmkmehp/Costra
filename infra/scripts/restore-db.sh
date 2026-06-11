@@ -3,6 +3,7 @@
 # Costra · DB 灾难恢复（从 pg_dump 备份还原）
 # =============================================================================
 # 适用场景：migration 搞坏了 DB / 需要回滚到某个备份点
+# 支持备份格式：.sql / .sql.gz
 #
 # 流程：
 #   1. 停止 server（防止恢复期间有新写入）
@@ -15,9 +16,11 @@
 #
 # 用法：
 #   ./restore-db.sh /data/backups/pre-migrate-20260610-172000.sql
+#   ./restore-db.sh /data/backups/scheduled-20260611-011700.sql.gz
 #   ./restore-db.sh --backup-file /data/backups/xxx.sql
-#   ./restore-db.sh --list                                # 列出可用备份
-#   ./restore-db.sh --dry-run /data/backups/xxx.sql       # 仅打印不执行
+#   ./restore-db.sh --backup-file /data/backups/xxx.sql.gz
+#   ./restore-db.sh --list                                # 列出可用备份（.sql / .sql.gz）
+#   ./restore-db.sh --dry-run /data/backups/xxx.sql.gz    # 仅打印不执行
 #
 # ⚠️  危险操作：会清空当前 DB 全部数据并用备份覆盖！
 #
@@ -37,23 +40,39 @@ PG_CONTAINER="costra-postgres"
 BACKUP_DIR="${COSTRA_DATA}/backups"
 
 # --- 解析参数 ---
-parse_common_args "$@"
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --backup-file)  BACKUP_FILE=$2; shift 2 ;;
-    --list)         LIST_MODE=1; shift ;;
-    --dry-run|-y|--yes) shift ;;
+    --backup-file)
+      [[ $# -ge 2 ]] || die "--backup-file 需要一个备份文件路径"
+      BACKUP_FILE=$2
+      shift 2
+      ;;
+    --list)
+      LIST_MODE=1
+      shift
+      ;;
+    --dry-run)
+      DRY_RUN=1
+      shift
+      ;;
+    -y|--yes)
+      ASSUME_YES=1
+      shift
+      ;;
     -h|--help)
-      grep '^#' "$0" | sed 's/^# \{0,1\}//' | head -30
+      grep '^#' "$0" | sed 's/^# \{0,1\}//' | head -32
       exit 0
       ;;
-    -*)  die "未知参数: $1 · 用 --help 查看" ;;
+    -*)
+      die "未知参数: $1 · 用 --help 查看"
+      ;;
     *)
-      # 位置参数作为 backup file
       if [[ -z "${BACKUP_FILE}" ]]; then
         BACKUP_FILE=$1
+        shift
+      else
+        die "多余的位置参数: $1 · 仅允许一个备份文件路径"
       fi
-      shift
       ;;
   esac
 done
@@ -63,7 +82,15 @@ if [[ "${LIST_MODE}" == "1" ]]; then
   echo "可用备份（${BACKUP_DIR}）："
   echo ""
   if [[ -d "${BACKUP_DIR}" ]]; then
-    ls -lhtr "${BACKUP_DIR}"/*.sql 2>/dev/null || echo "  （无 .sql 备份文件）"
+    FOUND=0
+    while IFS= read -r file; do
+      FOUND=1
+      ls -lh "$file"
+    done < <(find "${BACKUP_DIR}" -maxdepth 1 -type f \( -name '*.sql' -o -name '*.sql.gz' \) | sort)
+
+    if [[ "${FOUND}" != "1" ]]; then
+      echo "  （无 .sql / .sql.gz 备份文件）"
+    fi
   else
     echo "  备份目录不存在：${BACKUP_DIR}"
   fi
@@ -74,8 +101,15 @@ fi
 require_root
 require_cmd docker
 
-[[ -n "${BACKUP_FILE}" ]] || die "请指定备份文件路径 · 用法：./restore-db.sh /data/backups/xxx.sql · 或 --list 查看可用备份"
+[[ -n "${BACKUP_FILE}" ]] || die "请指定备份文件路径 · 用法：./restore-db.sh /data/backups/xxx.sql(.gz) · 或 --list 查看可用备份"
 [[ -f "${BACKUP_FILE}" ]] || die "备份文件不存在：${BACKUP_FILE}"
+case "${BACKUP_FILE}" in
+  *.sql) ;;
+  *.sql.gz)
+    require_cmd gzip
+    ;;
+  *) die "不支持的备份格式：${BACKUP_FILE} · 仅支持 .sql / .sql.gz" ;;
+esac
 
 # 文件大小检查（空文件保护）
 FILE_SIZE=$(stat -c%s "${BACKUP_FILE}" 2>/dev/null || stat -f%z "${BACKUP_FILE}" 2>/dev/null || echo "0")
@@ -137,10 +171,16 @@ log_success "public schema 已重建"
 # --- Step 3: 恢复备份 ---
 log_step "[3/6] 恢复备份（--single-transaction · 原子性）"
 
-run_cmd bash -c "docker exec -i '${PG_CONTAINER}' psql -U costra -d costra \
-  --single-transaction \
-  -v ON_ERROR_STOP=1 \
-  < '${BACKUP_FILE}'"
+if [[ "${BACKUP_FILE}" == *.sql.gz ]]; then
+  run_cmd bash -c "gzip -dc '${BACKUP_FILE}' | docker exec -i '${PG_CONTAINER}' psql -U costra -d costra \
+    --single-transaction \
+    -v ON_ERROR_STOP=1"
+else
+  run_cmd bash -c "docker exec -i '${PG_CONTAINER}' psql -U costra -d costra \
+    --single-transaction \
+    -v ON_ERROR_STOP=1 \
+    < '${BACKUP_FILE}'"
+fi
 
 log_success "备份恢复完成"
 
@@ -168,9 +208,9 @@ if [[ "${DRY_RUN}" != "1" ]]; then
     log_success "表数量: ${TABLE_COUNT} ✓"
   fi
 
-  # 列出表名
+  # 列出表名（容忍 head 提前关闭管道，避免 pipefail 误杀）
   log_info "已恢复的表："
-  docker exec "${PG_CONTAINER}" psql -U costra -d costra -c '\dt' | head -25
+  { docker exec "${PG_CONTAINER}" psql -U costra -d costra -c '\dt' || true; } | head -25
 
   # 数据条数抽检
   echo ""

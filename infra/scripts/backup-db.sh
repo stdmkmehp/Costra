@@ -37,22 +37,45 @@ NO_CLEANUP=0
 BACKUP_PREFIX="scheduled"
 
 # --- 解析参数 ---
-parse_common_args "$@"
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --retain-days)  RETAIN_DAYS=$2; shift 2 ;;
-    --no-cleanup)   NO_CLEANUP=1; shift ;;
-    --prefix)       BACKUP_PREFIX=$2; shift 2 ;;
-    --dry-run|-y|--yes) shift ;;
+    --retain-days)
+      [[ $# -ge 2 ]] || die "--retain-days 需要一个天数值"
+      RETAIN_DAYS=$2
+      shift 2
+      ;;
+    --no-cleanup)
+      NO_CLEANUP=1
+      shift
+      ;;
+    --prefix)
+      [[ $# -ge 2 ]] || die "--prefix 需要一个前缀值"
+      BACKUP_PREFIX=$2
+      shift 2
+      ;;
+    --dry-run)
+      DRY_RUN=1
+      shift
+      ;;
+    -y|--yes)
+      ASSUME_YES=1
+      shift
+      ;;
     -h|--help)
       grep '^#' "$0" | sed 's/^# \{0,1\}//' | head -25
       exit 0
       ;;
-    *) die "未知参数: $1 · 用 --help 查看" ;;
+    *)
+      die "未知参数: $1 · 用 --help 查看"
+      ;;
   esac
 done
 
 require_cmd docker
+require_cmd gzip
+require_cmd ionice
+[[ "${RETAIN_DAYS}" =~ ^[0-9]+$ ]] || die "--retain-days 必须是非负整数：${RETAIN_DAYS}"
+[[ "${BACKUP_PREFIX}" =~ ^[A-Za-z0-9_-]+$ ]] || die "--prefix 仅允许字母/数字/下划线/中划线：${BACKUP_PREFIX}"
 
 # =============================================================================
 # Step 1: 前置检查
@@ -96,15 +119,21 @@ if [[ "${DRY_RUN}" == "1" ]]; then
   log_dry "ionice -c3 docker exec ... pg_dump | gzip > ${BACKUP_FILE}"
 else
   # ionice class 3 = idle（仅在磁盘空闲时才跑 I/O · 不影响线上）
+  # 临时关闭 errexit/pipefail，自己捕获 PIPESTATUS，确保失败时能清理残留
+  set +e
+  set +o pipefail
   ionice -c3 docker exec "${PG_CONTAINER}" \
     pg_dump -U costra -d costra --no-owner --no-acl \
     | gzip > "${BACKUP_FILE}"
+  PIPE_STATUS=("${PIPESTATUS[@]}")
+  set -e
+  set -o pipefail
 
-  DUMP_EXIT=$?
-  if [[ ${DUMP_EXIT} -ne 0 ]]; then
-    # 清理可能的残留文件
+  DUMP_EXIT=${PIPE_STATUS[0]}
+  GZIP_EXIT=${PIPE_STATUS[1]}
+  if [[ ${DUMP_EXIT} -ne 0 || ${GZIP_EXIT} -ne 0 ]]; then
     rm -f "${BACKUP_FILE}"
-    die "pg_dump 失败（exit=${DUMP_EXIT}）"
+    die "pg_dump 失败（pg_dump=${DUMP_EXIT} · gzip=${GZIP_EXIT}）"
   fi
 fi
 
