@@ -35,13 +35,17 @@ CREATE TABLE IF NOT EXISTS announcement_reads (
 CREATE INDEX IF NOT EXISTS idx_announcement_reads_user ON announcement_reads(user_id);
 
 -- ═══ 种子数据：第一份公告（删档公测说明） ═════════════════════════════════════
+-- 使用固定 UUID + ON CONFLICT DO NOTHING，确保幂等可重跑。
+-- 此公告已被 0005_bulletin_update.sql 标记过期（expires_at = now()），
+-- 后续部署仅保留插入记录的无害占位。
 
-INSERT INTO announcements (title, content, published_at, expires_at)
+INSERT INTO announcements (id, title, content, published_at, expires_at)
 VALUES (
+  'b1e2c3d4-0002-4a7d-b8e1-1a2b3c4d5e6f',
   '删档公测说明',
   'Costra 目前处于删档公测阶段，时间为 2026 年 6 月 7 日至 6 月 30 日。公测期间您的所有记账数据将在测试结束后被清除。感谢您的参与和反馈，帮助我们打造更好的产品。',
   '2026-06-07T00:00:00+08:00',
   '2026-07-01T00:00:00+08:00'
-);
+) ON CONFLICT (id) DO NOTHING;
 
 COMMIT;
