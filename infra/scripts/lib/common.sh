@@ -190,30 +190,27 @@ write_file_safe() {
 }
 
 # =============================================================================
-# 通用参数解析（每个脚本可调用 parse_common_args "$@" 后用 -- 分隔）
+# 通用参数解析
 # =============================================================================
-# 这里只解析 --dry-run / --yes / --help · 业务参数由各脚本自行解析
+# 扫描全部 "$@"，把 --dry-run / -y / --yes 设置到 DRY_RUN / ASSUME_YES。
+# 不认识的参数不报错（留给业务侧的 while case 处理）。
+#
+# 关键：扫描全部参数（不在第一个不认识的参数处 return），这样无论 -y 出现在
+# 命令行哪个位置都能生效。例如：
+#   ./rebuild-server.sh --git-pull -y          # -y 在尾部
+#   ./04-build-server.sh --mode local -y       # -y 在尾部
+# 之前实现遇到 --git-pull / --mode 就 return，导致后置的 -y 被忽略 ·
+# 是历史踩坑。
+#
 # 用法：
 #   parse_common_args "$@"
-#   shift $((COMMON_ARGS_PARSED))
+#   # 之后业务侧自己 while 解析（业务侧 case 里把 -y/--yes/--dry-run 当 noop shift 掉即可）
 parse_common_args() {
-  COMMON_ARGS_PARSED=0
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --dry-run)
-        DRY_RUN=1
-        ((COMMON_ARGS_PARSED++))
-        shift
-        ;;
-      -y|--yes)
-        ASSUME_YES=1
-        ((COMMON_ARGS_PARSED++))
-        shift
-        ;;
-      *)
-        # 不认识的参数留给业务侧解析
-        return 0
-        ;;
+      --dry-run) DRY_RUN=1; shift ;;
+      -y|--yes)  ASSUME_YES=1; shift ;;
+      *)         shift ;;  # 不认识的参数：跳过继续扫，不 return
     esac
   done
 }
