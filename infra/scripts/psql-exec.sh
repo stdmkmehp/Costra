@@ -9,9 +9,9 @@
 # 替代了原来又长又容易写错的命令：
 #   docker exec -i -e PGPASSWORD='xxxxx' costra-replay-pg-costra-verify \
 #       psql -h 127.0.0.1 -U costra -d costra_verify \
-#       --single-transaction -v ON_ERROR_STOP=1 < ./0003.sql
+#       -v ON_ERROR_STOP=1 < ./0003.sql
 #   docker exec -i costra-postgres psql -U costra -d costra \
-#       --single-transaction -v ON_ERROR_STOP=1 < ./0003.sql
+#       -v ON_ERROR_STOP=1 < ./0003.sql
 #
 # 用法：
 #   # 默认对 verify 容器跑（隔离 · 用约定密码 VERIFY_PG_PW）
@@ -144,7 +144,7 @@ log_info "容器          : ${CONTAINER}"
 log_info "数据库        : ${DB}"
 log_info "用户          : ${PG_USER}"
 log_info "SQL 文件      : ${SQL_FILE} ($(ls -lh "${SQL_FILE}" | awk '{print $5}'))"
-log_info "执行模式      : --single-transaction · -v ON_ERROR_STOP=1（出错整体回滚）"
+log_info "执行模式      : SQL 文件自管事务 (BEGIN/COMMIT) · -v ON_ERROR_STOP=1（遇错即停）"
 echo ""
 
 if [[ "${RISKY}" == "1" ]]; then
@@ -161,7 +161,7 @@ fi
 # =============================================================================
 log_step "执行 SQL"
 
-PSQL_ARGS=(psql -h 127.0.0.1 -U "${PG_USER}" -d "${DB}" --single-transaction -v ON_ERROR_STOP=1)
+PSQL_ARGS=(psql -h 127.0.0.1 -U "${PG_USER}" -d "${DB}" -v ON_ERROR_STOP=1)
 
 if [[ "${SQL_FILE}" == *.sql.gz ]]; then
   if [[ "${DRY_RUN}" == "1" ]]; then
