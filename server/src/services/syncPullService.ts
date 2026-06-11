@@ -44,6 +44,22 @@ export interface SyncPullResult {
   /** BIGINT change_seq · 协议 v1.2 watermark 类型 */
   watermark: number;
   has_more: boolean;
+  /**
+   * 系统分类签名（migration 0004 配套 · spec §4）
+   *
+   * 签名规范（与 miniprogram/services/categoryService.ts computeCategoriesSignature
+   * 双端必须逐字符一致）：
+   *   - 仅纳入 family_id IS NULL（系统分类）且 deleted_at IS NULL 的行
+   *   - 排序：sortOrder ASC，相同 sortOrder 再按 id localeCompare ASC
+   *   - 单条字段顺序（'|' 连接）：id | parentId(空串若NULL) | name | icon | type
+   *     | sortOrder | isDirectDefault(1/0) | isParentDefault(1/0)
+   *     | displayOrder(空串若NULL)
+   *   - 条目之间用 ';' 连接
+   *
+   * 客户端比对此值与本地缓存签名，不一致则绕过 24h TTL 强刷分类列表，
+   * 关闭"分类改动 24h 内客户端不可见"的窗口。
+   */
+  categories_revision: string;
   changes: {
     entries: ReturnType<typeof entryToWire>[];
     /**
@@ -72,6 +88,54 @@ async function isUserInFamily(userId: string, familyId: string): Promise<boolean
   return res.rows.length > 0;
 }
 
+/**
+ * 计算系统分类签名（与前端 computeCategoriesSignature 双端逐字符一致）
+ *
+ * 仅纳入系统分类（family_id IS NULL）且未软删（deleted_at IS NULL）。
+ * 字段顺序、排序键、分隔符均严格对齐 miniprogram/services/categoryService.ts。
+ */
+async function computeSystemCategoriesRevision(): Promise<string> {
+  const pool = getPool();
+  const res = await pool.query(
+    `SELECT id, parent_id, name, icon, type, sort_order,
+            is_direct_default, is_parent_default, display_order
+       FROM categories
+      WHERE family_id IS NULL
+        AND deleted_at IS NULL`,
+    [],
+  );
+  type Row = {
+    id: string;
+    parent_id: string | null;
+    name: string;
+    icon: string;
+    type: string;
+    sort_order: number;
+    is_direct_default: boolean;
+    is_parent_default: boolean;
+    display_order: number | null;
+  };
+  const rows = res.rows as Row[];
+  // 排序：sortOrder ASC，相同再按 id localeCompare ASC（与前端一致）
+  rows.sort((a, b) => {
+    if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
+    return a.id.localeCompare(b.id);
+  });
+  return rows
+    .map(r => [
+      r.id,
+      r.parent_id ?? '',
+      r.name,
+      r.icon,
+      r.type,
+      r.sort_order,
+      r.is_direct_default ? 1 : 0,
+      r.is_parent_default ? 1 : 0,
+      r.display_order ?? '',
+    ].join('|'))
+    .join(';');
+}
+
 export async function syncPull(input: SyncPullInput): Promise<SyncPullResult> {
   // 1. 防越权（协议 §7）
   const member = await isUserInFamily(input.userId, input.familyId);
@@ -96,9 +160,13 @@ export async function syncPull(input: SyncPullInput): Promise<SyncPullResult> {
     ? rows[rows.length - 1].changeSeq
     : input.since;
 
+  // 4. 计算系统分类签名（spec §4）
+  const categoriesRevision = await computeSystemCategoriesRevision();
+
   return {
     watermark,
     has_more: hasMore,
+    categories_revision: categoriesRevision,
     changes: {
       entries: rows.map(entryToWire),
       categories: [],

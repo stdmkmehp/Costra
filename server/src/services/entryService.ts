@@ -19,6 +19,7 @@ import * as entryRepo from '../repositories/entryRepo.js';
 import type { EntryEntity } from '../repositories/entryRepo.js';
 import * as ledgerRepo from '../repositories/ledgerRepo.js';
 import * as familyRepo from '../repositories/familyRepo.js';
+import * as categoryRepo from '../repositories/categoryRepo.js';
 
 /**
  * 依赖注入接口（COSTRA-217 R1.x：新增 ledgerRepo/familyRepo 查询能力）
@@ -181,6 +182,61 @@ export function createEntryService(deps: EntryServiceDeps = {}): EntryService {
     return null; // 未知 kind · 不猜测
   }
 
+  /**
+   * 解析 entry 写入时的 category_id（migration 0004 配套 · spec §5）
+   *
+   * 用户体验诉求：用户提交了一个旧 / 已删 / 已合并的 category_id，服务端应**静默降级**，
+   * 而不是报错让用户重选（特别是离线 outbox 上传场景，用户不在记账面板）。
+   *
+   * 降级查找顺序：
+   *   1. category_id 命中 categories 且未删除 → type 一致才使用；type 不一致直接拒绝
+   *   2. 未命中 → 查 category_redirects[old_id] → 用 new_id（同样校验 type）
+   *   3. 仍未命中（垃圾/未知 id）→ 同 entry type 的兜底默认子分类
+   *
+   * 入参 inputCategoryId 为 null/undefined 时直接返回 null（不强制分类）。
+   */
+  async function resolveCategoryId(
+    inputCategoryId: string | null | undefined,
+    entryType: 'income' | 'expense' | 'transfer',
+  ): Promise<{ categoryId: string | null } | { error: { code: string; message: string } }> {
+    if (!inputCategoryId) return { categoryId: null };
+
+    // 1) 命中现有未删 category（categoryRepo.findById 已 WHERE deleted_at IS NULL）
+    const direct = await categoryRepo.findById(inputCategoryId);
+    if (direct) {
+      if (direct.type !== entryType) {
+        return {
+          error: {
+            code: 'BUSINESS_RULE_VIOLATION',
+            message: 'category type must match entry type',
+          },
+        };
+      }
+      return { categoryId: direct.id };
+    }
+
+    // 2) 命中 redirect 表
+    const redirect = await categoryRepo.findRedirect(inputCategoryId);
+    if (redirect) {
+      const redirected = await categoryRepo.findById(redirect.newId);
+      if (redirected) {
+        if (redirected.type !== entryType) {
+          return {
+            error: {
+              code: 'BUSINESS_RULE_VIOLATION',
+              message: 'redirected category type must match entry type',
+            },
+          };
+        }
+        return { categoryId: redirected.id };
+      }
+    }
+
+    // 3) 同 type 兜底默认子，避免产生 entry.type 与 category.type 不一致的脏数据
+    const fallback = await categoryRepo.findFallbackCategoryId(entryType);
+    return { categoryId: fallback ?? null };
+  }
+
   async function createWithIdempotency(
     userId: string,
     payload: CreateEntryPayload,
@@ -213,13 +269,19 @@ export function createEntryService(deps: EntryServiceDeps = {}): EntryService {
       sharedType = resolved;
     }
 
+    // 解析 category_id（spec §5：硬删后悬空 id 通过 redirect 表静默降级，不报错）
+    const resolvedCategory = await resolveCategoryId(payload.category_id, payload.type);
+    if ('error' in resolvedCategory) {
+      return { status: 'rejected', error: resolvedCategory.error };
+    }
+
     try {
       const entry = await entryRepo.insertEntry({
         ledgerId: payload.ledger_id,
         amount: payload.amount,
         currency: payload.currency,
         type: payload.type,
-        categoryId: payload.category_id,
+        categoryId: resolvedCategory.categoryId,
         accountId: payload.account_id,
         toAccountId: payload.to_account_id,
         note: payload.note,
@@ -260,7 +322,14 @@ export function createEntryService(deps: EntryServiceDeps = {}): EntryService {
 
     const repoInput: entryRepo.UpdateEntryInput = {};
     if (payload.amount !== undefined) repoInput.amount = payload.amount;
-    if (payload.category_id !== undefined) repoInput.categoryId = payload.category_id;
+    if (payload.category_id !== undefined) {
+      // spec §5：update 同样走降级，避免老客户端上传旧 category_id 失败
+      const resolvedCategory = await resolveCategoryId(payload.category_id, existing.type);
+      if ('error' in resolvedCategory) {
+        return { status: 'rejected', error: resolvedCategory.error };
+      }
+      repoInput.categoryId = resolvedCategory.categoryId;
+    }
     if (payload.account_id !== undefined) repoInput.accountId = payload.account_id;
     if (payload.note !== undefined) repoInput.note = payload.note;
     if (payload.occurred_at !== undefined) repoInput.occurredAt = payload.occurred_at;

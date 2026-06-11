@@ -61,8 +61,8 @@ interface DisplayEntry {
   icon: string;
   /** 金额展示文字 */
   amountText: string;
-  /** expense / income */
-  type: 'expense' | 'income';
+  /** expense / income / transfer · transfer 不计入月度收支 */
+  type: 'expense' | 'income' | 'transfer';
   /** 是否有备注（备注替换分类名） */
   hasNote: boolean;
   /** 成员头像 URL（多人账本时） */
@@ -114,8 +114,8 @@ function formatAmountShort(cents: number): string {
   return `${intPart}.${parts[1]}`;
 }
 
-/** 格式化条目金额文字 */
-function formatEntryAmount(cents: number, type: 'expense' | 'income'): string {
+/** 格式化条目金额文字（migration 0004：transfer 类无 +/- 前缀，不计收支） */
+function formatEntryAmount(cents: number, type: 'expense' | 'income' | 'transfer'): string {
   const prefix = type === 'income' ? '+' : '';
   return `${prefix}¥${formatAmountShort(cents)}`;
 }
@@ -245,16 +245,19 @@ Page({
     editAmountSharedType: 'personal' as 'personal' | 'shared',
     editAmountDate: '',
     editAmountDateText: '今天',
-    editCategoryType: 'expense' as 'expense' | 'income',
-    /** COSTRA-228: swiper current 绑定（0=支出 / 1=收入） */
+    editCategoryType: 'expense' as 'expense' | 'income' | 'transfer',
+    /** 分类编辑只允许在原 entry.type 内改分类，避免 category.type 与 entry.type 不一致 */
+    editCategoryLockedType: 'expense' as 'expense' | 'income' | 'transfer',
+    /** COSTRA-228 / migration 0004: swiper current 绑定（0=支出 / 1=收入 / 2=转移） */
     editCategoryTypeIndex: 0,
     /** COSTRA-228: swiper 切换动画时长 */
     editCategorySwiperDuration: 240,
     editCategoryList: [] as { id: string; icon: string; name: string }[],
     editSelectedCategoryId: '',
-    // COSTRA-228: 双 pane 数据（手势横滑期间两个 pane 都已渲染）
+    // COSTRA-228 / migration 0004: 三 pane 数据（手势横滑期间各 pane 都已渲染）
     editExpenseTier1Categories: [] as { id: string; icon: string; name: string; children: { id: string; name: string; icon: string }[] }[],
     editIncomeTier1Categories: [] as { id: string; icon: string; name: string; children: { id: string; name: string; icon: string }[] }[],
+    editTransferTier1Categories: [] as { id: string; icon: string; name: string; children: { id: string; name: string; icon: string }[] }[],
     editExpenseDedupedSubCategories: [] as { id: string; name: string; icon: string }[],
     editIncomeDedupedSubCategories: [] as { id: string; name: string; icon: string }[],
 
@@ -821,10 +824,11 @@ Page({
 
       const displayEntries: DisplayEntry[] = groupEntries.map(e => {
         const amt = new Decimal(e.amount);
+        // migration 0004：transfer 不计入日/月收支汇总，仅条目可见
         if (e.type === 'expense') {
           dayExpense = dayExpense.plus(amt);
           totalExpenseCents = totalExpenseCents.plus(amt);
-        } else {
+        } else if (e.type === 'income') {
           dayIncome = dayIncome.plus(amt);
           totalIncomeCents = totalIncomeCents.plus(amt);
         }
@@ -1288,9 +1292,17 @@ Page({
     const categoryData = loadCategoriesSync(familyId);
     (this as unknown as Record<string, unknown>)._editCategoryData = categoryData;
 
-    const entryType = entry.type || 'expense';
-    const tier1 = entryType === 'expense' ? categoryData.expense : categoryData.income;
-    const deduped = entryType === 'expense' ? categoryData.expenseDedupedSubs : categoryData.incomeDedupedSubs;
+    const entryType: 'expense' | 'income' | 'transfer' = entry.type || 'expense';
+    const tier1 = entryType === 'expense'
+      ? categoryData.expense
+      : entryType === 'income'
+        ? categoryData.income
+        : categoryData.transfer;
+    const deduped = entryType === 'expense'
+      ? categoryData.expenseDedupedSubs
+      : entryType === 'income'
+        ? categoryData.incomeDedupedSubs
+        : [];
 
     // 找到当前选中的分类
     let selectedTier1Id = '';
@@ -1311,11 +1323,13 @@ Page({
     this.setData({
       editCategoryVisible: true,
       editCategoryType: entryType,
-      editCategoryTypeIndex: entryType === 'income' ? 1 : 0,
+      editCategoryLockedType: entryType,
+      editCategoryTypeIndex: entryType === 'transfer' ? 2 : entryType === 'income' ? 1 : 0,
       editCategorySwiperDuration: 0,
-      // COSTRA-228: 双 pane 数据
+      // COSTRA-228: 三 pane 数据
       editExpenseTier1Categories: categoryData.expense,
       editIncomeTier1Categories: categoryData.income,
+      editTransferTier1Categories: categoryData.transfer,
       editExpenseDedupedSubCategories: categoryData.expenseDedupedSubs,
       editIncomeDedupedSubCategories: categoryData.incomeDedupedSubs,
       editTier1Categories: tier1,
@@ -1355,13 +1369,23 @@ Page({
     }
     (this as unknown as Record<string, unknown>)._editCategoryData = next;
 
-    const tier1 = this.data.editCategoryType === 'expense' ? next.expense : next.income;
-    const deduped = this.data.editCategoryType === 'expense' ? next.expenseDedupedSubs : next.incomeDedupedSubs;
+    const editType = this.data.editCategoryType;
+    const tier1 = editType === 'expense'
+      ? next.expense
+      : editType === 'income'
+        ? next.income
+        : next.transfer;
+    const deduped = editType === 'expense'
+      ? next.expenseDedupedSubs
+      : editType === 'income'
+        ? next.incomeDedupedSubs
+        : [];
 
-    // COSTRA-228: 双 pane 数据同时刷新
+    // COSTRA-228: 三 pane 数据同时刷新
     this.setData({
       editExpenseTier1Categories: next.expense,
       editIncomeTier1Categories: next.income,
+      editTransferTier1Categories: next.transfer,
       editExpenseDedupedSubCategories: next.expenseDedupedSubs,
       editIncomeDedupedSubCategories: next.incomeDedupedSubs,
       editTier1Categories: tier1,
@@ -1420,6 +1444,14 @@ Page({
       return;
     }
 
+    // 分类编辑只允许在原 entry.type 内改分类；跨类型改账需独立产品能力承载。
+    if (this.data.editCategoryType !== entry.type) {
+      this.setData({ editCategoryVisible: false });
+      eventBus.emit(EventNames.SHOW_TAB_BAR);
+      wx.showToast({ title: '不能跨类型修改分类', icon: 'none' });
+      return;
+    }
+
     // SOP 步骤 3: 同等性 guard
     if (entry.category_id === catId) {
       this.setData({ editCategoryVisible: false });
@@ -1459,8 +1491,9 @@ Page({
 
   /** 分类面板：点击 tab 切换收支（仅修改 editCategoryTypeIndex，由 swiper 过渡） */
   onEditCategoryTypeTab(e: WechatMiniprogram.TouchEvent) {
-    const type = (e.currentTarget.dataset as Record<string, string>).type as 'expense' | 'income';
-    const targetIdx = type === 'income' ? 1 : 0;
+    const type = (e.currentTarget.dataset as Record<string, string>).type as 'expense' | 'income' | 'transfer';
+    if (type !== this.data.editCategoryLockedType) return;
+    const targetIdx = type === 'transfer' ? 2 : type === 'income' ? 1 : 0;
     if (targetIdx === this.data.editCategoryTypeIndex) return;
     this.setData({ editCategoryTypeIndex: targetIdx });
   },
@@ -1468,27 +1501,42 @@ Page({
   /** 分类面板：swiper 横滑切换回调（统一更新 editCategoryType + 分类列表） */
   onEditCategorySwiperChange(e: WechatMiniprogram.SwiperChange) {
     const idx = e.detail.current;
-    const nextType: 'expense' | 'income' = idx === 1 ? 'income' : 'expense';
+    const nextType: 'expense' | 'income' | 'transfer' =
+      idx === 2 ? 'transfer' : idx === 1 ? 'income' : 'expense';
+    if (nextType !== this.data.editCategoryLockedType) {
+      const locked = this.data.editCategoryLockedType;
+      this.setData({ editCategoryTypeIndex: locked === 'transfer' ? 2 : locked === 'income' ? 1 : 0 });
+      return;
+    }
     if (nextType === this.data.editCategoryType) return;
     this._switchEditCategoryType(nextType);
   },
 
   /** 分类面板：收支切换核心逻辑 */
-  _switchEditCategoryType(type: 'expense' | 'income') {
+  _switchEditCategoryType(type: 'expense' | 'income' | 'transfer') {
     const catData = (this as unknown as Record<string, unknown>)._editCategoryData as {
       expense: { id: string; icon: string; name: string; children: { id: string; name: string; icon: string }[] }[];
       income: { id: string; icon: string; name: string; children: { id: string; name: string; icon: string }[] }[];
+      transfer: { id: string; icon: string; name: string; children: { id: string; name: string; icon: string }[] }[];
       expenseDedupedSubs: { id: string; name: string; icon: string }[];
       incomeDedupedSubs: { id: string; name: string; icon: string }[];
     } | undefined;
     if (!catData) return;
 
-    const tier1 = type === 'expense' ? catData.expense : catData.income;
-    const deduped = type === 'expense' ? catData.expenseDedupedSubs : catData.incomeDedupedSubs;
+    const tier1 = type === 'expense'
+      ? catData.expense
+      : type === 'income'
+        ? catData.income
+        : catData.transfer;
+    const deduped = type === 'expense'
+      ? catData.expenseDedupedSubs
+      : type === 'income'
+        ? catData.incomeDedupedSubs
+        : [];
 
     this.setData({
       editCategoryType: type,
-      editCategoryTypeIndex: type === 'income' ? 1 : 0,
+      editCategoryTypeIndex: type === 'transfer' ? 2 : type === 'income' ? 1 : 0,
       editTier1Categories: tier1,
       editDedupedSubCategories: deduped,
       editExpandedTier1Id: null,

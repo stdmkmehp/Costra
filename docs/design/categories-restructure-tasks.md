@@ -37,7 +37,7 @@ T0 (categories.yaml 权威源)  ← 一切的前置
 - T12 最后收口。
 
 **关键契约（跨任务，先对齐）**
-1. **签名算法规范**：字段顺序 `id|name|type|parentId|sortOrder|isDirectDefault(1/0)|isParentDefault(1/0)|displayOrder(''|num)`，条目以 `;` 连接，条目内字段以 `|` 连接；排序键 `sortOrder` 升序。服务端 T6 与前端 T8 必须**逐字符一致**。
+1. **签名算法规范**：字段顺序 `id|parentId(''|uuid)|name|icon|type|sortOrder|isDirectDefault(1/0)|isParentDefault(1/0)|displayOrder(''|num)`，条目以 `;` 连接，条目内字段以 `|` 连接；排序键 `sortOrder` 升序，相同 `sortOrder` 再按 `id` 升序；仅纳入系统分类（`family_id IS NULL`）。服务端 T6 与前端 T8 必须**逐字符一致**。
 2. **transfer 契约**：`entry_type` 已含 `transfer`（无需改）；`category_type` 新增 `'transfer'`；transfer entry 的 `shared_type` 恒为 `NULL`，不计入收支统计。
 3. **降级契约**：服务端写入时 `category_id` 不存在 → 查 `category_redirects` → 命中用 `new_id`，否则兜底「其他·默认子」，**静默落库不报错**。
 

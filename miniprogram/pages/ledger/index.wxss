@@ -355,6 +355,10 @@
   color: var(--color-role-amount-income, #07C160);
 }
 
+.entry-amount--transfer {
+  color: var(--color-text-placeholder, #b0b0b0);
+}
+
 .entry-delete {
   position: absolute;
   right: 0;

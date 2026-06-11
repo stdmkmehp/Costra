@@ -25,7 +25,7 @@ export interface CategoryResponse {
   id: string;
   family_id: string | null;
   name: string;
-  type: 'income' | 'expense';
+  type: 'income' | 'expense' | 'transfer';
   icon: string;
   color: string | null;
   sort_order: number;
@@ -42,7 +42,7 @@ export interface CategoryResponse {
 export interface CreateCategoryPayload {
   family_id: string;
   name: string;
-  type: 'income' | 'expense';
+  type: 'income' | 'expense' | 'transfer';
   icon: string;
   color?: string | null;
   parent_id?: string | null;

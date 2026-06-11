@@ -9,7 +9,7 @@ export interface Entry {
   ledger_id: string;
   amount: number;               // cents · int
   currency: string;             // ISO 4217
-  type: 'expense' | 'income';
+  type: 'expense' | 'income' | 'transfer';
   category_id: string | null;
   note: string;
   occurred_at: string;           // ISO 8601 UTC
@@ -201,7 +201,7 @@ function wireToEntry(wire: Record<string, unknown>): Entry {
     ledger_id: wire.ledger_id as string,
     amount: wire.amount as number,
     currency: wire.currency as string,
-    type: wire.type as 'expense' | 'income',
+    type: wire.type as 'expense' | 'income' | 'transfer',
     category_id: (wire.category_id as string | null) ?? null,
     note: (wire.note as string) ?? '',
     occurred_at: wire.occurred_at as string,

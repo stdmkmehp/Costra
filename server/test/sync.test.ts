@@ -16,6 +16,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { FastifyInstance } from 'fastify';
+import { randomUUID } from 'node:crypto';
 import { buildApp } from '../src/app.js';
 import { setWxFetchForTests } from '../src/wx/code2Session.js';
 
@@ -156,6 +157,200 @@ describe('POST /sync/push', () => {
     const updateBody = updateRes.json() as { results: Array<{ status: string; server_version?: number }> };
     expect(updateBody.results[0].status).toBe('conflict');
     expect(updateBody.results[0].server_version).toBe(1); // server 真实 version
+  });
+
+  it('T2.1 update category_id 命中 category_redirects → 静默落到 new_id', async () => {
+    const pool = (await import('../src/db/pool.js')).getPool();
+    const parentId = randomUUID();
+    const newCategoryId = randomUUID();
+    const oldCategoryId = randomUUID();
+    await pool.query(
+      `INSERT INTO categories (id, name, type, icon, sort_order, is_system, parent_id, is_parent_default)
+       VALUES ($1, '餐饮', 'expense', '餐', 1, true, NULL, false),
+              ($2, '餐饮', 'expense', '餐', 1, true, $1, true)`,
+      [parentId, newCategoryId],
+    );
+    await pool.query(
+      `INSERT INTO category_redirects (old_id, new_id, reason) VALUES ($1, $2, 'test redirect')`,
+      [oldCategoryId, newCategoryId],
+    );
+
+    await app.inject({
+      method: 'POST',
+      url: '/v1/sync/push',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${token}`,
+        'idempotency-key': randomUUID(),
+      },
+      payload: {
+        ops: [{
+          op: 'create',
+          entity: 'entry',
+          client_ref_id: 'local-T2-redirect',
+          base_version: null,
+          payload: {
+            ledger_id: '00000000-0000-0000-0000-000000000001',
+            amount: 5000,
+            type: 'expense',
+            occurred_at: '2026-05-11T10:00:00.000Z',
+          },
+        }],
+      },
+    });
+
+    const updateRes = await app.inject({
+      method: 'POST',
+      url: '/v1/sync/push',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${token}`,
+        'idempotency-key': randomUUID(),
+      },
+      payload: {
+        ops: [{
+          op: 'update',
+          entity: 'entry',
+          client_ref_id: 'local-T2-redirect',
+          base_version: 1,
+          payload: { category_id: oldCategoryId },
+        }],
+      },
+    });
+
+    expect(updateRes.statusCode).toBe(200);
+    const body = updateRes.json() as { results: Array<{ status: string; server_version?: number }> };
+    expect(body.results[0].status).toBe('ok');
+    expect(body.results[0].server_version).toBe(2);
+
+    const saved = await pool.query(`SELECT category_id FROM entries WHERE client_ref_id = 'local-T2-redirect'`);
+    expect(saved.rows[0].category_id).toBe(newCategoryId);
+  });
+
+  it('T2.2 update category_id 未知 UUID → 同 type 兜底默认子，不 500', async () => {
+    const pool = (await import('../src/db/pool.js')).getPool();
+    const parentId = randomUUID();
+    const fallbackId = randomUUID();
+    await pool.query(
+      `INSERT INTO categories (id, name, type, icon, sort_order, is_system, parent_id, is_parent_default)
+       VALUES ($1, '其他', 'expense', '他', 99, true, NULL, false),
+              ($2, '其他', 'expense', '他', 1, true, $1, true)`,
+      [parentId, fallbackId],
+    );
+
+    await app.inject({
+      method: 'POST',
+      url: '/v1/sync/push',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${token}`,
+        'idempotency-key': randomUUID(),
+      },
+      payload: {
+        ops: [{
+          op: 'create',
+          entity: 'entry',
+          client_ref_id: 'local-T2-fallback',
+          base_version: null,
+          payload: {
+            ledger_id: '00000000-0000-0000-0000-000000000001',
+            amount: 5000,
+            type: 'expense',
+            occurred_at: '2026-05-11T10:00:00.000Z',
+          },
+        }],
+      },
+    });
+
+    const updateRes = await app.inject({
+      method: 'POST',
+      url: '/v1/sync/push',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${token}`,
+        'idempotency-key': randomUUID(),
+      },
+      payload: {
+        ops: [{
+          op: 'update',
+          entity: 'entry',
+          client_ref_id: 'local-T2-fallback',
+          base_version: 1,
+          payload: { category_id: randomUUID() },
+        }],
+      },
+    });
+
+    expect(updateRes.statusCode).toBe(200);
+    const body = updateRes.json() as { results: Array<{ status: string }> };
+    expect(body.results[0].status).toBe('ok');
+
+    const saved = await pool.query(`SELECT category_id FROM entries WHERE client_ref_id = 'local-T2-fallback'`);
+    expect(saved.rows[0].category_id).toBe(fallbackId);
+  });
+
+  it('T2.3 update category_id 指向不同 type 分类 → rejected，避免脏数据', async () => {
+    const pool = (await import('../src/db/pool.js')).getPool();
+    const transferParentId = randomUUID();
+    const transferChildId = randomUUID();
+    await pool.query(
+      `INSERT INTO categories (id, name, type, icon, sort_order, is_system, parent_id, is_parent_default)
+       VALUES ($1, '储值', 'transfer', '储', 1, true, NULL, false),
+              ($2, '储值', 'transfer', '储', 1, true, $1, true)`,
+      [transferParentId, transferChildId],
+    );
+
+    await app.inject({
+      method: 'POST',
+      url: '/v1/sync/push',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${token}`,
+        'idempotency-key': randomUUID(),
+      },
+      payload: {
+        ops: [{
+          op: 'create',
+          entity: 'entry',
+          client_ref_id: 'local-T2-mismatch',
+          base_version: null,
+          payload: {
+            ledger_id: '00000000-0000-0000-0000-000000000001',
+            amount: 5000,
+            type: 'expense',
+            occurred_at: '2026-05-11T10:00:00.000Z',
+          },
+        }],
+      },
+    });
+
+    const updateRes = await app.inject({
+      method: 'POST',
+      url: '/v1/sync/push',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${token}`,
+        'idempotency-key': randomUUID(),
+      },
+      payload: {
+        ops: [{
+          op: 'update',
+          entity: 'entry',
+          client_ref_id: 'local-T2-mismatch',
+          base_version: 1,
+          payload: { category_id: transferChildId },
+        }],
+      },
+    });
+
+    expect(updateRes.statusCode).toBe(200);
+    const body = updateRes.json() as { results: Array<{ status: string; error?: { code: string } }> };
+    expect(body.results[0].status).toBe('rejected');
+    expect(body.results[0].error?.code).toBe('BUSINESS_RULE_VIOLATION');
+
+    const saved = await pool.query(`SELECT category_id, version FROM entries WHERE client_ref_id = 'local-T2-mismatch'`);
+    expect(saved.rows[0].category_id).toBeNull();
+    expect(saved.rows[0].version).toBe(1);
   });
 
   it('T3 rejected entity=category → status=rejected + NOT_IMPLEMENTED', async () => {

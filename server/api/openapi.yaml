@@ -1627,7 +1627,7 @@ components:
           nullable: true
           description: null 表示系统预设
         name: { type: string }
-        type: { type: string, enum: [income, expense] }
+        type: { type: string, enum: [income, expense, transfer] }
         icon: { type: string, description: 图标 key（Design Token 映射） }
         color: { type: string, description: 色值 key }
         sort_order: { type: integer }
@@ -1676,7 +1676,7 @@ components:
       properties:
         family_id: { type: string, format: uuid }
         name: { type: string, maxLength: 16 }
-        type: { type: string, enum: [income, expense] }
+        type: { type: string, enum: [income, expense, transfer] }
         icon: { type: string }
         color: { type: string }
         parent_id:
@@ -1835,7 +1835,7 @@ components:
 
     SyncPullResponse:
       type: object
-      required: [watermark, has_more, changes]
+      required: [watermark, has_more, categories_revision, changes]
       properties:
         watermark:
           type: integer
@@ -1845,6 +1845,16 @@ components:
             v1.2 升级（BUG-COSTRA-154）：从 ISO 时间戳改为 BIGINT change_seq
             PG SEQUENCE 严格单调 · 不依赖时钟 · 详见 sync-protocol.md §6.3 v1.2
         has_more: { type: boolean }
+        categories_revision:
+          type: string
+          description: |
+            系统分类签名（migration 0004 配套 · spec §4）。
+            客户端比对此值与本地缓存签名，不一致则绕过 24h TTL 强刷分类列表。
+            签名规范：仅纳入 family_id IS NULL 且 deleted_at IS NULL 的行，
+            按 sortOrder ASC + id localeCompare 排序，单条字段顺序
+            id|parentId|name|icon|type|sortOrder|isDirectDefault(1/0)|isParentDefault(1/0)|displayOrder
+            条目内 '|' 分隔，条目间 ';' 分隔。前端实现见
+            miniprogram/services/categoryService.ts computeCategoriesSignature
         changes:
           type: object
           description: 分实体返回变更集（含软删）

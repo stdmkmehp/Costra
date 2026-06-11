@@ -29,6 +29,15 @@
           <text class="expense-header__tab-text">收入</text>
           <view class="expense-header__tab-indicator"></view>
         </view>
+        <text class="expense-header__sep">·</text>
+        <view
+          class="expense-header__tab {{entryType === 'transfer' ? 'is-active' : ''}}"
+          data-type="transfer"
+          bindtap="onTapTab"
+        >
+          <text class="expense-header__tab-text">转移</text>
+          <view class="expense-header__tab-indicator"></view>
+        </view>
       </view>
       <view wx:if="{{keypadOnly}}" class="expense-header__tabs">
         <view class="expense-header__tab is-active">
@@ -178,6 +187,64 @@
               <text class="category-item__name">{{item.name}}</text>
             </view>
           </view>
+          <view class="category-bottom-spacer" style="height: {{safeAreaBottom || 20}}px;"></view>
+        </scroll-view>
+      </swiper-item>
+
+      <!-- 转移 pane（migration 0004 · 仅按树展示，无去重展示区） -->
+      <swiper-item>
+        <scroll-view
+          id="cat-scroll-transfer"
+          class="category-scroll"
+          scroll-y
+          enhanced="{{true}}"
+          show-scrollbar="{{false}}"
+          scroll-top="{{entryType === 'transfer' ? categoryScrollTop : 0}}"
+          bindscroll="onCategoryScroll"
+        >
+          <view class="category-section category-section--tier1">
+            <view
+              wx:for="{{transferTier1Categories}}"
+              wx:key="id"
+              id="cat-tier1-{{item.id}}"
+              class="category-tier1 {{entryType === 'transfer' && selectedTier1Id === item.id ? 'is-selected' : ''}} {{entryType === 'transfer' && dimmedTier1Ids.indexOf(item.id) >= 0 ? 'is-dimmed' : ''}}"
+              data-id="{{item.id}}"
+              bindtap="onTapTier1"
+            >
+              <view class="category-tier1__icon">{{item.icon}}</view>
+              <text class="category-tier1__name">{{item.name}}</text>
+            </view>
+          </view>
+
+          <view class="category-divider"></view>
+
+          <!-- 展开的子分类（仅当前 pane 显示展开态） -->
+          <view
+            class="category-section category-section--tier2"
+            wx:if="{{entryType === 'transfer' && expandedChildren.length > 0}}"
+          >
+            <view
+              wx:for="{{expandedChildren}}"
+              wx:key="id"
+              id="cat-sub-{{item.id}}"
+              class="category-item {{selectedTier2Id === item.id ? 'is-selected' : ''}}"
+              data-id="{{item.id}}"
+              bindtap="onTapExpandedChild"
+            >
+              <view class="category-item__icon">{{item.name[0]}}</view>
+              <text class="category-item__name">{{item.name}}</text>
+            </view>
+          </view>
+
+          <!-- 转移提示：转移流水不计入收支统计 -->
+          <view
+            wx:if="{{entryType === 'transfer' && !expandedTier1Id}}"
+            class="transfer-hint"
+            style="display:flex;justify-content:center;padding:24rpx 32rpx 16rpx;"
+          >
+            <text style="font-size:24rpx;color:var(--color-text-placeholder, #999);">转移记录不会计入收支统计</text>
+          </view>
+
           <view class="category-bottom-spacer" style="height: {{safeAreaBottom || 20}}px;"></view>
         </scroll-view>
       </swiper-item>

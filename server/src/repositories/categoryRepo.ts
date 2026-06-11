@@ -19,7 +19,7 @@ export interface CategoryEntity {
   id: string;
   familyId: string | null; // null = 系统预设
   name: string;
-  type: 'income' | 'expense';
+  type: 'income' | 'expense' | 'transfer';
   icon: string;
   color: string | null;
   sortOrder: number;
@@ -38,7 +38,7 @@ interface CategoryRow {
   id: string;
   family_id: string | null;
   name: string;
-  type: 'income' | 'expense';
+  type: 'income' | 'expense' | 'transfer';
   icon: string;
   color: string | null;
   sort_order: number;
@@ -83,7 +83,7 @@ function exec(): Runner {
 export interface CreateCategoryInput {
   familyId: string;
   name: string;
-  type: 'income' | 'expense';
+  type: 'income' | 'expense' | 'transfer';
   icon: string;
   color?: string | null;
   sortOrder?: number;
@@ -157,4 +157,65 @@ export async function insert(input: CreateCategoryInput, client?: Runner): Promi
     throw new Error('[categoryRepo] INSERT returned no row');
   }
   return rowToEntity(res.rows[0]);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 降级校验支持（migration 0004 · 配套 entry 写入 category_id 降级）
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 查重定向表：硬删后服务端"category_id 不存在 → 找重定向 new_id"的唯一事实源。
+ * 表语义见 migration 0004 Step C-1。
+ */
+export async function findRedirect(
+  oldId: string,
+  client?: Runner,
+): Promise<{ newId: string } | null> {
+  const runner = client ?? exec();
+  const res = await runner.query(
+    `SELECT new_id FROM category_redirects WHERE old_id = $1 LIMIT 1`,
+    [oldId],
+  );
+  const row = res.rows[0] as { new_id?: string } | undefined;
+  return row && row.new_id ? { newId: row.new_id } : null;
+}
+
+/**
+ * 按 entry type 取兜底 category。
+ *
+ * 用途：entry 写入时 category_id 既不命中 categories 也不命中 category_redirects 时，
+ * 落到同 type 的默认子分类，避免产生 entry.type 与 category.type 不一致的脏数据。
+ *
+ * 当前策略：
+ *   - expense → 其他 · 其他
+ *   - income  → 意外收入 · 其他
+ *   - transfer → 第一个 transfer 一级下的默认子（当前为 储值 · 储值）
+ */
+export async function findFallbackCategoryId(
+  type: 'income' | 'expense' | 'transfer',
+  client?: Runner,
+): Promise<string | null> {
+  const runner = client ?? exec();
+  const res = await runner.query(
+    `SELECT c.id
+       FROM categories c
+       JOIN categories p ON p.id = c.parent_id
+      WHERE c.family_id IS NULL
+        AND c.type = $1
+        AND c.deleted_at IS NULL
+        AND c.is_parent_default = true
+        AND p.family_id IS NULL
+        AND p.parent_id IS NULL
+        AND p.deleted_at IS NULL
+        AND (
+          ($1 = 'expense'  AND p.name = '其他')
+          OR ($1 = 'income'   AND p.name = '意外收入')
+          OR ($1 = 'transfer')
+        )
+      ORDER BY p.sort_order ASC, c.sort_order ASC, c.id ASC
+      LIMIT 1`,
+    [type],
+  );
+  const row = res.rows[0] as { id?: string } | undefined;
+  return row && row.id ? row.id : null;
 }

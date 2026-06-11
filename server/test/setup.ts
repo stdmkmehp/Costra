@@ -181,6 +181,15 @@ function applyMigrations(db: IMemoryDb): void {
     -- pg-mem 对 partial index WHERE col IS NULL 谓词支持正常
     CREATE INDEX idx_entries_category_id ON entries (category_id) WHERE deleted_at IS NULL;
     CREATE INDEX idx_categories_parent_id ON categories (parent_id) WHERE deleted_at IS NULL;
+    -- migration 0004_categories_restructure.sql · category_redirects 重定向表
+    -- 硬删后服务端"category_id 不存在 → 找重定向 new_id"的唯一事实源
+    CREATE TABLE category_redirects (
+      old_id     UUID PRIMARY KEY,
+      new_id     UUID NOT NULL REFERENCES categories(id),
+      reason     TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX idx_category_redirects_new_id ON category_redirects (new_id);
     CREATE TABLE idempotency_keys (
       key             TEXT NOT NULL,
       endpoint        TEXT NOT NULL,
@@ -279,7 +288,7 @@ function registerPgMemFunctions(db: IMemoryDb): void {
 function resetPgMem(): void {
   if (memDb) {
     memDb.public.none(
-      'DELETE FROM entries; DELETE FROM categories; DELETE FROM family_invites; DELETE FROM family_members; DELETE FROM ledgers; DELETE FROM families; DELETE FROM user_sessions; DELETE FROM users; DELETE FROM idempotency_keys; DELETE FROM announcement_reads; DELETE FROM announcements;',
+      'DELETE FROM entries; DELETE FROM category_redirects; DELETE FROM categories; DELETE FROM family_invites; DELETE FROM family_members; DELETE FROM ledgers; DELETE FROM families; DELETE FROM user_sessions; DELETE FROM users; DELETE FROM idempotency_keys; DELETE FROM announcement_reads; DELETE FROM announcements;',
     );
   }
 }

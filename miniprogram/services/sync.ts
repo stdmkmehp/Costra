@@ -3,22 +3,57 @@
 //   - Bug G: pushDelta 发送前从 storage 刷新 base_version
 //   - Bug D: 409 走 ackBatchFailure 保守重试
 //   - Bug F: wireOps 只发协议字段（不含 retries 等内部字段）
+// migration 0004: 消费 sync pull 的 categories_revision 字段，触发分类强刷
 
 import { request, ApiError } from './request';
 import { getWatermark, setWatermark, applyServerChanges, getEntry } from './db';
 import { drainBatch, ackResultsBySeq, ackBatchFailure, PushResultItem, SyncOp } from './outbox';
+import {
+  getCachedSystemCategoriesSignature,
+  refreshCategories,
+  warmUpMemoryCache,
+} from './categoryService';
 
 export type Entity = 'entry' | 'category' | 'budget';
 
 export interface SyncPullResponse {
   watermark: number;
   has_more?: boolean;
+  /**
+   * 系统分类签名（migration 0004 配套 · spec §4）。
+   * 客户端比对此值与本地缓存签名，不一致则绕过 24h TTL 强刷分类列表，
+   * 关闭"分类改动 24h 内客户端不可见"的窗口。
+   */
+  categories_revision?: string;
   changes: {
     entries?: unknown[];
     categories?: unknown[];
     budgets?: unknown[];
     ledgers?: unknown[];
   };
+}
+
+/**
+ * 检查 categories_revision 是否变化，若变化则后台强刷分类列表。
+ * fire-and-forget · 不阻塞 sync pull 主流程。
+ *
+ * 双端签名规范见：docs/design/categories-restructure-spec.md §4.2
+ */
+function maybeRefreshCategoriesByRevision(familyId: string, serverRevision: string | undefined): void {
+  if (!serverRevision || !familyId) return;
+  const localSig = getCachedSystemCategoriesSignature();
+  if (localSig && localSig === serverRevision) return; // 系统分类一致 · 无需刷新
+  // 不一致 · 后台拉新分类（绕过 24h TTL · refreshCategories 会写缓存 + warmUp 内存 +
+  // 在签名变化时广播 CATEGORIES_LOADED 事件，明细页等据此重渲）
+  console.log(`[sync:revision] categories_revision changed (local="${localSig.slice(0, 16)}…" → server="${serverRevision.slice(0, 16)}…") · forcing refresh`);
+  refreshCategories(familyId)
+    .then(items => {
+      // refreshCategories 内部已 warmUp，但显式补一次确保签名同步
+      warmUpMemoryCache(familyId, items);
+    })
+    .catch(err => {
+      console.warn('[sync:revision] refreshCategories failed:', err);
+    });
 }
 
 /**
@@ -49,6 +84,8 @@ export async function syncPull(
       await applyServerChanges(resp.changes);
     }
     await setWatermark(familyId, resp.watermark);
+    // migration 0004: 检查分类签名是否变化，触发强刷（fire-and-forget）
+    maybeRefreshCategoriesByRevision(familyId, resp.categories_revision);
   } else {
     console.warn(`[sync:pull] ⚠️ invalid response · watermark=${resp?.watermark} type=${typeof resp?.watermark}`);
   }

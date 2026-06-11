@@ -253,7 +253,10 @@ DELETE FROM categories
 - 不一致 → **绕过 24h TTL 强制 `refreshCategories(activeFamilyId)`** → 写缓存 + `warmUpMemoryCache` + 广播 `CATEGORIES_LOADED`（明细页等据此重渲）。
 
 ### 4.2 算法一致性约束
-- 服务端实现必须与 `miniprogram/services/categoryService.ts` 的 `computeCategoriesSignature()` **字段顺序/分隔符完全一致**（id、name、type、parentId、sortOrder、isDirectDefault、isParentDefault、displayOrder）。
+- 服务端实现必须与 `miniprogram/services/categoryService.ts` 的 `computeCategoriesSignature()` **字段顺序/分隔符完全一致**：
+  - 排序：先按 `sortOrder` 升序，相同 `sortOrder` 再按 `id` localeCompare 升序
+  - 单条字段顺序（`|` 连接）：`id | parentId(空串若NULL) | name | icon | type | sortOrder | isDirectDefault(1/0) | isParentDefault(1/0) | displayOrder(空串若NULL)`
+  - 条目间用 `;` 连接
 - 抽出一份"签名字段规范"注释，双端各自实现但以本规范为准（不引入跨端共享代码包成本）。
 
 ### 4.3 收益

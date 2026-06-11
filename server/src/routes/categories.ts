@@ -48,7 +48,7 @@ const createCategoryBodySchema = {
   properties: {
     family_id: { type: 'string', format: 'uuid' },
     name: { type: 'string', maxLength: 16 },
-    type: { type: 'string', enum: ['income', 'expense'] },
+    type: { type: 'string', enum: ['income', 'expense', 'transfer'] },
     icon: { type: 'string' },
     color: { type: 'string' },
     parent_id: { type: 'string', format: 'uuid', nullable: true },

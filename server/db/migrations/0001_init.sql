@@ -439,18 +439,25 @@ END $$;
 COMMIT;
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- 系统分类 SEED（独立事务 · 幂等：DELETE + INSERT）
+-- 系统分类 SEED（独立事务 · 幂等：UPSERT 按 (family_id,name,type,parent_id) 唯一键）
 -- 数据源：design/categories.yaml
--- 11 一级 + 80 二级 = 91 条
+-- 11 一级 + 80 二级 = 91 条（本基线为 expense+income；transfer 类目由 0004 引入）
+--
+-- ⚠️ 重要：本 seed 必须保证 ID 稳定（不再 DELETE+随机 UUID 重插）
+-- 原因：entries.category_id / budgets.category_id 直接 FK 引用本表 ID。
+-- 一旦有线上数据，DELETE 会被 FK 阻断；即便能删，重新 gen_random_uuid()
+-- 会让所有历史 entries 变"未分类"。
+--
+-- 幂等机制：
+--   - INSERT ... ON CONFLICT (family_id_normalized, name, type, parent_id_normalized)
+--     WHERE deleted_at IS NULL · 命中冲突时仅 UPDATE 业务属性，不动 id
+--   - 冲突目标对齐 partial unique index `uq_categories_family_name_type_parent`
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 BEGIN;
 
-DELETE FROM categories WHERE is_system = true AND family_id IS NULL;
-
--- ---------------------------------------------------------------------------
 -- 一级分类（11 条：8 支出 + 3 收入）
--- ---------------------------------------------------------------------------
+-- 冲突时更新 icon/color/sort_order；不动 id/family_id/parent_id/type/is_system
 INSERT INTO categories (family_id, name, type, icon, color, sort_order, is_system, parent_id, is_direct_default, is_parent_default, display_order)
 VALUES
   -- 支出一级
@@ -465,20 +472,31 @@ VALUES
   -- 收入一级
   (NULL, '职业收入', 'income',  '薪', 'color.category.salary',    1,  true, NULL, false, false, NULL),
   (NULL, '投资与资产','income', '投', 'color.category.invest',    2,  true, NULL, false, false, NULL),
-  (NULL, '意外收入', 'income',  '运', 'color.category.windfall',  3,  true, NULL, false, false, NULL);
+  (NULL, '意外收入', 'income',  '运', 'color.category.windfall',  3,  true, NULL, false, false, NULL)
+ON CONFLICT (
+  COALESCE(family_id, '00000000-0000-0000-0000-000000000000'),
+  name, type,
+  COALESCE(parent_id, '00000000-0000-0000-0000-000000000000')
+) WHERE deleted_at IS NULL
+DO UPDATE SET
+  icon              = EXCLUDED.icon,
+  color             = EXCLUDED.color,
+  sort_order        = EXCLUDED.sort_order,
+  is_direct_default = EXCLUDED.is_direct_default,
+  is_parent_default = EXCLUDED.is_parent_default,
+  display_order     = EXCLUDED.display_order;
 
 -- ---------------------------------------------------------------------------
--- 二级分类（80 条：66 支出 + 14 收入）
+-- 二级分类（78 条：64 支出 + 14 收入）
 -- 字段：family_id, name, type, icon, color, sort_order, is_system, parent_id, is_direct_default, is_parent_default, display_order
 -- is_parent_default=true：每个一级下 sort_order=1 的二级
 -- display_order：全局展示区顺序（NULL=不展示，如一级默认子/同名副本）
 -- ---------------------------------------------------------------------------
 
--- ----------- 餐饮 下二级（11 条）-----------
+-- ----------- 餐饮 下二级（10 条）-----------
 INSERT INTO categories (family_id, name, type, icon, color, sort_order, is_system, parent_id, is_direct_default, is_parent_default, display_order)
 VALUES
   (NULL, '餐饮',     'expense', '餐', 'color.category.food', 1,  true, (SELECT id FROM categories WHERE name='餐饮' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  true,  NULL),
-  (NULL, '三餐',     'expense', '餐', 'color.category.food', 2,  true, (SELECT id FROM categories WHERE name='餐饮' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  false, 48),
   (NULL, '外卖',     'expense', '餐', 'color.category.food', 3,  true, (SELECT id FROM categories WHERE name='餐饮' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  false, 1),
   (NULL, '买菜',     'expense', '餐', 'color.category.food', 4,  true, (SELECT id FROM categories WHERE name='餐饮' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  false, 2),
   (NULL, '水果',     'expense', '餐', 'color.category.food', 5,  true, (SELECT id FROM categories WHERE name='餐饮' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  false, 5),
@@ -487,7 +505,19 @@ VALUES
   (NULL, '酒水',     'expense', '餐', 'color.category.food', 8,  true, (SELECT id FROM categories WHERE name='餐饮' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), false, false, 47),
   (NULL, '柴米油盐', 'expense', '餐', 'color.category.food', 9,  true, (SELECT id FROM categories WHERE name='餐饮' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  false, 13),
   (NULL, '聚餐',     'expense', '餐', 'color.category.food', 10, true, (SELECT id FROM categories WHERE name='餐饮' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  false, 12),
-  (NULL, '宴请',     'expense', '餐', 'color.category.food', 11, true, (SELECT id FROM categories WHERE name='餐饮' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  false, 22);
+  (NULL, '宴请',     'expense', '餐', 'color.category.food', 11, true, (SELECT id FROM categories WHERE name='餐饮' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  false, 22)
+ON CONFLICT (
+  COALESCE(family_id, '00000000-0000-0000-0000-000000000000'),
+  name, type,
+  COALESCE(parent_id, '00000000-0000-0000-0000-000000000000')
+) WHERE deleted_at IS NULL
+DO UPDATE SET
+  icon              = EXCLUDED.icon,
+  color             = EXCLUDED.color,
+  sort_order        = EXCLUDED.sort_order,
+  is_direct_default = EXCLUDED.is_direct_default,
+  is_parent_default = EXCLUDED.is_parent_default,
+  display_order     = EXCLUDED.display_order;
 
 -- ----------- 交通 下二级（10 条）-----------
 INSERT INTO categories (family_id, name, type, icon, color, sort_order, is_system, parent_id, is_direct_default, is_parent_default, display_order)
@@ -501,7 +531,19 @@ VALUES
   (NULL, '机票',     'expense', '行', 'color.category.transport', 7,  true, (SELECT id FROM categories WHERE name='交通' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  false, 24),
   (NULL, '汽车保养', 'expense', '行', 'color.category.transport', 8,  true, (SELECT id FROM categories WHERE name='交通' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  false, 34),
   (NULL, '保险',     'expense', '行', 'color.category.transport', 9,  true, (SELECT id FROM categories WHERE name='交通' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  false, 35),
-  (NULL, '过路费',   'expense', '行', 'color.category.transport', 10, true, (SELECT id FROM categories WHERE name='交通' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  false, 36);
+  (NULL, '过路费',   'expense', '行', 'color.category.transport', 10, true, (SELECT id FROM categories WHERE name='交通' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  false, 36)
+ON CONFLICT (
+  COALESCE(family_id, '00000000-0000-0000-0000-000000000000'),
+  name, type,
+  COALESCE(parent_id, '00000000-0000-0000-0000-000000000000')
+) WHERE deleted_at IS NULL
+DO UPDATE SET
+  icon              = EXCLUDED.icon,
+  color             = EXCLUDED.color,
+  sort_order        = EXCLUDED.sort_order,
+  is_direct_default = EXCLUDED.is_direct_default,
+  is_parent_default = EXCLUDED.is_parent_default,
+  display_order     = EXCLUDED.display_order;
 
 -- ----------- 购物 下二级（8 条）-----------
 INSERT INTO categories (family_id, name, type, icon, color, sort_order, is_system, parent_id, is_direct_default, is_parent_default, display_order)
@@ -513,9 +555,21 @@ VALUES
   (NULL, '零食',     'expense', '购', 'color.category.shopping', 5, true, (SELECT id FROM categories WHERE name='购物' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), false, false, NULL),
   (NULL, '纸巾',     'expense', '购', 'color.category.shopping', 6, true, (SELECT id FROM categories WHERE name='购物' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  false, 39),
   (NULL, '饮料',     'expense', '购', 'color.category.shopping', 7, true, (SELECT id FROM categories WHERE name='购物' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), false, false, NULL),
-  (NULL, '护肤美妆', 'expense', '购', 'color.category.shopping', 8, true, (SELECT id FROM categories WHERE name='购物' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  false, 26);
+  (NULL, '护肤美妆', 'expense', '购', 'color.category.shopping', 8, true, (SELECT id FROM categories WHERE name='购物' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  false, 26)
+ON CONFLICT (
+  COALESCE(family_id, '00000000-0000-0000-0000-000000000000'),
+  name, type,
+  COALESCE(parent_id, '00000000-0000-0000-0000-000000000000')
+) WHERE deleted_at IS NULL
+DO UPDATE SET
+  icon              = EXCLUDED.icon,
+  color             = EXCLUDED.color,
+  sort_order        = EXCLUDED.sort_order,
+  is_direct_default = EXCLUDED.is_direct_default,
+  is_parent_default = EXCLUDED.is_parent_default,
+  display_order     = EXCLUDED.display_order;
 
--- ----------- 生活 下二级（12 条）-----------
+-- ----------- 生活 下二级（11 条）-----------
 INSERT INTO categories (family_id, name, type, icon, color, sort_order, is_system, parent_id, is_direct_default, is_parent_default, display_order)
 VALUES
   (NULL, '生活',     'expense', '活', 'color.category.lifestyle', 1,  true, (SELECT id FROM categories WHERE name='生活' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  true,  NULL),
@@ -524,12 +578,23 @@ VALUES
   (NULL, '柴米油盐', 'expense', '活', 'color.category.lifestyle', 4,  true, (SELECT id FROM categories WHERE name='生活' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), false, false, NULL),
   (NULL, '宠物',     'expense', '活', 'color.category.lifestyle', 5,  true, (SELECT id FROM categories WHERE name='生活' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  false, 29),
   (NULL, '美容美发', 'expense', '活', 'color.category.lifestyle', 6,  true, (SELECT id FROM categories WHERE name='生活' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  false, 20),
-  (NULL, '水电煤',   'expense', '活', 'color.category.lifestyle', 7,  true, (SELECT id FROM categories WHERE name='生活' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  false, 10),
   (NULL, '话费网费', 'expense', '活', 'color.category.lifestyle', 8,  true, (SELECT id FROM categories WHERE name='生活' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  false, 11),
   (NULL, '物业维修', 'expense', '活', 'color.category.lifestyle', 9,  true, (SELECT id FROM categories WHERE name='生活' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  false, 37),
   (NULL, '医疗',     'expense', '活', 'color.category.lifestyle', 10, true, (SELECT id FROM categories WHERE name='生活' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  false, 17),
   (NULL, '母婴',     'expense', '活', 'color.category.lifestyle', 11, true, (SELECT id FROM categories WHERE name='生活' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  false, 33),
-  (NULL, '租房',     'expense', '活', 'color.category.lifestyle', 12, true, (SELECT id FROM categories WHERE name='生活' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  false, 38);
+  (NULL, '租房',     'expense', '活', 'color.category.lifestyle', 12, true, (SELECT id FROM categories WHERE name='生活' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  false, 38)
+ON CONFLICT (
+  COALESCE(family_id, '00000000-0000-0000-0000-000000000000'),
+  name, type,
+  COALESCE(parent_id, '00000000-0000-0000-0000-000000000000')
+) WHERE deleted_at IS NULL
+DO UPDATE SET
+  icon              = EXCLUDED.icon,
+  color             = EXCLUDED.color,
+  sort_order        = EXCLUDED.sort_order,
+  is_direct_default = EXCLUDED.is_direct_default,
+  is_parent_default = EXCLUDED.is_parent_default,
+  display_order     = EXCLUDED.display_order;
 
 -- ----------- 旅行 下二级（6 条）-----------
 INSERT INTO categories (family_id, name, type, icon, color, sort_order, is_system, parent_id, is_direct_default, is_parent_default, display_order)
@@ -539,7 +604,19 @@ VALUES
   (NULL, '酒店',     'expense', '旅', 'color.category.travel', 3, true, (SELECT id FROM categories WHERE name='旅行' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  false, 21),
   (NULL, '交通',     'expense', '旅', 'color.category.travel', 4, true, (SELECT id FROM categories WHERE name='旅行' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), false, false, NULL),
   (NULL, '火车高铁', 'expense', '旅', 'color.category.travel', 5, true, (SELECT id FROM categories WHERE name='旅行' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), false, false, NULL),
-  (NULL, '餐饮',     'expense', '旅', 'color.category.travel', 6, true, (SELECT id FROM categories WHERE name='旅行' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), false, false, NULL);
+  (NULL, '餐饮',     'expense', '旅', 'color.category.travel', 6, true, (SELECT id FROM categories WHERE name='旅行' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), false, false, NULL)
+ON CONFLICT (
+  COALESCE(family_id, '00000000-0000-0000-0000-000000000000'),
+  name, type,
+  COALESCE(parent_id, '00000000-0000-0000-0000-000000000000')
+) WHERE deleted_at IS NULL
+DO UPDATE SET
+  icon              = EXCLUDED.icon,
+  color             = EXCLUDED.color,
+  sort_order        = EXCLUDED.sort_order,
+  is_direct_default = EXCLUDED.is_direct_default,
+  is_parent_default = EXCLUDED.is_parent_default,
+  display_order     = EXCLUDED.display_order;
 
 -- ----------- 文娱 下二级（8 条）-----------
 INSERT INTO categories (family_id, name, type, icon, color, sort_order, is_system, parent_id, is_direct_default, is_parent_default, display_order)
@@ -551,14 +628,38 @@ VALUES
   (NULL, '运动',     'expense', '娱', 'color.category.culture', 5, true, (SELECT id FROM categories WHERE name='文娱' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  false, 19),
   (NULL, '电影',     'expense', '娱', 'color.category.culture', 6, true, (SELECT id FROM categories WHERE name='文娱' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  false, 18),
   (NULL, '门票',     'expense', '娱', 'color.category.culture', 7, true, (SELECT id FROM categories WHERE name='文娱' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  false, 30),
-  (NULL, '教育',     'expense', '娱', 'color.category.culture', 8, true, (SELECT id FROM categories WHERE name='文娱' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  false, 32);
+  (NULL, '教育',     'expense', '娱', 'color.category.culture', 8, true, (SELECT id FROM categories WHERE name='文娱' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  false, 32)
+ON CONFLICT (
+  COALESCE(family_id, '00000000-0000-0000-0000-000000000000'),
+  name, type,
+  COALESCE(parent_id, '00000000-0000-0000-0000-000000000000')
+) WHERE deleted_at IS NULL
+DO UPDATE SET
+  icon              = EXCLUDED.icon,
+  color             = EXCLUDED.color,
+  sort_order        = EXCLUDED.sort_order,
+  is_direct_default = EXCLUDED.is_direct_default,
+  is_parent_default = EXCLUDED.is_parent_default,
+  display_order     = EXCLUDED.display_order;
 
 -- ----------- 转账 下二级（3 条）-----------
 INSERT INTO categories (family_id, name, type, icon, color, sort_order, is_system, parent_id, is_direct_default, is_parent_default, display_order)
 VALUES
   (NULL, '转账', 'expense', '转', 'color.category.transfer', 1, true, (SELECT id FROM categories WHERE name='转账' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  true,  NULL),
   (NULL, '还贷', 'expense', '转', 'color.category.transfer', 2, true, (SELECT id FROM categories WHERE name='转账' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  false, 25),
-  (NULL, '垫付', 'expense', '转', 'color.category.transfer', 3, true, (SELECT id FROM categories WHERE name='转账' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  false, 45);
+  (NULL, '垫付', 'expense', '转', 'color.category.transfer', 3, true, (SELECT id FROM categories WHERE name='转账' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  false, 45)
+ON CONFLICT (
+  COALESCE(family_id, '00000000-0000-0000-0000-000000000000'),
+  name, type,
+  COALESCE(parent_id, '00000000-0000-0000-0000-000000000000')
+) WHERE deleted_at IS NULL
+DO UPDATE SET
+  icon              = EXCLUDED.icon,
+  color             = EXCLUDED.color,
+  sort_order        = EXCLUDED.sort_order,
+  is_direct_default = EXCLUDED.is_direct_default,
+  is_parent_default = EXCLUDED.is_parent_default,
+  display_order     = EXCLUDED.display_order;
 
 -- ----------- 其他 下二级（8 条）-----------
 INSERT INTO categories (family_id, name, type, icon, color, sort_order, is_system, parent_id, is_direct_default, is_parent_default, display_order)
@@ -570,7 +671,19 @@ VALUES
   (NULL, '捐赠', 'expense', '他', 'color.category.other', 5, true, (SELECT id FROM categories WHERE name='其他' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  false, 44),
   (NULL, '丢失', 'expense', '他', 'color.category.other', 6, true, (SELECT id FROM categories WHERE name='其他' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  false, 46),
   (NULL, '礼物', 'expense', '他', 'color.category.other', 7, true, (SELECT id FROM categories WHERE name='其他' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  false, 42),
-  (NULL, '罚款', 'expense', '他', 'color.category.other', 8, true, (SELECT id FROM categories WHERE name='其他' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  false, 49);
+  (NULL, '罚款', 'expense', '他', 'color.category.other', 8, true, (SELECT id FROM categories WHERE name='其他' AND type='expense' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true,  false, 49)
+ON CONFLICT (
+  COALESCE(family_id, '00000000-0000-0000-0000-000000000000'),
+  name, type,
+  COALESCE(parent_id, '00000000-0000-0000-0000-000000000000')
+) WHERE deleted_at IS NULL
+DO UPDATE SET
+  icon              = EXCLUDED.icon,
+  color             = EXCLUDED.color,
+  sort_order        = EXCLUDED.sort_order,
+  is_direct_default = EXCLUDED.is_direct_default,
+  is_parent_default = EXCLUDED.is_parent_default,
+  display_order     = EXCLUDED.display_order;
 
 -- ----------- 职业收入 下二级（4 条）-----------
 INSERT INTO categories (family_id, name, type, icon, color, sort_order, is_system, parent_id, is_direct_default, is_parent_default, display_order)
@@ -578,14 +691,38 @@ VALUES
   (NULL, '工资', 'income', '薪', 'color.category.salary', 1, true, (SELECT id FROM categories WHERE name='职业收入' AND type='income' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true, true,  NULL),
   (NULL, '奖金', 'income', '薪', 'color.category.salary', 2, true, (SELECT id FROM categories WHERE name='职业收入' AND type='income' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true, false, 1),
   (NULL, '兼职', 'income', '薪', 'color.category.salary', 3, true, (SELECT id FROM categories WHERE name='职业收入' AND type='income' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true, false, 2),
-  (NULL, '报销', 'income', '薪', 'color.category.salary', 4, true, (SELECT id FROM categories WHERE name='职业收入' AND type='income' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true, false, 3);
+  (NULL, '报销', 'income', '薪', 'color.category.salary', 4, true, (SELECT id FROM categories WHERE name='职业收入' AND type='income' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true, false, 3)
+ON CONFLICT (
+  COALESCE(family_id, '00000000-0000-0000-0000-000000000000'),
+  name, type,
+  COALESCE(parent_id, '00000000-0000-0000-0000-000000000000')
+) WHERE deleted_at IS NULL
+DO UPDATE SET
+  icon              = EXCLUDED.icon,
+  color             = EXCLUDED.color,
+  sort_order        = EXCLUDED.sort_order,
+  is_direct_default = EXCLUDED.is_direct_default,
+  is_parent_default = EXCLUDED.is_parent_default,
+  display_order     = EXCLUDED.display_order;
 
 -- ----------- 投资与资产 下二级（3 条）-----------
 INSERT INTO categories (family_id, name, type, icon, color, sort_order, is_system, parent_id, is_direct_default, is_parent_default, display_order)
 VALUES
   (NULL, '理财', 'income', '投', 'color.category.invest', 1, true, (SELECT id FROM categories WHERE name='投资与资产' AND type='income' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true, true,  NULL),
   (NULL, '收租', 'income', '投', 'color.category.invest', 2, true, (SELECT id FROM categories WHERE name='投资与资产' AND type='income' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true, false, 4),
-  (NULL, '利息', 'income', '投', 'color.category.invest', 3, true, (SELECT id FROM categories WHERE name='投资与资产' AND type='income' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true, false, 5);
+  (NULL, '利息', 'income', '投', 'color.category.invest', 3, true, (SELECT id FROM categories WHERE name='投资与资产' AND type='income' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true, false, 5)
+ON CONFLICT (
+  COALESCE(family_id, '00000000-0000-0000-0000-000000000000'),
+  name, type,
+  COALESCE(parent_id, '00000000-0000-0000-0000-000000000000')
+) WHERE deleted_at IS NULL
+DO UPDATE SET
+  icon              = EXCLUDED.icon,
+  color             = EXCLUDED.color,
+  sort_order        = EXCLUDED.sort_order,
+  is_direct_default = EXCLUDED.is_direct_default,
+  is_parent_default = EXCLUDED.is_parent_default,
+  display_order     = EXCLUDED.display_order;
 
 -- ----------- 意外收入 下二级（7 条）-----------
 INSERT INTO categories (family_id, name, type, icon, color, sort_order, is_system, parent_id, is_direct_default, is_parent_default, display_order)
@@ -596,6 +733,18 @@ VALUES
   (NULL, '退款',     'income', '运', 'color.category.windfall', 4, true, (SELECT id FROM categories WHERE name='意外收入' AND type='income' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true, false, 7),
   (NULL, '中奖',     'income', '运', 'color.category.windfall', 5, true, (SELECT id FROM categories WHERE name='意外收入' AND type='income' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true, false, 10),
   (NULL, '闲置出售', 'income', '运', 'color.category.windfall', 6, true, (SELECT id FROM categories WHERE name='意外收入' AND type='income' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true, false, 11),
-  (NULL, '礼金',     'income', '运', 'color.category.windfall', 7, true, (SELECT id FROM categories WHERE name='意外收入' AND type='income' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true, false, 9);
+  (NULL, '礼金',     'income', '运', 'color.category.windfall', 7, true, (SELECT id FROM categories WHERE name='意外收入' AND type='income' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true, false, 9)
+ON CONFLICT (
+  COALESCE(family_id, '00000000-0000-0000-0000-000000000000'),
+  name, type,
+  COALESCE(parent_id, '00000000-0000-0000-0000-000000000000')
+) WHERE deleted_at IS NULL
+DO UPDATE SET
+  icon              = EXCLUDED.icon,
+  color             = EXCLUDED.color,
+  sort_order        = EXCLUDED.sort_order,
+  is_direct_default = EXCLUDED.is_direct_default,
+  is_parent_default = EXCLUDED.is_parent_default,
+  display_order     = EXCLUDED.display_order;
 
 COMMIT;

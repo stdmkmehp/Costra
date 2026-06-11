@@ -152,7 +152,7 @@
               </view>
             </view>
             <view class="entry-amount-wrap" data-refid="{{entry.client_ref_id}}" catchtap="onTapEntryAmount">
-              <text class="entry-amount tnum {{entry.type === 'income' ? 'entry-amount--income' : ''}}">{{entry.amountText}}</text>
+              <text class="entry-amount tnum {{entry.type === 'income' ? 'entry-amount--income' : ''}} {{entry.type === 'transfer' ? 'entry-amount--transfer' : ''}}">{{entry.amountText}}</text>
             </view>
           </view>
           <!-- 左滑删除按钮 -->
@@ -205,6 +205,15 @@
             <text class="edit-category-header__tab-text">收入</text>
             <view class="edit-category-header__tab-indicator"></view>
           </view>
+          <text class="edit-category-header__sep">·</text>
+          <view
+            class="edit-category-header__tab {{editCategoryType === 'transfer' ? 'is-active' : ''}}"
+            data-type="transfer"
+            bindtap="onEditCategoryTypeTab"
+          >
+            <text class="edit-category-header__tab-text">转移</text>
+            <view class="edit-category-header__tab-indicator"></view>
+          </view>
         </view>
         <view class="edit-category-header__placeholder"></view>
       </view>
@@ -213,6 +222,7 @@
         class="edit-category-swiper"
         current="{{editCategoryTypeIndex}}"
         duration="{{editCategorySwiperDuration}}"
+        disable-touch="{{true}}"
         bindchange="onEditCategorySwiperChange"
       >
         <!-- 支出 pane -->
@@ -326,6 +336,54 @@
                 <text class="category-item__name">{{item.name}}</text>
               </view>
             </view>
+            <view style="height: 40rpx;"></view>
+          </scroll-view>
+        </swiper-item>
+
+        <!-- 转移 pane（migration 0004 · 仅按树展示，无去重展示区） -->
+        <swiper-item>
+          <scroll-view
+            class="edit-category-scroll"
+            scroll-y
+            enhanced="{{true}}"
+            show-scrollbar="{{false}}"
+          >
+            <view class="category-section category-section--tier1">
+              <view
+                wx:for="{{editTransferTier1Categories}}"
+                wx:key="id"
+                class="category-tier1 {{editCategoryType === 'transfer' && editSelectedTier1Id === item.id ? 'is-selected' : ''}} {{editCategoryType === 'transfer' && editDimmedTier1Ids.indexOf(item.id) >= 0 ? 'is-dimmed' : ''}}"
+                data-id="{{item.id}}"
+                bindtap="onEditTapTier1"
+              >
+                <view class="category-tier1__icon">{{item.icon}}</view>
+                <text class="category-tier1__name">{{item.name}}</text>
+              </view>
+            </view>
+            <view class="category-divider"></view>
+            <view class="category-section category-section--tier2"
+              wx:if="{{editCategoryType === 'transfer' && editExpandedChildren.length > 0}}"
+            >
+              <view
+                wx:for="{{editExpandedChildren}}"
+                wx:key="id"
+                class="category-item {{editSelectedTier2Id === item.id ? 'is-selected' : ''}}"
+                data-id="{{item.id}}"
+                bindtap="onEditTapSubCategory"
+              >
+                <view class="category-item__icon">{{item.name[0]}}</view>
+                <text class="category-item__name">{{item.name}}</text>
+              </view>
+            </view>
+
+            <!-- 转移提示：转移流水不计入收支统计 -->
+            <view
+              wx:if="{{editCategoryType === 'transfer' && !editExpandedTier1Id}}"
+              style="display:flex;justify-content:center;padding:24rpx 32rpx 16rpx;"
+            >
+              <text style="font-size:24rpx;color:var(--color-text-placeholder, #999);">转移记录不会计入收支统计</text>
+            </view>
+
             <view style="height: 40rpx;"></view>
           </scroll-view>
         </swiper-item>

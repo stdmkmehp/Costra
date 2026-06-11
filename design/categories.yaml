@@ -1,8 +1,9 @@
 # Costra 分类定义（一级 + 二级）
 # 修改后告诉我，我会同步更新到：
-#   1. server/db/migrations/0008_categories_hierarchy_seed.sql（权威源）
-#   2. miniprogram/services/categoryService.ts getFallbackItems()（前端降级兜底）
-#   3. server/test/categories-shared-type.test.ts（测试断言数量）
+#   1. server/db/migrations/0001_init.sql（幂等基线 · UPSERT）
+#   2. server/db/migrations/0004_categories_restructure.sql（本次增量 · 删/增/重排）
+#   3. miniprogram/services/categoryService.ts CONFIG_EXPENSE/CONFIG_INCOME/CONFIG_TRANSFER（前端降级兜底）
+#   4. server/test/categories-shared-type.test.ts（测试断言数量）
 #
 # 字段说明：
 #   name:              分类名称
@@ -11,11 +12,20 @@
 #   sort_order:        排序权重（越小越靠前）
 #   is_direct_default: 是否为直选默认归属（仅二级有效）
 #                      同名二级出现在多个一级下时，只有最日常/高频的那个设为 true
+#   display_order:     全局二级展示区展示顺序（NULL=不展示）
 #
 # 规则：
 #   - 一级分类 is_direct_default 永远为 false
 #   - 二级分类 is_direct_default=true 表示记账时该名称默认归属到此父级
 #   - 例：用户选"零食"→ 默认归入"餐饮-零食"(true)，而非"购物-零食"(false)
+#
+# 类型说明（type 维度，与 entry_type 对齐）：
+#   - expense / income：日常支出/收入
+#   - transfer：资金在自己账户间流转（先充后花、账户互转、赊销），不计入收支统计
+#
+# 注：现有「支出·转账」(转账/还贷/垫付) 与新「转移」(transfer) 并存，语义不同：
+#     支出·转账 = 钱真转给别人/还贷算支出
+#     转移      = 钱仍是自己的，不计收支
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 支出分类（expense）
@@ -30,36 +40,68 @@ expense:
       - name: 餐饮
         sort_order: 1
         is_direct_default: true
-      - name: 三餐
+        is_parent_default: true
+        display_order: null
+      - name: 早餐
         sort_order: 2
         is_direct_default: true
-      - name: 外卖
+        is_parent_default: false
+        display_order: 1
+      - name: 午餐
         sort_order: 3
         is_direct_default: true
-      - name: 买菜
+        is_parent_default: false
+        display_order: 2
+      - name: 晚餐
         sort_order: 4
         is_direct_default: true
-      - name: 水果
+        is_parent_default: false
+        display_order: 3
+      - name: 外卖
         sort_order: 5
         is_direct_default: true
-      - name: 零食
+        is_parent_default: false
+        display_order: 4
+      - name: 买菜
         sort_order: 6
         is_direct_default: true
-      - name: 饮料
+        is_parent_default: false
+        display_order: 9
+      - name: 水果
         sort_order: 7
         is_direct_default: true
-      - name: 酒水
+        is_parent_default: false
+        display_order: 10
+      - name: 零食
         sort_order: 8
-        is_direct_default: false
-      - name: 柴米油盐
+        is_direct_default: true
+        is_parent_default: false
+        display_order: 8
+      - name: 饮料
         sort_order: 9
         is_direct_default: true
-      - name: 聚餐
+        is_parent_default: false
+        display_order: 11
+      - name: 酒水
         sort_order: 10
-        is_direct_default: true
-      - name: 宴请
+        is_direct_default: false
+        is_parent_default: false
+        display_order: 52
+      - name: 柴米油盐
         sort_order: 11
         is_direct_default: true
+        is_parent_default: false
+        display_order: 18
+      - name: 聚餐
+        sort_order: 12
+        is_direct_default: true
+        is_parent_default: false
+        display_order: 19
+      - name: 宴请
+        sort_order: 13
+        is_direct_default: true
+        is_parent_default: false
+        display_order: 27
 
   - name: 交通
     icon: 行
@@ -69,33 +111,53 @@ expense:
       - name: 交通
         sort_order: 1
         is_direct_default: true
+        is_parent_default: true
+        display_order: null
       - name: 打车
         sort_order: 2
         is_direct_default: true
+        is_parent_default: false
+        display_order: 6
       - name: 公交地铁
         sort_order: 3
         is_direct_default: true
+        is_parent_default: false
+        display_order: 5
       - name: 加油
         sort_order: 4
         is_direct_default: true
+        is_parent_default: false
+        display_order: 20
       - name: 停车
         sort_order: 5
         is_direct_default: true
+        is_parent_default: false
+        display_order: 21
       - name: 火车高铁
         sort_order: 6
         is_direct_default: true
+        is_parent_default: false
+        display_order: 28
       - name: 机票
         sort_order: 7
         is_direct_default: true
+        is_parent_default: false
+        display_order: 29
       - name: 汽车保养
         sort_order: 8
         is_direct_default: true
+        is_parent_default: false
+        display_order: 39
       - name: 保险
         sort_order: 9
         is_direct_default: true
+        is_parent_default: false
+        display_order: 40
       - name: 过路费
         sort_order: 10
         is_direct_default: true
+        is_parent_default: false
+        display_order: 41
 
   - name: 购物
     icon: 购
@@ -105,27 +167,43 @@ expense:
       - name: 购物
         sort_order: 1
         is_direct_default: true
+        is_parent_default: true
+        display_order: null
       - name: 日用
         sort_order: 2
         is_direct_default: true
+        is_parent_default: false
+        display_order: 7
       - name: 服饰
         sort_order: 3
         is_direct_default: true
+        is_parent_default: false
+        display_order: 17
       - name: 数码
         sort_order: 4
         is_direct_default: true
+        is_parent_default: false
+        display_order: 32
       - name: 零食
         sort_order: 5
         is_direct_default: false       # 默认归属到 餐饮-零食
+        is_parent_default: false
+        display_order: null
       - name: 纸巾
         sort_order: 6
         is_direct_default: true
+        is_parent_default: false
+        display_order: 44
       - name: 饮料
         sort_order: 7
         is_direct_default: false       # 默认归属到 餐饮-饮料
+        is_parent_default: false
+        display_order: null
       - name: 护肤美妆
         sort_order: 8
         is_direct_default: true
+        is_parent_default: false
+        display_order: 31
 
   - name: 生活
     icon: 活
@@ -135,39 +213,73 @@ expense:
       - name: 生活
         sort_order: 1
         is_direct_default: true
+        is_parent_default: true
+        display_order: null
       - name: 日用
         sort_order: 2
         is_direct_default: false
+        is_parent_default: false
+        display_order: null
       - name: 买菜
         sort_order: 3
         is_direct_default: false       # 默认归属到 餐饮-买菜
+        is_parent_default: false
+        display_order: null
       - name: 柴米油盐
         sort_order: 4
         is_direct_default: false
+        is_parent_default: false
+        display_order: null
       - name: 宠物
         sort_order: 5
         is_direct_default: true
+        is_parent_default: false
+        display_order: 34
       - name: 美容美发
         sort_order: 6
         is_direct_default: true
-      - name: 水电煤
+        is_parent_default: false
+        display_order: 25
+      - name: 水费
         sort_order: 7
         is_direct_default: true
-      - name: 话费网费
+        is_parent_default: false
+        display_order: 13
+      - name: 电费
         sort_order: 8
         is_direct_default: true
-      - name: 物业维修
+        is_parent_default: false
+        display_order: 14
+      - name: 燃气费
         sort_order: 9
         is_direct_default: true
-      - name: 医疗
+        is_parent_default: false
+        display_order: 15
+      - name: 话费网费
         sort_order: 10
         is_direct_default: true
-      - name: 母婴
+        is_parent_default: false
+        display_order: 16
+      - name: 物业维修
         sort_order: 11
         is_direct_default: true
-      - name: 租房
+        is_parent_default: false
+        display_order: 42
+      - name: 医疗
         sort_order: 12
         is_direct_default: true
+        is_parent_default: false
+        display_order: 22
+      - name: 母婴
+        sort_order: 13
+        is_direct_default: true
+        is_parent_default: false
+        display_order: 38
+      - name: 租房
+        sort_order: 14
+        is_direct_default: true
+        is_parent_default: false
+        display_order: 43
 
   - name: 旅行
     icon: 旅
@@ -177,21 +289,33 @@ expense:
       - name: 旅行
         sort_order: 1
         is_direct_default: true
+        is_parent_default: true
+        display_order: null
       - name: 机票
         sort_order: 2
         is_direct_default: false       # 默认归属到 交通-机票
+        is_parent_default: false
+        display_order: null
       - name: 酒店
         sort_order: 3
         is_direct_default: true
+        is_parent_default: false
+        display_order: 26
       - name: 交通
         sort_order: 4
         is_direct_default: false       # 默认归属到 交通-交通
+        is_parent_default: false
+        display_order: null
       - name: 火车高铁
         sort_order: 5
         is_direct_default: false
+        is_parent_default: false
+        display_order: null
       - name: 餐饮
         sort_order: 6
         is_direct_default: false       # 默认归属到 餐饮-餐饮
+        is_parent_default: false
+        display_order: null
 
   - name: 文娱
     icon: 娱
@@ -201,27 +325,43 @@ expense:
       - name: 文娱
         sort_order: 1
         is_direct_default: true
+        is_parent_default: true
+        display_order: null
       - name: 订阅会员
         sort_order: 2
         is_direct_default: true
+        is_parent_default: false
+        display_order: 12
       - name: 演出
         sort_order: 3
         is_direct_default: true
+        is_parent_default: false
+        display_order: 36
       - name: 游戏
         sort_order: 4
         is_direct_default: true
+        is_parent_default: false
+        display_order: 33
       - name: 运动
         sort_order: 5
         is_direct_default: true
+        is_parent_default: false
+        display_order: 24
       - name: 电影
         sort_order: 6
         is_direct_default: true
+        is_parent_default: false
+        display_order: 23
       - name: 门票
         sort_order: 7
         is_direct_default: true
+        is_parent_default: false
+        display_order: 35
       - name: 教育
         sort_order: 8
         is_direct_default: true
+        is_parent_default: false
+        display_order: 37
 
   - name: 转账
     icon: 转
@@ -231,12 +371,18 @@ expense:
       - name: 转账
         sort_order: 1
         is_direct_default: true
+        is_parent_default: true
+        display_order: null
       - name: 还贷
         sort_order: 2
         is_direct_default: true
+        is_parent_default: false
+        display_order: 30
       - name: 垫付
         sort_order: 3
         is_direct_default: true
+        is_parent_default: false
+        display_order: 50
 
   - name: 其他
     icon: 他
@@ -246,27 +392,43 @@ expense:
       - name: 其他
         sort_order: 1
         is_direct_default: true
+        is_parent_default: true
+        display_order: null
       - name: 红包
         sort_order: 2
         is_direct_default: true
+        is_parent_default: false
+        display_order: 45
       - name: 礼金
         sort_order: 3
         is_direct_default: true
+        is_parent_default: false
+        display_order: 46
       - name: 赡养
         sort_order: 4
         is_direct_default: true
+        is_parent_default: false
+        display_order: 48
       - name: 捐赠
         sort_order: 5
         is_direct_default: true
+        is_parent_default: false
+        display_order: 49
       - name: 丢失
         sort_order: 6
         is_direct_default: true
+        is_parent_default: false
+        display_order: 51
       - name: 礼物
         sort_order: 7
         is_direct_default: true
+        is_parent_default: false
+        display_order: 47
       - name: 罚款
         sort_order: 8
         is_direct_default: true
+        is_parent_default: false
+        display_order: null
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 收入分类（income）
@@ -281,15 +443,23 @@ income:
       - name: 工资
         sort_order: 1
         is_direct_default: true
+        is_parent_default: true
+        display_order: null
       - name: 奖金
         sort_order: 2
         is_direct_default: true
+        is_parent_default: false
+        display_order: 1
       - name: 兼职
         sort_order: 3
         is_direct_default: true
+        is_parent_default: false
+        display_order: 2
       - name: 报销
         sort_order: 4
         is_direct_default: true
+        is_parent_default: false
+        display_order: 3
 
   - name: 投资与资产
     icon: 投
@@ -299,12 +469,18 @@ income:
       - name: 理财
         sort_order: 1
         is_direct_default: true
+        is_parent_default: true
+        display_order: null
       - name: 收租
         sort_order: 2
         is_direct_default: true
+        is_parent_default: false
+        display_order: 4
       - name: 利息
         sort_order: 3
         is_direct_default: true
+        is_parent_default: false
+        display_order: 5
 
   - name: 意外收入
     icon: 运
@@ -314,29 +490,113 @@ income:
       - name: 其他
         sort_order: 1
         is_direct_default: true
+        is_parent_default: true
+        display_order: null
       - name: 转账
         sort_order: 2
         is_direct_default: true
+        is_parent_default: false
+        display_order: 8
       - name: 红包
         sort_order: 3
         is_direct_default: true
+        is_parent_default: false
+        display_order: 6
       - name: 退款
         sort_order: 4
         is_direct_default: true
+        is_parent_default: false
+        display_order: 7
       - name: 中奖
         sort_order: 5
         is_direct_default: true
+        is_parent_default: false
+        display_order: 10
       - name: 闲置出售
         sort_order: 6
         is_direct_default: true
+        is_parent_default: false
+        display_order: 11
       - name: 礼金
         sort_order: 7
         is_direct_default: true
+        is_parent_default: false
+        display_order: 9
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 转移分类（transfer · 不计入收支统计）
+# ═══════════════════════════════════════════════════════════════════════════════
+# 一级 display_order 永远 NULL；二级 display_order 也均为 NULL（不进全局展示区，
+# 仅在记账面板「转移」tab 内按树展示）
+
+transfer:
+  - name: 储值
+    icon: 储
+    color: color.category.transfer
+    sort_order: 1
+    children:
+      - name: 储值
+        sort_order: 1
+        is_direct_default: true
+        is_parent_default: true
+        display_order: null
+      - name: 公交卡储值
+        sort_order: 2
+        is_direct_default: true
+        is_parent_default: false
+        display_order: null
+      - name: 饭卡储值
+        sort_order: 3
+        is_direct_default: true
+        is_parent_default: false
+        display_order: null
+
+  - name: 账户互转
+    icon: 互
+    color: color.category.transfer
+    sort_order: 2
+    children:
+      - name: 账户互转
+        sort_order: 1
+        is_direct_default: true
+        is_parent_default: true
+        display_order: null
+
+  - name: 赊销
+    icon: 销
+    color: color.category.transfer
+    sort_order: 3
+    children:
+      - name: 赊销
+        sort_order: 1
+        is_direct_default: true
+        is_parent_default: true
+        display_order: null
+      - name: 花呗
+        sort_order: 2
+        is_direct_default: true
+        is_parent_default: false
+        display_order: null
+      - name: 白条
+        sort_order: 3
+        is_direct_default: true
+        is_parent_default: false
+        display_order: null
+      - name: 月付
+        sort_order: 4
+        is_direct_default: true
+        is_parent_default: false
+        display_order: null
+      - name: 信用卡
+        sort_order: 5
+        is_direct_default: true
+        is_parent_default: false
+        display_order: null
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 统计摘要
 # ═══════════════════════════════════════════════════════════════════════════════
-# 一级分类: 11 条（支出 8 + 收入 3）
-# 二级分类: 80 条（支出 66 + 收入 14）
-# 总计: 91 条
-# is_direct_default=true 的二级: 71 条（支出 57 + 收入 14）
+# 一级分类: 14 条（支出 8 + 收入 3 + 转移 3）
+# 二级分类: 88 条（支出 66 + 收入 14 + 转移 8）
+# 总计: 102 条
+# 支出二级 display_order 重排：1~52 见 docs/design/categories-restructure-spec.md §3 Step E

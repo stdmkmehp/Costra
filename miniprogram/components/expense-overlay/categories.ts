@@ -44,6 +44,11 @@ export interface DedupMapping {
 export interface CategoryData {
   expense: CategoryTier1[];
   income: CategoryTier1[];
+  /**
+   * 转移类目树（migration 0004 新增 · 不计入收支统计）。
+   * 转移类目不进入全局二级展示区（display_order=NULL），故无 dedupedSubs。
+   */
+  transfer: CategoryTier1[];
   expenseDedupedSubs: CategoryTier2[];
   incomeDedupedSubs: CategoryTier2[];
   dedupMapping: DedupMapping;
@@ -61,6 +66,7 @@ function buildCategoryData(items: CategoryItem[]): CategoryData {
   return {
     expense: tree.expense,
     income: tree.income,
+    transfer: tree.transfer,
     expenseDedupedSubs,
     incomeDedupedSubs,
     dedupMapping,

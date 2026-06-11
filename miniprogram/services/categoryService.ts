@@ -15,7 +15,7 @@ export interface CategoryItem {
   id: string;               // UUID
   familyId: string | null;  // null = 系统预设
   name: string;
-  type: 'income' | 'expense';
+  type: 'income' | 'expense' | 'transfer';
   icon: string;             // 单字符图标（API 返回直接使用）
   color?: string;
   sortOrder: number;
@@ -34,7 +34,7 @@ interface CategoryRaw {
   id: string;
   family_id: string | null;
   name: string;
-  type: 'income' | 'expense';
+  type: 'income' | 'expense' | 'transfer';
   icon: string;
   color?: string;
   sort_order: number;
@@ -74,90 +74,100 @@ const CACHE_KEY_PREFIX = 'categories_cache_';
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 // ─── 内嵌 fallback 数据 ─────────────────────────────────────────────────────────
-// API 不可达 + 缓存也无时使用。ID 使用 UUID 占位符（不是旧 slug）。
-// 数据来源: design/categories.yaml
+// API 不可达 + 缓存也无时使用。ID 使用确定性 UUID 占位符。
+// 数据来源: design/categories.yaml（与服务端权威源一致）
+//
+// 字段含义：
+//   def = is_direct_default
+//   pd  = is_parent_default
+//   dsp = display_order
 
 const CONFIG_EXPENSE = [
   { name: '餐饮', icon: '餐', color: 'color.category.food', order: 1, children: [
     { name: '餐饮', order: 1, def: true, pd: true, dsp: null },
-    { name: '外卖', order: 2, def: true, pd: false, dsp: 1 },
-    { name: '买菜', order: 3, def: true, pd: false, dsp: 2 },
-    { name: '水果', order: 4, def: true, pd: false, dsp: 5 },
-    { name: '零食', order: 5, def: true, pd: false, dsp: 6 },
-    { name: '饮料', order: 6, def: true, pd: false, dsp: 7 },
-    { name: '酒水', order: 7, def: false, pd: false, dsp: 48 },
-    { name: '柴米油盐', order: 8, def: true, pd: false, dsp: 14 },
-    { name: '聚餐', order: 9, def: true, pd: false, dsp: 13 },
-    { name: '宴请', order: 10, def: true, pd: false, dsp: 23 }
+    { name: '早餐', order: 2, def: true, pd: false, dsp: 1 },
+    { name: '午餐', order: 3, def: true, pd: false, dsp: 2 },
+    { name: '晚餐', order: 4, def: true, pd: false, dsp: 3 },
+    { name: '外卖', order: 5, def: true, pd: false, dsp: 4 },
+    { name: '买菜', order: 6, def: true, pd: false, dsp: 9 },
+    { name: '水果', order: 7, def: true, pd: false, dsp: 10 },
+    { name: '零食', order: 8, def: true, pd: false, dsp: 8 },
+    { name: '饮料', order: 9, def: true, pd: false, dsp: 11 },
+    { name: '酒水', order: 10, def: false, pd: false, dsp: 52 },
+    { name: '柴米油盐', order: 11, def: true, pd: false, dsp: 18 },
+    { name: '聚餐', order: 12, def: true, pd: false, dsp: 19 },
+    { name: '宴请', order: 13, def: true, pd: false, dsp: 27 }
   ]},
   { name: '交通', icon: '行', color: 'color.category.transport', order: 2, children: [
     { name: '交通', order: 1, def: true, pd: true, dsp: null },
-    { name: '打车', order: 2, def: true, pd: false, dsp: 3 },
-    { name: '公交', order: 3, def: true, pd: false, dsp: 8 },
-    { name: '地铁', order: 4, def: true, pd: false, dsp: 9 },
-    { name: '加油', order: 5, def: true, pd: false, dsp: 16 },
-    { name: '停车', order: 6, def: true, pd: false, dsp: 17 },
-    { name: '火车/高铁', order: 7, def: true, pd: false, dsp: 24 },
-    { name: '机票', order: 8, def: true, pd: false, dsp: 25 },
-    { name: '汽车保养', order: 9, def: true, pd: false, dsp: 35 },
-    { name: '保险', order: 10, def: true, pd: false, dsp: 36 },
-    { name: '过路费', order: 11, def: true, pd: false, dsp: 37 }
+    { name: '打车', order: 2, def: true, pd: false, dsp: 6 },
+    { name: '公交地铁', order: 3, def: true, pd: false, dsp: 5 },
+    { name: '加油', order: 4, def: true, pd: false, dsp: 20 },
+    { name: '停车', order: 5, def: true, pd: false, dsp: 21 },
+    { name: '火车高铁', order: 6, def: true, pd: false, dsp: 28 },
+    { name: '机票', order: 7, def: true, pd: false, dsp: 29 },
+    { name: '汽车保养', order: 8, def: true, pd: false, dsp: 39 },
+    { name: '保险', order: 9, def: true, pd: false, dsp: 40 },
+    { name: '过路费', order: 10, def: true, pd: false, dsp: 41 }
   ]},
   { name: '购物', icon: '购', color: 'color.category.shopping', order: 3, children: [
     { name: '购物', order: 1, def: true, pd: true, dsp: null },
-    { name: '日用', order: 2, def: true, pd: false, dsp: 4 },
-    { name: '服饰', order: 3, def: true, pd: false, dsp: 10 },
-    { name: '数码', order: 4, def: true, pd: false, dsp: 28 },
+    { name: '日用', order: 2, def: true, pd: false, dsp: 7 },
+    { name: '服饰', order: 3, def: true, pd: false, dsp: 17 },
+    { name: '数码', order: 4, def: true, pd: false, dsp: 32 },
     { name: '零食', order: 5, def: false, pd: false, dsp: null },
-    { name: '纸巾', order: 6, def: true, pd: false, dsp: 40 },
+    { name: '纸巾', order: 6, def: true, pd: false, dsp: 44 },
     { name: '饮料', order: 7, def: false, pd: false, dsp: null },
-    { name: '护肤美妆', order: 8, def: true, pd: false, dsp: 27 }
+    { name: '护肤美妆', order: 8, def: true, pd: false, dsp: 31 }
   ]},
   { name: '生活', icon: '活', color: 'color.category.lifestyle', order: 4, children: [
     { name: '生活', order: 1, def: true, pd: true, dsp: null },
     { name: '日用', order: 2, def: false, pd: false, dsp: null },
     { name: '买菜', order: 3, def: false, pd: false, dsp: null },
     { name: '柴米油盐', order: 4, def: false, pd: false, dsp: null },
-    { name: '宠物', order: 5, def: true, pd: false, dsp: 30 },
-    { name: '美容美发', order: 6, def: true, pd: false, dsp: 21 },
-    { name: '水电煤', order: 7, def: true, pd: false, dsp: 11 },
-    { name: '话费网费', order: 8, def: true, pd: false, dsp: 12 },
-    { name: '物业维修', order: 9, def: true, pd: false, dsp: 38 },
-    { name: '医疗', order: 10, def: true, pd: false, dsp: 18 },
-    { name: '母婴', order: 11, def: true, pd: false, dsp: 34 },
-    { name: '租房', order: 12, def: true, pd: false, dsp: 39 }
+    { name: '宠物', order: 5, def: true, pd: false, dsp: 34 },
+    { name: '美容美发', order: 6, def: true, pd: false, dsp: 25 },
+    { name: '水费', order: 7, def: true, pd: false, dsp: 13 },
+    { name: '电费', order: 8, def: true, pd: false, dsp: 14 },
+    { name: '燃气费', order: 9, def: true, pd: false, dsp: 15 },
+    { name: '话费网费', order: 10, def: true, pd: false, dsp: 16 },
+    { name: '物业维修', order: 11, def: true, pd: false, dsp: 42 },
+    { name: '医疗', order: 12, def: true, pd: false, dsp: 22 },
+    { name: '母婴', order: 13, def: true, pd: false, dsp: 38 },
+    { name: '租房', order: 14, def: true, pd: false, dsp: 43 }
   ]},
   { name: '旅行', icon: '旅', color: 'color.category.travel', order: 5, children: [
     { name: '旅行', order: 1, def: true, pd: true, dsp: null },
     { name: '机票', order: 2, def: false, pd: false, dsp: null },
-    { name: '酒店', order: 3, def: true, pd: false, dsp: 22 },
+    { name: '酒店', order: 3, def: true, pd: false, dsp: 26 },
     { name: '交通', order: 4, def: false, pd: false, dsp: null },
-    { name: '火车/高铁', order: 5, def: false, pd: false, dsp: null },
+    { name: '火车高铁', order: 5, def: false, pd: false, dsp: null },
     { name: '餐饮', order: 6, def: false, pd: false, dsp: null }
   ]},
   { name: '文娱', icon: '娱', color: 'color.category.culture', order: 6, children: [
     { name: '文娱', order: 1, def: true, pd: true, dsp: null },
-    { name: '订阅会员', order: 2, def: true, pd: false, dsp: 15 },
-    { name: '演出', order: 3, def: true, pd: false, dsp: 32 },
-    { name: '游戏', order: 4, def: true, pd: false, dsp: 29 },
-    { name: '运动', order: 5, def: true, pd: false, dsp: 20 },
-    { name: '电影', order: 6, def: true, pd: false, dsp: 19 },
-    { name: '门票', order: 7, def: true, pd: false, dsp: 31 },
-    { name: '教育', order: 8, def: true, pd: false, dsp: 33 }
+    { name: '订阅会员', order: 2, def: true, pd: false, dsp: 12 },
+    { name: '演出', order: 3, def: true, pd: false, dsp: 36 },
+    { name: '游戏', order: 4, def: true, pd: false, dsp: 33 },
+    { name: '运动', order: 5, def: true, pd: false, dsp: 24 },
+    { name: '电影', order: 6, def: true, pd: false, dsp: 23 },
+    { name: '门票', order: 7, def: true, pd: false, dsp: 35 },
+    { name: '教育', order: 8, def: true, pd: false, dsp: 37 }
   ]},
   { name: '转账', icon: '转', color: 'color.category.transfer', order: 7, children: [
     { name: '转账', order: 1, def: true, pd: true, dsp: null },
-    { name: '还贷', order: 2, def: true, pd: false, dsp: 26 }
+    { name: '还贷', order: 2, def: true, pd: false, dsp: 30 },
+    { name: '垫付', order: 3, def: true, pd: false, dsp: 50 }
   ]},
   { name: '其他', icon: '他', color: 'color.category.other', order: 99, children: [
     { name: '其他', order: 1, def: true, pd: true, dsp: null },
-    { name: '红包', order: 2, def: true, pd: false, dsp: 41 },
-    { name: '礼金', order: 3, def: true, pd: false, dsp: 42 },
-    { name: '赡养', order: 4, def: true, pd: false, dsp: 44 },
-    { name: '捐赠', order: 5, def: true, pd: false, dsp: 45 },
-    { name: '丢失', order: 6, def: true, pd: false, dsp: 47 },
-    { name: '礼物', order: 7, def: true, pd: false, dsp: 43 },
-    { name: '垫付', order: 8, def: true, pd: false, dsp: 46 }
+    { name: '红包', order: 2, def: true, pd: false, dsp: 45 },
+    { name: '礼金', order: 3, def: true, pd: false, dsp: 46 },
+    { name: '赡养', order: 4, def: true, pd: false, dsp: 48 },
+    { name: '捐赠', order: 5, def: true, pd: false, dsp: 49 },
+    { name: '丢失', order: 6, def: true, pd: false, dsp: 51 },
+    { name: '礼物', order: 7, def: true, pd: false, dsp: 47 },
+    { name: '罚款', order: 8, def: true, pd: false, dsp: null }
   ]}
 ];
 
@@ -175,11 +185,32 @@ const CONFIG_INCOME = [
   ]},
   { name: '意外收入', icon: '运', color: 'color.category.windfall', order: 3, children: [
     { name: '其他', order: 1, def: true, pd: true, dsp: null },
-    { name: '转账', order: 2, def: true, pd: false, dsp: 7 },
+    { name: '转账', order: 2, def: true, pd: false, dsp: 8 },
     { name: '红包', order: 3, def: true, pd: false, dsp: 6 },
-    { name: '中奖', order: 4, def: true, pd: false, dsp: 9 },
-    { name: '闲置出售', order: 5, def: true, pd: false, dsp: 10 },
-    { name: '礼金', order: 6, def: true, pd: false, dsp: 8 }
+    { name: '退款', order: 4, def: true, pd: false, dsp: 7 },
+    { name: '中奖', order: 5, def: true, pd: false, dsp: 10 },
+    { name: '闲置出售', order: 6, def: true, pd: false, dsp: 11 },
+    { name: '礼金', order: 7, def: true, pd: false, dsp: 9 }
+  ]}
+];
+
+// 转移分类（migration 0004 新增 · type='transfer' · 不计入收支统计）
+// 全部 display_order=null（不进全局二级展示区，仅在记账面板「转移」tab 内按树展示）
+const CONFIG_TRANSFER = [
+  { name: '储值', icon: '储', color: 'color.category.transfer', order: 1, children: [
+    { name: '储值', order: 1, def: true, pd: true, dsp: null },
+    { name: '公交卡储值', order: 2, def: true, pd: false, dsp: null },
+    { name: '饭卡储值', order: 3, def: true, pd: false, dsp: null }
+  ]},
+  { name: '账户互转', icon: '互', color: 'color.category.transfer', order: 2, children: [
+    { name: '账户互转', order: 1, def: true, pd: true, dsp: null }
+  ]},
+  { name: '赊销', icon: '销', color: 'color.category.transfer', order: 3, children: [
+    { name: '赊销', order: 1, def: true, pd: true, dsp: null },
+    { name: '花呗', order: 2, def: true, pd: false, dsp: null },
+    { name: '白条', order: 3, def: true, pd: false, dsp: null },
+    { name: '月付', order: 4, def: true, pd: false, dsp: null },
+    { name: '信用卡', order: 5, def: true, pd: false, dsp: null }
   ]}
 ];
 
@@ -187,19 +218,25 @@ const CONFIG_INCOME = [
 function getFallbackItems(): CategoryItem[] {
   const result: CategoryItem[] = [];
 
-  // 一级分类 UUID 映射表
-  // 支出尾数: 餐饮=1, 交通=2, 购物=3, 生活=4, 旅行=5, 文娱=6, 转账=7, 其他=8
-  // 收入尾数: 职业=201, 投资=202, 意外=203 (为了和支出拉开距离)
-  const getParentUuid = (type: 'expense' | 'income', order: number): string => {
-    const isIncome = type === 'income';
-    const suffix = isIncome ? (200 + order) : order;
+  // 一级分类 UUID 映射表（确定性，便于 getCategoryById fallback 路径稳定）
+  // 支出 parentSuffix: 餐饮=1..其他=8
+  // 收入 parentSuffix: 200+order（职业=201..意外=203）
+  // 转移 parentSuffix: 300+order（储值=301、账户互转=302、赊销=303）
+  // 子 UUID 前缀：expense=10..、income=11..、transfer=12..（互不冲突）
+  const getParentUuid = (type: 'expense' | 'income' | 'transfer', order: number): string => {
+    let suffix: number;
+    if (type === 'income')        suffix = 200 + order;
+    else if (type === 'transfer') suffix = 300 + order;
+    else                          suffix = order;
     return `00000000-0000-4000-8000-${String(suffix).padStart(12, '0')}`;
   };
 
-  const getChildUuid = (type: 'expense' | 'income', parentOrder: number, childOrder: number): string => {
-    const isIncome = type === 'income';
-    const parentSuffix = isIncome ? (200 + parentOrder) : parentOrder;
-    const prefix = isIncome ? '11000000' : '10000000';
+  const getChildUuid = (type: 'expense' | 'income' | 'transfer', parentOrder: number, childOrder: number): string => {
+    let parentSuffix: number;
+    let prefix: string;
+    if (type === 'income')        { parentSuffix = 200 + parentOrder; prefix = '11000000'; }
+    else if (type === 'transfer') { parentSuffix = 300 + parentOrder; prefix = '12000000'; }
+    else                          { parentSuffix = parentOrder;       prefix = '10000000'; }
     return `${prefix}-0000-4000-8000-${String(parentSuffix).padStart(6, '0')}${String(childOrder).padStart(6, '0')}`;
   };
 
@@ -266,6 +303,44 @@ function getFallbackItems(): CategoryItem[] {
         familyId: null,
         name: c.name,
         type: 'income',
+        icon: p.icon,
+        color: p.color,
+        sortOrder: c.order,
+        isSystem: true,
+        parentId: pId,
+        isDirectDefault: c.def,
+        isParentDefault: c.pd,
+        displayOrder: c.dsp,
+        childrenCount: 0
+      });
+    });
+  });
+
+  // 3. 构建转移（migration 0004）
+  CONFIG_TRANSFER.forEach(p => {
+    const pId = getParentUuid('transfer', p.order);
+    result.push({
+      id: pId,
+      familyId: null,
+      name: p.name,
+      type: 'transfer',
+      icon: p.icon,
+      color: p.color,
+      sortOrder: p.order,
+      isSystem: true,
+      parentId: null,
+      isDirectDefault: false,
+      isParentDefault: false,
+      displayOrder: null,
+      childrenCount: p.children.length
+    });
+
+    p.children.forEach(c => {
+      result.push({
+        id: getChildUuid('transfer', p.order, c.order),
+        familyId: null,
+        name: c.name,
+        type: 'transfer',
         icon: p.icon,
         color: p.color,
         sortOrder: c.order,
@@ -407,11 +482,12 @@ export async function prefetchCategories(familyId: string): Promise<void> {
 
 /**
  * 按 parent_id 组装树形结构
- * 返回 { expense: Tier1[], income: Tier1[] }
+ * 返回 { expense: Tier1[], income: Tier1[], transfer: Tier1[] }
  */
 export function buildCategoryTree(items: CategoryItem[]): {
   expense: CategoryTier1[];
   income: CategoryTier1[];
+  transfer: CategoryTier1[];
 } {
   const tier1Map = new Map<string, CategoryTier1>();
   const childrenMap = new Map<string, CategoryTier2[]>();
@@ -446,6 +522,7 @@ export function buildCategoryTree(items: CategoryItem[]): {
   // 组装
   const expense: CategoryTier1[] = [];
   const income: CategoryTier1[] = [];
+  const transfer: CategoryTier1[] = [];
 
   for (const [id, tier1] of tier1Map) {
     const children = childrenMap.get(id) || [];
@@ -455,12 +532,14 @@ export function buildCategoryTree(items: CategoryItem[]): {
     const rawItem = items.find(i => i.id === id);
     if (rawItem?.type === 'income') {
       income.push(tier1);
+    } else if (rawItem?.type === 'transfer') {
+      transfer.push(tier1);
     } else {
       expense.push(tier1);
     }
   }
 
-  return { expense, income };
+  return { expense, income, transfer };
 }
 
 /**
@@ -517,6 +596,14 @@ export function computeCategoriesSignature(items: CategoryItem[]): string {
 }
 
 /**
+ * 计算系统分类签名（仅 familyId === null）。
+ * 对齐服务端 categories_revision：仅覆盖系统分类，不纳入家庭自定义分类。
+ */
+export function computeSystemCategoriesSignature(items: CategoryItem[]): string {
+  return computeCategoriesSignature(items.filter(i => i.familyId === null));
+}
+
+/**
  * 将分类数组加载到内存缓存（每次 getCategories/refreshCategories 成功后自动调）
  * 供 getCategoryById / getCategoriesSync 使用
  *
@@ -554,9 +641,14 @@ export function getCategoriesSync(familyId: string): CategoryItem[] {
   return getFallbackItems();
 }
 
-/** 读取内存缓存当前签名（用于增量刷新比对） */
+/** 读取内存缓存当前全量签名（用于 UI 增量刷新比对） */
 export function getCachedCategoriesSignature(): string {
   return _cachedSignature;
+}
+
+/** 读取内存缓存当前系统分类签名（用于 sync categories_revision 比对） */
+export function getCachedSystemCategoriesSignature(): string {
+  return computeSystemCategoriesSignature(_cachedFlatItems);
 }
 
 /**
@@ -603,7 +695,7 @@ export function getCategoryNameById(categoryId: string | null): string {
  */
 export function buildDedupedSubCategories(
   items: CategoryItem[],
-  type: 'expense' | 'income',
+  type: 'expense' | 'income' | 'transfer',
 ): CategoryTier2[] {
   const seen = new Set<string>();
   const result: CategoryTier2[] = [];
