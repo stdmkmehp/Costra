@@ -12,6 +12,8 @@
 #   - 不复用 prod 的 costra-postgres，不加入 prod compose 网络，不暴露端口
 #   - 验证数据写入独立目录 /data/replay-pg/<db-slug>/pgsql
 #   - 通过 CPU / 内存限制降低对 prod 宿主机其他服务的干扰
+#   - 验证库使用约定的固定密码（VERIFY_PG_PW · 见下）：容器 --network none 完全隔离
+#     不暴露端口、不接 prod 网络 · 所以密码只是脚本间的约定值，不构成风险
 #
 # 用法：
 #   # 重放备份到默认验证库 costra_verify（隔离容器内）
@@ -47,6 +49,7 @@ REPLAY_CPUS="0.50"
 REPLAY_MEMORY="768m"
 REPLAY_PIDS_LIMIT="256"
 PG_USER="costra"
+# 验证库的固定密码来自 lib/common.sh: VERIFY_PG_PW（团队约定值 · 容器完全隔离）
 
 # --- 解析参数 ---
 while [[ $# -gt 0 ]]; do
@@ -114,7 +117,6 @@ fi
 # --- 校验 ---
 require_root
 require_cmd docker
-require_cmd openssl
 
 [[ -n "${BACKUP_FILE}" ]] || die "请指定备份文件路径 · 用法：./replay-db.sh /data/backups/xxx.sql(.gz) · 或 --list 查看可用备份"
 [[ -f "${BACKUP_FILE}" ]] || die "备份文件不存在：${BACKUP_FILE}"
@@ -140,7 +142,6 @@ DB_SLUG=${DB_SLUG%-}
 REPLAY_CONTAINER="costra-replay-pg-${DB_SLUG}"
 REPLAY_DIR="${REPLAY_BASE_DIR}/${DB_SLUG}"
 REPLAY_DATA_DIR="${REPLAY_DIR}/pgsql"
-REPLAY_PASSWORD=$(gen_password 24)
 
 # 防御性检查：只允许清理 replay 专用目录
 case "${REPLAY_DIR}" in
@@ -209,7 +210,7 @@ run_cmd docker run -d \
   --memory "${REPLAY_MEMORY}" \
   --pids-limit "${REPLAY_PIDS_LIMIT}" \
   -e POSTGRES_USER="${PG_USER}" \
-  -e POSTGRES_PASSWORD="${REPLAY_PASSWORD}" \
+  -e POSTGRES_PASSWORD="${VERIFY_PG_PW}" \
   -e POSTGRES_DB="${DB_VERIFY}" \
   -e TZ="Asia/Shanghai" \
   -v "${REPLAY_DATA_DIR}:/var/lib/postgresql/data" \
@@ -219,7 +220,7 @@ if [[ "${DRY_RUN}" != "1" ]]; then
   log_info "等待 PostgreSQL 就绪..."
   READY=0
   for _ in $(seq 1 30); do
-    if docker exec -e PGPASSWORD="${REPLAY_PASSWORD}" "${REPLAY_CONTAINER}" \
+    if docker exec "${REPLAY_CONTAINER}" \
       pg_isready -h 127.0.0.1 -U "${PG_USER}" -d "${DB_VERIFY}" >/dev/null 2>&1; then
       READY=1
       break
@@ -230,18 +231,18 @@ if [[ "${DRY_RUN}" != "1" ]]; then
   [[ "${READY}" == "1" ]] || die "隔离 PostgreSQL 容器启动超时 · 请检查 docker logs ${REPLAY_CONTAINER}"
 fi
 
-log_success "隔离容器已启动"
+log_success "隔离容器已启动（隔离 --network none · 密码=VERIFY_PG_PW）"
 
 # --- Step 3: 恢复备份 ---
 log_step "[3/5] 恢复备份到隔离容器（--single-transaction · 原子性）"
 
 if [[ "${BACKUP_FILE}" == *.sql.gz ]]; then
-  run_cmd bash -c "gzip -dc '${BACKUP_FILE}' | docker exec -i -e PGPASSWORD='${REPLAY_PASSWORD}' '${REPLAY_CONTAINER}' \
+  run_cmd bash -c "gzip -dc '${BACKUP_FILE}' | docker exec -i -e PGPASSWORD='${VERIFY_PG_PW}' '${REPLAY_CONTAINER}' \
     psql -h 127.0.0.1 -U '${PG_USER}' -d '${DB_VERIFY}' \
     --single-transaction \
     -v ON_ERROR_STOP=1"
 else
-  run_cmd bash -c "docker exec -i -e PGPASSWORD='${REPLAY_PASSWORD}' '${REPLAY_CONTAINER}' \
+  run_cmd bash -c "docker exec -i -e PGPASSWORD='${VERIFY_PG_PW}' '${REPLAY_CONTAINER}' \
     psql -h 127.0.0.1 -U '${PG_USER}' -d '${DB_VERIFY}' \
     --single-transaction \
     -v ON_ERROR_STOP=1 \
@@ -253,7 +254,7 @@ log_success "备份重放完成"
 # --- Step 4: 安装扩展 ---
 log_step "[4/5] 安装扩展（pgcrypto + citext）"
 
-run_cmd docker exec -e PGPASSWORD="${REPLAY_PASSWORD}" "${REPLAY_CONTAINER}" \
+run_cmd docker exec -e PGPASSWORD="${VERIFY_PG_PW}" "${REPLAY_CONTAINER}" \
   psql -h 127.0.0.1 -U "${PG_USER}" -d "${DB_VERIFY}" -c "
   CREATE EXTENSION IF NOT EXISTS pgcrypto;
   CREATE EXTENSION IF NOT EXISTS citext;
@@ -264,7 +265,7 @@ log_success "扩展已就绪"
 log_step "[5/5] 验证恢复结果"
 
 if [[ "${DRY_RUN}" != "1" ]]; then
-  TABLE_COUNT=$(docker exec -e PGPASSWORD="${REPLAY_PASSWORD}" "${REPLAY_CONTAINER}" \
+  TABLE_COUNT=$(docker exec -e PGPASSWORD="${VERIFY_PG_PW}" "${REPLAY_CONTAINER}" \
     psql -h 127.0.0.1 -U "${PG_USER}" -d "${DB_VERIFY}" -At -c "
       SELECT count(*) FROM pg_tables WHERE schemaname='public';
     " | tr -d ' \n')
@@ -276,13 +277,13 @@ if [[ "${DRY_RUN}" != "1" ]]; then
   fi
 
   log_info "已恢复的表："
-  { docker exec -e PGPASSWORD="${REPLAY_PASSWORD}" "${REPLAY_CONTAINER}" \
+  { docker exec -e PGPASSWORD="${VERIFY_PG_PW}" "${REPLAY_CONTAINER}" \
     psql -h 127.0.0.1 -U "${PG_USER}" -d "${DB_VERIFY}" -c '\dt' || true; } | head -25
 
   echo ""
   log_info "数据抽检："
   for tbl in users families ledgers entries; do
-    COUNT=$(docker exec -e PGPASSWORD="${REPLAY_PASSWORD}" "${REPLAY_CONTAINER}" \
+    COUNT=$(docker exec -e PGPASSWORD="${VERIFY_PG_PW}" "${REPLAY_CONTAINER}" \
       psql -h 127.0.0.1 -U "${PG_USER}" -d "${DB_VERIFY}" -At -c \
       "SELECT count(*) FROM ${tbl};" 2>/dev/null || echo "N/A")
     log_info "  ${tbl}: ${COUNT} rows"
@@ -298,8 +299,12 @@ log_success "隔离验证容器 ${REPLAY_CONTAINER} 已就绪 · 备份来源: $
 log_info "说明：该容器不属于 prod compose，不连接 costra_default，不暴露任何端口"
 
 echo ""
-log_info "连接验证库："
-log_info "  docker exec -it -e PGPASSWORD='${REPLAY_PASSWORD}' ${REPLAY_CONTAINER} psql -h 127.0.0.1 -U ${PG_USER} -d ${DB_VERIFY}"
+log_info "连接验证库（密码：${VERIFY_PG_PW}）："
+log_info "  docker exec -it -e PGPASSWORD='${VERIFY_PG_PW}' ${REPLAY_CONTAINER} psql -U ${PG_USER} -d ${DB_VERIFY}"
+echo ""
+log_info "对验证库执行 SQL 文件（推荐 · 密码自动注入）："
+log_info "  ./psql-exec.sh --target verify ./your-migration.sql"
+log_info "  ./psql-exec.sh --target verify ./your-backup.sql.gz"
 echo ""
 log_info "查看日志："
 log_info "  docker logs ${REPLAY_CONTAINER} --tail 100"

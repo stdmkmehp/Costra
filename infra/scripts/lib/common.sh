@@ -45,6 +45,11 @@ fi
 : "${COSTRA_COMPOSE_NET:=costra_default}"
 : "${COSTRA_DOMAIN:=costra.cloud}"
 
+# 验证库（replay-db.sh 拉起的隔离 PG 容器）的约定固定密码：
+# 容器 --network none 完全隔离 · 不暴露端口 · 不接 prod 网络
+# 这里只是脚本间共享的"团队约定值"，让 replay-db / psql-exec 走同一条命令路径
+: "${VERIFY_PG_PW:=costra-verify}"
+
 # --- 容器内进程 uid（修 redis 权限坑用）---
 readonly UID_REDIS=999
 readonly UID_POSTGRES=999
