@@ -26,6 +26,15 @@
 # 注：现有「支出·转账」(转账/还贷/垫付) 与新「转移」(transfer) 并存，语义不同：
 #     支出·转账 = 钱真转给别人/还贷算支出
 #     转移      = 钱仍是自己的，不计收支
+#
+# ⚠️ 二级分类「展开顺序」（运行时 sort_order）：
+#   本文件中各二级的 sort_order 仅为"结构基线"。运行时二级 sort_order 的最终顺序
+#   由 migration 0006_categories_sort_order_by_display.sql 按 display_order 派生重排：
+#     ① 父默认子置顶 ② 按 COALESCE(自身 display_order, 同名 canonical display_order) 升序
+#     ③ 无 display_order 的长尾按原 sort_order 垫底
+#   即"点开一级分类后展开的二级分类"高频在前、与全局展示区口径一致。
+#   详见 docs/design/categories-sort-order-by-display-spec.md。
+#   （类比：display_order 的最终值由 0004 Step E 重排，本文件 display_order 同为基线。）
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 支出分类（expense）

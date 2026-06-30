@@ -12,7 +12,12 @@ export interface FamilyItem {
   id: string;
   name: string;
   kind: 'personal' | 'shared';
-  role: 'owner' | 'member' | 'viewer';
+  /**
+   * 家庭所有者 user_id（契约事实源 · openapi.yaml Family.owner_id）。
+   * 注意：列表接口不下发 role 字段，判断"当前用户是否 owner"必须用 owner_id === 当前 user_id，
+   * 而非读取不存在的 role 字段（与 transferOwnership 同步维护，移交后即时一致）。
+   */
+  owner_id: string;
   ledger_id: string;
   ledger_name: string;
   member_count: number;

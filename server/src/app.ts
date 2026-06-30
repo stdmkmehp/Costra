@@ -4,7 +4,7 @@
  * 卡号：COSTRA-101 · 依据：ADR-0006 §2.1（已定 Fastify 5.x）
  *
  * buildApp() 负责：
- *   1. 构造 Fastify 实例（pino logger + trace_id）
+ *   1. 构造 Fastify 实例（pino + ISO 时间戳 + trace_id）
  *   2. 挂 CORS / sensible
  *   3. 注册 JWT 签发 / 校验 decorator
  *   4. 注册统一错误处理（setErrorHandler + setNotFoundHandler）
@@ -20,6 +20,7 @@ import cors from '@fastify/cors';
 import sensible from '@fastify/sensible';
 import multipart from '@fastify/multipart';
 import { randomUUID } from 'node:crypto';
+import { stdTimeFunctions } from 'pino';
 import { appEnv } from './config/env.js';
 import { registerErrorHandler } from './plugins/errorHandler.js';
 import { registerJwt } from './plugins/jwt.js';
@@ -49,7 +50,8 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
       ? false
       : {
           level: env.logLevel,
-          // 生产建议输出 JSON；开发可通过 pino-pretty 美化
+          // ISO 8601 时间戳替代 epoch 毫秒，人可直读（UTC，带 Z 后缀）
+          timestamp: stdTimeFunctions.isoTime,
         },
     // 每个请求生成 trace_id（作为 req.id 透传到日志 + 错误响应 trace_id 字段）
     genReqId: () => randomUUID(),

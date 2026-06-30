@@ -623,13 +623,17 @@ Page({
         }, 'preference-restore');
       }
 
+      // owner 判定统一走 owner_id === 当前用户（列表接口不下发 role 字段）。
+      // 与 _buildMultiDisplay 的成员级判定一致，避免切页后 summary 签名未变跳过 _buildMultiDisplay
+      // 时 isOwner 停留在错误值（旧实现读 targetFamily.role 恒为 undefined → 恒 false）。
+      const currentUserId = this._currentUserId || this._syncCurrentUserIdFromToken();
       this.setData({
         mode,
         familyId,
         familyName: mode === 'solo' ? (targetFamily.ledger_name || '个人账本') : targetFamily.name,
         familyKind: targetFamily.kind,
         familyList: families,
-        isOwner: targetFamily.role === 'owner',
+        isOwner: !!currentUserId && targetFamily.owner_id === currentUserId,
       });
 
       // 5. 加载 summary 数据
@@ -1624,11 +1628,12 @@ Page({
         }, 'family-switch');
 
         this._familyId = selected.id;
+        const currentUserId = this._currentUserId || this._syncCurrentUserIdFromToken();
         this.setData({
           familyId: selected.id,
           familyName: selected.name,
           familyKind: selected.kind,
-          isOwner: selected.role === 'owner',
+          isOwner: !!currentUserId && selected.owner_id === currentUserId,
           mode: selected.kind === 'shared' ? 'multi' : 'solo',
         });
         this._collapseAllRows();

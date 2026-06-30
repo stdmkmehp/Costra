@@ -19,7 +19,7 @@ const family = {
   id: 'family-1',
   name: '家庭账本',
   kind: 'shared' as const,
-  role: 'owner' as const,
+  owner_id: 'user-1',
   ledger_id: 'ledger-1',
   ledger_name: '家庭账本',
   member_count: 2,
