@@ -13,6 +13,7 @@ import { request } from '../../services/request';
 import { eventBus, EventNames, type ProfileUpdatedPayload } from '../../services/eventBus';
 import { getSafeAreaMetrics } from '../../utils/safeArea';
 import { getEnv } from '../../services/env';
+import { logger } from '../../utils/logger';
 
 /** 判断是否是微信临时路径，需要上传 */
 function isWxTempPath(url: string): boolean {
@@ -186,7 +187,7 @@ Page({
       wx.navigateBack();
       wx.showToast({ title: '保存成功', icon: 'success', duration: 1200 });
     } catch (e) {
-      console.warn('[profile-setup] save failed', e);
+      logger.warn('profile-setup', 'save failed', e);
       wx.showToast({ title: '保存失败，请重试', icon: 'none' });
     } finally {
       this.setData({ submitting: false });

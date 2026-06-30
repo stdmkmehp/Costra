@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Costra 一级分类图标 · v2（贴合设计规范）</title>
+<style>
+  :root {
+    /* —— Costra 设计规范色板 —— */
+    --bone: #f1f2ec;            /* 暖灰白 · 全局背景 */
+    --ink: #1c1b1a;             /* 油墨暖黑 */
+    --green: #07c160;           /* 微信品牌绿 */
+    --circle-bg: rgba(28, 27, 26, 0.06);   /* 未选中灰圆底（同 design_spec 6.2） */
+    --icon: rgba(28, 27, 26, 0.62);        /* 默认图标色 */
+    --label: rgba(28, 27, 26, 0.6);
+    --label-strong: #1c1b1a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "SF Pro Text", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bone);
+    color: var(--ink);
+    padding: 36px 16px 72px;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1 { font-size: 21px; font-weight: 600; letter-spacing: -0.3px; text-align: center; margin: 0 0 6px; }
+  .sub { text-align: center; color: rgba(28,27,26,0.42); font-size: 12.5px; margin-bottom: 32px; line-height: 1.6; }
+  .panel { max-width: 440px; margin: 0 auto 30px; }
+  .panel h2 {
+    font-size: 12px; color: rgba(28,27,26,0.42); font-weight: 600;
+    margin: 0 0 18px; text-align: center; letter-spacing: 1.2px;
+  }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); row-gap: 18px; }
+  .cell { display: flex; flex-direction: column; align-items: center; gap: 9px; }
+  .badge {
+    width: 58px; height: 58px; border-radius: 50%;
+    background: var(--circle-bg); color: var(--icon);
+    display: flex; align-items: center; justify-content: center;
+    transition: all .2s ease;
+  }
+  .badge svg { width: 28px; height: 28px; display: block; }
+  .label { font-size: 12px; color: var(--label); letter-spacing: .2px; }
+
+  /* 选中态 · 油墨暖黑（反转） */
+  .cell.sel-ink .badge { background: var(--ink); color: var(--bone); }
+  .cell.sel-ink .label { color: var(--label-strong); font-weight: 600; }
+  /* 选中态 · 微信绿 */
+  .cell.sel-green .badge { background: var(--green); color: #fff; }
+  .cell.sel-green .label { color: var(--green); font-weight: 600; }
+
+  .note {
+    max-width: 440px; margin: 8px auto 0; font-size: 12px;
+    color: rgba(28,27,26,0.46); line-height: 1.8;
+  }
+  .note code { background: rgba(28,27,26,0.06); padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+  .divider { max-width: 440px; margin: 4px auto 30px; height: 1px; background: rgba(28,27,26,0.08); }
+</style>
+</head>
+<body>
+  <h1>Costra 一级分类图标 · v3.5</h1>
+  <div class="sub">
+    线性单色 · 24×24 viewBox · 描边 1.5 · 圆角线帽<br/>
+    本版调整：全部图标整体放大（归一化目标 18 → 20）、仍等尺寸居中
+  </div>
+
+  <!-- 默认态 -->
+  <div class="panel">
+    <h2>默认态 · 灰圆 + 单色线性</h2>
+    <div class="grid" id="grid-normal"></div>
+  </div>
+  <div class="divider"></div>
+
+  <!-- 选中态 · 油墨黑 -->
+  <div class="panel">
+    <h2>选中态 · 油墨暖黑（反转）</h2>
+    <div class="grid" id="grid-ink"></div>
+  </div>
+  <div class="divider"></div>
+
+  <!-- 选中态 · 微信绿 -->
+  <div class="panel">
+    <h2>选中态 · 微信绿（备选强调色）</h2>
+    <div class="grid" id="grid-green"></div>
+  </div>
+
+  <div class="note">
+    说明：以上 14 个为 Costra 真实一级分类，全部 <b>手写矢量 SVG</b>，
+    <code>stroke="currentColor"</code> 单色，因此默认 / 选中（黑或绿）仅切换一个颜色变量即可，
+    与现有 <code>.is-selected</code> 机制无缝兼容。定稿后合成精简 <code>.ttf</code> base64 内联进小程序。
+  </div>
+
+<script>
+// 24x24 viewBox · 全部 stroke=currentColor · 线性单色
+const S = `fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"`;
+const ICONS = {
+  // ——— 支出 8 ———
+  '餐饮': `<g ${S}>
+    <path d="M6 3v4.4"/><path d="M8 3v4.7"/><path d="M10 3v4.4"/>
+    <path d="M6 7.3a2 2 0 0 0 4 0"/>
+    <path d="M8 7.7V21"/>
+    <path d="M16.4 3c-1.6 0-2.6 2.6-2.6 5.1 0 1.85 1.15 2.5 2.6 2.5s2.6-.65 2.6-2.5c0-2.5-1-5.1-2.6-5.1z"/>
+    <path d="M16.4 10.6V21"/></g>`,
+  '交通': `<g ${S}>
+    <rect x="5" y="3.5" width="14" height="15" rx="3"/><path d="M5 11.5h14"/>
+    <circle cx="8.4" cy="14.9" r="0.95"/><circle cx="15.6" cy="14.9" r="0.95"/>
+    <path d="M7.6 18.5v1.9"/><path d="M16.4 18.5v1.9"/></g>`,
+  '购物': `<g ${S}>
+    <path d="M4.6 7.8h14.8l-1.05 11.7a1.6 1.6 0 0 1-1.6 1.5H7.3a1.6 1.6 0 0 1-1.6-1.5L4.6 7.8z"/>
+    <path d="M8.2 8.2V6.1a3.8 3.8 0 0 1 7.6 0v2.1"/></g>`,
+  '生活': `<g ${S}>
+    <path d="M4.5 11 12 4.8l7.5 6.2"/>
+    <path d="M6.6 9.6v9.7a.9.9 0 0 0 .9.9h9a.9.9 0 0 0 .9-.9V9.6"/>
+    <path d="M10 20.2v-4.6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v4.6"/></g>`,
+  '旅行': `<g ${S}>
+    <path d="M20.4 4 3.2 11.8a.45.45 0 0 0 .03.85l6.7 2.25"/>
+    <path d="m9.93 14.9 2.25 6.7a.45.45 0 0 0 .85.03L20.4 4z"/>
+    <path d="M9.93 14.9 20.4 4z"/></g>`,
+  '文娱': `<g ${S}>
+    <path d="M8 7.5h8a5 5 0 0 1 4.95 4.25l.55 3.9a2.7 2.7 0 0 1-5.02 1.5l-.6-1.25a2.1 2.1 0 0 0-1.9-1.2H10.02a2.1 2.1 0 0 0-1.9 1.2l-.6 1.25a2.7 2.7 0 0 1-5.02-1.5l.55-3.9A5 5 0 0 1 8 7.5z"/>
+    <path d="M7 10.3v3.4"/><path d="M5.3 12h3.4"/>
+    <circle cx="16" cy="11.1" r="1" fill="currentColor" stroke="none"/>
+    <circle cx="18" cy="12.9" r="1" fill="currentColor" stroke="none"/></g>`,
+  '转账': `<g ${S}>
+    <path d="M4.5 8.2h12"/><path d="m13 4.9 3.5 3.3L13 11.6"/>
+    <path d="M19.5 15.8h-12"/><path d="M11 12.4 7.5 15.8 11 19.2"/></g>`,
+  '其他': `<g fill="currentColor" stroke="none">
+    <circle cx="6.4" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="17.6" cy="12" r="1.5"/></g>`,
+  // ——— 收入 3 ———
+  '职业收入': `<g ${S}>
+    <rect x="3.5" y="7.5" width="17" height="12.2" rx="2.4"/>
+    <path d="M8.6 7.5V6a2 2 0 0 1 2-2h2.8a2 2 0 0 1 2 2v1.5"/>
+    <path d="M3.5 12.4h17"/><path d="M10.8 12.4h2.4"/></g>`,
+  '投资与资产': `<g ${S}>
+    <path d="M4 16.6 9.5 11l3 3L20 6.4"/><path d="M15 6.4h5v5"/></g>`,
+  '意外收入': `<g ${S}>
+    <rect x="4" y="9" width="16" height="4" rx="1"/>
+    <path d="M5.3 13v6.6a1 1 0 0 0 1 1h11.4a1 1 0 0 0 1-1V13"/>
+    <path d="M12 9v11.6"/>
+    <path d="M12 9c0 0-1-4-3.2-3.7C7.2 5.5 7.6 8.2 9.3 8.8 10.4 9.1 12 9 12 9z"/>
+    <path d="M12 9c0 0 1-4 3.2-3.7C16.8 5.5 16.4 8.2 14.7 8.8 13.6 9.1 12 9 12 9z"/></g>`,
+  // ——— 转移 3 ———
+  '储值': `<g ${S}>
+    <rect x="3.5" y="6.5" width="17" height="12" rx="2.6"/>
+    <path d="M14.4 11.2h6.1v3.1h-6.1a1.55 1.55 0 0 1 0-3.1z"/>
+    <circle cx="16.6" cy="12.75" r="0.85" fill="currentColor" stroke="none"/></g>`,
+  '账户互转': `<g ${S}>
+    <path d="M5.4 11A6.6 6.6 0 0 1 17.2 7.6"/><path d="M13.4 7.4h4V3.4"/>
+    <path d="M18.6 13A6.6 6.6 0 0 1 6.8 16.4"/><path d="M10.6 16.6h-4v4"/></g>`,
+  '赊销': `<g ${S}>
+    <rect x="3.5" y="6" width="17" height="12" rx="2.4"/>
+    <path d="M3.5 9.8h17"/><path d="M6.6 14.5h3.2"/></g>`,
+};
+
+// 统一光学尺寸：测量每个图标几何包围盒，等比缩放并居中到同一目标方框，
+// 同时反向补偿 stroke-width，保证缩放后描边粗细仍然一致。
+const TARGET = 20;        // 目标最大边长（24 画布内，四周留 ~2 安全区）
+const BASE_STROKE = 1.5;  // 缩放后呈现的描边宽度
+function fit(g) {
+  const b = g.getBBox();
+  const s = TARGET / Math.max(b.width, b.height);
+  const tx = 12 - s * (b.x + b.width / 2);
+  const ty = 12 - s * (b.y + b.height / 2);
+  g.setAttribute('transform', `translate(${tx.toFixed(3)} ${ty.toFixed(3)}) scale(${s.toFixed(4)})`);
+  if (g.getAttribute('stroke') !== 'none') {
+    g.setAttribute('stroke-width', (BASE_STROKE / s).toFixed(3));
+  }
+}
+
+function render(id, klass) {
+  const grid = document.getElementById(id);
+  Object.entries(ICONS).forEach(([name, svg]) => {
+    const cell = document.createElement('div');
+    cell.className = 'cell' + (klass ? ' ' + klass : '');
+    cell.innerHTML = `<div class="badge"><svg viewBox="0 0 24 24">${svg}</svg></div><div class="label">${name}</div>`;
+    grid.appendChild(cell);
+    fit(cell.querySelector('svg > g'));
+  });
+}
+render('grid-normal', '');
+render('grid-ink', 'sel-ink');
+render('grid-green', 'sel-green');
+</script>
+</body>
+</html>

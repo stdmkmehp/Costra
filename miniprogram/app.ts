@@ -19,6 +19,7 @@ import { flushPendingPreference, getActiveFamilyId } from './services/family';
 import { prefetchCategories } from './services/categoryService';
 import { scheduleHomeDataPrefetchAfterLedgerReady } from './services/prefetch';
 import { captureNetworkType, markPerf, resetPerfSession, setPerfContext } from './services/perf';
+import { logger } from './utils/logger';
 
 interface AppGlobalData {
   env: ReturnType<typeof getEnv>;
@@ -88,7 +89,7 @@ App<AppOption>({
     resetPerfSession(this.globalData.bootAt);
     setPerfContext({ appEnv: this.globalData.env.name, launch: 'cold' });
     captureNetworkType();
-    console.info('[Costra] onLaunch env=', this.globalData.env.name);
+    logger.info('Costra', 'onLaunch', { env: this.globalData.env.name });
 
     // COSTRA-901: 隐私授权回调不在此处全局注册。
     // chooseAvatar/nickname 仅在 profile-setup 页面使用，弹窗由该页面的 privacy-popup 组件自行处理。
@@ -100,7 +101,7 @@ App<AppOption>({
     // globalData 与小程序实例同生命周期，不受 storage 版本清除影响
     const inviteToken = options?.query?.token as string | undefined;
     if (inviteToken) {
-      console.info('[Costra] onLaunch invite_token detected');
+      logger.info('Costra', 'onLaunch invite_token detected');
       this.globalData.pendingInviteToken = inviteToken;
     }
 
@@ -159,7 +160,7 @@ App<AppOption>({
       }
     })().catch((err) => {
       markPerf('app.bootstrap.failed', { error: err instanceof Error ? err.message : String(err) });
-      console.error('[Costra] bootstrap failed', err);
+      logger.error('Costra', 'bootstrap failed', err);
       try { wx.reLaunch({ url: '/pages/login/index' }); } catch { /* noop */ }
     });
 
@@ -179,7 +180,7 @@ App<AppOption>({
           // services/auth 负责静默续签，失败时兜底跳 login
           // COSTRA-030 Round-2 修复：原为 (token as any).refresh?.()，方法名错误且永远 undefined
           void token.refreshFn().catch((err) => {
-            console.warn('[Costra] token refresh failed, fallback to login', err);
+            logger.warn('Costra', 'token refresh failed, fallback to login', err);
             try { wx.reLaunch({ url: '/pages/login/index' }); } catch { /* noop */ }
           });
         }
@@ -197,6 +198,6 @@ App<AppOption>({
   },
 
   onError(msg: string) {
-    console.error('[Costra] App.onError', msg);
+    logger.error('Costra', 'App.onError', msg);
   },
 });

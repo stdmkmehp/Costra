@@ -96,6 +96,13 @@ services:
           memory: 1G
           cpus: '1.0'
 
+    # 日志轮转（postgres 日志走 stderr → docker · 补 max-size 上限防膨胀 · 与 server/nginx 一致）
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "5"
+
   # ===========================================================================
   # Redis 7 · 有状态 · AOF 持久化到 /data/redis
   # ===========================================================================
@@ -131,8 +138,7 @@ services:
       - "0.0.0.0"
       - "--protected-mode"
       - "yes"
-      - "--logfile"
-      - "/var/log/redis/redis.log"
+      # 不再写 --logfile（文件无 logrotate 会无限膨胀）· 默认输出 stdout 交 docker json-file 轮转
 
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PW}", "--no-auth-warning", "ping"]
@@ -146,6 +152,13 @@ services:
         limits:
           memory: 768M
           cpus: '0.5'
+
+    # 日志轮转（redis 日志改走 stdout → docker · 与 server/nginx 一致）
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "5"
 
   # ===========================================================================
   # Costra Server · 无状态 · 自构建镜像（server/Dockerfile）

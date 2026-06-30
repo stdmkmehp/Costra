@@ -10,7 +10,7 @@
 //
 // 设计原则：
 //   - fire-and-forget：调用方不应等待，全部静默失败
-//   - 不阻塞主流程：异常仅 console.warn，不影响首屏跳转、登录跳转
+//   - 不阻塞主流程：异常仅 logger.warn，不影响首屏跳转、登录跳转
 //   - 仅当月：年度数据切换概率低，省一次请求；用户切到年度时再走原 loading 路径
 //   - 仅 active family：N>1 账本时切账本会自然触发新预热，不浪费流量
 //
@@ -23,6 +23,7 @@ import { getMonthlyStatistics } from './statisticsApi';
 import { getFamilySummary } from './familyApi';
 import { getUserOverview } from './userOverviewApi';
 import { eventBus, EventNames } from './eventBus';
+import { logger } from '../utils/logger';
 import { markPerf, markPerfError } from './perf';
 import { buildMonthlyView } from '../pages/statistics/viewModels';
 import type { MonthlyView } from '../pages/statistics/types';
@@ -136,20 +137,20 @@ export async function prefetchHomeData(): Promise<void> {
       };
       markPerf('prefetch.monthly-view.ready', { familyId, month });
     }).catch((err) => {
-      console.warn('[prefetch] monthly statistics failed', err);
+      logger.warn('prefetch', 'monthly statistics failed', err);
     });
     const summaryTask = getFamilySummary(familyId, { month }, { topN: 20 }).catch((err) => {
-      console.warn('[prefetch] family summary failed', err);
+      logger.warn('prefetch', 'family summary failed', err);
     });
     const overviewTask = getUserOverview().catch((err) => {
-      console.warn('[prefetch] user overview failed', err);
+      logger.warn('prefetch', 'user overview failed', err);
     });
     await Promise.allSettled([monthlyTask, summaryTask, overviewTask]);
     markPerf('prefetch.after-ledger.done', { familyId, month });
   } catch (err) {
     // getActiveFamilyId() 自身出错（storage 异常等）· 静默
     markPerfError('prefetch.after-ledger.failed', err);
-    console.warn('[prefetch] home data skipped', err);
+    logger.warn('prefetch', 'home data skipped', err);
   }
 }
 

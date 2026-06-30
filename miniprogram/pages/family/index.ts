@@ -42,6 +42,7 @@ import {
 } from '../../services/familyApi';
 import type { ApiError } from '../../services/request';
 import { mapError } from '../../utils/error-mapper';
+import { logger } from '../../utils/logger';
 
 /** 跨页跳转统计页动作（COSTRA-302 写入 · COSTRA-303 消费） */
 export interface PendingStatisticsAction {
@@ -639,7 +640,7 @@ Page({
       // 5. 加载 summary 数据
       await this._loadSummary(familyId, { preserveExistingView: preserveSummary });
     } catch (err) {
-      console.error('[family] loadPage failed', err);
+      logger.error('family', 'loadPage failed', err);
 
       // P0-2: 403 / FAMILY_NOT_MEMBER 专门处理（COSTRA-223 R1.x.1）
       const apiErr = err as ApiError;
@@ -723,7 +724,7 @@ Page({
       const summary = await getFamilySummary(familyId, scope, { topN: L1_VISIBLE });
       this._applySummary(summary);
     } catch (err) {
-      console.error('[family] loadSummary failed', err);
+      logger.error('family', 'loadSummary failed', err);
 
       // P0-2: 403 / FAMILY_NOT_MEMBER 专门处理（COSTRA-223 R1.x.1）
       const apiErr = err as ApiError;
@@ -1182,7 +1183,7 @@ Page({
     try {
       await revokeInvite(familyId, inviteId);
     } catch (err) {
-      console.error('[family] revokeInvite failed', err);
+      logger.error('family', 'revokeInvite failed', err);
     }
   },
 
@@ -1212,7 +1213,7 @@ Page({
     } catch (err) {
       if (prepareSeq !== this._invitePrepareSeq || !this.data.inviteOverlayVisible) return;
 
-      console.error('[family] createInvite failed', err);
+      logger.error('family', 'createInvite failed', err);
       const mapped = mapError(err as ApiError);
       this.setData({
         invitePreparing: false,
@@ -1332,7 +1333,7 @@ Page({
           // 刷新页面数据
           await this._loadSummary(this._familyId);
         } catch (err) {
-          console.error('[family] removeMember failed', err);
+          logger.error('family', 'removeMember failed', err);
           wx.showToast({ title: '移出失败', icon: 'none' });
         }
       },
@@ -1368,7 +1369,7 @@ Page({
             },
           });
         } catch (err) {
-          console.error('[family] leaveFamily failed', err);
+          logger.error('family', 'leaveFamily failed', err);
           const mapped = mapError(err as ApiError);
           wx.showToast({ title: mapped.desc || '退出失败', icon: 'none' });
         }
@@ -1397,7 +1398,7 @@ Page({
           wx.showToast({ title: '已解散', icon: 'success' });
           await this._fallbackToPersonalAndExit();
         } catch (err) {
-          console.error('[family] dissolveFamily failed', err);
+          logger.error('family', 'dissolveFamily failed', err);
           const mapped = mapError(err as ApiError);
           wx.showToast({ title: mapped.desc || '解散失败', icon: 'none' });
         }
@@ -1498,7 +1499,7 @@ Page({
       invalidateFamilyCache(this._familyId);
       wx.showToast({ title: '已修改', icon: 'success' });
     } catch (err) {
-      console.error('[family] renameFamily failed', err);
+      logger.error('family', 'renameFamily failed', err);
       const apiErr = err as ApiError;
       // VERSION_CONFLICT：本地 version 过期，静默刷新后自动重试一次
       if (apiErr.code === 'VERSION_CONFLICT') {
@@ -1587,7 +1588,7 @@ Page({
       wx.showToast({ title: '创建成功', icon: 'success' });
       await this._loadPage();
     } catch (err) {
-      console.error('[family] createFamily failed', err);
+      logger.error('family', 'createFamily failed', err);
       this.setData({ createFamilyLoading: false, createFamilyError: '创建失败，请重试' });
     }
   },

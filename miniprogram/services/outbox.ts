@@ -10,6 +10,7 @@
 //   6. index = 待 drain 的 seq 列表 · drained = 已 drain 未 ack 的 seq
 
 import { getItem, setItem, removeItem } from './storage';
+import { logger } from '../utils/logger';
 import { eventBus, EventNames } from './eventBus';
 import { getEntry, putEntry } from './db';
 
@@ -113,7 +114,7 @@ async function readDeadLetter(): Promise<SyncOp[]> {
 }
 
 async function moveToDeadLetter(op: SyncOp, seq: number): Promise<void> {
-  console.error(`[outbox:dead-letter] ✗ op=${op.op} ref=${op.client_ref_id} base_version=${op.base_version} retries=${op.retries} seq=${seq} → DATA LOSS RISK`);
+  logger.error('outbox:dead-letter', `✗ op=${op.op} ref=${op.client_ref_id} base_version=${op.base_version} retries=${op.retries} seq=${seq} → DATA LOSS RISK`, op.payload);
   const dl = await readDeadLetter();
   dl.push(op);
   await setItem(DEAD_LETTER_KEY, dl);
@@ -154,7 +155,7 @@ export async function enqueue(
         Object.assign(pending.payload, op.payload);
         pending.idempotency_key = newIdemKey(); // 合并后换新 key
         await setItem(opKey(pending.seq), pending);
-        console.log(`[outbox:enqueue] MERGED update into pending create · ref=${op.client_ref_id} seq=${pending.seq}`);
+        logger.debug('outbox:enqueue', `MERGED update into pending create · ref=${op.client_ref_id} seq=${pending.seq}`);
         eventBus.emit(EventNames.OUTBOX_ENQUEUED);
         return;
       }
@@ -163,7 +164,7 @@ export async function enqueue(
         await removeItem(opKey(pending.seq));
         const idx = await readIndex();
         await writeIndex(idx.filter(s => s !== pending.seq));
-        console.log(`[outbox:enqueue] CANCELLED create+delete · ref=${op.client_ref_id} seq=${pending.seq} removed`);
+        logger.debug('outbox:enqueue', `CANCELLED create+delete · ref=${op.client_ref_id} seq=${pending.seq} removed`);
         // 不 emit：抵消操作不需要触发同步
         return;
       }
@@ -172,7 +173,7 @@ export async function enqueue(
         Object.assign(pending.payload, op.payload);
         pending.idempotency_key = newIdemKey();
         await setItem(opKey(pending.seq), pending);
-        console.log(`[outbox:enqueue] MERGED update into pending update · ref=${op.client_ref_id} seq=${pending.seq}`);
+        logger.debug('outbox:enqueue', `MERGED update into pending update · ref=${op.client_ref_id} seq=${pending.seq}`);
         eventBus.emit(EventNames.OUTBOX_ENQUEUED);
         return;
       }
@@ -182,7 +183,7 @@ export async function enqueue(
         pending.payload = {};
         pending.idempotency_key = newIdemKey();
         await setItem(opKey(pending.seq), pending);
-        console.log(`[outbox:enqueue] REPLACED update with delete · ref=${op.client_ref_id} seq=${pending.seq}`);
+        logger.debug('outbox:enqueue', `REPLACED update with delete · ref=${op.client_ref_id} seq=${pending.seq}`);
         eventBus.emit(EventNames.OUTBOX_ENQUEUED);
         return;
       }
@@ -208,7 +209,7 @@ export async function enqueue(
   const uniqueSeqs = [...new Set([...idx, seq])];
   await writeIndex(uniqueSeqs);
 
-  console.log(`[outbox:enqueue] op=${op.op} entity=${op.entity} ref=${op.client_ref_id} base_version=${op.base_version} seq=${seq} idem=${idempotencyKey} index_size=${uniqueSeqs.length}`);
+  logger.info('outbox:enqueue', `op=${op.op} entity=${op.entity} ref=${op.client_ref_id} base_version=${op.base_version} seq=${seq} idem=${idempotencyKey} index_size=${uniqueSeqs.length}`, op.payload);
   eventBus.emit(EventNames.OUTBOX_ENQUEUED);
 }
 
@@ -229,14 +230,14 @@ export async function drainBatch(
 
   // ─── 防御性 recover 分支：drained 残留 = 异常中断遗留 ──────────────────
   if (drained.length > 0) {
-    console.warn(`[outbox:drainBatch] ⚠️ RECOVER · drained residue: count=${drained.length} seqs=[${drained.join(',')}]`);
+    logger.warn('outbox:drainBatch', `⚠️ RECOVER · drained residue: count=${drained.length} seqs=[${drained.join(',')}]`);
     for (const seq of drained) {
       const op = await getItem<SyncOp>(opKey(seq));
       if (!op) {
         pendingDrained = pendingDrained.filter(s => s !== seq);
         continue;
       }
-      console.log(`[outbox:drainBatch] recover · seq=${seq} op=${op.op} ref=${op.client_ref_id} retries=${op.retries}`);
+      logger.debug('outbox:drainBatch', `recover · seq=${seq} op=${op.op} ref=${op.client_ref_id} retries=${op.retries}`);
       pendingDrained = pendingDrained.filter(s => s !== seq);
       currentIdx = currentIdx.filter(s => s !== seq);
       op.next_retry_at = now + 1;
@@ -274,7 +275,7 @@ export async function drainBatch(
   const remaining = currentIdx.filter(s => !drainedList.includes(s));
   await writeIndex(remaining);
 
-  console.log(`[outbox:drainBatch] drained · batchKey=${batchKey} count=${batch.length} ops=[${batch.map(o => `${o.op}:${o.client_ref_id}:v${o.base_version}`).join(', ')}]`);
+  logger.debug('outbox:drainBatch', `drained · batchKey=${batchKey} count=${batch.length} ops=[${batch.map(o => `${o.op}:${o.client_ref_id}:v${o.base_version}`).join(', ')}]`);
   return { batch, batchKey };
 }
 
@@ -287,7 +288,7 @@ export async function ackResultsBySeq(
   batchKey: string,
   seqResultPairs: Array<{ seq: number; result: PushResultItem }>
 ): Promise<void> {
-  console.log(`[outbox:ackResults] batchKey=${batchKey} pairs=${seqResultPairs.length} statuses=[${seqResultPairs.map(p => `${p.result.status}`).join(',')}]`);
+  logger.debug('outbox:ackResults', `batchKey=${batchKey} pairs=${seqResultPairs.length} statuses=[${seqResultPairs.map(p => `${p.result.status}`).join(',')}]`);
 
   // 清理本 batch 的 drained 记录
   const allDrained = await readDrained();
@@ -299,7 +300,7 @@ export async function ackResultsBySeq(
     if (!op) continue;
 
     if (result.status === 'ok') {
-      console.log(`[outbox:ackResults] ✓ OK · seq=${seq} op=${op.op} ref=${op.client_ref_id} server_id=${result.server_id} server_version=${result.server_version} → removed`);
+      logger.info('outbox:ackResults', `✓ OK · seq=${seq} op=${op.op} ref=${op.client_ref_id} server_id=${result.server_id} server_version=${result.server_version} → removed`);
       // 立即回写 server_id/version 到本地 entry（不等 pull 回填）
       if (result.server_id || result.server_version != null) {
         const entry = await getEntry(op.client_ref_id);
@@ -307,9 +308,9 @@ export async function ackResultsBySeq(
           if (result.server_id) entry.id = result.server_id;
           if (result.server_version != null) entry.version = result.server_version;
           await putEntry(entry);
-          console.log(`[outbox:ackResults] ✓ version written · ref=${op.client_ref_id} version=${entry.version}`);
+          logger.info('outbox:ackResults', `✓ version written · ref=${op.client_ref_id} version=${entry.version}`);
         } else {
-          console.warn(`[outbox:ackResults] ⚠️ entry not found for version write · ref=${op.client_ref_id}`);
+          logger.warn('outbox:ackResults', `⚠️ entry not found for version write · ref=${op.client_ref_id}`);
         }
       }
       await removeItem(opKey(seq));
@@ -322,12 +323,12 @@ export async function ackResultsBySeq(
       const newIdx = await readIndex();
       if (!newIdx.includes(seq)) newIdx.push(seq);
       await writeIndex(newIdx);
-      console.warn(`[outbox:ackResults] ⚠️ CONFLICT · seq=${seq} op=${op.op} ref=${op.client_ref_id} base_version=${op.base_version} server_version=${result.server_version} retries=${op.retries} next_retry_in=${computeRetryBackoff(op.retries)}ms → re-index`);
+      logger.warn('outbox:ackResults', `⚠️ CONFLICT · seq=${seq} op=${op.op} ref=${op.client_ref_id} base_version=${op.base_version} server_version=${result.server_version} retries=${op.retries} next_retry_in=${computeRetryBackoff(op.retries)}ms → re-index`);
     } else {
       // rejected
       const code = result.error?.code;
       if (code === 'NOT_FOUND' || code === 'PERMISSION_DENIED') {
-        console.warn(`[outbox:ackResults] ✗ REJECTED(${code}) · seq=${seq} op=${op.op} ref=${op.client_ref_id} → permanently removed`);
+        logger.warn('outbox:ackResults', `✗ REJECTED(${code}) · seq=${seq} op=${op.op} ref=${op.client_ref_id} → permanently removed`);
         await removeItem(opKey(seq));
       } else {
         // 可重试的 rejected（如 INVALID_ARGUMENT: base_version null → 下次刷新后可恢复）
@@ -338,13 +339,13 @@ export async function ackResultsBySeq(
         const newIdx = await readIndex();
         if (!newIdx.includes(seq)) newIdx.push(seq);
         await writeIndex(newIdx);
-        console.warn(`[outbox:ackResults] ⚠️ REJECTED(${code}) · seq=${seq} op=${op.op} ref=${op.client_ref_id} base_version=${op.base_version} msg="${result.error?.message}" retries=${op.retries} next_retry_in=${computeRetryBackoff(op.retries)}ms → re-index`);
+        logger.warn('outbox:ackResults', `⚠️ REJECTED(${code}) · seq=${seq} op=${op.op} ref=${op.client_ref_id} base_version=${op.base_version} msg="${result.error?.message}" retries=${op.retries} next_retry_in=${computeRetryBackoff(op.retries)}ms → re-index`);
       }
     }
   }
 
   await writeDrained(otherDrained);
-  console.log(`[outbox:ackResults] done · remaining_drained=${otherDrained.length}`);
+  logger.debug('outbox:ackResults', `done · remaining_drained=${otherDrained.length}`);
 }
 
 /**
@@ -364,7 +365,7 @@ export async function ackBatchFailure(batchKey: string): Promise<number> {
     }
   }
 
-  console.warn(`[outbox:ackBatchFailure] batchKey=${batchKey} thisBatch=${thisBatchSeqs.length} otherDrained=${otherDrained.length}`);
+  logger.warn('outbox:ackBatchFailure', `batchKey=${batchKey} thisBatch=${thisBatchSeqs.length} otherDrained=${otherDrained.length}`);
   await writeDrained(otherDrained);
 
   if (thisBatchSeqs.length === 0) return 0;
@@ -385,7 +386,7 @@ export async function ackBatchFailure(batchKey: string): Promise<number> {
     await setItem(opKey(seq), op);
     if (!newIdx.includes(seq)) newIdx.push(seq);
     recovered++;
-    console.warn(`[outbox:ackBatchFailure] ↻ RECOVER · seq=${seq} op=${op.op} ref=${op.client_ref_id} retries=${op.retries} next_retry_in=${computeRetryBackoff(op.retries)}ms → re-index`);
+    logger.warn('outbox:ackBatchFailure', `↻ RECOVER · seq=${seq} op=${op.op} ref=${op.client_ref_id} retries=${op.retries} next_retry_in=${computeRetryBackoff(op.retries)}ms → re-index`);
   }
   await writeIndex(newIdx);
   return recovered;

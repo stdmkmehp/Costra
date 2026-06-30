@@ -2,6 +2,7 @@
 // 重构: 移除 dirty 字段 + 添加 wireToEntry 字段映射 + 简化 applyServerChanges
 
 import { getItem, setItem } from './storage';
+import { logger } from '../utils/logger';
 
 export interface Entry {
   id?: string;                  // 服务端 UUID v7（push 成功后回写）
@@ -407,7 +408,7 @@ export async function getWatermark(familyId: string): Promise<number> {
     return v;
   }
   if (typeof v === 'string') {
-    console.warn('[db] legacy ISO watermark detected, resetting to 0', { familyId });
+    logger.warn('db', 'legacy ISO watermark detected, resetting to 0', { familyId });
     await setItem<number>(watermarkKey(familyId), 0);
     return 0;
   }
@@ -416,7 +417,7 @@ export async function getWatermark(familyId: string): Promise<number> {
 
 export async function setWatermark(familyId: string, watermark: number): Promise<void> {
   if (!Number.isInteger(watermark) || watermark < 0) {
-    console.warn('[db] invalid watermark · ignored', { familyId, watermark });
+    logger.warn('db', 'invalid watermark · ignored', { familyId, watermark });
     return;
   }
   await setItem<number>(watermarkKey(familyId), watermark);

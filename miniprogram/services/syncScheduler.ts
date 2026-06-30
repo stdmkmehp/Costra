@@ -12,6 +12,7 @@ import { getActiveFamilyId as familyContextGetActiveFamilyId } from './family';
 import { eventBus, EventNames, type SyncDonePayload } from './eventBus';
 import { deadLetterSize } from './outbox';
 import { markPerf, markPerfError } from './perf';
+import { logger } from '../utils/logger';
 
 // ─── 类型 ─────────────────────────────────────────────────────────────────────
 
@@ -47,7 +48,7 @@ let conflictRetryCount = 0;
 
 export async function syncOnce(trigger: TriggerSource): Promise<SyncResult | null> {
   if (isRunning) {
-    console.log(`[sync] skip · already running (trigger=${trigger}) → pending retrigger`);
+    logger.debug('sync', `skip · already running (trigger=${trigger}) → pending retrigger`);
     pendingRetrigger = true;
     return null;
   }
@@ -55,18 +56,18 @@ export async function syncOnce(trigger: TriggerSource): Promise<SyncResult | nul
   isRunning = true;
   const t0 = Date.now();
   markPerf(`sync.${trigger}.start`);
-  console.log(`[sync] ▶ start · trigger=${trigger}`);
+  logger.debug('sync', `▶ start · trigger=${trigger}`);
   try {
     if (!isLoggedIn()) {
       markPerf(`sync.${trigger}.done`, { skipped: 'not-logged-in' });
-      console.log(`[sync] skip · not logged in (trigger=${trigger})`);
+      logger.debug('sync', `skip · not logged in (trigger=${trigger})`);
       return null;
     }
 
     const familyId = await familyContextGetActiveFamilyId();
     if (!familyId) {
       markPerf(`sync.${trigger}.done`, { skipped: 'no-family' });
-      console.log(`[sync] skip · no active family (trigger=${trigger})`);
+      logger.debug('sync', `skip · no active family (trigger=${trigger})`);
       return null;
     }
 
@@ -84,14 +85,15 @@ export async function syncOnce(trigger: TriggerSource): Promise<SyncResult | nul
       rejected: pushResult.rejected,
       failed: pushResult.failed,
     });
-    console.log(
-      `[sync] ✓ ok · pushed=${pushResult.pushed} conflicts=${pushResult.conflicts} rejected=${pushResult.rejected} failed=${pushResult.failed} pulled=${pulled} watermark=${pullResult.watermark} (trigger=${trigger}) [${elapsed}ms]`
+    logger.debug(
+      'sync',
+      `✓ ok · pushed=${pushResult.pushed} conflicts=${pushResult.conflicts} rejected=${pushResult.rejected} failed=${pushResult.failed} pulled=${pulled} watermark=${pullResult.watermark} (trigger=${trigger}) [${elapsed}ms]`
     );
 
     // L7: dead-letter 告警（有条目无法同步时醒目提示）
     const dlSize = await deadLetterSize();
     if (dlSize > 0) {
-      console.error(`[sync] ⚠️ DEAD_LETTER: ${dlSize} ops permanently failed · data may be lost · check outbox:__dead_letter`);
+      logger.error('sync', `⚠️ DEAD_LETTER: ${dlSize} ops permanently failed · data may be lost · check outbox:__dead_letter`);
     }
 
     // 仅在有数据变化时广播 SYNC_DONE，避免空 sync（最常见的 periodic 心跳）触发无意义的 UI 刷新
@@ -115,7 +117,7 @@ export async function syncOnce(trigger: TriggerSource): Promise<SyncResult | nul
     if (pushResult.conflicts > 0 || pushResult.rejected > 0) {
       if (conflictRetryCount < MAX_CONFLICT_RETRIES) {
         conflictRetryCount++;
-        console.log(`[sync] conflict-retry scheduled · attempt=${conflictRetryCount}/${MAX_CONFLICT_RETRIES} · in ${CONFLICT_RETRY_DELAY_MS}ms`);
+        logger.warn('sync', `conflict-retry scheduled · attempt=${conflictRetryCount}/${MAX_CONFLICT_RETRIES} · in ${CONFLICT_RETRY_DELAY_MS}ms`);
         if (conflictRetryTimer) clearTimeout(conflictRetryTimer);
         conflictRetryTimer = setTimeout(() => {
           conflictRetryTimer = null;
@@ -123,7 +125,7 @@ export async function syncOnce(trigger: TriggerSource): Promise<SyncResult | nul
         }, CONFLICT_RETRY_DELAY_MS);
       } else {
         // 达到最大重试次数 · 停止重试 + 强制广播让 UI 刷新到当前最终态
-        console.warn(`[sync] conflict-retry exhausted (${MAX_CONFLICT_RETRIES} attempts) · giving up · forcing UI refresh`);
+        logger.warn('sync', `conflict-retry exhausted (${MAX_CONFLICT_RETRIES} attempts) · giving up · forcing UI refresh`);
         conflictRetryCount = 0;
         if (conflictRetryTimer) {
           clearTimeout(conflictRetryTimer);
@@ -139,7 +141,7 @@ export async function syncOnce(trigger: TriggerSource): Promise<SyncResult | nul
       }
     } else if (trigger === 'conflict-retry') {
       // conflict-retry 触发但本次已无冲突 → 冲突已解决，重置计数器 + 确保 UI 刷新
-      console.log('[sync] conflict-retry resolved · conflicts cleared');
+      logger.debug('sync', 'conflict-retry resolved · conflicts cleared');
       conflictRetryCount = 0;
       // 如果上面的 SYNC_DONE 已经 emit（pushed>0 || pulled>0），则无需重复；否则补一次
       if (pushResult.pushed === 0 && pulled === 0) {
@@ -164,7 +166,7 @@ export async function syncOnce(trigger: TriggerSource): Promise<SyncResult | nul
   } catch (e: any) {
     const elapsed = Date.now() - t0;
     markPerfError(`sync.${trigger}.failed`, e, { elapsed });
-    console.warn(`[sync] ✗ fail · ${e?.code || 'unknown'} ${e?.message || e} (trigger=${trigger}) [${elapsed}ms]`);
+    logger.warn('sync', `✗ fail · ${e?.code || 'unknown'} ${e?.message || e} (trigger=${trigger}) [${elapsed}ms]`);
     return null;
   } finally {
     isRunning = false;
@@ -199,7 +201,7 @@ export function startScheduler(ready?: Promise<void>): void {
 
   wx.onNetworkStatusChange((res: { isConnected: boolean }) => {
     if (res.isConnected) {
-      console.log('[sync] network recover · trigger sync');
+      logger.debug('sync', 'network recover · trigger sync');
       syncOnce('network-recover');
     }
   });
@@ -230,7 +232,7 @@ export function stopScheduler(): void {
 export function triggerOnPageShow(pageName: string): void {
   const now = Date.now();
   if (now - lastShowTriggerAt < SHOW_DEBOUNCE_MS) {
-    console.log(`[sync] skip page-show · debounced (page=${pageName})`);
+    logger.debug('sync', `skip page-show · debounced (page=${pageName})`);
     return;
   }
   lastShowTriggerAt = now;

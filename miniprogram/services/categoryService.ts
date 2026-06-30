@@ -7,6 +7,7 @@
 import { request } from './request';
 import { getItem, setItem } from './storage';
 import { eventBus, EventNames } from './eventBus';
+import { logger } from '../utils/logger';
 
 // ─── 类型定义 ──────────────────────────────────────────────────────────────────
 
@@ -421,7 +422,7 @@ export async function getCategories(familyId: string): Promise<CategoryItem[]> {
     return await refreshCategories(familyId);
   } catch {
     // 3. API 也失败 → 用 fallback
-    console.warn('[categoryService] API failed, using fallback data');
+    logger.warn('categoryService', 'API failed, using fallback data');
     const fallback = getFallbackItems();
     warmUpMemoryCache(familyId, fallback);
     return fallback;

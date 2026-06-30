@@ -9,6 +9,7 @@ import { getEnv } from './env';
 import { setItem, getItem, removeItem } from './storage';
 import { request } from './request';
 import { setActiveFamily, getActiveFamilyId, getActiveLedgerId, fetchAndRestorePreference, restoreActiveFamilyAfterLogin, flushPendingPreference } from './family';
+import { logger } from '../utils/logger';
 
 const TOKEN_KEY = '__costra_token_v1';
 const REFRESH_WINDOW_MS = 5 * 60 * 1000; // 距过期 < 5 分钟触发续签
@@ -102,7 +103,7 @@ export async function initAuth(): Promise<void> {
       await flushPendingPreference();
       return;
     } catch (e) {
-      console.warn('[auth] initAuth refresh expired access failed', e);
+      logger.warn('auth', 'initAuth refresh expired access failed', e);
       await clearToken();
       current = null;
       return;
@@ -212,7 +213,7 @@ export async function logout(): Promise<void> {
       });
     } catch (e) {
       // 吞错：退出本地即可，服务端幂等由 /auth/logout 保证
-      console.warn('[auth] logout remote call failed, continue local clean', e);
+      logger.warn('auth', 'logout remote call failed, continue local clean', e);
     }
   }
 
@@ -240,7 +241,7 @@ export async function doWxLogin(): Promise<Token> {
 
   const { code } = await wxLoginAsync();
   // P0-1 敏感值红线：不记录 code 任何片段（长度仅用于排障）
-  console.info('[auth] wx.login ok', { codeLen: code.length });
+  logger.info('auth', 'wx.login ok', { codeLen: code.length });
 
   if (env.mockLogin) {
     const mock = mockExchange(code);
@@ -257,7 +258,7 @@ export async function doWxLogin(): Promise<Token> {
     syncGlobalActiveLedgerId(restoredMock.ledger_id);
     await flushPendingPreference();
 
-    console.info('[auth] login success', { userId: mock.user.id, familyId: restoredMock.family_id });
+    logger.info('auth', 'login success', { userId: mock.user.id, familyId: restoredMock.family_id });
     return current;
   }
 
@@ -281,7 +282,7 @@ export async function doWxLogin(): Promise<Token> {
   });
   syncGlobalActiveLedgerId(restored.ledger_id);
   await flushPendingPreference();
-  console.info('[auth] login success · active ledger restored', {
+  logger.info('auth', 'login success · active ledger restored', {
     userId: resp.user.id,
     activeFamilyId: restored.family_id,
     activeLedgerId: restored.ledger_id,

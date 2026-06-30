@@ -2,6 +2,8 @@
 // 卡号: COSTRA-201 / COSTRA-220 · 极简发布/订阅模式 · 用于记账覆盖层控制 + 明细页响应式刷新
 // 设计决策: 单例 import 模式（优于 globalData 挂载 · 更清晰的依赖关系）
 
+import { logger } from '../utils/logger';
+
 type Handler = (data?: unknown) => void;
 
 /** 事件名常量 · 防止拼写错误 */
@@ -131,7 +133,7 @@ class EventBus {
         try {
           handler(data);
         } catch (err) {
-          console.error('[EventBus] handler error:', event, err);
+          logger.error('EventBus', `handler error · event=${event}`, err);
         }
       });
     }

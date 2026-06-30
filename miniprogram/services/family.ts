@@ -10,6 +10,7 @@ import { getItem, setItem, removeItem } from './storage';
 import { request } from './request';
 import { getFamilies as requestCachedFamilies } from './familyApi';
 import { eventBus, EventNames, type ActiveFamilyChangedPayload } from './eventBus';
+import { logger } from '../utils/logger';
 
 /** family_kind 枚举（与 server 0007 migration family_kind ENUM 对齐 · ADR-0007 §5.7.2） */
 export type FamilyKind = 'personal' | 'shared';
@@ -186,7 +187,7 @@ function isNonRetryablePreferenceError(apiErr: { code?: string; status?: number 
 async function setPendingPreferenceIfNewer(next: PendingPreference): Promise<void> {
   const previous = await getItem<PendingPreference>(PENDING_PREFERENCE_KEY);
   if (previous && previous.client_revision > next.client_revision) {
-    console.warn('[family] skip stale pending preference', {
+    logger.warn('family', 'skip stale pending preference', {
       previousRevision: previous.client_revision,
       nextRevision: next.client_revision,
     });
@@ -213,7 +214,7 @@ async function savePreference(ctx: FamilyContext & { family_kind: FamilyKind; le
     },
   });
   await removePendingPreferenceUpToRevision(revision);
-  console.info('[family] preference saved', { source, familyKind: ctx.family_kind });
+  logger.info('family', 'preference saved', { source, familyKind: ctx.family_kind });
 }
 
 async function queuePendingPreference(
@@ -224,7 +225,7 @@ async function queuePendingPreference(
 ): Promise<void> {
   const apiErr = err as { code?: string; status?: number };
   if (isNonRetryablePreferenceError(apiErr)) {
-    console.warn('[family] preference save rejected, skip retry', { source, code: apiErr.code, status: apiErr.status });
+    logger.warn('family', 'preference save rejected, skip retry', { source, code: apiErr.code, status: apiErr.status });
     return;
   }
   const previous = await getItem<PendingPreference>(PENDING_PREFERENCE_KEY);
@@ -239,7 +240,7 @@ async function queuePendingPreference(
     last_error_code: apiErr.code,
     updated_at: Date.now(),
   });
-  console.warn('[family] preference save queued', { source, code: apiErr.code, status: apiErr.status });
+  logger.warn('family', 'preference save queued', { source, code: apiErr.code, status: apiErr.status });
 }
 
 /**
@@ -269,7 +270,7 @@ export function savePreferenceAsync(
       } catch (e) {
         const apiErr = e as { code?: string; status?: number };
         if (isNonRetryablePreferenceError(apiErr)) {
-          console.warn('[family] preference save rejected with ids only, skip retry', { source, code: apiErr.code, status: apiErr.status });
+          logger.warn('family', 'preference save rejected with ids only, skip retry', { source, code: apiErr.code, status: apiErr.status });
           return;
         }
         const previous = await getItem<PendingPreference>(PENDING_PREFERENCE_KEY);
@@ -282,7 +283,7 @@ export function savePreferenceAsync(
           last_error_code: apiErr.code,
           updated_at: Date.now(),
         });
-        console.warn('[family] preference save queued with ids only', { source, code: apiErr.code, status: apiErr.status });
+        logger.warn('family', 'preference save queued with ids only', { source, code: apiErr.code, status: apiErr.status });
       }
       return;
     }
@@ -331,11 +332,11 @@ export async function flushPendingPreference(): Promise<void> {
       });
       await removePendingPreferenceUpToRevision(pending.client_revision);
     }
-    console.info('[family] pending preference flushed', { source: pending.source });
+    logger.info('family', 'pending preference flushed', { source: pending.source });
   } catch (e) {
     const apiErr = e as { code?: string; status?: number };
     if (isNonRetryablePreferenceError(apiErr)) {
-      console.warn('[family] pending preference rejected, drop retry', { source: pending.source, code: apiErr.code, status: apiErr.status });
+      logger.warn('family', 'pending preference rejected, drop retry', { source: pending.source, code: apiErr.code, status: apiErr.status });
       await removePendingPreferenceUpToRevision(pending.client_revision);
       return;
     }
@@ -396,14 +397,14 @@ export async function fetchAndRestorePreference(): Promise<FamilyContext | null>
     }
 
     if (!isCompleteFamilyContext(ctx)) {
-      console.warn('[family] preference restore rejected partial context');
+      logger.warn('family', 'preference restore rejected partial context');
       return null;
     }
 
     await setActiveFamily(ctx, 'preference-restore');
     return ctx;
   } catch (e) {
-    console.warn('[family] fetchAndRestorePreference failed', e);
+    logger.warn('family', 'fetchAndRestorePreference failed', e);
     return null;
   }
 }
@@ -419,9 +420,9 @@ export async function restoreActiveFamilyAfterLogin(defaultCtx: FamilyContext & 
         savePreferenceAsync(completed.family_id, completed.ledger_id, 'preference-restore');
         return completed;
       }
-      console.warn('[family] local active context invalid after login, fallback to server preference');
+      logger.warn('family', 'local active context invalid after login, fallback to server preference');
     } catch (e) {
-      console.warn('[family] local active context validation failed, keep local as offline-unverified', e);
+      logger.warn('family', 'local active context validation failed, keep local as offline-unverified', e);
       await setActiveFamily(local, 'preference-restore');
       if (local.family_kind === 'personal') {
         savePreferenceAsync(local.family_id, local.ledger_id, 'preference-restore');
@@ -453,7 +454,7 @@ export async function fallbackToPersonalFamily(source: ActiveFamilySwitchSource 
       ledger_name: personal.ledger_name || personal.name || '个人账本',
     }, source);
   } catch (e) {
-    console.warn('[family] fallbackToPersonalFamily failed', e);
+    logger.warn('family', 'fallbackToPersonalFamily failed', e);
     await clearActiveFamily(source);
     return null;
   }

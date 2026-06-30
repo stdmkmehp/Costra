@@ -148,6 +148,26 @@ export async function registerEntriesRoutes(app: FastifyInstance): Promise<void>
       );
       if (result.status === 'ok') {
         const entry = await entryService.findById(userId, result.serverId);
+        req.log.info(
+          {
+            action: 'entry.create',
+            userId,
+            entryId: entry.id,
+            ledgerId: entry.ledgerId,
+            type: entry.type,
+            amount: entry.amount,
+            currency: entry.currency,
+            categoryId: entry.categoryId,
+            accountId: entry.accountId,
+            toAccountId: entry.toAccountId,
+            occurredAt: entry.occurredAt.toISOString(),
+            note: entry.note,
+            sharedType: entry.sharedType,
+            version: entry.version,
+            clientRefId: entry.clientRefId,
+          },
+          'entry created',
+        );
         reply.code(201).send(entryToResponse(entry));
         return;
       }
@@ -204,6 +224,25 @@ export async function registerEntriesRoutes(app: FastifyInstance): Promise<void>
 
     if (result.status === 'ok') {
       const entry = await entryService.findById(userId, result.serverId);
+      req.log.info(
+        {
+          action: 'entry.update',
+          userId,
+          entryId: entry.id,
+          ledgerId: entry.ledgerId,
+          baseVersion,
+          newVersion: entry.version,
+          changedFields: Object.keys(payload),
+          amount: entry.amount,
+          currency: entry.currency,
+          type: entry.type,
+          categoryId: entry.categoryId,
+          occurredAt: entry.occurredAt.toISOString(),
+          note: entry.note,
+          sharedType: entry.sharedType,
+        },
+        'entry updated',
+      );
       reply.code(200).send(entryToResponse(entry));
       return;
     }
@@ -254,6 +293,10 @@ export async function registerEntriesRoutes(app: FastifyInstance): Promise<void>
       const result = await entryService.softDelete(userId, entryId, baseVersion);
 
       if (result.status === 'ok') {
+        req.log.info(
+          { action: 'entry.delete', userId, entryId, baseVersion },
+          'entry deleted',
+        );
         reply.code(204).send();
         return;
       }

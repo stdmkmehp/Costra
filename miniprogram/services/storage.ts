@@ -7,6 +7,8 @@
 //   2. 所有导出 API 返回 Promise · caller 必须 await
 //   3. 基于 wx.getStorage Promise 形态（基础库 2.21.0+ · 当前 dev 3.8.12 · NFR 最低 2.32.3）
 
+import { logger } from '../utils/logger';
+
 const STORAGE_VERSION = 1;
 const VERSION_KEY = '__costra_storage_version';
 
@@ -37,11 +39,11 @@ export async function ensureVersion(): Promise<void> {
         // 首次：无需 clearStorage（已无数据）· 直接写入 VERSION_KEY
         await wx.setStorage({ key: VERSION_KEY, data: STORAGE_VERSION });
       } catch (e2) {
-        console.warn('[storage] ensureVersion init failed', e2);
+        logger.warn('storage', 'ensureVersion init failed', e2);
       }
       return;
     }
-    console.warn('[storage] ensureVersion failed', e);
+    logger.warn('storage', 'ensureVersion failed', e);
   }
 }
 
@@ -51,7 +53,7 @@ export async function setItem<T>(key: string, data: T, ttlMs?: number): Promise<
   try {
     await wx.setStorage({ key, data: envelope });
   } catch (e) {
-    console.error('[storage] set failed', key, e);
+    logger.error('storage', `set failed · key=${key}`, e);
   }
 }
 
@@ -70,7 +72,7 @@ export async function getItem<T>(key: string): Promise<T | null> {
     const errMsg = (e as { errMsg?: string })?.errMsg || '';
     // data not found：key 不存在 · 正常语义返回 null
     if (errMsg.includes('data not found')) return null;
-    console.warn('[storage] get failed', key, e);
+    logger.warn('storage', `get failed · key=${key}`, e);
     return null;
   }
 }

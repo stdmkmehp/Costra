@@ -19,6 +19,7 @@ import { getActiveLedgerId, getActiveFamilyId, getActiveFamilyKind, getActiveLed
 import { getFamilies } from '../../services/familyApi';
 import { getToken } from '../../services/auth';
 import { eventBus, EventNames } from '../../services/eventBus';
+import { logger } from '../../utils/logger';
 import {
   loadCategoriesSync,
   refreshCategoryDataAsync,
@@ -642,7 +643,7 @@ Component({
         wx.vibrateShort({ type: 'light' });
         wx.showToast({ title: '已保存', icon: 'success' });
       } catch (err) {
-        console.error('[expense-overlay] edit save failed', err);
+        logger.error('expense-overlay', 'edit save failed', err);
         this.setData({ saving: false });
         wx.showToast({ title: '保存失败，请重试', icon: 'none' });
       }
@@ -1145,7 +1146,7 @@ Component({
 
         wx.showToast({ title: '记账成功', icon: 'success' });
       } catch (err) {
-        console.error('[expense-overlay] save failed', err);
+        logger.error('expense-overlay', 'save failed', err);
         this.setData({ saving: false });
         wx.showToast({ title: '保存失败，请重试', icon: 'none' });
       }

@@ -77,6 +77,20 @@ export async function registerCategoriesRoutes(app: FastifyInstance): Promise<vo
     async (req, reply) => {
       const userId = await parseUserId(req);
       const category = await categoryService.createCategory(userId, req.body);
+      req.log.info(
+        {
+          action: 'category.create',
+          userId,
+          familyId: category.family_id,
+          categoryId: category.id,
+          name: category.name,
+          type: category.type,
+          icon: category.icon,
+          color: category.color,
+          parentId: category.parent_id,
+        },
+        'category created',
+      );
       reply.code(201).send(category);
     },
   );

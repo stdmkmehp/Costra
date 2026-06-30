@@ -19,6 +19,7 @@ import {
 import { triggerOnPageShow, syncOnce } from '../../services/syncScheduler';
 import { eventBus, EventNames, type SyncDonePayload, type ActiveFamilyChangedPayload, type ProfileUpdatedPayload } from '../../services/eventBus';
 import { hasValidSession, getToken } from '../../services/auth';
+import { logger } from '../../utils/logger';
 import { getFamilies, getFamilyMembers, type FamilyItem } from '../../services/familyApi';
 import {
   getMonthlyStatistics,
@@ -431,7 +432,7 @@ Page({
       const fresh = await getMonthlyStatistics(this._familyId, month, { userId, topN: L1_VISIBLE });
       this._buildMonthlyDisplay(fresh, memberKey);
     } catch (err) {
-      console.warn('[statistics] refreshMonthly failed', err);
+      logger.warn('statistics', 'refreshMonthly failed', err);
     }
   },
 
@@ -467,7 +468,7 @@ Page({
       const fresh = await getMonthlyStatistics(this._familyId, month, { userId, topN: L1_VISIBLE });
       this._buildMonthlyDisplay(fresh, memberKey);
     } catch (err) {
-      console.error('[statistics] loadMonthly failed', err);
+      logger.error('statistics', 'loadMonthly failed', err);
       this.setData({
         [`monthlyByMember.${memberKey}.loading`]: false,
         [`monthlyByMember.${memberKey}.loaded`]: true,
@@ -493,7 +494,7 @@ Page({
       const fresh = await getYearlyStatistics(this._familyId, year, { userId, topN: L1_VISIBLE });
       this._buildYearlyDisplay(fresh, memberKey);
     } catch (err) {
-      console.error('[statistics] loadYearly failed', err);
+      logger.error('statistics', 'loadYearly failed', err);
       this.setData({
         [`yearlyByMember.${memberKey}.loading`]: false,
         [`yearlyByMember.${memberKey}.loaded`]: true,
@@ -979,7 +980,7 @@ Page({
         }
       }
     } catch (err) {
-      console.error('[statistics] drillDown L2 failed', err);
+      logger.error('statistics', 'drillDown L2 failed', err);
       // INV-2：错误路径也必须 cancel deferred handle，避免 LOADING_DELAY_MS 后才闪一下加载中再消失
       const loadingWasShown = this._consumeDeferredLoading(deferredKey);
       const latestView = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
@@ -1130,7 +1131,7 @@ Page({
         this._scheduleMeasureCurrentPane('l2-l3-loaded');
       });
     } catch (err) {
-      console.error('[statistics] drillDown L3 failed', err);
+      logger.error('statistics', 'drillDown L3 failed', err);
       const loadingWasShown = this._consumeDeferredLoading(deferredKey);
       const latestView = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
       if (latestView) {

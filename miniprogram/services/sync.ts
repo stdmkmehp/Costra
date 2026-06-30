@@ -6,6 +6,7 @@
 // migration 0004: 消费 sync pull 的 categories_revision 字段，触发分类强刷
 
 import { request, ApiError } from './request';
+import { logger } from '../utils/logger';
 import { getWatermark, setWatermark, applyServerChanges, getEntry } from './db';
 import { drainBatch, ackResultsBySeq, ackBatchFailure, PushResultItem, SyncOp } from './outbox';
 import {
@@ -45,14 +46,14 @@ function maybeRefreshCategoriesByRevision(familyId: string, serverRevision: stri
   if (localSig && localSig === serverRevision) return; // 系统分类一致 · 无需刷新
   // 不一致 · 后台拉新分类（绕过 24h TTL · refreshCategories 会写缓存 + warmUp 内存 +
   // 在签名变化时广播 CATEGORIES_LOADED 事件，明细页等据此重渲）
-  console.log(`[sync:revision] categories_revision changed (local="${localSig.slice(0, 16)}…" → server="${serverRevision.slice(0, 16)}…") · forcing refresh`);
+  logger.debug('sync:revision', `categories_revision changed (local="${localSig.slice(0, 16)}…" → server="${serverRevision.slice(0, 16)}…") · forcing refresh`);
   refreshCategories(familyId)
     .then(items => {
       // refreshCategories 内部已 warmUp，但显式补一次确保签名同步
       warmUpMemoryCache(familyId, items);
     })
     .catch(err => {
-      console.warn('[sync:revision] refreshCategories failed:', err);
+      logger.warn('sync:revision', 'refreshCategories failed', err);
     });
 }
 
@@ -64,7 +65,7 @@ export async function syncPull(
   opts?: { limit?: number }
 ): Promise<SyncPullResponse> {
   const since = await getWatermark(familyId);
-  console.log(`[sync:pull] requesting · family=${familyId} since=${since} limit=${opts?.limit ?? 200}`);
+  logger.debug('sync:pull', `requesting · family=${familyId} since=${since} limit=${opts?.limit ?? 200}`);
 
   const resp = await request<SyncPullResponse>({
     method: 'GET',
@@ -79,7 +80,7 @@ export async function syncPull(
   if (resp && typeof resp.watermark === 'number') {
     const entryCount = resp.changes?.entries?.length || 0;
     const catCount = resp.changes?.categories?.length || 0;
-    console.log(`[sync:pull] received · watermark=${resp.watermark} entries=${entryCount} categories=${catCount} has_more=${resp.has_more}`);
+    logger.debug('sync:pull', `received · watermark=${resp.watermark} entries=${entryCount} categories=${catCount} has_more=${resp.has_more}`);
     if (resp.changes) {
       await applyServerChanges(resp.changes);
     }
@@ -87,7 +88,7 @@ export async function syncPull(
     // migration 0004: 检查分类签名是否变化，触发强刷（fire-and-forget）
     maybeRefreshCategoriesByRevision(familyId, resp.categories_revision);
   } else {
-    console.warn(`[sync:pull] ⚠️ invalid response · watermark=${resp?.watermark} type=${typeof resp?.watermark}`);
+    logger.warn('sync:pull', `⚠️ invalid response · watermark=${resp?.watermark} type=${typeof resp?.watermark}`);
   }
 
   return resp;
@@ -101,7 +102,7 @@ async function refreshBaseVersion(op: SyncOp): Promise<number | null> {
   if (op.op === 'create') return null; // create 不需要 base_version
   const entry = await getEntry(op.client_ref_id);
   const version = entry?.version ?? op.base_version;
-  console.log(`[sync:refreshBaseVersion] ref=${op.client_ref_id} entry_found=${!!entry} entry_version=${entry?.version} op_base_version=${op.base_version} → result=${version}`);
+  logger.debug('sync:refreshBaseVersion', `ref=${op.client_ref_id} entry_found=${!!entry} entry_version=${entry?.version} op_base_version=${op.base_version} → result=${version}`);
   return version;
 }
 
@@ -147,11 +148,11 @@ export async function pushDelta(): Promise<{
   // 发送前从 storage 刷新 base_version + 只发协议字段
   const wireOps = await buildWireOps(ops);
 
-  console.log(`[sync:pushDelta] sending · batchKey=${batchKey} ops_count=${ops.length}`);
+  logger.info('sync:pushDelta', `sending · batchKey=${batchKey} ops_count=${ops.length}`);
   for (let i = 0; i < wireOps.length; i++) {
     const w = wireOps[i];
     const o = ops[i];
-    console.log(`[sync:pushDelta]   → ${w.op} entity=${w.entity} ref=${w.client_ref_id} base_version=${w.base_version} retries=${o.retries} seq=${o.seq}`);
+    logger.info('sync:pushDelta', `  → ${w.op} entity=${w.entity} ref=${w.client_ref_id} base_version=${w.base_version} retries=${o.retries} seq=${o.seq}`, w.payload);
   }
 
   try {
@@ -178,7 +179,7 @@ export async function pushDelta(): Promise<{
       else if (r.status === 'conflict') conflicts++;
       else rejected++;
     }
-    console.log(`[sync:pushDelta] done · pushed=${pushed} conflicts=${conflicts} rejected=${rejected}`);
+    logger.info('sync:pushDelta', `done · pushed=${pushed} conflicts=${conflicts} rejected=${rejected}`);
     return { pushed, conflicts, rejected, failed: 0 };
   } catch (err: unknown) {
     const status = (err as ApiError)?.status;
@@ -186,9 +187,9 @@ export async function pushDelta(): Promise<{
 
     // 409 或其他错误：都走 ackBatchFailure 保守重试
     // 不再区分 409（之前无条件清除会导致数据丢失）
-    console.warn(`[sync:pushDelta] ⚠️ HTTP ${status || 'network'} error · batchKey=${batchKey} msg="${errMsg}" → ackBatchFailure`);
+    logger.warn('sync:pushDelta', `⚠️ HTTP ${status || 'network'} error · batchKey=${batchKey} msg="${errMsg}" → ackBatchFailure`);
     const failed = await ackBatchFailure(batchKey);
-    console.warn(`[sync:pushDelta] failure recovered=${failed} ops back to index`);
+    logger.warn('sync:pushDelta', `failure recovered=${failed} ops back to index`);
     return { pushed: 0, conflicts: 0, rejected: 0, failed };
   }
 }
