@@ -26,7 +26,8 @@
         "home/index",
         "settings/index",
         "privacy/index",
-        "bulletin/index"
+        "bulletin/index",
+        "about/index"
       ]
     }
   ],

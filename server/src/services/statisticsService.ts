@@ -242,6 +242,42 @@ function getDaysInMonth(year: number, month: number): number {
   return new Date(Date.UTC(year, month, 0)).getUTCDate();
 }
 
+/** 当前时刻在 Asia/Shanghai 时区下的 { year, month(1~12), day(1~31) } */
+function getShanghaiNowParts(): { year: number; month: number; day: number } {
+  const shanghai = new Date(Date.now() + SHANGHAI_OFFSET_MS);
+  return {
+    year: shanghai.getUTCFullYear(),
+    month: shanghai.getUTCMonth() + 1,
+    day: shanghai.getUTCDate(),
+  };
+}
+
+/**
+ * 计算某月「至今已过去的天数」，作为日均支出的分母。
+ *   - 历史月：整月天数（daysInMonth）
+ *   - 当前月：今天的日期（如 2 号→2，避免月初除以整月导致日均被低估）
+ *   - 未来月：0（尚未开始，调用方据此把日均置 0）
+ */
+function elapsedDaysInMonth(year: number, month: number, daysInMonth: number): number {
+  const now = getShanghaiNowParts();
+  if (year > now.year || (year === now.year && month > now.month)) return 0;
+  if (year === now.year && month === now.month) return now.day;
+  return daysInMonth;
+}
+
+/**
+ * 计算某年「至今已过去的月份数」，作为月均支出的分母。
+ *   - 历史年：12
+ *   - 当前年：当前月份（如 7 月→7）
+ *   - 未来年：0
+ */
+function elapsedMonthsInYear(year: number): number {
+  const now = getShanghaiNowParts();
+  if (year > now.year) return 0;
+  if (year === now.year) return now.month;
+  return 12;
+}
+
 /**
  * COSTRA-260: 成员维度越权校验。
  *
@@ -403,7 +439,9 @@ export async function getMonthlyStatistics(
     if (dailyExpense[d] > maxDayExpense) maxDayExpense = dailyExpense[d];
   }
 
-  const avgDaily = daysInMonth > 0 ? Math.round(totalExpense / daysInMonth) : 0;
+  // 日均支出分母用「至今已过天数」而非整月天数：当前月月初不会被整月摊薄。
+  const elapsedDays = elapsedDaysInMonth(year, monthNum, daysInMonth);
+  const avgDaily = elapsedDays > 0 ? Math.round(totalExpense / elapsedDays) : 0;
 
   // === L1 排行 ===
   const l2Ids = l2Aggs.map((a) => a.category_id);
@@ -511,8 +549,6 @@ export async function getYearlyStatistics(
   const monthlyTrend: MonthlyTrendItem[] = [];
   let maxMonthExpense = 0;
   let maxMonthIdx = 0;
-  // 计算"已过月份数"：取年内有 entry 的最大月（无 entry 时按 12 估算 · 用于 avg_monthly_expense）
-  let maxMonthWithData = 0;
   for (let m = 1; m <= 12; m++) {
     monthlyTrend.push({
       month: m,
@@ -525,9 +561,10 @@ export async function getYearlyStatistics(
       maxMonthExpense = monthlyExpense[m];
       maxMonthIdx = m;
     }
-    if (monthlyEntryCount[m] > 0) maxMonthWithData = m;
   }
-  const monthsCount = maxMonthWithData > 0 ? maxMonthWithData : 12;
+  // 月均支出分母用「至今已过月份数」（当前年=当前月，历史年=12），与月度日均口径一致，
+  // 不再用"有数据的最大月"——避免最近月份未记账时分母偏小导致月均虚高。
+  const monthsCount = elapsedMonthsInYear(Number(input.year));
   const avgMonthly = monthsCount > 0 ? Math.round(totalExpense / monthsCount) : 0;
 
   // === L1 排行（全年）===

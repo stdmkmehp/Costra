@@ -35,6 +35,10 @@
         <view class="menu__label">账本导入 / 导出</view>
         <view class="menu__arrow">›</view>
       </view>
+      <view class="menu__item" bindtap="onTapComingSoon" hover-class="menu__item--hover" hover-stay-time="60">
+        <view class="menu__label">定时记账</view>
+        <view class="menu__arrow">›</view>
+      </view>
       <view class="menu__item" bindtap="onTapBulletin" hover-class="menu__item--hover" hover-stay-time="60">
         <view class="menu__label">
           公告
@@ -48,6 +52,10 @@
           <view class="menu__arrow">›</view>
         </button>
       </view>
+      <view class="menu__item" bindtap="onTapAbout" hover-class="menu__item--hover" hover-stay-time="60">
+        <view class="menu__label">关于 Costra</view>
+        <view class="menu__arrow">›</view>
+      </view>
       <view class="menu__item" bindtap="onTapSettings" hover-class="menu__item--hover" hover-stay-time="60">
         <view class="menu__label">设置</view>
         <view class="menu__arrow">›</view>
@@ -60,7 +68,7 @@
       </view>
     </view>
 
-    <view class="footer" bindtap="onTapIcp">
+    <view class="footer">
       <view wx:if="{{appVersion}}" class="footer__text footer__version">v{{appVersion}}</view>
       <view class="footer__text footer__icp">沪ICP备2026017253号-1X</view>
       <view class="footer__text">服务由 costra.cloud 提供 · 沪ICP备2026017253号-2</view>

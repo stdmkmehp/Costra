@@ -14,11 +14,21 @@ const DIST = resolve(__dirname, 'dist');
 mkdirSync(DIST, { recursive: true });
 
 const VB = 24;
-const TARGET = 20;
+const TARGET = 20;        // 方形图标目标最大边
+const AREA_TARGET = 18.5; // 光学等积目标（几何均值 √(w·h)）
+const MAX_DIM = 22;       // 最大边硬上限，避免溢出 viewBox
 const STROKE = 1.5;
 const S = `fill="none" stroke="currentColor" stroke-width="${STROKE}" stroke-linecap="round" stroke-linejoin="round"`;
 
 paper.setup(new paper.Size(VB, VB));
+
+// 光学归一：等面积（几何均值）为主放大扁平图标，最大边封顶 MAX_DIM，且不缩小方形图标
+function fitScale(w, h) {
+  const maxDim = Math.max(w, h);
+  const sMax = TARGET / maxDim;
+  const sArea = AREA_TARGET / Math.sqrt(w * h);
+  return Math.max(Math.min(sArea, MAX_DIM / maxDim), sMax);
+}
 
 /** 测 inner 的几何 bbox，返回 fit 后的 transform 与补偿描边宽度 */
 function fit(inner) {
@@ -27,7 +37,7 @@ function fit(inner) {
   const b = item.strokeBounds; // 含描边的视觉包围盒，更贴近肉眼
   // 用几何 bounds 做缩放（与 demo 一致：基于路径几何，不含描边）
   const gb = item.bounds;
-  const s = TARGET / Math.max(gb.width, gb.height);
+  const s = fitScale(gb.width, gb.height);
   const tx = 12 - s * (gb.x + gb.width / 2);
   const ty = 12 - s * (gb.y + gb.height / 2);
   item.remove();

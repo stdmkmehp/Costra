@@ -1,0 +1,69 @@
+/* pages-family/about · 关于 Costra */
+/* 视觉与 privacy 页对齐（暖灰白背景 + 分节文案），头部增加品牌信息 */
+
+.about {
+  padding: 48rpx 32rpx 64rpx;
+  background: var(--color-bg);
+  min-height: 100vh;
+}
+
+/* ─── 品牌头部 ──────────────────────────────────────────── */
+.about__brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 24rpx 0 48rpx;
+}
+
+.about__logo {
+  font-size: 64rpx;
+  font-weight: 700;
+  letter-spacing: 2rpx;
+  color: var(--color-text);
+}
+
+.about__slogan {
+  margin-top: 16rpx;
+  font-size: 26rpx;
+  color: var(--color-text-muted);
+}
+
+/* ─── 分节文案 ──────────────────────────────────────────── */
+.about__section {
+  margin-bottom: 36rpx;
+}
+
+.about__section-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: 12rpx;
+}
+
+.about__body {
+  font-size: 28rpx;
+  line-height: 1.7;
+  color: var(--color-text-muted);
+  margin-bottom: 8rpx;
+}
+
+.about__body--indent {
+  padding-left: 16rpx;
+}
+
+.about__bold {
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+/* ─── 底部备案信息 ──────────────────────────────────────── */
+.about__footer {
+  margin-top: 64rpx;
+  text-align: center;
+}
+
+.about__footer-text {
+  font-size: 24rpx;
+  color: #9E9E9E;
+  line-height: 1.8;
+}

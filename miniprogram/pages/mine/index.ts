@@ -7,8 +7,8 @@
 // 改造要点（2026-06-08）：
 //   - 顶部用户区：头像居中放大（160rpx），昵称居中，下方"已记账 X 天"
 //   - 宏观数据：横向 2 列（记账天数 / 记账笔数）· 走 GET /users/me/overview
-//   - 功能列表：创建协作 / 公告 / 导入导出 / 意见反馈 / 设置 — 导入导出为预留 toast「即将支持」，意见反馈使用无样式 button 承载 open-type=feedback，内层 view 复用普通菜单项布局
-//   - 退出登录 / 合规 footer 完整保留
+//   - 功能列表：创建协作 / 导入导出 / 定时记账 / 公告 / 意见反馈 / 关于 Costra / 设置 — 导入导出与定时记账为预留 toast「即将支持」，意见反馈使用无样式 button 承载 open-type=feedback，内层 view 复用普通菜单项布局
+//   - 退出登录 / 合规 footer 完整保留（ICP 备案号仅展示，不再点击复制）
 
 import { hasValidSession, getSession, logout, getToken } from '../../services/auth';
 import { defaultNickname } from '../../config/defaults';
@@ -221,7 +221,7 @@ Page({
   },
 
   onTapSettings() {
-    wx.navigateTo({ url: '/pages-family/settings/index' });
+    wx.showToast({ title: '暂无设置内容', icon: 'none' });
   },
 
   onTapPrivacy() {
@@ -237,6 +237,10 @@ Page({
 
   onTapBulletin() {
     wx.navigateTo({ url: '/pages-family/bulletin/index' });
+  },
+
+  onTapAbout() {
+    wx.navigateTo({ url: '/pages-family/about/index' });
   },
 
   /** 导入导出 / 意见反馈 — 一期占位 */
@@ -259,18 +263,6 @@ Page({
     }
   },
 
-  // ICP 备案号点击：复制工信部链接 + 弹窗提示（满足腾讯云「显著位置 + 跳转 beian.miit.gov.cn」规范）
+  // ICP 备案号仅展示，不再提供点击复制/弹窗（工信部备案查询由用户自行访问 beian.miit.gov.cn）
   // Refs: 沪ICP备2026017253号-1X（小程序）· 沪ICP备2026017253号-2（后端 costra.cloud）
-  onTapIcp() {
-    wx.setClipboardData({
-      data: 'https://beian.miit.gov.cn/',
-      success: () => {
-        wx.showModal({
-          title: '已复制工信部备案查询链接',
-          content: '请在浏览器中粘贴打开以查询：沪ICP备2026017253号',
-          showCancel: false,
-        });
-      },
-    });
-  },
 });

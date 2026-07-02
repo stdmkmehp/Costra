@@ -100,11 +100,21 @@ const html = `<!DOCTYPE html>
 const S = 'fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"';
 const GROUPS = ${DATA};
 
-const TARGET = 20;
+const TARGET = 20;        // 方形图标目标最大边
+const AREA_TARGET = 18.5; // 光学等积目标（几何均值 √(w·h)）
+const MAX_DIM = 22;       // 最大边硬上限，避免溢出 viewBox
 const BASE_STROKE = 1.5;
+// 光学归一：以「等面积（几何均值）」为主，扁平图标据此放大以匹配视觉体量；
+// 但最大边不超过 MAX_DIM 防溢出，且不小于原「最大边→TARGET」（只放大不缩小方形图标）。
+function fitScale(w, h) {
+  const maxDim = Math.max(w, h);
+  const sMax = TARGET / maxDim;
+  const sArea = AREA_TARGET / Math.sqrt(w * h);
+  return Math.max(Math.min(sArea, MAX_DIM / maxDim), sMax);
+}
 function fit(g) {
   const b = g.getBBox();
-  const s = TARGET / Math.max(b.width, b.height);
+  const s = fitScale(b.width, b.height);
   const tx = 12 - s * (b.x + b.width / 2);
   const ty = 12 - s * (b.y + b.height / 2);
   g.setAttribute('transform', 'translate(' + tx.toFixed(3) + ' ' + ty.toFixed(3) + ') scale(' + s.toFixed(4) + ')');
