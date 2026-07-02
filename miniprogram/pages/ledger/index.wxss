@@ -232,11 +232,16 @@
   display: flex;
   align-items: center;
   padding: 18rpx 32rpx;
-  transition: transform 150ms cubic-bezier(0.25, 0.1, 0.25, 1);
+  transition: transform 150ms cubic-bezier(0.25, 0.1, 0.25, 1), background-color 160ms ease;
   background: var(--color-role-bg-app, #f1f2ec);
   position: relative;
   z-index: 2;
   gap: 12rpx;
+}
+
+/* 长按上下文菜单打开时，目标流水泛起暖光弱提醒（满宽，无卡片，贴合明细列表无卡片设计） */
+.entry-item--ctx-active {
+  background: #faf9f5;
 }
 
 .entry-icon {
@@ -674,3 +679,162 @@
 }
 
 /* 费用性质开关样式已移至 styles/keypad.wxss，此处无需重复定义 */
+
+/* ─── 长按上下文菜单（原地弹出于触点附近） ─── */
+/* 全屏透明遮罩：捕获点击关闭菜单，拦截滚动防穿透 */
+.ctx-menu-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+}
+
+/* 菜单卡片：暖调浮起白 + 毛玻璃（与导航/Tab 材质语言统一，与 bone white 同色温）。
+   top/left 由 JS 按触点动态计算（px），position:fixed 锚定视口。 */
+.ctx-menu {
+  position: fixed;
+  width: 300rpx;
+  background: rgba(250, 249, 245, 0.82);
+  -webkit-backdrop-filter: blur(26rpx) saturate(180%);
+  backdrop-filter: blur(26rpx) saturate(180%);
+  border-radius: 30rpx;
+  box-shadow: 0 10rpx 50rpx rgba(0, 0, 0, 0.16), 0 2rpx 8rpx rgba(0, 0, 0, 0.05);
+  padding: 8rpx 0;
+  overflow: hidden;
+  transform-origin: center top;
+  animation: ctx-menu-in 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* 不支持毛玻璃时回退为不透明暖白 */
+@supports not (backdrop-filter: blur(1px)) {
+  .ctx-menu { background: #faf9f5; }
+}
+
+@keyframes ctx-menu-in {
+  from { opacity: 0; transform: scale(0.9); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.ctx-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  height: 96rpx;
+  padding: 0 30rpx;
+  color: var(--color-role-text-primary, #1c1b1a);
+  transition: background 120ms ease;
+}
+
+.ctx-menu__item:active {
+  background: rgba(28, 27, 26, 0.06);
+}
+
+.ctx-menu__text {
+  font-size: 30rpx;
+  color: inherit;
+  line-height: 1;
+}
+
+/* 删除项：抛弃实线分割，靠「间距 + 极浅内投影 + 红色」区隔（对齐规范抛弃分割线） */
+.ctx-menu__item--danger {
+  margin-top: 6rpx;
+  box-shadow: inset 0 1rpx 0 rgba(28, 27, 26, 0.05);
+  color: var(--color-semantic-danger, #FA5151);
+}
+
+/* ── 菜单极简单色图标（纯 CSS 几何，随 item color 变色，对齐 tab-bar 图标语言） ── */
+.ctx-ic {
+  position: relative;
+  width: 34rpx;
+  height: 34rpx;
+  flex-shrink: 0;
+  color: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 复制：两枚叠放的描边圆角矩形 */
+.ctx-ic--copy view {
+  position: absolute;
+  width: 20rpx;
+  height: 24rpx;
+  border: 2rpx solid currentColor;
+  border-radius: 4rpx;
+  box-sizing: border-box;
+}
+.ctx-ic--copy view:nth-child(1) { right: 3rpx; top: 2rpx; }
+.ctx-ic--copy view:nth-child(2) { left: 3rpx; bottom: 2rpx; background: rgba(250, 249, 245, 0.98); }
+
+/* 备注：便签外框 + 两条文本线 */
+.ctx-ic--note {
+  width: 28rpx;
+  height: 26rpx;
+  border: 2rpx solid currentColor;
+  border-radius: 4rpx;
+  box-sizing: border-box;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4rpx;
+  padding: 0 5rpx;
+}
+.ctx-ic--note view {
+  width: 100%;
+  height: 2rpx;
+  background: currentColor;
+  border-radius: 2rpx;
+}
+.ctx-ic--note view:nth-child(2) { width: 60%; }
+
+/* 金额：¥ 符号（沿用项目以 text 作符号图标的做法，如 tab [+]） */
+.ctx-ic--amount text {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: currentColor;
+  line-height: 1;
+}
+
+/* 分类：2×2 四宫格 */
+.ctx-ic--grid {
+  flex-wrap: wrap;
+  width: 24rpx;
+  height: 24rpx;
+  gap: 4rpx;
+}
+.ctx-ic--grid view {
+  width: 10rpx;
+  height: 10rpx;
+  background: currentColor;
+  border-radius: 2rpx;
+}
+
+/* 删除：垃圾桶（盖 + 把手 + 桶身） */
+.ctx-ic--trash { flex-direction: column; }
+.ctx-ic--trash .lid {
+  position: relative;
+  width: 24rpx;
+  height: 2rpx;
+  background: currentColor;
+  border-radius: 2rpx;
+}
+.ctx-ic--trash .lid::before {
+  content: '';
+  position: absolute;
+  top: -5rpx;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 12rpx;
+  height: 5rpx;
+  border: 2rpx solid currentColor;
+  border-bottom: none;
+  border-radius: 3rpx 3rpx 0 0;
+  box-sizing: border-box;
+}
+.ctx-ic--trash .can {
+  margin-top: 3rpx;
+  width: 18rpx;
+  height: 18rpx;
+  border: 2rpx solid currentColor;
+  border-top: none;
+  border-radius: 0 0 5rpx 5rpx;
+  box-sizing: border-box;
+}

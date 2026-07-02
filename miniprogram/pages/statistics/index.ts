@@ -610,7 +610,7 @@ Page({
     if (!this._familyId) return;
     if (this._loadingPromise) return;
     invalidateStatisticsCache(this._familyId);
-    this._invalidateCurrentDimViews();
+    this._invalidateAllDimViews();
     await this._loadData();
   },
 
@@ -646,7 +646,13 @@ Page({
   },
 
   /**
-   * 失效当前维度所有成员视图（数据变更场景：SYNC_DONE / ENTRY_SAVED / ENTRY_UPDATED）。
+   * 失效**两个维度**所有成员视图（数据变更场景：SYNC_DONE / ENTRY_SAVED / ENTRY_UPDATED）。
+   *
+   * 2026-06-30 跨维度失效：一笔记录天然同时影响其所在月份的月度数据与所在年份的年度数据，
+   *   因此数据变更必须同时失效 monthlyByMember 与 yearlyByMember，而非仅当前维度。
+   *   - 当前维度：标 loaded=false 后由紧随其后的 _loadData() 立即重拉。
+   *   - 另一维度：标 loaded=false，等用户切过去时由 _ensureMemberLoaded 自然重拉。
+   *   （区别于 _clearCurrentDimViews：切月/切年是 scope 变更，只影响当前维度，故只清当前维度。）
    *
    * 2026-06-08 子树脏标记机制：
    *   - view.loaded=false：触发 _ensureMemberLoaded 重拉 L1。
@@ -654,21 +660,22 @@ Page({
    *   - 每个嵌套 L2 节点 subtreeStale=true：onTapL2 在 stale 时强制重拉 L3。
    * 不清空 view 本身（保留 expanded 等用户展开态体验）。
    */
-  _invalidateCurrentDimViews() {
-    const byMemberKey = this.data.dimension === 'monthly' ? 'monthlyByMember' : 'yearlyByMember';
-    const byMember = this.data[byMemberKey] as Record<MemberKey, MonthlyView | YearlyView>;
+  _invalidateAllDimViews() {
     const update: Record<string, unknown> = {};
-    for (const mk of Object.keys(byMember)) {
-      const view = byMember[mk];
-      if (!view) continue;
-      update[`${byMemberKey}.${mk}.loaded`] = false;
-      // 标记 L1 子树及嵌套 L2 子树为 stale（保留 expanded · 仅清数据）
-      const stalifiedL1 = view.l1.map<L1Display>((l1) => ({
-        ...l1,
-        subtreeStale: true,
-        l2Items: l1.l2Items.map<L2Display>((l2) => ({ ...l2, subtreeStale: true })),
-      }));
-      update[`${byMemberKey}.${mk}.l1`] = stalifiedL1;
+    for (const byMemberKey of ['monthlyByMember', 'yearlyByMember'] as const) {
+      const byMember = this.data[byMemberKey] as Record<MemberKey, MonthlyView | YearlyView>;
+      for (const mk of Object.keys(byMember)) {
+        const view = byMember[mk];
+        if (!view) continue;
+        update[`${byMemberKey}.${mk}.loaded`] = false;
+        // 标记 L1 子树及嵌套 L2 子树为 stale（保留 expanded · 仅清数据）
+        const stalifiedL1 = view.l1.map<L1Display>((l1) => ({
+          ...l1,
+          subtreeStale: true,
+          l2Items: l1.l2Items.map<L2Display>((l2) => ({ ...l2, subtreeStale: true })),
+        }));
+        update[`${byMemberKey}.${mk}.l1`] = stalifiedL1;
+      }
     }
     if (Object.keys(update).length > 0) {
       this.setData(update);
@@ -946,7 +953,7 @@ Page({
       const mergedL2: L2Display[] = l2Items.map((freshL2) => {
         const prev = prevL2Map.get(freshL2.category_id);
         if (!prev) return freshL2;
-        // 继承用户展开态 + L3 数据（脏标记由 _invalidateCurrentDimViews 写在 prev 上）
+        // 继承用户展开态 + L3 数据（脏标记由 _invalidateAllDimViews 写在 prev 上）
         return {
           ...freshL2,
           expanded: prev.expanded,

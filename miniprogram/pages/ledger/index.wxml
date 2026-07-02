@@ -108,12 +108,13 @@
         >
           <!-- 滑动容器 -->
           <view
-            class="entry-item {{entry.type === 'income' ? 'entry-item--income' : ''}}"
+            class="entry-item {{entry.type === 'income' ? 'entry-item--income' : ''}} {{entry.client_ref_id === ctxActiveRefId ? 'entry-item--ctx-active' : ''}}"
             style="transform: translateX(-{{entry.translateX}}rpx);"
             data-refid="{{entry.client_ref_id}}"
             bindtouchstart="onTouchStart"
             bindtouchmove="onTouchMove"
             bindtouchend="onTouchEnd"
+            bindlongpress="onEntryLongPress"
           >
             <!-- 极简单色圆形图标 · COSTRA-227: 点击编辑分类 -->
             <view class="entry-icon" data-refid="{{entry.client_ref_id}}" catchtap="onTapEntryCategory">
@@ -436,6 +437,41 @@
           <view class="keypad__key keypad__key--fn" data-key="backspace" bindtap="onEditAmountKey"><text>⌫</text></view>
           <view class="keypad__key keypad__key--action keypad__key--done" data-key="done" bindtap="onEditAmountKey"><text>{{editAmountCalc.actionState === 'done' ? '保存' : '='}}</text></view>
         </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- ═══ 长按上下文菜单（原地弹出于触点附近） ═══ -->
+  <view
+    wx:if="{{ctxMenuVisible}}"
+    class="ctx-menu-overlay"
+    catchtap="onCtxMenuClose"
+    catchtouchmove="noop"
+  >
+    <view
+      class="ctx-menu"
+      style="top: {{ctxMenuTop}}px; left: {{ctxMenuLeft}}px;"
+      catchtap="noop"
+    >
+      <view class="ctx-menu__item" catchtap="onCtxCopy">
+        <view class="ctx-ic ctx-ic--copy"><view></view><view></view></view>
+        <text class="ctx-menu__text">复制流水</text>
+      </view>
+      <view class="ctx-menu__item" catchtap="onCtxNote">
+        <view class="ctx-ic ctx-ic--note"><view></view><view></view></view>
+        <text class="ctx-menu__text">修改备注</text>
+      </view>
+      <view class="ctx-menu__item" catchtap="onCtxAmount">
+        <view class="ctx-ic ctx-ic--amount"><text>¥</text></view>
+        <text class="ctx-menu__text">修改金额</text>
+      </view>
+      <view class="ctx-menu__item" catchtap="onCtxCategory">
+        <view class="ctx-ic ctx-ic--grid"><view></view><view></view><view></view><view></view></view>
+        <text class="ctx-menu__text">修改分类</text>
+      </view>
+      <view class="ctx-menu__item ctx-menu__item--danger" catchtap="onCtxDelete">
+        <view class="ctx-ic ctx-ic--trash"><view class="lid"></view><view class="can"></view></view>
+        <text class="ctx-menu__text">删除流水</text>
       </view>
     </view>
   </view>

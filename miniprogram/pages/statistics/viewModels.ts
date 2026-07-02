@@ -132,7 +132,7 @@ function findPeakIndex(values: number[]): number {
  * 构建 L1 展示项（保留旧展开态 + 子树）
  *
  * 2026-06-08 子树脏标记机制（B1 方案）：
- *   - 若 prev 节点 subtreeStale=true（_invalidateCurrentDimViews 打的）：
+ *   - 若 prev 节点 subtreeStale=true（_invalidateAllDimViews 打的）：
  *     · subtreeStale 透传给新节点（不清除）；
  *     · l2Items / l2HasMore 直接继承 prev（含每个 L2 节点已带的 subtreeStale 标记），
  *       让用户已展开的下钻面板（包括 L3 单笔列表）保持显示，避免"刷新即收起"体验。

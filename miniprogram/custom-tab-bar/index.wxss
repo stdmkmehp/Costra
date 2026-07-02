@@ -23,6 +23,15 @@
    * 避免页面滚动时 backdrop-filter 合成与主滚动层不同步导致的 1~2px 视觉漂移。
    * translate3d(0,0,0) 在 z 维度无视觉位移，等价 translateY(0)。 */
   transform: translate3d(0, 0, 0);
+  /* 反首帧闪烁（2026-07-02）：transition 不再常驻基类。
+   * 每个 Tab 页各持一份 tabbar 实例，首次进入时 hidden 由 true→false 揭示，
+   * 若基类常驻 transition，这个揭示会被动画成"从底部滑上来"。
+   * 改由 .tab-bar--animatable 承载 transition：首次揭示无此类 → 瞬时到位（无动画）；
+   * 揭示绘制完成后（markActive 回调）再开启，供后续面板开合的滑动动画使用。 */
+}
+
+/* 过渡开关：仅在首次揭示完成后开启，避免首帧揭示被动画化（2026-07-02） */
+.tab-bar--animatable {
   transition: transform var(--animation-fast, 150ms) var(--easing-default, cubic-bezier(0.25, 0.1, 0.25, 1));
 }
 

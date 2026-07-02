@@ -6,7 +6,8 @@
 import Decimal from '../../utils/vendor/decimal';
 import { toYuan } from '../../utils/money';
 import { getSafeAreaMetrics } from '../../utils/safeArea';
-import { listMonthEntries, deleteEntry, updateEntryFields, type Entry, type MonthEntriesResult } from '../../services/db';
+import { listMonthEntries, deleteEntry, updateEntryFields, putEntry, type Entry, type MonthEntriesResult } from '../../services/db';
+import { newClientRefId } from '../../utils/id';
 import {
   getActiveLedgerId,
   getActiveFamilyId,
@@ -263,6 +264,14 @@ Page({
 
     // ─── 列表滚动位置（COSTRA-220: 月份切换后滚动到顶部） ───
     listScrollTop: 0,
+
+    // ─── 长按上下文菜单 ───
+    ctxMenuVisible: false,
+    /** 菜单卡片左上角定位（px） */
+    ctxMenuTop: 0,
+    ctxMenuLeft: 0,
+    /** 当前被长按操作的流水（用于目标行暖光弱提醒） */
+    ctxActiveRefId: '',
   },
 
   // 内部状态
@@ -297,7 +306,8 @@ Page({
   _profileUpdatedHandler: null as ((payload?: unknown) => void) | null,
   /**
    * 当前已渲染 entries 的签名（sync-refresh: 签名 diff 跳过无效 setData，避免列表跳动）
-   * 拼接字段：client_ref_id|version|occurred_at|amount|type|category_id|note|deleted_at|shared_type|created_by
+   * 仅拼接影响视觉的字段（不含 version/updated_at —— 服务端版本变化但视觉不变时无需重渲）：
+   * client_ref_id|occurred_at|amount|type|category_id|note|deleted_at|shared_type|created_by
    */
   _entriesSignature: '' as string,
   /** 当前已渲染内容所属账本，用于切回时保留旧画面但避免账本切换误展示 */
@@ -309,12 +319,25 @@ Page({
   /** COSTRA-227: 当前正在编辑的条目 client_ref_id */
   _editingRefId: '' as string,
 
+  /** 长按上下文菜单：目标流水 client_ref_id */
+  _ctxRefId: '' as string,
+  /** 复制流水进行中的源 refId（防重复触发生成多条副本） */
+  _copyingRefId: '' as string,
+  /** 上下文菜单是否打开（打开期间屏蔽列表滑动，防误触发左滑） */
+  _contextMenuOpen: false as boolean,
+  /** 窗口可视区宽高（px，onLoad 记一次，用于菜单定位防溢出） */
+  _winW: 0 as number,
+  _winH: 0 as number,
+
   // ─── 生命周期 ────────────────────────────────────────────────────────────────
 
   // onLoad gate（冗余兜底 · onShow gate 是主防线）
   onLoad() {
     // COSTRA-214: 使用统一安全区服务替代直接调用 wx.getWindowInfo()
-    const { statusBarHeight, navBarHeight, navBarTotalHeight } = getSafeAreaMetrics();
+    const { statusBarHeight, navBarHeight, navBarTotalHeight, windowWidth, windowHeight } = getSafeAreaMetrics();
+    // 长按上下文菜单定位需要可视区宽高（px），复用统一安全区服务的窗口指标
+    this._winW = windowWidth;
+    this._winH = windowHeight;
     this.setData({
       statusBarHeight,
       navBarHeight,
@@ -486,7 +509,12 @@ Page({
 
   async _loadContext() {
     markPerf('ledger.context.start');
-    this._setLedgerLoadingState('validating-ledger');
+    // 仅在无可复用渲染内容时才进「验证账本」骨架态。
+    // 此刻 _ledgerId 仍是切换前的值：热刷新（同账本切回）判真 → 跳过骨架，列表原地保留；
+    // 切账本场景此处判真跳过，过渡由后续 _loadEntries 的 loading-cache 冷加载骨架承载。
+    if (!this._hasRenderableContent()) {
+      this._setLedgerLoadingState('validating-ledger');
+    }
     const [ledgerId, familyId, familyKind, ledgerName] = await Promise.all([
       getActiveLedgerId(),
       getActiveFamilyId(),
@@ -502,39 +530,9 @@ Page({
       ledger: familyKind || 'unknown',
       activeContext: ledgerId && familyId ? 'present' : 'missing',
     });
-    let displayLedgerName = ledgerName || (familyKind === 'personal' ? '个人账本' : '账本待同步');
-
-    // 协作账本需确认当前用户仍在 family 列表中；被移出时立即回退 personal，避免展示旧协作账本数据。
-    if (isMultiMember && familyId) {
-      try {
-        const { families } = await getFamilies();
-        const matched = families.find((f) => f.id === familyId && f.ledger_id === ledgerId);
-        if (!matched) {
-          const fallback = await fallbackToPersonalFamily('family-switch');
-          if (fallback) {
-            this._familyId = fallback.family_id;
-            this._ledgerId = fallback.ledger_id;
-            this.setData({ showMemberFilter: false, ledgerName: fallback.ledger_name || '个人账本' });
-            setPerfContext({ ledger: fallback.family_kind || 'personal', activeContext: 'fallback-personal' });
-          } else {
-            this._familyId = '';
-            this._ledgerId = '';
-            this._setLedgerLoadingState('failed', '账本待同步，请稍后重试');
-            // 首屏校验失败且无法回退 · 释放后台预热
-            this._emitLedgerDisplayFailed();
-          }
-          markPerf('ledger.context.done', { result: fallback ? 'fallback-personal' : 'family-missing' });
-          wx.showToast({ title: '你已不在该账本中', icon: 'none' });
-          return;
-        }
-        displayLedgerName = matched.ledger_name || matched.name || displayLedgerName;
-      } catch {
-        displayLedgerName = ledgerName ? `${ledgerName}（离线）` : '协作账本（离线）';
-        if (!ledgerId) {
-          wx.showToast({ title: '网络异常，账本待验证', icon: 'none' });
-        }
-      }
-    }
+    // 账本名直接用本地持久化的名称直出，不再于关键路径同步 getFamilies（无网会卡到超时）。
+    const displayLedgerName = ledgerName
+      || (familyKind === 'personal' ? '个人账本' : familyKind === 'shared' ? '协作账本' : '账本待同步');
 
     this.setData({
       showMemberFilter: isMultiMember,
@@ -542,17 +540,16 @@ Page({
       ledgerName: displayLedgerName,
     });
 
-    // 切换到非共享账本时重置筛选
+    // 协作账本成员资格校验移出关键路径，后台 fire-and-forget：
+    // 仍是成员则以服务端名称纠正；被移出才回退个人账本 + 重载（属低频操作，允许加载过渡）；
+    // 无网/超时/上下文已变则静默忽略，保留当前已展示内容，绝不清空界面。
+    if (isMultiMember && familyId) {
+      void this._validateFamilyMembership(familyId, this._ledgerId);
+    }
+
+    // 切换到非共享账本时重置筛选（个人账本无成员/性质筛选维度）
     if (!isMultiMember) {
-      this._filterExpenseType = 'all';
-      this._filterSelectedMemberIds = [];
-      this.setData({
-        filterExpenseType: 'all',
-        filterMembers: [],
-        filterActive: false,
-        filterPanelVisible: false,
-        memberFilterText: '全部',
-      });
+      this._resetFiltersForNonShared();
     }
 
     // 协作账本: 加载成员映射（用于条目行头像展示）
@@ -575,6 +572,23 @@ Page({
       shared: isMultiMember,
       hasLedgerId: !!this._ledgerId,
       hasFamilyId: !!this._familyId,
+    });
+  },
+
+  /**
+   * 重置筛选维度到「全部」（切换 / 回退到非共享账本时调用）。
+   * 个人账本不存在成员与公共/个人性质筛选，必须清空旧协作账本残留的筛选条件，
+   * 否则 _buildDisplay 会用旧筛选过滤个人账本流水，导致列表 / 汇总错误为空或不全。
+   */
+  _resetFiltersForNonShared() {
+    this._filterExpenseType = 'all';
+    this._filterSelectedMemberIds = [];
+    this.setData({
+      filterExpenseType: 'all',
+      filterMembers: [],
+      filterActive: false,
+      filterPanelVisible: false,
+      memberFilterText: '全部',
     });
   },
 
@@ -613,6 +627,63 @@ Page({
     }
   },
 
+  /**
+   * 后台静默校验协作账本成员资格（已移出关键路径，不阻塞渲染）。
+   * - 仍是成员：以服务端权威名称纠正本地账本名（必要时）。
+   * - 明确被移出：回退个人账本并重载流水（带 toast）。
+   * - 无网/超时/上下文已变/回退异常：静默忽略，保留本地已展示内容，绝不清空界面。
+   */
+  async _validateFamilyMembership(familyId: string, ledgerId: string) {
+    try {
+      const { families } = await getFamilies();
+      // 校验期间用户已切换上下文（账本或 family 任一变化）→ 放弃，避免回退到过期账本
+      if (this._familyId !== familyId || this._ledgerId !== ledgerId) return;
+      const matched = families.find((f) => f.id === familyId && f.ledger_id === ledgerId);
+      if (matched) {
+        const name = matched.ledger_name || matched.name;
+        if (name && name !== this.data.ledgerName) {
+          this.setData({ ledgerName: name });
+        }
+        markPerf('ledger.context.validate', { result: 'member' });
+        return;
+      }
+      // 明确被移出 → 回退个人账本
+      const fallback = await fallbackToPersonalFamily('family-switch');
+      if (this._familyId !== familyId || this._ledgerId !== ledgerId) return;
+      wx.showToast({ title: '你已不在该账本中', icon: 'none' });
+      if (fallback) {
+        this._familyId = fallback.family_id;
+        this._ledgerId = fallback.ledger_id;
+        // 回退到个人账本：隐藏成员入口 + 清空协作账本残留的筛选与成员映射，
+        // 否则 _loadEntries 重载后 _buildDisplay 会用旧协作筛选过滤个人流水。
+        this._memberMap = {};
+        this._resetFiltersForNonShared();
+        this.setData({ showMemberFilter: false, ledgerName: fallback.ledger_name || '个人账本' });
+        setPerfContext({ ledger: fallback.family_kind || 'personal', activeContext: 'fallback-personal' });
+        markPerf('ledger.context.validate', { result: 'fallback-personal' });
+        // 回退到新账本 → 重新加载流水（不同账本，自动走冷加载路径）
+        await this._loadEntries();
+      } else {
+        markPerf('ledger.context.validate', { result: 'family-missing-no-fallback' });
+      }
+    } catch {
+      // 无网/超时/回退异常：静默保留本地已展示内容（绝不清空界面），仅记录埋点便于排查。
+      markPerf('ledger.context.validate', { result: 'ignored-error' });
+    }
+  },
+
+  /**
+   * 是否已有可复用的渲染内容（区分冷加载 vs 热刷新的唯一判定）。
+   * 真：当前已渲染内容属于同一账本（指定月份时同月），可在屏保留并静默校验/更新。
+   *     —— 空月份(empty-confirmed)同样视为「已结算可保留」，避免热刷新时空态闪骨架。
+   * 假：首屏未渲染 / 切换了账本 / 切换了月份 —— 允许走加载过渡（骨架）。
+   */
+  _hasRenderableContent(targetMonth?: string): boolean {
+    if (!this._renderedLedgerId || this._renderedLedgerId !== this._ledgerId) return false;
+    if (targetMonth && this._renderedMonth !== targetMonth) return false;
+    return true;
+  },
+
   async _loadEntries(monthValue?: string) {
     const targetMonth = monthValue || this.data.currentMonth;
     markPerf('ledger.entries.start', { month: targetMonth, hasLedgerId: !!this._ledgerId });
@@ -638,19 +709,29 @@ Page({
       return;
     }
 
-    const canKeepCurrentView = this._renderedLedgerId === this._ledgerId
-      && this._renderedMonth === targetMonth
-      && this.data.dateGroups.length > 0;
-    if (canKeepCurrentView) {
-      markPerf('ledger.loading-state', { state: 'loading-cache', preserve: 'existing-view' });
-    } else {
-      this._setLedgerLoadingState('loading-cache');
+    // 热刷新：已有可复用的当前账本+月份渲染内容 → 全量本地读 + 签名 diff 静默更新。
+    // 不进骨架、不走 ready-partial 两段式：无变化则一帧不动，有变化则原地替换。
+    if (this._hasRenderableContent(targetMonth)) {
+      await this._reloadCurrentMonthSilently(targetMonth);
+      return;
     }
+
+    // 冷加载：无可复用内容（首屏 / 切账本 / 切月 / 被踢出回退）→ 允许加载过渡。
+    // loading-cache 骨架 + limit50 首屏求快 + ready-partial 两段式（partial 仅冷加载保留）。
+    const ledgerId = this._ledgerId;
+    this._setLedgerLoadingState('loading-cache');
     const recentResult = await listMonthEntries({
-      ledger_id: this._ledgerId,
+      ledger_id: ledgerId,
       month: targetMonth,
       limit: LEDGER_RECENT_ENTRY_LIMIT,
     });
+
+    // await 期间上下文（账本 / 月份）已变 → 放弃落地，交由新触发的加载接管，避免旧结果覆盖新画面。
+    // 切月（onPrevMonth/onNextMonth/onMonthChange 不 await）与切账本并发时由此守护防错配。
+    if (this._ledgerId !== ledgerId || this.data.currentMonth !== targetMonth) {
+      markPerf('ledger.entries.skip', { reason: 'context-changed', month: targetMonth });
+      return;
+    }
 
     this._allEntries = recentResult.entries;
     setPerfContext({
@@ -670,7 +751,7 @@ Page({
         totalBalance: `已先展示最近 ${this._allEntries.length} 条流水`,
       });
       this._setLedgerLoadingState('ready-partial', '整月统计更新中…');
-      void this._loadFullMonthEntries(targetMonth, this._ledgerId, recentResult);
+      void this._loadFullMonthEntries(targetMonth, ledgerId, recentResult);
     }
     markPerf('ledger.entries.done', {
       month: targetMonth,
@@ -729,6 +810,46 @@ Page({
     } catch (err) {
       markPerfError('ledger.entries.full.failed', err, { month: monthValue });
     }
+  },
+
+  /**
+   * 热刷新静默重载：保持当前列表在屏，全量本地读取后按签名 diff 决定是否重渲。
+   * - 不进骨架态、不走 ready-partial（partial 仅冷加载首屏求快保留）。
+   * - 签名无变化：一帧不动（仅在残留非 ready 态时纠正结算态）。
+   * - 签名变化：原地 _buildDisplay 替换 + 结算为 ready-full / empty-confirmed。
+   * - await 期间上下文（账本/月份）变更：放弃，交由新触发的加载接管。
+   * 纯本地读取，与网络解耦：无网亦可静默完成，不阻塞、不闪烁。
+   */
+  async _reloadCurrentMonthSilently(targetMonth: string) {
+    const ledgerId = this._ledgerId;
+    markPerf('ledger.entries.start', { month: targetMonth, mode: 'silent-hot-reload' });
+    const fullResult = await listMonthEntries({ ledger_id: ledgerId, month: targetMonth });
+    if (this._ledgerId !== ledgerId || this.data.currentMonth !== targetMonth) {
+      markPerf('ledger.entries.silent.skip', { reason: 'context-changed', month: targetMonth });
+      return;
+    }
+    const nextSig = this._computeEntriesSignature(fullResult.entries);
+    const settledState: LedgerLoadingState = fullResult.entries.length > 0 ? 'ready-full' : 'empty-confirmed';
+    if (nextSig === this._entriesSignature) {
+      // 数据无变化：一帧不动；仅当残留非结算态（如上次停在 ready-partial）时纠正。
+      if (this.data.ledgerLoadingState !== settledState) {
+        this._setLedgerLoadingState(settledState);
+      }
+      this._emitLedgerDisplayReady(targetMonth, fullResult.entries.length);
+      markPerf('ledger.entries.done', { month: targetMonth, mode: 'silent-hot-reload', unchanged: true, count: fullResult.entries.length });
+      return;
+    }
+    this._allEntries = fullResult.entries;
+    this._entriesSignature = nextSig;
+    setPerfContext({
+      entryCache: fullResult.source,
+      dataState: fullResult.entries.length > 0 ? 'full' : 'empty',
+    });
+    this._buildDisplay(targetMonth);
+    this._setLedgerLoadingState(settledState);
+    this._emitLedgerDisplayReady(targetMonth, fullResult.entries.length);
+    markPerf('ledger.entries.done', { month: targetMonth, mode: 'silent-hot-reload', unchanged: false, count: fullResult.entries.length });
+    markPerf('ledger.display.done', { source: 'silent-hot-reload', month: targetMonth, count: fullResult.entries.length, empty: fullResult.entries.length === 0 });
   },
 
   /**
@@ -1150,6 +1271,8 @@ Page({
   },
 
   onTouchMove(e: WechatMiniprogram.TouchEvent) {
+    // 上下文菜单打开期间屏蔽滑动，避免长按后误触发左滑
+    if (this._contextMenuOpen) return;
     const deltaX = e.touches[0].clientX - this._touchStartX;
     const deltaY = e.touches[0].clientY - this._touchStartY;
 
@@ -1236,8 +1359,152 @@ Page({
     return this._allEntries.find(e => e.client_ref_id === refId) || null;
   },
 
+  // ─── 长按上下文菜单 ───────────────────────────────────────────────────────
+
+  /** 长按流水 → 在触点附近原地弹出上下文菜单 */
+  onEntryLongPress(e: WechatMiniprogram.TouchEvent) {
+    const refId = (e.currentTarget.dataset as Record<string, string>).refid;
+    if (!refId) return;
+
+    // 若有流水处于左滑展开态，先复位，避免菜单与左滑并存
+    if (this.data.swipingRefId) {
+      this._resetAllSwipe();
+    }
+
+    const winW = this._winW || 375;
+    const winH = this._winH || 667;
+    // 菜单尺寸估算（rpx → px）：须与 index.wxss .ctx-menu 保持同步
+    // （宽 300rpx，高约 5×96rpx item + 上下 padding 8rpx + 删除项 margin 6rpx）
+    const rpxToPx = winW / 750;
+    const menuW = 300 * rpxToPx;
+    const menuH = 510 * rpxToPx;
+    const margin = 12;
+
+    const touchX = this._touchStartX;
+    const touchY = this._touchStartY;
+
+    // 左右：居中于触点，边界收拢防溢出
+    let left = touchX - menuW / 2;
+    if (left < margin) left = margin;
+    if (left > winW - menuW - margin) left = winW - menuW - margin;
+
+    // 上下：优先向下展开，下方空间不足则向上
+    let top = touchY + menuH + margin <= winH ? touchY : touchY - menuH;
+    const minTop = (this.data.statusBarHeight || 20) + 8;
+    if (top < minTop) top = minTop;
+    if (top > winH - menuH - margin) top = winH - menuH - margin;
+
+    this._ctxRefId = refId;
+    this._contextMenuOpen = true;
+    wx.vibrateShort({ type: 'light' });
+    this.setData({
+      ctxMenuVisible: true,
+      ctxMenuLeft: left,
+      ctxMenuTop: top,
+      ctxActiveRefId: refId,
+    });
+  },
+
+  /** 关闭上下文菜单 */
+  onCtxMenuClose() {
+    if (!this.data.ctxMenuVisible) return;
+    this._contextMenuOpen = false;
+    this._ctxRefId = '';
+    this.setData({ ctxMenuVisible: false, ctxActiveRefId: '' });
+  },
+
+  /** 菜单：复制流水 */
+  onCtxCopy() {
+    const refId = this._ctxRefId;
+    this.onCtxMenuClose();
+    void this._copyEntry(refId);
+  },
+
+  /** 菜单：修改备注 */
+  onCtxNote() {
+    const refId = this._ctxRefId;
+    this.onCtxMenuClose();
+    this._openEditNote(refId);
+  },
+
+  /** 菜单：修改金额 */
+  onCtxAmount() {
+    const refId = this._ctxRefId;
+    this.onCtxMenuClose();
+    this._openEditAmount(refId);
+  },
+
+  /** 菜单：修改分类 */
+  onCtxCategory() {
+    const refId = this._ctxRefId;
+    this.onCtxMenuClose();
+    this._openEditCategory(refId);
+  },
+
+  /** 菜单：删除流水（二次确认） */
+  onCtxDelete() {
+    const refId = this._ctxRefId;
+    this.onCtxMenuClose();
+    this._confirmDeleteEntry(refId);
+  },
+
+  /**
+   * 复制流水（直接落库）：用源流水的金额/币种/类型/分类/备注/公私性质创建一条新流水，
+   * occurred_at 记为「今天」、ledger_id 用当前账本、created_by 用当前用户、client_ref_id 新生成。
+   * 用于地铁等固定金额支出的快速记账，走 putEntry + enqueue(create) + ENTRY_SAVED 链路，
+   * 与手动记账保存后行为一致。
+   */
+  async _copyEntry(refId: string) {
+    if (!refId) return;
+    // 防重：同一流水复制进行中，忽略重复触发，避免生成多条副本
+    if (this._copyingRefId === refId) return;
+    const src = this._findRawEntry(refId);
+    if (!src) return;
+
+    this._copyingRefId = refId;
+    const now = new Date().toISOString();
+    const newEntry: Entry = {
+      client_ref_id: newClientRefId(),
+      ledger_id: this._ledgerId,
+      amount: src.amount,
+      currency: src.currency || 'CNY',
+      type: src.type,
+      category_id: src.category_id,
+      note: src.note,
+      occurred_at: now,
+      created_at: now,
+      updated_at: now,
+      created_by: getToken()?.raw.user.id || null,
+      shared_type: src.shared_type ?? null,
+    };
+
+    try {
+      await putEntry(newEntry);
+      await enqueue({
+        op: 'create',
+        entity: 'entry',
+        client_ref_id: newEntry.client_ref_id,
+        base_version: null,
+        payload: { ...newEntry },
+      });
+      wx.vibrateShort({ type: 'medium' });
+      // 复用响应式刷新链路（_onEntrySaved → _loadEntries）+ 统计页刷新
+      eventBus.emit(EventNames.ENTRY_SAVED);
+      // 历史月份浏览时新流水记入当月、当前列表不可见，故文案明示
+      wx.showToast({ title: '已复制到今天', icon: 'success' });
+    } catch {
+      wx.showToast({ title: '复制失败，请重试', icon: 'none' });
+    } finally {
+      this._copyingRefId = '';
+    }
+  },
+
   onDeleteEntry(e: WechatMiniprogram.TouchEvent) {
-    const refId = e.currentTarget.dataset.refid;
+    this._confirmDeleteEntry(e.currentTarget.dataset.refid);
+  },
+
+  /** 删除流水二次确认（左滑删除 / 长按菜单共用） */
+  _confirmDeleteEntry(refId: string) {
     if (!refId) return;
 
     wx.showModal({
@@ -1279,6 +1546,11 @@ Page({
   onTapEntryCategory(e: WechatMiniprogram.TouchEvent) {
     if (this.data.swipingRefId) { this._resetAllSwipe(); return; }
     const refId = (e.currentTarget.dataset as Record<string, string>).refid;
+    this._openEditCategory(refId);
+  },
+
+  /** 打开分类编辑面板（行内点击 / 长按菜单共用） */
+  _openEditCategory(refId: string) {
     if (!refId) return;
     const entry = this._findRawEntry(refId);
     if (!entry) return;
@@ -1551,6 +1823,11 @@ Page({
   onTapEntryNote(e: WechatMiniprogram.TouchEvent) {
     if (this.data.swipingRefId) { this._resetAllSwipe(); return; }
     const refId = (e.currentTarget.dataset as Record<string, string>).refid;
+    this._openEditNote(refId);
+  },
+
+  /** 打开备注编辑（行内点击 / 长按菜单共用） */
+  _openEditNote(refId: string) {
     if (!refId) return;
     const entry = this._findRawEntry(refId);
     if (!entry) return;
@@ -1613,6 +1890,11 @@ Page({
   onTapEntryAmount(e: WechatMiniprogram.TouchEvent) {
     if (this.data.swipingRefId) { this._resetAllSwipe(); return; }
     const refId = (e.currentTarget.dataset as Record<string, string>).refid;
+    this._openEditAmount(refId);
+  },
+
+  /** 打开金额编辑面板（行内点击 / 长按菜单共用） */
+  _openEditAmount(refId: string) {
     if (!refId) return;
     const entry = this._findRawEntry(refId);
     if (!entry) return;

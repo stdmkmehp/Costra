@@ -18,7 +18,20 @@
 
 import { eventBus, EventNames } from '../services/eventBus';
 import { getItem, setItem } from '../services/storage';
-import { getToken } from '../services/auth';
+import { getToken, hasValidSession } from '../services/auth';
+
+/** App 实例携带 bootstrap 就绪 Promise（与各 Tab 页 onShow gate 同源） */
+interface AppWithBootstrap { bootstrapPromise: Promise<void> }
+
+/** 取当前栈顶页面路由，用于把本 tabbar 实例映射回其所属 Tab（attach 自解锁用）。 */
+function getCurrentPageRoute(): string {
+  try {
+    const pages = getCurrentPages();
+    return pages.length > 0 ? pages[pages.length - 1].route || '' : '';
+  } catch {
+    return '';
+  }
+}
 
 /** Tab 路由映射 · index 2 是 [+] 不走路由 */
 const TAB_ROUTES: Record<number, string> = {
@@ -50,6 +63,13 @@ Component({
      * - 消除：点击「我的」tab 即刻消失 + 写 storage，与资料是否真正填写无关
      */
     showProfileBadge: false,
+    /**
+     * 过渡开关（2026-07-02）：控制 .tab-bar--animatable 是否挂载。
+     * 初始 false：挂载 + 首次揭示(hidden true→false) 全程无 transition → 瞬时到位，
+     * 避免每个 Tab 页首次进入时 tabbar「从底部滑上来」的闪烁。
+     * 仅在 _applyHidden（真正的面板开合）首次触达时两段式开启，此后常驻，供滑动动画使用。
+     */
+    animatable: false,
   },
 
   lifetimes: {
@@ -85,6 +105,25 @@ Component({
       // 主动检测一次：应对 tabBar attach 晚于 emit 的时序竞争
       // 场景：冷启动 bootstrap 极快，emit 发出时 tabBar 尚未 attach，事件被错过
       this._tryShowBadge();
+
+      // 反 attach/onShow 竞争（2026-07-02）：tab-bar 可能晚于所属页 onShow 才 attach，
+      // 此时页面 `getTabBar()?.markActive()` 因 getTabBar() 返回 null 而静默落空，
+      // 导致 tab-bar 永久停留在初始 hidden=true → tabbar 消失（真机已复现）。
+      // 修复：由 tab-bar 自身在 attach 后完成解锁，不再依赖 getTabBar() 时序。
+      //   - 沿用与页面相同的门槛（等 bootstrap 就绪 + 校验会话），避免未登录冷启动闪 tabbar 后跳登录；
+      //   - this 即已 attach 的本实例，markActive 必定生效；
+      //   - animatable 此刻仍为 false → 无 transition → 直接就位，无「从底部滑上来」闪烁；
+      //   - 页面 onShow 里的 markActive 退化为幂等的二次校正（hidden 已 false 时不改动）。
+      const route = getCurrentPageRoute();
+      const selfIdx = Object.keys(TAB_ROUTES)
+        .map(Number)
+        .find((i) => TAB_ROUTES[i] === `/${route}`);
+      if (selfIdx !== undefined) {
+        void getApp<AppWithBootstrap>().bootstrapPromise.then(() => {
+          if (!hasValidSession()) return; // 未登录：交由页面 reLaunch 到 login，不揭示 tabbar
+          this.markActive(selfIdx);
+        });
+      }
     },
 
     detached() {
@@ -162,6 +201,8 @@ Component({
       if (this.data.hidden !== panelOpen) {
         patch.hidden = panelOpen;
       }
+      // 揭示路径绝不开启 animatable：首次进入时 hidden(true→false) 必须瞬时（无 transition），
+      // 否则会被动画成「从底部滑上来」。animatable 只在 _applyHidden（真正的面板开合）里开启。
       this.setData(patch);
     },
 
@@ -171,8 +212,18 @@ Component({
       const unlocked = self._unlocked as boolean;
       const panelOpen = self._panelOpen as boolean;
       const nextHidden = !unlocked || panelOpen;
-      if (this.data.hidden !== nextHidden) {
-        this.setData({ hidden: nextHidden });
+      const applyHidden = () => {
+        if (this.data.hidden !== nextHidden) {
+          this.setData({ hidden: nextHidden });
+        }
+      };
+      // 反首帧闪烁（2026-07-02）：面板开合才需要滑动动画。
+      // 首次触达时用两段式开启 animatable（先 setData 开关并绘制，再改 hidden），
+      // 保证 transition 已就位、滑动可靠；此后 animatable 常驻。
+      if (!this.data.animatable) {
+        this.setData({ animatable: true }, applyHidden);
+      } else {
+        applyHidden();
       }
     },
   },

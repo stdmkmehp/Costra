@@ -4,7 +4,7 @@
 <!-- 架构: overlay → shell(flex-column) → header + scroll-view(flex:1) + keypad-sheet -->
 <!-- COSTRA-214: 顶部安全区由 getSafeAreaMetrics() 驱动，不再依赖 CSS env(safe-area-inset-top) -->
 
-<view class="expense-overlay {{visible ? 'is-visible' : ''}}">
+<view class="expense-overlay {{animatable ? 'expense-overlay--animatable' : ''}} {{visible ? 'is-visible' : ''}}">
   <view class="expense-shell">
 
     <!-- ═══ 顶部区域：取消 + 支出/收入指示器 ═══ -->

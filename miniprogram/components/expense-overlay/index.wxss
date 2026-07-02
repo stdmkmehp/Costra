@@ -12,6 +12,25 @@
   z-index: 9999;
   background: #f1f2ec;
   transform: translateY(100%);
+  /* 反首帧闪烁（2026-07-02）：transition 不再常驻基类。
+   * 每个 Tab 页各挂一份 overlay 实例，首次挂载时存在「先按默认位置(translateY 0)绘制、
+   * 再应用 WXSS transform(100%)」的时序窗口，若 transition 常驻，此窗口会把 overlay
+   * 动画成从可见位置向下滑走 → 底部露出「支出·收入·转移」header 的闪烁。
+   * 改由 .expense-overlay--animatable 承载 transition：挂载帧无此类 → 静止态直接就位无动画；
+   * 用户真正打开面板时（_show/openEditMode）才置 animatable=true 开启过渡。 */
+}
+
+/* 反首帧位置闪现（2026-07-02 再修）：即便无 transition，微信新页面首帧仍可能先按
+ * 默认位置(translateY 0)绘制一帧再套上 transform → 覆盖层闪现。
+ * 「从未打开过」的实例(尚无 --animatable)一律 visibility:hidden，彻底不可见，
+ * 无论 transform 何时落地都不闪；一旦用户打开(animatable=true)则解除，开合滑动照常。
+ * 因 is-visible 只可能在 _show/openEditMode 置 animatable=true 之后出现，两者不会冲突。 */
+.expense-overlay:not(.expense-overlay--animatable) {
+  visibility: hidden;
+}
+
+/* 过渡开关：用户真正打开面板时开启，避免首帧被动画化（2026-07-02） */
+.expense-overlay--animatable {
   transition: transform 350ms cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 

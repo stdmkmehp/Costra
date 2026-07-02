@@ -100,6 +100,13 @@ Component({
   data: {
     // ─── 显隐 ───
     visible: false,
+    /**
+     * 过渡开关（2026-07-02）：控制 .expense-overlay--animatable 是否挂载。
+     * 初始 false：挂载帧无 transition → 静止态(translateY 100%)直接就位，
+     * 消除每个 Tab 页首次创建时 overlay「从底部向上升起 / 底部露出支出·收入·转移」的闪烁。
+     * 挂载完成后由 attached 的 nextTick 置 true，供后续 open/close 滑动动画使用。
+     */
+    animatable: false,
 
     // ─── 编辑模式（COSTRA-227） ───
     editMode: false,
@@ -223,6 +230,13 @@ Component({
      * 联网状态下后台刷新若发现新数据会做温和增量刷新。
      */
     async _show() {
+      // 反首帧闪烁（2026-07-02）：过渡开关只在用户真正打开面板时开启，
+      // 且在 visible=true 之前先开（下方 await 天然分帧，保证 --animatable 已绘制）。
+      // 关键：切到其他 Tab 页时不会调 _show，那些页的 overlay 实例始终 animatable=false，
+      // 无论其重子树渲染多慢，transform 落地时都无 transition → 根除切页时覆盖层滑动闪烁。
+      if (!this.data.animatable) {
+        this.setData({ animatable: true });
+      }
       // —— 阶段 1：同步可得的数据（仅 storage，无网络）——
       const [ledgerId, familyKind, ledgerNameStored, familyId] = await Promise.all([
         getActiveLedgerId(),
@@ -426,6 +440,11 @@ Component({
     async openEditMode(entry: Entry) {
       // COSTRA-227: 通知 tabbar 隐藏
       eventBus.emit(EventNames.HIDE_TAB_BAR);
+
+      // 反首帧闪烁（2026-07-02 修订）：与 _show 一致，在 visible=true 之前先开过渡开关。
+      if (!this.data.animatable) {
+        this.setData({ animatable: true });
+      }
 
       // 存储原始 entry 引用（用于后续 diff）
       (this as unknown as Record<string, unknown>)._editOriginalEntry = entry;
