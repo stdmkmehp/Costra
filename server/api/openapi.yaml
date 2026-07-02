@@ -1365,7 +1365,7 @@ components:
           nullable: true
           description: 'L1 时为 parent_id；L2 时为 category_id；null 表示未分类（应不出现）'
         category_name: { type: string }
-        icon: { type: string }
+        icon: { type: string, description: '语义 icon_key，与 Category.icon 同源，端侧经 iconMap 映射为 costra-icons 字形；旧数据可能为单字符，客户端需兜底' }
         amount: { type: integer, format: int64, description: '金额（cents）' }
         entry_count: { type: integer }
         ratio_bps: { type: integer, minimum: 0, maximum: 10000, description: '占比万分比（基数因层级而异：L1 = 总支出 / L2 = 父级总额）' }
@@ -1628,7 +1628,7 @@ components:
           description: null 表示系统预设
         name: { type: string }
         type: { type: string, enum: [income, expense, transfer] }
-        icon: { type: string, description: 图标 key（Design Token 映射） }
+        icon: { type: string, description: '语义 icon_key（端侧经 iconMap 映射为 costra-icons 字体字形；映射见 scripts/icon-font/icon-registry.json）' }
         color: { type: string, description: 色值 key }
         sort_order: { type: integer }
         is_system: { type: boolean }

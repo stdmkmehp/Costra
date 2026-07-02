@@ -259,7 +259,7 @@
                 data-id="{{item.id}}"
                 bindtap="onEditTapSubCategory"
               >
-                <view class="category-item__icon">{{item.name[0]}}</view>
+                <view class="category-item__icon">{{item.icon}}</view>
                 <text class="category-item__name">{{item.name}}</text>
               </view>
             </view>
@@ -276,7 +276,7 @@
                 data-name="{{item.name}}"
                 bindtap="onEditTapSubCategory"
               >
-                <view class="category-item__icon">{{item.name[0]}}</view>
+                <view class="category-item__icon">{{item.icon}}</view>
                 <text class="category-item__name">{{item.name}}</text>
               </view>
             </view>
@@ -316,7 +316,7 @@
                 data-id="{{item.id}}"
                 bindtap="onEditTapSubCategory"
               >
-                <view class="category-item__icon">{{item.name[0]}}</view>
+                <view class="category-item__icon">{{item.icon}}</view>
                 <text class="category-item__name">{{item.name}}</text>
               </view>
             </view>
@@ -333,7 +333,7 @@
                 data-name="{{item.name}}"
                 bindtap="onEditTapSubCategory"
               >
-                <view class="category-item__icon">{{item.name[0]}}</view>
+                <view class="category-item__icon">{{item.icon}}</view>
                 <text class="category-item__name">{{item.name}}</text>
               </view>
             </view>
@@ -372,7 +372,7 @@
                 data-id="{{item.id}}"
                 bindtap="onEditTapSubCategory"
               >
-                <view class="category-item__icon">{{item.name[0]}}</view>
+                <view class="category-item__icon">{{item.icon}}</view>
                 <text class="category-item__name">{{item.name}}</text>
               </view>
             </view>

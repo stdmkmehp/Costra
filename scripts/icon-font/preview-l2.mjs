@@ -7,7 +7,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import paper from 'paper-jsdom';
 import { Resvg } from '@resvg/resvg-js';
-import { ICONS_L2 } from './icons-l2.mjs';
+import { ICONS_L2 } from './icons.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DIST = resolve(__dirname, 'dist');

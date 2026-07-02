@@ -256,9 +256,10 @@
 }
 
 .entry-icon__text {
-  font-size: 22rpx;
+  font-family: "costra-icons";
+  font-size: 34rpx;
+  line-height: 1;
   color: var(--color-role-text-primary, #1c1b1a);
-  font-weight: 500;
   line-height: 1;
 }
 

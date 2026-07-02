@@ -2,15 +2,15 @@
  * 生成二级分类图标评审页（HTML）。
  *
  * 复用一级 icon-style-demo.html 的设计规范与 fit() 光学归一逻辑，
- * 直接读取权威定义 icons-l2.mjs，按「分类组」分区展示三态（默认/选中黑/选中绿）。
- * 产出：docs/design/icon-style-demo-l2.html —— 可直接浏览器打开评审。
+ * 从唯一权威源 icons.mjs 读取二级分组视图（ICONS_L2），按「分类组」分区展示
+ * 三态（默认/选中黑/选中绿）。产出：docs/design/icon-style-demo-l2.html —— 可直接浏览器打开评审。
  *
  * 每新增/调整一组图标后重跑本脚本即可自动刷新评审页，无需手维护 HTML。
  */
 import { writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ICONS_L2 } from './icons-l2.mjs';
+import { ICONS_L2 } from './icons.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUT = resolve(__dirname, '../../docs/design/icon-style-demo-l2.html');

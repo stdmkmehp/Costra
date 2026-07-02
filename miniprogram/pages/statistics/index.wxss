@@ -428,7 +428,9 @@ page {
 
 .rank__icon {
   flex: none;
-  font-size: 28rpx;
+  font-family: "costra-icons";
+  font-size: 32rpx;
+  line-height: 1;
 }
 
 .rank__name {

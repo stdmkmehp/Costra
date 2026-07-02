@@ -150,7 +150,7 @@
 | `is_system` | BOOLEAN NOT NULL DEFAULT false | 系统预置（owner 为空） |
 | `parent_id` | UUID REFERENCES `categories(id)` ON DELETE RESTRICT | **COSTRA-217 新增**：二级分类父级（最多 2 级）；CONSTRAINT TRIGGER 禁止三级 + 禁止自引用 |
 | `name` | TEXT NOT NULL | — |
-| `icon` | TEXT | 图标键（对齐 `docs/design/design-system.md`） |
+| `icon` | TEXT | 图标键。系统分类迁移后（`0007_category_icon_keys.sql`）存**语义 icon_key**（如 `dining`/`transport`），端侧经 `miniprogram/services/iconMap.ts` 映射为 costra-icons 字体字形；历史单字仅作为旧 seed/回滚兼容。映射见 `scripts/icon-font/icon-registry.json` |
 | `color` | TEXT | 颜色键（COSTRA-217 seed 使用） |
 | `type` | TEXT NOT NULL CHECK (type IN ('income','expense','transfer')) | v1.1 P0-1：原 `kind` 改名 `type` 与 OpenAPI `Category.type` 对齐；同步补 `transfer` 枚举 |
 | `sort_order` | INTEGER NOT NULL DEFAULT 0 | — |
@@ -304,6 +304,9 @@ Clean rebuild 策略：0008 开头清空旧系统分类，全量插入新二级�
 | `0003_v1_1_rename_kind_to_type.down.sql` | down | 反向 RENAME 回滚（仅用于紧急回退） |
 | **`0008_categories_hierarchy_seed.sql`** | up | **COSTRA-217**：categories 加 `parent_id` + `is_direct_default` + CONSTRAINT TRIGGER 二级约束 + 替换唯一索引含 parent_id + partial unique index is_direct_default + 清空旧系统分类 + 全量插入二级分类 seed（11 一级 + 62 二级 = 73 条 · clean rebuild） |
 | **`0009_entries_shared_type.sql`** | up | **COSTRA-217**：创建 `entry_shared_type` ENUM + entries 加 `shared_type` 列 + CHECK 约束 `shared_type IS NULL OR type = 'expense'` + 索引 `idx_entries_shared_type` |
+| **`0007_category_icon_keys.sql`** | up | **COSTRA-ICON-KEY**：把系统分类 `icon` 列由单字就地刷为语义 icon_key（幂等 UPDATE，按 名+type+父 定位，`family_id IS NULL`）。`0001/0004` 历史 seed 保留单字基线**不改**，靠本迁移在 migrations 顺序执行末尾统一收敛 fresh + existing 环境 |
+
+> 注：上表编号沿用历史文档口径，与实际 `server/db/migrations/` 目录可能不完全一致；以目录实际文件为准。
 
 **命名约定**：`NNNN_<slug>.sql` / `NNNN_<slug>.down.sql`，编号幂等可重跑。
 

@@ -1,8 +1,8 @@
-# 分类图标资源替换 · 落地方案（评审稿）
+# 分类图标资源替换 · 落地方案（已实现）
 
 > 目标：把小程序当前「分类图标 = 单个汉字文本」替换为新设计的一套线性矢量图标（L1 14 个 + L2 67 个 = 81 个唯一字形），走 iconfont（base64 TTF）渲染。
 >
-> 本文是可评审的**逐文件落地拆解 + migration 草案**，尚未实现。
+> 本文为**已落地**的逐文件方案。构建管线已从最初计划的 `build.mjs`（paperjs-offset）改为 **FontForge 两步管线**（见 §4.3）；小程序 / 服务端 / 迁移代码均已实现，待按 §8 发布顺序上线。
 
 ---
 
@@ -25,7 +25,7 @@
    { iconKey: { label, svg } }  × 81                 { iconKey: "e0xx" }  稳定不漂移
                     │                                          │
                     └──────────────┬───────────────────────────┘
-                                   ▼  build.mjs（扩展：纳入 L2 + 读注册表分配码点）
+                                   ▼  build-svg.mjs（node·fit 归一产 SVG） + build-font.py（FontForge·描边→TTF）
         ┌──────────────────────────┼──────────────────────────────┐
         ▼                          ▼                               ▼
   iconfont.ttf            miniprogram/styles/iconfont.wxss    miniprogram/services/iconMap.ts
@@ -114,22 +114,30 @@
 
 ### 4.1 新增 `scripts/icon-font/icons.mjs`（唯一图标源）
 - 结构：`export const ICONS = { <iconKey>: { label: '早餐', svg: `<path .../>...` } }`，收录全部 81 个字形。
-- 迁移动作：把 `docs/design/icon-style-demo.html` 里内联的 14 个 L1 SVG 抽出，把 `icons-l2.mjs` 的 67 个按新 key 平铺，合并进本文件。原 `icons-l2.mjs` 退役或改为 re-export。
+- 迁移动作（已完成）：L1 从 `docs/design/icon-style-demo.html` 抽到**私有分片** `icons-l1.mjs`；`icons.mjs` import `icons-l1.mjs` + `icons-l2.mjs`，经 `KEY_OF` 平铺为 `{ iconKey: {label, svg} }` 共 81，并 re-export 分组视图（`ICONS_L1`/`ICONS_L2`）供评审/预览脚本消费。**分片为私有源，仅 `icons.mjs` 引用**；其余脚本（`build-svg.mjs` / `gen-demo-l2.mjs` / `preview-l2.mjs`）一律从 `icons.mjs` 取，杜绝双源漂移。`build-svg.mjs` 另做 registry ↔ ICONS key 双向校验。
 
 ### 4.2 新增 `scripts/icon-font/icon-registry.json`（码点稳定表）
 - `{ "dining": "e000", ..., "credit_card": "e0xx" }`，提交进仓库。build 只读它分配码点；新增字形只追加新 key，绝不移动已有。
 
-### 4.3 改造 `scripts/icon-font/build.mjs`
-- 数据源从「正则抠 demo.html」改为 `import { ICONS } from './icons.mjs'` + 读 `icon-registry.json`。
-- 产出新增（除现有 dist/*）：
-  - `miniprogram/styles/iconfont.wxss`：`@font-face{font-family:'costra-icons';src:url(data:font/ttf;base64,...)} .costra-icon{font-family:'costra-icons';...}`
-  - `miniprogram/services/iconMap.ts`：`export const ICON_GLYPH: Record<string,string> = { dining:'\ue000', ... }` + `export function resolveIconGlyph(key,fallback?)`。
-- 保留 dist 下 ttf/preview/compare 作为自检。
+### 4.3 构建管线（node + FontForge 两步）
+> ⚠️ 落地变更：原计划用 `build.mjs`（paperjs-offset 做 stroke→outline）在退化几何（如「加油」喷嘴半圆）上**死循环**，且不可靠。已改用工业标准 **FontForge** 的几何描边扩展，拆两步：
 
-### 4.4 改造 `gen-demo-l2.mjs` / demo 生成
-- 评审页/预览改为从 `icons.mjs` 读，纯消费者。`icon-style-demo.html` 不再是数据源。
+- **第 1 步 `scripts/icon-font/build-svg.mjs`（node）**：`import { ICONS }` + 读 `icon-registry.json`，只做 fit 光学归一（measure bbox + 缩放居中，**不做描边外扩**），产出：
+  - `dist/glyph-svg/<cpHex>-<key>.stroke.svg`（描边中心线）+ `.fill.svg`（实心形状）
+  - `dist/glyphs.json`、`dist/glyph-map.json`、`miniprogram/services/iconMap.ts`（不依赖 ttf，提前生成）
+  - `elToPaper` 支持 path/circle/ellipse/rect。
+- **第 2 步 `scripts/icon-font/build-font.py`（FontForge）**：逐字 `importOutlines(stroke) → stroke("circular",62.5,round,round) → importOutlines(fill) → removeOverlap → correctDirection → normalize_center → round`，产出：
+  - `dist/iconfont.ttf`
+  - `miniprogram/styles/iconfont.wxss`（@font-face base64 + `.costra-icon`）
+  - `dist/preview.html`
+  - `normalize_center`：等比缩放到 `TARGET_EM=833`（=EM·20/24）+ 居中（水平 EM/2，垂直 (ascent−descent)/2），消除 FontForge SVG 导入的缩放/定位差异。
+- **一键**：`bash scripts/icon-font/build.sh`（串联两步）。依赖：node（已 npm install）+ `brew install fontforge`。
 
-**产物校验**：`node build.mjs` + `render-ttf.mjs` 出 81 字形自检图，肉眼比对保真度。
+### 4.4 图标源单一化
+- `icons.mjs` 为唯一对外源：`import` L1（`icons-l1.mjs`，从 demo.html 抽出）+ L2（`icons-l2.mjs`），经 `KEY_OF` 平铺为 `{ iconKey: {label, svg} }` 共 81。构建只读 `icons.mjs`，不再正则解析 HTML。
+- `icons-l1.mjs` / `icons-l2.mjs` 为**私有分片源**，仅 `icons.mjs` import；评审页（`gen-demo-l2.mjs`）、PNG 预览（`preview-l2.mjs`）改从 `icons.mjs` re-export 的分组视图读取，不再直连分片，避免预览 / 构建 / registry 三者漂移。
+
+**产物校验**：`bash build.sh` 后打开 `dist/preview.html` 三态核验保真度。
 
 ---
 
@@ -156,17 +164,19 @@
 | 文件 | 改动 |
 |---|---|
 | `design/categories.yaml` | 每节点把 `icon:` 值由单字改为 icon_key（按 §2/§3）；更新文件头字段说明 |
-| `server/db/migrations/0001_init.sql` | 系统分类 seed 的 `icon` 列值改为 icon_key（基线正确，未来 fresh DB 直接对） |
-| `server/db/migrations/0004_categories_restructure.sql` | 同上，transfer 类目 icon → key |
-| **新增** `server/db/migrations/0007_category_icon_keys.sql` | 对**已部署 DB** 把系统分类 `icon` 就地刷成 icon_key（见 §7 草案） |
-| `server/api/openapi.yaml` | `Category.icon` 描述补充「值为 iconfont 语义 key，端侧字体映射」；已有「图标 key」表述基本对齐 |
+| `server/db/migrations/0001_init.sql` | **保持历史单字 seed 不改**（不改历史迁移，规避风险；由 0007 统一收敛） |
+| `server/db/migrations/0004_categories_restructure.sql` | **保持不改**，同上 |
+| **新增** `server/db/migrations/0007_category_icon_keys.sql` | 系统分类 `icon` 就地刷成 icon_key（幂等 UPDATE）。migrations 顺序执行，0007 在末尾对 **fresh + existing** 环境统一收敛为 key（见 §7） |
+| `server/api/openapi.yaml` | `Category.icon` 与统计 `StatCategoryRankItem.icon` 描述均补充「值为语义 icon_key，端侧经 iconMap 映射为字体字形」 |
 | server 测试 | `syncPull` 相关若断言含 icon 的签名 fixture 需更新；`categories-shared-type.test.ts` 若断言 icon 值需更新（数量断言不受影响） |
 
 **服务端运行时零影响**（icon 全程透传/回显，无逻辑依赖）；改 icon 值会自然改变 categories 同步签名 → `categories_revision` 变化 → 客户端自动缓存失效重拉。
 
 ---
 
-## 7. migration 0007 草案
+## 7. migration 0007（已实现 · 以下为设计草案）
+
+> 实际落地文件见 `server/db/migrations/0007_category_icon_keys.sql`（完整 VALUES 已按 §2/§3 展开）；本节保留设计草案说明其结构与幂等策略。
 
 沿用 0001 的 UPSERT 幂等风格（按 `(family_id,name,type,parent_id)` 冲突键，仅系统分类 `family_id IS NULL`），对每个节点按路径 UPDATE `icon`：
 
@@ -229,9 +239,9 @@ COMMIT;
 ## 9. 分阶段任务清单
 
 - **Phase 0** 定稿：确认 §2 key 命名 + §3 复用映射（本文档即评审对象）。
-- **Phase 1** 脚本：建 `icons.mjs` + `icon-registry.json`，改 `build.mjs`，产 `iconfont.wxss` / `iconMap.ts`，出自检图。
+- **Phase 1** 脚本：建私有分片 `icons-l1.mjs` + 唯一源 `icons.mjs` + `icon-registry.json`，`build-svg.mjs`（node·产 SVG）+ `build-font.py`（FontForge·产 TTF），产 `iconfont.wxss` / `iconMap.ts`，出 `preview.html` 自检。
 - **Phase 2** 小程序：app.wxss / category-grid.wxss / categoryService / 5 处 wxml+wxss；本地全路径验收（记账面板 / 明细 / 统计 / 协作）。
-- **Phase 3** 服务端：categories.yaml + 0001/0004 seed + 0007 + openapi + 测试；发布新版小程序 → 铺开 → 切服务端。
+- **Phase 3** 服务端：categories.yaml（L1 icon→key）+ **新增 0007（0001/0004 历史 seed 不改）** + openapi + 测试；发布新版小程序 → 铺开 → 切服务端。
 - **Phase 4** 收尾：旧单字降级逻辑保留兜底、文档、清理退役文件。
 
 ---

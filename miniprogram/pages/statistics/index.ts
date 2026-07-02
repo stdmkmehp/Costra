@@ -20,6 +20,7 @@ import { triggerOnPageShow, syncOnce } from '../../services/syncScheduler';
 import { eventBus, EventNames, type SyncDonePayload, type ActiveFamilyChangedPayload, type ProfileUpdatedPayload } from '../../services/eventBus';
 import { hasValidSession, getToken } from '../../services/auth';
 import { logger } from '../../utils/logger';
+import { resolveIconGlyph } from '../../services/iconMap';
 import { getFamilies, getFamilyMembers, type FamilyItem } from '../../services/familyApi';
 import {
   getMonthlyStatistics,
@@ -923,7 +924,7 @@ Page({
       const l2Items: L2Display[] = visibleItems.map((c) => ({
         category_id: c.category_id || '',
         category_name: c.category_name,
-        icon: c.icon,
+        icon: resolveIconGlyph(c.icon),
         amount: fmtYuan(c.amount),
         amountCents: c.amount,
         ratio_bps: c.ratio_bps,

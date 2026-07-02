@@ -8,6 +8,9 @@
  * - page 基线：background #f1f2ec，color #1c1b1a
  */
 
+/* 分类图标字体（costra-icons · @font-face base64 由 scripts/icon-font/build-font.py 生成，入口见 scripts/icon-font/build.sh） */
+@import "styles/iconfont.wxss";
+
 page {
   /* ---- 基础色 · CSS 变量对齐 tokens/index.ts v2.0.0 ---- */
 

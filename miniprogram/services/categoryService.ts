@@ -8,6 +8,7 @@ import { request } from './request';
 import { getItem, setItem } from './storage';
 import { eventBus, EventNames } from './eventBus';
 import { logger } from '../utils/logger';
+import { resolveIconGlyph } from './iconMap';
 
 // ─── 类型定义 ──────────────────────────────────────────────────────────────────
 
@@ -17,7 +18,7 @@ export interface CategoryItem {
   familyId: string | null;  // null = 系统预设
   name: string;
   type: 'income' | 'expense' | 'transfer';
-  icon: string;             // 单字符图标（API 返回直接使用）
+  icon: string;             // icon_key（语义键，端侧经 iconMap 解析为 costra-icons 字形）
   color?: string;
   sortOrder: number;
   isSystem: boolean;
@@ -84,134 +85,134 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 //   dsp = display_order
 
 const CONFIG_EXPENSE = [
-  { name: '餐饮', icon: '餐', color: 'color.category.food', order: 1, children: [
-    { name: '餐饮', order: 1, def: true, pd: true, dsp: null },
-    { name: '早餐', order: 2, def: true, pd: false, dsp: 1 },
-    { name: '午餐', order: 3, def: true, pd: false, dsp: 2 },
-    { name: '晚餐', order: 4, def: true, pd: false, dsp: 3 },
-    { name: '外卖', order: 5, def: true, pd: false, dsp: 4 },
-    { name: '买菜', order: 6, def: true, pd: false, dsp: 9 },
-    { name: '水果', order: 7, def: true, pd: false, dsp: 10 },
-    { name: '零食', order: 8, def: true, pd: false, dsp: 8 },
-    { name: '饮料', order: 9, def: true, pd: false, dsp: 11 },
-    { name: '酒水', order: 10, def: false, pd: false, dsp: 52 },
-    { name: '柴米油盐', order: 11, def: true, pd: false, dsp: 18 },
-    { name: '聚餐', order: 12, def: true, pd: false, dsp: 19 },
-    { name: '宴请', order: 13, def: true, pd: false, dsp: 27 }
+  { name: '餐饮', icon: 'dining', color: 'color.category.food', order: 1, children: [
+    { name: '餐饮', icon: 'dining', order: 1, def: true, pd: true, dsp: null },
+    { name: '早餐', icon: 'breakfast', order: 2, def: true, pd: false, dsp: 1 },
+    { name: '午餐', icon: 'lunch', order: 3, def: true, pd: false, dsp: 2 },
+    { name: '晚餐', icon: 'dinner', order: 4, def: true, pd: false, dsp: 3 },
+    { name: '外卖', icon: 'takeout', order: 5, def: true, pd: false, dsp: 4 },
+    { name: '买菜', icon: 'groceries', order: 6, def: true, pd: false, dsp: 9 },
+    { name: '水果', icon: 'fruit', order: 7, def: true, pd: false, dsp: 10 },
+    { name: '零食', icon: 'snack', order: 8, def: true, pd: false, dsp: 8 },
+    { name: '饮料', icon: 'drink', order: 9, def: true, pd: false, dsp: 11 },
+    { name: '酒水', icon: 'alcohol', order: 10, def: false, pd: false, dsp: 52 },
+    { name: '柴米油盐', icon: 'condiment', order: 11, def: true, pd: false, dsp: 18 },
+    { name: '聚餐', icon: 'gathering_meal', order: 12, def: true, pd: false, dsp: 19 },
+    { name: '宴请', icon: 'banquet', order: 13, def: true, pd: false, dsp: 27 }
   ]},
-  { name: '交通', icon: '行', color: 'color.category.transport', order: 2, children: [
-    { name: '交通', order: 1, def: true, pd: true, dsp: null },
-    { name: '打车', order: 2, def: true, pd: false, dsp: 6 },
-    { name: '公交地铁', order: 3, def: true, pd: false, dsp: 5 },
-    { name: '加油', order: 4, def: true, pd: false, dsp: 20 },
-    { name: '停车', order: 5, def: true, pd: false, dsp: 21 },
-    { name: '火车高铁', order: 6, def: true, pd: false, dsp: 28 },
-    { name: '机票', order: 7, def: true, pd: false, dsp: 29 },
-    { name: '汽车保养', order: 8, def: true, pd: false, dsp: 39 },
-    { name: '保险', order: 9, def: true, pd: false, dsp: 40 },
-    { name: '过路费', order: 10, def: true, pd: false, dsp: 41 }
+  { name: '交通', icon: 'transport', color: 'color.category.transport', order: 2, children: [
+    { name: '交通', icon: 'transport', order: 1, def: true, pd: true, dsp: null },
+    { name: '打车', icon: 'taxi', order: 2, def: true, pd: false, dsp: 6 },
+    { name: '公交地铁', icon: 'transit', order: 3, def: true, pd: false, dsp: 5 },
+    { name: '加油', icon: 'fuel', order: 4, def: true, pd: false, dsp: 20 },
+    { name: '停车', icon: 'parking', order: 5, def: true, pd: false, dsp: 21 },
+    { name: '火车高铁', icon: 'train', order: 6, def: true, pd: false, dsp: 28 },
+    { name: '机票', icon: 'flight', order: 7, def: true, pd: false, dsp: 29 },
+    { name: '汽车保养', icon: 'car_maintenance', order: 8, def: true, pd: false, dsp: 39 },
+    { name: '保险', icon: 'insurance', order: 9, def: true, pd: false, dsp: 40 },
+    { name: '过路费', icon: 'toll', order: 10, def: true, pd: false, dsp: 41 }
   ]},
-  { name: '购物', icon: '购', color: 'color.category.shopping', order: 3, children: [
-    { name: '购物', order: 1, def: true, pd: true, dsp: null },
-    { name: '日用', order: 2, def: true, pd: false, dsp: 7 },
-    { name: '服饰', order: 3, def: true, pd: false, dsp: 17 },
-    { name: '数码', order: 4, def: true, pd: false, dsp: 32 },
-    { name: '零食', order: 5, def: false, pd: false, dsp: null },
-    { name: '纸巾', order: 6, def: true, pd: false, dsp: 44 },
-    { name: '饮料', order: 7, def: false, pd: false, dsp: null },
-    { name: '护肤美妆', order: 8, def: true, pd: false, dsp: 31 }
+  { name: '购物', icon: 'shopping', color: 'color.category.shopping', order: 3, children: [
+    { name: '购物', icon: 'shopping', order: 1, def: true, pd: true, dsp: null },
+    { name: '日用', icon: 'daily_goods', order: 2, def: true, pd: false, dsp: 7 },
+    { name: '服饰', icon: 'clothing', order: 3, def: true, pd: false, dsp: 17 },
+    { name: '数码', icon: 'digital', order: 4, def: true, pd: false, dsp: 32 },
+    { name: '零食', icon: 'snack', order: 5, def: false, pd: false, dsp: null },
+    { name: '纸巾', icon: 'tissue', order: 6, def: true, pd: false, dsp: 44 },
+    { name: '饮料', icon: 'drink', order: 7, def: false, pd: false, dsp: null },
+    { name: '护肤美妆', icon: 'cosmetics', order: 8, def: true, pd: false, dsp: 31 }
   ]},
-  { name: '生活', icon: '活', color: 'color.category.lifestyle', order: 4, children: [
-    { name: '生活', order: 1, def: true, pd: true, dsp: null },
-    { name: '日用', order: 2, def: false, pd: false, dsp: null },
-    { name: '买菜', order: 3, def: false, pd: false, dsp: null },
-    { name: '柴米油盐', order: 4, def: false, pd: false, dsp: null },
-    { name: '宠物', order: 5, def: true, pd: false, dsp: 34 },
-    { name: '美容美发', order: 6, def: true, pd: false, dsp: 25 },
-    { name: '水费', order: 7, def: true, pd: false, dsp: 13 },
-    { name: '电费', order: 8, def: true, pd: false, dsp: 14 },
-    { name: '燃气费', order: 9, def: true, pd: false, dsp: 15 },
-    { name: '话费网费', order: 10, def: true, pd: false, dsp: 16 },
-    { name: '物业维修', order: 11, def: true, pd: false, dsp: 42 },
-    { name: '医疗', order: 12, def: true, pd: false, dsp: 22 },
-    { name: '母婴', order: 13, def: true, pd: false, dsp: 38 },
-    { name: '租房', order: 14, def: true, pd: false, dsp: 43 }
+  { name: '生活', icon: 'life', color: 'color.category.lifestyle', order: 4, children: [
+    { name: '生活', icon: 'life', order: 1, def: true, pd: true, dsp: null },
+    { name: '日用', icon: 'daily_goods', order: 2, def: false, pd: false, dsp: null },
+    { name: '买菜', icon: 'groceries', order: 3, def: false, pd: false, dsp: null },
+    { name: '柴米油盐', icon: 'condiment', order: 4, def: false, pd: false, dsp: null },
+    { name: '宠物', icon: 'pet', order: 5, def: true, pd: false, dsp: 34 },
+    { name: '美容美发', icon: 'beauty', order: 6, def: true, pd: false, dsp: 25 },
+    { name: '水费', icon: 'water_bill', order: 7, def: true, pd: false, dsp: 13 },
+    { name: '电费', icon: 'electricity_bill', order: 8, def: true, pd: false, dsp: 14 },
+    { name: '燃气费', icon: 'gas_bill', order: 9, def: true, pd: false, dsp: 15 },
+    { name: '话费网费', icon: 'telecom_bill', order: 10, def: true, pd: false, dsp: 16 },
+    { name: '物业维修', icon: 'repair', order: 11, def: true, pd: false, dsp: 42 },
+    { name: '医疗', icon: 'medical', order: 12, def: true, pd: false, dsp: 22 },
+    { name: '母婴', icon: 'baby', order: 13, def: true, pd: false, dsp: 38 },
+    { name: '租房', icon: 'rent', order: 14, def: true, pd: false, dsp: 43 }
   ]},
-  { name: '旅行', icon: '旅', color: 'color.category.travel', order: 5, children: [
-    { name: '旅行', order: 1, def: true, pd: true, dsp: null },
-    { name: '机票', order: 2, def: false, pd: false, dsp: null },
-    { name: '酒店', order: 3, def: true, pd: false, dsp: 26 },
-    { name: '交通', order: 4, def: false, pd: false, dsp: null },
-    { name: '火车高铁', order: 5, def: false, pd: false, dsp: null },
-    { name: '餐饮', order: 6, def: false, pd: false, dsp: null }
+  { name: '旅行', icon: 'travel', color: 'color.category.travel', order: 5, children: [
+    { name: '旅行', icon: 'travel', order: 1, def: true, pd: true, dsp: null },
+    { name: '机票', icon: 'flight', order: 2, def: false, pd: false, dsp: null },
+    { name: '酒店', icon: 'hotel', order: 3, def: true, pd: false, dsp: 26 },
+    { name: '交通', icon: 'transport', order: 4, def: false, pd: false, dsp: null },
+    { name: '火车高铁', icon: 'train', order: 5, def: false, pd: false, dsp: null },
+    { name: '餐饮', icon: 'dining', order: 6, def: false, pd: false, dsp: null }
   ]},
-  { name: '文娱', icon: '娱', color: 'color.category.culture', order: 6, children: [
-    { name: '文娱', order: 1, def: true, pd: true, dsp: null },
-    { name: '订阅会员', order: 2, def: true, pd: false, dsp: 12 },
-    { name: '演出', order: 3, def: true, pd: false, dsp: 36 },
-    { name: '游戏', order: 4, def: true, pd: false, dsp: 33 },
-    { name: '运动', order: 5, def: true, pd: false, dsp: 24 },
-    { name: '电影', order: 6, def: true, pd: false, dsp: 23 },
-    { name: '门票', order: 7, def: true, pd: false, dsp: 35 },
-    { name: '教育', order: 8, def: true, pd: false, dsp: 37 }
+  { name: '文娱', icon: 'entertainment', color: 'color.category.culture', order: 6, children: [
+    { name: '文娱', icon: 'entertainment', order: 1, def: true, pd: true, dsp: null },
+    { name: '订阅会员', icon: 'subscription', order: 2, def: true, pd: false, dsp: 12 },
+    { name: '演出', icon: 'performance', order: 3, def: true, pd: false, dsp: 36 },
+    { name: '游戏', icon: 'game', order: 4, def: true, pd: false, dsp: 33 },
+    { name: '运动', icon: 'sports', order: 5, def: true, pd: false, dsp: 24 },
+    { name: '电影', icon: 'movie', order: 6, def: true, pd: false, dsp: 23 },
+    { name: '门票', icon: 'ticket', order: 7, def: true, pd: false, dsp: 35 },
+    { name: '教育', icon: 'education', order: 8, def: true, pd: false, dsp: 37 }
   ]},
-  { name: '转账', icon: '转', color: 'color.category.transfer', order: 7, children: [
-    { name: '转账', order: 1, def: true, pd: true, dsp: null },
-    { name: '还贷', order: 2, def: true, pd: false, dsp: 30 },
-    { name: '垫付', order: 3, def: true, pd: false, dsp: 50 }
+  { name: '转账', icon: 'transfer', color: 'color.category.transfer', order: 7, children: [
+    { name: '转账', icon: 'transfer', order: 1, def: true, pd: true, dsp: null },
+    { name: '还贷', icon: 'loan_repay', order: 2, def: true, pd: false, dsp: 30 },
+    { name: '垫付', icon: 'advance_pay', order: 3, def: true, pd: false, dsp: 50 }
   ]},
-  { name: '其他', icon: '他', color: 'color.category.other', order: 99, children: [
-    { name: '其他', order: 1, def: true, pd: true, dsp: null },
-    { name: '红包', order: 2, def: true, pd: false, dsp: 45 },
-    { name: '礼金', order: 3, def: true, pd: false, dsp: 46 },
-    { name: '赡养', order: 4, def: true, pd: false, dsp: 48 },
-    { name: '捐赠', order: 5, def: true, pd: false, dsp: 49 },
-    { name: '丢失', order: 6, def: true, pd: false, dsp: 51 },
-    { name: '礼物', order: 7, def: true, pd: false, dsp: 47 },
-    { name: '罚款', order: 8, def: true, pd: false, dsp: null }
+  { name: '其他', icon: 'other', color: 'color.category.other', order: 99, children: [
+    { name: '其他', icon: 'other', order: 1, def: true, pd: true, dsp: null },
+    { name: '红包', icon: 'red_packet', order: 2, def: true, pd: false, dsp: 45 },
+    { name: '礼金', icon: 'cash_gift', order: 3, def: true, pd: false, dsp: 46 },
+    { name: '赡养', icon: 'support_family', order: 4, def: true, pd: false, dsp: 48 },
+    { name: '捐赠', icon: 'donation', order: 5, def: true, pd: false, dsp: 49 },
+    { name: '丢失', icon: 'lost', order: 6, def: true, pd: false, dsp: 51 },
+    { name: '礼物', icon: 'gift', order: 7, def: true, pd: false, dsp: 47 },
+    { name: '罚款', icon: 'fine', order: 8, def: true, pd: false, dsp: null }
   ]}
 ];
 
 const CONFIG_INCOME = [
-  { name: '职业收入', icon: '薪', color: 'color.category.salary', order: 1, children: [
-    { name: '工资', order: 1, def: true, pd: true, dsp: null },
-    { name: '奖金', order: 2, def: true, pd: false, dsp: 1 },
-    { name: '兼职', order: 3, def: true, pd: false, dsp: 2 },
-    { name: '报销', order: 4, def: true, pd: false, dsp: 3 }
+  { name: '职业收入', icon: 'salary', color: 'color.category.salary', order: 1, children: [
+    { name: '工资', icon: 'salary', order: 1, def: true, pd: true, dsp: null },
+    { name: '奖金', icon: 'bonus', order: 2, def: true, pd: false, dsp: 1 },
+    { name: '兼职', icon: 'part_time', order: 3, def: true, pd: false, dsp: 2 },
+    { name: '报销', icon: 'reimbursement', order: 4, def: true, pd: false, dsp: 3 }
   ]},
-  { name: '投资与资产', icon: '投', color: 'color.category.invest', order: 2, children: [
-    { name: '理财', order: 1, def: true, pd: true, dsp: null },
-    { name: '收租', order: 2, def: true, pd: false, dsp: 4 },
-    { name: '利息', order: 3, def: true, pd: false, dsp: 5 }
+  { name: '投资与资产', icon: 'investment', color: 'color.category.invest', order: 2, children: [
+    { name: '理财', icon: 'investment', order: 1, def: true, pd: true, dsp: null },
+    { name: '收租', icon: 'rent_income', order: 2, def: true, pd: false, dsp: 4 },
+    { name: '利息', icon: 'interest', order: 3, def: true, pd: false, dsp: 5 }
   ]},
-  { name: '意外收入', icon: '运', color: 'color.category.windfall', order: 3, children: [
-    { name: '其他', order: 1, def: true, pd: true, dsp: null },
-    { name: '转账', order: 2, def: true, pd: false, dsp: 8 },
-    { name: '红包', order: 3, def: true, pd: false, dsp: 6 },
-    { name: '退款', order: 4, def: true, pd: false, dsp: 7 },
-    { name: '中奖', order: 5, def: true, pd: false, dsp: 10 },
-    { name: '闲置出售', order: 6, def: true, pd: false, dsp: 11 },
-    { name: '礼金', order: 7, def: true, pd: false, dsp: 9 }
+  { name: '意外收入', icon: 'windfall', color: 'color.category.windfall', order: 3, children: [
+    { name: '其他', icon: 'windfall', order: 1, def: true, pd: true, dsp: null },
+    { name: '转账', icon: 'transfer', order: 2, def: true, pd: false, dsp: 8 },
+    { name: '红包', icon: 'red_packet', order: 3, def: true, pd: false, dsp: 6 },
+    { name: '退款', icon: 'refund', order: 4, def: true, pd: false, dsp: 7 },
+    { name: '中奖', icon: 'lottery', order: 5, def: true, pd: false, dsp: 10 },
+    { name: '闲置出售', icon: 'resale', order: 6, def: true, pd: false, dsp: 11 },
+    { name: '礼金', icon: 'cash_gift', order: 7, def: true, pd: false, dsp: 9 }
   ]}
 ];
 
 // 转移分类（migration 0004 新增 · type='transfer' · 不计入收支统计）
 // 全部 display_order=null（不进全局二级展示区，仅在记账面板「转移」tab 内按树展示）
 const CONFIG_TRANSFER = [
-  { name: '储值', icon: '储', color: 'color.category.transfer', order: 1, children: [
-    { name: '储值', order: 1, def: true, pd: true, dsp: null },
-    { name: '公交卡储值', order: 2, def: true, pd: false, dsp: null },
-    { name: '饭卡储值', order: 3, def: true, pd: false, dsp: null }
+  { name: '储值', icon: 'stored_value', color: 'color.category.transfer', order: 1, children: [
+    { name: '储值', icon: 'stored_value', order: 1, def: true, pd: true, dsp: null },
+    { name: '公交卡储值', icon: 'transit_card', order: 2, def: true, pd: false, dsp: null },
+    { name: '饭卡储值', icon: 'meal_card', order: 3, def: true, pd: false, dsp: null }
   ]},
-  { name: '账户互转', icon: '互', color: 'color.category.transfer', order: 2, children: [
-    { name: '账户互转', order: 1, def: true, pd: true, dsp: null }
+  { name: '账户互转', icon: 'account_transfer', color: 'color.category.transfer', order: 2, children: [
+    { name: '账户互转', icon: 'account_transfer', order: 1, def: true, pd: true, dsp: null }
   ]},
-  { name: '赊销', icon: '销', color: 'color.category.transfer', order: 3, children: [
-    { name: '赊销', order: 1, def: true, pd: true, dsp: null },
-    { name: '花呗', order: 2, def: true, pd: false, dsp: null },
-    { name: '白条', order: 3, def: true, pd: false, dsp: null },
-    { name: '月付', order: 4, def: true, pd: false, dsp: null },
-    { name: '信用卡', order: 5, def: true, pd: false, dsp: null }
+  { name: '赊销', icon: 'credit', color: 'color.category.transfer', order: 3, children: [
+    { name: '赊销', icon: 'credit', order: 1, def: true, pd: true, dsp: null },
+    { name: '花呗', icon: 'huabei', order: 2, def: true, pd: false, dsp: null },
+    { name: '白条', icon: 'baitiao', order: 3, def: true, pd: false, dsp: null },
+    { name: '月付', icon: 'monthly_pay', order: 4, def: true, pd: false, dsp: null },
+    { name: '信用卡', icon: 'credit_card', order: 5, def: true, pd: false, dsp: null }
   ]}
 ];
 
@@ -266,7 +267,7 @@ function getFallbackItems(): CategoryItem[] {
         familyId: null,
         name: c.name,
         type: 'expense',
-        icon: p.icon, // 子类默认继承父类 icon
+        icon: c.icon, // 子类使用自身 icon_key
         color: p.color,
         sortOrder: c.order,
         isSystem: true,
@@ -304,7 +305,7 @@ function getFallbackItems(): CategoryItem[] {
         familyId: null,
         name: c.name,
         type: 'income',
-        icon: p.icon,
+        icon: c.icon,
         color: p.color,
         sortOrder: c.order,
         isSystem: true,
@@ -342,7 +343,7 @@ function getFallbackItems(): CategoryItem[] {
         familyId: null,
         name: c.name,
         type: 'transfer',
-        icon: p.icon,
+        icon: c.icon,
         color: p.color,
         sortOrder: c.order,
         isSystem: true,
@@ -500,7 +501,7 @@ export function buildCategoryTree(items: CategoryItem[]): {
       tier1Map.set(item.id, {
         id: item.id,
         name: item.name,
-        icon: item.icon,
+        icon: resolveIconGlyph(item.icon),
         color: item.color,
         children: [],
       });
@@ -514,7 +515,7 @@ export function buildCategoryTree(items: CategoryItem[]): {
       list.push({
         id: item.id,
         name: item.name,
-        icon: item.icon,
+        icon: resolveIconGlyph(item.icon),
         color: item.color,
       });
     }
@@ -666,13 +667,13 @@ export function getCategoryById(id: string): CategoryItem | undefined {
 }
 
 /**
- * 获取分类图标（供明细页使用）
- * 降级：不存在时返回 '?'
+ * 获取分类图标字形（供明细页使用）
+ * 返回 costra-icons 字体的 PUA 字形字符；未知/空分类降级为「其他」字形。
  */
 export function getCategoryIconById(categoryId: string | null): string {
-  if (!categoryId) return '·';
+  if (!categoryId) return resolveIconGlyph(null);
   const item = getCategoryById(categoryId);
-  return item?.icon || '?';
+  return resolveIconGlyph(item?.icon);
 }
 
 /**
@@ -715,7 +716,7 @@ export function buildDedupedSubCategories(
       result.push({
         id: item.id,
         name: item.name,
-        icon: item.icon,
+        icon: resolveIconGlyph(item.icon),
         color: item.color,
       });
     }

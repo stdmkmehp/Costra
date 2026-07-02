@@ -7,7 +7,13 @@
 #
 # 字段说明：
 #   name:              分类名称
-#   icon:              单字符图标（过渡方案，未来改为语义 ID + icon map）
+#   icon:              语义 icon_key（端侧经 iconMap 映射为 costra-icons 字体字形）
+#                      本文件仅在一级节点标注 icon_key；二级各节点的 icon_key（含去重复用：
+#                      多个节点复用同一字形）以下列为权威，不在此逐节点展开：
+#                        · scripts/icon-font/icon-registry.json（icon_key → 码点）
+#                        · server/db/migrations/0007_category_icon_keys.sql（DB 权威映射）
+#                        · miniprogram/services/categoryService.ts CONFIG_*（前端 fallback）
+#                        · docs/design/category-icon-migration-plan.md §2/§3（设计说明）
 #   color:             颜色 token（如 color.category.food）
 #   sort_order:        排序权重（越小越靠前）
 #   is_direct_default: 是否为直选默认归属（仅二级有效）
@@ -42,7 +48,7 @@
 
 expense:
   - name: 餐饮
-    icon: 餐
+    icon: dining
     color: color.category.food
     sort_order: 1
     children:
@@ -113,7 +119,7 @@ expense:
         display_order: 27
 
   - name: 交通
-    icon: 行
+    icon: transport
     color: color.category.transport
     sort_order: 2
     children:
@@ -169,7 +175,7 @@ expense:
         display_order: 41
 
   - name: 购物
-    icon: 购
+    icon: shopping
     color: color.category.shopping
     sort_order: 3
     children:
@@ -215,7 +221,7 @@ expense:
         display_order: 31
 
   - name: 生活
-    icon: 活
+    icon: life
     color: color.category.lifestyle
     sort_order: 4
     children:
@@ -291,7 +297,7 @@ expense:
         display_order: 43
 
   - name: 旅行
-    icon: 旅
+    icon: travel
     color: color.category.travel
     sort_order: 5
     children:
@@ -327,7 +333,7 @@ expense:
         display_order: null
 
   - name: 文娱
-    icon: 娱
+    icon: entertainment
     color: color.category.culture
     sort_order: 6
     children:
@@ -373,7 +379,7 @@ expense:
         display_order: 37
 
   - name: 转账
-    icon: 转
+    icon: transfer
     color: color.category.transfer
     sort_order: 7
     children:
@@ -394,7 +400,7 @@ expense:
         display_order: 50
 
   - name: 其他
-    icon: 他
+    icon: other
     color: color.category.other
     sort_order: 99
     children:
@@ -445,7 +451,7 @@ expense:
 
 income:
   - name: 职业收入
-    icon: 薪
+    icon: salary
     color: color.category.salary
     sort_order: 1
     children:
@@ -471,7 +477,7 @@ income:
         display_order: 3
 
   - name: 投资与资产
-    icon: 投
+    icon: investment
     color: color.category.invest
     sort_order: 2
     children:
@@ -492,7 +498,7 @@ income:
         display_order: 5
 
   - name: 意外收入
-    icon: 运
+    icon: windfall
     color: color.category.windfall
     sort_order: 3
     children:
@@ -540,7 +546,7 @@ income:
 
 transfer:
   - name: 储值
-    icon: 储
+    icon: stored_value
     color: color.category.transfer
     sort_order: 1
     children:
@@ -561,7 +567,7 @@ transfer:
         display_order: null
 
   - name: 账户互转
-    icon: 互
+    icon: account_transfer
     color: color.category.transfer
     sort_order: 2
     children:
@@ -572,7 +578,7 @@ transfer:
         display_order: null
 
   - name: 赊销
-    icon: 销
+    icon: credit
     color: color.category.transfer
     sort_order: 3
     children:

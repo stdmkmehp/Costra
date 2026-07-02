@@ -99,7 +99,7 @@
               data-id="{{item.id}}"
               bindtap="onTapExpandedChild"
             >
-              <view class="category-item__icon">{{item.name[0]}}</view>
+              <view class="category-item__icon">{{item.icon}}</view>
               <text class="category-item__name">{{item.name}}</text>
             </view>
           </view>
@@ -118,7 +118,7 @@
               data-name="{{item.name}}"
               bindtap="onTapSubCategory"
             >
-              <view class="category-item__icon">{{item.name[0]}}</view>
+              <view class="category-item__icon">{{item.icon}}</view>
               <text class="category-item__name">{{item.name}}</text>
             </view>
           </view>
@@ -165,7 +165,7 @@
               data-id="{{item.id}}"
               bindtap="onTapExpandedChild"
             >
-              <view class="category-item__icon">{{item.name[0]}}</view>
+              <view class="category-item__icon">{{item.icon}}</view>
               <text class="category-item__name">{{item.name}}</text>
             </view>
           </view>
@@ -183,7 +183,7 @@
               data-name="{{item.name}}"
               bindtap="onTapSubCategory"
             >
-              <view class="category-item__icon">{{item.name[0]}}</view>
+              <view class="category-item__icon">{{item.icon}}</view>
               <text class="category-item__name">{{item.name}}</text>
             </view>
           </view>
@@ -231,7 +231,7 @@
               data-id="{{item.id}}"
               bindtap="onTapExpandedChild"
             >
-              <view class="category-item__icon">{{item.name[0]}}</view>
+              <view class="category-item__icon">{{item.icon}}</view>
               <text class="category-item__name">{{item.name}}</text>
             </view>
           </view>

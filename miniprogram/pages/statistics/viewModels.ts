@@ -5,6 +5,7 @@
 import type { MonthlyView, YearlyView, L1Display, SummaryGridItem, TrendChartMeta } from './types';
 import type { MonthlyStatistics, StatCategoryRankItem, DailyTrendItem, MonthlyTrendItem } from '../../services/statisticsApi';
 import { fmtYuan, fmtRatio, buildEmptyTitleMonth } from './formatters';
+import { resolveIconGlyph } from '../../services/iconMap';
 
 /**
  * L1 不限项：用户期望统计页所有一级分类全部展示（数据量天然受控，design/categories.yaml ~15 项）。
@@ -150,7 +151,7 @@ export function buildL1Display(c: StatCategoryRankItem, prevList: L1Display[]): 
   return {
     category_id: id,
     category_name: c.category_name,
-    icon: c.icon,
+    icon: resolveIconGlyph(c.icon),
     amount: fmtYuan(c.amount),
     amountCents: c.amount,
     ratio_bps: c.ratio_bps,
