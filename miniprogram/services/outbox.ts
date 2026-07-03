@@ -134,7 +134,24 @@ async function findPendingOp(clientRefId: string): Promise<SyncOp | null> {
   return null;
 }
 
+async function findInFlightOp(clientRefId: string): Promise<SyncOp | null> {
+  const seqs = [...await readIndex(), ...await readDrained()];
+  for (const seq of seqs) {
+    const op = await getItem<SyncOp>(opKey(seq));
+    if (op && op.entity === 'entry' && op.client_ref_id === clientRefId) {
+      return op;
+    }
+  }
+  return null;
+}
+
 // ─── 导出 API ─────────────────────────────────────────────────────────────────
+
+/** 查询 entry 是否存在待同步 / 已 drain 未 ack 的本地变更。用于远端补水 merge guard。 */
+export async function hasPendingEntryOp(clientRefId: string): Promise<boolean> {
+  return !!(await findInFlightOp(clientRefId));
+}
+
 
 /**
  * 入队操作，支持 op 合并：

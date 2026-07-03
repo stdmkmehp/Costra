@@ -98,6 +98,23 @@ describe('POST /entries', () => {
     expect(body.created_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
+  it('T7b 未传 client_ref_id 时服务端用 id 兜底，保证后续 sync 可定位', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/entries',
+      headers: authHeader(),
+      payload: {
+        ledger_id: '00000000-0000-0000-0000-000000000001',
+        amount: 1200,
+        type: 'income',
+        occurred_at: '2026-05-11T09:00:00.000Z',
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.json() as { id: string; client_ref_id: string };
+    expect(body.client_ref_id).toBe(body.id);
+  });
+
   it('T12 invalid body 缺 required 字段 → 400 INVALID_ARGUMENT', async () => {
     const res = await app.inject({
       method: 'POST',
@@ -190,6 +207,45 @@ describe('CROSS-FAMILY guard', () => {
     expect(getRes.statusCode).toBe(404);
     const body = getRes.json() as { code: string };
     expect(body.code).toBe('NOT_FOUND');
+  });
+
+  it('T-CROSS-FAMILY-LIST user B 用 user A ledger_id 查列表 → 200 但不泄露数据', async () => {
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/v1/entries',
+      headers: authHeader(),
+      payload: {
+        ledger_id: '00000000-0000-0000-0000-000000000001',
+        amount: 3000,
+        type: 'expense',
+        occurred_at: '2026-05-11T12:00:00.000Z',
+      },
+    });
+    expect(createRes.statusCode).toBe(201);
+
+    setWxFetchForTests(
+      (async () =>
+        new Response(
+          JSON.stringify({ openid: 'openid-user-b-cross-family-list', session_key: 'sk-b' }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )) as unknown as typeof fetch,
+    );
+    const loginB = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/wx-login',
+      payload: { code: 'user-b-list' },
+      headers: { 'content-type': 'application/json' },
+    });
+    const tokenB = (loginB.json() as { access_token: string }).access_token;
+
+    const listRes = await app.inject({
+      method: 'GET',
+      url: '/v1/entries?ledger_id=00000000-0000-0000-0000-000000000001',
+      headers: { authorization: `Bearer ${tokenB}` },
+    });
+    expect(listRes.statusCode).toBe(200);
+    const listBody = listRes.json() as { entries: unknown[] };
+    expect(listBody.entries).toHaveLength(0);
   });
 });
 

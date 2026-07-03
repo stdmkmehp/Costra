@@ -148,7 +148,7 @@ export async function insertEntry(input: CreateEntryInput, client?: Runner): Pro
       input.note ?? null,
       input.occurredAt,
       input.createdBy,
-      input.clientRefId ?? null,
+      input.clientRefId ?? id,
       input.sharedType ?? null, // COSTRA-217 B2
     ],
   );
@@ -247,6 +247,8 @@ export interface EntryFilter {
   type?: 'income' | 'expense' | 'transfer';
   from?: string; // ISO-8601
   to?: string;   // ISO-8601
+  /** 当前请求用户 · 存在时按 family_members active membership 过滤，防跨账本越权读 */
+  userId?: string;
 }
 
 /**
@@ -260,20 +262,30 @@ export async function findEntriesByLedger(
   client?: Runner,
 ): Promise<{ entries: EntryEntity[]; nextCursor: string | null }> {
   const runner = client ?? exec();
-  const conditions: string[] = ['deleted_at IS NULL'];
+  const conditions: string[] = ['e.deleted_at IS NULL'];
   const values: unknown[] = [];
   let idx = 1;
+  let membershipJoin = '';
 
-  if (filter.ledgerId) { conditions.push(`ledger_id = $${idx++}`); values.push(filter.ledgerId); }
-  if (filter.categoryId) { conditions.push(`category_id = $${idx++}`); values.push(filter.categoryId); }
-  if (filter.type) { conditions.push(`type = $${idx++}`); values.push(filter.type); }
-  if (filter.from) { conditions.push(`occurred_at >= $${idx++}`); values.push(filter.from); }
-  if (filter.to) { conditions.push(`occurred_at <= $${idx++}`); values.push(filter.to); }
+  if (filter.userId) {
+    membershipJoin = `
+       JOIN ledgers l ON l.id = e.ledger_id
+       JOIN family_members fm ON fm.family_id = l.family_id
+                              AND fm.user_id = $${idx++}
+                              AND fm.left_at IS NULL`;
+    values.push(filter.userId);
+  }
+
+  if (filter.ledgerId) { conditions.push(`e.ledger_id = $${idx++}`); values.push(filter.ledgerId); }
+  if (filter.categoryId) { conditions.push(`e.category_id = $${idx++}`); values.push(filter.categoryId); }
+  if (filter.type) { conditions.push(`e.type = $${idx++}`); values.push(filter.type); }
+  if (filter.from) { conditions.push(`e.occurred_at >= $${idx++}`); values.push(filter.from); }
+  if (filter.to) { conditions.push(`e.occurred_at <= $${idx++}`); values.push(filter.to); }
 
   if (cursor) {
     // cursor = updated_at + '|' + id（URL-safe base64 或原始字符串）
     const [cCursor, cId] = cursor.split('|');
-    conditions.push(`(updated_at, id) < ($${idx++}, $${idx++})`);
+    conditions.push(`(e.updated_at, e.id) < ($${idx++}, $${idx++})`);
     values.push(cCursor, cId);
   }
 
@@ -281,12 +293,13 @@ export async function findEntriesByLedger(
   values.push(limit + 1); // 多查一条判断 hasNext
 
   const res = await runner.query(
-    `SELECT id, ledger_id, amount, currency, type, category_id,
-            account_id, to_account_id, note, occurred_at,
-            created_by, created_at, updated_at, deleted_at, version, client_ref_id, change_seq, shared_type
-       FROM entries
+    `SELECT e.id, e.ledger_id, e.amount, e.currency, e.type, e.category_id,
+            e.account_id, e.to_account_id, e.note, e.occurred_at,
+            e.created_by, e.created_at, e.updated_at, e.deleted_at, e.version, e.client_ref_id, e.change_seq, e.shared_type
+       FROM entries e
+       ${membershipJoin}
       WHERE ${where}
-      ORDER BY updated_at DESC, id DESC
+      ORDER BY e.updated_at DESC, e.id DESC
       LIMIT $${idx}`,
     values,
   );

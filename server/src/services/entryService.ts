@@ -366,6 +366,7 @@ export function createEntryService(deps: EntryServiceDeps = {}): EntryService {
       type: filter.type,
       from: filter.from,
       to: filter.to,
+      userId,
     };
     const { entries, nextCursor } = await entryRepo.findEntriesByLedger(repoFilter, cursor, effectiveLimit);
     return { entries: entries.map(entityToView), next_cursor: nextCursor };

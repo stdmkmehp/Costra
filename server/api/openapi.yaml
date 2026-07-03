@@ -770,7 +770,7 @@ paths:
               schema:
                 type: object
                 properties:
-                  items:
+                  entries:
                     type: array
                     items: { $ref: '#/components/schemas/Entry' }
                   next_cursor:

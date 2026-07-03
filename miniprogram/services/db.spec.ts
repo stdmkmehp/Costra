@@ -137,6 +137,16 @@ describe('services/db · 模拟 wx.storage（mock 环境）', () => {
     expect(recent.entries.map(e => e.client_ref_id)).toEqual(['m2', 'm3']);
   });
 
+  it('listMonthEntries 按 Asia/Shanghai 自然月归属月初边界流水', async () => {
+    await putEntry({ client_ref_id: 'sh-1', ledger_id: 'l1', amount: 100, currency: 'CNY', type: 'expense', category_id: null, note: '', occurred_at: '2026-05-31T16:30:00.000Z' });
+
+    const may = await listMonthEntries({ ledger_id: 'l1', month: '2026-05' });
+    const june = await listMonthEntries({ ledger_id: 'l1', month: '2026-06' });
+
+    expect(may.entries.map(e => e.client_ref_id)).not.toContain('sh-1');
+    expect(june.entries.map(e => e.client_ref_id)).toContain('sh-1');
+  });
+
   it('updateEntryFields 修改 occurred_at 时迁移月索引', async () => {
     await putEntry({ client_ref_id: 'move-1', ledger_id: 'l1', amount: 100, currency: 'CNY', type: 'expense', category_id: null, note: '', occurred_at: '2026-06-15T00:00:00.000Z' });
     await updateEntryFields('move-1', { occurred_at: '2026-07-01T00:00:00.000Z' });

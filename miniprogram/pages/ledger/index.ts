@@ -6,8 +6,16 @@
 import Decimal from '../../utils/vendor/decimal';
 import { toYuan } from '../../utils/money';
 import { getSafeAreaMetrics } from '../../utils/safeArea';
-import { listMonthEntries, deleteEntry, updateEntryFields, putEntry, type Entry, type MonthEntriesResult } from '../../services/db';
+import { listMonthEntries, deleteEntry, updateEntryFields, putEntry, getEntry, type Entry, type MonthEntriesResult } from '../../services/db';
+import { fetchMonthEntries } from '../../services/entriesApi';
+import {
+  isLedgerMonthRemoteEmptyConfirmed,
+  markLedgerMonthRemoteEmptyConfirmed,
+  clearLedgerMonthRemoteEmptyConfirmed,
+} from '../../services/ledgerRemoteState';
 import { newClientRefId } from '../../utils/id';
+import { scheduleDeferredLoading, type DeferredLoadingHandle } from '../../utils/deferredLoading';
+import { shanghaiDateKeyFromIso } from '../../utils/shanghaiDate';
 import {
   getActiveLedgerId,
   getActiveFamilyId,
@@ -16,7 +24,7 @@ import {
   switchActiveFamily,
   fallbackToPersonalFamily,
 } from '../../services/family';
-import { enqueue } from '../../services/outbox';
+import { enqueue, hasPendingEntryOp } from '../../services/outbox';
 import { getToken, hasValidSession } from '../../services/auth';
 import { eventBus, EventNames, type SyncDonePayload, type ActiveFamilyChangedPayload, type ProfileUpdatedPayload, type LedgerDisplayReadyPayload } from '../../services/eventBus';
 import { triggerOnPageShow, syncOnce } from '../../services/syncScheduler';
@@ -144,9 +152,9 @@ function buildDaySummary(dayExpense: number, dayIncome: number): string {
   return parts.join(' / ');
 }
 
-/** ISO 8601 → 日期 key YYYY-MM-DD */
+/** ISO 8601 UTC → Asia/Shanghai 日期 key YYYY-MM-DD */
 function toDateKey(isoStr: string): string {
-  return isoStr.slice(0, 10);
+  return shanghaiDateKeyFromIso(isoStr);
 }
 
 /** 获取中文星期 */
@@ -340,6 +348,8 @@ Page({
   _renderedMonth: '' as string,
   /** 首次首屏完成事件是否已发出 */
   _displayReadyEmitted: false as boolean,
+  /** 本地读取阶段 loading-cache 的延迟显示句柄，避免快路径闪转圈 */
+  _ledgerLoadingDeferredHandle: null as DeferredLoadingHandle | null,
   /** COSTRA-227: 当前正在编辑的条目 client_ref_id */
   _editingRefId: '' as string,
 
@@ -508,6 +518,7 @@ Page({
       eventBus.off(EventNames.PROFILE_UPDATED, this._profileUpdatedHandler);
       this._profileUpdatedHandler = null;
     }
+    this._cancelDeferredLedgerLoading();
     this._endSwipeScrollSettling();
   },
 
@@ -532,13 +543,26 @@ Page({
     markPerf('ledger.loading-state', { state });
   },
 
+  _deferLedgerLoadingState(state: LedgerLoadingState, text?: string) {
+    this._cancelDeferredLedgerLoading();
+    this._ledgerLoadingDeferredHandle = scheduleDeferredLoading(() => {
+      this._setLedgerLoadingState(state, text);
+    });
+  },
+
+  _cancelDeferredLedgerLoading() {
+    if (!this._ledgerLoadingDeferredHandle) return;
+    this._ledgerLoadingDeferredHandle.cancel();
+    this._ledgerLoadingDeferredHandle = null;
+  },
+
   async _loadContext() {
     markPerf('ledger.context.start');
     // 仅在无可复用渲染内容时才进「验证账本」骨架态。
     // 此刻 _ledgerId 仍是切换前的值：热刷新（同账本切回）判真 → 跳过骨架，列表原地保留；
     // 切账本场景此处判真跳过，过渡由后续 _loadEntries 的 loading-cache 冷加载骨架承载。
     if (!this._hasRenderableContent()) {
-      this._setLedgerLoadingState('validating-ledger');
+      this._deferLedgerLoadingState('validating-ledger');
     }
     const [ledgerId, familyId, familyKind, ledgerName] = await Promise.all([
       getActiveLedgerId(),
@@ -592,6 +616,7 @@ Page({
     if (familyId) {
       void getCategories(familyId).catch(() => { /* 静默：fallback 兜底 */ });
     }
+    this._cancelDeferredLedgerLoading();
     markPerf('ledger.context.done', {
       ledger: familyKind || 'unknown',
       shared: isMultiMember,
@@ -741,21 +766,43 @@ Page({
       return;
     }
 
-    // 冷加载：无可复用内容（首屏 / 切账本 / 切月 / 被踢出回退）→ 允许加载过渡。
-    // loading-cache 骨架 + limit50 首屏求快 + ready-partial 两段式（partial 仅冷加载保留）。
+    // 冷加载：无可复用内容（首屏 / 切账本 / 切月 / 被踢出回退）→ 先读本地。
+    // loading-cache 采用 deferred 显示：本地快路径直接渲染，不让转圈闪一下。
     const ledgerId = this._ledgerId;
-    this._setLedgerLoadingState('loading-cache');
+    this._deferLedgerLoadingState('loading-cache');
     const recentResult = await listMonthEntries({
       ledger_id: ledgerId,
       month: targetMonth,
       limit: LEDGER_RECENT_ENTRY_LIMIT,
     });
+    this._cancelDeferredLedgerLoading();
 
     // await 期间上下文（账本 / 月份）已变 → 放弃落地，交由新触发的加载接管，避免旧结果覆盖新画面。
     // 切月（onPrevMonth/onNextMonth/onMonthChange 不 await）与切账本并发时由此守护防错配。
     if (this._ledgerId !== ledgerId || this.data.currentMonth !== targetMonth) {
       markPerf('ledger.entries.skip', { reason: 'context-changed', month: targetMonth });
       return;
+    }
+
+    // 本地完整为空时，必须区分「远端已确认空」与「远端尚未确认」。
+    // 未确认前不能直接展示 empty-confirmed，否则删除小程序/清缓存后会误导用户以为流水消失。
+    if (recentResult.complete && recentResult.entries.length === 0) {
+      const remoteEmptyConfirmed = await isLedgerMonthRemoteEmptyConfirmed(ledgerId, targetMonth);
+      if (this._ledgerId !== ledgerId || this.data.currentMonth !== targetMonth) {
+        markPerf('ledger.entries.skip', { reason: 'context-changed-after-empty-check', month: targetMonth });
+        return;
+      }
+      if (!remoteEmptyConfirmed) {
+        this._allEntries = [];
+        this._entriesSignature = '';
+        this._setLedgerLoadingState('loading-remote');
+        await this._hydrateRemoteMonthEntries(targetMonth, ledgerId);
+        return;
+      }
+    }
+
+    if (recentResult.entries.length > 0) {
+      await clearLedgerMonthRemoteEmptyConfirmed(ledgerId, targetMonth);
     }
 
     this._allEntries = recentResult.entries;
@@ -795,6 +842,109 @@ Page({
     this._emitLedgerDisplayReady(targetMonth, this._allEntries.length);
   },
 
+  async _putRemoteEntryIfSafe(entry: Entry): Promise<boolean> {
+    const local = await getEntry(entry.client_ref_id);
+    const hasPending = await hasPendingEntryOp(entry.client_ref_id);
+    if (hasPending) {
+      markPerf('ledger.entries.remote.skip-entry', { reason: 'pending-op', ref: entry.client_ref_id });
+      return false;
+    }
+    if (local?.deleted_at) {
+      const localVer = local.version ?? 0;
+      const remoteVer = entry.version ?? 0;
+      if (localVer >= remoteVer) {
+        markPerf('ledger.entries.remote.skip-entry', { reason: 'local-deleted-newer-or-equal', ref: entry.client_ref_id });
+        return false;
+      }
+    }
+    if (local && !local.deleted_at) {
+      const localVer = local.version ?? 0;
+      const remoteVer = entry.version ?? 0;
+      if (localVer > remoteVer) {
+        markPerf('ledger.entries.remote.skip-entry', { reason: 'local-newer', ref: entry.client_ref_id });
+        return false;
+      }
+    }
+    await putEntry(entry);
+    return true;
+  },
+
+  async _hydrateRemoteMonthEntries(monthValue: string, ledgerId: string) {
+    markPerf('ledger.entries.remote.start', { month: monthValue, ledgerId });
+    try {
+      let cursor: string | null = null;
+      let remoteCount = 0;
+      let writtenCount = 0;
+      let hasMore = false;
+      do {
+        const remoteResult = await fetchMonthEntries({
+          ledgerId,
+          month: monthValue,
+          limit: 100,
+          cursor,
+        });
+        if (this._ledgerId !== ledgerId || this.data.currentMonth !== monthValue) {
+          markPerf('ledger.entries.remote.skip', { reason: 'context-changed', month: monthValue });
+          return;
+        }
+        remoteCount += remoteResult.entries.length;
+        for (const entry of remoteResult.entries) {
+          if (await this._putRemoteEntryIfSafe(entry)) {
+            writtenCount += 1;
+          }
+        }
+        cursor = remoteResult.nextCursor;
+        hasMore = !!cursor;
+      } while (cursor);
+
+      if (remoteCount === 0 && !hasMore) {
+        await markLedgerMonthRemoteEmptyConfirmed(ledgerId, monthValue);
+      } else if (writtenCount > 0) {
+        await clearLedgerMonthRemoteEmptyConfirmed(ledgerId, monthValue);
+      }
+
+      const fullResult = await listMonthEntries({ ledger_id: ledgerId, month: monthValue });
+      if (this._ledgerId !== ledgerId || this.data.currentMonth !== monthValue) {
+        markPerf('ledger.entries.remote.skip', { reason: 'context-changed-after-write', month: monthValue });
+        return;
+      }
+
+      if (fullResult.entries.length > 0) {
+        await clearLedgerMonthRemoteEmptyConfirmed(ledgerId, monthValue);
+      }
+      this._allEntries = fullResult.entries;
+      this._entriesSignature = this._computeEntriesSignature(this._allEntries);
+      this._buildDisplay(monthValue);
+      setPerfContext({
+        entryCache: fullResult.source,
+        dataState: fullResult.entries.length > 0 ? 'full' : 'empty',
+      });
+
+      this._setLedgerLoadingState(fullResult.entries.length > 0 ? 'ready-full' : 'empty-confirmed');
+
+      markPerf('ledger.entries.remote.done', {
+        month: monthValue,
+        remoteCount,
+        writtenCount,
+        localCount: fullResult.entries.length,
+        hasMore,
+      });
+      markPerf('ledger.display.done', {
+        source: 'remote-hydrate',
+        month: monthValue,
+        count: fullResult.entries.length,
+        empty: fullResult.entries.length === 0,
+        partial: hasMore,
+      });
+      this._emitLedgerDisplayReady(monthValue, fullResult.entries.length);
+    } catch (err) {
+      if (this._ledgerId !== ledgerId || this.data.currentMonth !== monthValue) return;
+      markPerfError('ledger.entries.remote.failed', err, { month: monthValue });
+      this._setLedgerLoadingState('failed', '流水同步失败，请稍后重试', err instanceof Error ? err.message : String(err));
+      this._emitLedgerDisplayFailed();
+    }
+  },
+
   async _loadFullMonthEntries(monthValue: string, ledgerId: string, recentResult?: MonthEntriesResult) {
     markPerf('ledger.entries.full.start', { month: monthValue, ledgerId, recentCount: recentResult?.entries.length ?? 0 });
     try {
@@ -802,6 +952,9 @@ Page({
       if (this._ledgerId !== ledgerId || this.data.currentMonth !== monthValue) {
         markPerf('ledger.entries.full.skip', { reason: 'context-changed', month: monthValue });
         return;
+      }
+      if (fullResult.entries.length > 0) {
+        await clearLedgerMonthRemoteEmptyConfirmed(ledgerId, monthValue);
       }
       const nextSig = this._computeEntriesSignature(fullResult.entries);
       this._setLedgerLoadingState(fullResult.entries.length > 0 ? 'ready-full' : 'empty-confirmed');
@@ -853,6 +1006,10 @@ Page({
       markPerf('ledger.entries.silent.skip', { reason: 'context-changed', month: targetMonth });
       return;
     }
+    if (fullResult.entries.length > 0) {
+      await clearLedgerMonthRemoteEmptyConfirmed(ledgerId, targetMonth);
+    }
+    if (this._ledgerId !== ledgerId || this.data.currentMonth !== targetMonth) return;
     const nextSig = this._computeEntriesSignature(fullResult.entries);
     const settledState: LedgerLoadingState = fullResult.entries.length > 0 ? 'ready-full' : 'empty-confirmed';
     if (nextSig === this._entriesSignature) {
@@ -908,8 +1065,13 @@ Page({
    */
   async _refreshIfChanged() {
     if (!this._ledgerId) return;
+    const ledgerId = this._ledgerId;
     const targetMonth = this.data.currentMonth;
-    const fullResult = await listMonthEntries({ ledger_id: this._ledgerId, month: targetMonth });
+    const fullResult = await listMonthEntries({ ledger_id: ledgerId, month: targetMonth });
+    if (fullResult.entries.length > 0) {
+      await clearLedgerMonthRemoteEmptyConfirmed(ledgerId, targetMonth);
+    }
+    if (this._ledgerId !== ledgerId || this.data.currentMonth !== targetMonth) return;
     const nextSig = this._computeEntriesSignature(fullResult.entries);
     if (nextSig === this._entriesSignature) return;
     this._allEntries = fullResult.entries;

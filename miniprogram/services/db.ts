@@ -3,6 +3,7 @@
 
 import { getItem, setItem } from './storage';
 import { logger } from '../utils/logger';
+import { shanghaiMonthValueFromIso } from '../utils/shanghaiDate';
 
 export interface Entry {
   id?: string;                  // 服务端 UUID v7（push 成功后回写）
@@ -87,7 +88,7 @@ function entryMonthIndexKey(ledgerId: string, month: string): string {
 }
 
 function entryMonthValue(entry: Entry): string {
-  return entry.occurred_at.slice(0, 7);
+  return shanghaiMonthValueFromIso(entry.occurred_at);
 }
 
 interface EntryMonthIndexItem {
