@@ -33,7 +33,7 @@ UPDATE categories AS c SET icon = v.k FROM (VALUES
   ('赊销', 'transfer', 'credit')
 ) AS v(name, type, k)
 WHERE c.family_id IS NULL AND c.parent_id IS NULL
-  AND c.name = v.name AND c.type = v.type AND c.deleted_at IS NULL;
+  AND c.name = v.name AND c.type = v.type::category_type AND c.deleted_at IS NULL;
 
 -- ─── 二级分类（按 父名 + 子名 + type 定位；含去重复用：多个节点 → 同一 key）───
 UPDATE categories AS c SET icon = v.k FROM (VALUES
@@ -146,10 +146,10 @@ UPDATE categories AS c SET icon = v.k FROM (VALUES
   ('赊销', '信用卡', 'transfer', 'credit_card')
 ) AS v(pname, name, type, k)
 WHERE c.family_id IS NULL AND c.deleted_at IS NULL
-  AND c.name = v.name AND c.type = v.type
+  AND c.name = v.name AND c.type = v.type::category_type
   AND c.parent_id = (
     SELECT p.id FROM categories p
-    WHERE p.name = v.pname AND p.type = v.type
+    WHERE p.name = v.pname AND p.type = v.type::category_type
       AND p.parent_id IS NULL AND p.family_id IS NULL AND p.deleted_at IS NULL
     LIMIT 1
   );

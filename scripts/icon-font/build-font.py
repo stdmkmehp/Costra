@@ -84,6 +84,40 @@ def import_scaled(glyph, svg_path):
         glyph.transform(psMat.scale(float(EM) / float(VB)))
 
 
+def _stroke(glyph):
+    """circular 描边扩展（圆帽/圆角），兼容新旧 FontForge API。"""
+    try:
+        glyph.stroke("circular", STROKE_EM, "round", "round")
+    except TypeError:
+        glyph.stroke("circular", STROKE_EM, cap="round", join="round")
+
+
+def stroke_expand(font, glyph):
+    """逐轮廓独立描边再合并。
+
+    FontForge 的 stroke() 在同一字形内对多条相邻/近共线的开放轮廓一次性描边时，
+    可能产生一条伸向极远处的畸变尖刺（例：日用 daily_goods 的三条内部竖纹会令
+    描边结果 bbox 高度飙到 ~10000em，随后被 normalize_center 整体缩成一个点）。
+    逐条轮廓分别描边在几何上与整体描边等价，却能规避该缺陷，对全部字形稳健。
+    """
+    contours = list(glyph.foreground)
+    if len(contours) <= 1:
+        _stroke(glyph)
+        return
+    tmp = font.createChar(0xF0000, "__stroke_tmp__")
+    merged = fontforge.layer()
+    for contour in contours:
+        tmp.clear()
+        one = fontforge.layer()
+        one += contour
+        tmp.foreground = one
+        _stroke(tmp)
+        tmp.removeOverlap()
+        merged += tmp.foreground
+    font.removeGlyph(tmp)
+    glyph.foreground = merged
+
+
 for gi in glyphs:
     key = gi["key"]
     cp = gi["codepoint"]
@@ -93,12 +127,8 @@ for gi in glyphs:
     stroke_svg = os.path.join(GLYPH_SVG, "%s-%s.stroke.svg" % (gi["cpHex"], key))
     import_scaled(g, stroke_svg)
 
-    # 2. 几何描边扩展（圆帽/圆角）
-    try:
-        g.stroke("circular", STROKE_EM, "round", "round")
-    except TypeError:
-        # 兼容旧版 API（关键字参数）
-        g.stroke("circular", STROKE_EM, cap="round", join="round")
+    # 2. 几何描边扩展（逐轮廓独立描边再合并，规避多轮廓 stroke() 畸变）
+    stroke_expand(font, g)
 
     # 3. 追加实心形状（不参与描边扩展）
     if gi.get("hasFill"):
