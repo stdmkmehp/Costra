@@ -55,6 +55,14 @@
   color: var(--color-role-text-tertiary, rgba(28,27,26,0.28));
 }
 
+/* 固定头部：成员区 + 时间导航 + 进度占比（不随流水滚动） */
+.family__fixed-header {
+  flex: none;
+  padding-left: 32rpx;
+  padding-right: 32rpx;
+  background: #f1f2ec;
+}
+
 /* 可滚动内容区 */
 .family__scroll {
   flex: 1;

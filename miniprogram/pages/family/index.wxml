@@ -14,8 +14,118 @@
     </view>
   </view>
 
-  <!-- 页面内容区 -->
-  <scroll-view scroll-y class="family__scroll" enhanced show-scrollbar="{{false}}" style="padding-top: {{statusBarHeight + navBarHeight}}px;">
+  <!-- ═══ 固定头部：成员区 + 时间导航 + 进度占比（不随流水滚动，固定于顶部） ═══ -->
+  <!-- 始终渲染以承担 fixed 导航栏的顶部留白；内部块仅 multi 态展示 -->
+  <view class="family__fixed-header" style="padding-top: {{statusBarHeight + navBarHeight}}px;">
+    <block wx:if="{{mode !== 'solo'}}">
+      <!-- 成员与邀请区 (Avatar Row) -->
+      <scroll-view wx:if="{{contentReady && !loading}}" scroll-x enhanced show-scrollbar="{{false}}" class="avatar-row">
+        <view class="avatar-row__inner">
+          <view
+            wx:for="{{members}}"
+            wx:key="userId"
+            class="avatar-item {{item.status === 'left' ? 'avatar-item--left' : ''}}"
+            data-userid="{{item.userId}}"
+            data-status="{{item.status}}"
+            bind:tap="onTapMember"
+          >
+            <image
+              wx:if="{{item.avatarUrl}}"
+              class="avatar-item__img"
+              src="{{item.avatarUrl}}"
+              mode="aspectFill"
+              lazy-load
+            />
+            <view wx:else class="avatar-item__placeholder">
+              <text class="avatar-item__placeholder-text">{{item.nickname[0] || '?'}}</text>
+            </view>
+            <text class="avatar-item__name" wx:if="{{item.status === 'left'}}">已退出</text>
+            <view class="avatar-item__owner" wx:if="{{item.isOwner && item.status === 'active'}}"></view>
+          </view>
+          <!-- 邀请按钮：仅 owner 且成员未满时可见；点击后打开邀请遮罩并准备 token -->
+          <button
+            wx:if="{{canInvite}}"
+            class="avatar-item avatar-item--invite"
+            bind:tap="onOpenInviteOverlay"
+          >
+            <text class="avatar-item__plus">+</text>
+          </button>
+        </view>
+      </scroll-view>
+
+      <!-- 时间导航区（COSTRA-302 年度可用化 · 参照统计页双 picker 写法） -->
+      <view class="time-nav" wx:if="{{contentReady && !loading}}">
+        <view class="time-nav__left">
+          <view class="time-nav__arrow" bind:tap="onPrevTime">
+            <text class="time-nav__arrow-icon">‹</text>
+          </view>
+
+          <picker
+            wx:if="{{dimension === 'monthly'}}"
+            mode="date"
+            fields="month"
+            value="{{currentMonth}}"
+            bindchange="onMonthChange"
+          >
+            <view class="time-nav__month">
+              <text>{{monthDisplay}}</text>
+              <text class="time-nav__dropdown">▼</text>
+            </view>
+          </picker>
+
+          <picker
+            wx:else
+            mode="date"
+            fields="year"
+            value="{{currentYear}}-01-01"
+            bindchange="onYearChange"
+          >
+            <view class="time-nav__month">
+              <text>{{yearDisplay}}</text>
+              <text class="time-nav__dropdown">▼</text>
+            </view>
+          </picker>
+
+          <view class="time-nav__arrow" bind:tap="onNextTime">
+            <text class="time-nav__arrow-icon">›</text>
+          </view>
+        </view>
+        <!-- 月度/年度切换 -->
+        <view class="time-nav__dimension">
+          <text class="time-nav__dim-btn {{dimension === 'monthly' ? 'time-nav__dim-btn--active' : ''}}" bind:tap="onSwitchDimension" data-dim="monthly">月度</text>
+          <text class="time-nav__dim-btn {{dimension === 'yearly' ? 'time-nav__dim-btn--active' : ''}}" bind:tap="onSwitchDimension" data-dim="yearly">年度</text>
+        </view>
+      </view>
+
+      <!-- P2-1 已移除：年度不再拦截 · COSTRA-302 年度可用化 -->
+      <!-- Segmented Bar -->
+      <view class="segment-bar" wx:if="{{contentReady && !loading && segments.length > 0}}">
+        <view class="segment-bar__track">
+          <view
+            wx:for="{{segments}}"
+            wx:key="key"
+            class="segment-bar__segment"
+            style="flex: {{item.flexBps}}; background: {{item.color}};"
+          ></view>
+        </view>
+        <!-- Segmented Bar 图例 -->
+        <view class="segment-bar__legend">
+          <view
+            wx:for="{{segments}}"
+            wx:key="key"
+            class="segment-bar__legend-item"
+          >
+            <view class="segment-bar__legend-dot" style="background: {{item.color}};"></view>
+            <text class="segment-bar__legend-label">{{item.label}}</text>
+            <text class="segment-bar__legend-amount tnum">{{item.amount}}</text>
+          </view>
+        </view>
+      </view>
+    </block>
+  </view>
+
+  <!-- 页面内容区（可滚动：solo 内容 / 空态 / 下钻列表 / 加载态） -->
+  <scroll-view scroll-y class="family__scroll" enhanced show-scrollbar="{{false}}">
     <view class="family__content">
 
       <!-- ═══════ Solo Landing 态 ═══════ -->
@@ -54,110 +164,6 @@
 
       <!-- ═══════ Multi 态 ═══════ -->
       <block wx:else>
-
-        <!-- 成员与邀请区 (Avatar Row) -->
-        <scroll-view wx:if="{{contentReady && !loading}}" scroll-x enhanced show-scrollbar="{{false}}" class="avatar-row">
-          <view class="avatar-row__inner">
-            <view
-              wx:for="{{members}}"
-              wx:key="userId"
-              class="avatar-item {{item.status === 'left' ? 'avatar-item--left' : ''}}"
-              data-userid="{{item.userId}}"
-              data-status="{{item.status}}"
-              bind:tap="onTapMember"
-            >
-              <image
-                wx:if="{{item.avatarUrl}}"
-                class="avatar-item__img"
-                src="{{item.avatarUrl}}"
-                mode="aspectFill"
-                lazy-load
-              />
-              <view wx:else class="avatar-item__placeholder">
-                <text class="avatar-item__placeholder-text">{{item.nickname[0] || '?'}}</text>
-              </view>
-              <text class="avatar-item__name" wx:if="{{item.status === 'left'}}">已退出</text>
-              <view class="avatar-item__owner" wx:if="{{item.isOwner && item.status === 'active'}}"></view>
-            </view>
-            <!-- 邀请按钮：仅 owner 且成员未满时可见；点击后打开邀请遮罩并准备 token -->
-            <button
-              wx:if="{{canInvite}}"
-              class="avatar-item avatar-item--invite"
-              bind:tap="onOpenInviteOverlay"
-            >
-              <text class="avatar-item__plus">+</text>
-            </button>
-          </view>
-        </scroll-view>
-
-        <!-- 时间导航区（COSTRA-302 年度可用化 · 参照统计页双 picker 写法） -->
-        <view class="time-nav" wx:if="{{contentReady && !loading}}">
-          <view class="time-nav__left">
-            <view class="time-nav__arrow" bind:tap="onPrevTime">
-              <text class="time-nav__arrow-icon">‹</text>
-            </view>
-
-            <picker
-              wx:if="{{dimension === 'monthly'}}"
-              mode="date"
-              fields="month"
-              value="{{currentMonth}}"
-              bindchange="onMonthChange"
-            >
-              <view class="time-nav__month">
-                <text>{{monthDisplay}}</text>
-                <text class="time-nav__dropdown">▼</text>
-              </view>
-            </picker>
-
-            <picker
-              wx:else
-              mode="date"
-              fields="year"
-              value="{{currentYear}}-01-01"
-              bindchange="onYearChange"
-            >
-              <view class="time-nav__month">
-                <text>{{yearDisplay}}</text>
-                <text class="time-nav__dropdown">▼</text>
-              </view>
-            </picker>
-
-            <view class="time-nav__arrow" bind:tap="onNextTime">
-              <text class="time-nav__arrow-icon">›</text>
-            </view>
-          </view>
-          <!-- 月度/年度切换 -->
-          <view class="time-nav__dimension">
-            <text class="time-nav__dim-btn {{dimension === 'monthly' ? 'time-nav__dim-btn--active' : ''}}" bind:tap="onSwitchDimension" data-dim="monthly">月度</text>
-            <text class="time-nav__dim-btn {{dimension === 'yearly' ? 'time-nav__dim-btn--active' : ''}}" bind:tap="onSwitchDimension" data-dim="yearly">年度</text>
-          </view>
-        </view>
-
-        <!-- P2-1 已移除：年度不再拦截 · COSTRA-302 年度可用化 -->
-        <!-- Segmented Bar -->
-        <view class="segment-bar" wx:if="{{contentReady && !loading && segments.length > 0}}">
-          <view class="segment-bar__track">
-            <view
-              wx:for="{{segments}}"
-              wx:key="key"
-              class="segment-bar__segment"
-              style="flex: {{item.flexBps}}; background: {{item.color}};"
-            ></view>
-          </view>
-          <!-- Segmented Bar 图例 -->
-          <view class="segment-bar__legend">
-            <view
-              wx:for="{{segments}}"
-              wx:key="key"
-              class="segment-bar__legend-item"
-            >
-              <view class="segment-bar__legend-dot" style="background: {{item.color}};"></view>
-              <text class="segment-bar__legend-label">{{item.label}}</text>
-              <text class="segment-bar__legend-amount tnum">{{item.amount}}</text>
-            </view>
-          </view>
-        </view>
 
         <!-- 空态（Multi 模式下无收支记录） -->
         <view class="empty-state" wx:if="{{contentReady && isEmpty && !loading}}">

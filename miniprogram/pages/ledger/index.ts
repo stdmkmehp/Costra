@@ -74,10 +74,21 @@ interface DisplayEntry {
   isShared: boolean;
   /** 滑动偏移量（左滑删除，rpx） */
   translateX: number;
+  /** 左滑样式：仅在偏移量 > 0 时生成 transform，避免静止行创建合成层 */
+  translateStyle: string;
 }
 
-/** 成员筛选状态（原 COSTRA-220 MVP 升级为多维筛选面板） */
-type ExpenseTypeFilter = 'all' | 'personal' | 'shared';
+/** 流水类型筛选状态（原 COSTRA-220 MVP 升级为多维筛选面板 · 现覆盖支出/收入/转移） */
+type EntryTypeFilter = 'all' | 'personal' | 'shared' | 'income' | 'transfer';
+
+/** 筛选按钮上流水类型的短标签（'all' 不展示） */
+const ENTRY_TYPE_LABELS: Record<EntryTypeFilter, string> = {
+  all: '',
+  personal: '个人',
+  shared: '公共',
+  income: '收入',
+  transfer: '转移',
+};
 
 interface FilterMemberItem {
   user_id: string;
@@ -186,6 +197,7 @@ function buildEmptyTitle(monthValue: string): string {
 }
 
 const LEDGER_RECENT_ENTRY_LIMIT = 50;
+const SWIPE_SCROLL_IDLE_GRACE_MS = 220;
 
 // ─── Page ─────────────────────────────────────────────────────────────────────────
 
@@ -213,7 +225,7 @@ Page({
     filterActive: false,
     filterPanelVisible: false,
     filterMembers: [] as FilterMemberItem[],
-    filterExpenseType: 'all' as ExpenseTypeFilter,
+    filterEntryType: 'all' as EntryTypeFilter,
 
     // ─── 列表 ───
     dateGroups: [] as DateGroup[],
@@ -239,6 +251,8 @@ Page({
     editDimmedTier1Ids: [] as string[],
     editingNoteRefId: '',
     editNoteValue: '',
+    /** 正在编辑（金额/备注/分类）的流水 client_ref_id · 复用长按暖光高亮提醒用户当前编辑对象 */
+    editActiveRefId: '',
     editAmountVisible: false,
     editAmountDisplay: '0',
     editAmountCalc: { ...INITIAL_CALC_STATE } as CalcState,
@@ -282,10 +296,20 @@ Page({
   _touchStartY: 0 as number,
   _touchRefId: '' as string,
   _swipeStarted: false as boolean,
+  /** 当前手势已锁定为横向左滑；锁定期间 scroll 事件不能复位左滑，避免滚动惯性与横滑互相打架 */
+  _horizontalSwipeActive: false as boolean,
+  /** 横滑结束后等待 scroll-view 惯性滚动完全静止；期间 scroll 事件不复位左滑 */
+  _swipeScrollSettling: false as boolean,
+  _swipeScrollIdleTimer: null as ReturnType<typeof setTimeout> | null,
   _lastSwipeEndAt: 0 as number,
   _shouldRefreshEmptyHintOnNextEmpty: false as boolean,
-  /** 费用性质筛选状态 */
-  _filterExpenseType: 'all' as ExpenseTypeFilter,
+  /** 分类编辑面板横滑手势起点（用于识别横滑并弹「不能跨类型」弱提示） */
+  _editCatTouchX: 0 as number,
+  _editCatTouchY: 0 as number,
+  /** 「不能跨类型修改分类」弱提示节流时间戳（防连滑/连点刷屏） */
+  _lastTypeLockToastAt: 0 as number,
+  /** 流水类型筛选状态 */
+  _filterEntryType: 'all' as EntryTypeFilter,
   /** 成员筛选：选中的 user_id 集合（空 = 全选） */
   _filterSelectedMemberIds: [] as string[],
   /** 当前用户 ID（COSTRA-220: 从 auth token 获取 · 用于成员筛选） */
@@ -484,6 +508,7 @@ Page({
       eventBus.off(EventNames.PROFILE_UPDATED, this._profileUpdatedHandler);
       this._profileUpdatedHandler = null;
     }
+    this._endSwipeScrollSettling();
   },
 
   // ─── 数据加载 ────────────────────────────────────────────────────────────────
@@ -581,10 +606,10 @@ Page({
    * 否则 _buildDisplay 会用旧筛选过滤个人账本流水，导致列表 / 汇总错误为空或不全。
    */
   _resetFiltersForNonShared() {
-    this._filterExpenseType = 'all';
+    this._filterEntryType = 'all';
     this._filterSelectedMemberIds = [];
     this.setData({
-      filterExpenseType: 'all',
+      filterEntryType: 'all',
       filterMembers: [],
       filterActive: false,
       filterPanelVisible: false,
@@ -904,14 +929,24 @@ Page({
   _buildDisplay(monthValue?: string) {
     const targetMonth = monthValue || this.data.currentMonth;
 
-    // 筛选：费用性质 + 成员多选
+    // 筛选：流水类型 + 成员多选
     let entries = this._allEntries;
 
-    // 费用性质过滤
-    if (this._filterExpenseType === 'personal') {
-      entries = entries.filter(e => e.shared_type !== 'shared');
-    } else if (this._filterExpenseType === 'shared') {
-      entries = entries.filter(e => e.shared_type === 'shared');
+    // 流水类型过滤（单选 · 支出细分公共/个人，另含收入/转移）
+    switch (this._filterEntryType) {
+      case 'personal':
+        entries = entries.filter(e => e.type === 'expense' && e.shared_type !== 'shared');
+        break;
+      case 'shared':
+        entries = entries.filter(e => e.type === 'expense' && e.shared_type === 'shared');
+        break;
+      case 'income':
+        entries = entries.filter(e => e.type === 'income');
+        break;
+      case 'transfer':
+        entries = entries.filter(e => e.type === 'transfer');
+        break;
+      // 'all' → 不过滤
     }
 
     // 成员过滤（仅当有选择且非全选时过滤）
@@ -978,6 +1013,7 @@ Page({
           memberInitial,
           isShared: e.shared_type === 'shared',
           translateX: 0,
+          translateStyle: '',
         };
       });
 
@@ -1144,11 +1180,11 @@ Page({
     this.setData({ filterPanelVisible: visible });
   },
 
-  /** 筛选面板：费用性质变更 */
-  onFilterExpenseTypeChange(e: WechatMiniprogram.CustomEvent<{ expenseType: ExpenseTypeFilter }>) {
-    const { expenseType } = e.detail;
-    this._filterExpenseType = expenseType;
-    this.setData({ filterExpenseType: expenseType });
+  /** 筛选面板：流水类型变更 */
+  onFilterEntryTypeChange(e: WechatMiniprogram.CustomEvent<{ entryType: EntryTypeFilter }>) {
+    const { entryType } = e.detail;
+    this._filterEntryType = entryType;
+    this.setData({ filterEntryType: entryType });
     this._updateFilterState();
     this._buildDisplay();
   },
@@ -1203,14 +1239,14 @@ Page({
     const allMembers = this.data.filterMembers as FilterMemberItem[];
     const selectedCount = allMembers.filter(m => m.selected).length;
     const isAllMembers = selectedCount === 0 || selectedCount === allMembers.length;
-    const isAllExpense = this._filterExpenseType === 'all';
-    const filterActive = !isAllMembers || !isAllExpense;
+    const isAllType = this._filterEntryType === 'all';
+    const filterActive = !isAllMembers || !isAllType;
 
     let memberFilterText = '全部';
     if (filterActive) {
       const parts: string[] = [];
-      if (!isAllExpense) {
-        parts.push(this._filterExpenseType === 'personal' ? '个人' : '公共');
+      if (!isAllType) {
+        parts.push(ENTRY_TYPE_LABELS[this._filterEntryType]);
       }
       if (!isAllMembers) {
         parts.push(`${selectedCount}人`);
@@ -1268,6 +1304,7 @@ Page({
     this._touchStartY = e.touches[0].clientY;
     this._touchRefId = refId;
     this._swipeStarted = false;
+    this._horizontalSwipeActive = false;
   },
 
   onTouchMove(e: WechatMiniprogram.TouchEvent) {
@@ -1280,6 +1317,7 @@ Page({
     if (Math.abs(deltaX) < 10) return;
 
     this._swipeStarted = true;
+    this._horizontalSwipeActive = true;
 
     const refId = e.currentTarget.dataset.refid;
     if (refId !== this.data.swipingRefId && this.data.swipingRefId) {
@@ -1296,7 +1334,14 @@ Page({
   },
 
   onTouchEnd() {
-    if (!this._swipeStarted) return;
+    const wasSwipe = this._swipeStarted || this._horizontalSwipeActive;
+    this._swipeStarted = false;
+    this._horizontalSwipeActive = false;
+    if (!wasSwipe) return;
+
+    const now = Date.now();
+    this._beginSwipeScrollSettling();
+
     const refId = this._touchRefId;
     if (!refId) return;
 
@@ -1309,11 +1354,46 @@ Page({
         this.setData({ swipingRefId: '' });
       }
     }
-    this._lastSwipeEndAt = Date.now();
+    this._lastSwipeEndAt = now;
+    this._touchRefId = '';
+  },
+
+  onTouchCancel() {
+    const refId = this._touchRefId;
+    const wasSwipe = this._swipeStarted || this._horizontalSwipeActive;
+    this._swipeStarted = false;
+    this._horizontalSwipeActive = false;
+    this._endSwipeScrollSettling();
+    this._touchRefId = '';
+    if (!wasSwipe || !refId) return;
+
+    this._updateEntryTranslate(refId, 0);
+    if (this.data.swipingRefId === refId) {
+      this.setData({ swipingRefId: '' });
+    }
   },
 
   _resetSwipe(refId: string) {
     this._updateEntryTranslate(refId, 0);
+  },
+
+  _beginSwipeScrollSettling() {
+    this._swipeScrollSettling = true;
+    if (this._swipeScrollIdleTimer) {
+      clearTimeout(this._swipeScrollIdleTimer);
+    }
+    this._swipeScrollIdleTimer = setTimeout(() => {
+      this._swipeScrollSettling = false;
+      this._swipeScrollIdleTimer = null;
+    }, SWIPE_SCROLL_IDLE_GRACE_MS);
+  },
+
+  _endSwipeScrollSettling() {
+    this._swipeScrollSettling = false;
+    if (this._swipeScrollIdleTimer) {
+      clearTimeout(this._swipeScrollIdleTimer);
+      this._swipeScrollIdleTimer = null;
+    }
   },
 
   _resetAllSwipe() {
@@ -1321,8 +1401,9 @@ Page({
     let changed = false;
     for (const g of dateGroups) {
       for (const e of g.entries) {
-        if (e.translateX !== 0) {
+        if (e.translateX !== 0 || e.translateStyle) {
           e.translateX = 0;
+          e.translateStyle = '';
           changed = true;
         }
       }
@@ -1338,6 +1419,7 @@ Page({
       for (const e of g.entries) {
         if (e.client_ref_id === refId) {
           e.translateX = offset;
+          e.translateStyle = offset > 0 ? `transform: translateX(-${offset}rpx);` : '';
           this.setData({ dateGroups });
           return;
         }
@@ -1594,6 +1676,7 @@ Page({
     // —— 阶段 2：同步打开面板 ——
     this.setData({
       editCategoryVisible: true,
+      editActiveRefId: refId,
       editCategoryType: entryType,
       editCategoryLockedType: entryType,
       editCategoryTypeIndex: entryType === 'transfer' ? 2 : entryType === 'income' ? 1 : 0,
@@ -1703,31 +1786,27 @@ Page({
     const refId = this._editingRefId;
     this._editingRefId = '';
     if (!catId || !refId) {
-      this.setData({ editCategoryVisible: false });
-      eventBus.emit(EventNames.SHOW_TAB_BAR);
+      this._closeEditCategory();
       return;
     }
 
     // SOP 步骤 2: 取内存对象
     const entry = this._findRawEntry(refId);
     if (!entry) {
-      this.setData({ editCategoryVisible: false });
-      eventBus.emit(EventNames.SHOW_TAB_BAR);
+      this._closeEditCategory();
       return;
     }
 
     // 分类编辑只允许在原 entry.type 内改分类；跨类型改账需独立产品能力承载。
     if (this.data.editCategoryType !== entry.type) {
-      this.setData({ editCategoryVisible: false });
-      eventBus.emit(EventNames.SHOW_TAB_BAR);
-      wx.showToast({ title: '不能跨类型修改分类', icon: 'none' });
+      this._closeEditCategory();
+      this._showTypeLockToast();
       return;
     }
 
     // SOP 步骤 3: 同等性 guard
     if (entry.category_id === catId) {
-      this.setData({ editCategoryVisible: false });
-      eventBus.emit(EventNames.SHOW_TAB_BAR);
+      this._closeEditCategory();
       return;
     }
 
@@ -1737,8 +1816,7 @@ Page({
     entry.updated_at = now;
 
     // SOP 步骤 5: 关闭面板
-    this.setData({ editCategoryVisible: false });
-    eventBus.emit(EventNames.SHOW_TAB_BAR);
+    this._closeEditCategory();
 
     // SOP 步骤 6: 同步渲染
     this._buildDisplay();
@@ -1757,17 +1835,63 @@ Page({
   },
 
   onCloseEditCategory() {
-    this.setData({ editCategoryVisible: false });
+    this._closeEditCategory();
+  },
+
+  /** 关闭分类编辑面板（统一出口：隐藏面板 + 恢复 tabbar + 取消行内编辑高亮） */
+  _closeEditCategory() {
+    this.setData({ editCategoryVisible: false, editActiveRefId: '' });
     eventBus.emit(EventNames.SHOW_TAB_BAR);
   },
 
-  /** 分类面板：点击 tab 切换收支（仅修改 editCategoryTypeIndex，由 swiper 过渡） */
+  /**
+   * 「禁止修改流水类型」弱提示（统一出口 · 带 1.5s 节流防连滑/连点刷屏）。
+   * icon:'none' 纯文字弱提醒 + 短时长，不打断操作。
+   */
+  _showTypeLockToast() {
+    const now = Date.now();
+    if (now - this._lastTypeLockToastAt < 1500) return;
+    this._lastTypeLockToastAt = now;
+    wx.showToast({ title: '禁止修改流水类型', icon: 'none', duration: 800 });
+  },
+
+  /** 分类面板：点击 tab 切换收支（修改分类锁定类型，点击其它类型仅弱提示不切换） */
   onEditCategoryTypeTab(e: WechatMiniprogram.TouchEvent) {
     const type = (e.currentTarget.dataset as Record<string, string>).type as 'expense' | 'income' | 'transfer';
-    if (type !== this.data.editCategoryLockedType) return;
+    if (type !== this.data.editCategoryLockedType) {
+      this._showTypeLockToast();
+      return;
+    }
     const targetIdx = type === 'transfer' ? 2 : type === 'income' ? 1 : 0;
     if (targetIdx === this.data.editCategoryTypeIndex) return;
     this.setData({ editCategoryTypeIndex: targetIdx });
+  },
+
+  /**
+   * 分类面板：横滑手势起点记录。
+   * swiper 保留 disable-touch（不真正翻页），但 touch 事件仍照常派发，
+   * 借此识别用户的横滑意图并在 touchend 弹「禁止修改流水类型」弱提示。
+   */
+  onEditCategoryTouchStart(e: WechatMiniprogram.TouchEvent) {
+    const t = e.touches[0] || e.changedTouches[0];
+    if (!t) return;
+    this._editCatTouchX = t.clientX;
+    this._editCatTouchY = t.clientY;
+  },
+
+  /**
+   * 分类面板：横滑手势判定（需明确横扫才提示，尽量减少误触）。
+   * 条件：横向位移 > 100px 且横向明显主导（dx > dy*1.5）；
+   * 过滤掉点击微抖、斜滑、纵向滚动带出的横向分量。
+   */
+  onEditCategoryTouchEnd(e: WechatMiniprogram.TouchEvent) {
+    const t = e.changedTouches[0];
+    if (!t) return;
+    const dx = Math.abs(t.clientX - this._editCatTouchX);
+    const dy = Math.abs(t.clientY - this._editCatTouchY);
+    if (dx > 100 && dx > dy * 1.5) {
+      this._showTypeLockToast();
+    }
   },
 
   /** 分类面板：swiper 横滑切换回调（统一更新 editCategoryType + 分类列表） */
@@ -1835,6 +1959,7 @@ Page({
     this._editingRefId = refId;
     this.setData({
       editingNoteRefId: refId,
+      editActiveRefId: refId,
       editNoteValue: entry.note || '',
     });
   },
@@ -1848,21 +1973,21 @@ Page({
     const refId = this._editingRefId;
     this._editingRefId = '';
     if (!refId) {
-      this.setData({ editingNoteRefId: '' });
+      this.setData({ editingNoteRefId: '', editActiveRefId: '' });
       return;
     }
 
     // SOP 步骤 2: 取内存对象
     const entry = this._findRawEntry(refId);
     if (!entry) {
-      this.setData({ editingNoteRefId: '' });
+      this.setData({ editingNoteRefId: '', editActiveRefId: '' });
       return;
     }
 
     // SOP 步骤 3: 同等性 guard
     const newNote = this.data.editNoteValue.trim();
     const oldNote = (entry.note || '').trim();
-    this.setData({ editingNoteRefId: '' });
+    this.setData({ editingNoteRefId: '', editActiveRefId: '' });
     if (newNote === oldNote) return;
 
     // SOP 步骤 4: 同步赋值内存
@@ -1924,6 +2049,7 @@ Page({
     eventBus.emit(EventNames.HIDE_TAB_BAR);
     this.setData({
       editAmountVisible: true,
+      editActiveRefId: refId,
       editAmountDisplay: editCalc.display,
       editAmountCalc: editCalc,
       editAmountShowShared: isMulti && entry.type === 'expense',
@@ -2057,7 +2183,7 @@ Page({
   },
 
   _closeEditAmount() {
-    this.setData({ editAmountVisible: false });
+    this.setData({ editAmountVisible: false, editActiveRefId: '' });
     eventBus.emit(EventNames.SHOW_TAB_BAR);
   },
 
@@ -2079,6 +2205,11 @@ Page({
   noop() {},
 
   onListScroll() {
+    if (this._horizontalSwipeActive) return;
+    if (this._swipeScrollSettling) {
+      this._beginSwipeScrollSettling();
+      return;
+    }
     if (this.data.swipingRefId) {
       this._resetAllSwipe();
     }

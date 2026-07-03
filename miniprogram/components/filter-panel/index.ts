@@ -1,5 +1,5 @@
 // components/filter-panel/index.ts · 明细页筛选面板
-// 浮出式面板：支持费用性质（全部/个人/公共）+ 成员多选筛选
+// 浮出式面板：支持流水类型（全部/个人支出/公共支出/收入/转移）+ 成员多选筛选
 
 export interface FilterMember {
   user_id: string;
@@ -9,10 +9,18 @@ export interface FilterMember {
   selected: boolean;
 }
 
-export type ExpenseTypeFilter = 'all' | 'personal' | 'shared';
+/**
+ * 流水类型筛选维度（单选）：
+ *   all      → 全部流水
+ *   personal → 个人支出（type=expense 且非公共）
+ *   shared   → 公共支出（type=expense 且公共）
+ *   income   → 收入（type=income）
+ *   transfer → 转移（type=transfer）
+ */
+export type EntryTypeFilter = 'all' | 'personal' | 'shared' | 'income' | 'transfer';
 
 export interface FilterState {
-  expenseType: ExpenseTypeFilter;
+  entryType: EntryTypeFilter;
   selectedMemberIds: string[];
 }
 
@@ -28,10 +36,10 @@ Component({
       type: Array,
       value: [] as FilterMember[],
     },
-    /** 费用性质筛选 */
-    expenseType: {
+    /** 流水类型筛选 */
+    entryType: {
       type: String,
-      value: 'all' as ExpenseTypeFilter,
+      value: 'all' as EntryTypeFilter,
     },
   },
 
@@ -51,11 +59,11 @@ Component({
       this._closeAndSave();
     },
 
-    /** 费用性质切换 */
-    onTapExpenseType(e: WechatMiniprogram.TouchEvent) {
-      const type = (e.currentTarget.dataset as Record<string, string>).type as ExpenseTypeFilter;
-      if (type === this.properties.expenseType) return;
-      this.triggerEvent('expenseTypeChange', { expenseType: type });
+    /** 流水类型切换 */
+    onTapEntryType(e: WechatMiniprogram.TouchEvent) {
+      const type = (e.currentTarget.dataset as Record<string, string>).type as EntryTypeFilter;
+      if (type === this.properties.entryType) return;
+      this.triggerEvent('entryTypeChange', { entryType: type });
     },
 
     /** 点击成员头像 toggle */

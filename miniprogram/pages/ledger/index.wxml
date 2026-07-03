@@ -54,8 +54,8 @@
     <filter-panel
       visible="{{filterPanelVisible}}"
       members="{{filterMembers}}"
-      expenseType="{{filterExpenseType}}"
-      bind:expenseTypeChange="onFilterExpenseTypeChange"
+      entryType="{{filterEntryType}}"
+      bind:entryTypeChange="onFilterEntryTypeChange"
       bind:memberToggle="onFilterMemberToggle"
       bind:selectAll="onFilterSelectAll"
       bind:close="onFilterPanelClose"
@@ -64,6 +64,7 @@
     <scroll-view
       class="entry-list"
       scroll-y
+      using-sticky
       enhanced
       show-scrollbar="{{false}}"
       scroll-top="{{listScrollTop}}"
@@ -108,12 +109,13 @@
         >
           <!-- 滑动容器 -->
           <view
-            class="entry-item {{entry.type === 'income' ? 'entry-item--income' : ''}} {{entry.client_ref_id === ctxActiveRefId ? 'entry-item--ctx-active' : ''}}"
-            style="transform: translateX(-{{entry.translateX}}rpx);"
+            class="entry-item {{entry.type === 'income' ? 'entry-item--income' : ''}} {{entry.client_ref_id === ctxActiveRefId || entry.client_ref_id === editActiveRefId ? 'entry-item--ctx-active' : ''}}"
+            style="{{entry.translateStyle}}"
             data-refid="{{entry.client_ref_id}}"
             bindtouchstart="onTouchStart"
             bindtouchmove="onTouchMove"
             bindtouchend="onTouchEnd"
+            bindtouchcancel="onTouchCancel"
             bindlongpress="onEntryLongPress"
           >
             <!-- 极简单色圆形图标 · COSTRA-227: 点击编辑分类 -->
@@ -225,6 +227,8 @@
         duration="{{editCategorySwiperDuration}}"
         disable-touch="{{true}}"
         bindchange="onEditCategorySwiperChange"
+        bindtouchstart="onEditCategoryTouchStart"
+        bindtouchend="onEditCategoryTouchEnd"
       >
         <!-- 支出 pane -->
         <swiper-item>

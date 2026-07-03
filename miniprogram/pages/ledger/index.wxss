@@ -4,7 +4,7 @@
 
 /* ---- 页面容器 ---- */
 .ledger {
-  min-height: 100vh;
+  height: 100vh;
   background: var(--color-role-bg-app, #f1f2ec);
   display: flex;
   flex-direction: column;
@@ -92,10 +92,14 @@
 
 /* ---- 时间导航 + 筛选行 ---- */
 .filter-row {
+  position: relative;
+  z-index: 20;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 32rpx 16rpx;
+  background: var(--color-role-bg-app, #f1f2ec);
 }
 
 .filter-row__left {
@@ -177,15 +181,21 @@
 /* ─── 列表容器（筛选面板的定位参照） ─── */
 .list-container {
   position: relative;
+  z-index: 0;
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 /* ---- 流水列表 ---- */
 .entry-list {
   flex: 1;
+  /* flex item 默认 min-height:auto 会被内容撑高导致整页原生滚动，
+     置 0 使 scroll-view 收缩到剩余空间内、改为列表内部滚动，
+     从而固定住上方汇总区 + 月份/筛选行 */
+  min-height: 0;
   padding-bottom: calc(env(safe-area-inset-bottom) + 120rpx);
 }
 
@@ -198,15 +208,7 @@
   justify-content: space-between;
   align-items: center;
   padding: 16rpx 32rpx;
-  background: rgba(241, 242, 236, 0.95);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-}
-
-@supports not (backdrop-filter: blur(1px)) {
-  .date-header {
-    background: #f1f2ec;
-  }
+  background: #f1f2ec;
 }
 
 .date-header__label {
