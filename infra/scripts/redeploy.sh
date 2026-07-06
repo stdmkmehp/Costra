@@ -1,31 +1,31 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Costra · 快速重部署（停止 → 构建 → 启动 → 迁移）
+# Costra · 快速重部署（构建 → 停止 → 启动 → 迁移）
 # =============================================================================
 # 适用场景：prod 环境已搭建完毕（01~03 + 07~08 已跑过），只需要：
-#   1. 停止服务
-#   2. 拉取最新代码 / 重新构建镜像
+#   1. 重新构建镜像（旧服务仍在线，构建失败不影响线上）
+#   2. 停止服务（构建成功后才停，最小化停机窗口）
 #   3. 启动服务
-#   4. 跑 migrations（幂等 · 已跑过的自动跳过）
+#   4. （可选）跑 migrations（幂等 · 已跑过的自动跳过）
 #
-# 跳过的步骤：01-preflight / 02-prepare-dirs / 03-generate-env /
-#              07-issue-cert / 08-finalize-nginx / 09-verify-gates
+# 默认跳过的步骤：01-preflight / 02-prepare-dirs / 03-generate-env /
+#              06-migrate / 07-issue-cert / 08-finalize-nginx / 09-verify-gates
+# 说明：默认不跑 migration（纯重启/更新），如需迁移请显式加 --migrate。
+#       本脚本不会更新代码仓库，请自行确保代码已是目标版本。
 #
 # 用法：
 #   ./redeploy.sh --build-mode local                    # 本地重新 build
 #   ./redeploy.sh --build-mode registry --registry-image weizhao/costra-server:v2.0
 #   ./redeploy.sh --build-mode load --image-tar /tmp/costra-server.tar.gz
-#   ./redeploy.sh --skip-migrate                        # 跳过 migration（纯重启）
+#   ./redeploy.sh --migrate                             # 重部署并跑 migration
 #   ./redeploy.sh --skip-build                          # 跳过构建（只重启）
-#   ./redeploy.sh --git-pull                            # 先 git pull 再 build
 #
 # 选项：
 #   --build-mode <local|load|registry>  镜像构建方式（默认 local）
 #   --image-tar <path>                  load 模式：tar.gz 路径
 #   --registry-image <full>             registry 模式：完整镜像名
-#   --skip-migrate                      跳过 migration 步骤
+#   --migrate                           跑 migration 步骤（默认跳过）
 #   --skip-build                        跳过构建步骤（只停止+启动）
-#   --git-pull                          构建前先 git pull
 #   --restart-nginx                     同时重启 nginx 容器
 #   --dry-run / -y / --yes / -h / --help
 #
@@ -42,9 +42,8 @@ source "${SCRIPT_DIR}/lib/common.sh"
 BUILD_MODE="local"
 IMAGE_TAR=""
 REGISTRY_IMAGE=""
-SKIP_MIGRATE=0
+SKIP_MIGRATE=1
 SKIP_BUILD=0
-GIT_PULL=0
 RESTART_NGINX=0
 
 # --- 解析参数 ---
@@ -54,9 +53,8 @@ while [[ $# -gt 0 ]]; do
     --build-mode)       BUILD_MODE=$2; shift 2 ;;
     --image-tar)        IMAGE_TAR=$2; shift 2 ;;
     --registry-image)   REGISTRY_IMAGE=$2; shift 2 ;;
-    --skip-migrate)     SKIP_MIGRATE=1; shift ;;
+    --migrate)          SKIP_MIGRATE=0; shift ;;
     --skip-build)       SKIP_BUILD=1; shift ;;
-    --git-pull)         GIT_PULL=1; shift ;;
     --restart-nginx)    RESTART_NGINX=1; shift ;;
     --dry-run|-y|--yes) shift ;;
     -h|--help)
@@ -85,7 +83,6 @@ print_section_header "Costra · 快速重部署"
 log_info "build mode     = ${BUILD_MODE}"
 log_info "skip build     = ${SKIP_BUILD}"
 log_info "skip migrate   = ${SKIP_MIGRATE}"
-log_info "git pull       = ${GIT_PULL}"
 log_info "restart nginx  = ${RESTART_NGINX}"
 [[ "${DRY_RUN}" == "1" ]] && log_warn "DRY-RUN 模式 · 不真正执行命令"
 
@@ -102,7 +99,23 @@ CURRENT=0
 # 注意：bash `set -e` 下 `((var++))` 当 var 自增前为 0 时整条命令退出码为 1，
 # 会触发 ERR trap。统一改用 `var=$((var + 1))` 形式（赋值语句退出码恒为 0）。
 
-# --- Step 1: 停止服务 ---
+# --- Step 1: 构建（先构建，旧服务仍在线，构建失败不影响线上）---
+if [[ "${SKIP_BUILD}" != "1" ]]; then
+  CURRENT=$((CURRENT + 1))
+  log_step "[${CURRENT}/${TOTAL_STEPS}] 构建镜像"
+
+  # 调用 04-build-server.sh
+  BUILD_ARGS=("${COMMON_FLAGS[@]}" --mode "${BUILD_MODE}")
+  [[ -n "${IMAGE_TAR}" ]] && BUILD_ARGS+=(--image-tar "${IMAGE_TAR}")
+  [[ -n "${REGISTRY_IMAGE}" ]] && BUILD_ARGS+=(--registry-image "${REGISTRY_IMAGE}")
+
+  if ! "${SCRIPT_DIR}/04-build-server.sh" "${BUILD_ARGS[@]}"; then
+    die "构建失败 · 请检查日志（服务未停止，线上不受影响）"
+  fi
+  log_success "镜像构建完成"
+fi
+
+# --- Step 2: 停止服务（构建成功后才停，最小化停机窗口）---
 CURRENT=$((CURRENT + 1))
 log_step "[${CURRENT}/${TOTAL_STEPS}] 停止服务"
 
@@ -116,30 +129,6 @@ else
   run_cmd docker compose -f "${COSTRA_COMPOSE_FILE}" --env-file "${COSTRA_ENV_FILE}" \
     stop server postgres redis
   log_success "已停止 server + postgres + redis（nginx 保持运行）"
-fi
-
-# --- Step 2: git pull（可选）+ 构建 ---
-if [[ "${SKIP_BUILD}" != "1" ]]; then
-  CURRENT=$((CURRENT + 1))
-  log_step "[${CURRENT}/${TOTAL_STEPS}] 构建镜像"
-
-  # git pull（可选）
-  if [[ "${GIT_PULL}" == "1" ]]; then
-    log_info "git pull..."
-    cd "${COSTRA_ROOT}"
-    run_cmd git pull --ff-only
-    log_success "git pull 完成"
-  fi
-
-  # 调用 04-build-server.sh
-  BUILD_ARGS=("${COMMON_FLAGS[@]}" --mode "${BUILD_MODE}")
-  [[ -n "${IMAGE_TAR}" ]] && BUILD_ARGS+=(--image-tar "${IMAGE_TAR}")
-  [[ -n "${REGISTRY_IMAGE}" ]] && BUILD_ARGS+=(--registry-image "${REGISTRY_IMAGE}")
-
-  if ! "${SCRIPT_DIR}/04-build-server.sh" "${BUILD_ARGS[@]}"; then
-    die "构建失败 · 请检查日志"
-  fi
-  log_success "镜像构建完成"
 fi
 
 # --- Step 3: 启动服务 ---
