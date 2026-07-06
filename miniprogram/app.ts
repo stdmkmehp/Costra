@@ -9,7 +9,7 @@
 //   - FU-LAUNCH-FIRST-RENDER-RACE-B（COSTRA-125 本卡 close · 渲染层 storage group `_prepare` 未就绪）
 //   - .team/dispatch/COSTRA-125-miniapp-storage-async-migration.md §2.2 / §3 (d)
 //   - docs/devops/libversion-upgrade.md §3.4（反模式 #4）
-import { initAuth, isLoggedIn, getToken } from './services/auth';
+import { initAuth, isLoggedIn, getToken, loginFlow } from './services/auth';
 import { getEnv } from './services/env';
 import { ensureVersion } from './services/storage';
 import { startScheduler, stopScheduler, syncOnce } from './services/syncScheduler';
@@ -117,14 +117,29 @@ App<AppOption>({
       markPerf('app.init-auth.start');
       await initAuth();
       markPerf('app.init-auth.done');
-      // 启动期兜底 · entry page 渲染前先定登录态（与 Page.onLoad/onShow gate 形成多层保险）
-      const loggedIn = isLoggedIn();
-      setPerfContext({ session: loggedIn ? 'logged-in' : 'guest' });
-      if (!loggedIn) {
-        markPerf('app.bootstrap.done', { session: 'guest' });
-        try { wx.reLaunch({ url: '/pages/login/index' }); } catch { /* 单测 / 非 wx 环境 noop */ }
-        return;
+
+      // 方案 X（免登录墙）：initAuth 未恢复出有效会话时，启动即静默 wx.login 自动建立会话，
+      //   不再 reLaunch 到登录页拦截浏览。
+      //   合规依据：wx.login 静默、不弹窗、不采集头像/昵称/手机号（非隐私敏感接口），
+      //   符合微信《小程序搜索优化指南》"必要时才要求用户授权/登录"口径；openid 收集已在隐私指引声明。
+      //   仅当静默登录也失败（网络异常 / wx.login 失败）时，才降级 reLaunch 到登录页兜底重试。
+      if (!isLoggedIn()) {
+        markPerf('app.silent-login.start');
+        try {
+          await loginFlow();
+          markPerf('app.silent-login.done');
+        } catch (err) {
+          markPerf('app.silent-login.failed', { error: err instanceof Error ? err.message : String(err) });
+          logger.warn('Costra', 'silent login failed, fallback to login page', err);
+          setPerfContext({ session: 'guest' });
+          markPerf('app.bootstrap.done', { session: 'guest' });
+          try { wx.reLaunch({ url: '/pages/login/index' }); } catch { /* 单测 / 非 wx 环境 noop */ }
+          return;
+        }
       }
+
+      // 启动期登录态已就绪（initAuth 恢复 或 静默登录新建）· entry page 渲染前先定登录态
+      setPerfContext({ session: 'logged-in' });
       // 登录态已就绪：补偿上次未保存成功的 active ledger preference
       void flushPendingPreference();
 
