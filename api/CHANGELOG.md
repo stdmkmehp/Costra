@@ -6,6 +6,30 @@
 
 ---
 
+## [0.12.0] - 2026-07-06 · COSTRA-230 后续
+
+### Changed
+
+- **PATCH /families/{family_id}** 重命名权限由「仅 owner」放开为「任意 active 成员」
+  - summary 更新为「更新家庭名称（任意 active 成员均可）」，补充 description
+  - service 层 `updateFamily` 去除 `assertOwner`，仅保留 `assertActiveMember`
+  - 非破坏性放宽（原 403 场景现返回 200）；version 乐观锁与 ledger_name 同步逻辑不变
+
+---
+
+## [0.11.0] - 2026-06-12 · COSTRA-302
+
+### Added
+
+- **GET /families/{family_id}/summary/drill-down** 协作页家庭汇总三级下钻接口
+  - 按一级分类（L1）展开流水明细，口径严格对齐 familySummaryRepo（公共/个人分离）
+  - 参数：month/year(xor) + l1_category_id + shared_type + user_id(personal 时必填) + limit
+  - 响应：l1_category_id, l1_category_name, l1_amount, items[], total_count, has_more
+- **SummaryDrillDownResponse** schema
+- **SummaryDrillDownEntryItem** schema
+
+---
+
 ## [0.10.0] - 2026-06-11 · COSTRA-301
 
 ### Changed

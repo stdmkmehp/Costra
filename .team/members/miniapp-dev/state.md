@@ -16,6 +16,7 @@
 
 ## §2 当前关注（active tasks）
 
+- 🔧 **COSTRA-305 协作页排行榜 L1 三级下钻 + tabbar 遮挡修复**（2026-06-25 · 删除 onTapL1 跳转统计页 + 新增三级流水明细展开/收起 + familyApi drillDownFamilyL1Entries + .family-l3* 样式移植 + .family__content 底部内边距修复 tabbar 遮挡 · 4文件 +466/-20 · typecheck+lint+test 150/150+check:appjson+tooling+whitelist 六闸全绿）
 - ✅ **COSTRA-303 统计页消费 pendingStatisticsAction（自动切成员/月-年/展开 L1）**（2026-06-24 · onShow 接入 pending 消费 + 抽出 _handleL1Tap 程序触发版(+silent 参数) + _consumePendingAction 5 步完整流程 + AppWithBootstrap 类型扩展 + type-only import PendingStatisticsAction · 1文件 +91 行净增 · typecheck+lint+test 113/113 全绿 · 945行 < 1000）
 - ✅ **COSTRA-302 协作页 multi 模式重构（统计页同款手风琴 + 年度可用 + L1 跳转）**（2026-06-23 · 删除旧 detail-list + 新增 family-rank 手风琴 + 年度可用化 + L1 跳转 pendingStatisticsAction + app.ts globalData 扩展 · 4文件 +382/-391 · typecheck+lint+test 113/113+check:appjson+tooling+whitelist 全绿 · commit `0136ad5`）
 - ✅ **COSTRA-264 COSTRA-263 review 修复 + 二指手势后统计页左边距异常修复**（2026-06-22 · P0 拆分 index.ts(1093→979行) + P1 swiper 高度状态重置 + P1 初始高度动态化 + P1 tap 跳转 loading 占位 + P2 深滚回跳扣 nav 高度 + P2 anchor 测量移除 top>0 限制 + E 二指手势 overflow-x:hidden 防护 + F tech-spec §4.7+§8.4 · 6文件 +328/-201 · 六闸全绿 · commit `3013344`）
@@ -48,6 +49,7 @@
 
 ## §3 交付历史索引
 
+- 2026-06-25 · `history/2026-06-25-costra-305-family-l1-drill-down.md` · COSTRA-305 **协作页排行榜 L1 三级下钻 + tabbar 遮挡修复**（删除 onTapL1 统计页跳转 + 三级流水展开/收起 + familyApi drillDownFamilyL1Entries 含缓存 + .family-l3* 样式 + tabbar 遮挡修复 · 4文件 +466/-20 · 六闸全绿）
 - 2026-06-24 · `history/2026-06-24-costra-303-consume-pending-statistics-action.md` · COSTRA-303 **统计页消费 pendingStatisticsAction（自动切成员/月-年/展开 L1）**（onShow 接入 pending 消费 + _handleL1Tap 抽出 + _consumePendingAction 实装 · 1文件 +91行 · typecheck+lint+test 113/113 全绿 · 945行）
 - 2026-06-23 · `history/2026-06-23-costra-302-family-drilldown-rank.md` · COSTRA-302 **协作页 multi 模式重构（统计页同款手风琴 + 年度可用 + L1 跳转）**（删除旧 detail-list + 新增 family-rank 手风琴 + DrilldownRow/L1Display 类型 + 年度可用化 + L1 跳转 pendingStatisticsAction + app.ts globalData · 4文件 +382/-391 · 六闸全绿 · commit `0136ad5`）
 - 2026-06-22 · `history/2026-06-22-costra-264-review-fix-overflow-guard.md` · COSTRA-264 **COSTRA-263 review 修复 + 二指手势后统计页左边距异常修复**（P0 拆分 index.ts(1093→979行) + P1 swiper 高度状态重置 + P1 初始高度动态化 + P1 tap loading 占位 + P2 深滚回跳扣 nav + P2 anchor 测量修复 + E overflow-x:hidden + F tech-spec · 6文件 +328/-201 · 六闸全绿 · commit `3013344`）
@@ -129,6 +131,7 @@
   - **FU-125-P2-4（跨卡文档追写治理依据）**：dispatch §4 "可写" 组加注"追写 COSTRA-124 新建文档属接力卡治理反哺范式（D-017 §13.6/13.7 先例）· 非越权"
 
 ## §7 最近更新时间戳
+- **2026-06-25T09:55:00+08:00** · COSTRA-305 **协作页排行榜 L1 三级下钻 + tabbar 遮挡修复交付**（删除 onTapL1 跳转统计页 → 展开/收起三级流水明细 + familyApi drillDownFamilyL1Entries(含 _familyDrillCache) + L1Display 扩展 5 字段 + EntryRow 接口 + _loadL1Entries + _collapseAllRows 扩展清空 entries + _buildDrilldownRows 按 categoryId 保留 L1 展开态 + .family-l3* 样式移植 + .family__content padding-bottom 修复 tabbar 遮挡 · 4文件 +466/-20 · typecheck 0 error + lint 0 new + test 150/150 + check:appjson+tooling+whitelist 六闸全绿）
 - **2026-06-24T16:10:00+08:00** · COSTRA-303 **统计页消费 pendingStatisticsAction 交付**（onShow 接入 pending 消费 + _handleL1Tap 抽出(+silent) + _consumePendingAction(5 步: dim/month-year/member/loadData/expandL1) + AppWithBootstrap 类型扩展 + type-only import · 1文件 pages/statistics/index.ts 854→945 行(+91) · typecheck 0 error + lint 0 new warning(4 历史) + test 113/113 ✅）
 - **2026-06-23T15:40:00+08:00** · COSTRA-302 **协作页 multi 模式重构（统计页同款手风琴 + 年度可用 + L1 跳转）交付**（删除旧 detail-list + 新增 family-rank 手风琴 + DrilldownRow/L1Display 类型 + 年度可用化(移除 toast 拦截 + year picker + onPrevYear/onNextYear/onYearChange) + 公共行 L1 不下钻 + 成员行 L1 写 pendingStatisticsAction + switchTab + app.ts globalData 扩展 + _loadSummary scope 重构 + 手风琴交互(同时仅一行展开) + _collapseAllRows 切时间/切账本 · 4文件 +382/-391 · index.ts 1378行 < 1500 · typecheck+lint+test 113/113+check:appjson+tooling+whitelist 全绿 · commit `0136ad5`）
 - **2026-06-18T18:30:00+08:00** · COSTRA-223 **R1.x.1 修订交付**（P0-1 InviteResponse 对齐 OpenAPI + P0-2 403/FAMILY_NOT_MEMBER 专门处理 + P1-1 PersonalByMember.amount + P1-2 SWR stale-first + P1-3 invite_token + P1-4 缓存上限 20 · 2文件 +65/-39 · typecheck+lint+test 99/99 全绿 · 等 review-tech R2）

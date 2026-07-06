@@ -36,9 +36,11 @@ import {
   dissolveFamily,
   renameFamily,
   invalidateFamilyCache,
+  drillDownFamilyL1Entries,
   type FamilyItem,
   type FamilySummary,
   type CategoryRankItem,
+  type FamilyEntryDetailItem,
 } from '../../services/familyApi';
 import type { ApiError } from '../../services/request';
 import { mapError } from '../../utils/error-mapper';
@@ -116,7 +118,7 @@ interface ContributionDisplay {
   amount: string;       // 格式化后的元
 }
 
-/** L1 一级分类展示项（spec §4.3） */
+/** L1 一级分类展示项（spec §4.3 · COSTRA-305 扩展三级下钻字段） */
 interface L1Display {
   category_id: string;
   category_name: string;
@@ -125,7 +127,29 @@ interface L1Display {
   amountCents: number;
   ratio_bps: number;
   ratioText: string;
+  // COSTRA-305: 三级下钻
+  expanded: boolean;
+  loadingEntries: boolean;
+  entries: EntryRow[];
+  entriesLoaded: boolean;
+  entriesHasMore: boolean;
 }
+
+/** 三级流水明细行（对齐统计页 L3Display） */
+interface EntryRow {
+  entry_id: string;
+  amount: string;           // '¥xxx.xx'
+  note: string;
+  dateLabel: string;        // '6月24日'
+  timeLabel: string;        // '14:30'
+  shared: boolean;
+  nickname: string;
+  avatarUrl: string;
+  initial: string;          // nickname 首字符
+}
+
+/** 三级下钻可见条数上限（与统计页 L3 一致 · limit=VISIBLE+1 探测溢出） */
+const L1_ENTRIES_VISIBLE = 10;
 
 /** 下钻行（替代旧 DetailRow · spec §4.3） */
 interface DrilldownRow {
@@ -222,6 +246,20 @@ function nextYear(value: string): string {
   return `${parseInt(value, 10) + 1}`;
 }
 
+/** ISO UTC → M月D日 (Asia/Shanghai) */
+function formatEntryDate(isoUtc: string): string {
+  const utc = new Date(isoUtc);
+  const sh = new Date(utc.getTime() + 8 * 60 * 60 * 1000);
+  return `${sh.getUTCMonth() + 1}月${sh.getUTCDate()}日`;
+}
+
+/** ISO UTC → HH:mm (Asia/Shanghai · 24 小时制) */
+function formatEntryTime(isoUtc: string): string {
+  const utc = new Date(isoUtc);
+  const sh = new Date(utc.getTime() + 8 * 60 * 60 * 1000);
+  return `${String(sh.getUTCHours()).padStart(2, '0')}:${String(sh.getUTCMinutes()).padStart(2, '0')}`;
+}
+
 /** Segmented Bar 公共段颜色 · 莫兰迪石青（与成员色板协调） */
 const SHARED_SEGMENT_COLOR = '#6B9B8F';
 
@@ -303,12 +341,28 @@ Page({
     renameInput: '',
     renameLoading: false,
     renameError: '',
+
+    // ─── 成员头像锚定气泡菜单（替代原生 showActionSheet · 对齐明细页 ctx-menu 视觉语言） ───
+    memberMenuVisible: false,
+    /** 气泡左上角定位（px · 由 JS 按头像 boundingClientRect 计算） */
+    memberMenuLeft: 0,
+    memberMenuTop: 0,
+    /** 顶部小三角相对气泡左边的偏移（px · 始终指向头像中心） */
+    memberMenuArrowLeft: 0,
+    /** 气泡内选项：{ key, label, danger } */
+    memberMenuItems: [] as { key: string; label: string; danger: boolean }[],
+    /** 当前高亮的头像 userId（暖光环 · 复用明细页 ctxActiveRefId 语义） */
+    activeMemberUserId: '',
   },
 
   // 内部状态
   _familyId: '' as string,
   _currentUserId: '' as string,
+  /** 成员气泡菜单当前操作对象 userId（移出成员时需要） */
+  _memberMenuUserId: '' as string,
   _loadingPromise: null as Promise<void> | null,
+  /** P2-2: summary 刷新合并句柄——同一刷新进行中复用，避免 ENTRY_SAVED + SYNC_DONE 连击重复拉取 */
+  _syncRefreshPromise: null as Promise<void> | null,
   /**
    * 页级 loading 的 deferred handle（COSTRA-304 防闪烁）。
    * 切月/切年/切账本等"无法保留旧视图"的场景下，loading 不立即翻 true，
@@ -324,6 +378,9 @@ Page({
   _shouldRefreshEmptyHint: false,
   /** eventBus 订阅 handler（sync-refresh: SYNC_DONE 后失效缓存 + 重拉 summary，防内存泄漏） */
   _syncDoneHandler: null as ((payload?: unknown) => void) | null,
+  /** eventBus 订阅 handler（记账保存 / 条目编辑后即时刷新 · 对齐统计页，不必等一次完整同步） */
+  _entrySavedHandler: null as (() => void) | null,
+  _entryUpdatedHandler: null as (() => void) | null,
   /** eventBus 订阅 handler（2026-06-08: 跨页面账本切换响应） */
   _activeFamilyChangedHandler: null as ((payload?: unknown) => void) | null,
   /** eventBus 订阅 handler（画像变更后即时刷新成员列表中当前用户头像） */
@@ -354,6 +411,17 @@ Page({
     };
     this._syncDoneHandler = syncDoneHandler;
     eventBus.on(EventNames.SYNC_DONE, syncDoneHandler);
+
+    // 记账保存 / 条目编辑后即时刷新（对齐统计页 · 不必等一次完整同步）
+    // family 页数据来自服务端聚合，记账写入后本机上行 + 服务端聚合已变，需重调 API；
+    // _onSyncDone 内已 guard（_familyId 为空 / 正在加载）并走 preserveExistingView 防闪。
+    const entrySavedHandler = () => { void this._onSyncDone(); };
+    this._entrySavedHandler = entrySavedHandler;
+    eventBus.on(EventNames.ENTRY_SAVED, entrySavedHandler);
+
+    const entryUpdatedHandler = () => { void this._onSyncDone(); };
+    this._entryUpdatedHandler = entryUpdatedHandler;
+    eventBus.on(EventNames.ENTRY_UPDATED, entryUpdatedHandler);
 
     // 2026-06-08: 订阅 ACTIVE_FAMILY_CHANGED · 跨页面账本切换响应
     // 自身 onTapFamilyName / onConfirmCreateFamily / onTapRenameLedger / 邀请确认 等已就地刷新，
@@ -431,6 +499,15 @@ Page({
     if (this._syncDoneHandler) {
       eventBus.off(EventNames.SYNC_DONE, this._syncDoneHandler);
       this._syncDoneHandler = null;
+    }
+    // 取消订阅 ENTRY_SAVED / ENTRY_UPDATED（记账/编辑即时刷新）
+    if (this._entrySavedHandler) {
+      eventBus.off(EventNames.ENTRY_SAVED, this._entrySavedHandler);
+      this._entrySavedHandler = null;
+    }
+    if (this._entryUpdatedHandler) {
+      eventBus.off(EventNames.ENTRY_UPDATED, this._entryUpdatedHandler);
+      this._entryUpdatedHandler = null;
     }
     // 2026-06-08: 取消订阅 ACTIVE_FAMILY_CHANGED
     if (this._activeFamilyChangedHandler) {
@@ -520,8 +597,16 @@ Page({
   async _onSyncDone() {
     if (!this._familyId) return;
     if (this._loadingPromise) return;
+    // P2-2: 合并并发刷新——同一 summary 刷新进行中则复用在途 promise，
+    // 避免「ENTRY_SAVED/ENTRY_UPDATED + 紧随的 SYNC_DONE」连击导致重复 invalidate + 重复拉 summary + 重复 _refreshExpandedL1Entries。
+    if (this._syncRefreshPromise) return this._syncRefreshPromise;
     invalidateFamilyCache(this._familyId);
-    await this._loadSummary(this._familyId, { preserveExistingView: this.data.contentReady && !!this.data.summary });
+    this._syncRefreshPromise = this._loadSummary(this._familyId, { preserveExistingView: this.data.contentReady && !!this.data.summary });
+    try {
+      await this._syncRefreshPromise;
+    } finally {
+      this._syncRefreshPromise = null;
+    }
   },
 
   /**
@@ -855,19 +940,28 @@ Page({
       isOwner: isCurrentUserOwner,
       canInvite: isCurrentUserOwner && activeMembers.length < maxFamilyMembers,
     });
+
+    // COSTRA-305：数据变更后 summary 重建时，_buildDrilldownRows 保留了已展开 L1 的旧 entries
+    // （视觉连续性）；此处对这些节点后台静默重拉，使三级明细同步到最新数据。
+    this._refreshExpandedL1Entries(drilldownRows);
   },
 
-  /** 构建下钻行列表（spec §4.3 / §4.4 · COSTRA-302） */
+  /** 构建下钻行列表（spec §4.3 / §4.4 · COSTRA-302 / COSTRA-305 三级下钻保留） */
   _buildDrilldownRows(
     summary: FamilySummary,
     slotByUserId: Map<string, number | null>,
   ): DrilldownRow[] {
     const { segments, shared, personal_by_member, members } = summary;
 
-    // 保留旧 expanded 状态
+    // 保留旧 expanded 状态（行级）
     const oldExpandedMap = new Map<string, boolean>();
+    // 保留旧 L1 三级展开/entries 态（按 rowKey:categoryId 唯一键）
+    const oldL1Map = new Map<string, L1Display>();
     for (const row of this.data.drilldownRows) {
       oldExpandedMap.set(row.key, row.expanded);
+      for (const l1 of row.l1Items) {
+        oldL1Map.set(`${row.key}:${l1.category_id}`, l1);
+      }
     }
 
     const rows: DrilldownRow[] = [];
@@ -889,7 +983,17 @@ Page({
       // L1 列表（topN=L1_VISIBLE 已让后端按上限返回，前端不再做"还有 N 项"省略 · 用户期望全显示）
       const allL1 = shared.categories
         .filter(c => c.amount > 0)
-        .map(c => this._mapToL1Display(c));
+        .map(c => {
+          const base = this._mapToL1Display(c);
+          const prev = oldL1Map.get(`shared:${base.category_id}`);
+          if (prev) {
+            base.expanded = prev.expanded;
+            base.entries = prev.entries;
+            base.entriesLoaded = prev.entriesLoaded;
+            base.entriesHasMore = prev.entriesHasMore;
+          }
+          return base;
+        });
       const l1Items = allL1.slice(0, L1_VISIBLE);
 
       rows.push({
@@ -928,7 +1032,17 @@ Page({
       // L1 列表（topN=L1_VISIBLE 已让后端按上限返回 · 用户期望全显示）
       const allL1 = pm.categories
         .filter(c => c.amount > 0)
-        .map(c => this._mapToL1Display(c));
+        .map(c => {
+          const base = this._mapToL1Display(c);
+          const prev = oldL1Map.get(`${key}:${base.category_id}`);
+          if (prev) {
+            base.expanded = prev.expanded;
+            base.entries = prev.entries;
+            base.entriesLoaded = prev.entriesLoaded;
+            base.entriesHasMore = prev.entriesHasMore;
+          }
+          return base;
+        });
       const l1Items = allL1.slice(0, L1_VISIBLE);
 
       rows.push({
@@ -952,7 +1066,7 @@ Page({
     return rows;
   },
 
-  /** CategoryRankItem → L1Display */
+  /** CategoryRankItem → L1Display（含三级下钻默认值 · COSTRA-305） */
   _mapToL1Display(c: CategoryRankItem): L1Display {
     return {
       category_id: c.category_id || '',
@@ -962,6 +1076,11 @@ Page({
       amountCents: c.amount,
       ratio_bps: c.ratio_bps,
       ratioText: fmtRatio(c.ratio_bps),
+      expanded: false,
+      loadingEntries: false,
+      entries: [],
+      entriesLoaded: false,
+      entriesHasMore: false,
     };
   },
 
@@ -1079,32 +1198,170 @@ Page({
     this.setData({ [`drilldownRows[${idx}].expanded`]: !this.data.drilldownRows[idx].expanded });
   },
 
-  /** L1 子项点击：公共行不响应，成员行 switchTab 到统计页（COSTRA-302 · spec §4.5.1） */
+  /**
+   * L1 子项点击：展开/收起三级流水明细（COSTRA-305 · 公共行与成员行统一交互）
+   *
+   * - 已展开 → 收起（expanded=false）
+   * - 未展开 → 展开 + 若 entriesLoaded 直接显示缓存 · 否则请求 drill-down API
+   * - 采用最小 setData 路径（只写被点 L1 项的字段 `drilldownRows[i].l1Items[j].xxx`）
+   */
   onTapL1(e: WechatMiniprogram.TouchEvent) {
     const { rowkey, l1id } = e.currentTarget.dataset as Record<string, string>;
     if (!rowkey || !l1id) return;
-    const row = this.data.drilldownRows.find(r => r.key === rowkey);
-    if (!row) return;
-    if (row.type === 'shared') return;  // 公共支出 L1 不下钻
 
-    // 成员行 → 写 globalData + switchTab
-    const app = getApp<AppWithBootstrap>();
-    app.globalData.pendingStatisticsAction = {
-      memberKey: row.userId,
-      dimension: this.data.dimension,
-      month: this.data.dimension === 'monthly' ? this.data.currentMonth : undefined,
-      year: this.data.dimension === 'yearly' ? this.data.currentYear : undefined,
-      expandL1Id: l1id,
-    };
-    wx.switchTab({ url: '/pages/statistics/index' });
+    const rowIdx = this.data.drilldownRows.findIndex(r => r.key === rowkey);
+    if (rowIdx < 0) return;
+    const row = this.data.drilldownRows[rowIdx];
+    const l1Idx = row.l1Items.findIndex(l => l.category_id === l1id);
+    if (l1Idx < 0) return;
+    const l1 = row.l1Items[l1Idx];
+
+    const base = `drilldownRows[${rowIdx}].l1Items[${l1Idx}]`;
+
+    // 已展开 → 收起
+    if (l1.expanded) {
+      this.setData({ [`${base}.expanded`]: false });
+      return;
+    }
+
+    // 未展开 → 展开
+    if (l1.entriesLoaded) {
+      // 缓存命中，直接展示
+      this.setData({ [`${base}.expanded`]: true });
+      return;
+    }
+
+    // 需要请求数据
+    this.setData({
+      [`${base}.expanded`]: true,
+      [`${base}.loadingEntries`]: true,
+    });
+
+    const sharedType = row.type === 'shared' ? 'shared' as const : 'personal' as const;
+    const userId = row.type === 'shared' ? undefined : row.userId;
+    const scope = this.data.dimension === 'monthly'
+      ? { month: this.data.currentMonth }
+      : { year: this.data.currentYear };
+
+    void this._loadL1Entries(rowIdx, l1Idx, scope, l1id, sharedType, userId);
   },
 
-  /** 折叠所有行（时间切换 / 账本切换时使用） */
+  /** 加载 L1 三级流水明细（COSTRA-305） */
+  async _loadL1Entries(
+    rowIdx: number,
+    l1Idx: number,
+    scope: { month?: string; year?: string },
+    l1CategoryId: string,
+    sharedType: 'shared' | 'personal',
+    userId?: string,
+    silent: boolean = false,
+  ) {
+    const base = `drilldownRows[${rowIdx}].l1Items[${l1Idx}]`;
+    // P1-2 竞态防护：快照发起时的 family + scope，返回后校验；切月/年/账本后旧请求不得写入新视图。
+    const familyIdSnapshot = this._familyId;
+    const scopeKey = scope.month ? `m:${scope.month}` : `y:${scope.year}`;
+    const isStale = (): boolean => {
+      if (this._familyId !== familyIdSnapshot) return true;
+      const cur = this.data.dimension === 'monthly'
+        ? `m:${this.data.currentMonth}`
+        : `y:${this.data.currentYear}`;
+      return cur !== scopeKey;
+    };
+    try {
+      const res = await drillDownFamilyL1Entries(
+        familyIdSnapshot,
+        scope,
+        l1CategoryId,
+        { sharedType, userId, limit: L1_ENTRIES_VISIBLE + 1 },
+      );
+
+      // 返回后 family/scope 已变 → 丢弃，避免旧 scope 明细写入新视图
+      if (isStale()) return;
+      // 读最新 data 确认 L1 节点还在（summary 可能已刷新）
+      const latestRow = this.data.drilldownRows[rowIdx];
+      if (!latestRow) return;
+      const latestL1 = latestRow.l1Items[l1Idx];
+      if (!latestL1 || latestL1.category_id !== l1CategoryId) return;
+
+      const overflow = res.items.length > L1_ENTRIES_VISIBLE;
+      const visibleItems = overflow ? res.items.slice(0, L1_ENTRIES_VISIBLE) : res.items;
+      const entries: EntryRow[] = visibleItems.map((it: FamilyEntryDetailItem) => ({
+        entry_id: it.entry_id,
+        amount: formatCentsDisplay(it.amount),
+        note: it.note || '',
+        dateLabel: formatEntryDate(it.occurred_at),
+        timeLabel: formatEntryTime(it.occurred_at),
+        shared: it.shared_type === 'shared',
+        nickname: it.nickname || '',
+        avatarUrl: it.avatar_url || '',
+        initial: (it.nickname || '?')[0],
+      }));
+
+      this.setData({
+        [`${base}.entries`]: entries,
+        [`${base}.entriesLoaded`]: true,
+        [`${base}.entriesHasMore`]: overflow,
+        [`${base}.loadingEntries`]: false,
+      });
+    } catch (err) {
+      logger.error('family', 'loadL1Entries failed', err);
+      // family/scope 已变 → 不再回写（节点已被 _collapseAllRows 清理）
+      if (isStale()) return;
+      // 读最新 data 确认 L1 节点还在
+      const latestRow = this.data.drilldownRows[rowIdx];
+      if (latestRow) {
+        const latestL1 = latestRow.l1Items[l1Idx];
+        if (latestL1 && latestL1.category_id === l1CategoryId) {
+          this.setData({ [`${base}.loadingEntries`]: false });
+        }
+      }
+      // 静默重拉（数据变更后台刷新）失败不打扰用户，旧 entries 继续展示
+      if (!silent) wx.showToast({ title: '加载失败', icon: 'none' });
+    }
+  },
+
+  /**
+   * COSTRA-305：对已展开且已加载过的 L1 三级明细做 fire-and-forget 静默重拉。
+   *
+   * 用于数据变更（SYNC_DONE）后 summary 重建场景：_buildDrilldownRows 会保留旧 entries
+   * 以维持视觉连续，此处再对已展开节点后台拉取最新明细并覆盖，做到「排行金额 + 三级明细」
+   * 全链路同步。_familyDrillCache 已在 _onSyncDone → invalidateFamilyCache 中清理，
+   * 因此重拉必走网络拿到新值；非数据变更的普通重建则命中缓存、几乎零开销。
+   * 仅刷新 expanded 节点，避免无谓请求。
+   */
+  _refreshExpandedL1Entries(rows: DrilldownRow[]) {
+    const scope = this.data.dimension === 'monthly'
+      ? { month: this.data.currentMonth }
+      : { year: this.data.currentYear };
+    rows.forEach((row, rowIdx) => {
+      const sharedType = row.type === 'shared' ? 'shared' as const : 'personal' as const;
+      const userId = row.type === 'shared' ? undefined : row.userId;
+      row.l1Items.forEach((l1, l1Idx) => {
+        if (l1.expanded && l1.entriesLoaded && l1.category_id) {
+          void this._loadL1Entries(rowIdx, l1Idx, scope, l1.category_id, sharedType, userId, true);
+        }
+      });
+    });
+  },
+
+  /** 折叠所有行 + 收起所有 L1 三级展开（时间切换 / 账本切换时使用 · COSTRA-305 扩展） */
   _collapseAllRows() {
-    // 仅写当前处于展开态的行，避免整列重写；无展开行时直接跳过 setData
-    const update: Record<string, boolean> = {};
-    this.data.drilldownRows.forEach((r, idx) => {
-      if (r.expanded) update[`drilldownRows[${idx}].expanded`] = false;
+    // 仅写当前处于展开态的项，避免整列重写；无展开项时直接跳过 setData
+    const update: Record<string, unknown> = {};
+    this.data.drilldownRows.forEach((r, rowIdx) => {
+      if (r.expanded) update[`drilldownRows[${rowIdx}].expanded`] = false;
+      // COSTRA-305: scope 变了 → 旧三级明细失效，必须清空
+      r.l1Items.forEach((l1, l1Idx) => {
+        if (l1.expanded || l1.entriesLoaded) {
+          const base = `drilldownRows[${rowIdx}].l1Items[${l1Idx}]`;
+          if (l1.expanded) update[`${base}.expanded`] = false;
+          if (l1.entriesLoaded) {
+            update[`${base}.entries`] = [];
+            update[`${base}.entriesLoaded`] = false;
+            update[`${base}.entriesHasMore`] = false;
+          }
+        }
+      });
     });
     if (Object.keys(update).length > 0) this.setData(update);
   },
@@ -1247,13 +1504,18 @@ Page({
 
   // ─── 交互：成员头像点击 ────────────────────────────────────────────────────
   //
-  // 三分支（COSTRA-230 · D-029 §3.1）：
-  //   1. 已 left 成员 / 非 owner 点击他人 → 无响应
-  //   2. owner 点击他人头像 → ActionSheet[移出家庭] → wx.showModal 二次确认
-  //   3. 任意角色点击自己头像 → ActionSheet[离开家庭] → wx.showModal 二次确认
-  //      · owner 单人 → 文案"解散账本"语义（后端走 dissolve 分支）
-  //      · owner 多人 → 文案"离开家庭"，会自动移交所有权
-  //      · 非 owner → 文案"离开家庭"
+  // 点头像 → 锚定气泡菜单（自定义弹层，替代原生 showActionSheet；视觉对齐明细页 ctx-menu）：
+  //   · 被点头像泛起暖光环高亮（activeMemberUserId）
+  //   · 气泡从头像正下方浮出，顶部小三角指向头像中心
+  //   · 破坏性项（退出/解散/移出账本）红色 + 二次确认；中性项（重命名账本）默认黑
+  //
+  // 选项矩阵（重命名对全体 active 成员开放）：
+  //   1. 已 left 成员 → 无响应
+  //   2. 点自己：
+  //        · owner 单人 → [重命名账本 · 解散账本]
+  //        · owner 多人 → [重命名账本 · 退出账本 · 解散账本]（退出自动移交所有权）
+  //        · 普通成员   → [重命名账本 · 退出账本]
+  //   3. 点他人：owner → [移出账本]；普通成员 → 无响应
 
   onTapMember(e: WechatMiniprogram.TouchEvent) {
     const { userid, status } = e.currentTarget.dataset;
@@ -1262,59 +1524,107 @@ Page({
     if (status === 'left') return;
 
     const isSelf = userid === this._currentUserId;
+    const items = this._buildMemberMenuItems(isSelf);
+    // 普通成员点他人：无可用选项 → 无响应
+    if (items.length === 0) return;
 
-    // 自己：所有角色都可触发"离开/解散"
-    if (isSelf) {
-      this._showSelfActionSheet();
-      return;
-    }
-
-    // 他人：只有 owner 能管理
-    if (!this.data.isOwner) return;
-
-    wx.showActionSheet({
-      itemList: ['移出家庭'],
-      itemColor: '#FA5151',
-      success: (res) => {
-        if (res.tapIndex === 0) {
-          this._confirmRemoveMember(userid);
-        }
-      },
-    });
+    this._memberMenuUserId = userid;
+    this._openMemberMenu(userid, items);
   },
 
-  /** 自己头像 ActionSheet：owner 显示管理选项 + 退出/解散；非 owner 仅退出 */
-  _showSelfActionSheet() {
-    const activeMembers = this.data.members.filter(m => m.status === 'active');
-    const isLoneOwner = this.data.isOwner && activeMembers.length === 1;
+  /** 按角色 / 点击对象构建气泡菜单选项 */
+  _buildMemberMenuItems(isSelf: boolean): { key: string; label: string; danger: boolean }[] {
+    const items: { key: string; label: string; danger: boolean }[] = [];
 
-    // 构建选项
-    const items: string[] = [];
-    if (this.data.isOwner) {
-      items.push('重命名账本');
-    }
-    if (isLoneOwner) {
-      items.push('解散账本');
-    } else {
-      items.push('退出账本');
-      if (this.data.isOwner) {
-        items.push('解散账本');
-      }
-    }
+    if (isSelf) {
+      // 重命名账本：全体 active 成员均可
+      items.push({ key: 'rename', label: '重命名账本', danger: false });
 
-    wx.showActionSheet({
-      itemList: items,
-      success: (res) => {
-        const selected = items[res.tapIndex];
-        if (selected === '重命名账本') {
-          this.onTapRenameLedger();
-        } else if (selected === '解散账本') {
-          this._confirmDissolveFamily();
-        } else if (selected === '退出账本') {
-          this._confirmLeaveSelf();
+      const activeMembers = this.data.members.filter(m => m.status === 'active');
+      const isLoneOwner = this.data.isOwner && activeMembers.length === 1;
+      if (isLoneOwner) {
+        items.push({ key: 'dissolve', label: '解散账本', danger: true });
+      } else {
+        items.push({ key: 'leave', label: '退出账本', danger: true });
+        if (this.data.isOwner) {
+          items.push({ key: 'dissolve', label: '解散账本', danger: true });
         }
-      },
-    });
+      }
+    } else if (this.data.isOwner) {
+      // 点他人：仅 owner 可移出
+      items.push({ key: 'remove', label: '移出账本', danger: true });
+    }
+
+    return items;
+  },
+
+  /**
+   * 打开锚定气泡菜单：用 boundingClientRect 定位到被点头像
+   * 气泡水平居中于头像并做左右边界钳制；小三角单独偏移始终指向头像中心
+   */
+  _openMemberMenu(userId: string, items: { key: string; label: string; danger: boolean }[]) {
+    const winW = wx.getWindowInfo().windowWidth || 375;
+    const rpxToPx = winW / 750;
+    const menuW = 320 * rpxToPx; // 须与 wxss .member-menu width 同步
+    const margin = 12;
+    const arrowGap = 12 * rpxToPx; // 头像与气泡的间距
+
+    wx.createSelectorQuery()
+      .in(this)
+      .select(`#avatar-${userId}`)
+      .boundingClientRect((rect) => {
+        if (!rect) return;
+        const avatarCenterX = rect.left + rect.width / 2;
+
+        // 左右：气泡中心对齐头像中心，边界收拢防溢出
+        let left = avatarCenterX - menuW / 2;
+        if (left < margin) left = margin;
+        if (left > winW - menuW - margin) left = winW - menuW - margin;
+
+        // 小三角相对气泡左边的偏移：始终指向头像中心，钳制在气泡内避免出界
+        let arrowLeft = avatarCenterX - left;
+        const arrowInset = 28 * rpxToPx;
+        if (arrowLeft < arrowInset) arrowLeft = arrowInset;
+        if (arrowLeft > menuW - arrowInset) arrowLeft = menuW - arrowInset;
+
+        // 上下：固定向头像下方展开（头像在页面顶部，下方空间充足）
+        const top = rect.bottom + arrowGap;
+
+        wx.vibrateShort({ type: 'light' });
+        this.setData({
+          memberMenuItems: items,
+          memberMenuLeft: left,
+          memberMenuTop: top,
+          memberMenuArrowLeft: arrowLeft,
+          memberMenuVisible: true,
+          activeMemberUserId: userId,
+        });
+      })
+      .exec();
+  },
+
+  /** 关闭气泡菜单（点遮罩 / 选中某项 / 复位高亮） */
+  onMemberMenuClose() {
+    if (!this.data.memberMenuVisible) return;
+    this._memberMenuUserId = '';
+    this.setData({ memberMenuVisible: false, activeMemberUserId: '' });
+  },
+
+  /** 气泡菜单项点击：先关闭菜单，再分派到对应动作（破坏性动作均带二次确认） */
+  onMemberMenuTap(e: WechatMiniprogram.TouchEvent) {
+    const key = (e.currentTarget.dataset as Record<string, string>).key;
+    const userId = this._memberMenuUserId;
+    this.onMemberMenuClose();
+
+    if (key === 'rename') {
+      this.onTapRenameLedger();
+    } else if (key === 'leave') {
+      this._confirmLeaveSelf();
+    } else if (key === 'dissolve') {
+      this._confirmDissolveFamily();
+    } else if (key === 'remove') {
+      this._confirmRemoveMember(userId);
+    }
   },
 
   _confirmRemoveMember(userId: string) {
@@ -1323,7 +1633,7 @@ Page({
 
     wx.showModal({
       title: '',
-      content: `确定将${name}移出家庭吗？`,
+      content: `确定将${name}移出账本吗？`,
       confirmColor: '#FA5151',
       success: async (res) => {
         if (!res.confirm) return;
@@ -1423,13 +1733,10 @@ Page({
 
   // ─── 交互：重命名账本（COSTRA-230） ──────────────────────────────────────
   //
-  // 仅 owner 可触发。视觉与"创建协作账本"完全镜像（invite-dialog__* token）。
+  // 全体 active 成员均可触发（后端 updateFamily 已放开为 assertActiveMember）。
+  // 视觉与"创建协作账本"完全镜像（invite-dialog__* token）。
 
   onTapRenameLedger() {
-    if (!this.data.isOwner) {
-      wx.showToast({ title: '仅创建者可重命名', icon: 'none' });
-      return;
-    }
     this.setData({
       renameOverlayVisible: true,
       renameInput: this.data.familyName,

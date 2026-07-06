@@ -24,7 +24,8 @@
           <view
             wx:for="{{members}}"
             wx:key="userId"
-            class="avatar-item {{item.status === 'left' ? 'avatar-item--left' : ''}}"
+            id="avatar-{{item.userId}}"
+            class="avatar-item {{item.status === 'left' ? 'avatar-item--left' : ''}} {{item.userId === activeMemberUserId ? 'avatar-item--active' : ''}}"
             data-userid="{{item.userId}}"
             data-status="{{item.status}}"
             bind:tap="onTapMember"
@@ -227,25 +228,55 @@
 
             <!-- L1 列表（展开时） · 严格对齐统计页 .rank 子样式 -->
             <view class="family-l1" wx:if="{{item.expanded}}">
-              <view
-                wx:for="{{item.l1Items}}"
-                wx:for-item="l1"
-                wx:key="category_id"
-                class="family-l1__row"
-                data-rowkey="{{item.key}}"
-                data-l1id="{{l1.category_id}}"
-                bind:tap="onTapL1"
-              >
-                <view class="family-l1__row-main">
-                  <view class="family-l1__icon">{{l1.icon}}</view>
-                  <view class="family-l1__name">{{l1.category_name}}</view>
-                  <view class="family-l1__amount tnum">{{l1.amount}}</view>
-                  <view class="family-l1__ratio">{{l1.ratioText}}</view>
+              <block wx:for="{{item.l1Items}}" wx:for-item="l1" wx:key="category_id">
+                <view
+                  class="family-l1__row {{l1.expanded ? 'family-l1__row--open' : ''}}"
+                  data-rowkey="{{item.key}}"
+                  data-l1id="{{l1.category_id}}"
+                  bind:tap="onTapL1"
+                >
+                  <view class="family-l1__row-main">
+                    <view class="family-l1__icon">{{l1.icon}}</view>
+                    <view class="family-l1__name">{{l1.category_name}}</view>
+                    <view class="family-l1__amount tnum">{{l1.amount}}</view>
+                    <view class="family-l1__ratio">{{l1.ratioText}}</view>
+                  </view>
+                  <view class="family-l1__bar">
+                    <view class="family-l1__bar-fill" style="width: {{l1.ratio_bps / 100}}%;"></view>
+                  </view>
                 </view>
-                <view class="family-l1__bar">
-                  <view class="family-l1__bar-fill" style="width: {{l1.ratio_bps / 100}}%;"></view>
+
+                <!-- COSTRA-305: L1 三级流水明细（紧贴其父 L1 行下方） -->
+                <view class="family-l3" wx:if="{{l1.expanded}}">
+                  <!-- loading -->
+                  <view class="family-l3__loading" wx:if="{{l1.loadingEntries}}">加载中...</view>
+                  <!-- 有数据 -->
+                  <block wx:elif="{{l1.entries.length > 0}}">
+                    <view class="family-l3__row" wx:for="{{l1.entries}}" wx:key="entry_id" wx:for-item="e">
+                      <view class="family-l3__avatar">
+                        <image wx:if="{{e.avatarUrl}}" class="family-l3__avatar-img" src="{{e.avatarUrl}}" mode="aspectFill" lazy-load />
+                        <view wx:else class="family-l3__avatar-placeholder">{{e.initial}}</view>
+                      </view>
+                      <view class="family-l3__main">
+                        <view class="family-l3__top">
+                          <text class="family-l3__date">{{e.dateLabel}}</text>
+                          <text class="family-l3__note">{{e.note}}</text>
+                          <text class="family-l3__amount tnum">{{e.amount}}</text>
+                        </view>
+                        <view class="family-l3__bottom">
+                          <text class="family-l3__time">{{e.timeLabel}}</text>
+                          <text class="family-l3__shared" wx:if="{{e.shared}}">公共</text>
+                        </view>
+                      </view>
+                    </view>
+                    <view class="family-l3__more" wx:if="{{l1.entriesHasMore}}">
+                      还有部分较小支出未显示...
+                    </view>
+                  </block>
+                  <!-- 空态 -->
+                  <view class="family-l3__empty" wx:elif="{{l1.entriesLoaded}}">暂无明细</view>
                 </view>
-              </view>
+              </block>
             </view>
           </view>
         </view>
@@ -356,6 +387,54 @@
           disabled="{{renameLoading}}"
           bindtap="onConfirmRenameFamily"
         >保存</button>
+      </view>
+    </view>
+  </view>
+
+  <!-- 成员头像锚定气泡菜单（自定义弹层 · 替代 showActionSheet · 顶部小三角指向头像） -->
+  <view wx:if="{{memberMenuVisible}}" class="member-menu-overlay" catchtouchmove="noop" catchtap="onMemberMenuClose">
+    <view
+      class="member-menu"
+      style="left: {{memberMenuLeft}}px; top: {{memberMenuTop}}px;"
+      catchtap="noop"
+    >
+      <view class="member-menu__arrow" style="left: {{memberMenuArrowLeft}}px;"></view>
+      <view
+        wx:for="{{memberMenuItems}}"
+        wx:key="key"
+        class="member-menu__item {{item.danger ? 'member-menu__item--danger' : ''}}"
+        data-key="{{item.key}}"
+        catchtap="onMemberMenuTap"
+      >
+        <view class="member-menu__ic">
+          <!-- 重命名：文本框被 I-beam 光标从右侧贯穿断开（左右两段 + 偏右光标） -->
+          <block wx:if="{{item.key === 'rename'}}">
+            <view class="mm-rename">
+              <view class="mm-rename__box mm-rename__box--l"></view>
+              <view class="mm-rename__box mm-rename__box--r"></view>
+              <view class="mm-rename__caret"></view>
+            </view>
+          </block>
+          <!-- 退出：门框（左·右开口）+ 向右穿出的箭头 -->
+          <block wx:elif="{{item.key === 'leave'}}">
+            <view class="mm-leave__frame"></view>
+            <view class="mm-leave__arrow"></view>
+          </block>
+          <!-- 解散：垃圾桶（flex 容器完全复刻明细页 ctx-ic--trash） -->
+          <block wx:elif="{{item.key === 'dissolve'}}">
+            <view class="mm-trash">
+              <view class="lid"></view>
+              <view class="can"></view>
+            </view>
+          </block>
+          <!-- 移出：人形 + 减号（把成员移出） -->
+          <block wx:elif="{{item.key === 'remove'}}">
+            <view class="mm-person__head"></view>
+            <view class="mm-person__body"></view>
+            <view class="mm-person__minus"></view>
+          </block>
+        </view>
+        <text class="member-menu__text">{{item.label}}</text>
       </view>
     </view>
   </view>

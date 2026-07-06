@@ -29,6 +29,7 @@ import * as familyRepo from '../repositories/familyRepo.js';
 import * as ledgerRepo from '../repositories/ledgerRepo.js';
 import * as familyMemberRepo from '../repositories/familyMemberRepo.js';
 import * as summaryRepo from '../repositories/familySummaryRepo.js';
+import * as statsRepo from '../repositories/statisticsRepo.js';
 
 // --- Wire 响应类型（与 OpenAPI FamilySummary schema 对齐）---
 
@@ -467,5 +468,139 @@ export async function getFamilySummary(
       categories: sharedCategoryItems,
     },
     personal_by_member: personalByMember,
+  };
+}
+
+// --- Wire 响应类型（下钻） ---
+
+export interface SummaryDrillDownResponse {
+  l1_category_id: string;
+  l1_category_name: string;
+  l1_amount: number;
+  items: Array<{
+    entry_id: string;
+    amount: number;
+    note: string | null;
+    occurred_at: string;
+    shared_type: 'shared' | 'personal' | null;
+    created_by: string;
+    nickname: string;
+    avatar_url: string | null;
+  }>;
+  total_count: number;
+  has_more: boolean;
+}
+
+/**
+ * 协作页家庭汇总三级下钻
+ *
+ * 卡号：COSTRA-302
+ *
+ * 从 family summary 的 L1 一级分类排行下钻到流水明细。
+ * 口径严格对齐 familySummaryRepo（公共 = shared_type='shared'；个人 = shared_type='personal' AND created_by=userId）。
+ */
+export async function getSummaryDrillDown(
+  userId: string,
+  input: {
+    familyId: string;
+    month?: string;
+    year?: string;
+    l1CategoryId: string;
+    sharedType: 'shared' | 'personal';
+    userId?: string;
+    limit?: number;
+  },
+): Promise<SummaryDrillDownResponse> {
+  // 1. 参数校验：month/year xor
+  const hasMonth = !!input.month;
+  const hasYear = !!input.year;
+  if (hasMonth === hasYear) {
+    throw new AppError(ErrorCode.INVALID_ARGUMENT, {
+      message: 'must provide exactly one of month or year',
+      details: { reason: 'month_year_xor', month: input.month ?? null, year: input.year ?? null },
+    });
+  }
+  if (hasMonth) validateMonth(input.month!);
+  else validateYear(input.year!);
+
+  // l1_category_id 必填（路由层已校验，service 层兜底）
+  if (!input.l1CategoryId) {
+    throw new AppError(ErrorCode.INVALID_ARGUMENT, {
+      message: 'l1_category_id is required',
+      details: { field: 'l1_category_id' },
+    });
+  }
+
+  // shared_type=personal 时 user_id 必填
+  if (input.sharedType === 'personal' && !input.userId) {
+    throw new AppError(ErrorCode.INVALID_ARGUMENT, {
+      message: 'user_id is required when shared_type=personal',
+      details: { field: 'user_id', shared_type: input.sharedType },
+    });
+  }
+
+  // limit 校验
+  const limit = input.limit ?? 10;
+  if (limit < 1 || limit > 50) {
+    throw new AppError(ErrorCode.INVALID_ARGUMENT, {
+      message: 'limit must be between 1 and 50',
+      details: { field: 'limit', value: limit, constraint: '1-50' },
+    });
+  }
+
+  // 2. 权限守门
+  await familyService.assertActiveMember(userId, input.familyId);
+
+  // 当 user_id 存在时做成员归属校验（参考 statisticsService.assertUserIdBelongsToFamily 写法）
+  if (input.userId && input.userId !== userId) {
+    const belongs = await familyMemberRepo.isMemberIncludingLeft(input.userId, input.familyId);
+    if (!belongs) {
+      throw new AppError(ErrorCode.FAMILY_NOT_MEMBER, {
+        message: 'target user_id is not a member of this family',
+        details: { family_id: input.familyId, user_id: input.userId },
+      });
+    }
+  }
+
+  // 3. 获取 ledger
+  const ledger = await ledgerRepo.findFirstByFamilyId(input.familyId);
+  if (!ledger) {
+    throw new AppError(ErrorCode.NOT_FOUND, {
+      message: 'family ledger not found',
+      details: { ledger_missing: true },
+    });
+  }
+
+  // 4. 计算区间
+  const range = hasMonth ? parseMonthRange(input.month!) : parseYearRange(input.year!);
+  const { rangeStartUtc, rangeEndUtc } = range;
+
+  // 5. 确定 createdByUserId（口径对齐 familySummaryRepo）
+  // 公共口径不按人过滤；个人口径必须按 user_id 过滤
+  const createdByUserId = input.sharedType === 'personal' ? (input.userId ?? null) : null;
+
+  // 6. 调用 repo
+  const result = await summaryRepo.listEntriesByL1Category(
+    ledger.id,
+    rangeStartUtc,
+    rangeEndUtc,
+    input.l1CategoryId,
+    input.sharedType,
+    createdByUserId,
+    limit,
+  );
+
+  // 7. 取一级分类名
+  const catMetas = await statsRepo.getCategoriesByIds([input.l1CategoryId]);
+  const l1Name = catMetas[0]?.name ?? '未分类';
+
+  // 8. 组装响应
+  return {
+    l1_category_id: input.l1CategoryId,
+    l1_category_name: l1Name,
+    l1_amount: result.l1Amount,
+    items: result.items,
+    total_count: result.totalCount,
+    has_more: result.items.length < result.totalCount,
   };
 }

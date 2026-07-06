@@ -64,10 +64,12 @@ Component({
      */
     showProfileBadge: false,
     /**
-     * 过渡开关（2026-07-02）：控制 .tab-bar--animatable 是否挂载。
+     * 过渡开关（2026-07-02 引入 · 2026-07-03 解耦）：控制 .tab-bar--animatable 是否挂载。
      * 初始 false：挂载 + 首次揭示(hidden true→false) 全程无 transition → 瞬时到位，
      * 避免每个 Tab 页首次进入时 tabbar「从底部滑上来」的闪烁。
-     * 仅在 _applyHidden（真正的面板开合）首次触达时两段式开启，此后常驻，供滑动动画使用。
+     * 由 markActive 揭示后经 _ensureAnimatable() 在下一时间片幂等开启，此后常驻供滑动动画使用。
+     * 注意：绝不能把 hidden 的写入塞进开启 animatable 的 setData 回调里（后台实例回调会滞留、
+     * 携带过期值覆盖 hidden 导致 tabbar 消失）——animatable 与 hidden 写入必须解耦。
      */
     animatable: false,
   },
@@ -196,34 +198,49 @@ Component({
      */
     markActive(idx: number) {
       (this as unknown as Record<string, unknown>)._unlocked = true;
-      const panelOpen = (this as unknown as Record<string, unknown>)._panelOpen as boolean;
-      const patch: { selected: number; hidden?: boolean } = { selected: idx };
-      if (this.data.hidden !== panelOpen) {
-        patch.hidden = panelOpen;
-      }
-      // 揭示路径绝不开启 animatable：首次进入时 hidden(true→false) 必须瞬时（无 transition），
-      // 否则会被动画成「从底部滑上来」。animatable 只在 _applyHidden（真正的面板开合）里开启。
-      this.setData(patch);
+      this.setData({ selected: idx });
+
+      // 揭示路径绝不与 animatable 同帧：首次进入时 hidden(true→false) 必须瞬时（无 transition），
+      // 否则会被动画成「从底部滑上来」。hidden 统一由 _applyHidden 现算写入。
+      this._applyHidden();
+
+      // 揭示绘制完成后再开启过渡开关（此时 hidden 已就位，开启 transition 不产生位移），
+      // 供后续面板开合的滑动动画使用。
+      //
+      // 关键修复（tabbar 必现消失 · 2026-07-03）：
+      //   animatable 的开启从 _applyHidden 移到这里，与 hidden 写入彻底解耦。
+      //   原实现里 _applyHidden 用 `setData({animatable:true}, applyHiddenCallback)`
+      //   把 hidden 写入塞进了 animatable 的**渲染回调**，且回调闭包捕获了当时的 nextHidden 快照。
+      //   后台 tab 页的 tabbar 实例（webview 渲染被冻结）会让该回调长期滞留，
+      //   携带过期的 nextHidden=true，在页面切回前台、渲染恢复时才冲刷落地，
+      //   覆盖 markActive 刚写好的 hidden=false → tabbar 消失。
+      //   解耦后 _applyHidden 立即、现算地写 hidden，杜绝滞留回调覆盖。
+      this._ensureAnimatable();
     },
 
-    /** 内部：根据 _unlocked + _panelOpen 应用 hidden。 */
+    /**
+     * 揭示后开启过渡开关（幂等）。放在下一时间片，确保 hidden 已就位再挂 transition，
+     * 避免揭示帧被动画化；面板真正开合时 animatable 早已为 true，滑动动画可靠。
+     */
+    _ensureAnimatable() {
+      if (this.data.animatable) return;
+      wx.nextTick(() => {
+        if (!this.data.animatable) {
+          this.setData({ animatable: true });
+        }
+      });
+    },
+
+    /**
+     * 内部：根据**当前最新**的 _unlocked + _panelOpen 立即应用 hidden。
+     * 每次调用都现算 nextHidden，绝不缓存/延迟——这是唯一的 hidden 收口，
+     * 保证无论调用时机如何，hidden 永远反映真相源的最新状态，不会被过期值覆盖。
+     */
     _applyHidden() {
       const self = this as unknown as Record<string, unknown>;
-      const unlocked = self._unlocked as boolean;
-      const panelOpen = self._panelOpen as boolean;
-      const nextHidden = !unlocked || panelOpen;
-      const applyHidden = () => {
-        if (this.data.hidden !== nextHidden) {
-          this.setData({ hidden: nextHidden });
-        }
-      };
-      // 反首帧闪烁（2026-07-02）：面板开合才需要滑动动画。
-      // 首次触达时用两段式开启 animatable（先 setData 开关并绘制，再改 hidden），
-      // 保证 transition 已就位、滑动可靠；此后 animatable 常驻。
-      if (!this.data.animatable) {
-        this.setData({ animatable: true }, applyHidden);
-      } else {
-        applyHidden();
+      const nextHidden = !(self._unlocked as boolean) || (self._panelOpen as boolean);
+      if (this.data.hidden !== nextHidden) {
+        this.setData({ hidden: nextHidden });
       }
     },
   },

@@ -533,7 +533,7 @@ describe('COSTRA-221: Family Management API', () => {
   });
 
   // T13: PATCH /families/{id}
-  it('T13: owner can rename family; non-owner rejected; version conflict 409', async () => {
+  it('T13: any active member can rename family; version conflict 409', async () => {
     const { token: ownerToken } = await registerUser('t13-owner');
     const { token: memberToken } = await registerUser('t13-member');
 
@@ -572,14 +572,17 @@ describe('COSTRA-221: Family Management API', () => {
     expect(patchRes.json().ledger_name).toBe('新名');
     expect(patchRes.json().version).toBe(version + 1);
 
-    // 非 owner 改名 → 403
+    // 非 owner 成员也能改名 → 200（重命名对全体 active 成员开放）
     const patchRes2 = await app.inject({
       method: 'PATCH',
       url: `/v1/families/${familyId}`,
       headers: authHeaders(memberToken),
-      payload: { name: '非法改名', version: patchRes.json().version },
+      payload: { name: '成员改名', version: patchRes.json().version },
     });
-    expect(patchRes2.statusCode).toBe(403);
+    expect(patchRes2.statusCode).toBe(200);
+    expect(patchRes2.json().name).toBe('成员改名');
+    expect(patchRes2.json().ledger_name).toBe('成员改名');
+    expect(patchRes2.json().version).toBe(version + 2);
 
     // version conflict → 409
     const patchRes3 = await app.inject({

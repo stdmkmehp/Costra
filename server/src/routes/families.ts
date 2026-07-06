@@ -183,6 +183,20 @@ const summaryQuerySchema = {
   },
 } as const;
 
+const summaryDrillDownQuerySchema = {
+  type: 'object',
+  required: ['l1_category_id', 'shared_type'],
+  additionalProperties: false,
+  properties: {
+    month: { type: 'string', pattern: '^\\d{4}-\\d{2}$' },
+    year: { type: 'string', pattern: '^\\d{4}$' },
+    l1_category_id: { type: 'string', format: 'uuid' },
+    shared_type: { type: 'string', enum: ['shared', 'personal'] },
+    user_id: { type: 'string', format: 'uuid' },
+    limit: { type: 'integer', minimum: 1, maximum: 50 },
+  },
+} as const;
+
 // --- 注册 ---
 
 export async function registerFamiliesRoutes(app: FastifyInstance): Promise<void> {
@@ -298,6 +312,26 @@ export async function registerFamiliesRoutes(app: FastifyInstance): Promise<void
         month: req.query.month,
         year: req.query.year,
         topN: req.query.top_n,
+      });
+      reply.code(200).send(result);
+    },
+  );
+
+  // GET /families/{family_id}/summary/drill-down
+  // COSTRA-302: 协作页家庭汇总三级下钻
+  app.get<{ Params: { family_id: string }; Querystring: { month?: string; year?: string; l1_category_id: string; shared_type: 'shared' | 'personal'; user_id?: string; limit?: number } }>(
+    '/families/:family_id/summary/drill-down',
+    { schema: { params: familyIdParamSchema, querystring: summaryDrillDownQuerySchema } },
+    async (req, reply) => {
+      const userId = await parseUserId(req);
+      const result = await familySummaryService.getSummaryDrillDown(userId, {
+        familyId: req.params.family_id,
+        month: req.query.month,
+        year: req.query.year,
+        l1CategoryId: req.query.l1_category_id,
+        sharedType: req.query.shared_type,
+        userId: req.query.user_id,
+        limit: req.query.limit,
       });
       reply.code(200).send(result);
     },

@@ -594,3 +594,143 @@ export async function getPersonalCategoryRanksByMemberUntrimmed(
   }
   return sorted;
 }
+
+// --- 下钻明细 ---
+
+/** 下钻流水明细行（COSTRA-302 · 复用 statisticsRepo.EntryDetailRow 同结构） */
+export interface SummaryEntryDetailRow {
+  entry_id: string;
+  amount: number;
+  note: string | null;
+  occurred_at: string;
+  shared_type: 'shared' | 'personal' | null;
+  created_by: string;
+  nickname: string;
+  avatar_url: string | null;
+}
+
+/** 下钻查询结果 */
+export interface SummaryDrillDownResult {
+  items: SummaryEntryDetailRow[];
+  totalCount: number;
+  l1Amount: number;
+}
+
+/**
+ * 按一级分类下钻：列出属于指定 L1 分类（含其所有子分类）的流水明细。
+ *
+ * 卡号：COSTRA-302
+ *
+ * 采用两段式查询（与本文件既有多段查询风格一致 · 规避 pg-mem 对 JOIN+OR 的兼容问题）：
+ *   1. 查出目标 category_id 集合（一级本身 + 所有子分类）
+ *   2. 用 IN (...) 查 entries count+sum / 分页数据
+ *
+ * 口径：
+ *   - 公共 = shared_type='shared'
+ *   - 个人 = shared_type='personal' AND created_by=userId
+ *   - 严格对齐 getCategoryRanksUntrimmed/getPersonalCategoryRanksByMemberUntrimmed 口径
+ */
+export async function listEntriesByL1Category(
+  ledgerId: string,
+  rangeStartUtc: string,
+  rangeEndUtc: string,
+  l1CategoryId: string,
+  sharedType: 'shared' | 'personal',
+  createdByUserId: string | null,
+  limit: number,
+  client?: Runner,
+): Promise<SummaryDrillDownResult> {
+  const runner = client ?? exec();
+
+  // --- 第一段：取目标 category_id 集合 ---
+  // 不过滤 deleted_at：与 summary 的 category 元信息查询口径严格对齐
+  // （getCategoryRanksUntrimmed / getPersonalCategoryRanksByMemberUntrimmed 查 categories
+  //  时均未过滤 deleted_at，历史流水引用的软删分类仍计入排行）。若此处过滤 deleted_at，
+  //  会导致「排行金额 ≠ 下钻明细加总」（软删分类的流水在排行里有、下钻里漏）。
+  // 注：软删边界在 pg-mem 下不可测——pg-mem 对 `id IN(...)` 会返回软删行、但对 `parent_id=$1`
+  //  谓词不返回软删行；真 PG 两者一致返回。故软删口径一致性依赖生产真 PG，单测用全存活分类验证不变式。
+  const catRes = await runner.query(
+    `SELECT id FROM categories
+     WHERE (id = $1 OR parent_id = $1)`,
+    [l1CategoryId],
+  );
+  const categoryIds: string[] = catRes.rows.map((r) => String(r.id));
+
+  if (categoryIds.length === 0) {
+    return { items: [], totalCount: 0, l1Amount: 0 };
+  }
+
+  // --- 构建公共 WHERE 条件 ---
+  const baseConditions: string[] = [
+    'e.ledger_id = $1',
+    'e.deleted_at IS NULL',
+    'e.occurred_at >= $2',
+    'e.occurred_at < $3',
+    "e.type = 'expense'",
+    'e.shared_type = $4',
+  ];
+  const baseParams: unknown[] = [ledgerId, rangeStartUtc, rangeEndUtc, sharedType];
+  let idx = 5;
+
+  if (createdByUserId) {
+    baseConditions.push(`e.created_by = $${idx++}`);
+    baseParams.push(createdByUserId);
+  }
+
+  // IN 占位符
+  const inPlaceholders = categoryIds.map((_, i) => `$${idx + i}`).join(', ');
+  baseConditions.push(`e.category_id IN (${inPlaceholders})`);
+  const allParams = [...baseParams, ...categoryIds];
+
+  const whereClause = baseConditions.join(' AND ');
+
+  // --- 第二段 A：count + sum ---
+  const countRes = await runner.query(
+    `SELECT COUNT(*) AS total, COALESCE(SUM(e.amount), 0) AS l1_amount
+     FROM entries e
+     WHERE ${whereClause}`,
+    allParams,
+  );
+  const totalCount = Number(countRes.rows[0]?.total ?? 0);
+  const l1Amount = Number(countRes.rows[0]?.l1_amount ?? 0);
+
+  if (totalCount === 0) {
+    return { items: [], totalCount: 0, l1Amount: 0 };
+  }
+
+  // --- 第二段 B：分页数据（JOIN users） ---
+  const limitIdx = allParams.length + 1;
+  const dataParams = [...allParams, limit];
+  const dataRes = await runner.query(
+    `SELECT
+       e.id AS entry_id,
+       e.amount AS amount,
+       e.note AS note,
+       e.occurred_at AS occurred_at,
+       e.shared_type AS shared_type,
+       e.created_by AS created_by,
+       u.nickname AS nickname,
+       u.avatar_url AS avatar_url
+     FROM entries e
+     JOIN users u ON u.id = e.created_by
+     WHERE ${whereClause}
+     ORDER BY e.amount DESC, e.occurred_at DESC
+     LIMIT $${limitIdx}`,
+    dataParams,
+  );
+
+  const items: SummaryEntryDetailRow[] = dataRes.rows.map((r) => ({
+    entry_id: String(r.entry_id),
+    amount: Number(r.amount ?? 0),
+    note: r.note != null ? String(r.note) : null,
+    occurred_at: typeof r.occurred_at === 'string'
+      ? r.occurred_at
+      : (r.occurred_at as Date).toISOString(),
+    shared_type: (r.shared_type as 'shared' | 'personal' | null) ?? null,
+    created_by: String(r.created_by),
+    nickname: String(r.nickname ?? ''),
+    avatar_url: r.avatar_url != null ? String(r.avatar_url) : null,
+  }));
+
+  return { items, totalCount, l1Amount };
+}

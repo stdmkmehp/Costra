@@ -125,6 +125,8 @@
             <!-- 分类名/备注 · COSTRA-227: 点击原地编辑备注 -->
             <view class="entry-label grow" data-refid="{{entry.client_ref_id}}" catchtap="onTapEntryNote">
               <text wx:if="{{editingNoteRefId !== entry.client_ref_id}}" class="entry-label__text">{{entry.label}}</text>
+              <!-- 保存由键盘「完成」键(bindconfirm)或点编辑框外区域触发；
+                   刻意不绑 bindblur，避免失焦抢先清态导致点击穿透打开面板(见 _consumeNoteEditingIfActive) -->
               <input
                 wx:if="{{editingNoteRefId === entry.client_ref_id}}"
                 class="entry-label__input"
@@ -133,7 +135,6 @@
                 focus="{{true}}"
                 bindinput="onEditNoteInput"
                 bindconfirm="onConfirmEditNote"
-                bindblur="onConfirmEditNote"
                 maxlength="200"
               />
             </view>

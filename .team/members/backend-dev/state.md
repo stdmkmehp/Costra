@@ -16,6 +16,8 @@
 
 ## §2 当前关注（active tasks）
 
+- 🆕 **COSTRA-302 R1 实装完成**（2026-06-12 · 协作页家庭汇总三级下钻接口 · GET /families/{family_id}/summary/drill-down · OpenAPI v0.11.0 + CHANGELOG · familySummaryRepo listEntriesByL1Category 两段式查询 · familySummaryService getSummaryDrillDown 口径对齐 · routes summaryDrillDownQuerySchema · T-302-A1~A11 11 条新测 · 212/212 全绿 · typecheck ✅）
+
 - 🆕 **COSTRA-301 R1 实装完成**（2026-06-11 · OpenAPI 契约同步 month/year xor + miniprogram familyApi.ts 适配 · summary endpoint month optional + year 参数 + FamilySummary schema nullable month/year + FamilyCategoryRankItem L1 语义注释 · familyApi.ts scope 签名重构 + 缓存 key m:/y: 改造 · prefetch.ts + pages/family/index.ts 调用方适配 · api/CHANGELOG.md v0.10.0 · typecheck ✅ · lint 0 error · 179/179 全绿 · whitelist-check ✅）
 
 - 🆕 **COSTRA-300 R1 实装完成**（2026-06-10 · family summary L1 折叠 + year 支持 · parseYearRange/validateYear helper · foldToL1 纯函数 · repo getCategoryRanksUntrimmed/getPersonalCategoryRanksByMemberUntrimmed · routes summaryQuerySchema month/year xor · FamilySummaryResponse month|null + year|null · T-300-A1~A10 10 条新测 · 179/179 全绿 · typecheck ✅ · OpenAPI 暂不动留待 COSTRA-301）
@@ -37,6 +39,8 @@
 - COSTRA-157 R1 实装进行中（backend 段完成 · 等 miniapp-dev 接手 B/C/D/E + 统一 commit）
 
 ## §3 交付历史索引
+
+- **2026-06-12** · **COSTRA-302 R1 实装**（协作页家庭汇总三级下钻 · GET /families/{family_id}/summary/drill-down · OpenAPI v0.11.0 · familySummaryRepo listEntriesByL1Category · familySummaryService getSummaryDrillDown · routes summaryDrillDownQuerySchema · T-302-A1~A11 · 212/212 全绿）· `history/2026-06-12-costra-302-summary-drill-down.md`
 
 - **2026-06-11** · **COSTRA-301 R1 实装**（OpenAPI 契约同步 month/year xor + miniprogram familyApi.ts scope 签名重构 + 缓存 key 改造 + 调用方适配 · api/CHANGELOG v0.10.0 · typecheck ✅ · 179/179 全绿 · whitelist-check ✅）· `history/2026-06-11-costra-301-openapi-familyapi-month-year-xor.md`
 
@@ -97,7 +101,9 @@
 
 ## §7 最近更新时间戳
 
-- **2026-06-11T15:30:00+08:00 · COSTRA-301 R1 实装完成**（OpenAPI 契约同步 month/year xor + miniprogram familyApi.ts scope 签名重构 + 缓存 key 改造 + 调用方适配 · typecheck ✅ · 179/179 全绿 · whitelist-check ✅）
+- **2026-06-12T09:50:00+08:00 · COSTRA-302 R1 实装完成**（协作页家庭汇总三级下钻 · GET /families/{family_id}/summary/drill-down · OpenAPI v0.11.0 · familySummaryRepo listEntriesByL1Category · familySummaryService getSummaryDrillDown · 212/212 全绿 · typecheck ✅）
+
+- 2026-06-11T15:30:00+08:00 · COSTRA-301 R1 实装完成（OpenAPI 契约同步 month/year xor + miniprogram familyApi.ts scope 签名重构 + 缓存 key 改造 + 调用方适配 · typecheck ✅ · 179/179 全绿 · whitelist-check ✅）
 
 - 2026-05-02T19:24:00+08:00 · 初始化骨架（by Orchestrator）
 - 2026-05-11T20:57:43+08:00 · COSTRA-104 R1.x 极窄修复收口（363efa1 · P1-1 T2 测 + P2-1 followup_id）

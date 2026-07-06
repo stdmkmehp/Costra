@@ -320,7 +320,8 @@ export async function createSharedFamily(
  * 更新 family name（乐观锁 · version+1）
  * COSTRA-221: PATCH /families/{id} 实装
  *
- * 注意：owner_id 校验在 service 层 assertOwner 完成，repo 层只做 version 乐观锁
+ * 注意：重命名对全体 active 成员开放（无 owner 守门），成员身份在 service 层
+ * assertActiveMember 校验；repo 层只做 version 乐观锁
  * （pg-mem partial unique index 导致 WHERE ... AND owner_id=$N 参数化查询异常）
  */
 export async function updateName(
@@ -329,7 +330,7 @@ export async function updateName(
 ): Promise<FamilyEntity> {
   const runner = client ?? exec();
 
-  // 乐观锁更新 · owner_id 已在 service 层 assertOwner 校验
+  // 乐观锁更新 · 成员身份已在 service 层 assertActiveMember 校验
   const res = await runner.query(
     `UPDATE families
         SET name = $2, version = version + 1, updated_at = now()

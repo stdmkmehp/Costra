@@ -1455,6 +1455,8 @@ Page({
   // ─── 交互：左滑删除 ──────────────────────────────────────────────────────────
 
   onTapPage() {
+    // 备注编辑中点任意编辑框外区域 = 保存本次编辑并收键盘，吞掉本次点击（不穿透打开面板）
+    if (this._consumeNoteEditingIfActive()) return;
     if (!this.data.swipingRefId) return;
     if (Date.now() - this._lastSwipeEndAt < 180) return;
     this._resetAllSwipe();
@@ -1607,6 +1609,8 @@ Page({
 
   /** 长按流水 → 在触点附近原地弹出上下文菜单 */
   onEntryLongPress(e: WechatMiniprogram.TouchEvent) {
+    // 备注编辑中：本次操作先保存编辑，不再弹长按菜单（点编辑框外 = 保存）
+    if (this._consumeNoteEditingIfActive()) return;
     const refId = (e.currentTarget.dataset as Record<string, string>).refid;
     if (!refId) return;
 
@@ -1744,6 +1748,7 @@ Page({
   },
 
   onDeleteEntry(e: WechatMiniprogram.TouchEvent) {
+    if (this._consumeNoteEditingIfActive()) return;
     this._confirmDeleteEntry(e.currentTarget.dataset.refid);
   },
 
@@ -1788,6 +1793,7 @@ Page({
    * 同步用 loadCategoriesSync 立即打开，再后台 fire-and-forget 调 refreshCategoryDataAsync 增量刷新。
    */
   onTapEntryCategory(e: WechatMiniprogram.TouchEvent) {
+    if (this._consumeNoteEditingIfActive()) return;
     if (this.data.swipingRefId) { this._resetAllSwipe(); return; }
     const refId = (e.currentTarget.dataset as Record<string, string>).refid;
     this._openEditCategory(refId);
@@ -2107,6 +2113,8 @@ Page({
 
   /** 点击文字区域 → 原地 inline 编辑备注 */
   onTapEntryNote(e: WechatMiniprogram.TouchEvent) {
+    // 已在编辑其它/本条备注时，点备注区 = 保存当前编辑（需再次点击才进入新编辑）
+    if (this._consumeNoteEditingIfActive()) return;
     if (this.data.swipingRefId) { this._resetAllSwipe(); return; }
     const refId = (e.currentTarget.dataset as Record<string, string>).refid;
     this._openEditNote(refId);
@@ -2126,10 +2134,28 @@ Page({
     });
   },
 
+  /**
+   * 若备注正处于编辑态：保存本次编辑并返回 true，调用方须立即 return 吞掉本次操作。
+   * 用于「备注编辑中点编辑框外任意区域(空白 / 其他流水金额 / 分类等) = 保存并收键盘，
+   * 但不触发该区域功能、不穿透打开金额/分类面板」。
+   * 保存复用 onConfirmEditNote（幂等 + 同等性 guard + 落库入队）；
+   * 点原生 input 内部不会冒泡为外层 tap，故正常编辑不受影响。
+   */
+  _consumeNoteEditingIfActive(): boolean {
+    if (!this.data.editingNoteRefId) return false;
+    void this.onConfirmEditNote();
+    return true;
+  },
+
   onEditNoteInput(e: WechatMiniprogram.Input) {
     this.setData({ editNoteValue: e.detail.value });
   },
 
+  /**
+   * 保存备注 —— 由键盘「完成」键 (bindconfirm) 或「点编辑框外区域」(经 _consumeNoteEditingIfActive) 触发。
+   * 刻意未绑定 bindblur：避免失焦抢先清空编辑态，导致伴随的点击穿透打开金额/分类面板；
+   * 结束编辑一律由点击入口裁决保存。
+   */
   async onConfirmEditNote(_e?: WechatMiniprogram.TouchEvent) {
     // SOP 步骤 1: 幂等 guard（首行清，任何二次触发立即 bail）
     const refId = this._editingRefId;
@@ -2175,6 +2201,7 @@ Page({
 
   /** 点击金额区域 → 底部半屏键盘面板 */
   onTapEntryAmount(e: WechatMiniprogram.TouchEvent) {
+    if (this._consumeNoteEditingIfActive()) return;
     if (this.data.swipingRefId) { this._resetAllSwipe(); return; }
     const refId = (e.currentTarget.dataset as Record<string, string>).refid;
     this._openEditAmount(refId);

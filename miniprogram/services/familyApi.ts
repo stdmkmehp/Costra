@@ -161,6 +161,8 @@ let _familiesCache: CacheEntry<FamiliesResponse> | null = null;
 let _familiesInflight: Promise<FamiliesResponse> | null = null;
 const _membersCache = new Map<string, CacheEntry<FamilyMember[]>>();
 const _membersInflight = new Map<string, Promise<FamilyMember[]>>();
+/** COSTRA-305: L1 drill-down page-lifetime 缓存 */
+const _familyDrillCache = new Map<string, FamilySummaryDrillDownResponse>();
 
 /** 构建 summary 缓存 key（B3: month/year xor 改造） */
 function summaryCacheKey(familyId: string, scope: { month?: string; year?: string }): string {
@@ -206,6 +208,12 @@ export function invalidateFamilyCache(familyId: string): void {
   for (const key of _summaryCache.keys()) {
     if (key.startsWith(`${familyId}:`)) {
       _summaryCache.delete(key);
+    }
+  }
+  // COSTRA-305: 同步清理 drill-down 缓存
+  for (const key of _familyDrillCache.keys()) {
+    if (key.startsWith(`${familyId}:`)) {
+      _familyDrillCache.delete(key);
     }
   }
 }
@@ -465,9 +473,97 @@ export async function renameFamily(
   return family;
 }
 
+// ─── Family drill-down (L1→流水明细) ─────────────────────────────────────────────
+// COSTRA-305 · 协作页 L1 三级下钻
+// 契约: GET /v1/families/{familyId}/summary/drill-down
+
+/** 单条流水明细（drill-down 返回项） */
+export interface FamilyEntryDetailItem {
+  entry_id: string;
+  amount: number;            // cents
+  note: string | null;
+  occurred_at: string;       // UTC ISO
+  shared_type: 'shared' | 'personal' | null;
+  created_by: string;
+  nickname: string;
+  avatar_url: string | null;
+}
+
+/** GET /v1/families/{familyId}/summary/drill-down 响应 */
+export interface FamilySummaryDrillDownResponse {
+  l1_category_id: string;
+  l1_category_name: string;
+  l1_amount: number;         // cents
+  items: FamilyEntryDetailItem[];
+  total_count: number;
+  has_more: boolean;
+}
+
+function familyDrillCacheKey(
+  familyId: string,
+  scope: { month?: string; year?: string },
+  l1CategoryId: string,
+  sharedType: 'shared' | 'personal',
+  userId?: string,
+  limit?: number,
+): string {
+  const period = scope.month ?? scope.year!;
+  return `${familyId}:${period}:${l1CategoryId}:${sharedType}:${userId ?? 'all'}:${limit ?? 10}`;
+}
+
+/**
+ * 协作页 L1→流水明细 drill-down
+ * GET /v1/families/{familyId}/summary/drill-down
+ *
+ * @param familyId 家庭 ID
+ * @param scope month 或 year 二选一
+ * @param l1CategoryId 一级分类 ID
+ * @param opts sharedType + userId(personal 必填) + limit
+ */
+export async function drillDownFamilyL1Entries(
+  familyId: string,
+  scope: { month?: string; year?: string },
+  l1CategoryId: string,
+  opts: { sharedType: 'shared' | 'personal'; userId?: string; limit?: number },
+): Promise<FamilySummaryDrillDownResponse> {
+  const cacheKey = familyDrillCacheKey(familyId, scope, l1CategoryId, opts.sharedType, opts.userId, opts.limit);
+  const cached = _familyDrillCache.get(cacheKey);
+  if (cached) {
+    // LRU：命中即刷新最近使用顺序（delete + set 使其移到 Map 末尾，避免被优先淘汰）
+    _familyDrillCache.delete(cacheKey);
+    _familyDrillCache.set(cacheKey, cached);
+    return cached;
+  }
+
+  const params: Record<string, string | number> = {
+    l1_category_id: l1CategoryId,
+    shared_type: opts.sharedType,
+  };
+  if (scope.month) params.month = scope.month;
+  if (scope.year) params.year = scope.year;
+  if (opts.sharedType === 'personal' && opts.userId) params.user_id = opts.userId;
+  if (opts.limit != null) params.limit = opts.limit;
+
+  const data = await request<FamilySummaryDrillDownResponse>({
+    method: 'GET',
+    path: `/families/${familyId}/summary/drill-down`,
+    query: params,
+  });
+
+  // LRU 淘汰（复用 MAX_CACHE_SIZE 上限）
+  if (_familyDrillCache.size >= MAX_CACHE_SIZE && !_familyDrillCache.has(cacheKey)) {
+    const firstKey = _familyDrillCache.keys().next().value;
+    if (firstKey !== undefined) _familyDrillCache.delete(firstKey);
+  }
+  _familyDrillCache.set(cacheKey, data);
+
+  return data;
+}
+
 export const __test__ = {
   resetCaches(): void {
     _summaryCache.clear();
+    _familyDrillCache.clear();
     invalidateFamiliesCache();
     invalidateFamilyMembersCache();
   },

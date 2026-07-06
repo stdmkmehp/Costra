@@ -4,6 +4,8 @@ import {
   getFamilies,
   getFamilyMembers,
   createFamily,
+  drillDownFamilyL1Entries,
+  invalidateFamilyCache,
   invalidateFamiliesCache,
   invalidateFamilyMembersCache,
   __test__,
@@ -118,5 +120,88 @@ describe('services/familyApi · M1 短缓存与 in-flight 合并', () => {
 
     expect(next.families[0].id).toBe('family-new');
     expect(requestMock).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('services/familyApi · drillDownFamilyL1Entries 缓存与 key（COSTRA-305）', () => {
+  const drillResp = {
+    l1_category_id: 'cat-1',
+    l1_category_name: '餐饮',
+    l1_amount: 8000,
+    items: [],
+    total_count: 0,
+    has_more: false,
+  };
+
+  beforeEach(() => {
+    requestMock.mockReset();
+    __test__.resetCaches();
+  });
+
+  it('shared 下钻：query 不含 user_id，相同 key 命中缓存只请求一次', async () => {
+    requestMock.mockResolvedValue(drillResp);
+    const a = await drillDownFamilyL1Entries('family-1', { month: '2026-06' }, 'cat-1', { sharedType: 'shared' });
+    const b = await drillDownFamilyL1Entries('family-1', { month: '2026-06' }, 'cat-1', { sharedType: 'shared' });
+
+    expect(a).toEqual(drillResp);
+    expect(b).toEqual(drillResp);
+    expect(requestMock).toHaveBeenCalledTimes(1);
+    const arg = requestMock.mock.calls[0][0];
+    expect(arg.path).toBe('/families/family-1/summary/drill-down');
+    expect(arg.query.l1_category_id).toBe('cat-1');
+    expect(arg.query.shared_type).toBe('shared');
+    expect(arg.query.month).toBe('2026-06');
+    expect(arg.query.user_id).toBeUndefined();
+  });
+
+  it('personal 下钻：query 携带 user_id', async () => {
+    requestMock.mockResolvedValue(drillResp);
+    await drillDownFamilyL1Entries('family-1', { month: '2026-06' }, 'cat-1', { sharedType: 'personal', userId: 'user-2' });
+    const arg = requestMock.mock.calls[0][0];
+    expect(arg.query.shared_type).toBe('personal');
+    expect(arg.query.user_id).toBe('user-2');
+  });
+
+  it('month/year/sharedType/userId/limit 变更不误命中缓存', async () => {
+    requestMock.mockResolvedValue(drillResp);
+    await drillDownFamilyL1Entries('family-1', { month: '2026-06' }, 'cat-1', { sharedType: 'shared' });
+    await drillDownFamilyL1Entries('family-1', { month: '2026-07' }, 'cat-1', { sharedType: 'shared' });
+    await drillDownFamilyL1Entries('family-1', { year: '2026' }, 'cat-1', { sharedType: 'shared' });
+    await drillDownFamilyL1Entries('family-1', { month: '2026-06' }, 'cat-1', { sharedType: 'personal', userId: 'u2' });
+    await drillDownFamilyL1Entries('family-1', { month: '2026-06' }, 'cat-1', { sharedType: 'shared', limit: 5 });
+    expect(requestMock).toHaveBeenCalledTimes(5);
+  });
+
+  it('invalidateFamilyCache 同时清理 drill-down 缓存', async () => {
+    requestMock.mockResolvedValue(drillResp);
+    await drillDownFamilyL1Entries('family-1', { month: '2026-06' }, 'cat-1', { sharedType: 'shared' });
+    invalidateFamilyCache('family-1');
+    await drillDownFamilyL1Entries('family-1', { month: '2026-06' }, 'cat-1', { sharedType: 'shared' });
+    expect(requestMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('LRU：命中即 touch，淘汰最久未使用项而非最早插入项', async () => {
+    requestMock.mockResolvedValue(drillResp);
+    // 填满 20 个不同 key（MAX_CACHE_SIZE=20）
+    for (let i = 0; i < 20; i++) {
+      await drillDownFamilyL1Entries('family-1', { month: '2026-06' }, `cat-${i}`, { sharedType: 'shared' });
+    }
+    expect(requestMock).toHaveBeenCalledTimes(20);
+
+    // 访问最早插入的 cat-0 → 命中缓存并被 touch 到末尾（不新增请求）
+    await drillDownFamilyL1Entries('family-1', { month: '2026-06' }, 'cat-0', { sharedType: 'shared' });
+    expect(requestMock).toHaveBeenCalledTimes(20);
+
+    // 新增第 21 个 → 淘汰最久未使用（应为 cat-1，而非被 touch 的 cat-0）
+    await drillDownFamilyL1Entries('family-1', { month: '2026-06' }, 'cat-20', { sharedType: 'shared' });
+    expect(requestMock).toHaveBeenCalledTimes(21);
+
+    // cat-0 仍在缓存（命中，不新增）
+    await drillDownFamilyL1Entries('family-1', { month: '2026-06' }, 'cat-0', { sharedType: 'shared' });
+    expect(requestMock).toHaveBeenCalledTimes(21);
+
+    // cat-1 已被淘汰（未命中，新增请求）
+    await drillDownFamilyL1Entries('family-1', { month: '2026-06' }, 'cat-1', { sharedType: 'shared' });
+    expect(requestMock).toHaveBeenCalledTimes(22);
   });
 });

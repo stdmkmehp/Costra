@@ -277,7 +277,7 @@ export async function listMembers(
 }
 
 /**
- * 更新 family name（仅 owner）
+ * 更新 family name（任意 active 成员均可 · 账本名对全体成员开放编辑）
  * PATCH 不要求 Idempotency-Key，走 version 乐观锁
  *
  * 事务内同步更新 families.name + ledgers.name，保证 API 返回的 ledger_name 一致
@@ -288,9 +288,8 @@ export async function updateFamily(
   familyId: string,
   payload: { name?: string; version: number },
 ): Promise<FamilyResponse> {
-  // 权限守门：owner only
+  // 权限守门：任意 active 成员即可（重命名不再限 owner）
   await assertActiveMember(userId, familyId);
-  await assertOwner(userId, familyId);
 
   if (!payload.name || payload.name.trim().length === 0) {
     throw new AppError(ErrorCode.INVALID_ARGUMENT, {

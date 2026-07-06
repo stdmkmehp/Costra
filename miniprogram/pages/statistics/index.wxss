@@ -706,5 +706,5 @@ page {
 
 /* ─── 底部留白（避开自定义 TabBar，属于 pane 内可横滑区域）────────────── */
 .bottom-spacer {
-  height: calc(160rpx + env(safe-area-inset-bottom));
+  height: calc(150rpx + env(safe-area-inset-bottom));
 }
