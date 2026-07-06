@@ -2,6 +2,7 @@
   "navigationStyle": "custom",
   "usingComponents": {
     "expense-overlay": "/components/expense-overlay/index",
-    "filter-panel": "/components/filter-panel/index"
+    "filter-panel": "/components/filter-panel/index",
+    "ledger-switcher": "/components/ledger-switcher/index"
   }
 }

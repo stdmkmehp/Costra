@@ -452,10 +452,10 @@ export async function dissolveFamily(familyId: string, version: number): Promise
 }
 
 /**
- * 重命名 family（COSTRA-230）
+ * 重命名 family（COSTRA-230 · 权限放开见后端 familyService.updateFamily）
  * PATCH /v1/families/{id}
  *
- * - 仅 owner 允许调用（后端 assertOwner 守门）
+ * - 全体 active 成员均可调用（后端 assertActiveMember 守门；解散仍限 owner）
  * - 必须传 version（乐观锁）；返回新的 FamilyItem 含递增 version
  * - personal family 也允许重命名（与 deleteFamily 不同语义）
  */

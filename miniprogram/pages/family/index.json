@@ -1,6 +1,7 @@
 {
   "navigationStyle": "custom",
   "usingComponents": {
-    "expense-overlay": "/components/expense-overlay/index"
+    "expense-overlay": "/components/expense-overlay/index",
+    "ledger-switcher": "/components/ledger-switcher/index"
   }
 }

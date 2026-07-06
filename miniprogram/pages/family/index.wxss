@@ -13,47 +13,7 @@
 }
 
 /* 导航栏（与明细页一致） */
-.nav-bar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 100;
-  background: rgba(241, 242, 236, 0.92);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-}
-
-@supports not (backdrop-filter: blur(1px)) {
-  .nav-bar {
-    background: #f1f2ec;
-  }
-}
-
-.nav-bar__content {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 32rpx;
-}
-
-.nav-bar__center {
-  display: flex;
-  align-items: center;
-  gap: 6rpx;
-}
-
-.nav-bar__title {
-  font-size: 36rpx;
-  font-weight: 600;
-  color: var(--color-role-text-primary, #1c1b1a);
-  line-height: 1.2;
-}
-
-.nav-bar__arrow {
-  font-size: 20rpx;
-  color: var(--color-role-text-tertiary, rgba(28,27,26,0.28));
-}
+/* 导航栏样式已迁入 <ledger-switcher> 组件 */
 
 /* 固定头部：成员区 + 时间导航 + 进度占比（不随流水滚动） */
 .family__fixed-header {
@@ -726,8 +686,6 @@
   background: currentColor;
   border-radius: 1rpx;
 }
-.mm-rename__caret::before { top: 0; }
-.mm-rename__caret::after { bottom: 0; }
 .mm-rename__caret::before { top: 0; }
 .mm-rename__caret::after { bottom: 0; }
 

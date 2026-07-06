@@ -13,15 +13,14 @@ import {
   getActiveLedgerId,
   getActiveLedgerName,
   getActiveFamilyKind,
-  switchActiveFamily,
   fallbackToPersonalFamily,
 } from '../../services/family';
-import { triggerOnPageShow, syncOnce } from '../../services/syncScheduler';
+import { triggerOnPageShow } from '../../services/syncScheduler';
 import { eventBus, EventNames, type SyncDonePayload, type ActiveFamilyChangedPayload, type ProfileUpdatedPayload } from '../../services/eventBus';
 import { hasValidSession, getToken } from '../../services/auth';
 import { logger } from '../../utils/logger';
 import { resolveIconGlyph } from '../../services/iconMap';
-import { getFamilies, getFamilyMembers, type FamilyItem } from '../../services/familyApi';
+import { getFamilies, getFamilyMembers } from '../../services/familyApi';
 import {
   getMonthlyStatistics,
   getYearlyStatistics,
@@ -1306,55 +1305,8 @@ Page({
   },
 
   // ─── 交互：账本切换 ──────────────────────────────────────────────────────────
-
-  async onTapLedgerName() {
-    try {
-      const { families } = await getFamilies();
-      if (!families || families.length <= 1) {
-        wx.showToast({ title: '当前只有一个账本', icon: 'none' });
-        return;
-      }
-      const items = families.map((f: FamilyItem) => {
-        const suffix = f.kind === 'personal' ? '（个人）' : `（${f.member_count}人）`;
-        return f.name + suffix;
-      });
-      wx.showActionSheet({
-        itemList: items,
-        success: async (res) => {
-          const selected = families[res.tapIndex];
-          if (selected.ledger_id === this._ledgerId) return;
-          // 释放旧家庭统计缓存（与 _onActiveFamilyChanged 行为对齐 · 防长期占用）
-          if (this._familyId) invalidateStatisticsCache(this._familyId);
-          await switchActiveFamily({
-            family_id: selected.id,
-            ledger_id: selected.ledger_id,
-            family_kind: selected.kind,
-            ledger_name: selected.ledger_name || selected.name,
-          }, 'ledger-switch');
-          this._familyId = selected.id;
-          this._ledgerId = selected.ledger_id;
-          // 切账本 → 清空所有数据 + 重置 swiper 高度 + 重新加载上下文（含成员列表）
-          this._resetMemberSwiperHeightState('ledgerSwitch');
-          this._clearMemberScrollMemory();
-          // INV-2：切账本后旧 family 的 in-flight deferred handle 已无意义，全部 cancel
-          this._cancelAllDeferredLoadingHandles();
-          this.setData({
-            ledgerName: selected.ledger_name || selected.name,
-            familyKind: selected.kind,
-            monthlyByMember: {},
-            yearlyByMember: {},
-            memberTabIndex: 0,
-            currentMemberKey: 'all',
-          });
-          void syncOnce('ledger-switch');
-          await this._loadContext();
-          await this._loadData();
-        },
-      });
-    } catch {
-      wx.showToast({ title: '获取账本列表失败', icon: 'none' });
-    }
-  },
+  // 账本切换入口由 <ledger-switcher> 组件承载（顶部导航栏锚定下拉气泡）。
+  // 组件内部调 switchActiveFamily 广播 ACTIVE_FAMILY_CHANGED，本页由 _onActiveFamilyChanged 响应重载。
 
   /** 阻止穿透 */
   noop() {},

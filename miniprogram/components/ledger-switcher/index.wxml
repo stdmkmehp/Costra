@@ -1,0 +1,34 @@
+<!-- components/ledger-switcher/index.wxml · 账本切换器 -->
+<!-- 导航栏外壳（毛玻璃）+ 居中账本名 + ▼ 入口 + 锚定下拉气泡 -->
+
+<view class="nav-bar" style="padding-top: {{statusBarHeight}}px;">
+  <view class="nav-bar__content" style="height: {{navBarHeight}}px;">
+    <view wx:if="{{displayName}}" class="nav-bar__center" bindtap="onTapEntry">
+      <text class="nav-bar__title">{{displayName}}</text>
+      <text class="nav-bar__arrow {{open ? 'is-open' : ''}}">▼</text>
+    </view>
+  </view>
+</view>
+
+<!-- 下拉气泡（锚定标题正下方 · 顶部小三角居中指向标题） -->
+<view wx:if="{{open}}" class="ls__mask" catchtap="onClose" catchtouchmove="noop">
+  <view class="ls__popover" style="top: {{navTotalPx}}px;" catchtap="noop">
+    <view class="ls__arrow"></view>
+    <scroll-view scroll-y enhanced show-scrollbar="{{false}}" class="ls__scroll">
+      <view
+        wx:for="{{families}}"
+        wx:key="ledger_id"
+        class="ls__item {{item.isActive ? 'ls__item--active' : ''}}"
+        data-index="{{index}}"
+        catchtap="onSelect"
+      >
+        <view class="ls__ic ls__ic--{{item.kind}}"></view>
+        <view class="ls__meta">
+          <text class="ls__name">{{item.name}}</text>
+          <text class="ls__sub">{{item.subtitle}}</text>
+        </view>
+        <text wx:if="{{item.isActive}}" class="ls__check">✓</text>
+      </view>
+    </scroll-view>
+  </view>
+</view>

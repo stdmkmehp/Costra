@@ -8,7 +8,7 @@
 
 import { getItem, setItem, removeItem } from './storage';
 import { request } from './request';
-import { getFamilies as requestCachedFamilies } from './familyApi';
+import { getFamilies as requestCachedFamilies, type FamilyItem } from './familyApi';
 import { eventBus, EventNames, type ActiveFamilyChangedPayload } from './eventBus';
 import { logger } from '../utils/logger';
 
@@ -69,8 +69,16 @@ export async function setActiveFamily(
   await removeItem(LEGACY_FAMILY_ID_KEY);
   syncGlobalActiveLedgerId(ctx.ledger_id);
 
-  // 仅在 family_id 或 ledger_id 真正变化时广播，避免无意义刷新
-  if (!prev || prev.family_id !== ctx.family_id || prev.ledger_id !== ctx.ledger_id) {
+  // 在 family_id / ledger_id / ledger_name 任一变化时广播：
+  // 切换账本（id 变）与重命名账本（仅 ledger_name 变）都需通知订阅方即时更新。
+  // 账本名是纯展示单一数据源（storage.ledger_name），改名也须 emit 让 <ledger-switcher> 更新显示。
+  // 无变化则不广播，避免无意义刷新。
+  if (
+    !prev
+    || prev.family_id !== ctx.family_id
+    || prev.ledger_id !== ctx.ledger_id
+    || prev.ledger_name !== ctx.ledger_name
+  ) {
     const payload: ActiveFamilyChangedPayload = {
       family_id: ctx.family_id,
       ledger_id: ctx.ledger_id,
@@ -79,6 +87,30 @@ export async function setActiveFamily(
       source,
     };
     eventBus.emit(EventNames.ACTIVE_FAMILY_CHANGED, payload);
+  }
+}
+
+/**
+ * 用最新的 families 列表校准 storage 中 active 账本的名称（账本名单一数据源保新鲜）。
+ *
+ * 场景：其他成员/设备重命名了当前 active 账本后，本端各页 getFamilies 拿到新名，
+ *   但 storage.ledger_name 只在本端 setActiveFamily 时才刷新（family _doLoadPage 仅在切 family 时写），
+ *   故远程改名不会自动回流 storage。此函数把「用 getFamilies 结果校准当前账本名」这一逻辑收敛，
+ *   由需要展示账本名的页面在拿到 families 后调用。
+ *
+ * 幂等：仅当 active 账本名确有变化时才 setActiveFamily（写 storage + 广播 ACTIVE_FAMILY_CHANGED，
+ *   id 未变 → 各页 handler 短路 noop、不重载数据，仅 <ledger-switcher> 更新显示名，无循环）。
+ * 被踢出（active 不在列表）不在此处理，交由各页既有成员资格校验逻辑。
+ * family.name === ledger_name 由后端 1:1 同步保证，故优先用 ledger_name、降级 name。
+ */
+export async function reconcileActiveLedgerName(families: FamilyItem[]): Promise<void> {
+  const ctx = await getItem<FamilyContext>(FAMILY_CONTEXT_KEY);
+  if (!ctx?.family_id) return;
+  const active = families.find((f) => f.id === ctx.family_id && f.ledger_id === ctx.ledger_id);
+  if (!active) return;
+  const freshName = active.ledger_name || active.name;
+  if (freshName && freshName !== ctx.ledger_name) {
+    await setActiveFamily({ ...ctx, ledger_name: freshName }, 'family-rename');
   }
 }
 

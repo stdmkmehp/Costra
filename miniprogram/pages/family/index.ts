@@ -10,6 +10,7 @@ import { getSafeAreaMetrics } from '../../utils/safeArea';
 import { scheduleDeferredLoading, type DeferredLoadingHandle } from '../../utils/deferredLoading';
 import { getCategoryIconById } from '../../services/categoryService';
 import { getMemberColorBySlot } from '../../utils/memberColor';
+import { buildMemberMenuItems, type MemberMenuItem } from './memberMenu';
 import { maxSharedFamilies, maxFamilyMembers } from '../../config/defaults';
 import { pickRandomSlogan } from '../../config/slogans';
 import { triggerOnPageShow } from '../../services/syncScheduler';
@@ -350,7 +351,7 @@ Page({
     /** 顶部小三角相对气泡左边的偏移（px · 始终指向头像中心） */
     memberMenuArrowLeft: 0,
     /** 气泡内选项：{ key, label, danger } */
-    memberMenuItems: [] as { key: string; label: string; danger: boolean }[],
+    memberMenuItems: [] as MemberMenuItem[],
     /** 当前高亮的头像 userId（暖光环 · 复用明细页 ctxActiveRefId 语义） */
     activeMemberUserId: '',
   },
@@ -1528,41 +1529,20 @@ Page({
     // 普通成员点他人：无可用选项 → 无响应
     if (items.length === 0) return;
 
-    this._memberMenuUserId = userid;
     this._openMemberMenu(userid, items);
   },
 
-  /** 按角色 / 点击对象构建气泡菜单选项 */
-  _buildMemberMenuItems(isSelf: boolean): { key: string; label: string; danger: boolean }[] {
-    const items: { key: string; label: string; danger: boolean }[] = [];
-
-    if (isSelf) {
-      // 重命名账本：全体 active 成员均可
-      items.push({ key: 'rename', label: '重命名账本', danger: false });
-
-      const activeMembers = this.data.members.filter(m => m.status === 'active');
-      const isLoneOwner = this.data.isOwner && activeMembers.length === 1;
-      if (isLoneOwner) {
-        items.push({ key: 'dissolve', label: '解散账本', danger: true });
-      } else {
-        items.push({ key: 'leave', label: '退出账本', danger: true });
-        if (this.data.isOwner) {
-          items.push({ key: 'dissolve', label: '解散账本', danger: true });
-        }
-      }
-    } else if (this.data.isOwner) {
-      // 点他人：仅 owner 可移出
-      items.push({ key: 'remove', label: '移出账本', danger: true });
-    }
-
-    return items;
+  /** 按角色 / 点击对象构建气泡菜单选项（矩阵逻辑抽至 ./memberMenu 纯函数 · 见 memberMenu.spec.ts） */
+  _buildMemberMenuItems(isSelf: boolean): MemberMenuItem[] {
+    const activeMemberCount = this.data.members.filter(m => m.status === 'active').length;
+    return buildMemberMenuItems({ isSelf, isOwner: this.data.isOwner, activeMemberCount });
   },
 
   /**
    * 打开锚定气泡菜单：用 boundingClientRect 定位到被点头像
    * 气泡水平居中于头像并做左右边界钳制；小三角单独偏移始终指向头像中心
    */
-  _openMemberMenu(userId: string, items: { key: string; label: string; danger: boolean }[]) {
+  _openMemberMenu(userId: string, items: MemberMenuItem[]) {
     const winW = wx.getWindowInfo().windowWidth || 375;
     const rpxToPx = winW / 750;
     const menuW = 320 * rpxToPx; // 须与 wxss .member-menu width 同步
@@ -1590,6 +1570,9 @@ Page({
         // 上下：固定向头像下方展开（头像在页面顶部，下方空间充足）
         const top = rect.bottom + arrowGap;
 
+        // 仅在定位成功、菜单真正弹出时才记录目标 userId，
+        // 避免 rect 缺失的失败路径残留旧值（状态机保持自洽）
+        this._memberMenuUserId = userId;
         wx.vibrateShort({ type: 'light' });
         this.setData({
           memberMenuItems: items,
@@ -1900,55 +1883,7 @@ Page({
     }
   },
 
-  // ─── 交互：账本切换（P2-4: 复用明细页账本切换模式） ──────────────────────
-  //
-  // 重命名入口已移至 owner 点自己头像的 ActionSheet 中（_showSelfActionSheet）。
-  // 此处仅负责切换账本。
-
-  onTapFamilyName() {
-    const families = this.data.familyList;
-    const switchable = families && families.length > 1;
-
-    if (!switchable) {
-      wx.showToast({ title: '当前只有一个账本', icon: 'none' });
-      return;
-    }
-
-    // 构建 itemList：列出所有账本
-    const items: string[] = [];
-    for (const f of families) {
-      const suffix = f.kind === 'personal' ? '（个人）' : `（${f.member_count}人）`;
-      items.push(f.name + suffix);
-    }
-
-    wx.showActionSheet({
-      itemList: items,
-      success: async (res) => {
-        const selected = families[res.tapIndex];
-        if (selected.id === this._familyId) return;
-
-        // 统一切换 active family context + 可靠持久化服务端偏好
-        await switchActiveFamily({
-          family_id: selected.id,
-          ledger_id: selected.ledger_id,
-          family_kind: selected.kind,
-          ledger_name: selected.ledger_name || selected.name,
-        }, 'family-switch');
-
-        this._familyId = selected.id;
-        const currentUserId = this._currentUserId || this._syncCurrentUserIdFromToken();
-        this.setData({
-          familyId: selected.id,
-          familyName: selected.name,
-          familyKind: selected.kind,
-          isOwner: !!currentUserId && selected.owner_id === currentUserId,
-          mode: selected.kind === 'shared' ? 'multi' : 'solo',
-        });
-        this._collapseAllRows();
-
-        // 切换家庭后重新加载
-        await this._loadSummary(selected.id);
-      },
-    });
-  },
+  // ─── 交互：账本切换 ──────────────────────
+  // 账本切换入口由 <ledger-switcher> 组件承载（顶部导航栏锚定下拉气泡）。
+  // 组件内部调 switchActiveFamily 广播 ACTIVE_FAMILY_CHANGED，本页由 _onActiveFamilyChanged 响应重载。
 });
