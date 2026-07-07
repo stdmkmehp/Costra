@@ -113,13 +113,15 @@
 .avatar-row {
   white-space: nowrap;
   width: 100%;
-  margin-bottom: 24rpx;
+  /* 左右外扩 12rpx 抵消下方 inner 的左右内边距，保持头像视觉起点不变；
+     目的是给高亮态（scale + box-shadow 描边环）留出溢出空间，避免首个头像左侧被 scroll-view 裁剪 */
+  margin: 0 -12rpx 24rpx;
 }
 
 .avatar-row__inner {
   display: inline-flex;
   align-items: center;
-  padding: 8rpx 0;
+  padding: 8rpx 12rpx;
 }
 
 .avatar-item {

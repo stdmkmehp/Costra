@@ -486,6 +486,7 @@ export interface SummaryDrillDownResponse {
     created_by: string;
     nickname: string;
     avatar_url: string | null;
+    category_name: string;
   }>;
   total_count: number;
   has_more: boolean;

@@ -185,6 +185,9 @@ describe('COSTRA-302: Summary Drill-Down API', () => {
     expect(body.items[1].amount).toBe(3000);
     expect(body.items[0].shared_type).toBe('shared');
     expect(body.items[0].nickname).toBeTruthy();
+    // category_name = entry 所属二级/叶子分类名（供协作页明细备注区回退展示）
+    expect(body.items[0].category_name).toBe('外卖'); // amount=5000 挂在二级分类 l2Id
+    expect(body.items[1].category_name).toBe('餐饮'); // amount=3000 直接挂在一级分类 l1Id
   });
 
   // T-302-A6: 个人下钻 · 基本流程

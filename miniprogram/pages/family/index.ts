@@ -150,7 +150,7 @@ interface EntryRow {
 }
 
 /** 三级下钻可见条数上限（与统计页 L3 一致 · limit=VISIBLE+1 探测溢出） */
-const L1_ENTRIES_VISIBLE = 10;
+const L1_ENTRIES_VISIBLE = 5;
 
 /** 下钻行（替代旧 DetailRow · spec §4.3） */
 interface DrilldownRow {
@@ -1289,7 +1289,8 @@ Page({
       const entries: EntryRow[] = visibleItems.map((it: FamilyEntryDetailItem) => ({
         entry_id: it.entry_id,
         amount: formatCentsDisplay(it.amount),
-        note: it.note || '',
+        // 协作页从一级分类下钻，明细缺二级分类层：有备注优先显示备注，否则回退显示所属二级分类名
+        note: it.note || it.category_name || '',
         dateLabel: formatEntryDate(it.occurred_at),
         timeLabel: formatEntryTime(it.occurred_at),
         shared: it.shared_type === 'shared',

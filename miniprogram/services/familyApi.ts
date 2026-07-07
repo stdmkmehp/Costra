@@ -487,6 +487,8 @@ export interface FamilyEntryDetailItem {
   created_by: string;
   nickname: string;
   avatar_url: string | null;
+  /** entry 所属二级（叶子）分类名；协作页明细备注区在无备注时回退展示 */
+  category_name: string;
 }
 
 /** GET /v1/families/{familyId}/summary/drill-down 响应 */

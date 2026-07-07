@@ -607,6 +607,11 @@ export interface SummaryEntryDetailRow {
   created_by: string;
   nickname: string;
   avatar_url: string | null;
+  /**
+   * entry 所属分类名（即二级/叶子分类名）。
+   * 协作页从一级分类下钻，中间缺二级分类层，前端在明细备注区回退展示此名以补齐语义。
+   */
+  category_name: string;
 }
 
 /** 下钻查询结果 */
@@ -710,9 +715,11 @@ export async function listEntriesByL1Category(
        e.shared_type AS shared_type,
        e.created_by AS created_by,
        u.nickname AS nickname,
-       u.avatar_url AS avatar_url
+       u.avatar_url AS avatar_url,
+       c.name AS category_name
      FROM entries e
      JOIN users u ON u.id = e.created_by
+     LEFT JOIN categories c ON c.id = e.category_id
      WHERE ${whereClause}
      ORDER BY e.amount DESC, e.occurred_at DESC
      LIMIT $${limitIdx}`,
@@ -730,6 +737,7 @@ export async function listEntriesByL1Category(
     created_by: String(r.created_by),
     nickname: String(r.nickname ?? ''),
     avatar_url: r.avatar_url != null ? String(r.avatar_url) : null,
+    category_name: r.category_name != null ? String(r.category_name) : '未分类',
   }));
 
   return { items, totalCount, l1Amount };

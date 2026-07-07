@@ -1415,7 +1415,7 @@ components:
 
     SummaryDrillDownEntryItem:
       type: object
-      required: [entry_id, amount, occurred_at, created_by, nickname]
+      required: [entry_id, amount, occurred_at, created_by, nickname, category_name]
       description: 'COSTRA-302: summary drill-down 流水明细项'
       properties:
         entry_id: { type: string, format: uuid }
@@ -1426,6 +1426,7 @@ components:
         created_by: { type: string, format: uuid }
         nickname: { type: string }
         avatar_url: { type: string, nullable: true }
+        category_name: { type: string, description: 'entry 所属二级（叶子）分类名；前端在备注区回退展示' }
 
     SummaryDrillDownResponse:
       type: object
