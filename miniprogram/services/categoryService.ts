@@ -197,22 +197,21 @@ const CONFIG_INCOME = [
 ];
 
 // 转移分类（migration 0004 新增 · type='transfer' · 不计入收支统计）
-// 全部 display_order=null（不进全局二级展示区，仅在记账面板「转移」tab 内按树展示）
 const CONFIG_TRANSFER = [
   { name: '储值', icon: 'stored_value', color: 'color.category.transfer', order: 1, children: [
     { name: '储值', icon: 'stored_value', order: 1, def: true, pd: true, dsp: null },
-    { name: '公交卡储值', icon: 'transit_card', order: 2, def: true, pd: false, dsp: null },
-    { name: '饭卡储值', icon: 'meal_card', order: 3, def: true, pd: false, dsp: null }
+    { name: '公交卡储值', icon: 'transit_card', order: 2, def: true, pd: false, dsp: 1 },
+    { name: '饭卡储值', icon: 'meal_card', order: 3, def: true, pd: false, dsp: 2 }
   ]},
   { name: '账户互转', icon: 'account_transfer', color: 'color.category.transfer', order: 2, children: [
     { name: '账户互转', icon: 'account_transfer', order: 1, def: true, pd: true, dsp: null }
   ]},
   { name: '赊销', icon: 'credit', color: 'color.category.transfer', order: 3, children: [
     { name: '赊销', icon: 'credit', order: 1, def: true, pd: true, dsp: null },
-    { name: '花呗', icon: 'huabei', order: 2, def: true, pd: false, dsp: null },
-    { name: '白条', icon: 'baitiao', order: 3, def: true, pd: false, dsp: null },
-    { name: '月付', icon: 'monthly_pay', order: 4, def: true, pd: false, dsp: null },
-    { name: '信用卡', icon: 'credit_card', order: 5, def: true, pd: false, dsp: null }
+    { name: '花呗', icon: 'huabei', order: 2, def: true, pd: false, dsp: 3 },
+    { name: '白条', icon: 'baitiao', order: 3, def: true, pd: false, dsp: 4 },
+    { name: '月付', icon: 'monthly_pay', order: 4, def: true, pd: false, dsp: 5 },
+    { name: '信用卡', icon: 'credit_card', order: 5, def: true, pd: false, dsp: 6 }
   ]}
 ];
 

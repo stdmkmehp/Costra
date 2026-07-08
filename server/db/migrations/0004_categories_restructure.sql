@@ -84,8 +84,8 @@ DO UPDATE SET
 INSERT INTO categories (family_id, name, type, icon, color, sort_order, is_system, parent_id, is_direct_default, is_parent_default, display_order)
 VALUES
   (NULL, '储值',       'transfer', '储', 'color.category.transfer', 1, true, (SELECT id FROM categories WHERE name='储值'     AND type='transfer' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true, true,  NULL),
-  (NULL, '公交卡储值', 'transfer', '储', 'color.category.transfer', 2, true, (SELECT id FROM categories WHERE name='储值'     AND type='transfer' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true, false, NULL),
-  (NULL, '饭卡储值',   'transfer', '储', 'color.category.transfer', 3, true, (SELECT id FROM categories WHERE name='储值'     AND type='transfer' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true, false, NULL)
+  (NULL, '公交卡储值', 'transfer', '储', 'color.category.transfer', 2, true, (SELECT id FROM categories WHERE name='储值'     AND type='transfer' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true, false, 1),
+  (NULL, '饭卡储值',   'transfer', '储', 'color.category.transfer', 3, true, (SELECT id FROM categories WHERE name='储值'     AND type='transfer' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true, false, 2)
 ON CONFLICT (
   COALESCE(family_id, '00000000-0000-0000-0000-000000000000'),
   name, type,
@@ -116,10 +116,10 @@ DO UPDATE SET
 INSERT INTO categories (family_id, name, type, icon, color, sort_order, is_system, parent_id, is_direct_default, is_parent_default, display_order)
 VALUES
   (NULL, '赊销',     'transfer', '销', 'color.category.transfer', 1, true, (SELECT id FROM categories WHERE name='赊销' AND type='transfer' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true, true,  NULL),
-  (NULL, '花呗',     'transfer', '销', 'color.category.transfer', 2, true, (SELECT id FROM categories WHERE name='赊销' AND type='transfer' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true, false, NULL),
-  (NULL, '白条',     'transfer', '销', 'color.category.transfer', 3, true, (SELECT id FROM categories WHERE name='赊销' AND type='transfer' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true, false, NULL),
-  (NULL, '月付',     'transfer', '销', 'color.category.transfer', 4, true, (SELECT id FROM categories WHERE name='赊销' AND type='transfer' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true, false, NULL),
-  (NULL, '信用卡',   'transfer', '销', 'color.category.transfer', 5, true, (SELECT id FROM categories WHERE name='赊销' AND type='transfer' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true, false, NULL)
+  (NULL, '花呗',     'transfer', '销', 'color.category.transfer', 2, true, (SELECT id FROM categories WHERE name='赊销' AND type='transfer' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true, false, 3),
+  (NULL, '白条',     'transfer', '销', 'color.category.transfer', 3, true, (SELECT id FROM categories WHERE name='赊销' AND type='transfer' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true, false, 4),
+  (NULL, '月付',     'transfer', '销', 'color.category.transfer', 4, true, (SELECT id FROM categories WHERE name='赊销' AND type='transfer' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true, false, 5),
+  (NULL, '信用卡',   'transfer', '销', 'color.category.transfer', 5, true, (SELECT id FROM categories WHERE name='赊销' AND type='transfer' AND parent_id IS NULL AND family_id IS NULL LIMIT 1), true, false, 6)
 ON CONFLICT (
   COALESCE(family_id, '00000000-0000-0000-0000-000000000000'),
   name, type,

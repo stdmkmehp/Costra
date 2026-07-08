@@ -50,8 +50,8 @@
       <!-- 时间导航区（COSTRA-302 年度可用化 · 参照统计页双 picker 写法） -->
       <view class="time-nav" wx:if="{{contentReady && !loading}}">
         <view class="time-nav__left">
-          <view class="time-nav__arrow" bind:tap="onPrevTime">
-            <text class="time-nav__arrow-icon">‹</text>
+          <view class="time-nav__arrow month-switcher__arrow month-switcher__arrow--prev" hover-class="month-switcher__arrow--pressed" hover-stay-time="80" bind:tap="onPrevTime">
+            <text class="time-nav__arrow-icon month-switcher__arrow-icon">‹</text>
           </view>
 
           <picker
@@ -61,7 +61,7 @@
             value="{{currentMonth}}"
             bindchange="onMonthChange"
           >
-            <view class="time-nav__month">
+            <view class="time-nav__month month-switcher__value" hover-class="month-switcher__value--pressed" hover-stay-time="80">
               <text>{{monthDisplay}}</text>
               <text class="time-nav__dropdown">▼</text>
             </view>
@@ -74,14 +74,14 @@
             value="{{currentYear}}-01-01"
             bindchange="onYearChange"
           >
-            <view class="time-nav__month">
+            <view class="time-nav__month month-switcher__value" hover-class="month-switcher__value--pressed" hover-stay-time="80">
               <text>{{yearDisplay}}</text>
               <text class="time-nav__dropdown">▼</text>
             </view>
           </picker>
 
-          <view class="time-nav__arrow" bind:tap="onNextTime">
-            <text class="time-nav__arrow-icon">›</text>
+          <view class="time-nav__arrow month-switcher__arrow month-switcher__arrow--next" hover-class="month-switcher__arrow--pressed" hover-stay-time="80" bind:tap="onNextTime">
+            <text class="time-nav__arrow-icon month-switcher__arrow-icon">›</text>
           </view>
         </view>
         <!-- 月度/年度切换 -->

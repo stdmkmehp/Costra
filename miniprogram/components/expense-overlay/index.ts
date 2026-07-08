@@ -138,16 +138,16 @@ Component({
     categorySwiperDuration: 240,
 
     // ─── 分类网格（COSTRA-219: 动态从 API 加载，初始为空）───
-    // ─── COSTRA-228: 同时持有 expense / income 两套，让两个 swiper-item 各自渲染，
-    //     手势横滑过程中两个 pane 始终有内容（避免空白闪过）。
+    // ─── COSTRA-228: 同时持有 expense / income / transfer 三套，让三个 swiper-item 各自渲染，
+    //     手势横滑过程中各 pane 始终有内容（避免空白闪过）。
     //     `tier1Categories` / `dedupedSubCategories` 仍代表"当前 entryType"对应的快照，
     //     供内部 onTapTier1 / onTapSubCategory 等回调读取，不影响渲染。
     expenseTier1Categories: [] as readonly CategoryTier1[],
     incomeTier1Categories: [] as readonly CategoryTier1[],
-    /** migration 0004: 转移类目树（仅按树展示，无去重展示区） */
     transferTier1Categories: [] as readonly CategoryTier1[],
     expenseDedupedSubCategories: [] as readonly CategoryTier2[],
     incomeDedupedSubCategories: [] as readonly CategoryTier2[],
+    transferDedupedSubCategories: [] as readonly CategoryTier2[],
     tier1Categories: [] as readonly CategoryTier1[],
     dedupedSubCategories: [] as readonly CategoryTier2[],
     /** 展开的一级分类 id（null = 无展开） */
@@ -302,7 +302,7 @@ Component({
       // —— 阶段 2：同步加载分类（内存缓存 → fallback，永不查 storage 永不调 API）——
       const categoryData: CategoryData = familyId
         ? loadCategoriesSync(familyId)
-        : { expense: [], income: [], transfer: [], expenseDedupedSubs: [], incomeDedupedSubs: [], dedupMapping: {}, signature: '' };
+        : { expense: [], income: [], transfer: [], expenseDedupedSubs: [], incomeDedupedSubs: [], transferDedupedSubs: [], dedupMapping: {}, signature: '' };
 
       // 存储分类数据到实例属性（供收支切换使用）
       (this as unknown as Record<string, unknown>)._categoryData = categoryData;
@@ -334,12 +334,13 @@ Component({
         entryType: 'expense',
         entryTypeIndex: 0,
         categorySwiperDuration: 0,
-        // COSTRA-228: 双 pane 数据
+        // COSTRA-228: 三 pane 数据
         expenseTier1Categories: categoryData.expense,
         incomeTier1Categories: categoryData.income,
         transferTier1Categories: categoryData.transfer,
         expenseDedupedSubCategories: categoryData.expenseDedupedSubs,
         incomeDedupedSubCategories: categoryData.incomeDedupedSubs,
+        transferDedupedSubCategories: categoryData.transferDedupedSubs,
         tier1Categories: categoryData.expense,
         dedupedSubCategories: categoryData.expenseDedupedSubs,
         expandedTier1Id: null,
@@ -441,7 +442,7 @@ Component({
       // 更新实例属性（供收支切换使用）
       (this as unknown as Record<string, unknown>)._categoryData = next;
 
-      // 仅刷新与当前 entryType 对应的分类列表（migration 0004：transfer 单独处理）
+      // 仅刷新与当前 entryType 对应的分类列表
       const tier1Categories = this.data.entryType === 'expense'
         ? next.expense
         : this.data.entryType === 'income'
@@ -451,7 +452,7 @@ Component({
         ? next.expenseDedupedSubs
         : this.data.entryType === 'income'
           ? next.incomeDedupedSubs
-          : [];
+          : next.transferDedupedSubs;
 
       // COSTRA-228: 三套 pane 数据同时刷新（手势期间各 pane 也要保持最新）
       this.setData({
@@ -460,6 +461,7 @@ Component({
         transferTier1Categories: next.transfer,
         expenseDedupedSubCategories: next.expenseDedupedSubs,
         incomeDedupedSubCategories: next.incomeDedupedSubs,
+        transferDedupedSubCategories: next.transferDedupedSubs,
         tier1Categories,
         dedupedSubCategories,
       });
@@ -516,7 +518,7 @@ Component({
       // —— 阶段 2：同步加载分类（内存缓存 → fallback）——
       const categoryData: CategoryData = activeFamilyId
         ? loadCategoriesSync(activeFamilyId)
-        : { expense: [], income: [], transfer: [], expenseDedupedSubs: [], incomeDedupedSubs: [], dedupMapping: {}, signature: '' };
+        : { expense: [], income: [], transfer: [], expenseDedupedSubs: [], incomeDedupedSubs: [], transferDedupedSubs: [], dedupMapping: {}, signature: '' };
 
       (this as unknown as Record<string, unknown>)._categoryData = categoryData;
 
@@ -534,7 +536,7 @@ Component({
         ? categoryData.expenseDedupedSubs
         : entryType === 'income'
           ? categoryData.incomeDedupedSubs
-          : [];
+          : categoryData.transferDedupedSubs;
 
       // 查找分类预填
       let selectedTier1Id = '';
@@ -596,12 +598,13 @@ Component({
         entryType,
         entryTypeIndex: entryType === 'transfer' ? 2 : entryType === 'income' ? 1 : 0,
         categorySwiperDuration: 0,
-        // COSTRA-228: 双 pane 数据（编辑模式下分类区被 keypadOnly 隐藏，但保持数据完整以备后续退化）
+        // COSTRA-228: 三 pane 数据（编辑模式下分类区被 keypadOnly 隐藏，但保持数据完整以备后续退化）
         expenseTier1Categories: categoryData.expense,
         incomeTier1Categories: categoryData.income,
         transferTier1Categories: categoryData.transfer,
         expenseDedupedSubCategories: categoryData.expenseDedupedSubs,
         incomeDedupedSubCategories: categoryData.incomeDedupedSubs,
+        transferDedupedSubCategories: categoryData.transferDedupedSubs,
         tier1Categories,
         dedupedSubCategories,
         expandedTier1Id: null,
@@ -889,12 +892,11 @@ Component({
         : type === 'income'
           ? (categoryData?.income || [])
           : (categoryData?.transfer || []);
-      // 转移类目无去重展示区（display_order 全为 NULL，仅按树展示）
       const dedupedSubCategories = type === 'expense'
         ? (categoryData?.expenseDedupedSubs || [])
         : type === 'income'
           ? (categoryData?.incomeDedupedSubs || [])
-          : [];
+          : (categoryData?.transferDedupedSubs || []);
 
       // 收入/转移时隐藏费用性质开关（仅 expense + 多人家庭显示）
       const showSharedToggle = type === 'expense' && this.data.isMultiMemberLedger;

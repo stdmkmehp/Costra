@@ -191,7 +191,7 @@
         </scroll-view>
       </swiper-item>
 
-      <!-- 转移 pane（migration 0004 · 仅按树展示，无去重展示区） -->
+      <!-- 转移 pane（一级/二级展示规则与支出、收入一致） -->
       <swiper-item>
         <scroll-view
           id="cat-scroll-transfer"
@@ -218,7 +218,6 @@
 
           <view class="category-divider"></view>
 
-          <!-- 展开的子分类（仅当前 pane 显示展开态） -->
           <view
             class="category-section category-section--tier2"
             wx:if="{{entryType === 'transfer' && expandedChildren.length > 0}}"
@@ -234,15 +233,30 @@
               <view class="category-item__icon">{{item.icon}}</view>
               <text class="category-item__name">{{item.name}}</text>
             </view>
+            <view class="category-transfer-hint">
+              <text class="category-transfer-hint__text">转移记录不会计入收支统计</text>
+            </view>
           </view>
 
-          <!-- 转移提示：转移流水不计入收支统计 -->
           <view
-            wx:if="{{entryType === 'transfer' && !expandedTier1Id}}"
-            class="transfer-hint"
-            style="display:flex;justify-content:center;padding:24rpx 32rpx 16rpx;"
+            class="category-section category-section--tier2"
+            wx:if="{{entryType !== 'transfer' || !expandedTier1Id}}"
           >
-            <text style="font-size:24rpx;color:var(--color-text-placeholder, #999);">转移记录不会计入收支统计</text>
+            <view
+              wx:for="{{transferDedupedSubCategories}}"
+              wx:key="id"
+              id="{{entryType === 'transfer' ? 'cat-sub-' + item.id : 'cat-sub-transfer-' + item.id}}"
+              class="category-item {{entryType === 'transfer' && selectedTier2Id === item.id ? 'is-selected' : ''}}"
+              data-id="{{item.id}}"
+              data-name="{{item.name}}"
+              bindtap="onTapSubCategory"
+            >
+              <view class="category-item__icon">{{item.icon}}</view>
+              <text class="category-item__name">{{item.name}}</text>
+            </view>
+            <view class="category-transfer-hint">
+              <text class="category-transfer-hint__text">转移记录不会计入收支统计</text>
+            </view>
           </view>
 
           <view class="category-bottom-spacer" style="height: {{safeAreaBottom || 20}}px;"></view>

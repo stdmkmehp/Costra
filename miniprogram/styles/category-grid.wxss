@@ -124,6 +124,19 @@
   transition: color 150ms cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
+.category-transfer-hint {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: center;
+  padding: 12rpx 32rpx 0;
+}
+
+.category-transfer-hint__text {
+  font-size: 24rpx;
+  color: var(--color-text-placeholder, #999);
+  line-height: 1.4;
+}
+
 /* ─── 底部安全区占位 ─── */
 
 .category-bottom-spacer {

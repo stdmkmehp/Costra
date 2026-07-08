@@ -541,8 +541,8 @@ income:
 # ═══════════════════════════════════════════════════════════════════════════════
 # 转移分类（transfer · 不计入收支统计）
 # ═══════════════════════════════════════════════════════════════════════════════
-# 一级 display_order 永远 NULL；二级 display_order 也均为 NULL（不进全局展示区，
-# 仅在记账面板「转移」tab 内按树展示）
+# 一级 display_order 永远 NULL；二级 display_order 规则与支出/收入一致：
+# 父默认子不进全局展示区，非父默认二级按 display_order 进入默认二级展示区。
 
 transfer:
   - name: 储值
@@ -559,12 +559,12 @@ transfer:
         sort_order: 2
         is_direct_default: true
         is_parent_default: false
-        display_order: null
+        display_order: 1
       - name: 饭卡储值
         sort_order: 3
         is_direct_default: true
         is_parent_default: false
-        display_order: null
+        display_order: 2
 
   - name: 账户互转
     icon: account_transfer
@@ -591,22 +591,22 @@ transfer:
         sort_order: 2
         is_direct_default: true
         is_parent_default: false
-        display_order: null
+        display_order: 3
       - name: 白条
         sort_order: 3
         is_direct_default: true
         is_parent_default: false
-        display_order: null
+        display_order: 4
       - name: 月付
         sort_order: 4
         is_direct_default: true
         is_parent_default: false
-        display_order: null
+        display_order: 5
       - name: 信用卡
         sort_order: 5
         is_direct_default: true
         is_parent_default: false
-        display_order: null
+        display_order: 6
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 统计摘要
@@ -615,3 +615,4 @@ transfer:
 # 二级分类: 88 条（支出 66 + 收入 14 + 转移 8）
 # 总计: 102 条
 # 支出二级 display_order 重排：1~52 见 docs/design/categories-restructure-spec.md §3 Step E
+# 转移二级 display_order：1~6（父默认子不展示）

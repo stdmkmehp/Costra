@@ -188,7 +188,8 @@ T0 (categories.yaml 权威源)  ← 一切的前置
 - **改动文件**：`miniprogram/components/expense-overlay/{index.ts,index.wxml,index.wxss,categories.ts}`
 - **实现要点**：
   - 类型 tab：支出/收入 → 支出/收入/**转移**
-  - 转移 tab **仅按树展示**（储值/账户互转/赊销 + 子级），不复用全局二级展示区
+  - 转移 tab 的一级/二级分类展示规则与支出/收入一致：默认展示按 `display_order` 排序的二级分类，点一级后展开该一级子分类
+  - 转移 tab 的唯一 UI 特例：在二级分类末尾显示“转移记录不会计入收支统计”
   - 选中转移类目提交 `type='transfer'`；不发 `shared_type`
   - 校验现有"记入账本/计算器"流程在 transfer 下正常
 - **验收**：转移 tab 可选类目并成功记一笔 transfer；支出/收入 tab 行为不回归。

@@ -120,6 +120,75 @@ page {
   font-feature-settings: "tnum";
 }
 
+/* ---- 月份/时间切换按钮 · 明细页 / 统计页 / 协作页共用 ---- */
+.month-switcher__arrow.filter-row__arrow,
+.month-switcher__arrow.time-nav__arrow {
+  position: relative;
+  width: 68rpx;
+  min-width: 68rpx;
+  height: 68rpx;
+  box-sizing: border-box;
+  border-radius: var(--radius-pill, 9999rpx);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1rpx solid transparent;
+  transition: transform 120ms var(--easing-default);
+}
+
+.month-switcher__arrow.filter-row__arrow::before,
+.month-switcher__arrow.time-nav__arrow::before {
+  content: '';
+  position: absolute;
+  inset: 6rpx;
+  border-radius: var(--radius-pill, 9999rpx);
+  background: transparent;
+  transition: background-color 160ms var(--easing-default);
+}
+
+.month-switcher__arrow--prev {
+  margin-right: 2rpx;
+}
+
+.month-switcher__arrow--next {
+  margin-left: 2rpx;
+}
+
+.month-switcher__arrow.month-switcher__arrow--pressed {
+  transform: scale(0.96);
+}
+
+.month-switcher__arrow.month-switcher__arrow--pressed::before {
+  background: rgba(28,27,26,0.05);
+}
+
+.month-switcher__arrow-icon.filter-row__arrow-icon,
+.month-switcher__arrow-icon.time-nav__arrow-text,
+.month-switcher__arrow-icon.time-nav__arrow-icon {
+  position: relative;
+  z-index: 1;
+  font-size: 42rpx;
+  line-height: 1;
+  font-weight: 650;
+  color: rgba(28,27,26,0.56);
+  transform: translateY(-1rpx);
+}
+
+.month-switcher__value.filter-row__month,
+.month-switcher__value.time-nav__picker-inner,
+.month-switcher__value.time-nav__month {
+  min-height: 68rpx;
+  padding: 0 18rpx;
+  box-sizing: border-box;
+  border-radius: var(--radius-pill, 9999rpx);
+  transition: background-color 160ms var(--easing-default);
+}
+
+.month-switcher__value.month-switcher__value--pressed {
+  background: rgba(28,27,26,0.04);
+}
+
 /* ---- 排版原子类 ---- */
 .text-display {
   font-size: 112rpx;

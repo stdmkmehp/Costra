@@ -304,7 +304,8 @@ entry **创建/更新**时校验 `category_id`。若不存在 → **不报错、
 
 ### 6.2 `components/expense-overlay`
 - 类型 tab 由「支出/收入」扩为「支出/收入/转移」
-- 「转移」tab 内**仅按树展示**（储值 / 账户互转 / 赊销 + 各自子级），不复用全局二级展示区
+- 「转移」tab 的一级/二级分类展示规则与「支出/收入」保持一致：默认展示按 `display_order` 排序的二级分类，点一级后展开该一级子分类
+- 「转移」tab 的唯一 UI 特例：在二级分类末尾显示“转移记录不会计入收支统计”
 - 提交 entry 时 `type='transfer'`；转移类不参与 shared_type（仅 expense 有 shared_type）
 
 ### 6.3 `services/sync.ts`

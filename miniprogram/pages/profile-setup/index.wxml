@@ -1,11 +1,5 @@
 <!-- pages/profile-setup/index.wxml · 完善资料页 -->
 <view class="profile-setup">
-  <!-- 自定义导航栏 -->
-  <view class="page-nav" style="padding-top: {{statusBarHeight}}px; height: {{navBarHeight}}px;">
-    <view class="page-nav__back" bindtap="onTapBack">‹</view>
-    <text class="page-nav__title">完善资料</text>
-  </view>
-
   <view class="setup-body">
 
     <!-- 头像选择：button 内联块居中 -->

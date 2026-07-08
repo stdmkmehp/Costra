@@ -21,17 +21,17 @@
   <!-- ─── 时间导航 + 筛选行（支出/收入下方、流水上方） ───────────────────────── -->
   <view class="filter-row">
     <view class="filter-row__left">
-      <view class="filter-row__arrow" bindtap="onPrevMonth">
-        <text class="filter-row__arrow-icon">‹</text>
+      <view class="filter-row__arrow month-switcher__arrow month-switcher__arrow--prev" hover-class="month-switcher__arrow--pressed" hover-stay-time="80" bindtap="onPrevMonth">
+        <text class="filter-row__arrow-icon month-switcher__arrow-icon">‹</text>
       </view>
       <picker mode="date" fields="month" value="{{currentMonth}}" bindchange="onMonthChange">
-        <view class="filter-row__month">
+        <view class="filter-row__month month-switcher__value" hover-class="month-switcher__value--pressed" hover-stay-time="80">
           <text class="filter-row__month-text">{{monthDisplay}}</text>
           <text class="filter-row__dropdown">▼</text>
         </view>
       </picker>
-      <view class="filter-row__arrow" bindtap="onNextMonth">
-        <text class="filter-row__arrow-icon">›</text>
+      <view class="filter-row__arrow month-switcher__arrow month-switcher__arrow--next" hover-class="month-switcher__arrow--pressed" hover-stay-time="80" bindtap="onNextMonth">
+        <text class="filter-row__arrow-icon month-switcher__arrow-icon">›</text>
       </view>
     </view>
     <!-- 成员筛选（仅多人账本显示） -->
@@ -340,7 +340,7 @@
           </scroll-view>
         </swiper-item>
 
-        <!-- 转移 pane（migration 0004 · 仅按树展示，无去重展示区） -->
+        <!-- 转移 pane（一级/二级展示规则与支出、收入一致） -->
         <swiper-item>
           <scroll-view
             class="edit-category-scroll"
@@ -361,7 +361,8 @@
               </view>
             </view>
             <view class="category-divider"></view>
-            <view class="category-section category-section--tier2"
+            <view
+              class="category-section category-section--tier2"
               wx:if="{{editCategoryType === 'transfer' && editExpandedChildren.length > 0}}"
             >
               <view
@@ -374,14 +375,29 @@
                 <view class="category-item__icon">{{item.icon}}</view>
                 <text class="category-item__name">{{item.name}}</text>
               </view>
+              <view class="category-transfer-hint">
+                <text class="category-transfer-hint__text">转移记录不会计入收支统计</text>
+              </view>
             </view>
 
-            <!-- 转移提示：转移流水不计入收支统计 -->
             <view
-              wx:if="{{editCategoryType === 'transfer' && !editExpandedTier1Id}}"
-              style="display:flex;justify-content:center;padding:24rpx 32rpx 16rpx;"
+              class="category-section category-section--tier2"
+              wx:if="{{editCategoryType !== 'transfer' || !editExpandedTier1Id}}"
             >
-              <text style="font-size:24rpx;color:var(--color-text-placeholder, #999);">转移记录不会计入收支统计</text>
+              <view
+                wx:for="{{editTransferDedupedSubCategories}}"
+                wx:key="id"
+                class="category-item {{editCategoryType === 'transfer' && editSelectedTier2Id === item.id ? 'is-selected' : ''}}"
+                data-id="{{item.id}}"
+                data-name="{{item.name}}"
+                bindtap="onEditTapSubCategory"
+              >
+                <view class="category-item__icon">{{item.icon}}</view>
+                <text class="category-item__name">{{item.name}}</text>
+              </view>
+              <view class="category-transfer-hint">
+                <text class="category-transfer-hint__text">转移记录不会计入收支统计</text>
+              </view>
             </view>
 
             <view style="height: 40rpx;"></view>

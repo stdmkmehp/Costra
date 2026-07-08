@@ -284,6 +284,7 @@ Page({
     editTransferTier1Categories: [] as { id: string; icon: string; name: string; children: { id: string; name: string; icon: string }[] }[],
     editExpenseDedupedSubCategories: [] as { id: string; name: string; icon: string }[],
     editIncomeDedupedSubCategories: [] as { id: string; name: string; icon: string }[],
+    editTransferDedupedSubCategories: [] as { id: string; name: string; icon: string }[],
 
     // ─── 列表滚动位置（COSTRA-220: 月份切换后滚动到顶部） ───
     listScrollTop: 0,
@@ -1798,7 +1799,7 @@ Page({
       ? categoryData.expenseDedupedSubs
       : entryType === 'income'
         ? categoryData.incomeDedupedSubs
-        : [];
+        : categoryData.transferDedupedSubs;
 
     // 找到当前选中的分类
     let selectedTier1Id = '';
@@ -1829,6 +1830,7 @@ Page({
       editTransferTier1Categories: categoryData.transfer,
       editExpenseDedupedSubCategories: categoryData.expenseDedupedSubs,
       editIncomeDedupedSubCategories: categoryData.incomeDedupedSubs,
+      editTransferDedupedSubCategories: categoryData.transferDedupedSubs,
       editTier1Categories: tier1,
       editDedupedSubCategories: deduped,
       editExpandedTier1Id: null,
@@ -1876,7 +1878,7 @@ Page({
       ? next.expenseDedupedSubs
       : editType === 'income'
         ? next.incomeDedupedSubs
-        : [];
+        : next.transferDedupedSubs;
 
     // COSTRA-228: 三 pane 数据同时刷新
     this.setData({
@@ -1885,6 +1887,7 @@ Page({
       editTransferTier1Categories: next.transfer,
       editExpenseDedupedSubCategories: next.expenseDedupedSubs,
       editIncomeDedupedSubCategories: next.incomeDedupedSubs,
+      editTransferDedupedSubCategories: next.transferDedupedSubs,
       editTier1Categories: tier1,
       editDedupedSubCategories: deduped,
     });
@@ -2058,6 +2061,7 @@ Page({
       transfer: { id: string; icon: string; name: string; children: { id: string; name: string; icon: string }[] }[];
       expenseDedupedSubs: { id: string; name: string; icon: string }[];
       incomeDedupedSubs: { id: string; name: string; icon: string }[];
+      transferDedupedSubs: { id: string; name: string; icon: string }[];
     } | undefined;
     if (!catData) return;
 
@@ -2070,7 +2074,7 @@ Page({
       ? catData.expenseDedupedSubs
       : type === 'income'
         ? catData.incomeDedupedSubs
-        : [];
+        : catData.transferDedupedSubs;
 
     this.setData({
       editCategoryType: type,

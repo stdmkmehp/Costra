@@ -54,21 +54,6 @@ page {
   align-items: center;
 }
 
-.time-nav__arrow {
-  width: 56rpx;
-  height: 56rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.time-nav__arrow-text {
-  font-size: 36rpx;
-  color: var(--color-role-text-secondary, rgba(28,27,26,0.38));
-  font-weight: 500;
-  line-height: 1;
-}
-
 .time-nav__picker {
   flex: none;
 }
@@ -110,7 +95,7 @@ page {
 }
 
 .dim-switch__btn--active {
-  background: #ffffff;
+  background: rgba(255,255,255,0.72);
   color: var(--color-role-text-primary, #1c1b1a);
   font-weight: 500;
 }

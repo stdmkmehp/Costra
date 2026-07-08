@@ -11,7 +11,6 @@
 import { getToken, updateLocalUserProfile } from '../../services/auth';
 import { request } from '../../services/request';
 import { eventBus, EventNames, type ProfileUpdatedPayload } from '../../services/eventBus';
-import { getSafeAreaMetrics } from '../../utils/safeArea';
 import { getEnv } from '../../services/env';
 import { logger } from '../../utils/logger';
 
@@ -58,17 +57,9 @@ Page({
     avatarUrl: '',       // 当前展示头像（用户选择前显示已有头像或占位）
     nickname: '',        // 昵称 input 绑定值
     submitting: false,
-    statusBarHeight: 0,
-    navBarHeight: 0,
   },
 
   onLoad() {
-    const metrics = getSafeAreaMetrics();
-    this.setData({
-      statusBarHeight: metrics.statusBarHeight,
-      navBarHeight: metrics.navBarHeight,
-    });
-
     // 预填当前已有值（重复进入时不丢失已设定的信息）
     const token = getToken();
     if (token) {
@@ -192,10 +183,6 @@ Page({
     } finally {
       this.setData({ submitting: false });
     }
-  },
-
-  onTapBack() {
-    wx.navigateBack();
   },
 
   /** 隐私授权被拒绝：先退回上一页再弹提示 */

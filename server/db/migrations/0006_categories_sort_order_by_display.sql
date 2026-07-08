@@ -11,7 +11,8 @@
 --   ① 父默认子（is_parent_default=true）置顶
 --   ② 其余按有效 display_order 升序：COALESCE(自身 display_order, 同名 canonical display_order)
 --      —— 同名去重副本（自身 display_order=NULL）借用"带 display_order 的同名那份"的值
---   ③ 既无自身也无同名 canonical 的长尾（含全部 transfer）按原 sort_order 垫底
+--   ③ 既无自身也无同名 canonical 的长尾按原 sort_order 垫底
+--      （历史注：0006 执行时 transfer 均属长尾；0010 起非父默认 transfer 二级已有 display_order）
 --
 -- 作用域：仅系统分类（family_id IS NULL）的二级分类（parent_id IS NOT NULL）。
 --         一级分类、家庭自定义分类不动。

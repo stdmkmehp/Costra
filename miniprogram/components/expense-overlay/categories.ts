@@ -44,13 +44,11 @@ export interface DedupMapping {
 export interface CategoryData {
   expense: CategoryTier1[];
   income: CategoryTier1[];
-  /**
-   * 转移类目树（migration 0004 新增 · 不计入收支统计）。
-   * 转移类目不进入全局二级展示区（display_order=NULL），故无 dedupedSubs。
-   */
+  /** 转移类目树（migration 0004 新增 · 不计入收支统计） */
   transfer: CategoryTier1[];
   expenseDedupedSubs: CategoryTier2[];
   incomeDedupedSubs: CategoryTier2[];
+  transferDedupedSubs: CategoryTier2[];
   dedupMapping: DedupMapping;
   /** 数据签名（基于 items 的 UI 相关字段），用于增量刷新比对 */
   signature: string;
@@ -63,12 +61,14 @@ function buildCategoryData(items: CategoryItem[]): CategoryData {
   const dedupMapping = buildDedupMapping(items);
   const expenseDedupedSubs = buildDedupedSubCategories(items, 'expense');
   const incomeDedupedSubs = buildDedupedSubCategories(items, 'income');
+  const transferDedupedSubs = buildDedupedSubCategories(items, 'transfer');
   return {
     expense: tree.expense,
     income: tree.income,
     transfer: tree.transfer,
     expenseDedupedSubs,
     incomeDedupedSubs,
+    transferDedupedSubs,
     dedupMapping,
     signature: computeCategoriesSignature(items),
   };

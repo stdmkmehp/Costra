@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildDedupedSubCategories,
   computeCategoriesSignature,
   computeSystemCategoriesSignature,
   type CategoryItem,
@@ -41,5 +42,51 @@ describe('services/categoryService · categories_revision signature', () => {
 
     expect(computeSystemCategoriesSignature([system, custom])).toBe(computeCategoriesSignature([system]));
     expect(computeSystemCategoriesSignature([system, custom])).not.toBe(computeCategoriesSignature([system, custom]));
+  });
+});
+
+describe('services/categoryService · deduped sub categories', () => {
+  it('transfer 二级展示区复用支出/收入规则：过滤父默认子，按 display_order 排序', () => {
+    const parent = category({
+      id: '00000000-0000-4000-8000-000000000301',
+      name: '储值',
+      type: 'transfer',
+      parentId: null,
+      sortOrder: 1,
+    });
+    const parentDefault = category({
+      id: '12000000-0000-4000-8000-000301000001',
+      name: '储值',
+      type: 'transfer',
+      parentId: parent.id,
+      isDirectDefault: true,
+      isParentDefault: true,
+      displayOrder: null,
+      sortOrder: 1,
+    });
+    const transit = category({
+      id: '12000000-0000-4000-8000-000301000002',
+      name: '公交卡储值',
+      type: 'transfer',
+      parentId: parent.id,
+      isDirectDefault: true,
+      isParentDefault: false,
+      displayOrder: 2,
+      sortOrder: 2,
+    });
+    const meal = category({
+      id: '12000000-0000-4000-8000-000301000003',
+      name: '饭卡储值',
+      type: 'transfer',
+      parentId: parent.id,
+      isDirectDefault: true,
+      isParentDefault: false,
+      displayOrder: 1,
+      sortOrder: 3,
+    });
+
+    const result = buildDedupedSubCategories([parent, parentDefault, transit, meal], 'transfer');
+
+    expect(result.map((item) => item.name)).toEqual(['饭卡储值', '公交卡储值']);
   });
 });

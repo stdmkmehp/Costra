@@ -1,5 +1,5 @@
 {
-  "navigationStyle": "custom",
+  "navigationBarTitleText": "完善资料",
   "usingComponents": {
     "privacy-popup": "/components/privacy-popup/index"
   }

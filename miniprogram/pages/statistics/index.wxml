@@ -12,8 +12,8 @@
       <!-- ═══════ 时间维度 + 月/年切换 ═══════ -->
       <view class="time-bar">
         <view class="time-nav">
-          <view class="time-nav__arrow" bind:tap="onPrevTime">
-            <text class="time-nav__arrow-text">‹</text>
+          <view class="time-nav__arrow month-switcher__arrow month-switcher__arrow--prev" hover-class="month-switcher__arrow--pressed" hover-stay-time="80" bind:tap="onPrevTime">
+            <text class="time-nav__arrow-text month-switcher__arrow-icon">‹</text>
           </view>
 
           <picker
@@ -24,7 +24,7 @@
             value="{{currentMonth}}"
             bind:change="onMonthChange"
           >
-            <view class="time-nav__picker-inner">
+            <view class="time-nav__picker-inner month-switcher__value" hover-class="month-switcher__value--pressed" hover-stay-time="80">
               <text class="time-nav__text">{{monthDisplay}}</text>
               <text class="time-nav__caret">▼</text>
             </view>
@@ -38,14 +38,14 @@
             value="{{currentYear}}-01-01"
             bind:change="onYearChange"
           >
-            <view class="time-nav__picker-inner">
+            <view class="time-nav__picker-inner month-switcher__value" hover-class="month-switcher__value--pressed" hover-stay-time="80">
               <text class="time-nav__text">{{yearDisplay}}</text>
               <text class="time-nav__caret">▼</text>
             </view>
           </picker>
 
-          <view class="time-nav__arrow" bind:tap="onNextTime">
-            <text class="time-nav__arrow-text">›</text>
+          <view class="time-nav__arrow month-switcher__arrow month-switcher__arrow--next" hover-class="month-switcher__arrow--pressed" hover-stay-time="80" bind:tap="onNextTime">
+            <text class="time-nav__arrow-text month-switcher__arrow-icon">›</text>
           </view>
         </view>
 

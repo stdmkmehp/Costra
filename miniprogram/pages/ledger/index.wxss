@@ -67,20 +67,6 @@
   align-items: center;
 }
 
-.filter-row__arrow {
-  width: 56rpx;
-  height: 56rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.filter-row__arrow-icon {
-  font-size: 36rpx;
-  color: var(--color-role-text-secondary, rgba(28,27,26,0.38));
-  font-weight: 500;
-}
-
 .filter-row__month {
   display: flex;
   align-items: center;
