@@ -255,7 +255,7 @@
 
     <!-- ═══ 数字键盘面板（键盘出现时作为 shell 最后一个 flex 子项） ═══ -->
     <!-- COSTRA-214: 底部安全区由 JS safeAreaBottom 驱动 -->
-    <view wx:if="{{keypadVisible}}" class="keypad-sheet" style="padding-bottom: {{noteFocused ? 0 : safeAreaBottom}}px; transform: translateY(-{{keyboardHeight}}px);" catchtouchmove="noop">
+    <view wx:if="{{keypadVisible}}" class="keypad-sheet" style="padding-bottom: {{safeAreaBottom}}px; transform: translateY({{keypadOffsetY}}px); transition-duration: {{keypadTransitionMs}}ms;" catchtouchmove="noop">
 
       <!-- 金额显示区 -->
       <view class="keypad-sheet__amount">
@@ -281,7 +281,7 @@
             placeholder="添加备注..."
             focus="{{noteFocused}}"
             bindinput="onNoteInput"
-            bindfocus="onNoteFocus"
+            bindkeyboardheightchange="onKeyboardHeightChange"
             bindconfirm="onNoteConfirm"
             bindblur="onNoteBlur"
             adjust-position="{{false}}"
@@ -299,8 +299,9 @@
         </view>
       </view>
 
-      <!-- 数字键盘 -->
-      <view class="keypad" wx:if="{{!noteFocused}}">
+      <!-- 数字键盘（常驻 DOM：备注输入时不移除，仅被上移的面板带入系统键盘覆盖区并禁用点击，
+           避免用 wx:if 移除导致分类滚动容器高度突变、scroll-top 回弹产生抖动） -->
+      <view class="keypad {{noteFocused ? 'is-covered' : ''}}">
         <!-- 第一行：1 2 3 日期 -->
         <view class="keypad__row">
           <view class="keypad__key" data-key="1" bindtap="onKeypadTap"><text>1</text></view>

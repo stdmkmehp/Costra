@@ -19,6 +19,7 @@
 import { eventBus, EventNames } from '../services/eventBus';
 import { getItem, setItem } from '../services/storage';
 import { getToken, hasValidSession } from '../services/auth';
+import { getSafeAreaMetrics } from '../utils/safeArea';
 
 /** App 实例携带 bootstrap 就绪 Promise（与各 Tab 页 onShow gate 同源） */
 interface AppWithBootstrap { bootstrapPromise: Promise<void> }
@@ -72,12 +73,19 @@ Component({
      * 携带过期值覆盖 hidden 导致 tabbar 消失）——animatable 与 hidden 写入必须解耦。
      */
     animatable: false,
+    /** 底部视觉安全区（px）：系统安全区 + 无安全区设备的最小呼吸空间 */
+    visualSafeAreaBottom: 0,
   },
 
   lifetimes: {
     attached() {
+      this._refreshSafeAreaBottom();
+
       // 初始化实例状态（Component 不支持顶层声明实例属性，挂在 this 上）
       const self = this as unknown as Record<string, unknown>;
+      const resizeHandler = () => { this._refreshSafeAreaBottom(true); };
+      self._windowResizeHandler = resizeHandler;
+      try { wx.onWindowResize(resizeHandler); } catch { /* noop */ }
       self._unlocked = false;
       self._panelOpen = false;
 
@@ -143,10 +151,19 @@ Component({
       if (badgeOnHandler) {
         eventBus.off(EventNames.PROFILE_INCOMPLETE, badgeOnHandler);
       }
+      const resizeHandler = (this as unknown as Record<string, unknown>)._windowResizeHandler as (() => void) | undefined;
+      if (resizeHandler) {
+        try { wx.offWindowResize(resizeHandler); } catch { /* noop */ }
+      }
     },
   },
 
   methods: {
+    _refreshSafeAreaBottom(force = false) {
+      const { visualSafeAreaBottom } = getSafeAreaMetrics({ force });
+      this.setData({ visualSafeAreaBottom });
+    },
+
     /**
      * 尝试显示红点：需同时满足
      *   1. 当前 token 的 has_completed_profile=false

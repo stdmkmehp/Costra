@@ -68,6 +68,12 @@ const SCROLL_ANIM_DURATION_MS = 220;
  */
 const SCROLL_ANIM_FRAME_MS = 16;
 
+/**
+ * 操作行底部与系统键盘顶部的目标间距（px）。
+ * 需求是系统键盘刚好遮盖计算键盘区，因此必须为 0；否则会把计算键盘顶部露出来，表现为面板偏高。
+ */
+const NOTE_RISE_MARGIN_PX = 0;
+
 /** 本地自然日 → YYYY-MM-DD */
 function getLocalDateValue(date = new Date()): string {
   const year = date.getFullYear();
@@ -177,11 +183,18 @@ Component({
     /** 是否正在输入备注（显示系统键盘） */
     noteFocused: false as boolean,
     /**
-     * 系统键盘高度（px · 备注输入时由 input 的 focus 事件回传）。
-     * adjust-position 已关闭（不让微信擅自上推整页顶飞上方分类区），
-     * 改由此值驱动 keypad-sheet 手动上移，精确停靠在键盘正上方。
+     * 备注输入时 keypad-sheet 的 CSS translateY 偏移（px，负数=上移，正数=下移）。
+     * adjust-position 已关闭（不让微信擅自上推整页顶飞上方分类区）。
+     * 数字键盘常驻 DOM（不随 noteFocused 用 wx:if 移除，避免分类滚动容器高度突变导致抖动），
+     * 改由此值把整个面板移动，使系统键盘从操作行下沿开始遮盖数字键盘区。
      */
-    keyboardHeight: 0 as number,
+    keypadOffsetY: 0 as number,
+    /**
+     * keypad-sheet 位移过渡时长（ms）。
+     * 取自 bindkeyboardheightchange 回调的 duration，使面板与系统键盘同时长同步动画；
+     * 拿不到 duration（=0）时置 0 → 瞬间到位（不遮挡、不因赌时长而错位）。
+     */
+    keypadTransitionMs: 0 as number,
 
     // ─── 保存中 ───
     saving: false,
@@ -202,10 +215,28 @@ Component({
       // 根因：各 Tab 页都挂载 <expense-overlay/>，SHOW 是广播导致所有实例 visible=true。
       // 用户在某页点关闭只关当前实例 + emit HIDE，但其他实例不订阅 HIDE 导致残留。
       const hideHandler = () => {
-        this.setData({ visible: false, keypadVisible: false, noteFocused: false, keyboardHeight: 0, saving: false, editMode: false });
+        this._resetNoteKeyboardRuntime();
+        this.setData({ visible: false, keypadVisible: false, noteFocused: false, keypadOffsetY: 0, keypadTransitionMs: 0, saving: false, editMode: false });
       };
-      (this as unknown as Record<string, unknown>)._hideHandler = hideHandler;
+      const self = this as unknown as Record<string, unknown>;
+      self._hideHandler = hideHandler;
       eventBus.on(EventNames.HIDE_EXPENSE_OVERLAY, hideHandler);
+
+      const resizeHandler = () => {
+        const latest = (self._latestNoteKeyboard as { height: number; ms: number } | undefined);
+        this._clearNoteBlurFallback();
+        const session = this._nextNoteKeyboardSession();
+        if (this.data.visible && this.data.keypadVisible && this.data.noteFocused && latest && latest.height > 0) {
+          self._latestNoteKeyboard = { height: latest.height, ms: 0, session };
+          this._measureAndApplyNoteKeyboardOffset(session);
+          return;
+        }
+        if (!this.data.noteFocused && this.data.keypadOffsetY !== 0) {
+          this.setData({ keypadOffsetY: 0, keypadTransitionMs: 0 });
+        }
+      };
+      self._windowResizeHandler = resizeHandler;
+      try { wx.onWindowResize(resizeHandler); } catch { /* noop */ }
     },
 
     detached() {
@@ -214,10 +245,16 @@ Component({
         eventBus.off(EventNames.SHOW_EXPENSE_OVERLAY, showHandler);
       }
       // COSTRA-210 方案 A：取消订阅 HIDE handler
-      const hideHandler = (this as unknown as Record<string, unknown>)._hideHandler as (() => void) | undefined;
+      const self = this as unknown as Record<string, unknown>;
+      const hideHandler = self._hideHandler as (() => void) | undefined;
       if (hideHandler) {
         eventBus.off(EventNames.HIDE_EXPENSE_OVERLAY, hideHandler);
       }
+      const resizeHandler = self._windowResizeHandler as (() => void) | undefined;
+      if (resizeHandler) {
+        try { wx.offWindowResize(resizeHandler); } catch { /* noop */ }
+      }
+      this._resetNoteKeyboardRuntime();
     },
   },
 
@@ -236,6 +273,7 @@ Component({
      * 联网状态下后台刷新若发现新数据会做温和增量刷新。
      */
     async _show() {
+      this._resetNoteKeyboardRuntime();
       // 反首帧闪烁（2026-07-02）：过渡开关只在用户真正打开面板时开启，
       // 且在 visible=true 之前先开（下方 await 天然分帧，保证 --animatable 已绘制）。
       // 关键：切到其他 Tab 页时不会调 _show，那些页的 overlay 实例始终 animatable=false，
@@ -316,6 +354,8 @@ Component({
         recordDate,
         recordDateText: formatRecordDateText(recordDate),
         noteFocused: false,
+        keypadOffsetY: 0,
+        keypadTransitionMs: 0,
         saving: false,
         categoryScrollTop: 1,
       });
@@ -427,7 +467,8 @@ Component({
 
     onClose() {
       const wasEditMode = this.data.editMode;
-      this.setData({ visible: false, keypadVisible: false, editMode: false });
+      this._resetNoteKeyboardRuntime();
+      this.setData({ visible: false, keypadVisible: false, noteFocused: false, keypadOffsetY: 0, keypadTransitionMs: 0, editMode: false });
       eventBus.emit(EventNames.HIDE_EXPENSE_OVERLAY);
       if (wasEditMode) {
         eventBus.emit(EventNames.SHOW_TAB_BAR);
@@ -444,6 +485,7 @@ Component({
      * （编辑模式守护：refreshCategoryDataAsync 内已通过 editMode 检查跳过 setData）。
      */
     async openEditMode(entry: Entry) {
+      this._resetNoteKeyboardRuntime();
       // COSTRA-227: 通知 tabbar 隐藏
       eventBus.emit(EventNames.HIDE_TAB_BAR);
 
@@ -574,6 +616,8 @@ Component({
         recordDate,
         recordDateText: formatRecordDateText(recordDate),
         noteFocused: false,
+        keypadOffsetY: 0,
+        keypadTransitionMs: 0,
         saving: false,
         categoryScrollTop: 1,
       });
@@ -1086,16 +1130,62 @@ Component({
 
     // ─── 备注 ────────────────────────────────────────────────────────────────
 
-    onTapNote() {
-      // COSTRA-212: 先 false 再 nextTick true，确保 input 已存在于 DOM 时才设 focus
-      // 避免 wx:if 场景下 input 被销毁重建导致 focus 不稳定
-      if (this.data.noteFocused) {
-        this.setData({ noteFocused: false }, () => {
-          setTimeout(() => { this.setData({ noteFocused: true }); }, 50);
+    _nextNoteKeyboardSession() {
+      const self = this as unknown as Record<string, unknown>;
+      const next = ((self._noteKeyboardSession as number | undefined) || 0) + 1;
+      self._noteKeyboardSession = next;
+      self._noteRiseAnchor = undefined;
+      self._latestNoteKeyboard = undefined;
+      return next;
+    },
+
+    _getNoteKeyboardSession() {
+      const self = this as unknown as Record<string, unknown>;
+      return (self._noteKeyboardSession as number | undefined) || this._nextNoteKeyboardSession();
+    },
+
+    _resetNoteKeyboardRuntime() {
+      this._clearNoteBlurFallback();
+      this._nextNoteKeyboardSession();
+    },
+
+    _applyNoteKeyboardOffset(tailHeight: number, height: number, ms: number) {
+      // tailHeight 是「操作行下沿到 keypad-sheet 底部」的真实尾部高度，已包含当前
+      // keypad-sheet padding-bottom（底部物理安全区）。TabBar 的 visualSafeAreaBottom 只用于
+      // 页面/TabBar 视觉留白，不能混入键盘避让；这里完全以当前 sheet 实测布局为准。
+      // 当 height < tailHeight 时 delta 为负，keypadOffsetY 为正：整个计算器面板下移，
+      // 让操作行仍停在系统键盘顶部，屏幕底部溢出的数字键盘区由系统键盘/视口裁切遮盖。
+      const delta = height - tailHeight + NOTE_RISE_MARGIN_PX;
+      this.setData({ keypadOffsetY: -delta, keypadTransitionMs: ms });
+    },
+
+    _measureAndApplyNoteKeyboardOffset(session: number) {
+      const self = this as unknown as Record<string, unknown>;
+      wx.createSelectorQuery()
+        .in(this)
+        .select('.keypad-sheet').boundingClientRect()
+        .select('.keypad-sheet__actions').boundingClientRect()
+        .exec((res) => {
+          if ((self._noteKeyboardSession as number | undefined) !== session) return;
+          if (!this.data.visible || !this.data.keypadVisible || !this.data.noteFocused) return;
+          const latest = self._latestNoteKeyboard as { height: number; ms: number; session: number } | undefined;
+          if (!latest || latest.session !== session) return;
+          const rects = res as (WechatMiniprogram.BoundingClientRectCallbackResult | null)[] | null;
+          const sheetRect = rects && rects[0];
+          const actionsRect = rects && rects[1];
+          if (!sheetRect || !actionsRect) return;
+          const tailHeight = sheetRect.bottom - actionsRect.bottom;
+          if (!Number.isFinite(tailHeight) || tailHeight < 0) return;
+          self._noteRiseAnchor = { tailHeight };
+          this._applyNoteKeyboardOffset(tailHeight, latest.height, latest.ms);
         });
-      } else {
-        this.setData({ noteFocused: true });
-      }
+    },
+
+    onTapNote() {
+      // 已聚焦时不做 false→true 重建，避免触发 blur fallback 把正在输入的面板强制归位。
+      if (this.data.noteFocused) return;
+      this._resetNoteKeyboardRuntime();
+      this.setData({ noteFocused: true });
     },
 
     onNoteInput(e: WechatMiniprogram.Input) {
@@ -1103,20 +1193,79 @@ Component({
     },
 
     /**
-     * 备注 input 获得焦点：系统键盘弹起。
-     * adjust-position=false 已交出微信默认避让权，改由此处读取真实键盘高度，
-     * 驱动 keypad-sheet 上移到键盘正上方（transform 不改变布局流，上方分类区保持静止）。
+     * 系统键盘高度变化（弹起 height>0 / 收起 height=0）——面板位移唯一驱动点。
+     *
+     * 目标：系统键盘从操作行下沿开始遮盖自绘计算键盘区，且分类区不参与布局移动。
+     * 采用 sheet 内部相对距离，避免依赖 screenHeight/windowHeight/overlay.bottom 等跨机型坐标口径：
+     *   tailHeight = keypad-sheet.bottom - keypad-sheet__actions.bottom
+     *   delta      = keyboardHeight - tailHeight + MARGIN（MARGIN 当前为 0）
+     * tailHeight 来自同一 transform 容器内两个节点的 bottom 差值，天然不受 keypad-sheet 当前
+     * translateY 影响；并且会自动包含 keypad-sheet 的底部物理安全区 padding。这样 tabbar 的
+     * visualSafeAreaBottom 调整不会污染键盘避让。
+     *
+     * SelectorQuery 是异步的，系统键盘升起期间也可能连续回调多个高度；因此用 session token +
+     * latest height 防止旧测量/旧高度覆盖新状态。锚点在键盘收起、关闭、resize、重新聚焦时失效。
      */
-    onNoteFocus(e: WechatMiniprogram.InputFocus) {
-      this.setData({ keyboardHeight: e.detail.height || 0 });
+    onKeyboardHeightChange(e: WechatMiniprogram.InputKeyboardHeightChange) {
+      const height = e.detail.height || 0;
+      const duration = e.detail.duration || 0;
+      const ms = duration > 0 ? duration : 0;
+      const self = this as unknown as Record<string, unknown>;
+      if (height <= 0) {
+        this._resetNoteKeyboardRuntime();
+        this.setData({ keypadOffsetY: 0, keypadTransitionMs: ms });
+        return;
+      }
+      if (!this.data.visible || !this.data.keypadVisible || !this.data.noteFocused) return;
+      this._clearNoteBlurFallback();
+
+      const session = this._getNoteKeyboardSession();
+      self._latestNoteKeyboard = { height, ms, session };
+      const anchor = self._noteRiseAnchor as { tailHeight: number } | undefined;
+      if (anchor) {
+        this._applyNoteKeyboardOffset(anchor.tailHeight, height, ms);
+        return;
+      }
+
+      this._measureAndApplyNoteKeyboardOffset(session);
+    },
+
+    /** 清除失焦兜底定时器 */
+    _clearNoteBlurFallback() {
+      const self = this as unknown as Record<string, unknown>;
+      const timer = self._blurFallbackTimer as number | undefined;
+      if (timer) {
+        clearTimeout(timer);
+        self._blurFallbackTimer = undefined;
+      }
     },
 
     onNoteConfirm() {
-      this.setData({ noteFocused: false, keyboardHeight: 0 });
+      this._onNoteBlurred();
     },
 
     onNoteBlur() {
-      this.setData({ noteFocused: false, keyboardHeight: 0 });
+      this._onNoteBlurred();
+    },
+
+    /**
+     * 备注失焦：仅复位 UI 状态（input 收起、数字键盘解除禁用）；
+     * 面板回落交给 keyboardheightchange(height=0) 同步驱动。
+     * 兜底：若 ~400ms 内未收到 height=0（个别机型 blur 不伴随键盘高度事件），强制归位。
+     */
+    _onNoteBlurred() {
+      const session = this._getNoteKeyboardSession();
+      this.setData({ noteFocused: false });
+      this._clearNoteBlurFallback();
+      const self = this as unknown as Record<string, unknown>;
+      self._blurFallbackTimer = setTimeout(() => {
+        self._blurFallbackTimer = undefined;
+        if ((self._noteKeyboardSession as number | undefined) !== session || this.data.noteFocused) return;
+        this._resetNoteKeyboardRuntime();
+        if (this.data.keypadOffsetY !== 0) {
+          this.setData({ keypadOffsetY: 0, keypadTransitionMs: 0 });
+        }
+      }, 400) as unknown as number;
     },
 
     // ─── 保存 ────────────────────────────────────────────────────────────────

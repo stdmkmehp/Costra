@@ -1,6 +1,6 @@
 <view class="mine">
   <!-- 内容区 · 顶部仅留状态栏安全区，无导航标题（"我的" Tab 已在 tabbar 体现）-->
-  <view class="mine__content" style="padding-top: {{statusBarHeight}}px;">
+  <view class="mine__content" style="padding-top: {{statusBarHeight}}px; padding-bottom: {{contentBottomPadding}}px;">
     <!-- 顶部用户信息区：头像居中放大 · 昵称 · 已记账 X 天 -->
     <view class="profile" bindtap="onTapProfile" hover-class="profile--hover" hover-stay-time="60">
       <view class="profile__avatar-wrap">

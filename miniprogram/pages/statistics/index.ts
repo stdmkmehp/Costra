@@ -6,7 +6,7 @@
 // 前置: COSTRA-302（协作页写入 pendingStatisticsAction）· COSTRA-264（拆分 + swiper height）
 // Refs: COSTRA-303
 
-import { getSafeAreaMetrics } from '../../utils/safeArea';
+import { getSafeAreaMetrics, rpxToPx } from '../../utils/safeArea';
 import { scheduleDeferredLoading, type DeferredLoadingHandle } from '../../utils/deferredLoading';
 import {
   getActiveFamilyId,
@@ -108,6 +108,8 @@ Page({
     monthlyByMember: {} as Record<MemberKey, MonthlyView>,
     yearlyByMember: {} as Record<MemberKey, YearlyView>,
     isEmpty: false,
+    /** 底部留白：固定 TabBar 空间 + 底部视觉安全区 */
+    bottomSpacerHeight: 0,
   },
 
   _familyId: '' as string,
@@ -133,12 +135,19 @@ Page({
 
   // ─── 生命周期 ──────────────────────────────────────────────────────────────
 
-  onLoad() {
-    const m = getSafeAreaMetrics();
+  _refreshSafeAreaLayout(force = false) {
+    const m = getSafeAreaMetrics({ force });
     this.setData({
       statusBarHeight: m.statusBarHeight,
       navBarHeight: m.navBarHeight,
       memberSwiperHeightPx: Math.max(320, m.windowHeight - m.navBarTotalHeight - 110),
+      bottomSpacerHeight: Math.round(rpxToPx(150, m.windowWidth) + m.visualSafeAreaBottom),
+    });
+  },
+
+  onLoad() {
+    this._refreshSafeAreaLayout();
+    this.setData({
       monthDisplay: formatMonthDisplay(this.data.currentMonth),
       yearDisplay: formatYearDisplay(this.data.currentYear),
     });
@@ -241,6 +250,10 @@ Page({
         await this._consumePendingAction();
       }
     });
+  },
+
+  onResize() {
+    this._refreshSafeAreaLayout(true);
   },
 
   onUnload() {

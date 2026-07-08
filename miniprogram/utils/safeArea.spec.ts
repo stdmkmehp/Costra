@@ -56,6 +56,9 @@ describe('utils/safeArea · getSafeAreaMetrics', () => {
     expect(m.safeAreaTop).toBe(89);
     // safeAreaBottom = 812 - 778 = 34
     expect(m.safeAreaBottom).toBe(34);
+    // viewportBottomInset = 812 - 47 - 729 = 36，visual 取系统/反推/视觉最小值最大值
+    expect(m.viewportBottomInset).toBe(36);
+    expect(m.visualSafeAreaBottom).toBe(36);
     expect(m.windowHeight).toBe(729);
     expect(m.windowWidth).toBe(375);
   });
@@ -86,6 +89,8 @@ describe('utils/safeArea · getSafeAreaMetrics', () => {
     expect(m.navBarTotalHeight).toBe(60);
     // safeAreaBottom = 667 - 667 = 0
     expect(m.safeAreaBottom).toBe(0);
+    expect(m.viewportBottomInset).toBe(0);
+    expect(m.visualSafeAreaBottom).toBe(20);
   });
 
   it('menuButton 抛错时 navBarHeight fallback 到 44', () => {
@@ -129,6 +134,8 @@ describe('utils/safeArea · getSafeAreaMetrics', () => {
 
     const m = getSafeAreaMetrics();
     expect(m.safeAreaBottom).toBe(896 - 860);
+    expect(m.viewportBottomInset).toBe(896 - 44 - 812);
+    expect(m.visualSafeAreaBottom).toBe(40);
   });
 
   it('safeAreaBottom 兜底 0：screenHeight 或 safeArea.bottom 无效时', () => {
@@ -150,6 +157,8 @@ describe('utils/safeArea · getSafeAreaMetrics', () => {
 
     const m = getSafeAreaMetrics();
     expect(m.safeAreaBottom).toBe(0);
+    expect(m.viewportBottomInset).toBe(0);
+    expect(m.visualSafeAreaBottom).toBe(20);
   });
 
   it('cache 行为：第二次调用不重复调用 wx API', () => {
@@ -208,6 +217,52 @@ describe('utils/safeArea · getSafeAreaMetrics', () => {
 
     const m = getSafeAreaMetrics();
     expect(m.statusBarHeight).toBe(20);
+    expect(mockGetWindowInfo).toHaveBeenCalledTimes(2);
+  });
+
+  it('force=true 时跳过缓存并按新窗口尺寸重新计算', () => {
+    mockGetWindowInfo.mockReturnValue({
+      statusBarHeight: 47,
+      screenHeight: 812,
+      safeArea: { bottom: 778 },
+      windowHeight: 729,
+      windowWidth: 375,
+    });
+    mockGetMenuButtonBoundingClientRect.mockReturnValue({
+      top: 53,
+      bottom: 83,
+      height: 30,
+      width: 87,
+      left: 281,
+      right: 368,
+    });
+
+    const m1 = getSafeAreaMetrics();
+    expect(m1.windowWidth).toBe(375);
+    expect(m1.visualSafeAreaBottom).toBe(36);
+
+    mockGetWindowInfo.mockReturnValue({
+      statusBarHeight: 44,
+      screenHeight: 896,
+      safeArea: { bottom: 860 },
+      windowHeight: 812,
+      windowWidth: 414,
+    });
+    mockGetMenuButtonBoundingClientRect.mockReturnValue({
+      top: 50,
+      bottom: 80,
+      height: 30,
+      width: 87,
+      left: 320,
+      right: 407,
+    });
+
+    const m2 = getSafeAreaMetrics({ force: true });
+    expect(m2).not.toBe(m1);
+    expect(m2.windowWidth).toBe(414);
+    expect(m2.safeAreaBottom).toBe(36);
+    expect(m2.viewportBottomInset).toBe(40);
+    expect(m2.visualSafeAreaBottom).toBe(40);
     expect(mockGetWindowInfo).toHaveBeenCalledTimes(2);
   });
 });

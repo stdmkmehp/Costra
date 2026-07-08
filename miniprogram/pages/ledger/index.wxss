@@ -156,7 +156,7 @@
      置 0 使 scroll-view 收缩到剩余空间内、改为列表内部滚动，
      从而固定住上方汇总区 + 月份/筛选行 */
   min-height: 0;
-  padding-bottom: calc(env(safe-area-inset-bottom) + 120rpx);
+  /* 底部留白由 JS 统一注入：固定 TabBar 空间 + 底部视觉安全区 */
 }
 
 /* ---- 日期分组头（sticky 吸顶） ---- */

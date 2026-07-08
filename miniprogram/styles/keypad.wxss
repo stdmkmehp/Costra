@@ -142,6 +142,11 @@
   padding: 0 8rpx 8rpx;
 }
 
+/* 备注输入时数字键盘随面板上移落入系统键盘覆盖区，禁用点击避免误触 */
+.keypad.is-covered {
+  pointer-events: none;
+}
+
 .keypad__row {
   display: flex;
   width: 100%;

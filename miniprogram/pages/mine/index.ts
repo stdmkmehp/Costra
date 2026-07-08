@@ -13,7 +13,7 @@
 import { hasValidSession, getSession, logout, getToken } from '../../services/auth';
 import { defaultNickname } from '../../config/defaults';
 import { triggerOnPageShow, syncOnce, stopScheduler } from '../../services/syncScheduler';
-import { getSafeAreaMetrics } from '../../utils/safeArea';
+import { getSafeAreaMetrics, rpxToPx } from '../../utils/safeArea';
 import { eventBus, EventNames, type SyncDonePayload, type ProfileUpdatedPayload } from '../../services/eventBus';
 import {
   getUserOverview,
@@ -32,6 +32,8 @@ Page({
     nickname: '',
     avatarUrl: '',
     statusBarHeight: 0,
+    /** 内容底部留白：固定 TabBar 空间 + 底部视觉安全区 */
+    contentBottomPadding: 0,
     showProfileBadge: false,
     showBulletinBadge: false,
     appVersion: '',
@@ -49,13 +51,18 @@ Page({
   _syncDoneHandler: null as ((payload?: unknown) => void) | null,
   _profileUpdatedHandler: null as ((payload?: unknown) => void) | null,
 
-  // onLoad gate（冗余兜底 · onShow gate 是主防线）
-  onLoad() {
+  _refreshSafeAreaLayout(force = false) {
     // COSTRA-216: 获取安全区指标，设置自定义导航栏高度
-    const metrics = getSafeAreaMetrics();
+    const metrics = getSafeAreaMetrics({ force });
     this.setData({
       statusBarHeight: metrics.statusBarHeight,
+      contentBottomPadding: Math.round(rpxToPx(90, metrics.windowWidth) + metrics.visualSafeAreaBottom),
     });
+  },
+
+  // onLoad gate（冗余兜底 · onShow gate 是主防线）
+  onLoad() {
+    this._refreshSafeAreaLayout();
 
     // 读取小程序版本号（线上版本有值，开发/体验版为空）
     try {
@@ -122,6 +129,10 @@ Page({
         this.setData({ showProfileBadge: true });
       }
     });
+  },
+
+  onResize() {
+    this._refreshSafeAreaLayout(true);
   },
 
   onUnload() {

@@ -56,6 +56,7 @@
 
     <scroll-view
       class="entry-list"
+      style="padding-bottom: {{entryListBottomPadding}}px;"
       scroll-y
       using-sticky
       enhanced

@@ -5,7 +5,7 @@
 
 import Decimal from '../../utils/vendor/decimal';
 import { toYuan } from '../../utils/money';
-import { getSafeAreaMetrics } from '../../utils/safeArea';
+import { getSafeAreaMetrics, rpxToPx } from '../../utils/safeArea';
 import { listMonthEntries, deleteEntry, updateEntryFields, putEntry, getEntry, type Entry, type MonthEntriesResult } from '../../services/db';
 import { fetchMonthEntries } from '../../services/entriesApi';
 import {
@@ -243,6 +243,8 @@ Page({
     ledgerLoadingText: '正在准备账本…',
     ledgerLoadError: '',
     ledgerSkeletonRows: [1, 2, 3, 4],
+    /** 流水列表底部留白：固定 TabBar 空间 + 底部视觉安全区 */
+    entryListBottomPadding: 0,
 
     // ─── 左滑 ───
     swipingRefId: '',
@@ -364,10 +366,9 @@ Page({
 
   // ─── 生命周期 ────────────────────────────────────────────────────────────────
 
-  // onLoad gate（冗余兜底 · onShow gate 是主防线）
-  onLoad() {
+  _refreshSafeAreaLayout(force = false) {
     // COSTRA-214: 使用统一安全区服务替代直接调用 wx.getWindowInfo()
-    const { statusBarHeight, navBarHeight, navBarTotalHeight, windowWidth, windowHeight } = getSafeAreaMetrics();
+    const { statusBarHeight, navBarHeight, navBarTotalHeight, windowWidth, windowHeight, visualSafeAreaBottom } = getSafeAreaMetrics({ force });
     // 长按上下文菜单定位需要可视区宽高（px），复用统一安全区服务的窗口指标
     this._winW = windowWidth;
     this._winH = windowHeight;
@@ -375,6 +376,14 @@ Page({
       statusBarHeight,
       navBarHeight,
       navBarTotalHeight,
+      entryListBottomPadding: Math.round(rpxToPx(120, windowWidth) + visualSafeAreaBottom),
+    });
+  },
+
+  // onLoad gate（冗余兜底 · onShow gate 是主防线）
+  onLoad() {
+    this._refreshSafeAreaLayout();
+    this.setData({
       monthDisplay: formatMonthDisplay(this.data.currentMonth),
       emptyHint: pickRandomSlogan(),
     });
@@ -484,6 +493,10 @@ Page({
       // 首屏以失败态结算 · 释放后台预热，避免失败阻塞非首屏预热
       this._emitLedgerDisplayFailed();
     }
+  },
+
+  onResize() {
+    this._refreshSafeAreaLayout(true);
   },
 
   onUnload() {

@@ -29,10 +29,10 @@
   min-height: 0; /* flex 子项允许收缩 · 兼容真机 scroll-view 高度计算 */
 }
 
-/* COSTRA-305: 底部内边距覆盖 fixed tabbar + safe-area，防止最后一行被遮挡。
-   留白大小对齐统计页 .bottom-spacer（150rpx + safe-area）。 */
+/* COSTRA-305: 底部内边距覆盖 fixed tabbar + 底部视觉安全区，防止最后一行被遮挡。
+   padding-bottom 由 JS 统一注入，避免 CSS env 在不同机型/开发者工具下不一致。 */
 .family__content {
-  padding: 0 32rpx calc(150rpx + env(safe-area-inset-bottom));
+  padding: 0 32rpx;
 }
 
 /* ═══════ Solo 态 ═══════ */

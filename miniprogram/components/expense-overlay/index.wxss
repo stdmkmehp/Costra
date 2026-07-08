@@ -197,10 +197,13 @@
   /* padding-bottom 由 inline style 覆盖，此处保留 fallback 值 */
   max-height: 70vh;
   overflow: hidden;
-  /* 备注输入时由 JS keyboardHeight 驱动 inline transform 上移到键盘正上方，
-   * transform 不参与 flex 布局流 → 上方 header / 分类区保持绝对静止。
-   * 过渡与系统键盘弹起节奏大致对齐，避免生硬跳变。 */
-  transition: transform 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
+  /* 备注输入时由 JS keypadOffsetY 驱动 inline transform 移动，使系统键盘从操作行下沿开始
+   * 遮盖数字键盘区。transform 不参与 flex 布局流 + 数字键盘常驻使 keypad-sheet
+   * 高度恒定 → 上方 header / 分类滚动容器高度不变，分类区绝对静止无抖动。
+   * transition-duration 由 inline style（keypadTransitionMs）动态驱动：取系统键盘动画时长，
+   * 使面板与键盘同时长同步升降；拿不到时长则为 0ms 瞬间到位。 */
+  transition-property: transform;
+  transition-timing-function: cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
 /* ═══════════════════════════════════════════════════════════════

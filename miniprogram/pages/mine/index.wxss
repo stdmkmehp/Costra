@@ -6,12 +6,12 @@
 /* 页面内容区
  * padding-top：由 inline style 注入 statusBarHeight px（仅覆盖状态栏，无导航条），
  *              在状态栏正下方紧贴 16rpx 留白，让头像/昵称区整体上移；
- * padding-bottom：底部预留 tabbar 高度 + Home Indicator 安全区（90rpx + safe-area），
+ * padding-bottom：由 JS 注入底部视觉安全区 + tabbar 预留，
  *              避免 footer / 隐私链接被 tabbar 遮挡，也避免内容在 tabbar 半透明毛玻璃下方滑过
  *              造成视觉抖动错觉。
  */
 .mine__content {
-  padding: 16rpx 32rpx calc(env(safe-area-inset-bottom) + 90rpx);
+  padding: 16rpx 32rpx;
 }
 
 /* ─── 顶部用户信息区：居中放大 ────────────────────────────────────────────────── */

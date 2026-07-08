@@ -123,7 +123,7 @@
                 <block wx:else>
                   <include src="./tpl-yearly-pane.wxml" />
                 </block>
-                <view class="bottom-spacer"></view>
+                <view class="bottom-spacer" style="height: {{bottomSpacerHeight}}px;"></view>
               </view>
             </view>
           </scroll-view>
@@ -152,7 +152,7 @@
                 <block wx:else>
                   <include src="./tpl-yearly-pane.wxml" />
                 </block>
-                <view class="bottom-spacer"></view>
+                <view class="bottom-spacer" style="height: {{bottomSpacerHeight}}px;"></view>
               </view>
             </view>
           </scroll-view>

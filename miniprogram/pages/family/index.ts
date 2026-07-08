@@ -6,7 +6,7 @@
 // Refs: COSTRA-302
 
 import { toYuan } from '../../utils/money';
-import { getSafeAreaMetrics } from '../../utils/safeArea';
+import { getSafeAreaMetrics, rpxToPx } from '../../utils/safeArea';
 import { scheduleDeferredLoading, type DeferredLoadingHandle } from '../../utils/deferredLoading';
 import { getCategoryIconById } from '../../services/categoryService';
 import { getMemberColorBySlot } from '../../utils/memberColor';
@@ -277,6 +277,8 @@ Page({
     // ─── 导航栏 ───
     statusBarHeight: 0,
     navBarHeight: 44,
+    /** 内容底部留白：固定 TabBar 空间 + 底部视觉安全区 */
+    contentBottomPadding: 0,
 
     // ─── 模式 ───
     mode: 'solo' as 'solo' | 'multi',
@@ -389,12 +391,19 @@ Page({
 
   // ─── 生命周期 ────────────────────────────────────────────────────────────────
 
-  // onLoad gate（冗余兜底 · onShow gate 是主防线）
-  onLoad() {
-    const { statusBarHeight, navBarHeight } = getSafeAreaMetrics();
+  _refreshSafeAreaLayout(force = false) {
+    const { statusBarHeight, navBarHeight, windowWidth, visualSafeAreaBottom } = getSafeAreaMetrics({ force });
     this.setData({
       statusBarHeight,
       navBarHeight,
+      contentBottomPadding: Math.round(rpxToPx(150, windowWidth) + visualSafeAreaBottom),
+    });
+  },
+
+  // onLoad gate（冗余兜底 · onShow gate 是主防线）
+  onLoad() {
+    this._refreshSafeAreaLayout();
+    this.setData({
       monthDisplay: formatMonthDisplay(this.data.currentMonth),
       yearDisplay: formatYearDisplay(this.data.currentYear),
     });
@@ -493,6 +502,10 @@ Page({
         this.onCreateFamily();
       }
     });
+  },
+
+  onResize() {
+    this._refreshSafeAreaLayout(true);
   },
 
   onUnload() {

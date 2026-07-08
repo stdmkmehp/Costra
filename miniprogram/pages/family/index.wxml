@@ -120,7 +120,7 @@
 
   <!-- 页面内容区（可滚动：solo 内容 / 空态 / 下钻列表 / 加载态） -->
   <scroll-view scroll-y class="family__scroll" enhanced show-scrollbar="{{false}}">
-    <view class="family__content">
+    <view class="family__content" style="padding-bottom: {{contentBottomPadding}}px;">
 
       <!-- ═══════ Solo Landing 态 ═══════ -->
       <block wx:if="{{mode === 'solo'}}">

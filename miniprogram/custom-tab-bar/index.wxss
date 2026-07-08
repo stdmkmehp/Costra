@@ -15,7 +15,7 @@
   background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  padding-bottom: env(safe-area-inset-bottom);
+  /* 底部视觉安全区由 JS 统一注入，避免 CSS env 在不同机型/开发者工具下不一致 */
   z-index: 999;
   border-top: 1rpx solid rgba(28, 27, 26, 0.05);
   /* COSTRA-205: 覆盖层显示时平滑隐藏 · 通过 .tab-bar--hidden 切换 transform。

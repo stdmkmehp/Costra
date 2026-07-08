@@ -18,6 +18,20 @@
 //    wx.getWindowInfo() / wx.getSystemInfoSync() / wx.getMenuButtonBoundingClientRect()。
 // ═══════════════════════════════════════════════════════════════════════
 
+const VISUAL_SAFE_AREA_BOTTOM_MIN_RPX = 40;
+const VISUAL_SAFE_AREA_BOTTOM_MIN_PX = 16;
+const VISUAL_SAFE_AREA_BOTTOM_MAX_PX = 24;
+const DEFAULT_DESIGN_WIDTH_PX = 375;
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+export function rpxToPx(rpx: number, windowWidth?: number): number {
+  const width = windowWidth && windowWidth > 0 ? windowWidth : DEFAULT_DESIGN_WIDTH_PX;
+  return (rpx * width) / 750;
+}
+
 /** 安全区与导航栏指标（所有值均为 px） */
 export interface SafeAreaMetrics {
   /** 状态栏高度 */
@@ -36,6 +50,10 @@ export interface SafeAreaMetrics {
   safeAreaTop: number;
   /** 底部安全区（Home Indicator 区域高度） */
   safeAreaBottom: number;
+  /** 由 screenHeight/statusBarHeight/windowHeight 反推的底部占用 */
+  viewportBottomInset: number;
+  /** 底部视觉安全区：系统底部占用 + 无安全区设备的最小视觉呼吸空间 */
+  visualSafeAreaBottom: number;
   /** 可使用窗口高度 */
   windowHeight: number;
   /** 可使用窗口宽度 */
@@ -55,9 +73,10 @@ let _cache: SafeAreaMetrics | null = null;
  * - navBarTotalHeight = statusBarHeight + navBarHeight
  * - safeAreaTop = navBarTotalHeight（全屏 overlay header 顶部避让值）
  * - safeAreaBottom = screenHeight - safeArea.bottom，兜底 0
+ * - visualSafeAreaBottom = max(safeAreaBottom, viewportBottomInset, 视觉最小呼吸空间)
  */
-export function getSafeAreaMetrics(): SafeAreaMetrics {
-  if (_cache) return _cache;
+export function getSafeAreaMetrics(options?: { force?: boolean }): SafeAreaMetrics {
+  if (!options?.force && _cache) return _cache;
 
   // 1. 获取窗口信息
   let windowInfo: { statusBarHeight?: number; screenHeight?: number; safeArea?: { bottom?: number }; windowHeight?: number; windowWidth?: number };
@@ -108,8 +127,18 @@ export function getSafeAreaMetrics(): SafeAreaMetrics {
   // 4. 计算底部安全区
   // safeAreaBottom = 屏幕底部到安全区底部的距离（Home Indicator 区域）
   const safeAreaBottomPx = screenHeight > 0 && safeAreaBottom > 0
-    ? screenHeight - safeAreaBottom
+    ? Math.max(0, screenHeight - safeAreaBottom)
     : 0;
+  // 部分环境 safeArea.bottom 不稳定，使用 windowHeight 反推一份底部占用作为补充信号。
+  const viewportBottomInset = screenHeight > 0 && windowHeight > 0
+    ? Math.max(0, screenHeight - statusBarHeight - windowHeight)
+    : 0;
+  const visualBottomMinPx = clamp(
+    rpxToPx(VISUAL_SAFE_AREA_BOTTOM_MIN_RPX, windowWidth),
+    VISUAL_SAFE_AREA_BOTTOM_MIN_PX,
+    VISUAL_SAFE_AREA_BOTTOM_MAX_PX,
+  );
+  const visualSafeAreaBottom = Math.max(safeAreaBottomPx, viewportBottomInset, visualBottomMinPx);
 
   _cache = {
     statusBarHeight,
@@ -120,6 +149,8 @@ export function getSafeAreaMetrics(): SafeAreaMetrics {
     navBarTotalHeight,
     safeAreaTop: navBarTotalHeight,
     safeAreaBottom: safeAreaBottomPx,
+    viewportBottomInset,
+    visualSafeAreaBottom,
     windowHeight,
     windowWidth,
   };
@@ -130,7 +161,7 @@ export function getSafeAreaMetrics(): SafeAreaMetrics {
 /**
  * 重置安全区指标缓存。
  *
- * 仅用于单测场景，生产代码不应调用。
+ * 生产代码通常应使用 getSafeAreaMetrics({ force: true }) 在窗口尺寸变化时刷新。
  */
 export function resetSafeAreaMetricsCache(): void {
   _cache = null;
