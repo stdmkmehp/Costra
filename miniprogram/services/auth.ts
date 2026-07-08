@@ -9,9 +9,9 @@ import { getEnv } from './env';
 import { setItem, getItem, removeItem } from './storage';
 import { request } from './request';
 import { setActiveFamily, getActiveFamilyId, getActiveLedgerId, fetchAndRestorePreference, restoreActiveFamilyAfterLogin, flushPendingPreference } from './family';
+import { TOKEN_KEY, DEVICE_FP_KEY } from './storageKeys';
 import { logger } from '../utils/logger';
 
-const TOKEN_KEY = '__costra_token_v1';
 const REFRESH_WINDOW_MS = 5 * 60 * 1000; // 距过期 < 5 分钟触发续签
 
 /**
@@ -61,6 +61,11 @@ export interface Token extends TokenStored {
 }
 
 let current: Token | null = null;
+/**
+ * 登录态世代号：每次本地会话被替换或清空都递增。
+ * 用于防止旧的 in-flight refresh 响应在 logout / 新登录之后反写覆盖当前状态。
+ */
+let authEpoch = 0;
 
 function wrap(stored: TokenStored): Token {
   return {
@@ -83,12 +88,22 @@ function buildStored(raw: TokenRaw): TokenStored {
   };
 }
 
+function replaceCurrent(stored: TokenStored): Token {
+  current = wrap(stored);
+  authEpoch += 1;
+  return current;
+}
+
+function isRefreshStillCurrent(epoch: number, refreshToken: string): boolean {
+  return !!current && authEpoch === epoch && current.raw.refresh_token === refreshToken;
+}
+
 export async function initAuth(): Promise<void> {
   // COSTRA-125: getItem 已改 async · 必须 await · 否则 saved 是 Promise 永不等于 TokenStored
   const saved = await getItem<TokenStored>(TOKEN_KEY);
   const now = Date.now();
   if (saved && saved.access_expires_at > now) {
-    current = wrap(saved);
+    replaceCurrent(saved);
     await restoreFamilyContextForCurrentSession();
     await flushPendingPreference();
     return;
@@ -96,7 +111,7 @@ export async function initAuth(): Promise<void> {
 
   // access token 过期但 refresh token 仍有效时，冷启动优先静默续签，避免强制重新登录后用旧服务端偏好覆盖本地 context。
   if (saved && saved.refresh_expires_at > now) {
-    current = wrap(saved);
+    replaceCurrent(saved);
     try {
       await refreshToken();
       await restoreFamilyContextForCurrentSession();
@@ -186,6 +201,7 @@ export function getSession(): {
 
 export async function clearToken(): Promise<void> {
   current = null;
+  authEpoch += 1;
   // COSTRA-125: removeItem 已改 async · 调用方 logout() 已 async · 天然兼容
   await removeItem(TOKEN_KEY);
 }
@@ -246,7 +262,7 @@ export async function doWxLogin(): Promise<Token> {
   if (env.mockLogin) {
     const mock = mockExchange(code);
     const stored = buildStored(mock);
-    current = wrap(stored);
+    const token = replaceCurrent(stored);
     await setItem(TOKEN_KEY, stored);  // COSTRA-125: async
 
     const restoredMock = await restoreActiveFamilyAfterLogin({
@@ -259,18 +275,20 @@ export async function doWxLogin(): Promise<Token> {
     await flushPendingPreference();
 
     logger.info('auth', 'login success', { userId: mock.user.id, familyId: restoredMock.family_id });
-    return current;
+    return token;
   }
 
   // 真实链路（Backend OpenAPI: POST /v1/auth/wx-login）
+  // 携带设备指纹：服务端据此在登录时回收同设备旧会话（允许多设备并存）
+  const clientFp = await getOrCreateDeviceFp();
   const resp = await request<TokenRaw>({
     method: 'POST',
     path: '/auth/wx-login',
-    body: { code },
+    body: { code, client_fp: clientFp },
     auth: false
   });
   const stored = buildStored(resp);
-  current = wrap(stored);
+  const token = replaceCurrent(stored);
   await setItem(TOKEN_KEY, stored);  // COSTRA-125: async
 
   // 登录后恢复账本偏好策略：本地完整 active context 优先，服务端 preference 次之，default personal 最后兜底。
@@ -287,25 +305,50 @@ export async function doWxLogin(): Promise<Token> {
     activeFamilyId: restored.family_id,
     activeLedgerId: restored.ledger_id,
   });
-  return current;
-}
-
-/** 页面层门面：整体登录流程（login 页直接调用） */
-export async function loginFlow(): Promise<Token> {
-  return doWxLogin();
+  return token;
 }
 
 /**
- * 续签 access_token
+ * 页面层门面：整体登录流程（login 页 / app.ts bootstrap 均调用）。
+ * in-flight 去重：app.ts bootstrap 与 login 页 onLoad 可能并发触发；同一时刻只允许一次
+ *   wx.login → wx-login，避免同一次启动内建立多个 user_sessions（历史"10s 成对会话"根因）。
+ */
+let loginInflight: Promise<Token> | null = null;
+export function loginFlow(): Promise<Token> {
+  if (loginInflight) return loginInflight;
+  loginInflight = doWxLogin().finally(() => { loginInflight = null; });
+  return loginInflight;
+}
+
+/**
+ * 续签 access_token（对外入口 · in-flight 去重）。
+ * 多个并发 401 请求会各调一次续签；此处保证同一时刻只发一次 /auth/refresh，
+ *   并让所有并发调用复用同一结果。
+ */
+let refreshInflight: Promise<void> | null = null;
+export function refreshToken(): Promise<void> {
+  if (refreshInflight) return refreshInflight;
+  refreshInflight = doRefreshToken().finally(() => { refreshInflight = null; });
+  return refreshInflight;
+}
+
+/**
+ * 续签实现体
  * P0-3: body 字段名 `refresh_token` 对齐 OpenAPI /auth/refresh requestBody
  */
-export async function refreshToken(): Promise<void> {
+async function doRefreshToken(): Promise<void> {
   if (!current) throw new Error('NO_TOKEN');
+  const epochAtStart = authEpoch;
+  const refreshTokenAtStart = current.raw.refresh_token;
   const env = getEnv();
   if (env.mockLogin) {
-    const refreshed = mockExchange('refresh', current.raw.refresh_token);
+    const refreshed = mockExchange('refresh', refreshTokenAtStart);
     const stored = buildStored(refreshed);
-    current = wrap(stored);
+    if (!isRefreshStillCurrent(epochAtStart, refreshTokenAtStart)) {
+      logger.warn('auth', 'stale refresh response ignored');
+      return;
+    }
+    replaceCurrent(stored);
     await setItem(TOKEN_KEY, stored);  // COSTRA-125: async
 
     return;
@@ -313,11 +356,15 @@ export async function refreshToken(): Promise<void> {
   const resp = await request<TokenRaw>({
     method: 'POST',
     path: '/auth/refresh',
-    body: { refresh_token: current.raw.refresh_token },
+    body: { refresh_token: refreshTokenAtStart },
     auth: false
   });
   const stored = buildStored(resp);
-  current = wrap(stored);
+  if (!isRefreshStillCurrent(epochAtStart, refreshTokenAtStart)) {
+    logger.warn('auth', 'stale refresh response ignored');
+    return;
+  }
+  replaceCurrent(stored);
   await setItem(TOKEN_KEY, stored);  // COSTRA-125: async
 
   // refreshToken 只负责续签 token；active family 恢复由 initAuth/doWxLogin 的 restore 流程统一处理。
@@ -325,6 +372,27 @@ export async function refreshToken(): Promise<void> {
 }
 
 // ---- helpers ----
+
+/**
+ * 取（或首次生成并持久化）设备指纹。
+ * 小程序拿不到真实设备唯一 ID（隐私限制），这里生成一个稳定的随机标识代表
+ *   "本设备上的本安装实例"，持久化于 storage（DEVICE_FP_KEY）。
+ * 该 key 在 storage 版本迁移时受白名单保护（storageKeys.PRESERVED_KEYS），故跨升级稳定。
+ */
+async function getOrCreateDeviceFp(): Promise<string> {
+  const existing = await getItem<string>(DEVICE_FP_KEY);
+  if (existing) return existing;
+  const fp = genDeviceFp();
+  await setItem(DEVICE_FP_KEY, fp);
+  return fp;
+}
+
+/** 生成设备指纹：时间基 + 随机段（非加密用途 · 仅需足够唯一且持久） */
+function genDeviceFp(): string {
+  const ts = Date.now().toString(36);
+  const rand = Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 10);
+  return `df_${ts}_${rand}`;
+}
 
 function wxLoginAsync(): Promise<{ code: string }> {
   return new Promise((resolve, reject) => {
@@ -396,7 +464,12 @@ export async function updateLocalUserProfile(
 // ---- testing-only exports ----
 // 仅供单测重置内存态；生产代码不应调用
 export const __test__ = {
-  reset(): void { current = null; },
-  setCurrent(stored: TokenStored): void { current = wrap(stored); },
+  reset(): void {
+    current = null;
+    authEpoch += 1;
+    loginInflight = null;
+    refreshInflight = null;
+  },
+  setCurrent(stored: TokenStored): void { replaceCurrent(stored); },
   buildStored
 };

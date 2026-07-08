@@ -330,8 +330,11 @@ CREATE TABLE IF NOT EXISTS user_sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_user_sessions_user_active
     ON user_sessions (user_id) WHERE revoked_at IS NULL;
+-- 无谓词全索引：清理任务（maintenance.sh purge-sessions）执行 DELETE ... WHERE expires_at < now()，
+-- 需删除所有已过期行（含"已吊销且已过期"的行）。带 WHERE revoked_at IS NULL 谓词会把已吊销行
+-- 排除在索引外，使这部分行无法被该索引覆盖，导致清理走全表扫（见 0009）。
 CREATE INDEX IF NOT EXISTS idx_user_sessions_expires
-    ON user_sessions (expires_at) WHERE revoked_at IS NULL;
+    ON user_sessions (expires_at);
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- idempotency_keys

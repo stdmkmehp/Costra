@@ -7,7 +7,7 @@
 | 脚本 | npm script | 用途 |
 |---|---|---|
 | `migrate.sh` | `npm run db:migrate` | 跑齐 `db/migrations/*.sql` 全部 migrations · 幂等可重跑 |
-| `reset-data.sh` | `npm run db:reset-data` | 清业务数据（保留 schema + 系统分类 + redis flushall）|
+| `reset-data.sh` | `npm run db:reset-data` | DROP schema → 重建（migrate.sh 或从 SQL 备份导入）+ redis flushall |
 | `seed-curl-test.sh` | `USER_ID=... npm run db:seed:curl-test` | 给指定 user.id 建 family/ledger/family_members（curl 实测 § 2.5）|
 
 ## 环境变量
@@ -18,6 +18,7 @@
 |---|---|
 | `DB_URL` | `postgres://costra:costra_dev_pw@localhost:5432/costra` |
 | `REDIS_URL` | `redis://localhost:6379` |
+| `SQL_FILE` | （reset-data.sh 可选）指定则从 SQL 备份导入而非跑 migrate.sh · 支持 `.sql` / `.sql.gz` · 亦可作首个位置参数传入 |
 | `USER_ID` | （seed-curl-test.sh 必填）|
 | `FAMILY_ID` | `00000000-0000-0000-0000-0000000000F0` |
 | `LEDGER_ID` | `00000000-0000-0000-0000-000000000001` |

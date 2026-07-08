@@ -26,6 +26,9 @@ const wxLoginBodySchema = {
     code: { type: 'string', minLength: 1, maxLength: 256 },
     encrypted_data: { type: 'string' },
     iv: { type: 'string' },
+    // 客户端生成的设备指纹（持久化于小程序 storage）· 服务端据此按设备回收旧会话
+    // 只允许可打印安全字符，避免空白 / 控制字符 / 分隔符污染同设备判定。
+    client_fp: { type: 'string', minLength: 1, maxLength: 128, pattern: '^[-A-Za-z0-9._:]+$' },
   },
 } as const;
 
@@ -52,14 +55,14 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
     wxCode2Session: code2Session,
   });
 
-  app.post<{ Body: { code: string; encrypted_data?: string; iv?: string } }>(
+  app.post<{ Body: { code: string; encrypted_data?: string; iv?: string; client_fp?: string } }>(
     '/auth/wx-login',
     {
       schema: { body: wxLoginBodySchema },
     },
     async (req, reply) => {
       const body = req.body;
-      const pair = await svc.wxLogin(body.code);
+      const pair = await svc.wxLogin(body.code, body.client_fp ?? null);
       reply.code(200).send(pair);
     },
   );

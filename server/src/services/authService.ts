@@ -65,10 +65,17 @@ export interface AuthServiceDeps {
 }
 
 export interface AuthService {
-  wxLogin(code: string): Promise<AuthTokenPair>;
+  /** @param clientFp 客户端设备指纹（用于登录时按设备回收旧会话 · 允许 null） */
+  wxLogin(code: string, clientFp?: string | null): Promise<AuthTokenPair>;
   refresh(refreshToken: string): Promise<AuthTokenPair>;
   logout(refreshToken: string): Promise<void>;
 }
+
+/**
+ * 同设备会话的最大保留时长：登录时回收同 client_fp 且签发早于 (now - 此值) 的旧活跃会话。
+ * 语义 = "同一设备只保留最近 1 小时内建立的会话 + 本次新签"，抑制冷启动重登产生的孤儿会话。
+ */
+const SAME_DEVICE_SESSION_MAX_AGE_MS = 60 * 60 * 1000;
 
 /** Redis key 统一出口，避免散落字符串拼接。 */
 function redisKeyForRefresh(jti: string): string {
@@ -114,12 +121,28 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
     return { accessToken, refreshToken, accessTtl, refreshTtl, jti };
   }
 
-  async function persistSession(userId: string, jti: string, refreshTtl: number): Promise<void> {
-    const expiresAt = new Date(Date.now() + refreshTtl * 1000);
-    await sessionRepo.insert({ jti, userId, expiresAt });
-    // Redis 热路径：jti → userId；TTL 与 refresh_token 一致（多 60s 余量应对时钟漂移）
-    const redis = getRedis();
-    await redis.set(redisKeyForRefresh(jti), userId, 'EX', refreshTtl + 60);
+  async function persistSession(
+    userId: string,
+    jti: string,
+    refreshTtl: number,
+    clientFp: string | null,
+  ): Promise<void> {
+    const now = Date.now();
+    const expiresAt = new Date(now + refreshTtl * 1000);
+    const sameDeviceIssuedBefore = new Date(now - SAME_DEVICE_SESSION_MAX_AGE_MS);
+    // 同事务原子：先回收陈旧会话（过期 / 同设备旧会话），再落本次新会话
+    await withTx(async (client) => {
+      await sessionRepo.revokeStaleByUser({ userId, clientFp, sameDeviceIssuedBefore }, client);
+      await sessionRepo.insert({ jti, userId, expiresAt, clientFp }, client);
+    });
+    // Redis 是热路径缓存，不是真源；写失败不能让登录失败，否则 DB 已落 session 但客户端拿不到 token，会制造孤儿会话。
+    // 被回收的旧 jti 的 refresh:{jti} 残留无害：refresh 链路以 DB findActive 为准做二次校验。
+    try {
+      const redis = getRedis();
+      await redis.set(redisKeyForRefresh(jti), userId, 'EX', refreshTtl + 60);
+    } catch (err) {
+      app.log.warn({ err, jti, userId }, 'refresh session redis cache set failed, continue with DB source of truth');
+    }
   }
 
   /**
@@ -135,7 +158,7 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
     );
   }
 
-  async function wxLogin(code: string): Promise<AuthTokenPair> {
+  async function wxLogin(code: string, clientFp?: string | null): Promise<AuthTokenPair> {
     const { openid, unionid } = await wxCode2Session(code);
 
     // 单事务包住 user upsert + family/ledger bootstrap · 防数据漂移
@@ -196,7 +219,7 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
     });
 
     const pair = await signPair(user.id);
-    await persistSession(user.id, pair.jti, pair.refreshTtl);
+    await persistSession(user.id, pair.jti, pair.refreshTtl, clientFp ?? null);
 
     return {
       access_token: pair.accessToken,
@@ -225,16 +248,15 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
       });
     }
 
-    // 校验 jti 仍活跃：Redis 命中即通过；miss 回源 DB
-    const redis = getRedis();
-    const cached = await redis.get(redisKeyForRefresh(claims.jti));
-    let session;
-    if (cached != null) {
-      // 仍以 DB 为准做二次校验（防 Redis 有残留 key 而 DB 已吊销）
-      session = await sessionRepo.findActive(claims.jti);
-    } else {
-      session = await sessionRepo.findActive(claims.jti);
+    // 校验 jti 仍活跃：Redis 只是热路径缓存；无论命中/失败都以 DB 为准做二次校验。
+    // 这样 Redis miss / 短暂故障 / 残留 key 都不会影响 DB 真源语义。
+    try {
+      const redis = getRedis();
+      await redis.get(redisKeyForRefresh(claims.jti));
+    } catch (err) {
+      app.log.warn({ err, jti: claims.jti }, 'refresh session redis cache get failed, fallback to DB');
     }
+    const session = await sessionRepo.findActive(claims.jti);
     if (!session || session.userId !== claims.sub) {
       throw new AppError(ErrorCode.REFRESH_TOKEN_INVALID, {
         message: 'refresh session not found or revoked',
@@ -290,8 +312,12 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
       return;
     }
     await sessionRepo.revoke(claims.jti);
-    const redis = getRedis();
-    await redis.del(redisKeyForRefresh(claims.jti));
+    try {
+      const redis = getRedis();
+      await redis.del(redisKeyForRefresh(claims.jti));
+    } catch (err) {
+      app.log.warn({ err, jti: claims.jti }, 'refresh session redis cache delete failed, DB revoke already applied');
+    }
   }
 
   return { wxLogin, refresh, logout };

@@ -17,8 +17,10 @@
 #   ./backup-db.sh --no-cleanup       # 跳过清理旧备份
 #   ./backup-db.sh --dry-run          # 仅打印不执行
 #
-# cron 配置（每 4 小时错峰 · 避开整点高峰 · 偏移 17 分钟）：
-#   17 1,5,9,13,17,21 * * * /root/Costra/infra/scripts/backup-db.sh >> /data/logs/backup-db.log 2>&1
+# cron 配置（推荐统一走 maintenance.sh 入口 · 见 docs/db/maintenance-cron-plan.md）：
+#   实际写入 cron 时路径需为真实绝对路径（cron 不展开 shell 变量）· 即 ${COSTRA_ROOT} 的展开值。
+#   例（COSTRA_ROOT=/root/Costra 时）：
+#   17 1,5,9,13,17,21 * * * root /root/Costra/infra/scripts/maintenance.sh backup >> /data/logs/maintenance-backup.log 2>&1
 #
 # 退出码：
 #   0 = 备份成功

@@ -35,8 +35,18 @@ fi
 : "${DRY_RUN:=0}"
 : "${ASSUME_YES:=0}"
 
-# --- 路径基线（项目约定 · 可被环境变量覆盖）---
-: "${COSTRA_ROOT:=/root/Costra}"
+# --- 路径基线（从本文件位置自动派生 · 不硬编码 · 仍可被环境变量覆盖）---
+# common.sh 固定位于 <项目根>/infra/scripts/lib/common.sh · 向上三级即项目根。
+# 这样无论部署在 /root/release/Costra 还是开发机 / 任意目录，COSTRA_ROOT 都自解释、
+# 永远等于仓库实际所在路径，杜绝硬编码路径与真实部署路径漂移。
+# 若需覆盖（如非标准挂载），仍可通过环境变量 COSTRA_ROOT=... 传入（:= 会短路命令替换）。
+_COMMON_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -z "${COSTRA_ROOT:-}" ]]; then
+  # 显式派生（失败即报错退出）· 比放进 ${:=} 命令替换更利于严格模式诊断。
+  # 注：此处早于 die() 定义（见下文），故用内联 echo+exit。
+  COSTRA_ROOT="$(cd "${_COMMON_LIB_DIR}/../../.." && pwd)" \
+    || { echo "[common.sh] 派生 COSTRA_ROOT 失败（无法定位项目根）" >&2; exit 1; }
+fi
 : "${COSTRA_INFRA:=${COSTRA_ROOT}/infra}"
 : "${COSTRA_DATA:=/data}"
 : "${COSTRA_CONF_DIR:=${COSTRA_DATA}/conf}"

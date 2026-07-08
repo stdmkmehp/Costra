@@ -13,10 +13,12 @@
  *   T7 [err]   Schema 拒绝：POST /auth/wx-login body={} → 400 INVALID_ARGUMENT details.field='code'
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app.js';
 import { setWxFetchForTests } from '../src/wx/code2Session.js';
+import { getPool } from '../src/db/pool.js';
+import { getRedis } from '../src/db/redis.js';
 
 let app: FastifyInstance;
 
@@ -25,7 +27,11 @@ beforeEach(async () => {
   await app.ready();
 });
 
-async function doWxLogin(code = 'valid-code'): Promise<{
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+async function doWxLogin(code = 'valid-code', clientFp?: string): Promise<{
   status: number;
   body: {
     access_token: string;
@@ -36,13 +42,25 @@ async function doWxLogin(code = 'valid-code'): Promise<{
     user: { id: string; nickname: string };
   };
 }> {
+  const payload: { code: string; client_fp?: string } = { code };
+  if (clientFp) payload.client_fp = clientFp;
   const res = await app.inject({
     method: 'POST',
     url: '/v1/auth/wx-login',
-    payload: { code },
+    payload,
     headers: { 'content-type': 'application/json' },
   });
   return { status: res.statusCode, body: res.json() as never };
+}
+
+function mockWxOpenid(openid: string): void {
+  setWxFetchForTests(
+    (async () =>
+      new Response(
+        JSON.stringify({ openid, session_key: 'sk' }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )) as unknown as typeof fetch,
+  );
 }
 
 describe('POST /auth/wx-login', () => {
@@ -102,6 +120,123 @@ describe('POST /auth/wx-login', () => {
     expect(body.trace_id).toBeTruthy();
   });
 
+  it('T8 client_fp 落库：wx-login 携带 client_fp → user_sessions.client_fp 写入', async () => {
+    setWxFetchForTests(
+      (async () =>
+        new Response(
+          JSON.stringify({ openid: 'openid-T8', session_key: 'sk' }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )) as unknown as typeof fetch,
+    );
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/wx-login',
+      payload: { code: 'code-fp', client_fp: 'device-abc' },
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { user: { id: string } };
+    const rows = await getPool().query(
+      `SELECT client_fp FROM user_sessions WHERE user_id = $1 AND revoked_at IS NULL`,
+      [body.user.id],
+    );
+    expect(rows.rows).toHaveLength(1);
+    expect(rows.rows[0].client_fp).toBe('device-abc');
+  });
+
+  it('T9 同设备旧会话回收：旧 refresh 即使 Redis key 残留也被 DB revoked 拒绝', async () => {
+    mockWxOpenid('openid-same-device-revoke');
+    const first = await doWxLogin('code-old', 'device-a');
+    expect(first.status).toBe(200);
+    const oldJtiRes = await getPool().query(
+      `SELECT jti FROM user_sessions WHERE user_id = $1 AND revoked_at IS NULL`,
+      [first.body.user.id],
+    );
+    const oldJti = oldJtiRes.rows[0].jti as string;
+    await getPool().query(
+      `UPDATE user_sessions SET issued_at = $2 WHERE jti = $1`,
+      [oldJti, new Date(Date.now() - 2 * 60 * 60 * 1000)],
+    );
+
+    mockWxOpenid('openid-same-device-revoke');
+    const second = await doWxLogin('code-new', 'device-a');
+    expect(second.status).toBe(200);
+
+    const rows = await getPool().query(
+      `SELECT jti, revoked_at FROM user_sessions WHERE user_id = $1 ORDER BY issued_at ASC`,
+      [first.body.user.id],
+    );
+    expect(rows.rows).toHaveLength(2);
+    expect(rows.rows.find((r) => r.jti === oldJti)?.revoked_at).not.toBeNull();
+    expect(rows.rows.filter((r) => r.revoked_at == null)).toHaveLength(1);
+
+    const oldRefresh = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/refresh',
+      payload: { refresh_token: first.body.refresh_token },
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(oldRefresh.statusCode).toBe(401);
+    expect((oldRefresh.json() as { code: string }).code).toBe('REFRESH_TOKEN_INVALID');
+  });
+
+  it('T10 多设备并存：其它 client_fp 的旧会话不回收且仍可 refresh', async () => {
+    mockWxOpenid('openid-multi-device');
+    const deviceA = await doWxLogin('code-device-a', 'device-a');
+    expect(deviceA.status).toBe(200);
+    const oldJtiRes = await getPool().query(
+      `SELECT jti FROM user_sessions WHERE user_id = $1 AND revoked_at IS NULL`,
+      [deviceA.body.user.id],
+    );
+    await getPool().query(
+      `UPDATE user_sessions SET issued_at = $2 WHERE jti = $1`,
+      [oldJtiRes.rows[0].jti, new Date(Date.now() - 2 * 60 * 60 * 1000)],
+    );
+
+    mockWxOpenid('openid-multi-device');
+    const deviceB = await doWxLogin('code-device-b', 'device-b');
+    expect(deviceB.status).toBe(200);
+
+    const activeRows = await getPool().query(
+      `SELECT client_fp FROM user_sessions WHERE user_id = $1 AND revoked_at IS NULL ORDER BY client_fp`,
+      [deviceA.body.user.id],
+    );
+    expect(activeRows.rows.map((r) => r.client_fp)).toEqual(['device-a', 'device-b']);
+
+    const refreshA = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/refresh',
+      payload: { refresh_token: deviceA.body.refresh_token },
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(refreshA.statusCode).toBe(200);
+  });
+
+  it('T11 Redis set 失败不阻断登录：DB session 为真源', async () => {
+    mockWxOpenid('openid-redis-set-fail');
+    const redis = getRedis() as unknown as { set: (...args: unknown[]) => Promise<unknown> };
+    vi.spyOn(redis, 'set').mockRejectedValueOnce(new Error('redis set failed'));
+
+    const login = await doWxLogin('code-redis-set-fail', 'device-redis');
+    expect(login.status).toBe(200);
+    const rows = await getPool().query(
+      `SELECT jti FROM user_sessions WHERE user_id = $1 AND revoked_at IS NULL`,
+      [login.body.user.id],
+    );
+    expect(rows.rows).toHaveLength(1);
+  });
+
+  it('T12 err Schema 拒绝：非法 client_fp → 400 INVALID_ARGUMENT', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/wx-login',
+      payload: { code: 'valid-code', client_fp: 'bad fp with space' },
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(res.statusCode).toBe(400);
+    expect((res.json() as { code: string }).code).toBe('INVALID_ARGUMENT');
+  });
+
   it('T7 err Schema 拒绝：空 body → 400 INVALID_ARGUMENT', async () => {
     const res = await app.inject({
       method: 'POST',
@@ -146,6 +281,24 @@ describe('POST /auth/refresh', () => {
     expect(body.access_token_ttl_sec).toBe(7200);
   });
 
+  it('T13 Redis get 失败时 refresh 回源 DB 成功', async () => {
+    mockWxOpenid('openid-redis-get-fail');
+    const login = await doWxLogin('code-redis-get-fail', 'device-rg');
+    expect(login.status).toBe(200);
+    const redis = getRedis() as unknown as { get: (...args: unknown[]) => Promise<unknown> };
+    vi.spyOn(redis, 'get').mockRejectedValueOnce(new Error('redis get failed'));
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/refresh',
+      payload: { refresh_token: login.body.refresh_token },
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { access_token: string };
+    expect(body.access_token).toBeTruthy();
+  });
+
   it('T4 err 伪造 refresh_token → 401 REFRESH_TOKEN_INVALID', async () => {
     const res = await app.inject({
       method: 'POST',
@@ -188,6 +341,31 @@ describe('POST /auth/logout', () => {
     expect(secondLogout.statusCode).toBe(204);
 
     // 已吊销后的 refresh 再用 → REFRESH_TOKEN_INVALID
+    const refreshAfterLogout = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/refresh',
+      payload: { refresh_token: login.body.refresh_token },
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(refreshAfterLogout.statusCode).toBe(401);
+    expect((refreshAfterLogout.json() as { code: string }).code).toBe('REFRESH_TOKEN_INVALID');
+  });
+
+  it('T14 Redis del 失败不影响 logout；DB revoked 仍拒绝后续 refresh', async () => {
+    mockWxOpenid('openid-redis-del-fail');
+    const login = await doWxLogin('code-redis-del-fail', 'device-rd');
+    expect(login.status).toBe(200);
+    const redis = getRedis() as unknown as { del: (...args: unknown[]) => Promise<unknown> };
+    vi.spyOn(redis, 'del').mockRejectedValueOnce(new Error('redis del failed'));
+
+    const logoutRes = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/logout',
+      payload: { refresh_token: login.body.refresh_token },
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(logoutRes.statusCode).toBe(204);
+
     const refreshAfterLogout = await app.inject({
       method: 'POST',
       url: '/v1/auth/refresh',

@@ -51,6 +51,9 @@ describe('services/storage · 模拟 wx 异步 API（Promise 形态）', () => {
         mockStore.clear();
         return Promise.resolve();
       },
+      getStorageInfo: (): Promise<{ keys: string[] }> => {
+        return Promise.resolve({ keys: Array.from(mockStore.keys()) });
+      },
     };
     vi.stubGlobal('wx', mockWx);
   });
@@ -103,5 +106,36 @@ describe('services/storage · 模拟 wx 异步 API（Promise 形态）', () => {
     mockStore.set('user-data', 'should-survive');
     await ensureVersion();
     expect(mockStore.get('user-data')).toBe('should-survive');
+  });
+
+  it('ensureVersion 版本不匹配时 · 保留 token/device_fp 并清除普通 key', async () => {
+    const tokenEnv = { v: 1, t: Date.now(), d: { raw: { access_token: 'a' } } };
+    const deviceEnv = { v: 1, t: Date.now(), d: 'df_old_device' };
+    mockStore.set('__costra_storage_version', 0);
+    mockStore.set('__costra_token_v1', tokenEnv);
+    mockStore.set('__costra_device_fp', deviceEnv);
+    mockStore.set('legacy-key', { stale: true });
+
+    await ensureVersion();
+
+    expect(mockStore.get('__costra_storage_version')).toBe(1);
+    expect(mockStore.get('__costra_token_v1')).toBe(tokenEnv);
+    expect(mockStore.get('__costra_device_fp')).toBe(deviceEnv);
+    expect(mockStore.has('legacy-key')).toBe(false);
+  });
+
+  it('ensureVersion 缺 VERSION_KEY 但 storage 非空时 · 按旧版本迁移处理', async () => {
+    const tokenEnv = { v: 1, t: Date.now(), d: { raw: { access_token: 'a' } } };
+    const deviceEnv = { v: 1, t: Date.now(), d: 'df_old_device' };
+    mockStore.set('__costra_token_v1', tokenEnv);
+    mockStore.set('__costra_device_fp', deviceEnv);
+    mockStore.set('legacy-key', { stale: true });
+
+    await ensureVersion();
+
+    expect(mockStore.get('__costra_storage_version')).toBe(1);
+    expect(mockStore.get('__costra_token_v1')).toBe(tokenEnv);
+    expect(mockStore.get('__costra_device_fp')).toBe(deviceEnv);
+    expect(mockStore.has('legacy-key')).toBe(false);
   });
 });

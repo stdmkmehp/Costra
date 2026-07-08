@@ -22,8 +22,34 @@ infra/scripts/
 ├── 06-migrate.sh              # 跑 migrations（dump→migrate→verify）
 ├── 07-issue-cert.sh           # 签证书 + sed 取消 SSL 注释
 ├── 08-finalize-nginx.sh       # nginx -t + up nginx + cron 续期
-└── 09-verify-gates.sh         # 闸门 5 条验证
+├── 09-verify-gates.sh         # 闸门 5 条验证
+│
+├── backup-db.sh               # DB 定时备份（pg_dump + gzip · 被 maintenance.sh backup 委托）
+└── maintenance.sh             # ⭐ 运维定时任务统一入口（backup / purge-* / install-cron）
 ```
+
+---
+
+## 运维定时任务（maintenance.sh · 日常）
+
+> 与一次性 bootstrap（9 步）不同，`maintenance.sh` 是**长期运行的定时任务统一入口**：crontab 只调它，用子命令区分。详见 [`docs/db/maintenance-cron-plan.md`](../../docs/db/maintenance-cron-plan.md)。
+
+```bash
+# 一次性：生成 /etc/cron.d/costra-maintenance（用 ${COSTRA_ROOT} 展开真实路径）
+./maintenance.sh install-cron          # 先 --dry-run 预览
+
+# 手动执行（cron 亦调这些）：
+./maintenance.sh backup                # 委托 backup-db.sh（pg_dump + gzip）
+./maintenance.sh purge-idempotency     # 清过期幂等键（每小时）
+./maintenance.sh purge-sessions        # 清已过期 session（每日）
+./maintenance.sh purge-all             # 顺序跑全部 purge
+./maintenance.sh list                  # 列出可用任务
+
+# 预览不改（purge 跑 SELECT count 预览将删行数）：
+./maintenance.sh purge-idempotency --dry-run
+```
+
+清理任务依赖 migration `0009_session_index_fix.sql`（把 `idx_user_sessions_expires` 改为无谓词，使 `purge-sessions` 走索引而非全表扫）。
 
 ---
 
@@ -33,7 +59,7 @@ infra/scripts/
 
 ```bash
 ssh root@<prod-ip>
-cd /root/release/Costra/infra/scripts
+cd /root/Costra/infra/scripts
 
 chmod +x *.sh lib/*.sh
 
@@ -176,7 +202,7 @@ scp /tmp/costra-server.tar.gz root@<新机器>:/tmp/
 
 ```bash
 ssh root@<新机器>
-cd /root/release/Costra/infra/scripts
+cd /root/Costra/infra/scripts
 
 ./deploy-all.sh \
     --reuse-secrets \

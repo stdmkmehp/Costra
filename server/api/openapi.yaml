@@ -83,6 +83,12 @@ paths:
                 iv:
                   type: string
                   description: 可选，配合 encrypted_data
+                client_fp:
+                  type: string
+                  minLength: 1
+                  maxLength: 128
+                  pattern: '^[-A-Za-z0-9._:]+$'
+                  description: 可选，客户端生成并持久化的设备指纹；服务端据此在登录时按设备回收旧会话
       responses:
         '200':
           description: 登录成功

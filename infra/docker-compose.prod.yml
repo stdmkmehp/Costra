@@ -13,7 +13,7 @@
 #
 # 数据持久化：bind mount 到宿主机 /data/* · 容器删了数据不丢
 #
-# 启动：cd /root/release/Costra/infra && docker compose -f docker-compose.prod.yml --env-file /data/conf/server.env up -d
+# 启动：cd /root/Costra/infra && docker compose -f docker-compose.prod.yml --env-file /data/conf/server.env up -d
 # 停止：docker compose -f docker-compose.prod.yml down       # 不删卷
 # 完全清理：docker compose -f docker-compose.prod.yml down -v  # ⚠️ 删命名卷（bind mount 仍在）
 #

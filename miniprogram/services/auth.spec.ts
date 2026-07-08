@@ -3,7 +3,7 @@
 // COSTRA-158 R1.x.1: updateLocalUserProfile 改 async + setItem · 测适配 + 重启回读单测
 // COSTRA-165: T7~T11 family-context 接入测试（双源一致性 / initAuth 升级 / refresh 边界 / TokenRaw 契约对齐）
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { __test__ as authTest, getToken, getSession, updateLocalUserProfile, initAuth, doWxLogin, refreshToken } from './auth';
+import { __test__ as authTest, getToken, getSession, updateLocalUserProfile, initAuth, doWxLogin, loginFlow, refreshToken, clearToken } from './auth';
 import type { TokenRaw, TokenStored } from './auth';
 
 // R1.x.1: mock storage.ts · 让 setItem/getItem 操作共享 Map（模拟真实 envelope 行为）
@@ -332,6 +332,75 @@ describe('services/auth · COSTRA-165 family-context integration', () => {
     expect(familyState.ctx).toMatchObject({ family_id: 'f-shared-preferred', ledger_id: 'l-shared-preferred' });
     expect(familyState.ctx!.family_id).not.toBe(token.raw.default_family_id);
     expect(sharedGlobalData.activeLedgerId).toBe('l-shared-preferred');
+  });
+
+  it('T12: loginFlow 并发调用只触发一次 wx.login + /auth/wx-login', async () => {
+    const { getEnv } = await import('./env');
+    vi.mocked(getEnv).mockReturnValueOnce({
+      name: 'staging',
+      apiBaseUrl: 'https://costra.cloud/v1',
+      mockLogin: false,
+      flags: {},
+    });
+    const { request } = await import('./request');
+    let resolveLogin!: (value: TokenRaw) => void;
+    vi.mocked(request).mockImplementationOnce(() => new Promise<TokenRaw>((resolve) => { resolveLogin = resolve; }));
+
+    const p1 = loginFlow();
+    const p2 = loginFlow();
+    expect(mockWxLogin).toHaveBeenCalledTimes(1);
+    // wx.loginAsync resolve 后还会经过 device_fp 的 async storage 读写，再发 request。
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(vi.mocked(request)).toHaveBeenCalledTimes(1);
+
+    resolveLogin({ ...mockRaw, access_token: 'login.concurrent.access', refresh_token: 'login.concurrent.refresh' });
+    const [t1, t2] = await Promise.all([p1, p2]);
+    expect(t1.raw.access_token).toBe('login.concurrent.access');
+    expect(t2.raw.access_token).toBe('login.concurrent.access');
+  });
+
+  it('T13: refreshToken 并发调用只触发一次 /auth/refresh', async () => {
+    authTest.setCurrent(authTest.buildStored(mockRaw));
+    const { getEnv } = await import('./env');
+    vi.mocked(getEnv).mockReturnValueOnce({
+      name: 'staging',
+      apiBaseUrl: 'https://costra.cloud/v1',
+      mockLogin: false,
+      flags: {},
+    });
+    const { request } = await import('./request');
+    let resolveRefresh!: (value: TokenRaw) => void;
+    vi.mocked(request).mockImplementationOnce(() => new Promise<TokenRaw>((resolve) => { resolveRefresh = resolve; }));
+
+    const p1 = refreshToken();
+    const p2 = refreshToken();
+    expect(vi.mocked(request)).toHaveBeenCalledTimes(1);
+
+    resolveRefresh({ ...mockRaw, access_token: 'refresh.concurrent.access' });
+    await Promise.all([p1, p2]);
+    expect(getToken()?.raw.access_token).toBe('refresh.concurrent.access');
+  });
+
+  it('T14: refresh 悬挂期间 clearToken 后，旧 refresh 响应不得恢复登录态', async () => {
+    authTest.setCurrent(authTest.buildStored(mockRaw));
+    const { getEnv } = await import('./env');
+    vi.mocked(getEnv).mockReturnValueOnce({
+      name: 'staging',
+      apiBaseUrl: 'https://costra.cloud/v1',
+      mockLogin: false,
+      flags: {},
+    });
+    const { request } = await import('./request');
+    let resolveRefresh!: (value: TokenRaw) => void;
+    vi.mocked(request).mockImplementationOnce(() => new Promise<TokenRaw>((resolve) => { resolveRefresh = resolve; }));
+
+    const p = refreshToken();
+    await clearToken();
+    resolveRefresh({ ...mockRaw, access_token: 'stale.refresh.access' });
+    await p;
+
+    expect(getToken()).toBeNull();
+    expect(storageMap.has('__costra_token_v1')).toBe(false);
   });
 
   // T11: refreshToken 空字符串保护

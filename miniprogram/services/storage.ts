@@ -8,6 +8,7 @@
 //   3. 基于 wx.getStorage Promise 形态（基础库 2.21.0+ · 当前 dev 3.8.12 · NFR 最低 2.32.3）
 
 import { logger } from '../utils/logger';
+import { PRESERVED_KEYS } from './storageKeys';
 
 const STORAGE_VERSION = 1;
 const VERSION_KEY = '__costra_storage_version';
@@ -28,7 +29,9 @@ export async function ensureVersion(): Promise<void> {
   try {
     const res = await wx.getStorage<number>({ key: VERSION_KEY });
     if (res.data !== STORAGE_VERSION) {
-      await wx.clearStorage();
+      // 版本迁移：清空 storage 但保留白名单 key（鉴权 token / 设备指纹），
+      // 避免升级后强制重登（新增孤儿会话）与设备身份重置（按设备回收失效）。
+      await clearStoragePreserving(PRESERVED_KEYS);
       await wx.setStorage({ key: VERSION_KEY, data: STORAGE_VERSION });
     }
   } catch (e: unknown) {
@@ -36,7 +39,11 @@ export async function ensureVersion(): Promise<void> {
     const errMsg = (e as { errMsg?: string })?.errMsg || '';
     if (errMsg.includes('data not found')) {
       try {
-        // 首次：无需 clearStorage（已无数据）· 直接写入 VERSION_KEY
+        // VERSION_KEY 缺失不一定是首次启动：老版本可能已有 token/family 等业务 key。
+        // 若 storage 非空，按一次旧版本迁移处理：只保留白名单 key，清掉其它旧结构数据。
+        if (await hasAnyStorageData()) {
+          await clearStoragePreserving(PRESERVED_KEYS);
+        }
         await wx.setStorage({ key: VERSION_KEY, data: STORAGE_VERSION });
       } catch (e2) {
         logger.warn('storage', 'ensureVersion init failed', e2);
@@ -44,6 +51,42 @@ export async function ensureVersion(): Promise<void> {
       return;
     }
     logger.warn('storage', 'ensureVersion failed', e);
+  }
+}
+
+/**
+ * 清空 storage，但保留白名单 key 的原始值。
+ * 做法：先把白名单 key 的裸值读出暂存 → clearStorage → 原样写回。
+ * 注：读写走裸 wx.getStorage/setStorage（保留 envelope 结构，不做 TTL 解包），
+ *     保证 token / 设备指纹的存储形态在迁移前后完全一致。
+ */
+async function hasAnyStorageData(): Promise<boolean> {
+  try {
+    const info = await wx.getStorageInfo();
+    return Array.isArray(info.keys) && info.keys.length > 0;
+  } catch (e) {
+    logger.warn('storage', 'getStorageInfo failed during ensureVersion', e);
+    return false;
+  }
+}
+
+async function clearStoragePreserving(keys: readonly string[]): Promise<void> {
+  const saved: Array<{ key: string; data: unknown }> = [];
+  for (const key of keys) {
+    try {
+      const res = await wx.getStorage<unknown>({ key });
+      saved.push({ key, data: res.data });
+    } catch {
+      /* key 不存在 → 跳过 */
+    }
+  }
+  await wx.clearStorage();
+  for (const item of saved) {
+    try {
+      await wx.setStorage({ key: item.key, data: item.data });
+    } catch (e) {
+      logger.warn('storage', `preserve rewrite failed · key=${item.key}`, e);
+    }
   }
 }
 
