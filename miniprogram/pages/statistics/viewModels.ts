@@ -4,7 +4,7 @@
 
 import type { MonthlyView, YearlyView, L1Display, SummaryGridItem, TrendChartMeta } from './types';
 import type { MonthlyStatistics, StatCategoryRankItem, DailyTrendItem, MonthlyTrendItem } from '../../services/statisticsApi';
-import { fmtYuan, fmtRatio, buildEmptyTitleMonth } from './formatters';
+import { fmtYuan, fmtExpense, fmtRatio, buildEmptyTitleMonth } from './formatters';
 import { resolveIconGlyph } from '../../services/iconMap';
 
 /**
@@ -184,7 +184,7 @@ export function buildMonthlyView(
     .map((c) => buildL1Display(c, prevList));
   const isEmpty = totals.expense === 0 && totals.income === 0;
   return {
-    totalExpense: fmtYuan(totals.expense),
+    totalExpense: fmtExpense(totals.expense),
     totalIncome: fmtYuan(totals.income),
     totalBalance: fmtYuan(totals.balance),
     trend: daily_trend.map((d) => d.expense),

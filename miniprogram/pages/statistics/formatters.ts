@@ -18,6 +18,12 @@ export function fmtYuan(cents: number): string {
   return `${sign}¥${fmtAmount(cents)}`;
 }
 
+/** 支出金额专用：cents → -¥X,XXX.XX（始终带负号前缀，0 时显示 ¥0.00） */
+export function fmtExpense(cents: number): string {
+  if (cents === 0) return '¥0.00';
+  return `-¥${fmtAmount(cents)}`;
+}
+
 /** 万分比 → 百分比文本，如 4250 → "42.5%"；整数时省略小数，如 10000 → "100%" */
 export function fmtRatio(bps: number): string {
   const pct = bps / 100;

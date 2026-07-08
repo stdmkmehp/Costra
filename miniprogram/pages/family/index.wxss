@@ -628,13 +628,17 @@
   box-shadow: inset 0 1rpx 0 rgba(28, 27, 26, 0.05);
 }
 
-/* ── 图标容器（几何随 item color 变色，全部绝对定位不依赖 flex 方向）── */
+/* ── 图标容器（几何随 item color 变色，与明细页 ctx-ic 对齐方式统一）── */
 .member-menu__ic {
   position: relative;
   width: 34rpx;
+  min-width: 34rpx;
   height: 34rpx;
   flex-shrink: 0;
   color: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* 重命名：文本框被 I-beam 光标从右侧贯穿断开（左右两段分离 · 光标偏右） */

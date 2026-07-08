@@ -343,7 +343,7 @@ page {
 .month-list__metrics {
   flex: 1;
   display: flex;
-  gap: 16rpx;
+  gap: 0;
   font-size: 22rpx;
   color: rgba(28, 27, 26, 0.7);
   overflow: hidden;
@@ -351,6 +351,8 @@ page {
 }
 
 .month-list__metric {
+  flex: 1;
+  min-width: 0;
   font-size: 22rpx;
 }
 

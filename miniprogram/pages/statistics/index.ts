@@ -48,6 +48,7 @@ import type {
 } from './types';
 import {
   fmtYuan,
+  fmtExpense,
   fmtRatio,
   getCurrentMonthValue,
   getCurrentYearValue,
@@ -573,7 +574,7 @@ Page({
 
     const isEmpty = totals.expense === 0 && totals.income === 0;
     const viewData: YearlyView = {
-      totalExpense: fmtYuan(totals.expense),
+      totalExpense: fmtExpense(totals.expense),
       totalIncome: fmtYuan(totals.income),
       totalBalance: fmtYuan(totals.balance),
       trend: monthly_trend.map((m) => m.expense),

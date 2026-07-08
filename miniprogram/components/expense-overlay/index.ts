@@ -176,6 +176,12 @@ Component({
     recordDateText: '今天',
     /** 是否正在输入备注（显示系统键盘） */
     noteFocused: false as boolean,
+    /**
+     * 系统键盘高度（px · 备注输入时由 input 的 focus 事件回传）。
+     * adjust-position 已关闭（不让微信擅自上推整页顶飞上方分类区），
+     * 改由此值驱动 keypad-sheet 手动上移，精确停靠在键盘正上方。
+     */
+    keyboardHeight: 0 as number,
 
     // ─── 保存中 ───
     saving: false,
@@ -196,7 +202,7 @@ Component({
       // 根因：各 Tab 页都挂载 <expense-overlay/>，SHOW 是广播导致所有实例 visible=true。
       // 用户在某页点关闭只关当前实例 + emit HIDE，但其他实例不订阅 HIDE 导致残留。
       const hideHandler = () => {
-        this.setData({ visible: false, keypadVisible: false, noteFocused: false, saving: false, editMode: false });
+        this.setData({ visible: false, keypadVisible: false, noteFocused: false, keyboardHeight: 0, saving: false, editMode: false });
       };
       (this as unknown as Record<string, unknown>)._hideHandler = hideHandler;
       eventBus.on(EventNames.HIDE_EXPENSE_OVERLAY, hideHandler);
@@ -1096,12 +1102,21 @@ Component({
       this.setData({ note: e.detail.value });
     },
 
+    /**
+     * 备注 input 获得焦点：系统键盘弹起。
+     * adjust-position=false 已交出微信默认避让权，改由此处读取真实键盘高度，
+     * 驱动 keypad-sheet 上移到键盘正上方（transform 不改变布局流，上方分类区保持静止）。
+     */
+    onNoteFocus(e: WechatMiniprogram.InputFocus) {
+      this.setData({ keyboardHeight: e.detail.height || 0 });
+    },
+
     onNoteConfirm() {
-      this.setData({ noteFocused: false });
+      this.setData({ noteFocused: false, keyboardHeight: 0 });
     },
 
     onNoteBlur() {
-      this.setData({ noteFocused: false });
+      this.setData({ noteFocused: false, keyboardHeight: 0 });
     },
 
     // ─── 保存 ────────────────────────────────────────────────────────────────

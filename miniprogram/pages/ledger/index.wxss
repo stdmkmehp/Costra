@@ -708,6 +708,7 @@
 .ctx-ic {
   position: relative;
   width: 34rpx;
+  min-width: 34rpx;
   height: 34rpx;
   flex-shrink: 0;
   color: inherit;
@@ -728,25 +729,31 @@
 .ctx-ic--copy view:nth-child(1) { right: 3rpx; top: 2rpx; }
 .ctx-ic--copy view:nth-child(2) { left: 3rpx; bottom: 2rpx; background: rgba(250, 249, 245, 0.98); }
 
-/* 备注：便签外框 + 两条文本线 */
-.ctx-ic--note {
+/* 备注：便签外框 + 两条文本线（内嵌于 34rpx 容器中央，不覆盖容器自身尺寸） */
+.ctx-ic--note::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   width: 28rpx;
   height: 26rpx;
   border: 2rpx solid currentColor;
   border-radius: 4rpx;
   box-sizing: border-box;
+}
+.ctx-ic--note {
   flex-direction: column;
   justify-content: center;
   gap: 4rpx;
-  padding: 0 5rpx;
 }
 .ctx-ic--note view {
-  width: 100%;
+  width: 16rpx;
   height: 2rpx;
   background: currentColor;
   border-radius: 2rpx;
 }
-.ctx-ic--note view:nth-child(2) { width: 60%; }
+.ctx-ic--note view:nth-child(2) { width: 10rpx; }
 
 /* 金额：¥ 符号（沿用项目以 text 作符号图标的做法，如 tab [+]） */
 .ctx-ic--amount text {

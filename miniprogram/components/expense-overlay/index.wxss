@@ -197,6 +197,10 @@
   /* padding-bottom 由 inline style 覆盖，此处保留 fallback 值 */
   max-height: 70vh;
   overflow: hidden;
+  /* 备注输入时由 JS keyboardHeight 驱动 inline transform 上移到键盘正上方，
+   * transform 不参与 flex 布局流 → 上方 header / 分类区保持绝对静止。
+   * 过渡与系统键盘弹起节奏大致对齐，避免生硬跳变。 */
+  transition: transform 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
 /* ═══════════════════════════════════════════════════════════════

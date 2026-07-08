@@ -255,7 +255,7 @@
 
     <!-- ═══ 数字键盘面板（键盘出现时作为 shell 最后一个 flex 子项） ═══ -->
     <!-- COSTRA-214: 底部安全区由 JS safeAreaBottom 驱动 -->
-    <view wx:if="{{keypadVisible}}" class="keypad-sheet" style="padding-bottom: {{safeAreaBottom}}px;" catchtouchmove="noop">
+    <view wx:if="{{keypadVisible}}" class="keypad-sheet" style="padding-bottom: {{noteFocused ? 0 : safeAreaBottom}}px; transform: translateY(-{{keyboardHeight}}px);" catchtouchmove="noop">
 
       <!-- 金额显示区 -->
       <view class="keypad-sheet__amount">
@@ -281,9 +281,10 @@
             placeholder="添加备注..."
             focus="{{noteFocused}}"
             bindinput="onNoteInput"
+            bindfocus="onNoteFocus"
             bindconfirm="onNoteConfirm"
             bindblur="onNoteBlur"
-            adjust-position="{{true}}"
+            adjust-position="{{false}}"
           />
         </view>
 
