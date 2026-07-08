@@ -9,8 +9,9 @@
 #
 # 任务：
 #   backup [--retain-days N|--no-cleanup|--prefix P]  委托 backup-db.sh
-#   purge-idempotency                                 清过期幂等键（每小时）
+#   purge-idempotency                                 清过期幂等键（每日）
 #   purge-sessions                                    清已过期 session（每日）
+#   purge-invites                                     清过期邀请（每日）
 #   purge-all                                         顺序跑全部 purge-*
 #   renew-cert                                        certbot renew（到期才续 · 续到新证书才 reload nginx）
 #   install-cron                                      用 ${COSTRA_ROOT} 展开生成 /etc/cron.d/costra-maintenance
@@ -40,8 +41,9 @@ LOG_DIR="/data/logs"
 # =============================================================================
 declare -a CRON_SCHEDULE=(
   "backup|27 3,7,11,15,19,23 * * *|maintenance-backup.log"
-  "purge-idempotency|7 * * * *|maintenance-purge.log"
-  "purge-sessions|47 3 * * *|maintenance-purge.log"
+  "purge-idempotency|7 4 * * *|maintenance-purge.log"
+  "purge-sessions|17 4 * * *|maintenance-purge.log"
+  "purge-invites|27 4 * * *|maintenance-purge.log"
   "renew-cert|17 3 * * *|maintenance-cert.log"
 )
 
@@ -52,7 +54,7 @@ TASK=""
 declare -a PASSTHRU=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    backup|purge-idempotency|purge-sessions|purge-all|renew-cert|install-cron|list)
+    backup|purge-idempotency|purge-sessions|purge-invites|purge-all|renew-cert|install-cron|list)
       [[ -z "${TASK}" ]] || die "只能指定一个任务（已有：${TASK}）"
       TASK=$1; shift ;;
     --dry-run|-y|--yes) shift ;;       # common 已处理 · noop
@@ -106,14 +108,20 @@ task_purge() {
 }
 
 do_purge_idempotency() {
-  task_purge "idempotency" "idempotency_keys" "expires_at < now()"
+  # 过期 + 30 天审计保留期后物理删除
+  task_purge "idempotency" "idempotency_keys" "expires_at < now() - interval '30 days'"
 }
 
 do_purge_sessions() {
-  # 删除所有已过期 session（含"已吊销且已过期"的行）· 单条件完全走 idx_user_sessions_expires。
+  # 过期 + 30 天审计保留期后物理删除。
   # 已吊销但未过期的行不影响业务（findActive 过滤 revoked_at IS NULL），
-  # 随其 expires_at 自然过期后被本任务删除 · 无需人为缓冲期这种硬逻辑。
-  task_purge "sessions" "user_sessions" "expires_at < now()"
+  # 随其 expires_at 自然过期后进入 30 天倒计时。
+  task_purge "sessions" "user_sessions" "expires_at < now() - interval '30 days'"
+}
+
+do_purge_invites() {
+  # 过期 + 30 天审计保留期后物理删除（不区分是否已使用）
+  task_purge "invites" "family_invites" "expires_at < now() - interval '30 days'"
 }
 
 # =============================================================================
@@ -178,7 +186,7 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # backup / install-cron / list 各用独立锁名。
 # =============================================================================
 case "${TASK}" in
-  purge-idempotency|purge-sessions|purge-all) LOCK_NAME="purge" ;;
+  purge-idempotency|purge-sessions|purge-invites|purge-all) LOCK_NAME="purge" ;;
   *)                                          LOCK_NAME="${TASK}" ;;
 esac
 if command -v flock >/dev/null 2>&1; then
@@ -204,10 +212,15 @@ case "${TASK}" in
     require_cmd docker; _assert_pg_healthy; _load_pg_pw
     do_purge_sessions
     ;;
+  purge-invites)
+    require_cmd docker; _assert_pg_healthy; _load_pg_pw
+    do_purge_invites
+    ;;
   purge-all)
     require_cmd docker; _assert_pg_healthy; _load_pg_pw
     do_purge_idempotency
     do_purge_sessions
+    do_purge_invites
     ;;
   install-cron)
     do_install_cron
@@ -217,7 +230,7 @@ case "${TASK}" in
     do_renew_cert
     ;;
   list)
-    log_info "可用任务：backup · purge-idempotency · purge-sessions · purge-all · renew-cert · install-cron · list"
+    log_info "可用任务：backup · purge-idempotency · purge-sessions · purge-invites · purge-all · renew-cert · install-cron · list"
     ;;
 esac
 

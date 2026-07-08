@@ -33,8 +33,9 @@ infra/scripts/maintenance.sh   ← 唯一入口 · 子命令分发器
 | 子命令 | 作用 | 频率建议 | 透传参数 |
 |---|---|---|---|
 | `backup` | 委托 `backup-db.sh` | 每 4h 错峰 | `--retain-days N` / `--no-cleanup` / `--prefix` |
-| `purge-idempotency` | 清过期幂等键 | 每小时 | — |
-| `purge-sessions` | 清已过期 session | 每日 | — |
+| `purge-idempotency` | 清过期幂等键（过期 +30 天审计保留） | 每日 | — |
+| `purge-sessions` | 清已过期 session（过期 +30 天审计保留） | 每日 | — |
+| `purge-invites` | 清过期邀请（过期 +30 天审计保留） | 每日 | — |
 | `purge-all` | 顺序跑全部 purge | 手动/兜底 | — |
 | `renew-cert` | certbot 证书续期（到期才续 · 续到才 reload nginx）| 每日 | — |
 | `install-cron` | 用 `${COSTRA_ROOT}` 展开生成 `/etc/cron.d/costra-maintenance` | 一次性 | — |

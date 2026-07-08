@@ -40,8 +40,9 @@ infra/scripts/
 
 # 手动执行（cron 亦调这些）：
 ./maintenance.sh backup                # 委托 backup-db.sh（pg_dump + gzip）
-./maintenance.sh purge-idempotency     # 清过期幂等键（每小时）
-./maintenance.sh purge-sessions        # 清已过期 session（每日）
+./maintenance.sh purge-idempotency     # 清过期幂等键（每日 · 过期 +30 天审计保留）
+./maintenance.sh purge-sessions        # 清已过期 session（每日 · 过期 +30 天审计保留）
+./maintenance.sh purge-invites         # 清过期邀请（每日 · 过期 +30 天审计保留）
 ./maintenance.sh purge-all             # 顺序跑全部 purge
 ./maintenance.sh list                  # 列出可用任务
 
