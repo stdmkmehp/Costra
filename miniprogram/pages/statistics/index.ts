@@ -8,6 +8,7 @@
 
 import { getSafeAreaMetrics, rpxToPx } from '../../utils/safeArea';
 import { scheduleDeferredLoading, type DeferredLoadingHandle } from '../../utils/deferredLoading';
+import { resolveEntryDisplayNote } from '../../utils/entryDisplay';
 import {
   getActiveFamilyId,
   getActiveLedgerId,
@@ -1108,10 +1109,11 @@ Page({
       // 前端切片成最多 L3_VISIBLE 项 + has_more 探测：limit 多查 1 条用于判断溢出。
       const overflow = res.items.length > L3_VISIBLE;
       const visibleItems = overflow ? res.items.slice(0, L3_VISIBLE) : res.items;
+      const fallbackCategoryName = res.category_name || '';
       const l3Items: L3Display[] = visibleItems.map((it: DrillDownEntryItem) => ({
         entry_id: it.entry_id,
         amount: fmtYuan(it.amount),
-        note: it.note || '',
+        note: resolveEntryDisplayNote(it.note, fallbackCategoryName),
         dateLabel: formatEntryDate(it.occurred_at),
         timeLabel: formatEntryTime(it.occurred_at),
         shared: it.shared_type === 'shared',

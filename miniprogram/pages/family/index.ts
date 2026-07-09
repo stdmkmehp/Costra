@@ -8,6 +8,7 @@
 import { toYuan } from '../../utils/money';
 import { getSafeAreaMetrics, rpxToPx } from '../../utils/safeArea';
 import { scheduleDeferredLoading, type DeferredLoadingHandle } from '../../utils/deferredLoading';
+import { resolveEntryDisplayNote } from '../../utils/entryDisplay';
 import { getCategoryIconById } from '../../services/categoryService';
 import { getMemberColorBySlot } from '../../utils/memberColor';
 import { buildMemberMenuItems, type MemberMenuItem } from './memberMenu';
@@ -1302,8 +1303,7 @@ Page({
       const entries: EntryRow[] = visibleItems.map((it: FamilyEntryDetailItem) => ({
         entry_id: it.entry_id,
         amount: formatCentsDisplay(it.amount),
-        // 协作页从一级分类下钻，明细缺二级分类层：有备注优先显示备注，否则回退显示所属二级分类名
-        note: it.note || it.category_name || '',
+        note: resolveEntryDisplayNote(it.note, it.category_name),
         dateLabel: formatEntryDate(it.occurred_at),
         timeLabel: formatEntryTime(it.occurred_at),
         shared: it.shared_type === 'shared',
