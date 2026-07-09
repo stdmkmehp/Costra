@@ -195,14 +195,29 @@ if command -v flock >/dev/null 2>&1; then
   flock -n 9 || die "另一个 [${LOCK_NAME}] 任务仍在运行 · 本次跳过"
 fi
 
+TASK_START_EPOCH=$(date +%s)
+TASK_START_TIME=$(date '+%F %T %z')
+
+on_task_error() {
+  local lineno=$1 exit_code=$2
+  local task_end_epoch task_end_time elapsed
+  task_end_epoch=$(date +%s)
+  task_end_time=$(date '+%F %T %z')
+  elapsed=$((task_end_epoch - TASK_START_EPOCH))
+  log_error "maintenance · ${TASK} 失败 · 开始：${TASK_START_TIME} · 结束：${task_end_time} · 耗时：${elapsed}s · 退出码：${exit_code} · 行：${lineno}"
+  exit "${exit_code}"
+}
+trap 'on_task_error ${LINENO} $?' ERR
+
 print_section_header "🧹 Costra maintenance · ${TASK}"
+log_info "开始时间：${TASK_START_TIME}"
 
 case "${TASK}" in
   backup)
     # 委托 backup-db.sh · export 让子脚本继承 DRY_RUN/ASSUME_YES（common.sh 用 := 不覆盖已存在值）
     export DRY_RUN ASSUME_YES
     log_info "委托 → backup-db.sh ${PASSTHRU[*]}"
-    exec "${SCRIPT_DIR}/backup-db.sh" "${PASSTHRU[@]}"
+    "${SCRIPT_DIR}/backup-db.sh" "${PASSTHRU[@]}"
     ;;
   purge-idempotency)
     require_cmd docker; _assert_pg_healthy; _load_pg_pw
@@ -234,5 +249,8 @@ case "${TASK}" in
     ;;
 esac
 
-log_success "maintenance · ${TASK} 完成"
+TASK_END_EPOCH=$(date +%s)
+TASK_END_TIME=$(date '+%F %T %z')
+TASK_ELAPSED=$((TASK_END_EPOCH - TASK_START_EPOCH))
+log_success "maintenance · ${TASK} 完成 · 开始：${TASK_START_TIME} · 结束：${TASK_END_TIME} · 耗时：${TASK_ELAPSED}s"
 exit 0

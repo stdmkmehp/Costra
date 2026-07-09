@@ -212,7 +212,7 @@ write_file_safe() {
 #
 # 关键：扫描全部参数（不在第一个不认识的参数处 return），这样无论 -y 出现在
 # 命令行哪个位置都能生效。例如：
-#   ./rebuild-server.sh --git-pull -y          # -y 在尾部
+#   ./redeploy.sh --scope server -y            # -y 在尾部
 #   ./04-build-server.sh --mode local -y       # -y 在尾部
 # 之前实现遇到 --git-pull / --mode 就 return，导致后置的 -y 被忽略 ·
 # 是历史踩坑。
