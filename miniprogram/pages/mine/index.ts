@@ -7,7 +7,7 @@
 // 改造要点（2026-06-08）：
 //   - 顶部用户区：头像居中放大（160rpx），昵称居中，下方"已记账 X 天"
 //   - 宏观数据：横向 2 列（记账天数 / 记账笔数）· 走 GET /users/me/overview
-//   - 功能列表：创建协作 / 导入导出 / 定时记账 / 公告 / 意见反馈 / 关于 Costra / 设置 — 导入导出与定时记账为预留 toast「即将支持」，意见反馈使用无样式 button 承载 open-type=feedback，内层 view 复用普通菜单项布局
+//   - 功能列表：创建协作 / 公告 / 意见反馈 / 关于 Costra / 设置 — 意见反馈使用无样式 button 承载 open-type=feedback，内层 view 复用普通菜单项布局；账本导入导出、定时记账已下沉至设置页
 //   - 退出登录 / 合规 footer 完整保留（ICP 备案号仅展示，不再点击复制）
 
 import { hasValidSession, getSession, logout, getToken } from '../../services/auth';
@@ -232,7 +232,7 @@ Page({
   },
 
   onTapSettings() {
-    wx.showToast({ title: '暂无设置内容', icon: 'none' });
+    wx.navigateTo({ url: '/pages-family/settings/index' });
   },
 
   onTapPrivacy() {
@@ -252,11 +252,6 @@ Page({
 
   onTapAbout() {
     wx.navigateTo({ url: '/pages-family/about/index' });
-  },
-
-  /** 导入导出 / 意见反馈 — 一期占位 */
-  onTapComingSoon() {
-    wx.showToast({ title: '即将支持', icon: 'none' });
   },
 
   async onTapLogout() {

@@ -4,7 +4,7 @@
 // 金额 ADR-0002: 全部走 decimal.js（utils/money.ts）
 
 import Decimal from '../../utils/vendor/decimal';
-import { toYuan } from '../../utils/money';
+import { toYuan, parseClipboardToAmount } from '../../utils/money';
 import { getSafeAreaMetrics, rpxToPx } from '../../utils/safeArea';
 import { listMonthEntries, deleteEntry, updateEntryFields, putEntry, getEntry, type Entry, type MonthEntriesResult } from '../../services/db';
 import { fetchMonthEntries } from '../../services/entriesApi';
@@ -39,6 +39,7 @@ import { loadCategoriesSync, refreshCategoryDataAsync } from '../../components/e
 import {
   INITIAL_CALC_STATE, inputDigit, inputDot,
   inputOperator, inputBackspace, pressEquals,
+  pressClear, inputPaste,
   type CalcState,
 } from '../../utils/calc';
 
@@ -2234,6 +2235,11 @@ Page({
       this._onEditAmountAction();
       return;
     }
+    if (key === 'paste') {
+      // 粘贴走 wx.getClipboardData 异步链路，单独走一支
+      this._pasteFromClipboardToEditAmount();
+      return;
+    }
 
     let calc = this.data.editAmountCalc;
 
@@ -2251,6 +2257,15 @@ Page({
       case '-':
         calc = inputOperator(calc, '-');
         break;
+      case '*':
+        calc = inputOperator(calc, '*');
+        break;
+      case '/':
+        calc = inputOperator(calc, '/');
+        break;
+      case 'clear':
+        calc = pressClear(calc);
+        break;
       case 'backspace':
         calc = inputBackspace(calc);
         break;
@@ -2259,6 +2274,42 @@ Page({
     }
 
     this.setData({ editAmountCalc: calc, editAmountDisplay: calc.display });
+    // 2026-07-16 R2: 链式运算 / 溢出反馈 → 统一走 _reportEditAmountCalcError
+    this._reportEditAmountCalcError(calc.error);
+  },
+
+  /**
+   * 计算错误反馈（除零 / 溢出），力度 light + toast。与 expense-overlay 对齐。
+   */
+  _reportEditAmountCalcError(err: 'divzero' | 'overflow' | null) {
+    if (!err) return;
+    wx.vibrateShort({ type: 'light' });
+    wx.showToast({
+      title: err === 'divzero' ? '不能除以 0' : '金额超出上限',
+      icon: 'none',
+    });
+  },
+
+  /**
+   * 编辑金额面板：粘贴键。语义与 expense-overlay._pasteFromClipboard 一致，
+   * 只是 setData 的字段名是 editAmountCalc / editAmountDisplay。
+   */
+  _pasteFromClipboardToEditAmount() {
+    wx.getClipboardData({
+      success: (res) => {
+        const yuanStr = parseClipboardToAmount(res.data || '');
+        if (!yuanStr) {
+          wx.showToast({ title: '剪贴板无有效金额', icon: 'none' });
+          return;
+        }
+        const newCalc = inputPaste(this.data.editAmountCalc, yuanStr);
+        this.setData({ editAmountCalc: newCalc, editAmountDisplay: newCalc.display });
+        wx.vibrateShort({ type: 'light' });
+      },
+      fail: () => {
+        wx.showToast({ title: '剪贴板读取失败', icon: 'none' });
+      },
+    });
   },
 
   _onEditAmountAction() {
@@ -2266,6 +2317,7 @@ Page({
     if (calc.actionState === 'equals') {
       const newCalc = pressEquals(calc);
       this.setData({ editAmountCalc: newCalc, editAmountDisplay: newCalc.display });
+      this._reportEditAmountCalcError(newCalc.error);
     } else {
       this._confirmEditAmount();
     }

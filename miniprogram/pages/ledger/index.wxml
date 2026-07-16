@@ -424,33 +424,52 @@
           <text class="keypad-shared__text {{editAmountSharedType === 'shared' ? 'is-active' : ''}}">公共支出</text>
         </view>
       </view>
-      <!-- 数字键盘（公共样式） -->
+      <!-- 数字键盘（公共样式 · 2026-07-16 从 4 行扩至 5 行：AC / 粘贴 / × / ÷） -->
       <view class="keypad">
+        <!-- 第 1 行：AC 粘贴 日期 × -->
+        <view class="keypad__row">
+          <view class="keypad__key keypad__key--fn keypad__key--clear" data-key="clear" bindtap="onEditAmountKey"><text>AC</text></view>
+          <view class="keypad__key keypad__key--fn keypad__key--paste" data-key="paste" bindtap="onEditAmountKey"><text>Paste</text></view>
+          <picker class="keypad__picker" mode="date" value="{{editAmountDate}}" bindchange="onEditAmountDateChange">
+            <view class="keypad__key keypad__key--fn keypad__key--date"><text>{{editAmountDateText}}</text></view>
+          </picker>
+          <view class="keypad__key keypad__key--fn" data-key="*" bindtap="onEditAmountKey"><text>×</text></view>
+        </view>
+        <!-- 第 2 行：1 2 3 ÷ -->
         <view class="keypad__row">
           <view class="keypad__key" data-key="1" bindtap="onEditAmountKey"><text>1</text></view>
           <view class="keypad__key" data-key="2" bindtap="onEditAmountKey"><text>2</text></view>
           <view class="keypad__key" data-key="3" bindtap="onEditAmountKey"><text>3</text></view>
-          <picker class="keypad__picker" mode="date" value="{{editAmountDate}}" bindchange="onEditAmountDateChange">
-            <view class="keypad__key keypad__key--fn keypad__key--date"><text>{{editAmountDateText}}</text></view>
-          </picker>
+          <view class="keypad__key keypad__key--fn" data-key="/" bindtap="onEditAmountKey"><text>÷</text></view>
         </view>
+        <!-- 第 3 行：4 5 6 + -->
         <view class="keypad__row">
           <view class="keypad__key" data-key="4" bindtap="onEditAmountKey"><text>4</text></view>
           <view class="keypad__key" data-key="5" bindtap="onEditAmountKey"><text>5</text></view>
           <view class="keypad__key" data-key="6" bindtap="onEditAmountKey"><text>6</text></view>
           <view class="keypad__key keypad__key--fn" data-key="+" bindtap="onEditAmountKey"><text>+</text></view>
         </view>
+        <!-- 第 4 行：7 8 9 - -->
         <view class="keypad__row">
           <view class="keypad__key" data-key="7" bindtap="onEditAmountKey"><text>7</text></view>
           <view class="keypad__key" data-key="8" bindtap="onEditAmountKey"><text>8</text></view>
           <view class="keypad__key" data-key="9" bindtap="onEditAmountKey"><text>9</text></view>
           <view class="keypad__key keypad__key--fn" data-key="-" bindtap="onEditAmountKey"><text>-</text></view>
         </view>
+        <!-- 第 5 行：. 0 ⌫ 保存/= -->
         <view class="keypad__row">
           <view class="keypad__key" data-key="." bindtap="onEditAmountKey"><text>.</text></view>
           <view class="keypad__key" data-key="0" bindtap="onEditAmountKey"><text>0</text></view>
-          <view class="keypad__key keypad__key--fn" data-key="backspace" bindtap="onEditAmountKey"><text>⌫</text></view>
-          <view class="keypad__key keypad__key--action keypad__key--done" data-key="done" bindtap="onEditAmountKey"><text>{{editAmountCalc.actionState === 'done' ? '保存' : '='}}</text></view>
+          <view class="keypad__key keypad__key--fn keypad__key--backspace" data-key="backspace" bindtap="onEditAmountKey" aria-label="删除">
+            <view class="ic-backspace"></view>
+          </view>
+          <view
+            class="keypad__key keypad__key--action {{editAmountCalc.actionState === 'done' ? 'keypad__key--done' : 'keypad__key--equals'}}"
+            data-key="done"
+            bindtap="onEditAmountKey"
+          >
+            <text>{{editAmountCalc.actionState === 'done' ? '保存' : '='}}</text>
+          </view>
         </view>
       </view>
     </view>

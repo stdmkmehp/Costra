@@ -161,6 +161,13 @@
   margin: 0;
 }
 
+/*
+ * 字号规范（2026-07-16 统一）：
+ *   - 主档 36rpx：数字 0-9 / . / 四则运算符 × ÷ + −（纯符号视觉等重）
+ *   - 副档 30rpx：文字标签 AC / Paste / 今天/日期 / 完成 / =（多字符或语义标签，比数字略小以保持视觉密度平衡）
+ *   - SVG 图标 ⌫：40×28rpx，视觉尺寸对齐副档字符
+ * 修改字号时应把新增键归入两档之一，不要再引入第三档。
+ */
 .keypad__key {
   flex: 1;
   height: 96rpx;
@@ -177,21 +184,73 @@
 }
 
 .keypad__key:active {
-  background: rgba(28, 27, 26, 0.1);
+  background: rgba(28, 27, 26, 0.09);
 }
 
+/* 2026-07-16 视觉收敛：功能键背景从 0.08 → 0.05，与数字键 0.04 拉齐差距，
+ * 只保留可辨识的分界层次，不再形成割裂感。
+ * 字号：功能键中的四则运算符（× ÷ + −）与数字同为主档 36rpx（由基类继承，无需覆盖）。
+ * 文字标签类子变体（--paste / --date / --action）在下方单独设为副档 30rpx。 */
 .keypad__key--fn {
-  background: rgba(28, 27, 26, 0.08);
-  font-size: 32rpx;
+  background: rgba(28, 27, 26, 0.05);
 }
 
+/* 副档 30rpx：日期文字（今天 / M/D） */
 .keypad__key--date {
-  font-size: 24rpx;
+  font-size: 30rpx;
 }
 
+/* 副档 30rpx：AC（All Clear）文字标签 */
+.keypad__key--clear {
+  font-size: 30rpx;
+}
+
+/* 副档 30rpx + 加粗：完成 / = 主 CTA */
 .keypad__key--action {
-  font-size: 28rpx;
+  font-size: 30rpx;
   font-weight: 600;
+}
+
+/* 副档 30rpx：Paste 键（letter-spacing 让 5 字母排布松弛） */
+.keypad__key--paste {
+  font-size: 30rpx;
+  letter-spacing: 0.5rpx;
+}
+
+/* ─── 退格键：SVG 描边图标（封闭五边形 + 内嵌 ×，参考 iOS 系统 delete） ─── */
+.keypad__key--backspace {
+  /* 父键已 flex-center；.ic-backspace 由 SVG 背景直接绘制，无需额外定位 */
+}
+
+/*
+ * 采用 base64 编码的内联 SVG 作为 background-image。
+ * 原始 SVG:
+ *   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 18" fill="none"
+ *        stroke="rgb(28,27,26)" stroke-opacity="0.85"
+ *        stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+ *     <path d="M8 1 L22 1 A1.5 1.5 0 0 1 23 2.5 L23 15.5 A1.5 1.5 0 0 1 22 17 L8 17 L1 9 Z"/>
+ *     <path d="M12 6 L18 12 M18 6 L12 12"/>
+ *   </svg>
+ *
+ * 走 base64 而非 utf8 data URI：与项目 SVG 约定一致（MEMORY.md 折线图规约），
+ * 兼容性最稳；且描边颜色写死在 SVG 里，按键 :active 变色不影响图标本身。
+ */
+.ic-backspace {
+  width: 40rpx;
+  height: 28rpx;
+  background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAxOCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJyZ2IoMjgsMjcsMjYpIiBzdHJva2Utb3BhY2l0eT0iMC44NSIgc3Ryb2tlLXdpZHRoPSIxLjYiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTggMSBMMjIgMSBBMS41IDEuNSAwIDAgMSAyMyAyLjUgTDIzIDE1LjUgQTEuNSAxLjUgMCAwIDEgMjIgMTcgTDggMTcgTDEgOSBaIi8+PHBhdGggZD0iTTEyIDYgTDE4IDEyIE0xOCA2IEwxMiAxMiIvPjwvc3ZnPg==");
+  background-repeat: no-repeat;
+  background-size: contain;
+  background-position: center;
+}
+
+/* 深色模式：SVG stroke 颜色无法响应 CSS 变量，改切换 background-image 到白色描边版本
+ * （2026-07-16 review Product P1-4 修复）。设计系统 §7 要求组件不判断主题；此处使用
+ * media query 作为图像资源级降级，未引入 JS 判断，与设计系统约束兼容。 */
+@media (prefers-color-scheme: dark) {
+  .ic-backspace {
+    background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAxOCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJyZ2IoMjU1LDI1NSwyNTUpIiBzdHJva2Utb3BhY2l0eT0iMC44NSIgc3Ryb2tlLXdpZHRoPSIxLjYiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTggMSBMMjIgMSBBMS41IDEuNSAwIDAgMSAyMyAyLjUgTDIzIDE1LjUgQTEuNSAxLjUgMCAwIDEgMjIgMTcgTDggMTcgTDEgOSBaIi8+PHBhdGggZD0iTTEyIDYgTDE4IDEyIE0xOCA2IEwxMiAxMiIvPjwvc3ZnPg==");
+  }
 }
 
 .keypad__key--done {

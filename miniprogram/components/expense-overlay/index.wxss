@@ -195,7 +195,8 @@
   border-top-left-radius: 24rpx;
   border-top-right-radius: 24rpx;
   /* padding-bottom 由 inline style 覆盖，此处保留 fallback 值 */
-  max-height: 70vh;
+  /* 2026-07-16: 键盘由 4 行扩至 5 行，max-height 从 70vh 放宽到 78vh，避免小屏被挤压 */
+  max-height: 78vh;
   overflow: hidden;
   /* 备注输入时由 JS keypadOffsetY 驱动 inline transform 移动，使系统键盘从操作行下沿开始
    * 遮盖数字键盘区。transform 不参与 flex 布局流 + 数字键盘常驻使 keypad-sheet

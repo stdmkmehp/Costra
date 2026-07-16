@@ -30,8 +30,10 @@ import {
   INITIAL_CALC_STATE,
   inputDigit, inputDot,
   inputOperator, inputBackspace, pressEquals,
+  pressClear, inputPaste,
   type CalcState,
 } from './calc';
+import { parseClipboardToAmount } from '../../utils/money';
 
 // ─── 账本选项 ─────────────────────────────────────────────────────────────────
 
@@ -567,6 +569,7 @@ Component({
         justEvaluated: false,
         actionState: 'done',
         amountCents: entry.amount || 0,
+        error: null,
       };
 
       // 日期预填：occurred_at → 本地 YYYY-MM-DD
@@ -1042,6 +1045,19 @@ Component({
         case '-':
           newCalc = inputOperator(calc, '-');
           break;
+        case '*':
+          newCalc = inputOperator(calc, '*');
+          break;
+        case '/':
+          newCalc = inputOperator(calc, '/');
+          break;
+        case 'clear':
+          newCalc = pressClear(calc);
+          break;
+        case 'paste':
+          // 粘贴走 wx.getClipboardData 异步链路，独立分支处理，不落到统一 setData
+          this._pasteFromClipboard();
+          return;
         case 'backspace':
           newCalc = inputBackspace(calc);
           break;
@@ -1053,6 +1069,49 @@ Component({
       }
 
       this.setData({ calc: newCalc });
+      // 2026-07-16 R2: 链式运算 / 溢出反馈——状态机在 error 字段显式标记，
+      // 由此统一路径触发反馈，替代原本靠 "display === before" 的隐式判断。
+      this._reportCalcError(newCalc.error);
+    },
+
+    /**
+     * 计算错误统一反馈（2026-07-16 review R2）。
+     * - divzero：light 振动 + toast「不能除以 0」
+     * - overflow：light 振动 + toast「金额超出上限」
+     * - null：静默
+     * 说明：原振动强度 heavy 会有惊吓感（review P2 建议）→ 统一降到 light。
+     */
+    _reportCalcError(err: 'divzero' | 'overflow' | null) {
+      if (!err) return;
+      wx.vibrateShort({ type: 'light' });
+      wx.showToast({
+        title: err === 'divzero' ? '不能除以 0' : '金额超出上限',
+        icon: 'none',
+      });
+    },
+
+    /**
+     * 粘贴键：读取剪贴板 → parseClipboardToAmount 清洗 → inputPaste 注入。
+     *
+     * 无效场景（非数字/纯字母/超上限/0）→ toast「剪贴板无有效金额」，不振动。
+     * 有效场景 → 触感反馈 `light`，覆盖当前操作数。
+     */
+    _pasteFromClipboard() {
+      wx.getClipboardData({
+        success: (res) => {
+          const yuanStr = parseClipboardToAmount(res.data || '');
+          if (!yuanStr) {
+            wx.showToast({ title: '剪贴板无有效金额', icon: 'none' });
+            return;
+          }
+          const newCalc = inputPaste(this.data.calc, yuanStr);
+          this.setData({ calc: newCalc });
+          wx.vibrateShort({ type: 'light' });
+        },
+        fail: () => {
+          wx.showToast({ title: '剪贴板读取失败', icon: 'none' });
+        },
+      });
     },
 
     /** 右下角按钮动作：= 计算 / 完成 保存 */
@@ -1060,9 +1119,10 @@ Component({
       const calc = this.data.calc;
 
       if (calc.actionState === 'equals') {
-        // 按 = 计算结果
+        // 按 = 计算结果。除零/溢出由状态机 error 字段显式标记，走统一反馈。
         const newCalc = pressEquals(calc);
         this.setData({ calc: newCalc });
+        this._reportCalcError(newCalc.error);
       } else {
         // 按"完成/保存" → 保存
         if (this.data.editMode) {
