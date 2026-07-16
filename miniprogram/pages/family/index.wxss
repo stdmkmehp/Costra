@@ -211,6 +211,45 @@
   border: none;
 }
 
+/* ─── 邀请按钮呼吸光环引导（方案 B · 仅在只有自己一人时叠加） ─────────────
+ * 使用 box-shadow 双层脉冲：
+ *   · 内层近距柔化环：始终存在，突出按钮为"可点击的活体"
+ *   · 外层脉冲：ring 半径 + 透明度双通道循环，产生可见但不刺眼的心跳感
+ * 关闭 overflow：base 类为了防 button 默认样式溢出用了 overflow: hidden，
+ * 会裁掉外扩阴影；引导态改为 visible 让光环可见。
+ * 相邻头像 margin-right: 24rpx 已提供足够外扩空间，不会与相邻头像重叠。
+ */
+.avatar-item--invite-hint {
+  overflow: visible !important;
+  animation: avatar-invite-pulse 1800ms ease-in-out infinite;
+}
+
+@keyframes avatar-invite-pulse {
+  0% {
+    box-shadow:
+      0 0 0 0 rgba(7, 193, 96, 0.45),
+      0 0 0 2rpx rgba(7, 193, 96, 0.22);
+  }
+  70% {
+    box-shadow:
+      0 0 0 16rpx rgba(7, 193, 96, 0),
+      0 0 0 2rpx rgba(7, 193, 96, 0.22);
+  }
+  100% {
+    box-shadow:
+      0 0 0 0 rgba(7, 193, 96, 0),
+      0 0 0 2rpx rgba(7, 193, 96, 0.22);
+  }
+}
+
+/* 尊重系统"减少动效"偏好：仅保留静态柔化环，去掉脉冲 */
+@media (prefers-reduced-motion: reduce) {
+  .avatar-item--invite-hint {
+    animation: none;
+    box-shadow: 0 0 0 2rpx rgba(7, 193, 96, 0.28);
+  }
+}
+
 .avatar-item__plus {
   font-size: 36rpx;
   color: #07C160;

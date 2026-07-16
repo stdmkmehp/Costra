@@ -21,6 +21,7 @@ import {
   invalidateUserOverview,
 } from '../../services/userOverviewApi';
 import { hasUnreadAnnouncements } from '../../services/announcementApi';
+import { buildAppShareContent } from '../../utils/share';
 
 interface AppWithBootstrapAndGlobal {
   bootstrapPromise: Promise<void>;
@@ -271,4 +272,14 @@ Page({
 
   // ICP 备案号仅展示，不再提供点击复制/弹窗（工信部备案查询由用户自行访问 beian.miit.gov.cn）
   // Refs: 沪ICP备2026017253号-1X（小程序）· 沪ICP备2026017253号-2（后端 costra.cloud）
+
+  // ─── 分享（推广型 · 内容来自 utils/share.ts） ───────────────────────────────
+  // 只提供 onShareAppMessage（好友分享）；不实现 onShareTimeline：
+  // 微信朋友圈落地页 = 分享时的当前页面，无法自定义 path，
+  // 若在此挂钩子会导致朋友圈进来落到"我的"页，与"统一落地明细页"要求冲突。
+  // 朋友圈分享入口仅在 pages/ledger/index 提供。
+
+  onShareAppMessage() {
+    return buildAppShareContent();
+  },
 });

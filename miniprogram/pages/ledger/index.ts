@@ -42,6 +42,7 @@ import {
   pressClear, inputPaste,
   type CalcState,
 } from '../../utils/calc';
+import { buildAppShareContent, buildTimelineShareContent } from '../../utils/share';
 
 // ─── 类型 ────────────────────────────────────────────────────────────────────────
 
@@ -2432,5 +2433,15 @@ Page({
     if (this.data.swipingRefId) {
       this._resetAllSwipe();
     }
+  },
+
+  // ─── 分享（推广型 · 内容来自 utils/share.ts） ───────────────────────────────
+
+  onShareAppMessage() {
+    return buildAppShareContent();
+  },
+
+  onShareTimeline() {
+    return buildTimelineShareContent();
   },
 });

@@ -47,6 +47,8 @@ import {
 import type { ApiError } from '../../services/request';
 import { mapError } from '../../utils/error-mapper';
 import { logger } from '../../utils/logger';
+import { buildAppShareContent, buildInviteShareContent } from '../../utils/share';
+import { dispatchFamilyShare } from './shareDispatch';
 
 /** 跨页跳转统计页动作（COSTRA-302 写入 · COSTRA-303 消费） */
 export interface PendingStatisticsAction {
@@ -290,6 +292,12 @@ Page({
     familyKind: 'personal' as FamilyKind,
     isOwner: false,
     canInvite: false,
+    /**
+     * 顶部 "+" 邀请按钮呼吸光环引导（方案 B）
+     * 触发条件：multi 态 + 有邀请权限（owner 且未满员）+ 账本只有自己一位活跃成员。
+     * 目的：让刚创建协作账本的用户注意到成员区的邀请入口；成员≥2 后自然消失，无引导专属存储。
+     */
+    hintInvite: false,
     currentUserId: '',
 
     // ─── 家庭列表（多家庭切换用） ───
@@ -874,6 +882,8 @@ Page({
       isEmpty,
       emptyTitle: buildEmptyTitle(dim, value),
       emptyHint: isEmpty ? this._pickEmptyHint() : '',
+      // solo 态没有 "+" 按钮，主动关闭引导态保持 data 与视图自洽
+      hintInvite: false,
     });
   },
 
@@ -941,6 +951,10 @@ Page({
     const isEmpty = totalExpense === 0 && totals.income === 0;
     const dim = this.data.dimension;
     const value = dim === 'monthly' ? this.data.currentMonth : this.data.currentYear;
+    const canInvite = isCurrentUserOwner && activeMembers.length < maxFamilyMembers;
+    // 方案 B：仅当只有自己一位活跃成员且能发起邀请时，才对 "+" 按钮做呼吸光环引导。
+    // 成员≥2 后自然为 false，无需任何清理逻辑或本地引导标记。
+    const hintInvite = canInvite && activeMembers.length === 1;
 
     this._settleLoading({
       contentReady: true,
@@ -953,7 +967,8 @@ Page({
       emptyHint: isEmpty ? this._pickEmptyHint() : '',
       familyName: summary.family_name,
       isOwner: isCurrentUserOwner,
-      canInvite: isCurrentUserOwner && activeMembers.length < maxFamilyMembers,
+      canInvite,
+      hintInvite,
     });
 
     // COSTRA-305：数据变更后 summary 重建时，_buildDrilldownRows 保留了已展开 L1 的旧 entries
@@ -1495,23 +1510,39 @@ Page({
     }
   },
 
-  /** onShareAppMessage 回调（仅在 invite token 已就绪时由遮罩内分享按钮触发） */
-  onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent {
-    const inviteToken = this._pendingInviteToken;
-    const familyName = this.data.familyName;
-    const path = inviteToken
-      ? `/pages/invite-confirm/index?token=${inviteToken}`
-      : '/pages/family/index';
-
-    // 标记已触发分享（微信已废弃 success/fail 回调，改由 onShow 检测此标记来关闭弹窗）
-    if (inviteToken) {
+  /** onShareAppMessage · 双态分派（协作邀请与推广型分享隔离）
+   *
+   * 场景 A · 协作邀请（对外行为与旧版逐字等价 · 由 utils/share.spec.ts 锁死）
+   *   触发：邀请遮罩内 <button open-type="share">分享邀请</button>
+   *   判定：opts.from === 'button' && _pendingInviteToken 有值
+   *   返回：{ title: `${familyName} 邀请你一起记账`, path: `/pages/invite-confirm/index?token=${inviteToken}` }
+   *   副作用：置 _pendingInviteShared = true，让 onShow 关闭邀请遮罩且不 revoke token
+   *
+   * 场景 B · 推广型分享（新增能力）
+   *   触发：右上角胶囊菜单"分享给朋友"
+   *   判定：opts.from === 'menu'（或场景 A 判定失败的兜底路径）
+   *   返回：utils/share.ts 的通用推广卡（Costra · 开启记账之路）
+   *   副作用：无（绝不触碰 _pendingInviteShared，避免误关邀请遮罩）
+   *
+   * opts.from 见微信官方 Page.onShareAppMessage 文档定义：
+   *   https://developers.weixin.qq.com/miniprogram/dev/reference/api/Page.html#onShareAppMessage-Object-object
+   *   （'button' = 页面内 open-type=share 按钮；'menu' = 右上角胶囊菜单；访问于 2026-07-16）
+   *
+   * 不提供 onShareTimeline：朋友圈落地页 = 分享时的当前页面，无法自定义 path，
+   * 若在此挂钩子会导致朋友圈进来落到协作页，与"统一落地明细页"约束冲突。
+   */
+  onShareAppMessage(opts?: WechatMiniprogram.Page.IShareAppMessageOption): WechatMiniprogram.Page.ICustomShareContent {
+    const decision = dispatchFamilyShare({
+      from: opts?.from,
+      pendingInviteToken: this._pendingInviteToken,
+    });
+    if (decision.kind === 'invite') {
+      // 场景 A 副作用：与旧代码逐字等价（让 onShow 关闭邀请遮罩且不 revoke token）
       this._pendingInviteShared = true;
+      return buildInviteShareContent(this.data.familyName, decision.inviteToken);
     }
-
-    return {
-      title: inviteToken ? `${familyName} 邀请你一起记账` : 'Costra 协作记账',
-      path,
-    };
+    // 场景 B：通用推广分享，绝不触碰 _pendingInviteShared
+    return buildAppShareContent();
   },
 
   /** 阻止遮罩触摸穿透 */

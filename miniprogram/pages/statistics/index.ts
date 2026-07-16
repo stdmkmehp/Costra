@@ -78,6 +78,7 @@ import {
 } from './viewModels';
 import { makeAllTab, buildMemberTabs } from './memberHelpers';
 import type { PendingStatisticsAction } from '../family/index';
+import { buildAppShareContent } from '../../utils/share';
 
 interface AppWithBootstrap {
   bootstrapPromise: Promise<void>;
@@ -1326,4 +1327,14 @@ Page({
 
   /** 阻止穿透 */
   noop() {},
+
+  // ─── 分享（推广型 · 内容来自 utils/share.ts） ───────────────────────────────
+  // 只提供 onShareAppMessage（好友分享）；不实现 onShareTimeline：
+  // 微信朋友圈落地页 = 分享时的当前页面，无法自定义 path，
+  // 若在此挂钩子会导致朋友圈进来落到统计页，与"统一落地明细页"要求冲突。
+  // 朋友圈分享入口仅在 pages/ledger/index 提供。
+
+  onShareAppMessage() {
+    return buildAppShareContent();
+  },
 });
