@@ -202,14 +202,16 @@
   font-weight: 400;
 }
 
-/* 副档 30rpx：日期文字（今天 / M/D） */
+/* 副档 30rpx + 400 字重：日期文字（今天 / M/D） */
 .keypad__key--date {
   font-size: 30rpx;
+  font-weight: 400;
 }
 
-/* 副档 30rpx：AC（All Clear）文字标签 */
+/* 副档 30rpx + 400 字重：AC（All Clear）文字标签 */
 .keypad__key--clear {
   font-size: 30rpx;
+  font-weight: 400;
 }
 
 /* 副档 30rpx + 加粗：完成 / = 主 CTA */
@@ -218,9 +220,10 @@
   font-weight: 600;
 }
 
-/* 副档 30rpx：Paste 键（letter-spacing 让 5 字母排布松弛） */
+/* 副档 30rpx + 400 字重：Paste 键（letter-spacing 让 5 字母排布松弛） */
 .keypad__key--paste {
   font-size: 30rpx;
+  font-weight: 400;
   letter-spacing: 0.5rpx;
 }
 

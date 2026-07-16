@@ -7,7 +7,7 @@
 
   <view class="about__section">
     <view class="about__section-title">关于 Costra</view>
-    <view class="about__body">Costra 取自 <text class="about__bold">Cost（花费）</text> 与 <text class="about__bold">Track（记录）</text>，是一款面向多人协作/家庭共享的云端记账小程序。Costra 追求恰到好处的简洁与质感，打开即用、随手就记，让每一笔收支都看得清晰、每一次操作都用得顺手。</view>
+    <view class="about__body">Costra 取自 <text class="about__bold">Cost（花费）</text> 与 <text class="about__bold">Track（记录）</text>，是一款面向多人协作/家庭共享的云端记账小程序。Costra 追求恰到好处的简洁与质感，打开即用、随手就记，坚持免费、永久无广。</view>
   </view>
 
   <view class="about__section">
@@ -20,7 +20,7 @@
 
   <view class="about__section">
     <view class="about__section-title">我们的理念</view>
-    <view class="about__body">我们希望 Costra 不只是一个工具，而是帮助用户建立更健康财务习惯的伙伴。极简的界面、顺手的操作、恰到好处的协作，让每一次记账都轻松自然，让每一分收支都心中有数。</view>
+    <view class="about__body">我们希望 Costra 不只是一个工具，而是帮助用户建立更健康财务习惯的伙伴。极简的界面、顺手的操作、恰到好处的协作，让每一笔收支都看得清晰、每一次操作都用得顺手。</view>
   </view>
 
   <view class="about__footer">
