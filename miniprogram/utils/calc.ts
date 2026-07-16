@@ -262,11 +262,15 @@ export function inputDigit(calc: CalcState, digit: string): CalcState {
 
   // 追加数字（限制显示长度）
   const currentOperand = calc.accumulator === '0' ? digit : calc.accumulator + digit;
-  // 小数点后最多2位
-  if (currentOperand.includes('.') && currentOperand.split('.')[1]?.length > 2) return calc;
-  // 整数部分最多8位
+  // 小数点后最多2位 · 越界忽略此次输入，但清 error（用户已经开始新操作，旧 toast 不应重复触发）
+  if (currentOperand.includes('.') && currentOperand.split('.')[1]?.length > 2) {
+    return calc.error ? { ...calc, error: null } : calc;
+  }
+  // 整数部分最多8位 · 同上
   const intPart = currentOperand.split('.')[0];
-  if (intPart.length > 8 && !currentOperand.includes('.')) return calc;
+  if (intPart.length > 8 && !currentOperand.includes('.')) {
+    return calc.error ? { ...calc, error: null } : calc;
+  }
 
   let newDisplay: string;
   if (calc.pendingOp) {
@@ -329,7 +333,10 @@ export function inputDot(calc: CalcState): CalcState {
     };
   }
 
-  if (calc.accumulator.includes('.')) return calc;
+  if (calc.accumulator.includes('.')) {
+    // 已有小数点 · 忽略此次输入但清 error
+    return calc.error ? { ...calc, error: null } : calc;
+  }
 
   const currentOperand = calc.accumulator + '.';
   let newDisplay: string;
