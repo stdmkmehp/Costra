@@ -2294,23 +2294,35 @@ Page({
   /**
    * 编辑金额面板：粘贴键。语义与 expense-overlay._pasteFromClipboard 一致，
    * 只是 setData 的字段名是 editAmountCalc / editAmountDisplay。
+   *
+   * 失败细分（2026-07-16）：文案与 expense-overlay._clipboardReasonText 完全对齐。
    */
   _pasteFromClipboardToEditAmount() {
     wx.getClipboardData({
       success: (res) => {
-        const yuanStr = parseClipboardToAmount(res.data || '');
-        if (!yuanStr) {
-          wx.showToast({ title: '剪贴板无有效金额', icon: 'none' });
+        const result = parseClipboardToAmount(res.data);
+        if (!result.ok) {
+          wx.showToast({ title: this._clipboardReasonText(result.reason), icon: 'none' });
           return;
         }
-        const newCalc = inputPaste(this.data.editAmountCalc, yuanStr);
+        const newCalc = inputPaste(this.data.editAmountCalc, result.value);
         this.setData({ editAmountCalc: newCalc, editAmountDisplay: newCalc.display });
         wx.vibrateShort({ type: 'light' });
       },
       fail: () => {
-        wx.showToast({ title: '剪贴板读取失败', icon: 'none' });
+        wx.showToast({ title: '读取剪贴板失败', icon: 'none' });
       },
     });
+  },
+
+  /** 粘贴失败 reason → toast 文案（与 expense-overlay 保持一致） */
+  _clipboardReasonText(reason: 'empty' | 'no-number' | 'overflow' | 'zero'): string {
+    switch (reason) {
+      case 'empty':     return '剪贴板是空的';
+      case 'no-number': return '未识别到金额';
+      case 'overflow':  return '金额超出上限';
+      case 'zero':      return '金额不能为 0';
+    }
   },
 
   _onEditAmountAction() {

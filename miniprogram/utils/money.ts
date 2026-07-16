@@ -84,28 +84,46 @@ export function parseAmountInputToCents(input: string): number {
 const CLIPBOARD_MAX_INT_DIGITS = 8;
 
 /**
- * 从剪贴板任意文本中提取合法金额（元字符串，去尾零）。
+ * 剪贴板金额解析结果：discriminated union，
+ * 让 UI 层可以按 reason 给出细化提示，而不是笼统的「读取失败」。
+ *
+ * - `empty`     ：剪贴板为空（用户没复制过内容）
+ * - `no-number` ：有内容但抽不到任何合法数字 token（如纯字母/纯符号/`abc123def` 这类被丢弃的 token）
+ * - `overflow`  ：抽到数字但整数位 >8（超上限，与保存路径的 amountCents 约束对齐）
+ * - `zero`      ：抽到数字但值为 0（不是有效金额）
+ */
+export type ClipboardAmountResult =
+  | { ok: true; value: string }
+  | { ok: false; reason: 'empty' | 'no-number' | 'overflow' | 'zero' };
+
+/**
+ * 从剪贴板任意文本中提取合法金额。
  *
  * 用于记账面板"粘贴"键：把用户复制的 `¥12.34` / `共 12,345.67 元` / `１２.３４` 等
- * 各种口径的金额文本，归一为记账可用的元字符串（如 `'12.34'` / `'12345.67'` / `'12.3'`）。
+ * 各种口径的金额文本，归一为记账可用的元字符串。
  *
- * 规则（详见方案 §3.1）：
+ * 规则：
  * 1. 输入裁剪 64 字符防超长；
  * 2. 全角数字/小数点/中文句号归一为半角；
  * 3. 剔除货币符号、千分位、空白等噪声（`¥￥$` 及 `CNY/RMB/元/人民币` 等）；
- * 4. 抽取首个不紧邻英文字母的 `-?\d+(?:\.\d+)?` 子串；
+ * 4. 抽取首个不含英文字母的数字 token；
  * 5. 取绝对值（记账金额恒正）；
- * 6. 超过 `CLIPBOARD_MAX_INT_DIGITS` 位整数 → 拒绝；
- * 7. 小数超过 2 位 → 向零截断到 2 位（与 toCents 保持一致，不拒绝）；
- * 8. 结果为 0 → 视为无效金额（返回 null）。
+ * 6. 超过 `CLIPBOARD_MAX_INT_DIGITS` 位整数 → reason='overflow'；
+ * 7. 小数超过 2 位 → 向零截断到 2 位（不拒绝，与 toCents 一致）；
+ * 8. 结果为 0 → reason='zero'。
  *
- * 返回：合法元字符串（去尾零，`12.30 → '12.3'`；`12.00 → '12'`），无效则返回 null。
+ * 返回：`{ ok: true, value: '12.3' }`（去尾零元字符串）或
+ *      `{ ok: false, reason: 'empty' | 'no-number' | 'overflow' | 'zero' }`。
+ *
+ * 类型上收 `unknown` 是刻意为之：调用方是异步 wx API 的 res.data，虽然运行时是
+ * string，但静态类型上被视为不可信外部输入。
  */
-export function parseClipboardToAmount(raw: string): string | null {
-  if (typeof raw !== 'string') return null;
-  // Step 1: 长度裁剪
+export function parseClipboardToAmount(raw: unknown): ClipboardAmountResult {
+  // Step 0: 类型 & 空值兜底 → empty
+  if (typeof raw !== 'string') return { ok: false, reason: 'empty' };
+  // Step 1: 长度裁剪 + 去首尾空白
   let s = raw.slice(0, 64).trim();
-  if (!s) return null;
+  if (!s) return { ok: false, reason: 'empty' };
 
   // Step 2: 本地化归一
   //   全角数字 U+FF10..U+FF19 → 半角
@@ -122,42 +140,43 @@ export function parseClipboardToAmount(raw: string): string | null {
   //   按字母/数字/点/负号连续段切 token，若 token 同时含字母则丢弃（如 abc123def / sku12.34）。
   //   token 内需能匹配 `-?\d+(\.\d+)?` 才视为候选，避免误取 `.34`、`--` 等。
   const tokens = s.match(/[A-Za-z0-9.-]+/g);
-  if (!tokens) return null;
+  if (!tokens) return { ok: false, reason: 'no-number' };
   let picked: string | null = null;
   for (const tok of tokens) {
     if (/[A-Za-z]/.test(tok)) continue; // 混入字母的 token 直接丢
     const m = tok.match(/-?\d+(?:\.\d+)?/);
     if (m) { picked = m[0]; break; }
   }
-  if (!picked) return null;
+  if (!picked) return { ok: false, reason: 'no-number' };
 
-  // Step 4: Decimal 解析
+  // Step 4: Decimal 解析（异常输入退化为 no-number）
   let d: Decimal;
   try {
     d = new Decimal(picked);
   } catch {
-    return null;
+    return { ok: false, reason: 'no-number' };
   }
-  if (!d.isFinite()) return null;
+  if (!d.isFinite()) return { ok: false, reason: 'no-number' };
 
   // Step 5: 取绝对值
   if (d.isNegative()) d = d.abs();
 
   // Step 6: 整数位上限
   const intPart = d.truncated().abs().toFixed(0);
-  if (intPart.length > CLIPBOARD_MAX_INT_DIGITS) return null;
+  if (intPart.length > CLIPBOARD_MAX_INT_DIGITS) return { ok: false, reason: 'overflow' };
 
   // Step 7: 向零截断到 2 位小数（与 toCents 一致）
   d = d.toDecimalPlaces(2, Decimal.ROUND_DOWN);
 
-  // Step 8: 0 视为无效
-  if (d.isZero()) return null;
+  // Step 8: 0 视为无效（截断后可能变 0，如 "0.001" → 0）
+  if (d.isZero()) return { ok: false, reason: 'zero' };
 
   // 返回去尾零元字符串
   const fixed = d.toFixed(2);
   if (fixed.includes('.')) {
     const trimmed = fixed.replace(/0+$/, '').replace(/\.$/, '');
-    return trimmed || null;
+    // trimmed 理论上不可能为空（已在 Step 8 排除 0），但兜底返回 no-number 语义
+    return trimmed ? { ok: true, value: trimmed } : { ok: false, reason: 'no-number' };
   }
-  return fixed;
+  return { ok: true, value: fixed };
 }

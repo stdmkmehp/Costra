@@ -26,8 +26,9 @@
 
 const SHARE_TITLE = 'Costra · 开启记账之路';
 const SHARE_PATH = '/pages/ledger/index';
-const SHARE_IMAGE_APP = '/assets/share/share-cover.png';           // 5:4 · 好友分享
-const SHARE_IMAGE_TIMELINE = '/assets/share/share-cover-timeline.png'; // 1:1 · 朋友圈
+const SHARE_IMAGE_APP = '/assets/share/share-cover.png';                // 5:4 · 好友分享
+const SHARE_IMAGE_TIMELINE = '/assets/share/share-cover-timeline.png';  // 1:1 · 朋友圈
+const SHARE_IMAGE_INVITE = '/assets/share/share-cover-invite.png';      // 5:4 · 协作邀请
 
 export function buildAppShareContent(): WechatMiniprogram.Page.ICustomShareContent {
   return {
@@ -48,10 +49,13 @@ export function buildTimelineShareContent(): WechatMiniprogram.Page.ICustomTimel
 /**
  * 构造协作邀请分享内容。
  *
- * 与旧版 family/index.ts 内联实现的功能等价（受 share.spec.ts 单测约束）：
- *   - title: `${familyName} 邀请你一起记账`
- *   - path:  `/pages/invite-confirm/index?token=${inviteToken}`
- *   - 不带 imageUrl（沿用旧行为，走微信页面截图）
+ * 与旧版 family/index.ts 内联实现的兼容说明（受 share.spec.ts 单测约束）：
+ *   - title 逐字一致：`${familyName} 邀请你一起记账`
+ *   - path  逐字一致：`/pages/invite-confirm/index?token=${inviteToken}`
+ *   - imageUrl 从旧版的"缺省（走微信页面截图）"升级为**专属邀请封面图**：
+ *     视觉延续推广型分享的 Wordmark 家族（同底色/同 Wordmark/同装饰线），
+ *     仅主副文案替换为邀请场景（"邀你一起记账" / "每一笔支出，都值得被看见"）。
+ *     此升级不改变协作邀请的任何状态机 / 副作用 / 关闭链路，仅优化分享卡视觉。
  */
 export function buildInviteShareContent(
   familyName: string,
@@ -60,5 +64,6 @@ export function buildInviteShareContent(
   return {
     title: `${familyName} 邀请你一起记账`,
     path: `/pages/invite-confirm/index?token=${inviteToken}`,
+    imageUrl: SHARE_IMAGE_INVITE,
   };
 }

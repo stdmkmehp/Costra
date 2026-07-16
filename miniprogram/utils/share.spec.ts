@@ -5,11 +5,12 @@
 //    · onShareAppMessage 5:4 封面：https://developers.weixin.qq.com/miniprogram/dev/reference/api/Page.html#onShareAppMessage-Object-object
 //    · onShareTimeline   1:1 封面：https://developers.weixin.qq.com/miniprogram/dev/reference/api/Page.html#onShareTimeline
 //    （访问于 2026-07-16）
-// 2. **协作邀请型分享**与旧版 family/index.ts 内联实现的行为逐字等价
+// 2. **协作邀请型分享** title / path 与旧版 family/index.ts 内联实现的行为逐字等价
 //    ——旧行为对比锚：
 //      title: `${familyName} 邀请你一起记账`
 //      path:  `/pages/invite-confirm/index?token=${inviteToken}`
-//      不带 imageUrl 字段
+//    imageUrl 从旧版的"缺省（走微信页面截图）"升级为专属邀请封面图，此升级是纯增量优化，
+//    不影响协作邀请任何状态机 / 副作用 / 关闭链路。
 //    单测直接校验字面量，任何"顺手改文案"都会被立即拦截。
 import { describe, it, expect } from 'vitest';
 import {
@@ -57,9 +58,15 @@ describe('utils/share · buildInviteShareContent（协作邀请 · 行为等价�
     expect(c.path).toBe('/pages/invite-confirm/index?token=tok_abc123');
   });
 
-  it('不携带 imageUrl（沿用旧行为，走微信页面截图）', () => {
+  it('携带专属邀请封面图（与旧版"走微信页面截图"的行为升级）', () => {
     const c = buildInviteShareContent('家庭', 'tok_x');
-    expect(c.imageUrl).toBeUndefined();
+    expect(c.imageUrl).toBe('/assets/share/share-cover-invite.png');
+  });
+
+  it('邀请封面图必须与推广型好友分享 / 朋友圈图片各自独立（避免混用）', () => {
+    const invite = buildInviteShareContent('家庭', 'tok_x').imageUrl;
+    expect(invite).not.toBe(buildAppShareContent().imageUrl);
+    expect(invite).not.toBe(buildTimelineShareContent().imageUrl);
   });
 
   it('familyName 含特殊字符（emoji / 空格）不影响 title 构造', () => {

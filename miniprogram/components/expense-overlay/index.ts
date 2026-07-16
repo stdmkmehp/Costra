@@ -1093,25 +1093,39 @@ Component({
     /**
      * 粘贴键：读取剪贴板 → parseClipboardToAmount 清洗 → inputPaste 注入。
      *
-     * 无效场景（非数字/纯字母/超上限/0）→ toast「剪贴板无有效金额」，不振动。
-     * 有效场景 → 触感反馈 `light`，覆盖当前操作数。
+     * 失败细分（2026-07-16）：按 reason 给更具体的 toast，替代笼统的「读取失败」。
+     *   - empty      → 剪贴板是空的
+     *   - no-number  → 未识别到金额
+     *   - overflow   → 金额超出上限
+     *   - zero       → 金额不能为 0
+     *   - API fail   → 读取剪贴板失败
      */
     _pasteFromClipboard() {
       wx.getClipboardData({
         success: (res) => {
-          const yuanStr = parseClipboardToAmount(res.data || '');
-          if (!yuanStr) {
-            wx.showToast({ title: '剪贴板无有效金额', icon: 'none' });
+          const result = parseClipboardToAmount(res.data);
+          if (!result.ok) {
+            wx.showToast({ title: this._clipboardReasonText(result.reason), icon: 'none' });
             return;
           }
-          const newCalc = inputPaste(this.data.calc, yuanStr);
+          const newCalc = inputPaste(this.data.calc, result.value);
           this.setData({ calc: newCalc });
           wx.vibrateShort({ type: 'light' });
         },
         fail: () => {
-          wx.showToast({ title: '剪贴板读取失败', icon: 'none' });
+          wx.showToast({ title: '读取剪贴板失败', icon: 'none' });
         },
       });
+    },
+
+    /** 粘贴失败 reason → toast 文案（与 pages/ledger 保持一致） */
+    _clipboardReasonText(reason: 'empty' | 'no-number' | 'overflow' | 'zero'): string {
+      switch (reason) {
+        case 'empty':     return '剪贴板是空的';
+        case 'no-number': return '未识别到金额';
+        case 'overflow':  return '金额超出上限';
+        case 'zero':      return '金额不能为 0';
+      }
     },
 
     /** 右下角按钮动作：= 计算 / 完成 保存 */
