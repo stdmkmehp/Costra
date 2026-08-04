@@ -19,11 +19,13 @@
 - Todo: COSTRA-114（开发服务器 bootstrap 手册 · I-003 未开工）
 - 其他: COSTRA-108（miniprogram-ci 演练）/ COSTRA-117（husky v10 兼容）
 - **2026-05-23**：路径 α Phase-1 prod-bootstrap 手册 v1.0 + prod-readiness-checklist v1.0 落盘（与 D-026 同对话轮交付 · Orchestrator 兜底落档 · 见 D-026 §6.1 incident 备注 · 等 Human SSH 49.235.216.20 跑 §1~§8）
+- **2026-07-21**：`analytics/` 行为分析项目全量实现（spec v0.1.1 · 24 项语法检查通过 · 端到端 mock 渲染验收通过）
 
 ## §3 交付历史索引
 
 - （无 · 从下一次装扮开始记录）
 - 2026-05-23：`infra/prod-bootstrap.md` v1.0 + `infra/wechat/prod-readiness-checklist.md` v1.0（Orchestrator 兜底交付 · devops-ops 装扮档工具白名单错配 incident 见 D-026 §6.1 · 候选 Sprint-3 末 Retro 议题 #6）
+- 2026-07-21：`analytics/` 行为分析项目全量实现（见 history/2026-07-21-analytics-impl-brief.md）
 
 ## §4 最近决策影响
 
@@ -53,5 +55,6 @@
 
 ## §7 最近更新时间戳
 
+- 2026-07-21T21:00:00+08:00 · analytics/ 行为分析项目全量实现 · spec v0.1.1 全覆盖
 - 2026-05-23T20:30:00+08:00 · 路径 α Phase-1 prod-bootstrap 落档 · D-026 配套交付（Orchestrator 兜底）
 - 2026-05-02T19:24:00+08:00 · 初始化骨架（by Orchestrator）
