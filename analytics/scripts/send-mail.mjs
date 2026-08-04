@@ -111,21 +111,24 @@ const htmlBody = marked.parse(mdContent);
 
 const inlineStyle = `
 <style>
-  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; font-size: 14px; color: #1c1b1a; line-height: 1.6; max-width: 800px; margin: 0 auto; padding: 16px; }
-  h1 { font-size: 20px; color: #1a1a1a; border-bottom: 2px solid #e8e8e8; padding-bottom: 8px; }
-  h2 { font-size: 16px; color: #2c2c2c; margin-top: 24px; border-left: 3px solid #4a9eff; padding-left: 8px; }
-  table { border-collapse: collapse; margin: 8px 0; width: 100%; font-size: 13px; }
-  th, td { border: 1px solid #ddd; padding: 4px 8px; text-align: left; }
-  th { background: #f1f2ec; font-weight: 600; }
-  tr:nth-child(even) { background: #fafafa; }
-  code { background: #f5f5f5; padding: 2px 4px; border-radius: 3px; font-family: "SF Mono", Consolas, monospace; font-size: 13px; }
-  pre { background: #f5f5f5; padding: 12px; border-radius: 4px; overflow-x: auto; }
-  blockquote { border-left: 3px solid #ccc; margin: 8px 0; padding: 4px 12px; color: #555; background: #f9f9f9; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; font-size: 14px; color: #1c1b1a; line-height: 1.7; max-width: 860px; margin: 0 auto; padding: 20px; background: #f8f9fa; }
+  h1 { font-size: 22px; color: #1a1a1a; border-bottom: 3px solid #4a9eff; padding-bottom: 10px; margin-bottom: 16px; }
+  h2 { font-size: 17px; color: #2c2c2c; margin-top: 28px; margin-bottom: 12px; padding: 6px 10px; background: #f0f4ff; border-left: 4px solid #4a9eff; border-radius: 0 4px 4px 0; }
+  h3 { font-size: 15px; color: #444; margin-top: 20px; margin-bottom: 8px; }
+  table { border-collapse: collapse; margin: 12px 0; width: 100%; font-size: 13px; background: #fff; border-radius: 6px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  th { background: #f0f4ff; font-weight: 600; color: #333; padding: 8px 10px; text-align: left; border-bottom: 2px solid #e0e6f0; }
+  td { border-bottom: 1px solid #eee; padding: 6px 10px; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #f8faff; }
+  code, pre { background: #f5f5f5; font-family: "SF Mono", "JetBrains Mono", Consolas, monospace; font-size: 12px; }
+  code { padding: 2px 5px; border-radius: 3px; }
+  pre { padding: 14px 16px; border-radius: 6px; overflow-x: auto; line-height: 1.4; border: 1px solid #e8e8e8; }
+  blockquote { border-left: 4px solid #4a9eff; margin: 12px 0; padding: 8px 16px; color: #444; background: #f0f8ff; border-radius: 0 4px 4px 0; }
   ul, ol { padding-left: 20px; }
-  li { margin: 2px 0; }
+  li { margin: 4px 0; }
   strong { color: #1a1a1a; }
-  em { color: #666; }
-  hr { border: none; border-top: 1px solid #e8e8e8; margin: 16px 0; }
+  em { color: #666; font-style: italic; }
+  hr { border: none; border-top: 1px solid #e8e8e8; margin: 20px 0; }
 </style>
 `;
 

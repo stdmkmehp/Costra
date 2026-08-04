@@ -183,14 +183,16 @@ analytics/
 │   ├── send-mail.mjs           # markdown → HTML → SMTP
 │   └── send-failure-mail.mjs   # 失败/无 dump 告警邮件
 ├── sql/
-│   ├── 10-summary.sql          # 各维度汇总
-│   ├── 20-new-users.sql        # 新增用户明细
+│   ├── 10-summary.sql          # 各维度汇总（含手动/自动记账区分）
+│   ├── 20-new-users.sql        # 新增用户明细（含来源/家庭数/首笔记账耗时）
 │   ├── 30-new-ledgers.sql      # 新增账本明细
-│   ├── 40-new-entries.sql      # 新增记账明细（全量，渲染层截断）
+│   ├── 40-new-entries.sql      # 新增记账明细（含 source: auto/manual）
 │   ├── 50-new-invites.sql      # 新增邀请明细
-│   ├── 60-active-users.sql     # 活跃用户（DAU）
-│   └── 90-anomaly.sql          # 异常信号（高频用户/账本）
-├── templates/
+│   ├── 60-active-users.sql     # 活跃/低活跃用户（7天≥5天/2~4天）
+│   ├── 65-auto-only-users.sql  # 仅自动记账预警（7d/14d/30d）
+│   ├── 70-retention.sql  # 留存率（7日/30日）
+│   ├── 80-daily-trend.sql    # 过去7天每日趋势数据（柱状图用）
+│   └── 90-anomaly.sql       # 异常信号（高频用户/账本）├── templates/
 │   ├── common.mjs              # 格式化辅助（fmtAmount/fmtBadge/parseCsv/sparkline）
 │   ├── daily.mjs               # 日报 template（< 2d）
 │   ├── range.mjs               # 区间报告 template（2d~7d）

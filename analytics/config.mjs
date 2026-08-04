@@ -1,5 +1,10 @@
 // config.mjs · 阈值配置（见 spec §7.1）
-// 阈值：users=10, ledgers=10, entries=20, invites=5, active=8
+// 展示阈值：users=10, ledgers=10, entries=20, invites=5, active=8
+//
+// 活跃判定规则（不可配置）：
+//   活跃用户：最近 7 天内有 ≥5 天进行过记账
+//   低活跃用户：最近 7 天内有 2~4 天进行过记账
+//   仅自动记账预警：连续 7/14/30 天只有自动记账没有手动记账
 
 export const DEFAULT_THRESHOLDS = {
   users:   10,

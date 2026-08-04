@@ -156,6 +156,9 @@ const data = {
   entries:  readCsv('40-new-entries'),
   invites:  readCsv('50-new-invites'),
   active:   readCsv('60-active-users'),
+  autoOnly: readCsv('65-auto-only-users'),
+  retention:readCsv('70-retention'),
+  trend:    readCsv('80-daily-trend'),
   anomaly:  readCsv('90-anomaly'),
 };
 

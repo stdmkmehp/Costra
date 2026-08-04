@@ -159,18 +159,21 @@ function renderInvitesSection(invites, threshold) {
 }
 
 function renderActiveSection(active, threshold) {
+  // 兼容新版 60-active-users.sql 字段名
+  const items = (active || []).filter(u => u.activity_level === 'active' || u.activity_level === 'low_active');
+  if (items.length === 0) return '无\n';
   return renderSection(
-    active,
+    items,
     threshold,
-    (items) => items.map(u =>
-      `- ${fmtNickname(u.nickname)} · ${u.entries_count} 条 ${fmtAmount(u.entries_amount_cents)}`
+    (list) => list.map(u =>
+      `- ${fmtNickname(u.nickname)} · ${u.active_days}天活跃 · ${u.entries_total} 条 · 手动 ${u.manual_total} / 自动 ${u.auto_total}`
     ).join('\n') + '\n',
-    (items, n) => {
-      const shown = items.slice(0, n);
-      const rest  = items.length - n;
+    (list, n) => {
+      const shown = list.slice(0, n);
+      const rest  = list.length - n;
       return shown.map(u =>
-        `- ${fmtNickname(u.nickname)} · ${u.entries_count} 条 ${fmtAmount(u.entries_amount_cents)}`
-      ).join('\n') + `\n- _…另 ${rest} 人（共 ${items.length} 人）_\n`;
+  `- ${fmtNickname(u.nickname)} · ${u.active_days}天活跃 · ${u.entries_total} 条`
+      ).join('\n') + `\n- _…另 ${rest} 人（共 ${list.length} 人）_\n`;
     }
   );
 }
