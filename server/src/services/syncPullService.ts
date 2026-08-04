@@ -207,5 +207,6 @@ function entryToWire(e: PullEntryRow) {
     updated_at: e.updatedAt.toISOString(),          // 毫秒精度展示用 · 不再参与 watermark
     deleted_at: e.deletedAt ? e.deletedAt.toISOString() : null,
     shared_type: e.sharedType,                      // COSTRA-217 B2: 公共/个人支出标记
+    source_recurring_id: e.sourceRecurringId,       // T4: 定时规则来源；手工流水为 null
   };
 }

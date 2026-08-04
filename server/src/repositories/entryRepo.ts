@@ -47,6 +47,14 @@ export interface EntryEntity {
    * - DB CHECK 约束: shared_type IS NULL OR type = 'expense'
    */
   sharedType: 'personal' | 'shared' | null;
+  /**
+   * 来源定时规则 id（T2 · COSTRA-5xx · 2026-07-21）
+   * - 由定时调度器生成的 entry：值 = recurring_rules.id
+   * - 用户手工记账的 entry：null
+   * - 明细页据此渲染"定"字角标（product-spec §6）
+   * - 外键 ON DELETE SET NULL：删除规则时保留历史 entry
+   */
+  sourceRecurringId: string | null;
 }
 
 interface EntryRow {
@@ -68,6 +76,7 @@ interface EntryRow {
   client_ref_id: string | null;
   change_seq: string | number; // BIGINT · 真 PG 返 string · pg-mem 返 number
   shared_type: 'personal' | 'shared' | null; // COSTRA-217 B2
+  source_recurring_id: string | null; // T2 · 来源定时规则
 }
 
 function rowToEntity(r: EntryRow): EntryEntity {
@@ -90,6 +99,7 @@ function rowToEntity(r: EntryRow): EntryEntity {
     clientRefId: r.client_ref_id,
     changeSeq: Number(r.change_seq), // 同 amount 范式 · 跨驱动统一为 number
     sharedType: r.shared_type, // COSTRA-217 B2
+    sourceRecurringId: r.source_recurring_id, // T2
   };
 }
 
@@ -116,6 +126,8 @@ export interface CreateEntryInput {
   clientRefId?: string | null;
   /** COSTRA-217 B2: 公共/个人支出标记 · 仅 expense 有值 · income/transfer 必须为 null */
   sharedType?: 'personal' | 'shared' | null;
+  /** T2 · 来源定时规则 id · 由 recurringService 生成 entry 时透传 */
+  sourceRecurringId?: string | null;
 }
 
 /**
@@ -131,11 +143,11 @@ export async function insertEntry(input: CreateEntryInput, client?: Runner): Pro
   const runner = client ?? exec();
   const res = await runner.query(
     `INSERT INTO entries (id, ledger_id, amount, currency, type, category_id,
-                          account_id, to_account_id, note, occurred_at, created_by, client_ref_id, shared_type)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                          account_id, to_account_id, note, occurred_at, created_by, client_ref_id, shared_type, source_recurring_id)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
         RETURNING id, ledger_id, amount, currency, type, category_id,
                   account_id, to_account_id, note, occurred_at,
-                  created_by, created_at, updated_at, deleted_at, version, client_ref_id, change_seq, shared_type`,
+                  created_by, created_at, updated_at, deleted_at, version, client_ref_id, change_seq, shared_type, source_recurring_id`,
     [
       id,
       input.ledgerId,
@@ -150,6 +162,7 @@ export async function insertEntry(input: CreateEntryInput, client?: Runner): Pro
       input.createdBy,
       input.clientRefId ?? id,
       input.sharedType ?? null, // COSTRA-217 B2
+      input.sourceRecurringId ?? null, // T2
     ],
   );
   if (!res.rows[0]) {
@@ -212,7 +225,7 @@ export async function updateEntryByVersion(
       WHERE id = $${idx++} AND version = $${idx} AND deleted_at IS NULL
         RETURNING id, ledger_id, amount, currency, type, category_id,
                   account_id, to_account_id, note, occurred_at,
-                  created_by, created_at, updated_at, deleted_at, version, client_ref_id, change_seq, shared_type`,
+                  created_by, created_at, updated_at, deleted_at, version, client_ref_id, change_seq, shared_type, source_recurring_id`,
     values,
   );
   return res.rows[0] ? rowToEntity(res.rows[0]) : null;
@@ -235,7 +248,7 @@ export async function softDeleteEntry(entryId: string, baseVersion: number, clie
       WHERE id = $1 AND version = $2 AND deleted_at IS NULL
         RETURNING id, ledger_id, amount, currency, type, category_id,
                   account_id, to_account_id, note, occurred_at,
-                  created_by, created_at, updated_at, deleted_at, version, client_ref_id, change_seq, shared_type`,
+                  created_by, created_at, updated_at, deleted_at, version, client_ref_id, change_seq, shared_type, source_recurring_id`,
     [entryId, baseVersion],
   );
   return res.rows[0] ? rowToEntity(res.rows[0]) : null;
@@ -295,7 +308,7 @@ export async function findEntriesByLedger(
   const res = await runner.query(
     `SELECT e.id, e.ledger_id, e.amount, e.currency, e.type, e.category_id,
             e.account_id, e.to_account_id, e.note, e.occurred_at,
-            e.created_by, e.created_at, e.updated_at, e.deleted_at, e.version, e.client_ref_id, e.change_seq, e.shared_type
+            e.created_by, e.created_at, e.updated_at, e.deleted_at, e.version, e.client_ref_id, e.change_seq, e.shared_type, e.source_recurring_id
        FROM entries e
        ${membershipJoin}
       WHERE ${where}
@@ -368,7 +381,7 @@ export async function findEntriesByFamilySince(
   const res = await runner.query(
     `SELECT e.id, e.ledger_id, l.family_id, e.amount, e.currency, e.type, e.category_id,
             e.account_id, e.to_account_id, e.note, e.occurred_at,
-            e.created_by, e.created_at, e.updated_at, e.deleted_at, e.version, e.client_ref_id, e.change_seq, e.shared_type
+            e.created_by, e.created_at, e.updated_at, e.deleted_at, e.version, e.client_ref_id, e.change_seq, e.shared_type, e.source_recurring_id
        FROM entries e
        JOIN ledgers l ON l.id = e.ledger_id
       WHERE l.family_id = $1
@@ -408,7 +421,7 @@ export async function findById(entryId: string, userIdOrClient?: string | Runner
     const res = await runner.query(
       `SELECT e.id, e.ledger_id, e.amount, e.currency, e.type, e.category_id,
               e.account_id, e.to_account_id, e.note, e.occurred_at,
-              e.created_by, e.created_at, e.updated_at, e.deleted_at, e.version, e.client_ref_id, e.change_seq, e.shared_type
+              e.created_by, e.created_at, e.updated_at, e.deleted_at, e.version, e.client_ref_id, e.change_seq, e.shared_type, e.source_recurring_id
          FROM entries e
          JOIN ledgers l ON l.id = e.ledger_id
          JOIN family_members fm ON fm.family_id = l.family_id
@@ -425,7 +438,7 @@ export async function findById(entryId: string, userIdOrClient?: string | Runner
   const res = await runner.query(
     `SELECT e.id, e.ledger_id, e.amount, e.currency, e.type, e.category_id,
             e.account_id, e.to_account_id, e.note, e.occurred_at,
-            e.created_by, e.created_at, e.updated_at, e.deleted_at, e.version, e.client_ref_id, e.change_seq, e.shared_type
+            e.created_by, e.created_at, e.updated_at, e.deleted_at, e.version, e.client_ref_id, e.change_seq, e.shared_type, e.source_recurring_id
        FROM entries e
        JOIN ledgers l ON l.id = e.ledger_id
        JOIN family_members fm ON fm.family_id = l.family_id AND fm.left_at IS NULL
@@ -444,7 +457,7 @@ export async function findByLedgerAndClientRefId(ledgerId: string, clientRefId: 
   const res = await runner.query(
     `SELECT id, ledger_id, amount, currency, type, category_id,
             account_id, to_account_id, note, occurred_at,
-            created_by, created_at, updated_at, deleted_at, version, client_ref_id, change_seq, shared_type
+            created_by, created_at, updated_at, deleted_at, version, client_ref_id, change_seq, shared_type, source_recurring_id
        FROM entries
       WHERE ledger_id = $1 AND client_ref_id = $2 AND deleted_at IS NULL
       LIMIT 1`,
@@ -462,7 +475,7 @@ export async function findByClientRefId(clientRefId: string, userId: string, cli
   const res = await runner.query(
     `SELECT e.id, e.ledger_id, e.amount, e.currency, e.type, e.category_id,
             e.account_id, e.to_account_id, e.note, e.occurred_at,
-            e.created_by, e.created_at, e.updated_at, e.deleted_at, e.version, e.client_ref_id, e.change_seq, e.shared_type
+            e.created_by, e.created_at, e.updated_at, e.deleted_at, e.version, e.client_ref_id, e.change_seq, e.shared_type, e.source_recurring_id
        FROM entries e
        JOIN ledgers l ON l.id = e.ledger_id
        JOIN family_members fm ON fm.family_id = l.family_id AND fm.user_id = $2

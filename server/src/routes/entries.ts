@@ -46,6 +46,7 @@ function entryToResponse(e: EntryEntity) {
     version: e.version,
     client_ref_id: e.clientRefId,
     shared_type: e.sharedType, // COSTRA-217 B2
+    source_recurring_id: e.sourceRecurringId, // T4 · 定时来源角标
   };
 }
 

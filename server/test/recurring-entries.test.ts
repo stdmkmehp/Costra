@@ -1,0 +1,974 @@
+/**
+ * Costra · Server · recurring-entries 端到端测试
+ *
+ * 卡号占位：COSTRA-5xx（T2 · Sprint-4 · Epic-E）
+ * 事实源：
+ *   - server/db/migrations/0011_recurring_entries.sql
+ *   - server/src/routes/recurring.ts
+ *   - docs/design/recurring-entry-task-breakdown.md T2 §2.6 DoD
+ *
+ * 覆盖：
+ *   - CRUD 8 endpoint
+ *   - 权限 404（跨用户越权）
+ *   - 校验 400（各字段边界）
+ *   - 乐观锁 409
+ *   - 端到端 scheduler.tickOnce：POST 创建 → 时间 mock → tick → 断言 entries 表 + next_run_at
+ *   - 补齐 loop 场景 A / B
+ *   - 幂等（同一 next_run_at 两次 tick 只生成一条）
+ *   - 跨月 12 天规则一次生成 12 条
+ */
+
+import { describe, it, expect, beforeEach } from 'vitest';
+import type { FastifyInstance } from 'fastify';
+import { buildApp } from '../src/app.js';
+import { setWxFetchForTests } from '../src/wx/code2Session.js';
+import { getPool } from '../src/db/pool.js';
+
+// ==============================================================================
+// helpers
+// ==============================================================================
+
+async function login(app: FastifyInstance, openid = 'openid-recur-test'): Promise<{
+  token: string;
+  userId: string;
+}> {
+  setWxFetchForTests(
+    (async () =>
+      new Response(
+        JSON.stringify({ openid, session_key: 'sk' }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )) as unknown as typeof fetch,
+  );
+  const res = await app.inject({
+    method: 'POST',
+    url: '/v1/auth/wx-login',
+    payload: { code: `test-${openid}` },
+    headers: { 'content-type': 'application/json' },
+  });
+  const body = res.json() as { access_token: string };
+  const parts = body.access_token.split('.');
+  const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString()) as { sub: string };
+  return { token: body.access_token, userId: payload.sub };
+}
+
+async function setupFamilyAndLedger(userId: string, opts: {
+  familyId: string;
+  ledgerId: string;
+} = { familyId: '00000000-0000-0000-0000-0000000000f1', ledgerId: '00000000-0000-0000-0000-000000000001' }) {
+  const pool = getPool();
+  await pool.query(
+    `INSERT INTO families (id, name, owner_id, kind) VALUES ($1, 'F', $2, 'shared')`,
+    [opts.familyId, userId],
+  );
+  await pool.query(
+    `INSERT INTO ledgers (id, family_id, name) VALUES ($1, $2, 'Main')`,
+    [opts.ledgerId, opts.familyId],
+  );
+  await pool.query(
+    `INSERT INTO family_members (family_id, user_id, role) VALUES ($1, $2, 'owner')`,
+    [opts.familyId, userId],
+  );
+  return opts;
+}
+
+function authHeader(token: string) {
+  return { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
+}
+
+/** 用于不带 body 的 POST / DELETE 请求（pause/resume/copy/delete）· 不设 content-type */
+function authHeaderNoBody(token: string) {
+  return { authorization: `Bearer ${token}` };
+}
+
+const LEDGER_ID = '00000000-0000-0000-0000-000000000001';
+
+// ==============================================================================
+// CRUD basics
+// ==============================================================================
+
+describe('recurring-entries · CRUD basics', () => {
+  let app: FastifyInstance;
+  let token: string;
+  let userId: string;
+
+  beforeEach(async () => {
+    app = await buildApp({ disableLogger: true, autoStartScheduler: false });
+    await app.ready();
+    const login1 = await login(app);
+    token = login1.token;
+    userId = login1.userId;
+    await setupFamilyAndLedger(userId);
+  });
+
+  it('POST /recurring-entries · weekly Mon+Wed+Fri · morning · 201 + fields', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 20000,
+        shared_type: 'personal',
+        note: '打车',
+        period: 'weekly',
+        days_of_week: [1, 3, 5],
+        execute_bucket: 'morning',
+        start_date: '2026-08-01',
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.json() as Record<string, unknown>;
+    expect(body.id).toMatch(/^[0-9a-f]{8}-/);
+    expect(body.created_by).toBe(userId);
+    expect(body.period).toBe('weekly');
+    expect(body.days_of_week).toEqual([1, 3, 5]);
+    expect(body.execute_bucket).toBe('morning');
+    // execute_hour/minute 应在窗口内缩范围内
+    const total = (body.execute_hour as number) * 60 + (body.execute_minute as number);
+    expect(total).toBeGreaterThanOrEqual(6 * 60 + 30);
+    expect(total).toBeLessThan(12 * 60 - 30);
+    expect(body.status).toBe('active');
+    expect(body.next_run_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(body.version).toBe(1);
+  });
+
+  it('POST · yearly · 12 cross-month (每月同号)', async () => {
+    const ymd = [101, 202, 303, 404, 505, 606, 707, 808, 909, 1010, 1111, 1212];
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 10000,
+        shared_type: 'personal',
+        period: 'yearly',
+        year_month_days: ymd,
+        execute_bucket: 'dawn',
+        start_date: '2026-01-01',
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.json() as Record<string, unknown>;
+    expect(body.year_month_days).toEqual(ymd);
+  });
+
+  it('POST · yearly · monthly-family with invalid Feb 30 → 400', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 10000,
+        shared_type: 'personal',
+        period: 'yearly',
+        year_month_days: [230], // Feb 30 invalid
+        execute_bucket: 'dawn',
+        start_date: '2026-01-01',
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('POST · duplicates in days_of_week → 400', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 100,
+        shared_type: 'personal',
+        period: 'weekly',
+        days_of_week: [1, 1, 3],
+        execute_bucket: 'morning',
+        start_date: '2026-08-01',
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('POST · shared_type on income → 422 BUSINESS_RULE_VIOLATION', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'income',
+        amount: 100,
+        shared_type: 'personal',
+        period: 'weekly',
+        days_of_week: [1],
+        execute_bucket: 'morning',
+        start_date: '2026-08-01',
+      },
+    });
+    expect(res.statusCode).toBe(422);
+  });
+
+  it('GET list · status=all default · includes new rule', async () => {
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 100,
+        shared_type: 'personal',
+        period: 'weekly',
+        days_of_week: [1],
+        execute_bucket: 'morning',
+        start_date: '2026-08-01',
+      },
+    });
+    const created = createRes.json() as { id: string };
+
+    const listRes = await app.inject({
+      method: 'GET',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+    });
+    expect(listRes.statusCode).toBe(200);
+    const body = listRes.json() as { items: Array<{ id: string }> };
+    expect(body.items.some((i) => i.id === created.id)).toBe(true);
+  });
+
+  it('GET /:id · other user rule → 404 (not 403)', async () => {
+    // 用户 A 创建
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 100,
+        shared_type: 'personal',
+        period: 'weekly',
+        days_of_week: [1],
+        execute_bucket: 'morning',
+        start_date: '2026-08-01',
+      },
+    });
+    const created = createRes.json() as { id: string };
+
+    // 用户 B 登录
+    const loginB = await login(app, 'openid-other-user');
+    // 用户 B 也需加入 family_members 才能通过 assertUserOwnsLedger（虽然本用例是 GET，不 create）
+    // 但 GET 走 findByIdForUser 直接 WHERE created_by · 匹配不上返 404
+
+    const getRes = await app.inject({
+      method: 'GET',
+      url: `/v1/recurring-entries/${created.id}`,
+      headers: authHeader(loginB.token),
+    });
+    expect(getRes.statusCode).toBe(404);
+  });
+
+  it('PATCH · optimistic lock · wrong version → 409', async () => {
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 100,
+        shared_type: 'personal',
+        period: 'weekly',
+        days_of_week: [1],
+        execute_bucket: 'morning',
+        start_date: '2026-08-01',
+      },
+    });
+    const created = createRes.json() as { id: string; version: number };
+
+    const patchRes = await app.inject({
+      method: 'PATCH',
+      url: `/v1/recurring-entries/${created.id}`,
+      headers: authHeader(token),
+      payload: { version: 999, amount: 200 },
+    });
+    expect(patchRes.statusCode).toBe(409);
+  });
+
+  it('POST pause + resume · resume 后 next_run_at 应更新', async () => {
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 100,
+        shared_type: 'personal',
+        period: 'weekly',
+        days_of_week: [1],
+        execute_bucket: 'morning',
+        start_date: '2026-08-01',
+      },
+    });
+    const created = createRes.json() as { id: string; next_run_at: string };
+
+    const pauseRes = await app.inject({
+      method: 'POST',
+      url: `/v1/recurring-entries/${created.id}/pause`,
+      headers: authHeaderNoBody(token),
+    });
+    expect(pauseRes.statusCode).toBe(200);
+    expect((pauseRes.json() as { status: string }).status).toBe('paused');
+
+    const resumeRes = await app.inject({
+      method: 'POST',
+      url: `/v1/recurring-entries/${created.id}/resume`,
+      headers: authHeaderNoBody(token),
+    });
+    expect(resumeRes.statusCode).toBe(200);
+    const resumed = resumeRes.json() as { status: string; next_run_at: string };
+    expect(resumed.status).toBe('active');
+    // 恢复后从 now 起算，next_run_at 应 >= now
+    expect(new Date(resumed.next_run_at).getTime()).toBeGreaterThan(Date.now() - 60_000);
+  });
+
+  it('POST /copy · id 不同 · 其它字段一致（除 start_date + end_date）', async () => {
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 200,
+        shared_type: 'personal',
+        note: '外卖',
+        period: 'weekly',
+        days_of_week: [1, 3, 5],
+        execute_bucket: 'morning',
+        start_date: '2026-08-01',
+      },
+    });
+    const original = createRes.json() as Record<string, unknown>;
+
+    const copyRes = await app.inject({
+      method: 'POST',
+      url: `/v1/recurring-entries/${original.id as string}/copy`,
+      headers: authHeaderNoBody(token),
+    });
+    expect(copyRes.statusCode).toBe(201);
+    const copy = copyRes.json() as Record<string, unknown>;
+    expect(copy.id).not.toBe(original.id);
+    expect(copy.amount).toBe(original.amount);
+    expect(copy.note).toBe(original.note);
+    expect(copy.days_of_week).toEqual(original.days_of_week);
+    expect(copy.end_date).toBe(null);
+  });
+
+  it('DELETE · 软删 · 版本冲突 → 409', async () => {
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 100,
+        shared_type: 'personal',
+        period: 'weekly',
+        days_of_week: [1],
+        execute_bucket: 'morning',
+        start_date: '2026-08-01',
+      },
+    });
+    const created = createRes.json() as { id: string };
+
+    // 错版本
+    const delWrong = await app.inject({
+      method: 'DELETE',
+      url: `/v1/recurring-entries/${created.id}?version=999`,
+      headers: authHeaderNoBody(token),
+    });
+    expect(delWrong.statusCode).toBe(409);
+
+    // 正确版本
+    const delOk = await app.inject({
+      method: 'DELETE',
+      url: `/v1/recurring-entries/${created.id}?version=1`,
+      headers: authHeaderNoBody(token),
+    });
+    expect(delOk.statusCode).toBe(204);
+
+    // 再查 → 404
+    const getRes = await app.inject({
+      method: 'GET',
+      url: `/v1/recurring-entries/${created.id}`,
+      headers: authHeader(token),
+    });
+    expect(getRes.statusCode).toBe(404);
+  });
+
+  it('POST · unauthenticated → 401', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 100,
+        shared_type: 'personal',
+        period: 'weekly',
+        days_of_week: [1],
+        execute_bucket: 'morning',
+        start_date: '2026-08-01',
+      },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('POST · ledger not owned by user → 403', async () => {
+    const loginB = await login(app, 'openid-user-b');
+    // B 不是家庭成员
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(loginB.token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 100,
+        shared_type: 'personal',
+        period: 'weekly',
+        days_of_week: [1],
+        execute_bucket: 'morning',
+        start_date: '2026-08-01',
+      },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+});
+
+// ==============================================================================
+// scheduler tick + 补齐 loop
+// ==============================================================================
+
+describe('recurring-entries · scheduler tick', () => {
+  let app: FastifyInstance;
+  let token: string;
+  let userId: string;
+
+  beforeEach(async () => {
+    app = await buildApp({ disableLogger: true, autoStartScheduler: false });
+    await app.ready();
+    const login1 = await login(app);
+    token = login1.token;
+    userId = login1.userId;
+    await setupFamilyAndLedger(userId);
+  });
+
+  it('E2E · weekly rule · tickOnce past next_run_at → 1 entry generated', async () => {
+    // 创建规则 · start_date 是过去 · execute_bucket=morning
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 500,
+        shared_type: 'personal',
+        note: '打车',
+        period: 'weekly',
+        days_of_week: [1, 3, 5], // Mon+Wed+Fri
+        execute_bucket: 'morning',
+        start_date: '2026-08-01', // 2026-08-01 是周六
+      },
+    });
+    const rule = createRes.json() as {
+      id: string;
+      next_run_at: string;
+      execute_hour: number;
+      execute_minute: number;
+      timezone: string;
+    };
+
+    // 直接把 nextRunAt 拉到过去 · 精确对齐周一 execute time
+    const pool = getPool();
+    const { DateTime } = await import('luxon');
+    const pastNextRun = DateTime.fromObject(
+      {
+        year: 2026,
+        month: 8,
+        day: 3, // Monday
+        hour: rule.execute_hour,
+        minute: rule.execute_minute,
+      },
+      { zone: rule.timezone },
+    ).toJSDate();
+    await pool.query(
+      `UPDATE recurring_rules SET next_run_at = $1 WHERE id = $2`,
+      [pastNextRun, rule.id],
+    );
+
+    // 用 tickOnce 直接触发 · now = 周一 当天更晚一些
+    const scheduler = app.recurringScheduler!;
+    const now = DateTime.fromObject(
+      { year: 2026, month: 8, day: 3, hour: 23, minute: 59 },
+      { zone: rule.timezone },
+    ).toJSDate();
+    const report = await scheduler.tickOnce(now);
+
+    expect(report.pickedCount).toBe(1);
+    expect(report.processedCount).toBe(1);
+    expect(report.failedCount).toBe(0);
+
+    // 查生成的 entries
+    const entriesRes = await pool.query(
+      `SELECT source_recurring_id, occurred_at, amount FROM entries WHERE source_recurring_id = $1`,
+      [rule.id],
+    );
+    expect(entriesRes.rows.length).toBe(1);
+    expect(Number(entriesRes.rows[0].amount)).toBe(500);
+    expect(entriesRes.rows[0].source_recurring_id).toBe(rule.id);
+
+    // REST /entries 与 sync/pull 都必须把来源下发给客户端角标链路
+    const listRes = await app.inject({
+      method: 'GET',
+      url: `/v1/entries?ledger_id=${LEDGER_ID}&limit=10`,
+      headers: authHeaderNoBody(token),
+    });
+    expect(listRes.statusCode).toBe(200);
+    expect((listRes.json() as { entries: Array<{ source_recurring_id: string | null }> }).entries[0].source_recurring_id).toBe(rule.id);
+
+    const pullRes = await app.inject({
+      method: 'GET',
+      url: '/v1/sync/pull?family_id=00000000-0000-0000-0000-0000000000f1&since=0&limit=20',
+      headers: authHeaderNoBody(token),
+    });
+    expect(pullRes.statusCode).toBe(200);
+    expect((pullRes.json() as { changes: { entries: Array<{ source_recurring_id: string | null }> } }).changes.entries[0].source_recurring_id).toBe(rule.id);
+
+    // 校验 next_run_at 已推进到未来（周三 execute time）
+    const updated = await pool.query<{ next_run_at: Date }>(
+      `SELECT next_run_at FROM recurring_rules WHERE id = $1`,
+      [rule.id],
+    );
+    expect(new Date(updated.rows[0].next_run_at).getTime()).toBeGreaterThan(now.getTime());
+  });
+
+  it('E2E · idempotent · tick twice yields no duplicate entries', async () => {
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 300,
+        shared_type: 'personal',
+        period: 'weekly',
+        days_of_week: [1],
+        execute_bucket: 'morning',
+        start_date: '2026-08-01',
+      },
+    });
+    const rule = createRes.json() as {
+      id: string;
+      execute_hour: number;
+      execute_minute: number;
+      timezone: string;
+    };
+
+    const pool = getPool();
+    const { DateTime } = await import('luxon');
+    // 精确对齐周一 execute time
+    const past = DateTime.fromObject(
+      {
+        year: 2026,
+        month: 8,
+        day: 3, // Monday
+        hour: rule.execute_hour,
+        minute: rule.execute_minute,
+      },
+      { zone: rule.timezone },
+    ).toJSDate();
+    await pool.query(
+      `UPDATE recurring_rules SET next_run_at = $1 WHERE id = $2`,
+      [past, rule.id],
+    );
+
+    const scheduler = app.recurringScheduler!;
+    const now = DateTime.fromObject(
+      { year: 2026, month: 8, day: 3, hour: 23, minute: 59 },
+      { zone: rule.timezone },
+    ).toJSDate();
+
+    // 第 1 次 tick · 生成 1 条
+    await scheduler.tickOnce(now);
+
+    // 强行把 next_run_at 拉回到同一 execute time · 制造"重跑"场景
+    await pool.query(
+      `UPDATE recurring_rules SET next_run_at = $1 WHERE id = $2`,
+      [past, rule.id],
+    );
+    // 第 2 次 tick · 命中同一 client_ref_id · 不重复生成
+    await scheduler.tickOnce(now);
+
+    const entriesRes = await pool.query<{ cnt: number }>(
+      `SELECT COUNT(*)::int AS cnt FROM entries WHERE source_recurring_id = $1`,
+      [rule.id],
+    );
+    expect(entriesRes.rows[0].cnt).toBe(1);
+  });
+
+  it('E2E · backfill scenario A · 每天下午规则宕机 48h → 补 2-3 条', async () => {
+    // start_date 早期 · daily-ish 规则用 weekly 全选 dow 代替
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 100,
+        shared_type: 'personal',
+        period: 'weekly',
+        days_of_week: [1, 2, 3, 4, 5, 6, 7], // 每天
+        execute_bucket: 'afternoon',
+        start_date: '2026-08-01',
+      },
+    });
+    const rule = createRes.json() as {
+      id: string;
+      execute_hour: number;
+      execute_minute: number;
+      timezone: string;
+    };
+
+    // 手动把 next_run_at 拉到过去 · 精确对齐 execute_hour:execute_minute in tz
+    // 用 luxon 计算正确的 UTC 时间点
+    const pool = getPool();
+    const { DateTime } = await import('luxon');
+    const past = DateTime.fromObject(
+      {
+        year: 2026,
+        month: 8,
+        day: 10,
+        hour: rule.execute_hour,
+        minute: rule.execute_minute,
+      },
+      { zone: rule.timezone },
+    ).toJSDate();
+    await pool.query(
+      `UPDATE recurring_rules SET next_run_at = $1 WHERE id = $2`,
+      [past, rule.id],
+    );
+
+    // now = 2 天后同一时刻（不含当天，因为 execute time 未到）
+    const now = DateTime.fromObject(
+      {
+        year: 2026,
+        month: 8,
+        day: 12,
+        hour: rule.execute_hour,
+        minute: rule.execute_minute - 1, // 差 1 分钟 · 避免命中当天
+      },
+      { zone: rule.timezone },
+    ).toJSDate();
+    const scheduler = app.recurringScheduler!;
+    const report = await scheduler.tickOnce(now);
+    expect(report.processedCount).toBe(1);
+    const genResult = report.results[0].result as {
+      generatedCount: number;
+      generatedDates: Date[];
+    };
+    // 从 8/10 execute 起 → 补 8/10, 8/11 两条；8/12 execute time 未到
+    expect(genResult.generatedCount).toBe(2);
+
+    // entries 表应有 2 条
+    const entriesRes = await pool.query<{ occurred_at: Date }>(
+      `SELECT occurred_at FROM entries WHERE source_recurring_id = $1 ORDER BY occurred_at ASC`,
+      [rule.id],
+    );
+    expect(entriesRes.rows.length).toBe(2);
+    // 第一条应该早于 now
+    expect(new Date(entriesRes.rows[0].occurred_at).getTime()).toBeLessThan(now.getTime());
+  });
+
+  it('E2E · backfill scenario B · 宕机 15 天 · 只补最近 7 天', async () => {
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 100,
+        shared_type: 'personal',
+        period: 'weekly',
+        days_of_week: [1, 2, 3, 4, 5, 6, 7],
+        execute_bucket: 'afternoon',
+        start_date: '2026-07-01',
+      },
+    });
+    const rule = createRes.json() as {
+      id: string;
+      execute_hour: number;
+      execute_minute: number;
+      timezone: string;
+    };
+
+    const pool = getPool();
+    const { DateTime } = await import('luxon');
+    // next_run_at 拉到 15 天前的 execute time
+    const past = DateTime.fromObject(
+      {
+        year: 2026,
+        month: 8,
+        day: 1,
+        hour: rule.execute_hour,
+        minute: rule.execute_minute,
+      },
+      { zone: rule.timezone },
+    ).toJSDate();
+    await pool.query(
+      `UPDATE recurring_rules SET next_run_at = $1 WHERE id = $2`,
+      [past, rule.id],
+    );
+
+    const now = DateTime.fromObject(
+      { year: 2026, month: 8, day: 16, hour: rule.execute_hour, minute: rule.execute_minute - 1 },
+      { zone: rule.timezone },
+    ).toJSDate();
+    const scheduler = app.recurringScheduler!;
+    const report = await scheduler.tickOnce(now);
+
+    const result = report.results[0].result as {
+      generatedCount: number;
+      skippedDates: Date[];
+    };
+    // 补齐窗口 = 7 天 · 从 8/1 到 8/16 (15 天)，前 8 天 skip，后 7 天补
+    expect(result.generatedCount).toBeGreaterThan(0);
+    expect(result.generatedCount).toBeLessThanOrEqual(8);
+    expect(result.skippedDates.length).toBeGreaterThan(0);
+  });
+
+  it('E2E · yearly 每月同号 · 未 due · 不产生 entry', async () => {
+    const ymd = [101, 202, 303, 404, 505, 606, 707, 808, 909, 1010, 1111, 1212];
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 100,
+        shared_type: 'personal',
+        period: 'yearly',
+        year_month_days: ymd,
+        execute_bucket: 'dawn',
+        start_date: '2026-01-01',
+      },
+    });
+    const rule = createRes.json() as { id: string; next_run_at: string };
+
+    // 未 due · now < next_run_at
+    const scheduler = app.recurringScheduler!;
+    const earlyNow = new Date(new Date(rule.next_run_at).getTime() - 60_000);
+    const report = await scheduler.tickOnce(earlyNow);
+    expect(report.pickedCount).toBe(0);
+    expect(report.processedCount).toBe(0);
+
+    const pool = getPool();
+    const entriesRes = await pool.query<{ cnt: number }>(
+      `SELECT COUNT(*)::int AS cnt FROM entries WHERE source_recurring_id = $1`,
+      [rule.id],
+    );
+    expect(entriesRes.rows[0].cnt).toBe(0);
+  });
+
+  it('E2E · advisory-lock is mocked in test env · tick always proceeds', async () => {
+    // 直接调 tickOnce 两次 · 都能拿到锁
+    const scheduler = app.recurringScheduler!;
+    const r1 = await scheduler.tickOnce(new Date());
+    const r2 = await scheduler.tickOnce(new Date());
+    expect(r1.pickedCount).toBe(0);
+    expect(r2.pickedCount).toBe(0);
+  });
+});
+
+// ==============================================================================
+// POST method-override (wx.request PATCH 降级兜底)
+// ==============================================================================
+
+describe('recurring-entries · POST method-override', () => {
+  let app: FastifyInstance;
+  let token: string;
+  let userId: string;
+
+  beforeEach(async () => {
+    app = await buildApp({ disableLogger: true, autoStartScheduler: false });
+    await app.ready();
+    const login1 = await login(app);
+    token = login1.token;
+    userId = login1.userId;
+    await setupFamilyAndLedger(userId);
+  });
+
+  it('POST /recurring-entries/:id + X-HTTP-Method-Override: PATCH → 200', async () => {
+    // 先创建一条
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 5000,
+        shared_type: 'personal',
+        period: 'weekly',
+        days_of_week: [1],
+        execute_bucket: 'morning',
+        start_date: '2026-08-01',
+      },
+    });
+    expect(createRes.statusCode).toBe(201);
+    const rule = createRes.json() as { id: string; version: number };
+
+    // 用 POST + override 做 PATCH
+    const patchRes = await app.inject({
+      method: 'POST',
+      url: `/v1/recurring-entries/${rule.id}`,
+      headers: {
+        ...authHeader(token),
+        'x-http-method-override': 'PATCH',
+      },
+      payload: {
+        version: rule.version,
+        amount: 8000,
+      },
+    });
+    expect(patchRes.statusCode).toBe(200);
+    const patched = patchRes.json() as { amount: number; version: number };
+    expect(patched.amount).toBe(8000);
+    expect(patched.version).toBe(rule.version + 1);
+  });
+
+  it('POST /recurring-entries/:id without override → 405', async () => {
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 5000,
+        shared_type: 'personal',
+        period: 'weekly',
+        days_of_week: [1],
+        execute_bucket: 'morning',
+        start_date: '2026-08-01',
+      },
+    });
+    const rule = createRes.json() as { id: string; version: number };
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/v1/recurring-entries/${rule.id}`,
+      headers: authHeader(token),
+      payload: { version: rule.version, amount: 9000 },
+    });
+    expect(res.statusCode).toBe(405);
+  });
+});
+
+// ==============================================================================
+// HTTP mutation idempotency（T3 离线队列重放保障）
+// ==============================================================================
+
+describe('recurring-entries · mutation idempotency', () => {
+  let app: FastifyInstance;
+  let token: string;
+
+  beforeEach(async () => {
+    app = await buildApp({ disableLogger: true, autoStartScheduler: false });
+    await app.ready();
+    const loggedIn = await login(app, 'openid-recur-idempotency');
+    token = loggedIn.token;
+    await setupFamilyAndLedger(loggedIn.userId);
+  });
+
+  it('replaying create with the same key returns the cached rule without duplication', async () => {
+    const payload = {
+      ledger_id: LEDGER_ID,
+      type: 'expense',
+      amount: 6600,
+      shared_type: 'personal',
+      period: 'weekly',
+      days_of_week: [2],
+      execute_bucket: 'morning',
+      start_date: '2026-08-01',
+    };
+    const headers = { ...authHeader(token), 'idempotency-key': 'recurring-create-replay-key' };
+
+    const first = await app.inject({ method: 'POST', url: '/v1/recurring-entries', headers, payload });
+    const replay = await app.inject({ method: 'POST', url: '/v1/recurring-entries', headers, payload });
+
+    expect(first.statusCode).toBe(201);
+    expect(replay.statusCode).toBe(201);
+    expect((replay.json() as { id: string }).id).toBe((first.json() as { id: string }).id);
+
+    const count = await getPool().query<{ count: number }>(
+      'SELECT COUNT(*)::int AS count FROM recurring_rules',
+    );
+    expect(count.rows[0].count).toBe(1);
+  });
+
+  it('replaying method-override update returns cached version instead of a version conflict', async () => {
+    const create = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 5000,
+        shared_type: 'personal',
+        period: 'weekly',
+        days_of_week: [1],
+        execute_bucket: 'morning',
+        start_date: '2026-08-01',
+      },
+    });
+    const rule = create.json() as { id: string; version: number };
+    const headers = {
+      ...authHeader(token),
+      'x-http-method-override': 'PATCH',
+      'idempotency-key': 'recurring-update-replay-key',
+    };
+    const payload = { version: rule.version, amount: 8800 };
+
+    const first = await app.inject({
+      method: 'POST',
+      url: `/v1/recurring-entries/${rule.id}`,
+      headers,
+      payload,
+    });
+    const replay = await app.inject({
+      method: 'POST',
+      url: `/v1/recurring-entries/${rule.id}`,
+      headers,
+      payload,
+    });
+
+    expect(first.statusCode).toBe(200);
+    expect(replay.statusCode).toBe(200);
+    expect(replay.json()).toEqual(first.json());
+    expect((replay.json() as { version: number }).version).toBe(rule.version + 1);
+  });
+});

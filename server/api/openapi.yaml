@@ -23,9 +23,9 @@ servers:
   - url: http://localhost:8080/v1
     description: 本地开发（docker-compose 起；开发工具"不校验合法域名"模式）
   - url: http://49.235.216.20:8080/v1
-    description: 开发服务器（D-009 锁定公网 IP；ICP 备案下证前临时开放）
-  - url: https://costra.cloud/v1
-    description: 预发布（D-023 临时复用 prod URL · 子域 api-staging 搁置至 Phase-2）
+    description: 开发服务器（D-009 锁定公网 IP；ICP备案下证前临时开放）
+  - url: https://stg.costra.cloud/v1
+    description: 预发布（Sprint-4 启用 ·与prod 同规格 · 微信体验版打此后端 · infra/wechat/domains.md §1.1）
   - url: https://costra.cloud/v1
     description: 生产（D-009 §2.1 锁定主域 costra.cloud · D-023 prod 入口回归根域 · ICP 下证 2026-05-13）
 
@@ -1070,6 +1070,165 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/IcpInfo' }
 
+  # ═══════════════════════════════════════════════════════════════════════════
+  # T2 · 定时记账 · COSTRA-5xx（Sprint-4 · Epic-E）
+  # 事实源：docs/design/recurring-entry-tech-spec.md v0.2.1 §5
+  # ═══════════════════════════════════════════════════════════════════════════
+  /recurring-entries:
+    get:
+      operationId: listRecurringEntries
+      tags: [recurring]
+      summary: 列出当前用户创建的定时（跟人不跟账本）
+      description: |
+        始终按 created_by = 当前用户过滤 · 不接受 ledger_id 参数
+        协作账本 owner 也看不到成员的规则 · 反之亦然
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [active, paused, ended, auto_paused, all]
+            default: all
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/RecurringRule' }
+
+    post:
+      operationId: createRecurringEntry
+      tags: [recurring]
+      summary: 新建定时规则
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecurringRuleCreate' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RecurringRule' }
+        '400': { description: INVALID_ARGUMENT }
+        '403': { description: PERMISSION_DENIED (user not in ledger family) }
+        '422': { description: BUSINESS_RULE_VIOLATION }
+
+  /recurring-entries/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getRecurringEntry
+      tags: [recurring]
+      summary: 详情 · 只能取自己创建的规则
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RecurringRule' }
+        '404': { description: NOT_FOUND (不返 403 · 防止越权探测) }
+
+    patch:
+      operationId: patchRecurringEntry
+      tags: [recurring]
+      summary: 编辑（乐观锁）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/RecurringRuleUpdate'
+                - type: object
+                  required: [version]
+                  properties:
+                    version: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RecurringRule' }
+        '404': { description: NOT_FOUND }
+        '409': { description: VERSION_CONFLICT }
+
+    delete:
+      operationId: deleteRecurringEntry
+      tags: [recurring]
+      summary: 软删除（历史 entry 不受影响）
+      parameters:
+        - name: version
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '204': { description: No Content }
+        '404': { description: NOT_FOUND }
+        '409': { description: VERSION_CONFLICT }
+
+  /recurring-entries/{id}/pause:
+    post:
+      operationId: pauseRecurringEntry
+      tags: [recurring]
+      summary: 手动禁用 · status → paused
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RecurringRule' }
+
+  /recurring-entries/{id}/resume:
+    post:
+      operationId: resumeRecurringEntry
+      tags: [recurring]
+      summary: 手动启用 · status → active + 重算 next_run_at
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RecurringRule' }
+
+  /recurring-entries/{id}/copy:
+    post:
+      operationId: copyRecurringEntry
+      tags: [recurring]
+      summary: 复制规则（start_date 用今天 · end_date 清空）
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RecurringRule' }
+
 components:
   securitySchemes:
     BearerAuth:
@@ -1421,7 +1580,7 @@ components:
 
     SummaryDrillDownEntryItem:
       type: object
-      required: [entry_id, amount, occurred_at, created_by, nickname, category_name]
+      required: [entry_id, amount, occurred_at, created_by, nickname, category_name, source_recurring_id]
       description: 'COSTRA-302: summary drill-down 流水明细项'
       properties:
         entry_id: { type: string, format: uuid }
@@ -1429,6 +1588,11 @@ components:
         note: { type: string, nullable: true }
         occurred_at: { type: string, format: date-time, description: 'UTC ISO' }
         shared_type: { type: string, enum: [shared, personal], nullable: true }
+        source_recurring_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: '来源定时规则；手工流水为 null，用于“定”角标'
         created_by: { type: string, format: uuid }
         nickname: { type: string }
         avatar_url: { type: string, nullable: true }
@@ -1587,13 +1751,18 @@ components:
 
     DrillDownEntryItem:
       type: object
-      required: [entry_id, amount, occurred_at, created_by, nickname]
+      required: [entry_id, amount, occurred_at, created_by, nickname, source_recurring_id]
       properties:
         entry_id: { type: string, format: uuid }
         amount: { type: integer, format: int64 }
         note: { type: string, nullable: true }
         occurred_at: { type: string, format: date-time }
         shared_type: { type: string, enum: [shared, personal], nullable: true }
+        source_recurring_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: '来源定时规则；手工流水为 null，用于“定”角标'
         created_by: { type: string, format: uuid }
         nickname: { type: string }
         avatar_url: { type: string, nullable: true }
@@ -1784,7 +1953,7 @@ components:
 
     Entry:
       type: object
-      required: [id, ledger_id, amount, currency, type, occurred_at, created_by, created_at, version]
+      required: [id, ledger_id, amount, currency, type, occurred_at, created_by, created_at, version, source_recurring_id]
       properties:
         id: { type: string, format: uuid }
         ledger_id: { type: string, format: uuid }
@@ -1844,6 +2013,12 @@ components:
             - income: 不适用公共收入概念，必须为 NULL
             - transfer: 暂不进入公共/个人统计，必须为 NULL
             非法组合（如 type=income 且 shared_type=shared）服务端返回 BUSINESS_RULE_VIOLATION。
+        source_recurring_id:
+          type: string
+          format: uuid
+          nullable: true
+          readOnly: true
+          description: 来源定时规则；手工流水为 null，用于客户端展示“定”角标
 
     EntryCreate:
       type: object
@@ -2106,3 +2281,182 @@ components:
           format: uri
           description: 工信部官方查询入口
           example: https://beian.miit.gov.cn/
+
+    # ─── T2 · 定时记账 ─────────────────────────────────────────────
+    # 事实源：docs/design/recurring-entry-tech-spec.md §5.1 · server/db/migrations/0011_recurring_entries.sql
+    RecurringRule:
+      type: object
+      required:
+        - id
+        - ledger_id
+        - created_by
+        - type
+        - amount
+        - currency
+        - period
+        - execute_bucket
+        - execute_hour
+        - execute_minute
+        - timezone
+        - start_date
+        - status
+        - next_run_at
+        - created_at
+        - updated_at
+        - version
+      properties:
+        id: { type: string, format: uuid }
+        ledger_id: { type: string, format: uuid }
+        created_by: { type: string, format: uuid }
+        type: { type: string, enum: [income, expense, transfer] }
+        amount: { type: integer, minimum: 1, description: "单位:分" }
+        currency: { type: string, default: CNY }
+        category_id: { type: string, format: uuid, nullable: true }
+        account_id: { type: string, format: uuid, nullable: true }
+        to_account_id: { type: string, format: uuid, nullable: true }
+        note: { type: string, maxLength: 200, nullable: true }
+        shared_type:
+          type: string
+          enum: [personal, shared]
+          nullable: true
+          description: "仅 expense 有值; income/transfer 必须为 null"
+        period:
+          type: string
+          enum: [weekly, biweekly, monthly, bimonthly, trimonthly, yearly]
+        days_of_week:
+          type: array
+          items: { type: integer, minimum: 1, maximum: 7 }
+          minItems: 1
+          maxItems: 7
+          nullable: true
+          description: "1=周一, 7=周日; weekly/biweekly 用"
+        days_of_month:
+          type: array
+          items: { type: integer, minimum: 1, maximum: 31 }
+          minItems: 1
+          maxItems: 14
+          nullable: true
+          description: "monthly/bimonthly/trimonthly 用"
+        year_month_days:
+          type: array
+          items: { type: integer, minimum: 101, maximum: 1231 }
+          minItems: 1
+          maxItems: 12
+          nullable: true
+          description: "yearly 用; 元素 = month*100 + day. 例: 1/1→101, 12/25→1225"
+        execute_bucket:
+          type: string
+          enum: [dawn, morning, afternoon, night]
+          description: "用户选择的时段档位"
+        execute_hour:
+          type: integer
+          minimum: 0
+          maximum: 23
+          readOnly: true
+          description: "后端 assignBucketMinute 分配 · 内缩边界后落在窗口中段"
+        execute_minute:
+          type: integer
+          minimum: 0
+          maximum: 59
+          readOnly: true
+        timezone:
+          type: string
+          example: "Asia/Shanghai"
+          description: "创建时快照自 users.timezone"
+        start_date: { type: string, format: date }
+        end_date: { type: string, format: date, nullable: true }
+        status:
+          type: string
+          enum: [active, paused, ended, auto_paused]
+          readOnly: true
+          description: "客户端通过 /pause 和 /resume 端点切换"
+        next_run_at:
+          type: string
+          format: date-time
+          readOnly: true
+        last_run_at:
+          type: string
+          format: date-time
+          nullable: true
+          readOnly: true
+        last_run_status:
+          type: string
+          nullable: true
+          readOnly: true
+          description: "ok | ok_with_skipped | failed_* | auto_paused_after_3_failures"
+        created_at: { type: string, format: date-time, readOnly: true }
+        updated_at: { type: string, format: date-time, readOnly: true }
+        version: { type: integer, minimum: 1, readOnly: true }
+
+    RecurringRuleCreate:
+      type: object
+      required: [ledger_id, type, amount, period, execute_bucket, start_date]
+      properties:
+        ledger_id: { type: string, format: uuid }
+        type: { type: string, enum: [income, expense, transfer] }
+        amount: { type: integer, minimum: 1 }
+        currency: { type: string, default: CNY }
+        category_id: { type: string, format: uuid, nullable: true }
+        account_id: { type: string, format: uuid, nullable: true }
+        to_account_id: { type: string, format: uuid, nullable: true }
+        note: { type: string, maxLength: 200, nullable: true }
+        shared_type:
+          type: string
+          enum: [personal, shared]
+          nullable: true
+        period:
+          type: string
+          enum: [weekly, biweekly, monthly, bimonthly, trimonthly, yearly]
+        days_of_week:
+          type: array
+          items: { type: integer, minimum: 1, maximum: 7 }
+          minItems: 1
+          maxItems: 7
+          nullable: true
+        days_of_month:
+          type: array
+          items: { type: integer, minimum: 1, maximum: 31 }
+          minItems: 1
+          maxItems: 14
+          nullable: true
+        year_month_days:
+          type: array
+          items: { type: integer, minimum: 101, maximum: 1231 }
+          minItems: 1
+          maxItems: 12
+          nullable: true
+        execute_bucket:
+          type: string
+          enum: [dawn, morning, afternoon, night]
+        timezone:
+          type: string
+          description: "可选 · 缺省用 users.timezone"
+        start_date: { type: string, format: date }
+        end_date: { type: string, format: date, nullable: true }
+
+    RecurringRuleUpdate:
+      type: object
+      description: "所有字段可选 · 至少带 version"
+      properties:
+        type: { type: string, enum: [income, expense, transfer] }
+        amount: { type: integer, minimum: 1 }
+        category_id: { type: string, format: uuid, nullable: true }
+        account_id: { type: string, format: uuid, nullable: true }
+        to_account_id: { type: string, format: uuid, nullable: true }
+        note: { type: string, maxLength: 200, nullable: true }
+        shared_type:
+          type: string
+          enum: [personal, shared]
+          nullable: true
+        period:
+          type: string
+          enum: [weekly, biweekly, monthly, bimonthly, trimonthly, yearly]
+        days_of_week: { type: array, items: { type: integer }, nullable: true }
+        days_of_month: { type: array, items: { type: integer }, nullable: true }
+        year_month_days: { type: array, items: { type: integer }, nullable: true }
+        execute_bucket:
+          type: string
+          enum: [dawn, morning, afternoon, night]
+        timezone: { type: string }
+        start_date: { type: string, format: date }
+        end_date: { type: string, format: date, nullable: true }

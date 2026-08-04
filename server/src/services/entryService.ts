@@ -31,11 +31,21 @@ export interface EntryServiceDeps {
 }
 
 export interface EntryService {
-  createWithIdempotency(userId: string, payload: CreateEntryPayload, clientRefId?: string): Promise<EntryResult>;
+  createWithIdempotency(userId: string, payload: CreateEntryPayload, clientRefId?: string, opts?: CreateEntryOpts): Promise<EntryResult>;
   updateWithVersion(userId: string, entryId: string, payload: UpdateEntryPayload, baseVersion: number): Promise<EntryResult>;
   softDelete(userId: string, entryId: string, baseVersion: number): Promise<EntryResult>;
   list(userId: string, filter: ListEntryFilter, cursor: string | null, limit: number): Promise<EntryListResult>;
   findById(userId: string, entryId: string): Promise<EntryEntity>;
+}
+
+/**
+ * T2 · createWithIdempotency 可选参数
+ * 目前仅用于定时调度器透传 sourceRecurringId
+ * 客户端 API 走 route 直接调用时不传这个 opts
+ */
+export interface CreateEntryOpts {
+  /** 来源定时规则 id · 走 entries.source_recurring_id */
+  sourceRecurringId?: string;
 }
 
 export interface EntryListResult {
@@ -106,6 +116,8 @@ export interface EntryView {
   client_ref_id: string | null;
   /** COSTRA-217 B2: 公共/个人支出标记 */
   shared_type: 'personal' | 'shared' | null;
+  /** T4: 来源定时规则；手工流水为 null */
+  source_recurring_id: string | null;
 }
 
 function entityToView(e: EntryEntity): EntryView {
@@ -127,6 +139,7 @@ function entityToView(e: EntryEntity): EntryView {
     version: e.version,
     client_ref_id: e.clientRefId,
     shared_type: e.sharedType, // COSTRA-217 B2
+    source_recurring_id: e.sourceRecurringId, // T4
   };
 }
 
@@ -241,6 +254,7 @@ export function createEntryService(deps: EntryServiceDeps = {}): EntryService {
     userId: string,
     payload: CreateEntryPayload,
     clientRefId?: string,
+    opts?: CreateEntryOpts,
   ): Promise<EntryResult> {
     validateCreatePayload(payload);
 
@@ -289,6 +303,7 @@ export function createEntryService(deps: EntryServiceDeps = {}): EntryService {
         createdBy: userId,
         clientRefId: clientRefId ?? null,
         sharedType, // COSTRA-217 B2 + R1.x 默认规则
+        sourceRecurringId: opts?.sourceRecurringId ?? null, // T2
       });
       return { status: 'ok', serverId: entry.id, serverVersion: entry.version };
     } catch (err: unknown) {

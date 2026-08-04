@@ -483,6 +483,7 @@ export interface SummaryDrillDownResponse {
     note: string | null;
     occurred_at: string;
     shared_type: 'shared' | 'personal' | null;
+    source_recurring_id: string | null;
     created_by: string;
     nickname: string;
     avatar_url: string | null;

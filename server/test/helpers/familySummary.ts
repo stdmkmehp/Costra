@@ -69,11 +69,23 @@ export async function insertEntry(params: {
   occurredAt: string;
   categoryId?: string | null;
   sharedType?: 'personal' | 'shared' | null;
+  sourceRecurringId?: string | null;
 }): Promise<void> {
+  if (params.sourceRecurringId) {
+    await getPool().query(
+      `INSERT INTO recurring_rules (
+         id, ledger_id, created_by, type, amount, period,
+         execute_bucket, execute_hour, execute_minute, timezone,
+         start_date, next_run_at
+       ) VALUES ($1, $2, $3, 'expense', $4, 'weekly', 'morning', 9, 0, 'Asia/Shanghai', '2026-01-01', '2026-01-05T01:00:00.000Z')`,
+      [params.sourceRecurringId, params.ledgerId, params.createdBy, params.amount],
+    );
+  }
+
   const id = crypto.randomUUID();
   await getPool().query(
-    `INSERT INTO entries (id, ledger_id, amount, currency, type, category_id, occurred_at, created_by, shared_type)
-     VALUES ($1, $2, $3, 'CNY', $4, $5, $6, $7, $8)`,
+    `INSERT INTO entries (id, ledger_id, amount, currency, type, category_id, occurred_at, created_by, shared_type, source_recurring_id)
+     VALUES ($1, $2, $3, 'CNY', $4, $5, $6, $7, $8, $9)`,
     [
       id,
       params.ledgerId,
@@ -83,6 +95,7 @@ export async function insertEntry(params: {
       params.occurredAt,
       params.createdBy,
       params.sharedType ?? null,
+      params.sourceRecurringId ?? null,
     ],
   );
 }

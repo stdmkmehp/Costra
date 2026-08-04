@@ -384,7 +384,8 @@ describe('COSTRA-224: Statistics API · drill-down', () => {
     const parent = await insertCategory({ name: '餐饮', type: 'expense', icon: '🍚' });
     const sub = await insertCategory({ name: '外卖', type: 'expense', icon: '🥡', parentId: parent });
 
-    await insertEntry({ ledgerId, amount: 5000, type: 'expense', createdBy: ownerId, occurredAt: '2026-06-05T05:00:00.000Z', categoryId: sub, sharedType: 'shared' });
+    const recurringId = '00000000-0000-0000-0000-0000000000c1';
+    await insertEntry({ ledgerId, amount: 5000, type: 'expense', createdBy: ownerId, occurredAt: '2026-06-05T05:00:00.000Z', categoryId: sub, sharedType: 'shared', sourceRecurringId: recurringId });
     await insertEntry({ ledgerId, amount: 3000, type: 'expense', createdBy: memberId, occurredAt: '2026-06-06T05:00:00.000Z', categoryId: sub, sharedType: 'personal' });
 
     // owner 设置 nickname 验证 JOIN
@@ -412,8 +413,10 @@ describe('COSTRA-224: Statistics API · drill-down', () => {
     expect(body.items[0].nickname).toBe('史蒂夫');
     expect(body.items[0].avatar_url).toBe('https://example.com/avatar.png');
     expect(body.items[0].shared_type).toBe('shared');
+    expect(body.items[0].source_recurring_id).toBe(recurringId);
     expect(body.items[1].amount).toBe(3000);
     expect(body.items[1].created_by).toBe(memberId);
+    expect(body.items[1].source_recurring_id).toBeNull();
     expect(body.has_more).toBe(false);
   });
 

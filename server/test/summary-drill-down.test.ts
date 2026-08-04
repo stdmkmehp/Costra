@@ -154,9 +154,11 @@ describe('COSTRA-302: Summary Drill-Down API', () => {
 
     // 插入公共流水
     // 2026-06-10 Asia/Shanghai → UTC: 2026-06-09T16:00:00Z
+    const recurringId = '00000000-0000-0000-0000-0000000000c2';
     await insertEntry({
       ledgerId, amount: 5000, type: 'expense', createdBy: ownerId,
       occurredAt: '2026-06-09T16:00:00.000Z', categoryId: l2Id, sharedType: 'shared',
+      sourceRecurringId: recurringId,
     });
     await insertEntry({
       ledgerId, amount: 3000, type: 'expense', createdBy: ownerId,
@@ -184,6 +186,8 @@ describe('COSTRA-302: Summary Drill-Down API', () => {
     expect(body.items[0].amount).toBe(5000);
     expect(body.items[1].amount).toBe(3000);
     expect(body.items[0].shared_type).toBe('shared');
+    expect(body.items[0].source_recurring_id).toBe(recurringId);
+    expect(body.items[1].source_recurring_id).toBeNull();
     expect(body.items[0].nickname).toBeTruthy();
     // category_name = entry 所属二级/叶子分类名（供协作页明细备注区回退展示）
     expect(body.items[0].category_name).toBe('外卖'); // amount=5000 挂在二级分类 l2Id

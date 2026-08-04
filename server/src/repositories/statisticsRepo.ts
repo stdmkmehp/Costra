@@ -52,6 +52,7 @@ export interface EntryDetailRow {
   note: string | null;
   occurred_at: string;
   shared_type: 'shared' | 'personal' | null;
+  source_recurring_id: string | null;
   created_by: string;
   nickname: string;
   avatar_url: string | null;
@@ -317,6 +318,7 @@ export async function listEntriesByCategory(
        e.note AS note,
        e.occurred_at AS occurred_at,
        e.shared_type AS shared_type,
+       e.source_recurring_id AS source_recurring_id,
        e.created_by AS created_by,
        u.nickname AS nickname,
        u.avatar_url AS avatar_url
@@ -343,6 +345,7 @@ export async function listEntriesByCategory(
       ? r.occurred_at
       : (r.occurred_at as Date).toISOString(),
     shared_type: (r.shared_type as 'shared' | 'personal' | null) ?? null,
+    source_recurring_id: r.source_recurring_id != null ? String(r.source_recurring_id) : null,
     created_by: String(r.created_by),
     nickname: String(r.nickname ?? ''),
     avatar_url: r.avatar_url != null ? String(r.avatar_url) : null,

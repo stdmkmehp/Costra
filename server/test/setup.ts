@@ -231,6 +231,67 @@ function applyMigrations(db: IMemoryDb): void {
       PRIMARY KEY (user_id, announcement_id)
     );
     CREATE INDEX idx_announcement_reads_user ON announcement_reads(user_id);
+
+    -- ═══════════════════════════════════════════════════════════════
+    -- migration 0011_recurring_entries.sql · 简化 pg-mem 兼容版
+    -- 依据 docs/spike/pgmem-array-check.md 的适配策略：
+    --   * ENUM → TEXT + CHECK IN (...)
+    --   * 数组元素范围 / 长度 CHECK → 省略（service 层 validateCreate 兜底）
+    --   * 复合 chk_recurring_period_fields → 省略（service 层校验）
+    --   * pg-mem 已验证支持 SMALLINT[] / INTEGER[] 列基础 INSERT/SELECT
+    -- ═══════════════════════════════════════════════════════════════
+    CREATE TABLE recurring_rules (
+      id              UUID PRIMARY KEY,
+      ledger_id       UUID NOT NULL,
+      created_by      UUID NOT NULL,
+
+      type            TEXT NOT NULL CHECK (type IN ('income','expense','transfer')),
+      amount          BIGINT NOT NULL CHECK (amount > 0),
+      currency        TEXT NOT NULL DEFAULT 'CNY',
+      category_id     UUID,
+      account_id      UUID,
+      to_account_id   UUID,
+      note            TEXT,
+      shared_type     TEXT,
+
+      period          TEXT NOT NULL CHECK (period IN
+        ('weekly','biweekly','monthly','bimonthly','trimonthly','yearly')),
+      days_of_week    SMALLINT[],
+      days_of_month   SMALLINT[],
+      year_month_days INTEGER[],
+
+      execute_bucket  TEXT NOT NULL CHECK (execute_bucket IN
+        ('dawn','morning','afternoon','night')),
+      execute_hour    SMALLINT NOT NULL CHECK (execute_hour BETWEEN 0 AND 23),
+      execute_minute  SMALLINT NOT NULL CHECK (execute_minute BETWEEN 0 AND 59),
+      timezone        TEXT NOT NULL,
+
+      start_date      DATE NOT NULL,
+      end_date        DATE,
+      status          TEXT NOT NULL DEFAULT 'active'
+                      CHECK (status IN ('active','paused','ended','auto_paused')),
+
+      next_run_at     TIMESTAMPTZ NOT NULL,
+      last_run_at     TIMESTAMPTZ,
+      last_run_status TEXT,
+      consecutive_failures SMALLINT NOT NULL DEFAULT 0,
+
+      -- 复用 entries_change_seq（0006 已 CREATE SEQUENCE）
+      change_seq      BIGINT NOT NULL DEFAULT nextval('entries_change_seq'),
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+      deleted_at      TIMESTAMPTZ,
+      version         INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE INDEX idx_recurring_rules_next_run ON recurring_rules (next_run_at)
+      WHERE status = 'active' AND deleted_at IS NULL;
+    CREATE INDEX idx_recurring_rules_created_by ON recurring_rules (created_by)
+      WHERE deleted_at IS NULL;
+
+    -- entries 表新增 source_recurring_id 列（migration 0011 ALTER）
+    ALTER TABLE entries ADD COLUMN source_recurring_id UUID REFERENCES recurring_rules(id) ON DELETE SET NULL;
+    CREATE INDEX idx_entries_source_recurring ON entries (source_recurring_id)
+      WHERE source_recurring_id IS NOT NULL AND deleted_at IS NULL;
   `;
   db.public.none(ddl);
 
@@ -288,7 +349,7 @@ function registerPgMemFunctions(db: IMemoryDb): void {
 function resetPgMem(): void {
   if (memDb) {
     memDb.public.none(
-      'DELETE FROM entries; DELETE FROM category_redirects; DELETE FROM categories; DELETE FROM family_invites; DELETE FROM family_members; DELETE FROM ledgers; DELETE FROM families; DELETE FROM user_sessions; DELETE FROM users; DELETE FROM idempotency_keys; DELETE FROM announcement_reads; DELETE FROM announcements;',
+      'DELETE FROM recurring_rules; DELETE FROM entries; DELETE FROM category_redirects; DELETE FROM categories; DELETE FROM family_invites; DELETE FROM family_members; DELETE FROM ledgers; DELETE FROM families; DELETE FROM user_sessions; DELETE FROM users; DELETE FROM idempotency_keys; DELETE FROM announcement_reads; DELETE FROM announcements;',
     );
   }
 }

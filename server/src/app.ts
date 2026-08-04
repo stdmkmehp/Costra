@@ -35,10 +35,23 @@ import { registerFamiliesRoutes } from './routes/families.js';
 import { registerStatisticsRoutes } from './routes/statistics.js';
 import { registerUploadRoutes } from './routes/upload.js';
 import { registerAnnouncementsRoutes } from './routes/announcements.js';
+import { registerRecurringRoutes } from './routes/recurring.js';
+import { createRecurringService } from './services/recurringService.js';
+import { createEntryService } from './services/entryService.js';
+import { createScheduler, type RecurringScheduler } from './services/recurringScheduler.js';
+
+// 让 app.recurringScheduler 可访问（测试和优雅关停用）
+declare module 'fastify' {
+  interface FastifyInstance {
+    recurringScheduler?: RecurringScheduler;
+  }
+}
 
 export interface BuildAppOptions {
   /** 测试注入：禁用 logger 以避免 vitest 日志噪音 */
   disableLogger?: boolean;
+  /** 是否启动 scheduler 定时循环（生产用 true · 单测都用 false 手动 tickOnce） */
+  autoStartScheduler?: boolean;
 }
 
 export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInstance> {
@@ -80,6 +93,19 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   // --- 业务路由 ---
   // healthz 保留根路径（K8s/SLB liveness probe 惯例 · 不进 v1 prefix）
   await registerHealthRoute(app);
+
+  // T2 · 定时记账 scheduler · 挂到 app 实例便于 test 手动 tickOnce 和 close 时 stop
+  const entryService = createEntryService();
+  const recurringService = createRecurringService({ entryService });
+  const scheduler = createScheduler(recurringService);
+  app.decorate('recurringScheduler', scheduler);
+  if (opts.autoStartScheduler !== false && process.env.COSTRA_RECURRING_ENABLED !== 'false') {
+    scheduler.start(); // test 环境内部会自动跳过 setInterval
+  }
+  app.addHook('onClose', async () => {
+    await scheduler.stop();
+  });
+
   // 业务路由全部进 /v1 prefix 子作用域（COSTRA-156 · 让实装服从 OpenAPI servers 契约）
   await app.register(async (v1) => {
     await registerAuthRoutes(v1);
@@ -92,6 +118,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
     await registerStatisticsRoutes(v1);
     await registerUploadRoutes(v1);
     await registerAnnouncementsRoutes(v1);
+    await registerRecurringRoutes(v1, { service: recurringService });
   }, { prefix: '/v1' });
 
   return app;
