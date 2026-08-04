@@ -41,11 +41,22 @@ const REPO_ROOT = resolve(__dirname, '..');
 const TARGETS = [
   {
     label: 'server',
-    path: resolve(REPO_ROOT, 'server/src/services/recurringSchedule.ts'),
+ path: resolve(REPO_ROOT, 'server/src/services/recurringSchedule.ts'),
   },
   {
     label: 'miniprogram',
     path: resolve(REPO_ROOT, 'miniprogram/services/recurringSchedule.ts'),
+  },
+];
+
+const FORMAT_TARGETS = [
+  {
+    label: 'server',
+    path: resolve(REPO_ROOT, 'server/src/services/recurringFormat.ts'),
+  },
+  {
+    label: 'miniprogram',
+    path: resolve(REPO_ROOT, 'miniprogram/services/recurringFormat.ts'),
   },
 ];
 
@@ -103,10 +114,10 @@ console.log(`  miniprogram : ${hClient}  (${client.path})`);
 
 if (hServer !== hClient) {
   const d = firstDiffLine(server.text, client.text);
-  console.error('\n[parity] FAIL: byte-level drift between server and miniprogram');
+  console.error('\n[parity] FAIL: byte-level drift between server and miniprogram (recurringSchedule.ts)');
   if (d) {
     console.error(`\n  first diff at line ${d.line}:`);
-    console.error(`  - server      : ${JSON.stringify(d.a)}`);
+    console.error(`  - server    : ${JSON.stringify(d.a)}`);
     console.error(`  - miniprogram : ${JSON.stringify(d.b)}`);
   }
   console.error(
@@ -118,4 +129,48 @@ if (hServer !== hClient) {
 }
 
 console.log('\n[parity] PASS: recurringSchedule.ts byte-level identical');
+
+// ===== recurringFormat.ts parity check =====
+
+let formatMissing = false;
+const formatContents = [];
+for (const t of FORMAT_TARGETS) {
+  if (!existsSync(t.path)) {
+    console.error(`[parity] MISSING: ${t.path}`);
+    formatMissing = true;
+    continue;
+  }
+  formatContents.push({ label: t.label, path: t.path, text: readFileSync(t.path, 'utf8') });
+}
+
+if (formatMissing) {
+  console.error('\n[parity] One or more recurringFormat.ts files are missing. exit 2');
+  process.exit(2);
+}
+
+const [fmtServer, fmtClient] = formatContents;
+const hFmtServer = hashOf(fmtServer.text);
+const hFmtClient = hashOf(fmtClient.text);
+
+console.log('\n[parity] recurringFormat.ts sha256:');
+console.log(`  server      : ${hFmtServer}  (${fmtServer.path})`);
+console.log(`  miniprogram : ${hFmtClient}  (${fmtClient.path})`);
+
+if (hFmtServer !== hFmtClient) {
+  const d = firstDiffLine(fmtServer.text, fmtClient.text);
+  console.error('\n[parity] FAIL: byte-level drift between server and miniprogram (recurringFormat.ts)');
+  if (d) {
+    console.error(`\n  first diff at line ${d.line}:`);
+    console.error(`  - server      : ${JSON.stringify(d.a)}`);
+    console.error(`  - miniprogram : ${JSON.stringify(d.b)}`);
+  }
+  console.error(
+    '\n[parity] Fix: modify BOTH files in the same commit.\n' +
+      '     Use `cp server/src/services/recurringFormat.ts miniprogram/services/recurringFormat.ts`\n' +
+      '     (or the reverse) if you meant them to be identical.',
+  );
+  process.exit(1);
+}
+
+console.log('\n[parity] PASS: recurringFormat.ts byte-level identical');
 process.exit(0);
