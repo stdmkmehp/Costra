@@ -37,6 +37,7 @@ import type {
   UpdateRecurringRuleInput,
 } from '../repositories/recurringRepo.js';
 import * as ledgerRepo from '../repositories/ledgerRepo.js';
+import * as familyRepo from '../repositories/familyRepo.js';
 import * as familyMemberRepo from '../repositories/familyMemberRepo.js';
 import * as userRepo from '../repositories/userRepo.js';
 import {
@@ -295,7 +296,16 @@ export interface ProcessResult {
   generatedDates: Date[];
   skippedDates: Date[];
   newNextRunAt: Date;
-  newStatus: 'active' | 'ended';
+  newStatus: 'active' | 'ended' | 'auto_paused';
+  /**
+   * 当 newStatus === 'auto_paused' 时，说明本轮 tick 检测到运行前置条件失效
+   * （账本被删 / 家庭被解散 / 用户已退出家庭），未生成任何 entry。
+   * 值对应写入 recurring_rules.last_run_status，供列表页显示原因。
+   */
+  autoPausedReason?:
+    | 'failed_ledger_deleted'
+    | 'failed_family_deleted'
+    | 'failed_user_left_family';
 }
 
 // ==============================================================================
@@ -449,6 +459,30 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
     validateUpdate(payload);
     const existing = await findById(userId, ruleId);
 
+    // 部分 PATCH 也必须通过与 create 相同的完整校验：把 patch 合并到 existing 上，
+    // 再跑一次 validateCreate。这能拦到诸如「保留 period=yearly，但把 year_month_days 改为 null」
+    // 或「切 period 到 weekly 但没传 days_of_week」的非法组合。
+    const merged: CreateRecurringPayload = {
+    ledger_id: existing.ledgerId,
+      type: payload.type ?? existing.type,
+      amount: payload.amount ?? existing.amount,
+      currency: existing.currency,
+      category_id: payload.category_id !== undefined ? payload.category_id : existing.categoryId,
+      account_id: payload.account_id !== undefined ? payload.account_id : existing.accountId,
+      to_account_id: payload.to_account_id !== undefined ? payload.to_account_id : existing.toAccountId,
+      note: payload.note !== undefined ? payload.note : existing.note,
+  shared_type: payload.shared_type !== undefined ? payload.shared_type : existing.sharedType,
+      period: payload.period ?? existing.period,
+ days_of_week: payload.days_of_week !== undefined ? payload.days_of_week : existing.daysOfWeek,
+      days_of_month: payload.days_of_month !== undefined ? payload.days_of_month : existing.daysOfMonth,
+    year_month_days: payload.year_month_days !== undefined ? payload.year_month_days : existing.yearMonthDays,
+      execute_bucket: payload.execute_bucket ?? existing.executeBucket,
+    timezone: payload.timezone ?? existing.timezone,
+      start_date: payload.start_date ?? existing.startDate,
+      end_date: payload.end_date !== undefined ? payload.end_date : existing.endDate,
+    };
+    validateCreate(merged);
+
     // 若 ledger 变更（不允许 · 不在 payload 里）· 若 timezone 变化则重算
     // 若 execute_bucket 变化 → 重算 hour/minute
     // 若 period / days_of_* / start_date / execute_bucket / timezone 任一变化 → 重算 next_run_at
@@ -533,7 +567,23 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
     if (payload.timezone !== undefined) input.timezone = payload.timezone;
     if (payload.start_date !== undefined) input.startDate = payload.start_date;
     if (payload.end_date !== undefined) input.endDate = payload.end_date;
-    if (nextRunAt !== undefined) input.nextRunAt = nextRunAt;
+ if (nextRunAt !== undefined) input.nextRunAt = nextRunAt;
+
+    // end_date 收敛：合并后的 end_date 若使规则永远无法再次执行，立即置 'ended'。
+    // 判定基准：
+    //   - 新 next_run_at 已算出且 > end_boundary，或
+    //   - 未重算 next_run_at 但 end_date 缩短到现有 next_run_at 之前。
+    const effectiveEndDate = payload.end_date !== undefined ? payload.end_date : existing.endDate;
+    const effectiveTimezone = payload.timezone !== undefined ? payload.timezone : existing.timezone;
+    if (effectiveEndDate) {
+ const endBoundary = DateTime.fromISO(effectiveEndDate, { zone: effectiveTimezone })
+    .endOf('day')
+    .toJSDate();
+const cursor = nextRunAt ?? existing.nextRunAt;
+      if (cursor > endBoundary && existing.status === 'active') {
+    input.status = 'ended';
+      }
+    }
 
     const updated = await recurringRepo.updateRuleByVersion(
       ruleId,
@@ -569,13 +619,16 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
   }
 
   async function resume(userId: string, ruleId: string): Promise<RecurringRuleEntity> {
-    const existing = await findById(userId, ruleId);
+ const existing = await findById(userId, ruleId);
     if (existing.status === 'ended') {
       throw new AppError(ErrorCode.BUSINESS_RULE_VIOLATION, {
         message: 'cannot resume an ended rule',
         details: { rule_id: ruleId },
       });
     }
+    // 若上一次执行发现账本失效 / 用户已退出家庭 / 家庭已解散被自动停用，
+    // 恢复时必须重新验证前置条件；否则用户点"启用"会立刻在下一 tick 再次 auto_paused。
+    await assertUserOwnsLedger(userId, existing.ledgerId);
     // resume 时重算 next_run_at（从当前时刻起算 · 不补跑历史）
     const forCompute = toComputeShape(existing);
     const nextRunAt = computeNextRunAt(forCompute, new Date());
@@ -671,11 +724,84 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
 
   // ------------ scheduler tick 单条规则处理（tech-spec §3.4）------------
 
+  /**
+   * 运行前置校验：目标账本、家庭、成员身份是否仍然有效。
+   *
+   * 触发时机：`processOneRule` 事务开头，尚未生成任何 entry。
+   * 任一失效即返回原因字符串（写入 last_run_status），由 processOneRule
+   * 将规则置为 auto_paused，本轮不生成 entry；下轮 tick 因 status != 'active'
+   * 自然被过滤掉，用户在列表页看到「已自动停用」及具体原因。
+   *
+   * 为什么不走 3 次失败递增：
+   *   - 结构性失效（账本/家庭/成员）在下一个 tick 只会得到相同结果
+   *   - 重试没有价值，反而放大 audit / metric 噪音
+   *   - 与 tech-spec §7 边界表格保持一致
+   */
+  async function assertRuleContextValid(
+    rule: RecurringRuleEntity,
+    client: PoolClient,
+  ): Promise<
+    | { ok: true }
+    | {
+        ok: false;
+      reason:
+  | 'failed_ledger_deleted'
+          | 'failed_family_deleted'
+          | 'failed_user_left_family';
+    }
+  > {
+    // 结构性失效检测在同一事务 client 上读取，保证读取到最新（含 deleted_at）状态。
+    // 各 repo 的 client 参数为结构化 Runner，PoolClient 兼容其 .query 签名，
+    // 通过 as unknown 局部规避类型形参差异。
+    const runner = client as unknown as Parameters<typeof ledgerRepo.findById>[1];
+    const ledger = await ledgerRepo.findById(rule.ledgerId, runner);
+    if (!ledger) return { ok: false, reason: 'failed_ledger_deleted' };
+
+    const family = await familyRepo.findById(
+      ledger.familyId,
+      client as unknown as Parameters<typeof familyRepo.findById>[1],
+    );
+    if (!family) return { ok: false, reason: 'failed_family_deleted' };
+
+const isMember = await familyMemberRepo.isActiveMember(
+      rule.createdBy,
+      family.id,
+      client as unknown as Parameters<typeof familyMemberRepo.isActiveMember>[2],
+    );
+if (!isMember) return { ok: false, reason: 'failed_user_left_family' };
+
+    return { ok: true };
+  }
+
   async function processOneRule(
     rule: RecurringRuleEntity,
     now: Date,
     client: PoolClient,
   ): Promise<ProcessResult> {
+    // ── 运行前置校验：结构性失效 → 直接 auto_paused ─────────────────────
+    const ctx = await assertRuleContextValid(rule, client);
+    if (!ctx.ok) {
+      await client.query(
+        `UPDATE recurring_rules
+     SET status = 'auto_paused',
+       last_run_at = $1,
+     last_run_status = $2,
+consecutive_failures = 0,
+    version = version + 1,
+     change_seq = nextval('entries_change_seq')
+      WHERE id = $3 AND deleted_at IS NULL`,
+        [now, ctx.reason, rule.id],
+      );
+      return {
+        generatedCount: 0,
+    generatedDates: [],
+        skippedDates: [],
+        newNextRunAt: rule.nextRunAt,
+        newStatus: 'auto_paused',
+        autoPausedReason: ctx.reason,
+      };
+    }
+
     const forCompute = toComputeShape(rule);
 
     let cursor = rule.nextRunAt;
@@ -699,24 +825,24 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
       const dayLocal = localDate(cursor, rule.timezone);
       const clientRefId = makeClientRefId(rule.id, dayLocal);
 
-      const result = await entryService.createWithIdempotency(
-        rule.createdBy,
+  const result = await entryService.createWithIdempotency(
+  rule.createdBy,
         {
           ledger_id: rule.ledgerId,
-          amount: rule.amount,
+    amount: rule.amount,
           currency: rule.currency,
           type: rule.type,
           category_id: rule.categoryId,
           account_id: rule.accountId,
           to_account_id: rule.toAccountId,
           note: rule.note,
-          occurred_at: cursor.toISOString(),
-          shared_type: rule.sharedType,
+    occurred_at: cursor.toISOString(),
+   shared_type: rule.sharedType,
           client_ref_id: clientRefId,
         },
-        clientRefId,
-        { sourceRecurringId: rule.id },
-      );
+    clientRefId,
+        { sourceRecurringId: rule.id, client }, // T2 · 事务串联
+    );
       if (result.status === 'ok' || result.status === 'conflict') {
         // ok = 新生成 · conflict = 之前已生成过（幂等） · 都视为已完成
         generated.push(cursor);

@@ -14,9 +14,6 @@
  *   - NODE_ENV === 'test' 时 setInterval 不启动，只暴露 tickOnce
  *   - Advisory lock 在 pg-mem 环境下 mock（永远拿到）
  *   - 显式驱动：await scheduler.tickOnce(mockNow)
- *
- * 灰度：
- *   - COSTRA_RECURRING_ENABLED 环境变量为 false 时 startScheduler 不启动
  */
 
 import type { PoolClient } from 'pg';
@@ -122,11 +119,21 @@ export function createScheduler(
     try {
       gotLock = await tryAcquireLock(lockClient);
       if (!gotLock) {
-        // 别的实例在 tick · 本轮跳过
+  // 别的实例在 tick · 本轮跳过
         return report;
       }
 
-      // 拉候选 · 需要在事务内配合 FOR UPDATE SKIP LOCKED
+ // T2 · end_date 状态收敛：先扫一遍已过期的 active 规则并置 'ended'，
+      // 避免它们永远进不了后续 due 查询而成为"启用中但不会执行"的僵尸。
+      // 单条 UPDATE，走部分索引；空表时无成本。
+      try {
+        await recurringRepo.markEndedForExpired(now);
+      } catch (err) {
+    // sweep 失败不阻塞 tick 主流程，下轮再试
+    report.results.push({ ruleId: '__sweep_ended__', result: { error: (err as Error).message } });
+      }
+
+    // 拉候选 · 需要在事务内配合 FOR UPDATE SKIP LOCKED
       // 为简化：每条规则一个独立事务；批量拉候选用一个只读事务
       const candidates = await pickDueRules(now, batchSize);
       report.pickedCount = candidates.length;
@@ -161,7 +168,6 @@ export function createScheduler(
 
   function start(): void {
     if (isTestEnv()) return; // test 环境不启定时器
-    if (process.env.COSTRA_RECURRING_ENABLED === 'false') return; // 灰度 flag off
     if (timerHandle != null) return; // 已启动
 
     running = true;

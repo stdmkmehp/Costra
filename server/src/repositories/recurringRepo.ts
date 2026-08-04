@@ -339,6 +339,8 @@ export interface UpdateRecurringRuleInput {
   startDate?: string;
   endDate?: string | null;
   nextRunAt?: Date;
+  /** T2 · PATCH end_date 后若已过期，可一并置 'ended' */
+  status?: RecurringStatus;
 }
 
 /**
@@ -385,6 +387,7 @@ export async function updateRuleByVersion(
   if (input.startDate !== undefined) push('start_date', input.startDate);
   if (input.endDate !== undefined) push('end_date', input.endDate);
   if (input.nextRunAt !== undefined) push('next_run_at', input.nextRunAt);
+  if (input.status !== undefined) push('status', input.status);
 
   if (fields.length === 0) {
     // 无实际字段变更 · 直接返回当前行（保持幂等）
@@ -520,5 +523,35 @@ export async function findActiveRulesByLedger(
       WHERE ledger_id = $1 AND status = 'active' AND deleted_at IS NULL`,
     [ledgerId],
   );
-  return res.rows.map(rowToEntity);
+return res.rows.map(rowToEntity);
+}
+
+/**
+ * 已过期 active 规则一次性置 'ended'。
+ *
+ * 场景：due 查询过滤掉了 `end_date + 1d <= now` 的 active 规则，导致它们永远进不了
+ * processOneRule 更新状态。列表页会一直看到"启用中但不会执行"的僵尸规则。
+ * 由 scheduler tick 每次调用一次，成本 O(表大小)，走 idx_recurring_rules_next_run 分区索引。
+ *
+ * 返回受影响行数，供 tick report 记录。
+ */
+export async function markEndedForExpired(
+  now: Date,
+  client?: Runner,
+): Promise<number> {
+  const runner = client ?? exec();
+  const res = await runner.query(
+    `UPDATE recurring_rules
+        SET status = 'ended',
+ last_run_at = $1,
+            last_run_status = 'ended_by_end_date',
+         version = version + 1,
+            change_seq = nextval('entries_change_seq')
+      WHERE status = 'active'
+      AND deleted_at IS NULL
+        AND end_date IS NOT NULL
+        AND end_date + INTERVAL '1 day' <= $1`,
+    [now],
+  );
+  return res.rowCount ?? 0;
 }

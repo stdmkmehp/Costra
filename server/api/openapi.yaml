@@ -1107,6 +1107,8 @@ paths:
       operationId: createRecurringEntry
       tags: [recurring]
       summary: 新建定时规则
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -1144,6 +1146,8 @@ paths:
       operationId: patchRecurringEntry
       tags: [recurring]
       summary: 编辑（乐观锁）
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -1169,6 +1173,7 @@ paths:
       tags: [recurring]
       summary: 软删除（历史 entry 不受影响）
       parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
         - name: version
           in: query
           required: true
@@ -1184,6 +1189,7 @@ paths:
       tags: [recurring]
       summary: 手动禁用 · status → paused
       parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
         - name: id
           in: path
           required: true
@@ -1201,6 +1207,7 @@ paths:
       tags: [recurring]
       summary: 手动启用 · status → active + 重算 next_run_at
       parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
         - name: id
           in: path
           required: true
@@ -1218,6 +1225,7 @@ paths:
       tags: [recurring]
       summary: 复制规则（start_date 用今天 · end_date 清空）
       parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
         - name: id
           in: path
           required: true

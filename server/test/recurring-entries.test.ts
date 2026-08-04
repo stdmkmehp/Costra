@@ -792,13 +792,164 @@ describe('recurring-entries · scheduler tick', () => {
     expect(entriesRes.rows[0].cnt).toBe(0);
   });
 
-  it('E2E · advisory-lock is mocked in test env · tick always proceeds', async () => {
+it('E2E · advisory-lock is mocked in test env · tick always proceeds', async () => {
     // 直接调 tickOnce 两次 · 都能拿到锁
     const scheduler = app.recurringScheduler!;
     const r1 = await scheduler.tickOnce(new Date());
     const r2 = await scheduler.tickOnce(new Date());
     expect(r1.pickedCount).toBe(0);
     expect(r2.pickedCount).toBe(0);
+  });
+});
+
+// ==============================================================================
+// 运行前置校验 · auto_paused 兜底
+// ==============================================================================
+
+describe('recurring-entries · pre-flight auto_paused', () => {
+  let app: FastifyInstance;
+  let token: string;
+  let userId: string;
+
+  beforeEach(async () => {
+    app = await buildApp({ disableLogger: true, autoStartScheduler: false });
+ await app.ready();
+    const login1 = await login(app);
+    token = login1.token;
+    userId = login1.userId;
+    await setupFamilyAndLedger(userId);
+  });
+
+  async function createDueRule(): Promise<{ id: string; execute_hour: number; execute_minute: number; timezone: string; }> {
+    const createRes = await app.inject({
+ method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+    payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 500,
+        shared_type: 'personal',
+        period: 'weekly',
+        days_of_week: [1, 3, 5],
+        execute_bucket: 'morning',
+        start_date: '2026-08-01',
+      },
+    });
+    expect(createRes.statusCode).toBe(201);
+    const rule = createRes.json() as { id: string; execute_hour: number; execute_minute: number; timezone: string; };
+    // 把 next_run_at 拉到过去，让 rule 立即 due
+    const pool = getPool();
+  await pool.query(
+      `UPDATE recurring_rules SET next_run_at = $1 WHERE id = $2`,
+      [new Date('2026-08-03T01:00:00.000Z'), rule.id],
+    );
+    return rule;
+  }
+
+  it('账本被软删 → rule 自动 auto_paused · 不生成 entry · last_run_status = failed_ledger_deleted', async () => {
+    const rule = await createDueRule();
+    const pool = getPool();
+    // 模拟账本被删
+    await pool.query(`UPDATE ledgers SET deleted_at = now() WHERE id = $1`, [LEDGER_ID]);
+
+    const scheduler = app.recurringScheduler!;
+    const report = await scheduler.tickOnce(new Date('2026-08-03T23:59:00.000Z'));
+    expect(report.processedCount).toBe(1);
+
+    const ruleRes = await pool.query<{ status: string; last_run_status: string | null; consecutive_failures: number }>(
+      `SELECT status, last_run_status, consecutive_failures FROM recurring_rules WHERE id = $1`,
+      [rule.id],
+    );
+    expect(ruleRes.rows[0].status).toBe('auto_paused');
+ expect(ruleRes.rows[0].last_run_status).toBe('failed_ledger_deleted');
+    // 结构性失效不走 3 次重试
+    expect(ruleRes.rows[0].consecutive_failures).toBe(0);
+
+    const entriesRes = await pool.query<{ cnt: number }>(
+      `SELECT COUNT(*)::int AS cnt FROM entries WHERE source_recurring_id = $1`,
+      [rule.id],
+    );
+    expect(entriesRes.rows[0].cnt).toBe(0);
+  });
+
+  it('用户被移出家庭 → rule 自动 auto_paused · last_run_status = failed_user_left_family', async () => {
+    const rule = await createDueRule();
+    const pool = getPool();
+    // 模拟用户离开家庭
+    await pool.query(
+      `UPDATE family_members SET left_at = now() WHERE user_id = $1`,
+   [userId],
+    );
+
+    const scheduler = app.recurringScheduler!;
+    const report = await scheduler.tickOnce(new Date('2026-08-03T23:59:00.000Z'));
+    expect(report.processedCount).toBe(1);
+
+    const ruleRes = await pool.query<{ status: string; last_run_status: string | null }>(
+      `SELECT status, last_run_status FROM recurring_rules WHERE id = $1`,
+      [rule.id],
+    );
+    expect(ruleRes.rows[0].status).toBe('auto_paused');
+    expect(ruleRes.rows[0].last_run_status).toBe('failed_user_left_family');
+
+    const entriesRes = await pool.query<{ cnt: number }>(
+      `SELECT COUNT(*)::int AS cnt FROM entries WHERE source_recurring_id = $1`,
+  [rule.id],
+    );
+    expect(entriesRes.rows[0].cnt).toBe(0);
+  });
+
+  it('家庭被解散 → rule 自动 auto_paused · last_run_status = failed_family_deleted', async () => {
+    const rule = await createDueRule();
+    const pool = getPool();
+    await pool.query(`UPDATE families SET deleted_at = now() WHERE id = $1`, ['00000000-0000-0000-0000-0000000000f1']);
+
+    const scheduler = app.recurringScheduler!;
+    const report = await scheduler.tickOnce(new Date('2026-08-03T23:59:00.000Z'));
+    expect(report.processedCount).toBe(1);
+
+    const ruleRes = await pool.query<{ status: string; last_run_status: string | null }>(
+      `SELECT status, last_run_status FROM recurring_rules WHERE id = $1`,
+      [rule.id],
+    );
+    expect(ruleRes.rows[0].status).toBe('auto_paused');
+    expect(ruleRes.rows[0].last_run_status).toBe('failed_family_deleted');
+  });
+
+  it('账本正常但账本已改名等场景 → rule 继续正常执行（回归保护）', async () => {
+    const rule = await createDueRule();
+    const pool = getPool();
+    // 改名不影响 rule 执行
+    await pool.query(`UPDATE ledgers SET name = 'Renamed' WHERE id = $1`, [LEDGER_ID]);
+
+    const scheduler = app.recurringScheduler!;
+    const report = await scheduler.tickOnce(new Date('2026-08-03T23:59:00.000Z'));
+    expect(report.processedCount).toBe(1);
+
+    const ruleRes = await pool.query<{ status: string; last_run_status: string | null }>(
+      `SELECT status, last_run_status FROM recurring_rules WHERE id = $1`,
+    [rule.id],
+  );
+    expect(ruleRes.rows[0].status).toBe('active');
+    expect(ruleRes.rows[0].last_run_status).toMatch(/^ok/);
+  });
+
+  it('resume 一条 auto_paused 但账本仍失效的规则 → 拒绝并保持停用', async () => {
+    const rule = await createDueRule();
+    const pool = getPool();
+    await pool.query(`UPDATE ledgers SET deleted_at = now() WHERE id = $1`, [LEDGER_ID]);
+    const scheduler = app.recurringScheduler!;
+    await scheduler.tickOnce(new Date('2026-08-03T23:59:00.000Z'));
+
+    // 用户点击"启用"应被服务端拒绝
+    const resumeRes = await app.inject({
+    method: 'POST',
+      url: `/v1/recurring-entries/${rule.id}/resume`,
+      headers: authHeaderNoBody(token),
+    });
+    // ledger 已删 → assertUserOwnsLedger 抛 NOT_FOUND
+    expect([403, 404]).toContain(resumeRes.statusCode);
   });
 });
 

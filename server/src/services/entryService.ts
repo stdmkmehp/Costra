@@ -40,12 +40,17 @@ export interface EntryService {
 
 /**
  * T2 · createWithIdempotency 可选参数
- * 目前仅用于定时调度器透传 sourceRecurringId
+ * 目前用于定时调度器透传 sourceRecurringId 及事务 client
  * 客户端 API 走 route 直接调用时不传这个 opts
  */
 export interface CreateEntryOpts {
   /** 来源定时规则 id · 走 entries.source_recurring_id */
   sourceRecurringId?: string;
+  /**
+   * 事务运行时 client · 若传入，findByLedgerAndClientRefId 与 insertEntry 都在此事务内。
+   * 用于定时调度器把 rule 水位更新与 entry insert 串在同一事务，避免 crash 半态。
+   */
+  client?: import('pg').PoolClient;
 }
 
 export interface EntryListResult {
@@ -258,11 +263,20 @@ export function createEntryService(deps: EntryServiceDeps = {}): EntryService {
   ): Promise<EntryResult> {
     validateCreatePayload(payload);
 
+  // 事务 client 由 caller（如定时调度器）注入；未传则走全局 pool（默认路径）。
+    // 关键：findByLedgerAndClientRefId 与 insertEntry 走同一 client，
+    // 保证 recurring tick 内 entry insert 与 rule 水位更新在同一事务下要么全成功要么全回滚。
+    const txClient = opts?.client;
+
     // 防重：若 client_ref_id 存在，先查 ledger_id+client_ref_id 是否已有
     if (clientRefId) {
-      const existing = await entryRepo.findByLedgerAndClientRefId(payload.ledger_id, clientRefId);
+      const existing = await entryRepo.findByLedgerAndClientRefId(
+ payload.ledger_id,
+        clientRefId,
+        txClient as unknown as Parameters<typeof entryRepo.findByLedgerAndClientRefId>[2],
+      );
       if (existing) {
-        return { status: 'conflict', serverVersion: existing.version };
+    return { status: 'conflict', serverVersion: existing.version };
       }
     }
 
@@ -290,21 +304,24 @@ export function createEntryService(deps: EntryServiceDeps = {}): EntryService {
     }
 
     try {
-      const entry = await entryRepo.insertEntry({
-        ledgerId: payload.ledger_id,
-        amount: payload.amount,
-        currency: payload.currency,
-        type: payload.type,
-        categoryId: resolvedCategory.categoryId,
-        accountId: payload.account_id,
-        toAccountId: payload.to_account_id,
-        note: payload.note,
-        occurredAt: payload.occurred_at,
-        createdBy: userId,
-        clientRefId: clientRefId ?? null,
-        sharedType, // COSTRA-217 B2 + R1.x 默认规则
-        sourceRecurringId: opts?.sourceRecurringId ?? null, // T2
-      });
+    const entry = await entryRepo.insertEntry(
+      {
+          ledgerId: payload.ledger_id,
+          amount: payload.amount,
+   currency: payload.currency,
+          type: payload.type,
+          categoryId: resolvedCategory.categoryId,
+          accountId: payload.account_id,
+     toAccountId: payload.to_account_id,
+          note: payload.note,
+  occurredAt: payload.occurred_at,
+          createdBy: userId,
+    clientRefId: clientRefId ?? null,
+     sharedType, // COSTRA-217 B2 + R1.x 默认规则
+   sourceRecurringId: opts?.sourceRecurringId ?? null, // T2
+     },
+    txClient as unknown as Parameters<typeof entryRepo.insertEntry>[1],
+      );
       return { status: 'ok', serverId: entry.id, serverVersion: entry.version };
     } catch (err: unknown) {
       const msg = (err as { message?: string }).message ?? '';

@@ -99,7 +99,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   const recurringService = createRecurringService({ entryService });
   const scheduler = createScheduler(recurringService);
   app.decorate('recurringScheduler', scheduler);
-  if (opts.autoStartScheduler !== false && process.env.COSTRA_RECURRING_ENABLED !== 'false') {
+  if (opts.autoStartScheduler !== false) {
     scheduler.start(); // test 环境内部会自动跳过 setInterval
   }
   app.addHook('onClose', async () => {
