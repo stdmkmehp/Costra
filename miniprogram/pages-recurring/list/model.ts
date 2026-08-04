@@ -4,7 +4,7 @@
 
 import type { RecurringRule, RecurringPeriod } from '../../services/recurringApi';
 import { toYuan } from '../../utils/money';
-import { formatDaysForSummary, type FormatContext } from '../../services/recurringSchedule';
+import { formatDaysForSummary, type FormatContext } from '../../services/recurringFormat';
 import type { CategoryItem } from '../../services/categoryService';
 import type { FamilyItem } from '../../services/familyApi';
 

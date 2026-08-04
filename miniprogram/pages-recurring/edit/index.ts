@@ -17,7 +17,7 @@ import {
 } from '../../services/recurringApi';
 import { invalidateCache, enqueueMutation, generateIdempotencyKey } from '../../services/recurringLocal';
 import { toYuan, parseAmountInputToCents } from '../../utils/money';
-import { formatDaysForSummary, type FormatContext } from '../../services/recurringSchedule';
+import { formatDaysForSummary, type FormatContext } from '../../services/recurringFormat';
 import { getActiveFamilyId } from '../../services/family';
 import { getToken } from '../../services/auth';
 import { getFamilies, type FamilyItem } from '../../services/familyApi';

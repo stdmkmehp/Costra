@@ -2,7 +2,7 @@
 // 卡号占位：COSTRA-5xx（T3 · Sprint-4 · Epic-E）
 // Refs: COSTRA-5xx
 
-import { formatDaysForSummary, type FormatContext } from '../../services/recurringSchedule';
+import { formatDaysForSummary, type FormatContext } from '../../services/recurringFormat';
 import {
   countYearMonthBadges,
   findFirstSelectedMonth,
