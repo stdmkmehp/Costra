@@ -336,12 +336,14 @@ cd server && npx tsx scripts/import-entries.mts \
 
 ## 七、安全与合规
 
-1. **导出仅限后台操作**：v1 不暴露 HTTP 接口，由运维人员在服务器执行
-2. **未来客户端导出前置条件**：
-   - 用户需已绑定手机号（IA 设计要求）
-   - 导出前二次确认弹窗
-   - 导出文件包含水印（用户 ID + 时间戳）
-3. **导入审计**：每次导入操作记录到 `audit_log`（操作人、时间、文件摘要、结果）
+1. **v1 后台脚本**：当前不暴露 HTTP 接口，由运维人员在服务器执行。
+2. **v2 客户端方案（已冻结）**：详见 `docs/design/data-import-export-client-analysis.md` v0.2。
+   - 登录用户必须是目标账本所属家庭的活跃成员。
+   - 导出以账本为单位，包含日期范围内全部成员的未删除流水。
+   - 不要求绑定手机号，不弹二次同意；创建任务和下载文件均进行服务端鉴权。
+   - 导入、导出均走服务端异步任务；任务状态可恢复。
+   - 导出完成后使用 `wx.shareFileMessage` 转发 CSV 到微信聊天。
+3. **审计**：每次导入 / 导出记录操作人、账本、任务 ID、文件摘要、时间和结果统计。
 
 ---
 
@@ -350,4 +352,4 @@ cd server && npx tsx scripts/import-entries.mts \
 - [x] 实现 `server/scripts/export-entries.mts`
 - [x] 实现 `server/scripts/import-entries.mts`
 - [ ] 补充支付宝账单格式映射
-- [ ] 未来：HTTP API + 客户端 UI
+- [ ] v2：异步任务 HTTP API + `设置 → 账本导入 / 导出` 客户端 UI（方案见 `data-import-export-client-analysis.md` v0.2）
