@@ -19,8 +19,9 @@
 #
 # 关联：
 #   - server/Dockerfile（自构建 server 镜像）
-#   - infra/nginx/conf.d/costra.cloud.conf（nginx 配置模板 · SSL 注释状态 · git 安全）
-#   - /data/conf/nginx/costra.cloud.conf（live 运行时配置 · SSL 已启用 · 容器挂载此目录）
+#   - infra/nginx/conf.d/costra.cloud.conf.prod（prod 模板 · SSL 注释状态 · git 安全）
+#   - infra/nginx/conf.d/costra.cloud.conf.staging（staging 模板 · 与 prod 仅差 server_name / 证书路径）
+#   - /data/conf/nginx/costra.cloud.conf（live 运行时配置 · 由 05-start-stack.sh 按 COSTRA_DOMAIN 选源复制 · SSL 已启用 · 容器挂载此目录）
 #   - /data/conf/server.env（DATABASE_URL / REDIS_URL / JWT_SECRET / WX_APP_SECRET / WX_MOCK_LOGIN=0）
 #   - /data/conf/postgres.env（仅 PG 用 · POSTGRES_PASSWORD）
 #   - prod-bootstrap-compose.md §3-C（部署手册）

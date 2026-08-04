@@ -46,6 +46,13 @@ jobs:
           npm ci --ignore-scripts || npm install --ignore-scripts
           npm run lint --if-present
 
+      # ---- Recurring Schedule Parity Check (T1 · Sprint-4 · Epic-E) ----
+      # Ensures server/src/services/recurringSchedule.ts and
+      # miniprogram/services/recurringSchedule.ts remain byte-level identical.
+      # If they drift, the PR is blocked (see docs/design/recurring-entry-tech-spec.md §7.5).
+      - name: Recurring Schedule Parity Check
+        run: npm run parity
+
       # ---- Typecheck ----
       - name: Typecheck (miniprogram)
         run: npm run typecheck --if-present
@@ -92,6 +99,7 @@ jobs:
             echo "| Step | Status |"
             echo "|---|---|"
             echo "| Lint | ${{ job.status }} |"
+            echo "| Parity (recurringSchedule) | ${{ job.status }} |"
             echo "| Typecheck | ${{ job.status }} |"
             echo "| Test | ${{ job.status }} |"
             echo "| MiniApp Size | see size-check.mjs output |"

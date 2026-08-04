@@ -1,27 +1,37 @@
 # =============================================================================
-# Costra · prod nginx 反代配置（v1.5 · 2026-05-25 · Plan C 容器化版）
+# Costra · staging nginx 反代配置（Plan C 容器化版 · staging 专用）
 # =============================================================================
 # 容器名：costra-nginx · 镜像 nginx:1.27-alpine
-# 挂载位置：./nginx/conf.d/ → /etc/nginx/conf.d/ (read-only)
-# 关键差异 vs 宿主机版：proxy_pass 的 host 用 service name `server`（不是 127.0.0.1）
-# certbot 仍在宿主机签 · /etc/letsencrypt 容器只读挂载
+# 挂载位置：/data/conf/nginx/ → /etc/nginx/conf.d/ (read-only)
+#   → live目录（/data/conf/nginx）由 05-start-stack.sh 从本模板复制并去掉 .staging
+#     后缀，最终变成 costra.cloud.conf（这样 nginx 才会加载；.staging 后缀不会被 nginx 认）
 #
-# 母决策：D-009（域名）/ D-023（prod 入口根域）
-# 关联：infra/docker-compose.prod.yml (nginx service)
+# 与 prod 版差异（仅 3 处· 便于 diff 追溯）：
+#   1. server_name → stg.costra.cloud
+#   2. TLS 证书路径 → /etc/letsencrypt/live/stg.costra.cloud/{fullchain,privkey}.pem
+#   3. 顶部注释里的环境名标注
+# 其余（safety header / /healthz / /uploads/ / /v1/ / 日志）与 prod 一致，避免"staging 与
+# prod 行为不一致"（D-026 §2.3 C1灰度隔离原则：staging 必须与 prod 同规格）
+#
+# 母决策：D-009（域名）/ D-023（stg 子域 Sprint-4 启用）
+# 关联：
+#   - infra/docker-compose.prod.yml (nginx service ·挂载的是 live 目录 · 不区分环境)
+#   - infra/nginx/conf.d/costra.cloud.conf.prod（prod 专用副本）
+#   - infra/scripts/05-start-stack.sh（按 COSTRA_DOMAIN 选择模板）
 # =============================================================================
 
 # ============== HTTP 80 → 重定向 HTTPS（certbot ACME challenge 留出口）==============
 server {
     listen 80;
     listen [::]:80;
-    server_name costra.cloud;
+    server_name stg.costra.cloud;
 
-    # certbot http-01 challenge 走 webroot（宿主 /data/certbot/www）
+    # certbot http-01 challenge 走webroot（宿主 /data/certbot/www）
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
     }
 
-    # healthcheck 端点（供 docker healthcheck 在 80 端口探活 · 不走 301）
+    # healthcheck 端点（供docker healthcheck 在 80 端口探活 · 不走 301）
     location = /healthz {
         proxy_pass http://server:8080/healthz;
         proxy_set_header Host $host;
@@ -40,14 +50,14 @@ server {
     listen 443 ssl;
     listen [::]:443 ssl;
     http2 on;
-    server_name costra.cloud;
+    server_name stg.costra.cloud;
 
-    # ICP 响应头（沪ICP备2026017253号-2）
+    # ICP 响应头（沪ICP备2026017253号-2 · 同主体子域共用主备案）
     add_header X-ICP-Filing "沪ICP备2026017253号-2" always;
 
-    # ============== TLS（首次部署前注释 · §7.3 certbot 签完后取消注释 + reload）==============
-    # ssl_certificate /etc/letsencrypt/live/costra.cloud/fullchain.pem;
-    # ssl_certificate_key /etc/letsencrypt/live/costra.cloud/privkey.pem;
+    # ============== TLS（首次部署前注释 · 07-issue-cert.sh 签完后取消注释 + reload）==============
+    # ssl_certificate /etc/letsencrypt/live/stg.costra.cloud/fullchain.pem;
+    # ssl_certificate_key /etc/letsencrypt/live/stg.costra.cloud/privkey.pem;
     # ssl_protocols TLSv1.2 TLSv1.3;
     # ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
     # ssl_prefer_server_ciphers off;
@@ -56,14 +66,14 @@ server {
     # ssl_stapling on;
     # ssl_stapling_verify on;
 
-    # ============== 安全 header（最小集 · FU-PROD-SECURITY-HEADERS 后续完整化）==============
+    # ============== 安全 header（最小集 · 与 prod 一致）==============
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-Frame-Options "DENY" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
     # HSTS · TLS 落地后启用（首次启用前确保 cert 稳定 · 否则浏览器 6 个月内不能回退 HTTP）
     # add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
 
-    # ============== /healthz 根路径（D-009 + server/src/app.ts:69）==============
+    # ============== /healthz 根路径（与 prod 一致）==============
     location = /healthz {
         # ⚠️ Plan C 关键：容器间用 service name "server" · 不是 127.0.0.1
         proxy_pass http://server:8080/healthz;
@@ -73,28 +83,17 @@ server {
         proxy_read_timeout 10s;
     }
 
-    # ============== /uploads/ 静态文件（用户头像等持久化上传内容）==============
-    # server 容器写入 /var/costra/uploads，bind mount 到宿主机 /data/uploads
-    # nginx 容器只读挂载 /data/uploads，直接静态服务，不经过 Fastify
-    #
-    # 缓存策略：no-cache + etag
-    #   - no-cache：每次请求都带 If-None-Match 校验 ETag
-    #   - etag on（nginx 默认）：文件未变返回 304 Not Modified，节省传输
-    #   - 用户更新头像时文件内容变，ETag 变，客户端自动拿到新图片
+    # ============== /uploads/ 静态文件（与 prod 一致 · 但 staging 上传的头像与 prod 隔离）==============
     location /uploads/ {
         alias /data/uploads/;
-        # 每次校验，文件未变则 304（头像小文件，304 往返代价极低）
         expires off;
         add_header Cache-Control "no-cache" always;
-        # etag on 是 nginx 默认值，显式写出以明确意图
         etag on;
-        # 禁止目录遍历
         autoindex off;
-        # 只允许 GET / HEAD
         limit_except GET HEAD { deny all; }
     }
 
-    # ============== /v1/* 业务路由 ==============
+    # ============== /v1/* 业务路由（与 prod 一致）==============
     location /v1/ {
         proxy_pass http://server:8080/v1/;
         proxy_set_header Host $host;
@@ -103,9 +102,6 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_read_timeout 60s;
         proxy_connect_timeout 5s;
-
-        # 限流（FU-PROD-RATE-LIMIT 后续基于 limit_req_zone 完整化）
-        # 当前仅日志识别 · 不真限
     }
 
     # ============== 默认 · 防扫探 ==============
@@ -114,8 +110,6 @@ server {
     }
 
     # ============== 日志（走容器 stdout/stderr · 由 docker json-file 轮转）==============
-    # 改前写文件 /var/log/nginx/*.log（挂载卷）· docker logging 的 max-size 管不到 → 无限膨胀。
-    # 现改为 /dev/stdout、/dev/stderr，统一交 docker json-file（max-size 100m × max-file 5）轮转。
     access_log /dev/stdout;
     error_log /dev/stderr warn;
 }

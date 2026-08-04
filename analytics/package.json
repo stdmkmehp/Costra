@@ -1,0 +1,21 @@
+{
+  "name": "costra-analyze",
+  "version": "0.1.0",
+  "description": "Costra 用户行为日报分析工具",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "analyze": "bash scripts/analyze.sh",
+    "render": "node scripts/render.mjs",
+    "send-mail": "node scripts/send-mail.mjs",
+    "send-failure-mail": "node scripts/send-failure-mail.mjs",
+    "check": "node scripts/check-syntax.mjs"
+  },
+  "dependencies": {
+    "nodemailer": "^6.9.0",
+    "marked": "^12.0.0"
+  }
+}

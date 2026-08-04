@@ -1,0 +1,12 @@
+# Dockerfile.analyzer · Node.js 分析器容器
+# 分析逻辑完整运行在该容器中；宿主机只负责 docker compose exec。
+
+FROM node:18-alpine
+
+RUN apk add --no-cache bash gzip postgresql-client
+
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --no-audit --no-fund
+
+CMD ["node", "-e", "setInterval(()=>{}, 9999999)"]

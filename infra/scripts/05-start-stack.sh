@@ -55,18 +55,45 @@ log_step "[1/4] 同步 nginx 配置模板 → live（/data/conf/nginx）"
 
 NGINX_TMPL_DIR="${COSTRA_INFRA}/nginx/conf.d"
 NGINX_LIVE_DIR="${COSTRA_DATA}/conf/nginx"
+NGINX_LIVE_CONF="${NGINX_LIVE_DIR}/costra.cloud.conf"
+
+# 按 COSTRA_DOMAIN 选源模板：
+#   costra.cloud       → costra.cloud.conf.prod
+#   stg.costra.cloud   → costra.cloud.conf.staging
+#   其他值             → 报错（防止误部署到未预期环境）
+#
+# 注意：源文件带 .prod / .staging 后缀 · 不会被 nginx 直接加载（nginx 只加载 *.conf）
+#复制到 live 时统一改名为 costra.cloud.conf（这样 nginx 才会认）
+case "${COSTRA_DOMAIN}" in
+  costra.cloud)
+    NGINX_TMPL_SRC="${NGINX_TMPL_DIR}/costra.cloud.conf.prod"
+    ENV_LABEL="prod"
+    ;;
+  stg.costra.cloud)
+    NGINX_TMPL_SRC="${NGINX_TMPL_DIR}/costra.cloud.conf.staging"
+    ENV_LABEL="staging"
+    ;;
+  *)
+    die "不支持的 COSTRA_DOMAIN=${COSTRA_DOMAIN} · 仅支持 costra.cloud / stg.costra.cloud · 如需新增环境请在 infra/nginx/conf.d/ 补一份 costra.cloud.conf.<env> 并在此 case 加分支"
+    ;;
+esac
+
+require_file "${NGINX_TMPL_SRC}"
 
 mkdir -p "${NGINX_LIVE_DIR}"
 
-# 策略：如果 live 目录已有配置（非首次部署）· 不覆盖（保护已启用 SSL 的运行时配置）
-# 只在 live 目录为空时（首次部署）才从模板复制
-if [[ -z "$(ls -A "${NGINX_LIVE_DIR}" 2>/dev/null)" ]]; then
-  log_info "live 目录为空（首次部署）· 从模板复制"
-  run_cmd cp -a "${NGINX_TMPL_DIR}/." "${NGINX_LIVE_DIR}/"
-  log_success "模板已复制到 ${NGINX_LIVE_DIR}"
+# 策略：如果 live conf 已存在（非首次部署）· 不覆盖（保护已启用 SSL 的运行时配置）
+# 只在 live conf 缺失时（首次部署）才从模板复制
+if [[ ! -f "${NGINX_LIVE_CONF}" ]]; then
+  log_info "live conf 不存在（首次部署 · ${ENV_LABEL}）· 从模板复制"
+  log_info "  src : ${NGINX_TMPL_SRC}"
+  log_info "  dst : ${NGINX_LIVE_CONF}"
+  run_cmd cp -a "${NGINX_TMPL_SRC}" "${NGINX_LIVE_CONF}"
+  log_success "${ENV_LABEL} 模板已复制到 ${NGINX_LIVE_CONF}"
 else
-  log_info "live 目录已有配置 · 跳过覆盖（git pull 安全）"
-  log_info "如需强制更新 live 配置 · 手动: cp ${NGINX_TMPL_DIR}/* ${NGINX_LIVE_DIR}/"
+  log_info "live conf 已存在 · 跳过覆盖（git pull 安全）"
+  log_info "如需强制更新: rm ${NGINX_LIVE_CONF} && 重跑 05-start-stack.sh"
+  log_info "或手动: cp ${NGINX_TMPL_SRC} ${NGINX_LIVE_CONF}"
 fi
 
 # --- Step 2: 拉官方镜像（postgres/redis/nginx）---

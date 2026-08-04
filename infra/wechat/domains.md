@@ -40,7 +40,7 @@
 |---|---|---|---|---|---|
 | prod | `costra.cloud` | A | `49.235.216.20` | 🟢 已注册 · A 已配 · ICP 已下证（沪ICP备2026017253号-2，2026-05-13） · D-023 prod 入口直挂根域 · **2026-05-19 微信白名单 `https://costra.cloud` 已配（4 类全填 · 即时生效）** | 已生效 |
 | dev | `dev.costra.cloud` | A | `49.235.216.20` | ⚪ 已搁置至 Phase-2（D-023） | ⚪ 已搁置至 Phase-2（D-023）· 重启触发条件见 D-023 §2.4 |
-| stg | `stg.costra.cloud` | A | `49.235.216.20`（Sprint-2 末若迁预发专用机则改 IP） | ⚪ 已搁置至 Phase-2（D-023） | ⚪ 已搁置至 Phase-2（D-023）· 重启触发条件见 D-023 §2.4 |
+| stg | `stg.costra.cloud` | A | `106.54.173.55` | 🟢 Sprint-4 启用 · DNS 已配 · 独立 staging 机器 · 与 prod 同规格（D-026 §2.3 C1）· 白名单需追加 `https://stg.costra.cloud` |已生效 |
 | api | `api.costra.cloud` | CNAME | `costra.cloud.`（或 A 直指 IP · 看 nginx 部署） | ⚪ 已搁置至 Phase-2（D-023） | ⚪ 已搁置至 Phase-2（D-023）· 重启触发条件见 D-023 §2.4 |
 
 > 📎 **微信小程序 request 白名单特殊性**：
@@ -50,16 +50,16 @@
 
 ### 1.1 预发 API 子域名补充说明
 
-`server/api/openapi.yaml servers` 中使用的 `api-staging.costra.cloud` 为预发专用 API 入口，由 `stg.costra.cloud` 通过 nginx server_name 分流或独立 CNAME 实现：
+Sprint-4 起，staging 独立机器部署 · 域名走 `stg.costra.cloud`（一级子域，非 `api-staging.costra.cloud`）· 与 prod 完全同规格但物理隔离：
 
-| env | server URL（代码中 apiBaseUrl） | DNS 条目 |
+| env | server URL（代码中apiBaseUrl） | DNS 条目 |
 |---|---|---|
 | local | `http://localhost:8080/v1` | 本机 loopback · 无 DNS |
 | dev-ip | `http://49.235.216.20:8080/v1` | 直连 IP · ICP 下证前过渡 · OpenAPI 保留 · env.ts 不暴露 |
-| staging | `https://costra.cloud/v1` | ⚪ D-023 临时复用 prod URL · 子域 api-staging 启用时切回 · D-026 §2.1 现阶段语义化登记接受方案（Sprint-3~Sprint-5）|
+| staging | `https://stg.costra.cloud/v1` | 🟢 Sprint-4 启用 · A 记录已配 → `106.54.173.55` · 微信白名单需追加 |
 | prod | `https://costra.cloud/v1` | 主域 A 记录已生效（49.235.216.20） |
 
-> ⚪ 标记表示 D-023 决策搁置 · 不影响当前 CI 三方对账
+> ⚪ 历史备注（保留供上下文追溯）：Sprint-3 期间 staging 曾临时复用 prod URL（D-023 决策）· Sprint-4 独立机器落地后已解除。
 
 > ⚠️ 本文件 §1 矩阵列的是 **4 个根域 / 子域规划**；§1.1 表列的是**运行期实际 URL**（含 IP 直连一条）。CI 校验脚本按 §1.1 做三方对账，§1 为 Human 可读的 DNS 管理视图。
 
@@ -71,7 +71,7 @@
 |---|---|---|---|---|
 | `costra.cloud` | A | `49.235.216.20` | 600 | 主域 · 已生效 · 变更频率低 |
 | `dev.costra.cloud` | A | `49.235.216.20` | 300 | 开发期可能需要快速切换 IP · ⚪ D-023 搁置 · 暂不创建 |
-| `stg.costra.cloud` | A | `49.235.216.20`（Sprint-2 末定） | 300 | 同上 · ⚪ D-023 搁置 · 暂不创建 |
+| `stg.costra.cloud` | A | `106.54.173.55` | 300 | 🟢 Sprint-4 启用 · 独立staging 机器 · 与 prod 物理隔离 |
 | `api.costra.cloud` | CNAME | `costra.cloud.` | 600 | 生产入口 · 通过 nginx 反代 · ⚪ D-023 搁置 · 暂不创建 |
 | `api-staging.costra.cloud` | CNAME | `costra.cloud.` | 300 | 预发入口 · ⚪ D-023 搁置 · 暂不创建 |
 
@@ -175,4 +175,5 @@ dig +short api-staging.costra.cloud  # 预期: costra.cloud. 再 49.235.216.20
 | 2026-04-27 | 首次落地（四环境域名矩阵 + §1.1 运行期 URL + §4 Human 操作清单 + §3 三方对账规则） | COSTRA-115 R1 |
 | 2026-05-13 | ICP 备案下证（小程序 -1X · 后端 -2） · COSTRA-107 closed | COSTRA-107 |
 | 2026-05-18 | D-023 prod 入口回归根域 · 子域搁置至 Phase-2 · §1 status 🟡→⚪ · §1.1 prod/staging URL 切根域 | D-023 |
-| **2026-05-19** | **微信白名单 `https://costra.cloud` Human 已配（4 类全填 · 即时生效）+ 公安联网备案 Human 已提交申请（在 30 日窗口内）** · §1 prod 行 status 加白名单已配事实 · §0 公示规范加公安备案已提交 · 解锁路径：105 方式 C 真链路实测 + Sprint-3 154/152/153 staging 验证 | (Human 完成 R-019/R-020 解锁) |
+| **2026-05-19** | **微信白名单 `https://costra.cloud` Human 已配（4 类全填· 即时生效）+ 公安联网备案Human 已提交申请（在 30 日窗口内）** · §1 prod 行status 加白名单已配事实 · §0 公示规范加公安备案已提交 · 解锁路径：105 方式 C 真链路实测 + Sprint-3 154/152/153 staging 验证 | (Human 完成 R-019/R-020 解锁) |
+| **2026-08-04** | **staging 子域 `stg.costra.cloud` 启用**（Sprint-4）· 独立机器 106.54.173.55 · §1 stg 行 ⚪→🟢 · §1.1 staging URL `https://costra.cloud/v1` → `https://stg.costra.cloud/v1` · §2 stg 行 ⚪→🟢 · env.ts + openapi.yaml servers 同步 · D-023 staging 搁置解除（prod/api 子域仍搁置）· nginx 模板拆分 conf.prod / conf.staging 两份 · 05-start-stack.sh 按 COSTRA_DOMAIN 选源 | staging 独立部署 |

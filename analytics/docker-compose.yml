@@ -1,0 +1,49 @@
+name: costra-analyze
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Costra Analyze · 独立 Docker Compose
+# 与 prod 的 infra/docker-compose.prod.yml 完全隔离（见 spec §0.2）
+#   - compose project name: costra-analyze
+#   - 容器名: costra-analyze-pg / costra-analyze-node
+#   - 端口:   127.0.0.1:15432
+#   - DB/用户: analyze/analyze
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: costra-analyze-pg
+    restart: always
+    ports:
+      - "127.0.0.1:15432:5432"
+    environment:
+      POSTGRES_DB: ${PG_DB:-analyze}
+      POSTGRES_USER: ${PG_USER:-analyze}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-change_me}
+    volumes:
+      - analyze-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  analyzer:
+    build:
+      context: .
+      dockerfile: Dockerfile.analyzer
+    image: costra-analyze-node:local
+    container_name: costra-analyze-node
+    restart: always
+    working_dir: /app
+    volumes:
+      - .:/app
+      - ${DUMP_INBOX:-/tmp/costra-analyze-inbox}:${DUMP_INBOX:-/tmp/costra-analyze-inbox}:ro
+      - ${REPORTS_DIR:-/tmp/costra-analyze-report}:${REPORTS_DIR:-/tmp/costra-analyze-report}
+      - ${LOG_DIR:-/tmp/costra-analyze-logs}:${LOG_DIR:-/tmp/costra-analyze-logs}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  analyze-pg-data:

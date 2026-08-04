@@ -43,11 +43,12 @@
 ├─ certbot/www/  (ACME challenge)
 └─ backups/      (FU-PROD-PG-BACKUP)
 
-nginx 配置架构（模板 vs live 分离 · v1.7 新增）：
-├─ repo:  infra/nginx/conf.d/costra.cloud.conf   ← 模板（SSL 注释 · git 安全）
-└─ live:  /data/conf/nginx/costra.cloud.conf     ← 运行时（SSL 已启用 · docker 挂载此目录）
+nginx 配置架构（模板 vs live 分离 · v1.7 新增 · v1.8 环境拆分）：
+├─ repo:infra/nginx/conf.d/costra.cloud.conf.prod← prod 模板（SSL 注释 · git 安全）
+├─ repo:  infra/nginx/conf.d/costra.cloud.conf.staging  ← staging 模板（server_name = stg.costra.cloud）
+└─ live:  /data/conf/nginx/costra.cloud.conf           ← 运行时（SSL 已启用 · docker 挂载此目录）
     → git pull 只更新模板 · 不影响正在运行的 nginx
-    → 首次部署：05-start-stack.sh 自动复制模板 → live
+    → 首次部署：05-start-stack.sh 按 COSTRA_DOMAIN 选源模板 (.prod / .staging)  ·去掉后缀复制到 live
     → 后续更新模板：需手动 cp 或删除 live 后重跑 05
 ```
 

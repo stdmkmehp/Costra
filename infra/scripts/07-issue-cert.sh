@@ -44,10 +44,16 @@ DOMAIN="${COSTRA_DOMAIN}"
 USE_EXISTING=0
 IMPORT_TAR=""
 SKIP_SSL_UNCOMMENT=0
-# live 配置路径（/data/conf/nginx）· 不是 repo 模板（./nginx/conf.d）
-# 模板 → live 复制由 05-start-stack.sh 在起容器前完成
+# live配置路径（/data/conf/nginx）· 不是 repo 模板（./nginx/conf.d）
+# 模板 → live 复制由 05-start-stack.sh 在起容器前完成（按 COSTRA_DOMAIN 选 .prod / .staging）
 NGINX_CONF="${COSTRA_DATA}/conf/nginx/costra.cloud.conf"
-NGINX_CONF_TEMPLATE="${COSTRA_INFRA}/nginx/conf.d/costra.cloud.conf"
+
+# fallback 场景：若 live conf 缺失（05 没跑就直接跑 07），按 COSTRA_DOMAIN 选源模板
+case "${COSTRA_DOMAIN}" in
+  costra.cloud)      NGINX_CONF_TEMPLATE="${COSTRA_INFRA}/nginx/conf.d/costra.cloud.conf.prod" ;;
+  stg.costra.cloud)  NGINX_CONF_TEMPLATE="${COSTRA_INFRA}/nginx/conf.d/costra.cloud.conf.staging" ;;
+  *)                 NGINX_CONF_TEMPLATE="" ;;   # 未支持的域名 · fallback 分支后面会报错
+esac
 
 # --- 临时 nginx 容器名（签证专用 · 用完即弃）---
 CERT_NGINX_NAME="costra-certbot-nginx"
@@ -235,8 +241,9 @@ if [[ "${SKIP_SSL_UNCOMMENT}" == "1" ]]; then
 else
   log_step "取消 nginx conf 里的 SSL 注释（${NGINX_CONF}）"
 
-  # 如果 live conf 不存在 · 从模板复制一份（防御：05 没跑就直接跑 07 的场景）
+  # 如果 live conf 不存在· 从模板复制一份（防御：05 没跑就直接跑 07 的场景）
   if [[ ! -f "${NGINX_CONF}" ]]; then
+    [[ -n "${NGINX_CONF_TEMPLATE}" ]] || die "COSTRA_DOMAIN=${COSTRA_DOMAIN} 没有对应模板 · 请先跑 05-start-stack.sh 或补充 infra/nginx/conf.d/costra.cloud.conf.<env>"
     log_info "live conf 不存在 · 从模板复制: ${NGINX_CONF_TEMPLATE} → ${NGINX_CONF}"
     require_file "${NGINX_CONF_TEMPLATE}"
     mkdir -p "$(dirname "${NGINX_CONF}")"
