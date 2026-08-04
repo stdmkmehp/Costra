@@ -40,3 +40,9 @@ SANITY_RESULT=$(psql -h "${PG_HOST}" -U "${PG_USER}" -d "${REPORT_DB}" \
   ") || die "Sanity check 失败：核心表查询报错，请检查 dump 是否完整"
 
 log_info "Sanity check 通过: ${SANITY_RESULT}"
+
+log_info "补全分析所需列（兼容旧 dump）..."
+psql -h "${PG_HOST}" -U "${PG_USER}" -d "${REPORT_DB}" \
+  -v ON_ERROR_STOP=1 --quiet \
+  -c "ALTER TABLE entries ADD COLUMN IF NOT EXISTS source_recurring_id UUID;" >/dev/null
+log_info "列补全完成"

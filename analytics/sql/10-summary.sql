@@ -40,7 +40,7 @@ WITH
       AND created_at >= :'window_start'::timestamptz AND created_at < :'window_end'::timestamptz
   )
 SELECT
-  u.cAS new_users,
+  u.c                   AS new_users,
   l.c                   AS new_ledgers,
   e.c                   AS new_entries,
   e.sum_amount          AS new_entries_amount_cents,
