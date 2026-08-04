@@ -39,6 +39,10 @@ vi.mock('./recurringApi', () => ({
   deleteRecurringRule: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock('./auth', () => ({
+  getCurrentUserId: vi.fn(() => 'user-test'),
+}));
+
 import { getItem, setItem } from './storage';
 import {
   getCachedRules,
@@ -79,7 +83,7 @@ describe('recurringLocal', () => {
       await enqueueMutation({ kind: 'pause', id: 'rule-1', idempotencyKey: key, enqueuedAt: Date.now() });
       expect(setItem).toHaveBeenCalled();
       const call = (setItem as any).mock.calls[0];
-      expect(call[0]).toBe('recurring:mutation_queue');
+      expect(call[0]).toBe('recurring:mutation_queue:user-test');
       const ops = call[1];
       expect(ops[0].idempotencyKey).toBe(key);
     });
@@ -88,7 +92,7 @@ describe('recurringLocal', () => {
       const key = 'idem-key-123';
       const ops = [{ kind: 'pause' as const, id: 'rule-1', idempotencyKey: key, enqueuedAt: Date.now() }];
       (getItem as any).mockImplementation((k: string) => {
-        if (k === 'recurring:mutation_queue') return Promise.resolve(ops);
+        if (k === 'recurring:mutation_queue:user-test') return Promise.resolve(ops);
         return Promise.resolve(null);
       });
       (pauseRecurringRule as any).mockResolvedValue({});
@@ -107,7 +111,7 @@ describe('recurringLocal', () => {
         enqueuedAt: Date.now(),
       }];
       (getItem as any).mockImplementation((k: string) => {
-        if (k === 'recurring:mutation_queue') return Promise.resolve(ops);
+        if (k === 'recurring:mutation_queue:user-test') return Promise.resolve(ops);
         return Promise.resolve(null);
       });
       const netErr = new Error('network') as any;
@@ -122,7 +126,7 @@ describe('recurringLocal', () => {
     it('replayMutationQueue discards on 404', async () => {
       const ops = [{ kind: 'pause' as const, id: 'rule-gone', idempotencyKey: 'idem-404', enqueuedAt: Date.now() }];
       (getItem as any).mockImplementation((k: string) => {
-        if (k === 'recurring:mutation_queue') return Promise.resolve(ops);
+        if (k === 'recurring:mutation_queue:user-test') return Promise.resolve(ops);
         return Promise.resolve(null);
       });
       const err = new Error('not found') as any;
@@ -143,7 +147,7 @@ describe('recurringLocal', () => {
         enqueuedAt: Date.now(),
       }];
       (getItem as any).mockImplementation((k: string) => {
-        if (k === 'recurring:mutation_queue') return Promise.resolve(ops);
+        if (k === 'recurring:mutation_queue:user-test') return Promise.resolve(ops);
         return Promise.resolve(null);
       });
       const err = new Error('conflict') as any;
@@ -155,7 +159,7 @@ describe('recurringLocal', () => {
       expect(replayed).toBe(1);
       // removeItem should be called for cache invalidation
       const { removeItem } = await import('./storage');
-      expect(removeItem).toHaveBeenCalledWith('recurring:list');
+      expect(removeItem).toHaveBeenCalledWith('recurring:list:user-test');
     });
 
     it('replayMutationQueue keeps op on transient 503 failure', async () => {
@@ -166,7 +170,7 @@ describe('recurringLocal', () => {
         enqueuedAt: Date.now(),
       }];
       (getItem as any).mockImplementation((k: string) => {
-        if (k === 'recurring:mutation_queue') return Promise.resolve(ops);
+        if (k === 'recurring:mutation_queue:user-test') return Promise.resolve(ops);
         return Promise.resolve(null);
       });
       const err = new Error('unavailable') as any;
@@ -175,7 +179,7 @@ describe('recurringLocal', () => {
       (pauseRecurringRule as any).mockRejectedValue(err);
 
       expect(await replayMutationQueue()).toBe(0);
-      const queueWrite = (setItem as any).mock.calls.find((call: any[]) => call[0] === 'recurring:mutation_queue');
+      const queueWrite = (setItem as any).mock.calls.find((call: any[]) => call[0] === 'recurring:mutation_queue:user-test');
       expect(queueWrite?.[1]).toEqual(ops);
     });
 
@@ -191,7 +195,7 @@ describe('recurringLocal', () => {
         },
       ];
       (getItem as any).mockImplementation((k: string) => {
-        if (k === 'recurring:mutation_queue') return Promise.resolve(ops);
+        if (k === 'recurring:mutation_queue:user-test') return Promise.resolve(ops);
         return Promise.resolve(null);
       });
       (pauseRecurringRule as any).mockResolvedValue({ id: 'rule-chain', version: 2 });
@@ -207,10 +211,39 @@ describe('recurringLocal', () => {
 
     it('generateIdempotencyKey returns unique values', () => {
       const k1 = generateIdempotencyKey();
-      const k2 = generateIdempotencyKey();
+    const k2 = generateIdempotencyKey();
       expect(k1).not.toBe(k2);
-      expect(typeof k1).toBe('string');
+expect(typeof k1).toBe('string');
       expect(k1.length).toBeGreaterThan(0);
+});
+  });
+
+  describe('per-user scoping', () => {
+    it('enqueueMutation returns silently when there is no logged-in user', async () => {
+   const auth = await import('./auth');
+      (auth.getCurrentUserId as any).mockReturnValueOnce(null);
+ await enqueueMutation({ kind: 'pause', id: 'rule-x', idempotencyKey: 'k', enqueuedAt: Date.now() });
+      // 不应写入 storage
+  expect(setItem).not.toHaveBeenCalled();
+    });
+
+    it('getCachedRules discards cached payload when userId does not match', async () => {
+      (getItem as any).mockResolvedValue({
+        items: [{ id: 'other' }],
+   fetchedAt: Date.now(),
+      userId: 'other-user',
+      });
+      const result = await getCachedRules();
+      expect(result).toBeNull();
+    });
+
+    it('clearForCurrentUser removes both cache and queue for the active user', async () => {
+      const { clearForCurrentUser } = await import('./recurringLocal');
+      await clearForCurrentUser();
+      const { removeItem } = await import('./storage');
+   const keys = (removeItem as any).mock.calls.map((c: any[]) => c[0]);
+    expect(keys).toContain('recurring:list:user-test');
+    expect(keys).toContain('recurring:mutation_queue:user-test');
     });
   });
 });

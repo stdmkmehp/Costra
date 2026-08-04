@@ -18,6 +18,11 @@ export interface DisplayRule {
   amountText: string;
   isDisabled: boolean;
   status: string;
+  /**
+   * 已禁用/自动停用行的原因短文案，例如"已禁用"、"账本已删除"、"已退出家庭"。
+   * status === 'active' 时为空。
+   */
+  statusHint: string;
   version: number;
   raw: RecurringRule;
 }
@@ -32,6 +37,29 @@ export interface ListSummary {
 const BUCKET_LABELS: Record<string, string> = {
   dawn: '凌晨', morning: '早上', afternoon: '下午', night: '晚上',
 };
+
+/**
+ * 把服务端返回的 status + last_run_status 翻译为一句给用户看的原因短语。
+ * 供 UI 在"已禁用"分组中区分「用户主动禁用」和「系统兜底停用」的具体原因。
+ */
+export function buildStatusHint(r: Pick<RecurringRule, 'status' | 'last_run_status'>): string {
+  if (r.status === 'active') return '';
+  if (r.status === 'ended') return '已到期';
+  if (r.status === 'paused') return '已禁用';
+  // auto_paused：解析 last_run_status
+  switch (r.last_run_status) {
+    case 'failed_ledger_deleted':
+      return '账本已删除';
+    case 'failed_family_deleted':
+      return '所在家庭已解散';
+    case 'failed_user_left_family':
+      return '你已退出该家庭';
+    case 'auto_paused_after_3_failures':
+      return '连续失败已停用';
+    default:
+    return '已自动停用';
+  }
+}
 
 // ─── 纯函数 ──────────────────────────────────────────────────────────────────
 
@@ -79,10 +107,11 @@ export function toDisplayRule(
     id: r.id,
     categoryIcon,
     title,
-    subtitle,
+ subtitle,
     amountText,
-    isDisabled: r.status !== 'active',
-    status: r.status,
+  isDisabled: r.status !== 'active',
+  status: r.status,
+    statusHint: buildStatusHint(r),
     version: r.version,
     raw: r,
   };

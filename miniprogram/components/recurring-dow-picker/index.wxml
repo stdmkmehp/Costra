@@ -6,10 +6,10 @@
     <text class="rdow__clear" bindtap="onClear">清空</text>
   </view>
   <view class="rdow__grid">
-    <view wx:for="{{[1,2,3,4,5,6,7]}}" wx:key="*this"
-          class="rdow__tag {{value.indexOf(item) >= 0 ? 'rdow__tag--selected' : ''}}"
-          data-day="{{item}}" bindtap="onTapDow">
-      <text>{{dowLabels[item - 1]}}</text>
-    </view>
+    <view wx:for="{{dowItems}}" wx:key="day"
+          class="rdow__tag {{item.selected ? 'rdow__tag--selected' : ''}}"
+   data-day="{{item.day}}" bindtap="onTapDow">
+      <text>{{item.label}}</text>
+  </view>
   </view>
 </view>

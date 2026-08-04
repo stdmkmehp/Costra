@@ -71,7 +71,7 @@
               <view class="reclist__icon">{{item.categoryIcon}}</view>
               <view class="reclist__mid">
                 <text class="reclist__title">{{item.title}}</text>
-                <text class="reclist__sub">{{item.subtitle}} · <text class="reclist__tag--amber">已禁用</text></text>
+                <text class="reclist__sub">{{item.subtitle}} · <text class="reclist__tag--amber">{{item.statusHint}}</text></text>
               </view>
               <text class="reclist__amount tnum">{{item.amountText}}</text>
             </view>

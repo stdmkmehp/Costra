@@ -181,6 +181,14 @@ export function getToken(): Token | null {
 }
 
 /**
+ * 返回当前登录用户 id（无会话时返回 null）。
+ * 供 recurring cache / queue 等按用户隔离 storage 使用。
+ */
+export function getCurrentUserId(): string | null {
+  return current?.raw.user?.id ?? null;
+}
+
+/**
  * 页面层门面：返回当前会话（包含用户画像，来源 AuthTokenPair.user）
  * P1-4: 后续若需扩展 /users/me 在线画像，由 COSTRA-103 承接
  */
@@ -237,6 +245,15 @@ export async function logout(): Promise<void> {
   const app = getApp();
   if (app?.globalData) {
     app.globalData.activeLedgerId = undefined;
+  }
+
+  // 清理当前用户 recurring 本地数据（缓存 + mutation queue），避免下一位登录用户串数据。
+  // 必须在 clearToken 之前，因 recurringLocal 依赖 getCurrentUserId() 定位存储 key。
+  try {
+    const { clearForCurrentUser } = await import('./recurringLocal');
+    await clearForCurrentUser();
+  } catch (err) {
+    logger.warn('auth', 'clear recurring local on logout failed', err);
   }
 
   await clearToken();

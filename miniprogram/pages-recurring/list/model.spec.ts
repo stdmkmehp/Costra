@@ -3,7 +3,7 @@
 // Refs: COSTRA-5xx
 
 import { describe, it, expect } from 'vitest';
-import { groupRules, clampMenuPosition, buildPeriodLabel } from './model';
+import { groupRules, clampMenuPosition, buildPeriodLabel, buildStatusHint } from './model';
 import type { RecurringRule } from '../../services/recurringApi';
 
 function makeRule(overrides: Partial<RecurringRule> = {}): RecurringRule {
@@ -101,5 +101,37 @@ describe('list/model', () => {
     it('biweekly → 每两周', () => expect(buildPeriodLabel('biweekly')).toBe('每两周'));
     it('monthly → 每月', () => expect(buildPeriodLabel('monthly')).toBe('每月'));
     it('yearly → 每年', () => expect(buildPeriodLabel('yearly')).toBe('每年'));
+  });
+
+  describe('buildStatusHint', () => {
+    it('active → 空文案', () => {
+      expect(buildStatusHint({ status: 'active', last_run_status: null })).toBe('');
+    });
+    it('paused → 已禁用', () => {
+  expect(buildStatusHint({ status: 'paused', last_run_status: null })).toBe('已禁用');
+    });
+    it('ended → 已到期', () => {
+      expect(buildStatusHint({ status: 'ended', last_run_status: 'ok' })).toBe('已到期');
+    });
+    it('auto_paused · 账本被删 → 账本已删除', () => {
+      expect(buildStatusHint({ status: 'auto_paused', last_run_status: 'failed_ledger_deleted' }))
+ .toBe('账本已删除');
+    });
+    it('auto_paused · 家庭解散 → 所在家庭已解散', () => {
+      expect(buildStatusHint({ status: 'auto_paused', last_run_status: 'failed_family_deleted' }))
+     .toBe('所在家庭已解散');
+    });
+    it('auto_paused · 用户退出家庭 → 你已退出该家庭', () => {
+      expect(buildStatusHint({ status: 'auto_paused', last_run_status: 'failed_user_left_family' }))
+        .toBe('你已退出该家庭');
+    });
+    it('auto_paused · 连续失败 3 次 → 连续失败已停用', () => {
+      expect(buildStatusHint({ status: 'auto_paused', last_run_status: 'auto_paused_after_3_failures' }))
+        .toBe('连续失败已停用');
+    });
+    it('auto_paused · 未知原因 → 已自动停用', () => {
+    expect(buildStatusHint({ status: 'auto_paused', last_run_status: 'anything_else' }))
+        .toBe('已自动停用');
+    });
   });
 });

@@ -8,6 +8,13 @@ import { toggleLimitedSelection } from '../recurring-selection';
 
 const DOW_LABELS = ['一', '二', '三', '四', '五', '六', '日'];
 const DOW_MAX = 7;
+const DOW_DAYS = [1, 2, 3, 4, 5, 6, 7] as const;
+
+interface DowItem {
+  day: number;
+  label: string;
+  selected: boolean;
+}
 
 Component({
   properties: {
@@ -17,11 +24,19 @@ Component({
   data: {
     dowLabels: DOW_LABELS,
     dowMax: DOW_MAX,
-    summaryCount: '',
-    summaryList: '',
+    dowItems: [] as DowItem[],
+ summaryCount: '',
+  summaryList: '',
   },
   observers: {
     value() {
+    this._updateItems();
+      this._updateSummary();
+    },
+  },
+  lifetimes: {
+ attached() {
+   this._updateItems();
       this._updateSummary();
     },
   },
@@ -29,29 +44,39 @@ Component({
     onTapDow(e: WechatMiniprogram.TouchEvent) {
       const day = Number(e.currentTarget.dataset.day);
       const result = toggleLimitedSelection(
-        this.properties.value as number[],
-        day,
+  this.properties.value as number[],
+  day,
         DOW_MAX,
-      );
+   );
       if (result.limitRejected) {
-        this.triggerEvent('limit', { max: DOW_MAX });
-        return;
-      }
-      this.triggerEvent('change', { value: result.values });
+    this.triggerEvent('limit', { max: DOW_MAX });
+     return;
+   }
+this.triggerEvent('change', { value: result.values });
     },
     onClear() {
       if ((this.properties.value as number[]).length === 0) return;
       wx.showModal({
-        title: '清空所有已选星期？',
-        confirmText: '清空',
-        confirmColor: '#C08A7B',
-        success: (res) => {
-          if (res.confirm) {
-            this.triggerEvent('clear');
-          }
-        },
+title: '清空所有已选星期？',
+    confirmText: '清空',
+    confirmColor: '#C08A7B',
+     success: (res) => {
+     if (res.confirm) {
+      this.triggerEvent('clear');
+   }
+     },
       });
     },
+    _updateItems() {
+      const arr = this.properties.value as number[];
+      const selectedSet = new Set(arr);
+      const dowItems: DowItem[] = DOW_DAYS.map((day) => ({
+        day,
+     label: DOW_LABELS[day - 1],
+        selected: selectedSet.has(day),
+      }));
+      this.setData({ dowItems });
+  },
     _updateSummary() {
       const arr = this.properties.value as number[];
       if (arr.length === 0) {

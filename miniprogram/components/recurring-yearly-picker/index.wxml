@@ -16,10 +16,10 @@
   </scroll-view>
   <!-- 日网格 -->
   <view class="ryear__day-grid">
-    <view wx:for="{{dayGrid}}" wx:key="*this"
-          class="ryear__day-tag {{value.indexOf(activeMonth * 100 + item) >= 0 ? 'ryear__day-tag--selected' : ''}} {{rejectedDay === item ? 'ryear__day-tag--rejected' : ''}}"
-          data-day="{{item}}" bindtap="onTapDay">
-      <text>{{item < 10 ? '0' + item : item}}</text>
+ <view wx:for="{{dayItems}}" wx:key="day"
+    class="ryear__day-tag {{item.selected ? 'ryear__day-tag--selected' : ''}} {{item.rejected ? 'ryear__day-tag--rejected' : ''}}"
+        data-day="{{item.day}}" bindtap="onTapDay">
+    <text>{{item.label}}</text>
     </view>
   </view>
   <view wx:if="{{showHint}}" class="ryear__hint">
