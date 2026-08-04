@@ -22,6 +22,9 @@ SQL_FILES=(
   "40-new-entries"
   "50-new-invites"
   "60-active-users"
+  "65-auto-only-users"
+  "70-retention"
+  "80-daily-trend"
   "90-anomaly"
 )
 

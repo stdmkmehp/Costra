@@ -15,8 +15,8 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # 每天 23:59 日报（24h 窗口）
 # flock 避免并发恢复；最多等待 30 分钟，避免非阻塞锁静默漏发。
-59 23 * * *   root  flock -w 1800 /var/lock/costra-analyze.lock /opt/costra-analyze/scripts/analyze.sh --window 24h >> /var/log/costra-analyze/daily.log 2>&1
+59 23 * * *   root  flock -w 1800 /var/lock/costra-analyze.lock /opt/costra-analyze/scripts/analyze.sh --window 24h >> /data/logs/analyze/daily.log 2>&1
 
 # 每周日 23:50 周报（7d 窗口）；与其他任务重叠时最多等待 30 分钟。
-50 23 * * 0   root  flock -w 1800 /var/lock/costra-analyze.lock /opt/costra-analyze/scripts/analyze.sh --window 7d >> /var/log/costra-analyze/weekly.log 2>&1
+50 23 * * 0   root  flock -w 1800 /var/lock/costra-analyze.lock /opt/costra-analyze/scripts/analyze.sh --window 7d >> /data/logs/analyze/weekly.log 2>&1
 

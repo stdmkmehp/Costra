@@ -17,7 +17,7 @@ log_info "清空旧分析数据库: ${REPORT_DB}"
 psql_admin "DROP DATABASE IF EXISTS ${REPORT_DB} WITH (FORCE);" >/dev/null
 
 log_info "创建分析数据库: ${REPORT_DB}"
-psql_admin "CREATE DATABASE ${REPORT_DB} OWNER ${PG_USER};" >/dev/null
+psql_admin "CREATE DATABASE ${REPORT_DB} OWNER \"${PG_USER}\";" >/dev/null
 
 log_info "原样解压并导入 dump..."
 gunzip -c "${DUMP_FILE}" \
