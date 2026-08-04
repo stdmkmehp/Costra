@@ -1,4 +1,4 @@
-// services/env.ts · 环境与 Feature Flag 读取
+// services/env.ts ·环境与 Feature Flag 读取
 // 卡号: COSTRA-030 · ADR-0004 §7
 
 export type EnvName = 'dev' | 'staging' | 'prod';
@@ -10,12 +10,11 @@ interface EnvConfig {
   flags: Record<string, boolean>;
 }
 
-// 实际部署时由构建脚本替换，此处提供默认 dev 值
 const ENV_MAP: Record<EnvName, EnvConfig> = {
   dev: {
     name: 'dev',
     apiBaseUrl: 'http://localhost:8080/v1',
-    mockLogin: false,
+    mockLogin: true,
     flags: {
       family_sharing: true,
       subscribe_msg: true,
@@ -24,8 +23,9 @@ const ENV_MAP: Record<EnvName, EnvConfig> = {
   },
   staging: {
     name: 'staging',
-    // D-023 临时复用 prod URL（子域 api-staging.costra.cloud 搁置至 Phase-2 · D-023 §2.4 触发条件之一启用时切回）
-    apiBaseUrl: 'https://costra.cloud/v1',
+    // Sprint-4 启用 stg 子域独立后端（infra/wechat/domains.md §1.1）
+    // 微信白名单已加 https://stg.costra.cloud · 备案沿用主体主备案（沪ICP备2026017253号-2）
+    apiBaseUrl: 'https://stg.costra.cloud/v1',
     mockLogin: false,
     flags: {
       family_sharing: true,
@@ -46,8 +46,35 @@ const ENV_MAP: Record<EnvName, EnvConfig> = {
   }
 };
 
-// 当前环境：由 __wxConfig 或编译期替换决定，这里默认 dev
-const CURRENT_ENV: EnvName = 'prod';
+/**
+ * 当前环境自动分流（COSTRA-030 · Sprint-4 启用）
+ *
+ * 分流规则（依据 wx.getAccountInfoSync().miniProgram.envVersion）：
+ *   -'release'正式版→ prod
+ *   - 'trial'   体验版      → staging（上传体验版 = 部署到 staging 联调）
+ *   - 'develop' 开发版→ dev（本地开发者工具默认 · 打localhost）
+ *   - 其它 /抛异常 / API缺失 → dev（保守回退 · 不误打生产）
+ *
+ * 单元测试 / Node 环境（无 wx 全局）：回退 dev。
+ *
+ * ⚠️ 若需在开发者工具里"本地跑但打 staging"，可手动改常量为 'staging' · 但不要commit。
+ *⚠️ D-026 §2.3 C2 红线：staging.mockLogin 与 prod.mockLogin 均为 false · 不可放松。
+ */
+function detectEnv(): EnvName {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const g: any = typeof wx !== 'undefined' ? wx : undefined;
+    const v: string | undefined = g?.getAccountInfoSync?.().miniProgram?.envVersion;
+    if (v === 'release') return 'prod';
+    if (v === 'trial') return 'staging';
+    if (v === 'develop') return 'dev';
+    return 'dev';
+  } catch {
+    return 'dev';
+  }
+}
+
+const CURRENT_ENV: EnvName = detectEnv();
 
 export function getEnv(): EnvConfig {
   return ENV_MAP[CURRENT_ENV];

@@ -23,6 +23,7 @@ export interface EntryApiItem {
   version: number;
   client_ref_id: string | null;
   shared_type: 'shared' | 'personal' | null;
+  source_recurring_id: string | null;
 }
 
 interface EntryListResponse {
@@ -54,6 +55,7 @@ function toLocalEntry(item: EntryApiItem): Entry | null {
     version: item.version,
     created_by: item.created_by,
     shared_type: item.shared_type ?? null,
+    source_recurring_id: item.source_recurring_id ?? null,
   };
 }
 

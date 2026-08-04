@@ -1,0 +1,11 @@
+{
+  "navigationStyle": "custom",
+  "usingComponents": {
+    "category-picker": "../../components/category-picker/index",
+    "recurring-period-selector": "../../components/recurring-period-selector/index",
+    "recurring-dow-picker": "../../components/recurring-dow-picker/index",
+    "recurring-dom-picker": "../../components/recurring-dom-picker/index",
+    "recurring-yearly-picker": "../../components/recurring-yearly-picker/index",
+    "recurring-bucket-picker": "../../components/recurring-bucket-picker/index"
+  }
+}

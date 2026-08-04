@@ -115,6 +115,11 @@
             <!-- 极简单色圆形图标 · COSTRA-227: 点击编辑分类 -->
             <view class="entry-icon" data-refid="{{entry.client_ref_id}}" catchtap="onTapEntryCategory">
               <text class="entry-icon__text">{{entry.icon}}</text>
+              <!-- 单人账本：角标依附分类图标；固定“定 公”顺序 -->
+              <view wx:if="{{!showMemberFilter && (entry.isRecurring || entry.isShared)}}" class="entry-member__badge">
+                <text wx:if="{{entry.isRecurring}}" class="entry-member__badge-text entry-member__badge-text--recurring">定</text>
+                <text wx:if="{{entry.isShared}}" class="entry-member__badge-text entry-member__badge-text--shared">公</text>
+              </view>
             </view>
             <!-- 分类名/备注 · COSTRA-227: 点击原地编辑备注 -->
             <view class="entry-label grow" data-refid="{{entry.client_ref_id}}" catchtap="onTapEntryNote">
@@ -144,9 +149,10 @@
               <view wx:elif="{{entry.memberInitial}}" class="entry-member__fallback">
                 <text class="entry-member__initial">{{entry.memberInitial}}</text>
               </view>
-              <!-- 公共支出角标 -->
-              <view wx:if="{{entry.isShared}}" class="entry-member__badge">
-                <text class="entry-member__badge-text">公</text>
+              <!-- 协作账本：角标依附成员头像；固定“定 公”顺序 -->
+              <view wx:if="{{entry.isRecurring || entry.isShared}}" class="entry-member__badge">
+                <text wx:if="{{entry.isRecurring}}" class="entry-member__badge-text entry-member__badge-text--recurring">定</text>
+                <text wx:if="{{entry.isShared}}" class="entry-member__badge-text entry-member__badge-text--shared">公</text>
               </view>
             </view>
             <view class="entry-amount-wrap" data-refid="{{entry.client_ref_id}}" catchtap="onTapEntryAmount">

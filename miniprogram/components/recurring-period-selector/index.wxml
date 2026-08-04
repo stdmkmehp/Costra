@@ -1,0 +1,11 @@
+<!-- components/recurring-period-selector/index.wxml -->
+<view wx:if="{{show}}" class="rps__mask" bindtap="onClose">
+  <view class="rps__sheet" catchtap="onNoop">
+    <view wx:for="{{periodOptions}}" wx:key="value"
+          class="rps__item" data-value="{{item.value}}" bindtap="onSelect">
+      <text>{{item.label}}</text>
+      <text wx:if="{{value === item.value}}" class="rps__check">✓</text>
+    </view>
+    <view class="rps__cancel" bindtap="onClose">取消</view>
+  </view>
+</view>

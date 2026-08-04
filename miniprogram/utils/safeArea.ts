@@ -42,6 +42,10 @@ export interface SafeAreaMetrics {
   menuButtonBottom: number;
   /** 胶囊按钮高度 */
   menuButtonHeight: number;
+  /** 胶囊按钮左边缘（距屏幕左侧） */
+  menuButtonLeft: number;
+  /** 胶囊按钮宽度 */
+  menuButtonWidth: number;
   /** 导航栏内容区高度（不含状态栏） */
   navBarHeight: number;
   /** 导航栏总高度 = statusBarHeight + navBarHeight */
@@ -100,16 +104,22 @@ export function getSafeAreaMetrics(options?: { force?: boolean }): SafeAreaMetri
   let menuButtonTop = 0;
   let menuButtonBottom = 0;
   let menuButtonHeight = 0;
+  let menuButtonLeft = 0;
+  let menuButtonWidth = 0;
   try {
     const rect = wx.getMenuButtonBoundingClientRect();
     menuButtonTop = rect.top ?? 0;
     menuButtonBottom = rect.bottom ?? 0;
     menuButtonHeight = rect.height ?? 0;
+    menuButtonLeft = rect.left ?? 0;
+    menuButtonWidth = rect.width ?? 0;
   } catch {
     // 开发者工具可能不支持 getMenuButtonBoundingClientRect
     menuButtonTop = 0;
     menuButtonBottom = 0;
     menuButtonHeight = 0;
+    menuButtonLeft = 0;
+    menuButtonWidth = 0;
   }
 
   // 3. 计算导航栏高度
@@ -145,6 +155,8 @@ export function getSafeAreaMetrics(options?: { force?: boolean }): SafeAreaMetri
     menuButtonTop,
     menuButtonBottom,
     menuButtonHeight,
+    menuButtonLeft,
+    menuButtonWidth,
     navBarHeight,
     navBarTotalHeight,
     safeAreaTop: navBarTotalHeight,

@@ -77,7 +77,8 @@ export interface L3Display {
   note: string;
   dateLabel: string;
   timeLabel: string;
-  shared: boolean;
+  isShared: boolean;
+  isRecurring: boolean;
   nickname: string;
   avatarUrl: string;
   initial: string;

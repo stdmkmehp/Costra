@@ -27,6 +27,10 @@
 
     <!-- 功能列表：圆角分组卡片 -->
     <view class="menu">
+      <view class="menu__item" bindtap="onTapRecurring" hover-class="menu__item--hover" hover-stay-time="60">
+        <view class="menu__label">定时记账</view>
+        <view class="menu__arrow">›</view>
+      </view>
       <view class="menu__item" bindtap="onTapCreateFamily" hover-class="menu__item--hover" hover-stay-time="60">
         <view class="menu__label">创建协作账本</view>
         <view class="menu__arrow">›</view>

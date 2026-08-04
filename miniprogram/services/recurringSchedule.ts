@@ -1,0 +1,381 @@
+// costra · recurringSchedule.ts · T1 同源基础设施
+//
+// 卡号占位：COSTRA-5xx（T1 · Sprint-4 · Epic-E）
+// 事实源：
+//   - docs/design/recurring-entry-tech-spec.md §7 v0.2.1
+//   - docs/design/recurring-entry-product-spec.md §4/§5 v0.3.2
+//
+// ★★★ byte-level 同源约束 ★★★
+//   本文件必须与 miniprogram/services/recurringSchedule.ts 内容完全一致（含空行、注释）
+//   CI 由 scripts/verify-recurring-schedule-parity.mjs 卡关
+//   任一处改动，两边必须同步
+
+import { DateTime } from 'luxon';
+
+// ===== 类型定义 =====
+
+export type Period =
+  | 'weekly'
+  | 'biweekly'
+  | 'monthly'
+  | 'bimonthly'
+  | 'trimonthly'
+  | 'yearly';
+
+export type ExecuteBucket = 'dawn' | 'morning' | 'afternoon' | 'night';
+
+/**
+ * 用于 computeNextRunAt 计算的最小字段集
+ * 与 recurring_rules 表的字段名保持一致（snake_case），便于直接从 DB row 消费
+ */
+export interface RecurringRuleForCompute {
+  period: Period;
+  timezone: string; // IANA 时区名 · 例 'Asia/Shanghai'
+  start_date: string; // 'YYYY-MM-DD'
+  execute_hour: number; // 0-23
+  execute_minute: number; // 0-59
+  days_of_week: number[] | null; // 1=周一...7=周日 · weekly/biweekly 用
+  days_of_month: number[] | null; // 1..31 · monthly/bimonthly/trimonthly 用
+  year_month_days: number[] | null; // 编码 month*100+day · yearly 用
+}
+
+// ===== 时段窗口常量（tech-spec §3.5 v0.2.1 · 内缩边界）=====
+
+export interface BucketWindow {
+  startHour: number;
+  endHour: number;
+}
+
+export const BUCKET_WINDOWS: Record<ExecuteBucket, BucketWindow> = {
+  dawn: { startHour: 0, endHour: 6 }, // 00:00 ~ 05:59
+  morning: { startHour: 6, endHour: 12 }, // 06:00 ~ 11:59
+  afternoon: { startHour: 12, endHour: 18 }, // 12:00 ~ 17:59
+  night: { startHour: 18, endHour: 24 }, // 18:00 ~ 23:59
+};
+
+/** 每个 6h 窗口的首尾内缩 30 分钟 · 让 hash 只落在中段 5 小时内 */
+export const INNER_MARGIN_MINUTES = 30;
+
+// ===== fnv1a64 · 纯 BigInt 实现 · 跨端可复现 =====
+
+const FNV_OFFSET_64 = 0xcbf29ce484222325n;
+const FNV_PRIME_64 = 0x100000001b3n;
+const MASK_64 = 0xffffffffffffffffn;
+
+/**
+ * FNV-1a 64-bit 哈希
+ * 纯函数 · 无 crypto/Buffer 依赖 · Node 与小程序端行为一致
+ */
+export function fnv1a64(input: string): bigint {
+  let hash = FNV_OFFSET_64;
+  for (let i = 0; i < input.length; i++) {
+    const code = input.charCodeAt(i);
+    // 处理多字节字符：拆成低 8 + 高 8 两轮，保持 UTF-16 稳定性
+    hash = ((hash ^ BigInt(code & 0xff)) * FNV_PRIME_64) & MASK_64;
+    if (code > 0xff) {
+      hash = ((hash ^ BigInt((code >> 8) & 0xff)) * FNV_PRIME_64) & MASK_64;
+    }
+  }
+  return hash;
+}
+
+// ===== 错峰分钟分配（tech-spec §3.5 v0.2.1）=====
+
+/**
+ * 为 (userId, ruleId) 稳定分配一个 bucket 内的具体 hour/minute
+ *
+ * 属性保证：
+ *   - 同一 (userId, ruleId, bucket) 输入永远返回同一个 (hour, minute)
+ *   - 输出严格落在 [startHour*60 + 30, endHour*60 - 30) 区间
+ *   - 避开整点报时（避开 hh:00 和 hh:59 边界）
+ *
+ * 用户切换 bucket → 后端调用一次本函数覆盖 execute_hour/execute_minute
+ */
+export function assignBucketMinute(
+  userId: string,
+  ruleId: string,
+  bucket: ExecuteBucket,
+): { hour: number; minute: number } {
+  const w = BUCKET_WINDOWS[bucket];
+  const windowTotalMinutes = (w.endHour - w.startHour) * 60;
+  const usableMinutes = windowTotalMinutes - INNER_MARGIN_MINUTES * 2;
+  if (usableMinutes <= 0) {
+    throw new Error(
+      `assignBucketMinute: usableMinutes must be > 0 (got ${usableMinutes})`,
+    );
+  }
+  const h = fnv1a64(`${userId}|${ruleId}`);
+  const offset = Number(h % BigInt(usableMinutes));
+  const totalMinutes = w.startHour * 60 + INNER_MARGIN_MINUTES + offset;
+  return {
+    hour: Math.floor(totalMinutes / 60),
+    minute: totalMinutes % 60,
+  };
+}
+
+// ===== 补齐 loop 窗口常量（tech-spec §3.4 v0.2.1）=====
+
+export const BACKFILL_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+export const MAX_BACKFILL_ITER = 100;
+
+// ===== computeNextRunAt · 核心调度算法 =====
+
+const MAX_COMPUTE_ITER = 800; // 每年最坏 366 + buffer
+
+/**
+ * 计算 rule 严格大于 from 的下一次执行时点
+ *
+ * 语义：
+ *   - 返回值总是 execute_hour:execute_minute:00.000 in rule.timezone
+ *   - 返回值 > from（严格大于）
+ *   - 每月 31 号在小月回落到月末（e.g. 2 月落 28/29 · 4 月落 30）
+ *   - 每年 2/29 平年落 2/28
+ *   - 若 800 天内无匹配（配置异常）→ 抛错
+ */
+export function computeNextRunAt(
+  rule: RecurringRuleForCompute,
+  from: Date,
+): Date {
+  const tz = rule.timezone;
+  const fromZ = DateTime.fromJSDate(from, { zone: tz });
+  if (!fromZ.isValid) {
+    throw new Error(`computeNextRunAt: invalid timezone "${tz}"`);
+  }
+
+  // 起点：把 from 推到"下一分钟"再 set 到 execute 时点
+  //   之所以先 +1 分钟：让"from 恰好正整分钟"也能正确推进（避免返回等值）
+  let cursor = fromZ.plus({ minutes: 1 }).set({
+    hour: rule.execute_hour,
+    minute: rule.execute_minute,
+    second: 0,
+    millisecond: 0,
+  });
+  // set 可能把 cursor 回退到 from 之前（例如 from=15:00 · execute=09:00 → set 后是当天 09:00 < from）
+  // 修正：若 cursor <= from，推到下一天
+  if (cursor <= fromZ) {
+    cursor = cursor.plus({ days: 1 });
+  }
+
+  for (let i = 0; i < MAX_COMPUTE_ITER; i++) {
+    const match = tryMatchOnDay(rule, cursor);
+    if (match) return match.toJSDate();
+    cursor = cursor.plus({ days: 1 });
+  }
+  throw new Error(
+    `computeNextRunAt: no match within ${MAX_COMPUTE_ITER} days · rule config invalid`,
+  );
+}
+
+/**
+ * 判断 cursor 是否命中 rule 的匹配日 · 命中返回 cursor 本身；否则返回 null
+ * cursor 已经 set 到 execute_hour:execute_minute
+ */
+function tryMatchOnDay(
+  rule: RecurringRuleForCompute,
+  cursor: DateTime,
+): DateTime | null {
+  switch (rule.period) {
+    case 'weekly': {
+      const dows = rule.days_of_week;
+      if (!dows || dows.length === 0) return null;
+      return dows.includes(cursor.weekday) ? cursor : null;
+    }
+
+    case 'biweekly': {
+      const dows = rule.days_of_week;
+      if (!dows || dows.length === 0) return null;
+      // 基准周 = start_date 所在自然周（Luxon 默认 startOfWeek = 周一）
+      const baseMonday = DateTime.fromISO(rule.start_date, {
+        zone: rule.timezone,
+      }).startOf('week');
+      const cursorMonday = cursor.startOf('week');
+      const weeksDiff = Math.round(
+        cursorMonday.diff(baseMonday, 'weeks').weeks,
+      );
+      if (weeksDiff < 0 || weeksDiff % 2 !== 0) return null;
+      return dows.includes(cursor.weekday) ? cursor : null;
+    }
+
+    case 'monthly':
+    case 'bimonthly':
+    case 'trimonthly': {
+      const doms = rule.days_of_month;
+      if (!doms || doms.length === 0) return null;
+      const step =
+        rule.period === 'monthly' ? 1 : rule.period === 'bimonthly' ? 2 : 3;
+      const baseMonth = DateTime.fromISO(rule.start_date, {
+        zone: rule.timezone,
+      }).startOf('month');
+      const cursorMonth = cursor.startOf('month');
+      const monthsDiff = Math.round(
+        cursorMonth.diff(baseMonth, 'months').months,
+      );
+      if (monthsDiff < 0 || monthsDiff % step !== 0) return null;
+      return matchDayOfMonth(cursor, doms);
+    }
+
+    case 'yearly': {
+      const ymds = rule.year_month_days;
+      if (!ymds || ymds.length === 0) return null;
+      const M = cursor.month;
+      const D = cursor.day;
+      const dim = cursor.daysInMonth ?? 31;
+      for (const encoded of ymds) {
+        const eM = Math.floor(encoded / 100);
+        const eD = encoded % 100;
+        if (eM !== M) continue;
+        // 2/29 平年落 2/28（唯一的每年跨月边界特例）
+        const targetD = eM === 2 && eD === 29 && dim === 28 ? 28 : eD;
+        if (targetD === D) return cursor;
+      }
+      return null;
+    }
+  }
+}
+
+/**
+ * 每月类的日子匹配 · 处理 31→月末的回落
+ *
+ * 例：days=[15, 31] · 4 月 · daysInMonth=30
+ *   effective = {15, 30}（31 回落到 30）
+ *   若 cursor.day === 15 或 30 则命中
+ */
+function matchDayOfMonth(cursor: DateTime, days: number[]): DateTime | null {
+  const dim = cursor.daysInMonth ?? 31;
+  const effective = new Set<number>();
+  for (const d of days) {
+    effective.add(Math.min(d, dim));
+  }
+  return effective.has(cursor.day) ? cursor : null;
+}
+
+// ===== formatDaysForSummary · 已选日子的展示格式化 =====
+
+export type FormatMode = 'full' | 'compact';
+
+export interface FormatContext {
+  period: Period;
+  mode: FormatMode;
+  days_of_week: number[] | null;
+  days_of_month: number[] | null;
+  year_month_days: number[] | null;
+}
+
+/**
+ * 已选日子的自然语言化字符串
+ *
+ * mode='full'  编辑页摘要条 / 预览卡片 · 完整明确列出所有已选
+ * mode='compact' 列表页副行等非编辑场景 · ≥4 天时首 2 尾 2 省略
+ *
+ * 事实源：product-spec §5.3.4
+ */
+export function formatDaysForSummary(ctx: FormatContext): string {
+  switch (ctx.period) {
+    case 'weekly':
+    case 'biweekly':
+      return formatDow(ctx.days_of_week ?? [], ctx.mode);
+    case 'monthly':
+    case 'bimonthly':
+    case 'trimonthly':
+      return formatDom(ctx.days_of_month ?? [], ctx.mode);
+    case 'yearly':
+      return formatYearMonthDays(ctx.year_month_days ?? [], ctx.mode);
+  }
+}
+
+const CN_DOW_CHARS = ['一', '二', '三', '四', '五', '六', '日']; // ISO 1..7
+
+/**
+ * dow 格式化
+ *   full · 全选 7 天 → "每天" · 否则 "周一、二、三"
+ *   compact · ≥4 天 → "周一、二、…、六、日"
+ */
+function formatDow(days: number[], mode: FormatMode): string {
+  if (days.length === 0) return '';
+  const sorted = [...new Set(days)].sort((a, b) => a - b);
+  if (sorted.length === 7) return '每天';
+  if (mode === 'compact' && sorted.length >= 4) {
+    const chars = sorted.map((d) => CN_DOW_CHARS[d - 1]);
+    return `周${chars[0]}、${chars[1]}、…、${chars[chars.length - 2]}、${chars[chars.length - 1]}`;
+  }
+  const chars = sorted.map((d) => CN_DOW_CHARS[d - 1]);
+  return `周${chars.join('、')}`;
+}
+
+/**
+ * dom 格式化 · 支持连续 3+ 天用 ~ 压缩
+ *   full · "5、10~13、31 日"
+ *   compact · ≥4 天 → "5、10、…、25、31 日"
+ */
+function formatDom(days: number[], mode: FormatMode): string {
+  if (days.length === 0) return '';
+  const sorted = [...new Set(days)].sort((a, b) => a - b);
+  if (mode === 'compact' && sorted.length >= 4) {
+    return `${sorted[0]}、${sorted[1]}、…、${sorted[sorted.length - 2]}、${sorted[sorted.length - 1]} 日`;
+  }
+  return `${compressRuns(sorted)} 日`;
+}
+
+/**
+ * 每年 (月, 日) 组合格式化
+ *   full · "1 月 1 日、2 月 14、22 日、12 月 25 日"
+ *   compact · ≥4 组 → "1/1、2/2、…、11/11、12/12"
+ */
+function formatYearMonthDays(encoded: number[], mode: FormatMode): string {
+  if (encoded.length === 0) return '';
+  const sorted = [...new Set(encoded)].sort((a, b) => a - b);
+
+  if (mode === 'compact' && sorted.length >= 4) {
+    const toShort = (v: number) => `${Math.floor(v / 100)}/${v % 100}`;
+    return `${toShort(sorted[0])}、${toShort(sorted[1])}、…、${toShort(sorted[sorted.length - 2])}、${toShort(sorted[sorted.length - 1])}`;
+  }
+
+  // full：按月合并
+  const byMonth = new Map<number, number[]>();
+  for (const v of sorted) {
+    const m = Math.floor(v / 100);
+    const d = v % 100;
+    const arr = byMonth.get(m) ?? [];
+    arr.push(d);
+    byMonth.set(m, arr);
+  }
+  const months = [...byMonth.keys()].sort((a, b) => a - b);
+  const parts: string[] = [];
+  for (const m of months) {
+    const ds = byMonth.get(m)!;
+    parts.push(`${m} 月 ${compressRuns(ds)} 日`);
+  }
+  return parts.join('、');
+}
+
+/**
+ * 数组压缩：连续 3 个以上用 "a~b"，非连续用 "、"
+ *   [5,6,7,8] → "5~8"
+ *   [1,2,3,10,15] → "1~3、10、15"
+ *   [1,2] → "1、2"（少于 3 个不压缩）
+ */
+function compressRuns(sorted: number[]): string {
+  if (sorted.length === 0) return '';
+  const groups: Array<[number, number]> = [];
+  let start = sorted[0];
+  let prev = sorted[0];
+  for (let i = 1; i < sorted.length; i++) {
+    const v = sorted[i];
+    if (v === prev + 1) {
+      prev = v;
+    } else {
+      groups.push([start, prev]);
+      start = v;
+      prev = v;
+    }
+  }
+  groups.push([start, prev]);
+
+  const parts = groups.map(([a, b]) => {
+    const runLen = b - a + 1;
+    if (runLen >= 3) return `${a}~${b}`;
+    if (runLen === 2) return `${a}、${b}`;
+    return `${a}`;
+  });
+  return parts.join('、');
+}

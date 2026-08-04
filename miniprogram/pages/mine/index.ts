@@ -7,7 +7,7 @@
 // 改造要点（2026-06-08）：
 //   - 顶部用户区：头像居中放大（160rpx），昵称居中，下方"已记账 X 天"
 //   - 宏观数据：横向 2 列（记账天数 / 记账笔数）· 走 GET /users/me/overview
-//   - 功能列表：创建协作 / 公告 / 意见反馈 / 关于 Costra / 设置 — 意见反馈使用无样式 button 承载 open-type=feedback，内层 view 复用普通菜单项布局；账本导入导出、定时记账已下沉至设置页
+//   - 功能列表：定时记账 / 创建协作 / 公告 / 意见反馈 / 关于 Costra — 意见反馈使用无样式 button 承载 open-type=feedback，内层 view 复用普通菜单项布局
 //   - 退出登录 / 合规 footer 完整保留（ICP 备案号仅展示，不再点击复制）
 
 import { hasValidSession, getSession, logout, getToken } from '../../services/auth';
@@ -230,6 +230,10 @@ Page({
 
   onTapProfile() {
     wx.navigateTo({ url: '/pages/profile-setup/index' });
+  },
+
+  onTapRecurring() {
+    wx.navigateTo({ url: '/pages-recurring/list/index' });
   },
 
   onTapSettings() {

@@ -193,6 +193,7 @@
 }
 
 .entry-icon {
+  position: relative;
   width: 48rpx;
   height: 48rpx;
   border-radius: 50%;
@@ -254,15 +255,18 @@
   position: absolute;
   right: -6rpx;
   bottom: -6rpx;
+  display: flex;
+  align-items: center;
+  gap: 2rpx;
   line-height: 1;
   pointer-events: none;
+  white-space: nowrap;
 }
 
 .entry-member__badge-text {
   font-size: 18rpx;
   line-height: 1;
   font-weight: 800;
-  color: #6B9B8F;
   text-shadow:
     1rpx 0 0 var(--color-role-bg-app, #f1f2ec),
     -1rpx 0 0 var(--color-role-bg-app, #f1f2ec),
@@ -272,6 +276,14 @@
     -1rpx -1rpx 0 var(--color-role-bg-app, #f1f2ec),
     1rpx -1rpx 0 var(--color-role-bg-app, #f1f2ec),
     -1rpx 1rpx 0 var(--color-role-bg-app, #f1f2ec);
+}
+
+.entry-member__badge-text--recurring {
+  color: #A88A5E;
+}
+
+.entry-member__badge-text--shared {
+  color: #6B9B8F;
 }
 
 .entry-label {

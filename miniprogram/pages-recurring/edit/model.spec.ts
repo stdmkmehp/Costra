@@ -1,0 +1,105 @@
+// pages-recurring/edit/model.spec.ts · 编辑页纯函数单测
+// 卡号占位：COSTRA-5xx（T3）
+// Refs: COSTRA-5xx
+
+import { describe, it, expect } from 'vitest';
+import {
+  shouldClearDaysOnPeriodChange,
+  bucketRepresentativeTime,
+  isVersionConflict,
+  findNearestSelectedMonth,
+  DOM_MAX,
+  YEARLY_MAX,
+} from './model';
+
+describe('edit/model', () => {
+  describe('shouldClearDaysOnPeriodChange', () => {
+    it('weekly → biweekly: same group, no clear', () => {
+      expect(shouldClearDaysOnPeriodChange('weekly', 'biweekly')).toBe(false);
+    });
+    it('biweekly → weekly: same group, no clear', () => {
+      expect(shouldClearDaysOnPeriodChange('biweekly', 'weekly')).toBe(false);
+    });
+    it('monthly → bimonthly: same group, no clear', () => {
+      expect(shouldClearDaysOnPeriodChange('monthly', 'bimonthly')).toBe(false);
+    });
+    it('monthly → trimonthly: same group, no clear', () => {
+      expect(shouldClearDaysOnPeriodChange('monthly', 'trimonthly')).toBe(false);
+    });
+    it('weekly → monthly: cross group, clear', () => {
+      expect(shouldClearDaysOnPeriodChange('weekly', 'monthly')).toBe(true);
+    });
+    it('monthly → yearly: cross group, clear', () => {
+      expect(shouldClearDaysOnPeriodChange('monthly', 'yearly')).toBe(true);
+    });
+    it('yearly → weekly: cross group, clear', () => {
+      expect(shouldClearDaysOnPeriodChange('yearly', 'weekly')).toBe(true);
+    });
+    it('same period: no clear', () => {
+      expect(shouldClearDaysOnPeriodChange('weekly', 'weekly')).toBe(false);
+    });
+  });
+
+  describe('bucketRepresentativeTime', () => {
+    it('dawn: midpoint of 0-6 → 03:00', () => {
+      const { hour, minute } = bucketRepresentativeTime('dawn');
+      expect(hour).toBe(3);
+      expect(minute).toBe(0);
+    });
+    it('morning: midpoint of 6-12 → 09:00', () => {
+      const { hour, minute } = bucketRepresentativeTime('morning');
+      expect(hour).toBe(9);
+      expect(minute).toBe(0);
+    });
+    it('afternoon: midpoint of 12-18 → 15:00', () => {
+      const { hour, minute } = bucketRepresentativeTime('afternoon');
+      expect(hour).toBe(15);
+      expect(minute).toBe(0);
+    });
+    it('night: midpoint of 18-24 → 21:00', () => {
+      const { hour, minute } = bucketRepresentativeTime('night');
+      expect(hour).toBe(21);
+      expect(minute).toBe(0);
+    });
+  });
+
+  describe('isVersionConflict', () => {
+    it('status 409', () => {
+      expect(isVersionConflict({ status: 409 })).toBe(true);
+    });
+    it('code VERSION_CONFLICT', () => {
+      expect(isVersionConflict({ code: 'VERSION_CONFLICT' })).toBe(true);
+    });
+    it('both', () => {
+      expect(isVersionConflict({ status: 409, code: 'VERSION_CONFLICT' })).toBe(true);
+    });
+    it('other error', () => {
+      expect(isVersionConflict({ status: 400, code: 'INVALID_ARGUMENT' })).toBe(false);
+    });
+    it('null/undefined', () => {
+      expect(isVersionConflict(null)).toBe(false);
+      expect(isVersionConflict(undefined)).toBe(false);
+    });
+  });
+
+  describe('findNearestSelectedMonth', () => {
+    it('empty → 1', () => {
+      expect(findNearestSelectedMonth([])).toBe(1);
+    });
+    it('single month → that month', () => {
+      expect(findNearestSelectedMonth([315])).toBe(3); // 3*100+15
+    });
+    it('multiple months → smallest', () => {
+      expect(findNearestSelectedMonth([510, 315, 720])).toBe(3);
+    });
+  });
+
+  describe('constants', () => {
+    it('DOM_MAX is 14', () => {
+      expect(DOM_MAX).toBe(14);
+    });
+    it('YEARLY_MAX is 12', () => {
+      expect(YEARLY_MAX).toBe(12);
+    });
+  });
+});

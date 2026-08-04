@@ -1,0 +1,170 @@
+<!-- pages-recurring/edit/index.wxml · 定时记账编辑页 -->
+<view class="recedit">
+  <!-- 自定义导航栏 -->
+  <view class="recedit__nav" style="padding-top: {{statusBarHeight}}px; height: {{navBarHeight}}px;">
+    <view class="recedit__nav-back" bindtap="onTapBack">
+      <text class="recedit__nav-back-icon">‹</text>
+    </view>
+    <text class="recedit__nav-title">{{mode === 'edit' ? '编辑定时' : '新建定时'}}</text>
+    <view class="recedit__nav-save {{isValid ? 'recedit__nav-save--active' : ''}}" style="right: {{navActionRight}}px;" bindtap="onSave">
+      <text>{{saving ? '保存中…' : '保存'}}</text>
+    </view>
+  </view>
+
+  <scroll-view class="recedit__scroll" scroll-y enhanced show-scrollbar="{{false}}"
+               style="padding-top: {{navBarTotalHeight}}px;">
+    <!-- 卡片1：记什么 -->
+    <view class="recedit__card {{saveFlashError && validationSection === 1 ? 'recedit__card--error-flash' : ''}}">
+      <!-- Type tab -->
+      <view class="recedit__type-tabs">
+        <view class="recedit__type-tab {{entryType === 'expense' ? 'recedit__type-tab--active' : ''}}"
+              data-type="expense" bindtap="onTypeChange">支出</view>
+        <view class="recedit__type-tab {{entryType === 'income' ? 'recedit__type-tab--active' : ''}}"
+              data-type="income" bindtap="onTypeChange">收入</view>
+        <view class="recedit__type-tab {{entryType === 'transfer' ? 'recedit__type-tab--active' : ''}}"
+              data-type="transfer" bindtap="onTypeChange">转账</view>
+      </view>
+
+      <!-- 金额 -->
+      <view class="recedit__row {{saveFlashError && amountCents <= 0 ? 'recedit__row--error' : ''}}" bindtap="onTapAmount" hover-class="recedit__row--hover">
+        <text class="recedit__label">金额</text>
+        <text class="recedit__value {{amountDisplay ? 'recedit__value--bold' : 'recedit__value--placeholder'}} tnum">
+          {{amountDisplay ? '¥ ' + amountDisplay : '¥ 0.00'}}
+        </text>
+        <text class="recedit__arrow">›</text>
+      </view>
+
+      <!-- 分类 -->
+      <view class="recedit__row" bindtap="onShowCategoryPicker" hover-class="recedit__row--hover">
+        <text class="recedit__label">分类</text>
+        <view class="recedit__value">
+          <text wx:if="{{categoryIcon}}">{{categoryIcon}} </text>
+          <text>{{categoryName || '请选择'}}</text>
+        </view>
+        <text class="recedit__arrow">›</text>
+      </view>
+
+      <!-- 账本 -->
+      <view class="recedit__row" bindtap="onTapLedger" hover-class="recedit__row--hover">
+        <text class="recedit__label">账本</text>
+        <text class="recedit__value">{{ledgerName || '请选择'}}</text>
+        <text class="recedit__arrow">›</text>
+      </view>
+
+      <!-- 归属（仅 expense） -->
+      <view class="recedit__row" wx:if="{{entryType === 'expense'}}">
+        <text class="recedit__label">归属</text>
+        <view class="recedit__capsules">
+          <view class="recedit__capsule {{sharedType === 'shared' ? 'recedit__capsule--active' : ''}}"
+                data-val="shared" bindtap="onToggleShared">公共</view>
+          <view class="recedit__capsule {{sharedType === 'personal' ? 'recedit__capsule--active' : ''}}"
+                data-val="personal" bindtap="onToggleShared">个人</view>
+        </view>
+      </view>
+
+      <!-- 备注 -->
+      <view class="recedit__row">
+        <text class="recedit__label">备注</text>
+        <input class="recedit__input" placeholder="选填" value="{{note}}" bindinput="onNoteInput" />
+      </view>
+    </view>
+
+    <!-- 卡片2：什么时候记 -->
+    <view class="recedit__card {{saveFlashError && validationSection === 2 ? 'recedit__card--error-flash' : ''}}">
+      <!-- 周期选择 -->
+      <view class="recedit__row" bindtap="onShowPeriodSheet" hover-class="recedit__row--hover">
+        <text class="recedit__label">周期</text>
+        <text class="recedit__value">{{periodLabel}}</text>
+        <text class="recedit__arrow">›</text>
+      </view>
+
+      <!-- DOW 控件（每周/每两周） -->
+      <recurring-dow-picker
+        wx:if="{{period === 'weekly' || period === 'biweekly'}}"
+        value="{{daysOfWeek}}"
+        period="{{period}}"
+        bind:change="onDowChange"
+        bind:clear="onDowClear"
+        bind:limit="onDowLimit"
+      />
+
+      <!-- DOM 控件（每月/每两月/每三月） -->
+      <recurring-dom-picker
+        wx:if="{{period === 'monthly' || period === 'bimonthly' || period === 'trimonthly'}}"
+        value="{{daysOfMonth}}"
+        period="{{period}}"
+        bind:change="onDomChange"
+        bind:clear="onDomClear"
+        bind:limit="onDomLimit"
+      />
+
+      <!-- Yearly 控件 -->
+      <recurring-yearly-picker
+        wx:if="{{period === 'yearly'}}"
+        value="{{yearMonthDays}}"
+        bind:change="onYearlyChange"
+        bind:clear="onYearlyClear"
+        bind:limit="onYearlyLimit"
+      />
+
+      <!-- 时段 -->
+      <recurring-bucket-picker
+        value="{{bucket}}"
+        bind:change="onBucketChange"
+      />
+
+      <!-- 起始日 -->
+      <picker mode="date" value="{{startDate}}" start="{{startDateMin}}" end="{{startDateMax}}" bindchange="onStartDateChange">
+        <view class="recedit__row" hover-class="recedit__row--hover">
+          <text class="recedit__label">起始日</text>
+          <text class="recedit__value">{{startDate}}</text>
+          <text class="recedit__arrow">›</text>
+        </view>
+      </picker>
+
+      <!-- 结束日 -->
+      <view class="recedit__row">
+        <text class="recedit__label">结束日</text>
+        <text class="recedit__value" wx:if="{{!hasEndDate}}">不设结束</text>
+        <picker wx:else mode="date" value="{{endDate}}" start="{{endDateMin}}" end="{{endDateMax}}" bindchange="onEndDateChange">
+          <text class="recedit__value">{{endDate || '请选择'}}</text>
+        </picker>
+        <switch class="recedit__switch" checked="{{hasEndDate}}" bindchange="onToggleEndDate" color="#8AA98F" />
+      </view>
+    </view>
+
+    <!-- 卡片3：预览 -->
+    <view class="recedit__card recedit__card--preview">
+      <view class="recedit__preview-main">
+        <text class="recedit__preview-icon">⟳</text>
+        <text class="recedit__preview-desc">{{previewDesc || '—'}}</text>
+      </view>
+      <view class="recedit__preview-next">
+        <text class="recedit__preview-label">预计下次执行</text>
+        <view class="recedit__preview-datetime">
+          <text class="recedit__preview-date tnum">{{previewDate}}</text>
+          <text class="recedit__preview-bucket" wx:if="{{previewBucket}}">{{previewBucket}}</text>
+        </view>
+      </view>
+    </view>
+  </scroll-view>
+
+  <!-- 周期选择 action-sheet -->
+  <recurring-period-selector
+    show="{{showPeriodSheet}}"
+    value="{{period}}"
+    bind:change="onPeriodChange"
+    bind:close="onPeriodClose"
+  />
+
+  <!-- 分类选择器 -->
+  <category-picker
+    show="{{showCategoryPicker}}"
+    value="{{categoryId}}"
+    allow-cross-type="{{true}}"
+    current-type="{{entryType}}"
+    family-id="{{ledgerFamilyId}}"
+    bind:select="onCategorySelect"
+    bind:close="onCategoryClose"
+  />
+</view>

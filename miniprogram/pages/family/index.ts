@@ -9,6 +9,7 @@ import { toYuan } from '../../utils/money';
 import { getSafeAreaMetrics, rpxToPx } from '../../utils/safeArea';
 import { scheduleDeferredLoading, type DeferredLoadingHandle } from '../../utils/deferredLoading';
 import { resolveEntryDisplayNote } from '../../utils/entryDisplay';
+import { computeBadges } from '../../utils/entryBadges';
 import { getCategoryIconById } from '../../services/categoryService';
 import { getMemberColorBySlot } from '../../utils/memberColor';
 import { buildMemberMenuItems, type MemberMenuItem } from './memberMenu';
@@ -146,7 +147,8 @@ interface EntryRow {
   note: string;
   dateLabel: string;        // '6月24日'
   timeLabel: string;        // '14:30'
-  shared: boolean;
+  isShared: boolean;
+  isRecurring: boolean;
   nickname: string;
   avatarUrl: string;
   initial: string;          // nickname 首字符
@@ -1315,17 +1317,21 @@ Page({
 
       const overflow = res.items.length > L1_ENTRIES_VISIBLE;
       const visibleItems = overflow ? res.items.slice(0, L1_ENTRIES_VISIBLE) : res.items;
-      const entries: EntryRow[] = visibleItems.map((it: FamilyEntryDetailItem) => ({
-        entry_id: it.entry_id,
-        amount: formatCentsDisplay(it.amount),
-        note: resolveEntryDisplayNote(it.note, it.category_name),
-        dateLabel: formatEntryDate(it.occurred_at),
-        timeLabel: formatEntryTime(it.occurred_at),
-        shared: it.shared_type === 'shared',
-        nickname: it.nickname || '',
-        avatarUrl: it.avatar_url || '',
-        initial: (it.nickname || '?')[0],
-      }));
+      const entries: EntryRow[] = visibleItems.map((it: FamilyEntryDetailItem) => {
+        const badges = computeBadges(it);
+        return {
+          entry_id: it.entry_id,
+          amount: formatCentsDisplay(it.amount),
+          note: resolveEntryDisplayNote(it.note, it.category_name),
+          dateLabel: formatEntryDate(it.occurred_at),
+          timeLabel: formatEntryTime(it.occurred_at),
+          isShared: badges.showShared,
+          isRecurring: badges.showRecurring,
+          nickname: it.nickname || '',
+          avatarUrl: it.avatar_url || '',
+          initial: (it.nickname || '?')[0],
+        };
+      });
 
       this.setData({
         [`${base}.entries`]: entries,

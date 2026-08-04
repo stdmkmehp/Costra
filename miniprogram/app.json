@@ -29,6 +29,14 @@
         "bulletin/index",
         "about/index"
       ]
+    },
+    {
+      "root": "pages-recurring/",
+      "name": "recurring",
+      "pages": [
+        "list/index",
+        "edit/index"
+      ]
     }
   ],
   "preloadRule": {

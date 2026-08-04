@@ -1,0 +1,79 @@
+/* pages-recurring/edit/index.wxss · 定时记账编辑页 */
+/* 视觉：暖灰 #f1f2ec · 白卡 · 24rpx 圆角 · 无阴影 · 莫兰迪色板 */
+
+.recedit { background: #f1f2ec; min-height: 100vh; position: relative; }
+
+/* 自定义导航栏 */
+.recedit__nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  display: flex; align-items: center; justify-content: space-between;
+  padding-left: 16rpx; padding-right: 16rpx;
+  background: #f1f2ec;
+}
+.recedit__nav-back { width: 80rpx; height: 100%; display: flex; align-items: center; justify-content: center; }
+.recedit__nav-back-icon { font-size: 48rpx; color: #1c1b1a; font-weight: 300; }
+.recedit__nav-title { font-size: 34rpx; font-weight: 600; color: #1c1b1a; position: absolute; left: 50%; transform: translateX(-50%); }
+.recedit__nav-save { position: absolute; bottom: 0; height: 100%; display: flex; align-items: center; padding: 0 24rpx; font-size: 30rpx; color: rgba(28,27,26,0.28); }
+.recedit__nav-save--active { color: #8AA98F; font-weight: 600; }
+
+.recedit__scroll { padding: 16rpx 24rpx 60rpx; }
+
+/* 卡片 */
+.recedit__card {
+  background: #ffffff; border-radius: 24rpx; margin-bottom: 32rpx;
+  padding: 0 32rpx; overflow: hidden;
+  border: 2rpx solid transparent; transition: border-color 300ms ease-out;
+}
+.recedit__card--error-flash {
+  animation: recedit-error-flash 600ms ease-out;
+}
+@keyframes recedit-error-flash {
+  0%, 100% { border-color: transparent; }
+  25%, 75% { border-color: #C08A7B; }
+}
+
+/* 行 */
+.recedit__row {
+  display: flex; align-items: center; height: 88rpx;
+  border-bottom: 1rpx solid rgba(28,27,26,0.06);
+}
+.recedit__row:last-child { border-bottom: none; }
+.recedit__row--hover { background: rgba(28,27,26,0.02); }
+.recedit__row--error { }
+.recedit__label { font-size: 28rpx; color: rgba(28,27,26,0.72); width: 120rpx; flex-shrink: 0; }
+.recedit__value { flex: 1; font-size: 28rpx; color: #1c1b1a; text-align: right; }
+.recedit__value--bold { font-weight: 600; font-size: 32rpx; font-variant-numeric: tabular-nums; }
+.recedit__value--placeholder { color: rgba(28,27,26,0.28); }
+.recedit__arrow { font-size: 28rpx; color: rgba(28,27,26,0.28); margin-left: 8rpx; }
+.recedit__input { flex: 1; font-size: 28rpx; color: #1c1b1a; text-align: right; }
+
+/* Type tabs */
+.recedit__type-tabs { display: flex; padding: 24rpx 0; gap: 0; }
+.recedit__type-tab {
+  flex: 1; text-align: center; font-size: 28rpx; color: rgba(28,27,26,0.48);
+  padding: 16rpx 0; border-bottom: 4rpx solid transparent;
+}
+.recedit__type-tab--active { color: #1c1b1a; font-weight: 600; border-bottom-color: #8AA98F; }
+
+/* 归属胶囊 */
+.recedit__capsules { display: flex; gap: 16rpx; flex: 1; justify-content: flex-end; }
+.recedit__capsule {
+  padding: 0 28rpx; height: 52rpx; line-height: 52rpx; border-radius: 26rpx;
+  font-size: 24rpx; background: rgba(28,27,26,0.06); color: #1c1b1a;
+  transition: all 160ms ease-out;
+}
+.recedit__capsule--active { background: #8AA98F; color: #ffffff; }
+
+/* Switch */
+.recedit__switch { transform: scale(0.7); }
+
+/* 预览卡片 */
+.recedit__card--preview { padding: 28rpx 32rpx; }
+.recedit__preview-main { display: flex; align-items: flex-start; margin-bottom: 24rpx; }
+.recedit__preview-icon { font-size: 36rpx; color: #A0A69C; margin-right: 12rpx; }
+.recedit__preview-desc { font-size: 30rpx; font-weight: 500; color: #1c1b1a; line-height: 44rpx; flex: 1; }
+.recedit__preview-next { }
+.recedit__preview-label { display: block; font-size: 24rpx; color: rgba(28,27,26,0.48); margin-bottom: 8rpx; }
+.recedit__preview-datetime { display: flex; align-items: baseline; gap: 16rpx; }
+.recedit__preview-date { font-size: 44rpx; font-weight: 600; color: #1c1b1a; font-variant-numeric: tabular-nums; }
+.recedit__preview-bucket { font-size: 28rpx; color: rgba(28,27,26,0.48); }

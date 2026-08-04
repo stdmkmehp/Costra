@@ -21,6 +21,8 @@ export interface Entry {
   deleted_at?: string | null;
   created_by?: string | null;
   shared_type?: 'shared' | 'personal' | null;
+  /** 服务端定时规则来源；手工流水为 null */
+  source_recurring_id?: string | null;
 }
 
 export interface Category {
@@ -213,6 +215,7 @@ function wireToEntry(wire: Record<string, unknown>): Entry {
     version: wire.server_version as number | undefined,     // server_version → version
     created_by: wire.user_id as string | null | undefined,  // user_id → created_by
     shared_type: wire.shared_type as 'shared' | 'personal' | null | undefined,
+    source_recurring_id: wire.source_recurring_id as string | null | undefined,
   };
 }
 

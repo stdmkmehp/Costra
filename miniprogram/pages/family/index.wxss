@@ -460,6 +460,7 @@
 }
 
 .family-l3__avatar {
+  position: relative;
   flex: none;
   width: 36rpx;
   height: 36rpx;
@@ -532,12 +533,38 @@
   color: rgba(28,27,26,0.4);
 }
 
-.family-l3__shared {
+.family-l3__badge {
+  position: absolute;
+  right: -6rpx;
+  bottom: -6rpx;
+  display: flex;
+  align-items: center;
+  gap: 1rpx;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.family-l3__badge-text {
   font-size: 18rpx;
+  line-height: 1;
+  font-weight: 800;
+  text-shadow:
+    1rpx 0 0 var(--color-role-bg-app, #f1f2ec),
+    -1rpx 0 0 var(--color-role-bg-app, #f1f2ec),
+    0 1rpx 0 var(--color-role-bg-app, #f1f2ec),
+    0 -1rpx 0 var(--color-role-bg-app, #f1f2ec),
+    1rpx 1rpx 0 var(--color-role-bg-app, #f1f2ec),
+    -1rpx -1rpx 0 var(--color-role-bg-app, #f1f2ec),
+    1rpx -1rpx 0 var(--color-role-bg-app, #f1f2ec),
+    -1rpx 1rpx 0 var(--color-role-bg-app, #f1f2ec);
+}
+
+.family-l3__badge-text--recurring {
+  color: #A88A5E;
+}
+
+.family-l3__badge-text--shared {
   color: #6B9B8F;
-  background: rgba(107,155,143,0.12);
-  padding: 2rpx 8rpx;
-  border-radius: 4rpx;
 }
 
 .family-l3__more {

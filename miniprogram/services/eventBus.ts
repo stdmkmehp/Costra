@@ -24,6 +24,8 @@ export const EventNames = {
   OUTBOX_ENQUEUED: 'outbox-enqueued',
   /** 同步完成（pulled>0 或 pushed>0 时由 syncScheduler emit · 各 tab 页订阅后即时刷新） */
   SYNC_DONE: 'sync-done',
+  /** 定时规则离线队列完成重放 · 列表页据此拉取服务端最终态 */
+  RECURRING_SYNC_DONE: 'recurring-sync-done',
   /** 用户画像未完善（has_completed_profile=false · bootstrap 检测后广播 · tabBar + mine 页订阅） */
   PROFILE_INCOMPLETE: 'profile-incomplete',
   /** 用户画像已完善（PATCH /users/me 成功后广播 · 清除红点） */

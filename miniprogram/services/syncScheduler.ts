@@ -11,6 +11,7 @@ import { isLoggedIn } from './auth';
 import { getActiveFamilyId as familyContextGetActiveFamilyId } from './family';
 import { eventBus, EventNames, type SyncDonePayload } from './eventBus';
 import { deadLetterSize } from './outbox';
+import { replayMutationQueue } from './recurringLocal';
 import { markPerf, markPerfError } from './perf';
 import { logger } from '../utils/logger';
 
@@ -62,6 +63,14 @@ export async function syncOnce(trigger: TriggerSource): Promise<SyncResult | nul
       markPerf(`sync.${trigger}.done`, { skipped: 'not-logged-in' });
       logger.debug('sync', `skip · not logged in (trigger=${trigger})`);
       return null;
+    }
+
+    // 定时规则跟用户而非当前账本；先于 active-family 判断独立重放。
+    // 即使本地尚未恢复 active family，网络恢复/周期/页面触发也不能饿死 recurring queue。
+    try {
+      await replayMutationQueue();
+    } catch (replayErr) {
+      logger.warn('sync', 'recurring queue replay error', replayErr);
     }
 
     const familyId = await familyContextGetActiveFamilyId();

@@ -208,7 +208,7 @@ describe('services/auth · updateLocalUserProfile（COSTRA-158 §2.4）', () => 
 // ─── COSTRA-165: T7~T11 family-context 接入测试 ──────────────────────────────
 
 describe('services/auth · COSTRA-165 family-context integration', () => {
-  // mock env.ts 让 mockLogin=true · doWxLogin 走 mock 路径
+  // mock env.ts 让 mockLogin=true · doWxLogin 会跳过 getOrCreateDeviceFp，但仍走服务端请求
   vi.mock('./env', () => ({
     getEnv: vi.fn(() => ({
       name: 'dev',
@@ -218,9 +218,26 @@ describe('services/auth · COSTRA-165 family-context integration', () => {
     })),
   }));
 
-  // mock request.ts（真链路不需要 · 但 import 不报错）
+  // mock request.ts · 默认返回 mockRaw 以支持 T7~T10（mockLogin=true 现在也走 request）
   vi.mock('./request', () => ({
-    request: vi.fn(),
+    request: vi.fn(async () => ({
+      access_token: 'mock-jwt.access',
+      refresh_token: 'mock-jwt.refresh',
+      access_token_ttl_sec: 3600,
+      refresh_token_ttl_sec: 2592000,
+      expires_in: 3600,
+      user: {
+        id: 'mock-u-1',
+        nickname: '测试用户',
+        avatar_url: null,
+        has_completed_profile: true,
+        timezone: 'Asia/Shanghai',
+        created_at: '2026-01-01T00:00:00.000Z',
+        updated_at: '2026-01-01T00:00:00.000Z',
+      },
+      default_family_id: 'f-default-001',
+      default_ledger_id: 'l-default-001',
+    })),
   }));
 
   // mock wx.login

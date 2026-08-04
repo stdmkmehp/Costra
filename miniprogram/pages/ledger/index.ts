@@ -29,6 +29,7 @@ import { eventBus, EventNames, type SyncDonePayload, type ActiveFamilyChangedPay
 import { triggerOnPageShow } from '../../services/syncScheduler';
 import { markPerf, markPerfError, setPerfContext } from '../../services/perf';
 import { pickRandomSlogan } from '../../config/slogans';
+import { computeBadges } from '../../utils/entryBadges';
 import { getFamilies, getFamilyMembers } from '../../services/familyApi';
 import {
   getCategories,
@@ -79,8 +80,10 @@ interface DisplayEntry {
   avatarUrl: string;
   /** 成员昵称首字（头像加载失败时的 fallback） */
   memberInitial: string;
-  /** 是否为公共支出（仅公共显示角标） */
+  /** 是否显示“公”角标 */
   isShared: boolean;
+  /** 是否显示“定”角标 */
+  isRecurring: boolean;
   /** 滑动偏移量（左滑删除，rpx） */
   translateX: number;
   /** 左滑样式：仅在偏移量 > 0 时生成 transform，避免静止行创建合成层 */
@@ -343,7 +346,7 @@ Page({
   /**
    * 当前已渲染 entries 的签名（sync-refresh: 签名 diff 跳过无效 setData，避免列表跳动）
    * 仅拼接影响视觉的字段（不含 version/updated_at —— 服务端版本变化但视觉不变时无需重渲）：
-   * client_ref_id|occurred_at|amount|type|category_id|note|deleted_at|shared_type|created_by
+   * client_ref_id|occurred_at|amount|type|category_id|note|deleted_at|shared_type|source_recurring_id|created_by
    */
   _entriesSignature: '' as string,
   /** 当前已渲染内容所属账本，用于切回时保留旧画面但避免账本切换误展示 */
@@ -1065,6 +1068,7 @@ Page({
         e.note ?? '',
         e.deleted_at ?? '',
         e.shared_type ?? '',
+        e.source_recurring_id ?? '',
         e.created_by ?? '',
       ].join('|'))
       .join(';');
@@ -1179,6 +1183,7 @@ Page({
           // memberMap 尚未就绪时给一个通用占位
           memberInitial = '?';
         }
+        const badges = computeBadges(e);
         return {
           client_ref_id: e.client_ref_id,
           label: hasNote ? e.note : getCategoryName(e.category_id),
@@ -1188,7 +1193,8 @@ Page({
           hasNote,
           avatarUrl,
           memberInitial,
-          isShared: e.shared_type === 'shared',
+          isShared: badges.showShared,
+          isRecurring: badges.showRecurring,
           translateX: 0,
           translateStyle: '',
         };

@@ -192,11 +192,15 @@ describe('services/db · 模拟 wx.storage（mock 环境）', () => {
         occurred_at: '2026-06-22T00:00:00.000Z',
         server_version: 1,
         user_id: 'u1',
+        shared_type: 'shared',
+        source_recurring_id: 'rule-1',
       }],
     });
 
     const june = await listMonthEntries({ ledger_id: 'l1', month: '2026-06' });
 
     expect(june.entries.map(e => e.client_ref_id)).toEqual(['server-ref-1']);
+    expect(june.entries[0].shared_type).toBe('shared');
+    expect(june.entries[0].source_recurring_id).toBe('rule-1');
   });
 });

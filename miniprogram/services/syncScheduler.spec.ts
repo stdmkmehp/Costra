@@ -26,17 +26,23 @@ vi.mock('./eventBus', () => ({
   EventNames: { OUTBOX_ENQUEUED: 'outbox-enqueued', SYNC_DONE: 'sync-done' },
 }));
 
+vi.mock('./recurringLocal', () => ({
+  replayMutationQueue: vi.fn().mockResolvedValue(0),
+}));
+
 import { pushDelta } from './sync';
 import { syncPull } from './sync';
 import { isLoggedIn } from './auth';
 import { getActiveFamilyId as familyContextGetActiveFamilyId } from './family';
 import { eventBus } from './eventBus';
+import { replayMutationQueue } from './recurringLocal';
 
 const mockedPushDelta = vi.mocked(pushDelta);
 const mockedSyncPull = vi.mocked(syncPull);
 const mockedIsLoggedIn = vi.mocked(isLoggedIn);
 const mockedGetActiveFamilyId = vi.mocked(familyContextGetActiveFamilyId);
 const mockedEventBusEmit = vi.mocked(eventBus.emit);
+const mockedReplayMutationQueue = vi.mocked(replayMutationQueue);
 
 // ─── 测 ───────────────────────────────────────────────────────────────────────
 
@@ -70,6 +76,7 @@ describe('services/syncScheduler', () => {
     const result = await syncOnce('launch');
 
     expect(result).toBeNull();
+    expect(mockedReplayMutationQueue).toHaveBeenCalledTimes(1);
     expect(mockedPushDelta).not.toHaveBeenCalled();
   });
 

@@ -1,0 +1,18 @@
+/* components/recurring-period-selector/index.wxss */
+.rps__mask { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 1000; background: rgba(28,27,26,0.4); }
+.rps__sheet {
+  position: absolute; bottom: 0; left: 0; right: 0; background: #ffffff;
+  border-radius: 24rpx 24rpx 0 0; padding-bottom: env(safe-area-inset-bottom);
+  animation: rps-slide-up 280ms ease-out;
+}
+@keyframes rps-slide-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+.rps__item {
+  display: flex; align-items: center; justify-content: space-between;
+  height: 100rpx; padding: 0 40rpx; font-size: 30rpx; color: #1c1b1a;
+  border-bottom: 1rpx solid rgba(28,27,26,0.06);
+}
+.rps__check { color: #8AA98F; font-size: 32rpx; }
+.rps__cancel {
+  text-align: center; height: 100rpx; line-height: 100rpx;
+  font-size: 30rpx; color: rgba(28,27,26,0.48); border-top: 8rpx solid #f1f2ec;
+}

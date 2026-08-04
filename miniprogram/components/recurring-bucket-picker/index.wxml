@@ -1,0 +1,8 @@
+<!-- components/recurring-bucket-picker/index.wxml -->
+<view class="rbucket__row">
+  <view wx:for="{{bucketOptions}}" wx:key="value"
+        class="rbucket__item {{value === item.value ? 'rbucket__item--active' : ''}}"
+        data-bucket="{{item.value}}" bindtap="onSelect">
+    <text>{{item.label}}</text>
+  </view>
+</view>

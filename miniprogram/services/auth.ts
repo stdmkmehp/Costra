@@ -215,10 +215,9 @@ export async function clearToken(): Promise<void> {
  * 保证用户离开前本地数据尽量上行。此处不直接引入 syncScheduler 以避免循环依赖。
  */
 export async function logout(): Promise<void> {
-  const env = getEnv();
   const had = !!current;
 
-  if (had && !env.mockLogin) {
+  if (had) {
     try {
       await request<void>({
         method: 'POST',
@@ -259,28 +258,9 @@ export async function doWxLogin(): Promise<Token> {
   // P0-1 敏感值红线：不记录 code 任何片段（长度仅用于排障）
   logger.info('auth', 'wx.login ok', { codeLen: code.length });
 
-  if (env.mockLogin) {
-    const mock = mockExchange(code);
-    const stored = buildStored(mock);
-    const token = replaceCurrent(stored);
-    await setItem(TOKEN_KEY, stored);  // COSTRA-125: async
-
-    const restoredMock = await restoreActiveFamilyAfterLogin({
-      family_id: mock.default_family_id,
-      ledger_id: mock.default_ledger_id,
-      family_kind: 'personal',
-      ledger_name: '个人账本',
-    });
-    syncGlobalActiveLedgerId(restoredMock.ledger_id);
-    await flushPendingPreference();
-
-    logger.info('auth', 'login success', { userId: mock.user.id, familyId: restoredMock.family_id });
-    return token;
-  }
-
-  // 真实链路（Backend OpenAPI: POST /v1/auth/wx-login）
   // 携带设备指纹：服务端据此在登录时回收同设备旧会话（允许多设备并存）
-  const clientFp = await getOrCreateDeviceFp();
+  // mockLogin 时服务端 WX_MOCK_LOGIN 已 mock code2Session，code 可为任意非空值
+  const clientFp = env.mockLogin ? undefined : await getOrCreateDeviceFp();
   const resp = await request<TokenRaw>({
     method: 'POST',
     path: '/auth/wx-login',
@@ -340,19 +320,6 @@ async function doRefreshToken(): Promise<void> {
   if (!current) throw new Error('NO_TOKEN');
   const epochAtStart = authEpoch;
   const refreshTokenAtStart = current.raw.refresh_token;
-  const env = getEnv();
-  if (env.mockLogin) {
-    const refreshed = mockExchange('refresh', refreshTokenAtStart);
-    const stored = buildStored(refreshed);
-    if (!isRefreshStillCurrent(epochAtStart, refreshTokenAtStart)) {
-      logger.warn('auth', 'stale refresh response ignored');
-      return;
-    }
-    replaceCurrent(stored);
-    await setItem(TOKEN_KEY, stored);  // COSTRA-125: async
-
-    return;
-  }
   const resp = await request<TokenRaw>({
     method: 'POST',
     path: '/auth/refresh',
@@ -401,38 +368,6 @@ function wxLoginAsync(): Promise<{ code: string }> {
       fail: reject
     });
   });
-}
-
-/**
- * 单测 / dev mockLogin 下的假 TokenRaw
- * 不对外导出；签名对齐 TokenRaw 以保证切换真实链路零类型改动
- * COSTRA-165: mockExchange 同步补 default_family_id/default_ledger_id + user 新字段（T11 覆盖）
- */
-function mockExchange(_code: string, oldRefresh?: string): TokenRaw {
-  const seed = Date.now().toString(36);
-  return {
-    access_token: `mock.access.${seed}`,
-    refresh_token: oldRefresh || `mock.refresh.${seed}`,
-    access_token_ttl_sec: 60 * 60,      // 1h
-    refresh_token_ttl_sec: 30 * 24 * 3600, // 30d
-    expires_in: 60 * 60,  // COSTRA-165 P1-3: 与 access_token_ttl_sec 一致
-    user: {
-      id: `mock-user-${seed.slice(0, 4)}`,
-      nickname: '测试用户',
-      avatar_url: null,
-      // mock 模式下 has_completed_profile=true · 因此 mock 下无法验证"完善资料"入口显示路径
-      // 该路径由 §9 步骤 2（has_completed_profile=false 首登场景）Human 实测覆盖
-      // Card-Review P2-3 修订（2026-05-19 10:15）
-      has_completed_profile: true,
-      // COSTRA-165 P1-3: 与 server toUserView() 1:1 对齐
-      timezone: 'Asia/Shanghai',
-      created_at: '2026-01-01T00:00:00.000Z',
-      updated_at: '2026-01-01T00:00:00.000Z',
-    },
-    // COSTRA-165: mock 路径也提供 default_family_id/default_ledger_id
-    default_family_id: `mock-family-${seed.slice(0, 4)}`,
-    default_ledger_id: `mock-ledger-${seed.slice(0, 4)}`,
-  };
 }
 
 // ---- COSTRA-158 §2.4: PATCH 成功后本地更新 user 子对象 ----

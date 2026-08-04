@@ -1,0 +1,15 @@
+<!-- components/recurring-dow-picker/index.wxml -->
+<view class="rdow">
+  <view class="rdow__summary-bar" wx:if="{{summaryCount || summaryList}}">
+    <text class="rdow__summary-count">已选 <text class="rdow__count-bold">{{summaryCount}}</text> / {{dowMax}}</text>
+    <text class="rdow__summary-list">{{summaryList}}</text>
+    <text class="rdow__clear" bindtap="onClear">清空</text>
+  </view>
+  <view class="rdow__grid">
+    <view wx:for="{{[1,2,3,4,5,6,7]}}" wx:key="*this"
+          class="rdow__tag {{value.indexOf(item) >= 0 ? 'rdow__tag--selected' : ''}}"
+          data-day="{{item}}" bindtap="onTapDow">
+      <text>{{dowLabels[item - 1]}}</text>
+    </view>
+  </view>
+</view>

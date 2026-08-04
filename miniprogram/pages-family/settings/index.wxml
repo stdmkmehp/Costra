@@ -4,8 +4,4 @@
     <view class="settings__label">账本导入 / 导出</view>
     <view class="settings__arrow">›</view>
   </view>
-  <view class="settings__item" bindtap="onTapComingSoon" hover-class="settings__item--hover" hover-stay-time="60">
-    <view class="settings__label">定时记账</view>
-    <view class="settings__arrow">›</view>
-  </view>
 </view>

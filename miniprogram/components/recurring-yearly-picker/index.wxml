@@ -1,0 +1,28 @@
+<!-- components/recurring-yearly-picker/index.wxml -->
+<view class="ryear">
+  <view class="ryear__summary-bar">
+    <text class="ryear__summary-count" wx:if="{{summaryCount}}">已选 <text class="ryear__count-bold">{{summaryCount}}</text> / {{yearlyMax}}</text>
+    <text class="ryear__summary-list">{{summaryList || '请点选下方日期'}}</text>
+    <text class="ryear__clear {{value.length > 0 ? '' : 'ryear__clear--disabled'}}" bindtap="onClear">清空</text>
+  </view>
+  <!-- 月份 tab -->
+  <scroll-view class="ryear__months" scroll-x enhanced show-scrollbar="{{false}}">
+    <view wx:for="{{monthGrid}}" wx:key="*this"
+          class="ryear__month-tab {{activeMonth === item ? 'ryear__month-tab--active' : ''}}"
+          data-month="{{item}}" bindtap="onTapMonth">
+      <text>{{item}}</text>
+      <view wx:if="{{monthBadges[item]}}" class="ryear__month-badge">{{monthBadges[item]}}</view>
+    </view>
+  </scroll-view>
+  <!-- 日网格 -->
+  <view class="ryear__day-grid">
+    <view wx:for="{{dayGrid}}" wx:key="*this"
+          class="ryear__day-tag {{value.indexOf(activeMonth * 100 + item) >= 0 ? 'ryear__day-tag--selected' : ''}} {{rejectedDay === item ? 'ryear__day-tag--rejected' : ''}}"
+          data-day="{{item}}" bindtap="onTapDay">
+      <text>{{item < 10 ? '0' + item : item}}</text>
+    </view>
+  </view>
+  <view wx:if="{{showHint}}" class="ryear__hint">
+    ⓘ {{activeMonth === 2 ? '勾中 2/29 时，平年会顺延到 2/28' : '勾中 29/30/31 时，当月无该日会顺延到当月最后一天'}}
+  </view>
+</view>

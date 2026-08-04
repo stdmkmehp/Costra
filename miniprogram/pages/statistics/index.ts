@@ -9,6 +9,7 @@
 import { getSafeAreaMetrics, rpxToPx } from '../../utils/safeArea';
 import { scheduleDeferredLoading, type DeferredLoadingHandle } from '../../utils/deferredLoading';
 import { resolveEntryDisplayNote } from '../../utils/entryDisplay';
+import { computeBadges } from '../../utils/entryBadges';
 import {
   getActiveFamilyId,
   getActiveLedgerId,
@@ -1111,17 +1112,21 @@ Page({
       const overflow = res.items.length > L3_VISIBLE;
       const visibleItems = overflow ? res.items.slice(0, L3_VISIBLE) : res.items;
       const fallbackCategoryName = res.category_name || '';
-      const l3Items: L3Display[] = visibleItems.map((it: DrillDownEntryItem) => ({
-        entry_id: it.entry_id,
-        amount: fmtYuan(it.amount),
-        note: resolveEntryDisplayNote(it.note, fallbackCategoryName),
-        dateLabel: formatEntryDate(it.occurred_at),
-        timeLabel: formatEntryTime(it.occurred_at),
-        shared: it.shared_type === 'shared',
-        nickname: it.nickname || '',
-        avatarUrl: it.avatar_url || '',
-        initial: (it.nickname || '?')[0],
-      }));
+      const l3Items: L3Display[] = visibleItems.map((it: DrillDownEntryItem) => {
+        const badges = computeBadges(it);
+        return {
+          entry_id: it.entry_id,
+          amount: fmtYuan(it.amount),
+          note: resolveEntryDisplayNote(it.note, fallbackCategoryName),
+          dateLabel: formatEntryDate(it.occurred_at),
+          timeLabel: formatEntryTime(it.occurred_at),
+          isShared: badges.showShared,
+          isRecurring: badges.showRecurring,
+          nickname: it.nickname || '',
+          avatarUrl: it.avatar_url || '',
+          initial: (it.nickname || '?')[0],
+        };
+      });
       const latestView = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
       if (!latestView) {
         this._consumeDeferredLoading(deferredKey);
