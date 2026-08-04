@@ -60,16 +60,27 @@ const ENV_MAP: Record<EnvName, EnvConfig> = {
  * ⚠️ 若需在开发者工具里"本地跑但打 staging"，可手动改常量为 'staging' · 但不要commit。
  *⚠️ D-026 §2.3 C2 红线：staging.mockLogin 与 prod.mockLogin 均为 false · 不可放松。
  */
+type WxRuntime = {
+  getAccountInfoSync?: () => {
+    miniProgram?: {
+      envVersion?: string;
+    };
+  };
+};
+
 function detectEnv(): EnvName {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const g: any = typeof wx !== 'undefined' ? wx : undefined;
-    const v: string | undefined = g?.getAccountInfoSync?.().miniProgram?.envVersion;
-    if (v === 'release') return 'prod';
-    if (v === 'trial') return 'staging';
-    if (v === 'develop') return 'dev';
-    return 'dev';
-  } catch {
+    const g: WxRuntime | undefined = typeof wx !== 'undefined' ? wx : undefined;
+    const envVersion = g?.getAccountInfoSync?.()?.miniProgram?.envVersion;
+    const env: EnvName = envVersion === 'release' ? 'prod' : envVersion === 'trial' ? 'staging' : 'dev';
+
+    if (g) {
+      console.info('[env] detectEnv', { envVersion: envVersion ?? 'unknown', env });
+    }
+
+    return env;
+  } catch (err) {
+    console.warn('[env] detectEnv fallback dev', err);
     return 'dev';
   }
 }
