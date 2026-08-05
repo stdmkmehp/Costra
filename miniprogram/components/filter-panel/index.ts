@@ -89,6 +89,8 @@ Component({
     /** 展开的一级分类的二级列表（从 categories 中提取） */
     expandedSubcategories: [] as FilterCategoryTier2[],
     expandedCategoryName: '',
+    /** 当前展开一级下二级是否全选（控制「全选」Chip 激活态） */
+    expandedAllSelected: true,
   },
 
   observers: {
@@ -217,18 +219,20 @@ Component({
     _computeExpandedSub() {
       const expandedId = this.properties.expandedCategoryId;
       if (!expandedId) {
-        this.setData({ expandedSubcategories: [], expandedCategoryName: '' });
+        this.setData({ expandedSubcategories: [], expandedCategoryName: '', expandedAllSelected: true });
         return;
       }
       const categories = this.properties.categories as FilterCategoryTier1[];
       const found = categories.find(c => c.id === expandedId);
       if (found) {
+        const expandedAllSelected = found.children.length > 0 && found.children.every(c => c.selected);
         this.setData({
           expandedSubcategories: found.children,
           expandedCategoryName: found.name,
+          expandedAllSelected,
         });
       } else {
-        this.setData({ expandedSubcategories: [], expandedCategoryName: '' });
+        this.setData({ expandedSubcategories: [], expandedCategoryName: '', expandedAllSelected: true });
       }
     },
 

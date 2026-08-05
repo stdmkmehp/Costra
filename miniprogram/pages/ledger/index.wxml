@@ -35,7 +35,7 @@
       </view>
     </view>
     <!-- 筛选按钮（始终显示：支持类型/成员/分类/搜索筛选） -->
-    <view class="filter-row__right {{filterActive ? 'is-active' : ''}}" bindtap="onTapMemberFilter">
+    <view class="filter-row__right {{filterActive ? 'is-active' : ''}}" catchtap="onTapMemberFilter">
       <text class="filter-row__member-text">{{memberFilterText}}</text>
       <text class="filter-row__member-arrow {{filterPanelVisible ? 'is-rotated' : ''}}">▼</text>
     </view>
@@ -73,6 +73,7 @@
       enhanced
       show-scrollbar="{{false}}"
       scroll-top="{{listScrollTop}}"
+      catchtap="onFilterPanelClose"
       bindscroll="onListScroll"
     >
     <view

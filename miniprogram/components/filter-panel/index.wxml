@@ -10,7 +10,9 @@
 
     <!-- 搜索关键词 -->
     <view class="filter-search">
-      <text class="filter-search__icon">🔍</text>
+      <view class="filter-search__icon">
+        <view class="filter-search__icon-search"></view>
+      </view>
       <input
         class="filter-search__input"
         type="text"
@@ -102,11 +104,6 @@
     <view class="filter-section" wx:if="{{categories.length > 0}}">
       <view class="filter-section__header">
         <text class="filter-section__title">分类</text>
-        <text
-          wx:if="{{!categoryAllSelected}}"
-          class="filter-section__action"
-          bindtap="onCategoryReset"
-        >重置</text>
       </view>
 
       <!-- 一级 Chip 行 -->
@@ -127,10 +124,9 @@
           bindtap="onTapCategoryTier1"
           bindlongpress="onLongPressCategoryTier1"
         >
-          <text class="filter-chip__icon">{{item.icon}}</text>
           <text class="filter-chip__text">{{item.name}}</text>
-          <!-- 半选小圆点 -->
-          <view wx:if="{{item.status === 'partial'}}" class="filter-chip__dot"></view>
+          <!-- 半选后缀：显示已选 N / 总 M -->
+          <text wx:if="{{item.status === 'partial'}}" class="filter-chip__count">{{item.selectedCount}}/{{item.totalCount}}</text>
         </view>
       </view>
 
@@ -141,7 +137,7 @@
         </view>
         <view class="filter-chips">
           <view
-            class="filter-chip filter-chip--small"
+            class="filter-chip filter-chip--small {{expandedAllSelected ? 'is-active' : ''}}"
             data-parent="{{expandedCategoryId}}"
             bindtap="onTapSubcategoryAll"
           >

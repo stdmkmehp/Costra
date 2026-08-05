@@ -120,6 +120,10 @@ interface FilterCategoryItem {
   icon: string;
   /** 全选 'all' / 半选 'partial' / 未选 'none' */
   status: 'all' | 'partial' | 'none';
+  /** 已选二级数量（用于半选态后缀显示） */
+  selectedCount: number;
+  /** 二级总数 */
+  totalCount: number;
   children: FilterSubCategoryItem[];
 }
 
@@ -1457,6 +1461,9 @@ Page({
 
   /** 筛选面板：关闭 */
   onFilterPanelClose() {
+    // panel 不可见时直接 bail：scroll-view 的 catchtap 会在 panel 不可见时也命中此方法，
+    // 若不 bail 会把成员误"自动全选"、误触发 _buildDisplay 列表重渲。
+    if (!this.data.filterPanelVisible) return;
     // 关闭时若无成员选中 → 自动全选
     const hasSelected = this.data.filterMembers.some((m: FilterMemberItem) => m.selected);
     if (!hasSelected) {
@@ -1563,17 +1570,24 @@ Page({
     this._buildDisplay();
   },
 
-  /** 分类：toggle「全部」Chip（与成员「全选/取消全选」一致）
-   *  - 当前全选 → 反选（清空 _filterCategoryIds）
-   *  - 当前非全选 → 重置为全选（_filterCategoryIds 清空表示不过滤） */
+  /** 分类：toggle「全部」Chip
+   *  - 当前全选 → 反选（清空 _filterCategoryIds，表示所有分类都不选）
+   *  - 当前非全选 → 选中所有分类 ID（每个一级的所有二级都加入选中集） */
   onFilterCategoryToggleAll(e: WechatMiniprogram.CustomEvent<{ allSelected: boolean }>) {
     const { allSelected } = e.detail;
+    const categories = this.data.filterCategories as FilterCategoryItem[];
     if (allSelected) {
-      // 已全选 → 反选：清空选中集
+      // 已全选 → 反选：清空选中集（所有分类视为未选）
       this._filterCategoryIds = new Set();
     } else {
-      // 非全选 → 重置为全选：选中集清空视为不过滤
-      this._filterCategoryIds = new Set();
+      // 非全选 → 选中所有二级 ID
+      const ids = new Set<string>();
+      for (const cat of categories) {
+        for (const sub of cat.children) {
+          ids.add(sub.id);
+        }
+      }
+      this._filterCategoryIds = ids;
     }
     this._rebuildFilterCategories();
     this._updateFilterState();
@@ -1595,17 +1609,18 @@ Page({
         if (selected) selectedCount++;
         return { ...sub, selected };
       });
+      const totalCount = children.length;
       let status: 'all' | 'partial' | 'none';
       if (selectedCount === 0) {
         status = 'none';
         allCategorySelected = false;
-      } else if (selectedCount === children.length) {
+      } else if (selectedCount === totalCount) {
         status = 'all';
       } else {
         status = 'partial';
         allCategorySelected = false;
       }
-      return { ...cat, children, status };
+      return { ...cat, children, status, selectedCount, totalCount };
     });
 
     this._categoryFilterActive = !allCategorySelected;
@@ -1653,21 +1668,24 @@ Page({
         if (tier1.children.length === 0) continue;
         const t1Name = tier1.name;
         const t1Lc = t1Name.toLowerCase();
+        const t1Children = (tier1.children as CategoryTier2[]).map(c => {
+          const t2Lc = c.name.toLowerCase();
+          searchIndex.set(c.id, { tier1Name: t1Name, tier2Name: c.name, tier1NameLc: t1Lc, tier2NameLc: t2Lc });
+          return {
+            id: c.id,
+            name: c.name,
+            icon: c.icon,
+            selected: true,
+          };
+        });
         categories.push({
           id: tier1.id,
           name: t1Name,
           icon: tier1.icon,
           status: 'all',
-          children: (tier1.children as CategoryTier2[]).map(c => {
-            const t2Lc = c.name.toLowerCase();
-            searchIndex.set(c.id, { tier1Name: t1Name, tier2Name: c.name, tier1NameLc: t1Lc, tier2NameLc: t2Lc });
-            return {
-              id: c.id,
-              name: c.name,
-              icon: c.icon,
-              selected: true,
-            };
-          }),
+          selectedCount: t1Children.length,
+          totalCount: t1Children.length,
+          children: t1Children,
         });
       }
     }
@@ -1752,6 +1770,11 @@ Page({
   onTapPage() {
     // 备注编辑中点任意编辑框外区域 = 保存本次编辑并收键盘，吞掉本次点击（不穿透打开面板）
     if (this._consumeNoteEditingIfActive()) return;
+    // 筛选面板展开时点面板外部（header / filter-row 等）= 关闭面板
+    if (this.data.filterPanelVisible) {
+      this.onFilterPanelClose();
+      return;
+    }
     if (!this.data.swipingRefId) return;
     if (Date.now() - this._lastSwipeEndAt < 180) return;
     this._resetAllSwipe();
