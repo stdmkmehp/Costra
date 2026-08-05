@@ -75,6 +75,7 @@ import {
   getInitialSwiperHeightPx,
   buildL1Display,
   buildMonthlyView,
+  buildMonthRows,
   buildYearlyTrendChartMeta,
 } from './viewModels';
 import { makeAllTab, buildMemberTabs } from './memberHelpers';
@@ -574,14 +575,9 @@ Page({
         : '—' },
     ];
 
-    const months: MonthRow[] = monthly_trend.map((mt) => ({
-      month: mt.month,
-      label: `${mt.month}月`,
-      expense: fmtYuan(mt.expense),
-      income: fmtYuan(mt.income),
-      balance: fmtYuan(mt.balance),
-      isEmpty: mt.expense === 0 && mt.income === 0,
-    }));
+    // 2026-08-05：buildMonthRows 把 12 个月按"全年统一基线"归一化，
+    // 并按 balance 正负决定 barLayout，让"income - expense = balance"在视觉上自洽。
+    const months: MonthRow[] = buildMonthRows(monthly_trend);
 
     const prevList = this.data.yearlyByMember[memberKey]?.l1 ?? [];
     const l1: L1Display[] = category_ranks

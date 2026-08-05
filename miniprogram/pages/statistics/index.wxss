@@ -294,7 +294,7 @@ page {
   margin-top: 4rpx;
 }
 
-/* ─── 月度流水（年度专有） ──────────────────────────────────────────── */
+/* ─── 月度流水（年度专有）· 2026-08-05 改版：莫兰迪三色线条 ────────────── */
 .month-list {
   padding: 24rpx 32rpx 8rpx;
 }
@@ -305,6 +305,33 @@ page {
   color: #1c1b1a;
   margin-bottom: 16rpx;
 }
+
+/* 图例：支出 / 收入 / 结余 · 颜色与下方线条一致 */
+.month-list__legend {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+  margin-bottom: 16rpx;
+  font-size: 22rpx;
+  color: rgba(28, 27, 26, 0.55);
+}
+
+.month-list__legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.month-list__legend-dot {
+  width: 16rpx;
+  height: 16rpx;
+  border-radius: 4rpx;
+  flex: none;
+}
+
+.month-list__legend-dot--expense { background: #CC7566; } /* 莫兰迪赤陶 */
+.month-list__legend-dot--income{ background: #6B9B78; } /* 莫兰迪苔藓绿 */
+.month-list__legend-dot--balance { background: #C4A855; } /* 莫兰迪暗金 */
 
 .month-list__row {
   display: flex;
@@ -325,20 +352,58 @@ page {
   color: #1c1b1a;
 }
 
-.month-list__metrics {
+/* 双行条形图容器 */
+.month-list__bars {
   flex: 1;
+  min-width: 0;
   display: flex;
-  gap: 0;
-  font-size: 22rpx;
-  color: rgba(28, 27, 26, 0.7);
+  flex-direction: column;
+  gap: 1rpx;
+}
+
+.month-list__bar-row {
+  display: flex;
+  align-items: center;
+  height: 4rpx;
+}
+
+.month-list__bar-track {
+  height: 100%;
+  border-radius: 4rpx;
+  /* width 由模板通过 inline style 按比例设置 */
+  transition: width 0.25s ease;
+}
+
+.month-list__bar-track--expense { background: #CC7566; } /* 莫兰迪赤陶 */
+.month-list__bar-track--income  { background: #6B9B78; } /* 莫兰迪苔藓绿 */
+.month-list__bar-track--balance { background: #C4A855; } /* 莫兰迪暗金 */
+
+/* 数字行：三列等宽对齐，保证纵向"支/收/余"字对齐 */
+.month-list__bar-numbers {
+  margin-top: 6rpx;
+  display: flex;
+  font-size: 20rpx;
+  color: rgba(28, 27, 26, 0.55);
   overflow: hidden;
   white-space: nowrap;
 }
 
-.month-list__metric {
+.month-list__bar-num {
   flex: 1;
   min-width: 0;
+  font-size: 20rpx;
+}
+
+/* 空态行：仅显示"无记录"占位 */
+.month-list__empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.month-list__empty-text {
   font-size: 22rpx;
+  color: rgba(28, 27, 26, 0.28);
 }
 
 .month-list__arrow {

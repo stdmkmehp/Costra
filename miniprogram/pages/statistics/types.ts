@@ -24,6 +24,25 @@ export interface MonthRow {
   income: string;
   balance: string;
   isEmpty: boolean;
+  /**
+   * 2026-08-05：年度页"月度流水"线条可视化原始数据
+   *  - expenseCents / incomeCents / balanceCents：原始分（与后端 YearlyStatistics.monthly_trend 一致）
+   *  - expenseRatio / incomeRatio / balanceRatio：相对**全局基线**的归一化比例（0~1）
+   *    · 全局基线 = max(所有 month.expense, 所有 month.income, 所有 |month.balance|)，
+   *      让 12 个月的线条能直接对比长短（最长那根 = 100%）。
+   *    · 由于所有月共用同一基线，视觉上"income 线 - expense 线 = balance 线"在
+   *      同一月内严格按钱数关系成立（按线长只是视觉近似）。
+   *  - barLayout：'income-top'（balance>=0）→ 支出+结余叠放第一行，收入第二行；
+   *               'expense-top'（balance<0）→ 收入+|结余|叠放第一行，支出第二行。
+   *    两种布局下都能让用户一眼看出 income - expense = balance 的关系。
+   */
+  expenseCents: number;
+  incomeCents: number;
+  balanceCents: number;
+  expenseRatio: number;
+  incomeRatio: number;
+  balanceRatio: number;
+  barLayout: 'income-top' | 'expense-top';
 }
 
 export interface L1Display {
