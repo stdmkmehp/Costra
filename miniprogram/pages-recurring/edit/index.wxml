@@ -122,6 +122,7 @@
             <text class="recedit__value recedit__end-date-text">{{endDate || '请选择'}}</text>
           </picker>
           <text wx:else class="recedit__value recedit__end-date-text">永不结束</text>
+          <text wx:if="{{hasEndDate}}" class="recedit__arrow">›</text>
         </view>
       </view>
     </view>

@@ -1,15 +1,18 @@
 <!-- components/recurring-yearly-picker/index.wxml -->
 <view class="ryear">
-  <!-- 月份 tab -->
-  <view class="ryear__months-hint">← 左右滑动选择月份 →</view>
-  <scroll-view class="ryear__months" scroll-x enhanced show-scrollbar="{{false}}">
-    <view wx:for="{{monthGrid}}" wx:key="*this"
-          class="ryear__month-tab {{activeMonth === item ? 'ryear__month-tab--active' : ''}}"
-          data-month="{{item}}" bindtap="onTapMonth">
-      <text>{{item}}月</text>
-      <view wx:if="{{monthBadges[item]}}" class="ryear__month-badge">{{monthBadges[item]}}</view>
-    </view>
-  </scroll-view>
+  <!-- 月份 tab（左右渐隐暗示可滑动，不使用点击箭头以免与"行尾 ›"语义冲突） -->
+  <view class="ryear__months-row">
+    <view class="ryear__months-fade ryear__months-fade--left"></view>
+    <scroll-view class="ryear__months" scroll-x enhanced show-scrollbar="{{false}}">
+      <view wx:for="{{monthGrid}}" wx:key="*this"
+            class="ryear__month-tab {{activeMonth === item ? 'ryear__month-tab--active' : ''}}"
+            data-month="{{item}}" bindtap="onTapMonth">
+        <text>{{item}}月</text>
+        <view wx:if="{{monthBadges[item]}}" class="ryear__month-badge">{{monthBadges[item]}}</view>
+      </view>
+    </scroll-view>
+    <view class="ryear__months-fade ryear__months-fade--right"></view>
+  </view>
   <!-- 日网格 -->
   <view class="ryear__day-grid">
     <view wx:for="{{dayItems}}" wx:key="day"

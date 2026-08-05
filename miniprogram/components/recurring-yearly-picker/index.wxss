@@ -1,7 +1,23 @@
 /* components/recurring-yearly-picker/index.wxss */
 .ryear { padding: 16rpx 0 24rpx; }
-.ryear__months-hint { font-size: 22rpx; color: rgba(28,27,26,0.32); text-align: center; margin-bottom: 8rpx; }
-.ryear__months { white-space: nowrap; margin-bottom: 16rpx; }
+.ryear__months-row {
+  position: relative;
+  margin-bottom: 16rpx;
+}
+.ryear__months { white-space: nowrap; }
+/* 左右渐隐蒙版：暗示可滑动，但不暗示可点击 */
+.ryear__months-fade {
+  position: absolute; top: 0; bottom: 0; width: 40rpx;
+  pointer-events: none; z-index: 2;
+}
+.ryear__months-fade--left {
+  left: 0;
+  background: linear-gradient(to right, #ffffff 0%, rgba(255,255,255,0) 100%);
+}
+.ryear__months-fade--right {
+  right: 0;
+  background: linear-gradient(to left, #ffffff 0%, rgba(255,255,255,0) 100%);
+}
 .ryear__month-tab {
   display: inline-flex; position: relative; align-items: center; justify-content: center;
   min-width: 80rpx; height: 72rpx; font-size: 26rpx; font-weight: 500; color: #1c1b1a;
