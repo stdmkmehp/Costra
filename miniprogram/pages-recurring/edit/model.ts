@@ -102,9 +102,25 @@ export function computePreviewNextRun(
   };
 
   try {
-    const next = computeNextRunAt(rule, now);
+    // 与后端 create 逻辑同步：起始日=今天时，判断当前时刻是否已进入 bucket 窗口
+    // (1) 当前时刻 < 窗口起点 → 今天会触发（从 start_date 00:00 起算）
+    // (2) 当前时刻 >= 窗口起点 → 跳过今天（从 now 起算）
+    const nowZ = DateTime.fromJSDate(now, { zone: timezone });
+    const startDateZ = DateTime.fromISO(startDate, { zone: timezone }).startOf('day');
+    const isToday = nowZ.hasSame(startDateZ, 'day');
+    const computeFrom = isToday
+      ? (() => {
+          const window = BUCKET_WINDOWS[bucket];
+          const windowStartToday = nowZ.set({ hour: window.startHour, minute: 0, second: 0, millisecond: 0 });
+          // 当前时刻已进入或超过 bucket 窗口起点 → 从 now 起算（跳过今天）
+          if (nowZ >= windowStartToday) return now;
+          // 窗口还没开始 → 从 start_date 00:00 起算（今天触发）
+          return startDateZ.minus({ minutes: 1 }).toJSDate();
+        })()
+      : startDateZ.minus({ minutes: 1 }).toJSDate();
+
+    const next = computeNextRunAt(rule, computeFrom);
     // 按 rule timezone 格式化日期（不用宿主本地时区）
-    // 使用简单 UTC offset 计算（避免引入 luxon 到 model 层）
     const formatted = formatDateInTimezone(next, timezone);
     return formatted;
   } catch {

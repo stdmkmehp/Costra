@@ -245,6 +245,9 @@ Page({
           item.id === rule.id ? { ...item, status: nextStatus } : item
         )));
         wx.showToast({ title: '网络不佳，已暂存', icon: 'none' });
+      } else if (e?.code === 'BUSINESS_RULE_VIOLATION') {
+        // 业务规则拒绝（如已到期规则 resume）→ 展示服务端中文提示
+        wx.showToast({ title: e?.message || '该规则已到期，无法直接启用', icon: 'none', duration: 3000 });
       } else {
         wx.showToast({ title: '操作失败', icon: 'none' });
       }

@@ -43,6 +43,7 @@ import * as userRepo from '../repositories/userRepo.js';
 import {
   assignBucketMinute,
   computeNextRunAt,
+  BUCKET_WINDOWS,
   BACKFILL_WINDOW_MS,
   MAX_BACKFILL_ITER,
   type RecurringRuleForCompute,
@@ -414,12 +415,23 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
     let nextRunAt = computeNextRunAt(forCompute, fromStart);
 
     // 产品规格 §4.4：起始日 = 今天且今日恰好是被勾中的日 →
-    //   若"今日的执行时段"仍未过 → 今天就会触发一次
-    //   若已过 → 等下一个匹配日
-    // computeNextRunAt 从 start_date 00:00 计算，会算出今天的 execute_hour:execute_minute，
-    // 但如果这个时间点已经过了当前时刻，说明今天的执行时段已过，应该跳到下一个匹配日。
+    //   判断整个 bucket 窗口与当前时刻的关系：
+    //   (1) 当前时刻 < 窗口起点 → 今天会触发（窗口还没开始，hash 落点必然在未来）
+    //   (2) 当前时刻 >= 窗口起点 → 跳过今天（hash 落点可能在当前时刻之前或之后，行为不确定）
+    //   这样保证用户在创建时就能确定今天会不会触发，不依赖 hash 随机落点。
     const now = new Date();
-    if (nextRunAt <= now) {
+    if (nextRunAt > now) {
+      // nextRunAt 在未来 → 还需要确认它是否落在今天的 bucket 窗口内且窗口已开始
+      const nowZ = DateTime.fromJSDate(now, { zone: timezone });
+      const window = BUCKET_WINDOWS[payload.execute_bucket];
+      // bucket 窗口起点（今天 window.startHour:00 in tz）
+      const windowStartToday = nowZ.set({ hour: window.startHour, minute: 0, second: 0, millisecond: 0 });
+      if (nowZ >= windowStartToday) {
+        // 当前时刻已进入或超过 bucket 窗口起点 → 跳过今天
+        nextRunAt = computeNextRunAt(forCompute, now);
+      }
+    } else {
+      // nextRunAt 已过 → 从当前时刻重算下一个匹配日
       nextRunAt = computeNextRunAt(forCompute, now);
     }
 
@@ -633,13 +645,7 @@ const cursor = nextRunAt ?? existing.nextRunAt;
   }
 
   async function resume(userId: string, ruleId: string): Promise<RecurringRuleEntity> {
- const existing = await findById(userId, ruleId);
-    if (existing.status === 'ended') {
-      throw new AppError(ErrorCode.BUSINESS_RULE_VIOLATION, {
-        message: 'cannot resume an ended rule',
-        details: { rule_id: ruleId },
-      });
-    }
+    const existing = await findById(userId, ruleId);
     // 若上一次执行发现账本失效 / 用户已退出家庭 / 家庭已解散被自动停用，
     // 恢复时必须重新验证前置条件；否则用户点"启用"会立刻在下一 tick 再次 auto_paused。
     await assertUserOwnsLedger(userId, existing.ledgerId);
@@ -647,7 +653,7 @@ const cursor = nextRunAt ?? existing.nextRunAt;
     const forCompute = toComputeShape(existing);
     const nextRunAt = computeNextRunAt(forCompute, new Date());
 
-    // 若已过 end_date → 拒绝
+    // 若已过 end_date → 拒绝（ended 规则同样适用）
     if (existing.endDate != null) {
       const endBoundary = DateTime.fromISO(existing.endDate, {
         zone: existing.timezone,
@@ -656,7 +662,7 @@ const cursor = nextRunAt ?? existing.nextRunAt;
         .toJSDate();
       if (nextRunAt > endBoundary) {
         throw new AppError(ErrorCode.BUSINESS_RULE_VIOLATION, {
-          message: 'next execution would exceed end_date',
+          message: '该规则已到期，请先修改结束日期再启用',
           details: { rule_id: ruleId, end_date: existing.endDate },
         });
       }
