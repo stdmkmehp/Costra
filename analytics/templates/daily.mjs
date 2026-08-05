@@ -45,8 +45,9 @@ const dumpShort        = isoToShort(dumpMtimeIso);
   const subject = `Costra 日报 · ${anchorDate} · dump@${dumpShort} · +${newUsers}用户 +${newLedgers}账本 +${newEntries}记账（${fmtAmountShort(entriesAmt)}）+${newInvites}邀请`;
 
   // ─── 活跃用户分级统计 ───────────────────────────────────────────────────────
-  const activeList = (active || []).filter(u => u.activity_level === 'active');
-  const lowActiveList = (active || []).filter(u => u.activity_level === 'low_active');
+  const highActiveList = (active || []).filter(u => u.activity_level === 'high_active');
+  const activeList = (active || []).filter(u => u.activity_level === 'active' || u.activity_level === 'high_active');
+  const normalActiveList = (active || []).filter(u => u.activity_level === 'active');
 
   // ─── 留存率 ────────────────────────────────────────────────────────────────
   const retentionData = retention || [];
@@ -59,7 +60,9 @@ const dumpShort        = isoToShort(dumpMtimeIso);
     newUsers, newLedgers, newEntries, entriesAmt,
     manualEntries, autoEntries, manualAmt, autoAmt,
     newInvites, usedInvites, activeUsers,
-    activeCount: activeList.length, lowActiveCount: lowActiveList.length,
+    activeCount: activeList.length, highActiveCount: highActiveList.length,
+    personalLedgers: Number(s.personal_ledgers || 0),
+    sharedLedgers: Number(s.shared_ledgers || 0),
     retentionData,
   }));
 
@@ -81,7 +84,7 @@ const dumpShort        = isoToShort(dumpMtimeIso);
   sections.push(renderInvitesSection(invites, thresholds.invites, newInvites));
 
   // ── 活跃用户（分级） ───────────────────────────────────────────────────────
-  sections.push(renderActiveSection(activeList, lowActiveList, thresholds.active));
+  sections.push(renderActiveSection(highActiveList, normalActiveList, thresholds.active));
 
   // ── 自动记账预警 ───────────────────────────────────────────────────────────
   if (autoOnly && autoOnly.length > 0) {
@@ -112,18 +115,18 @@ ${sections.join('\n---\n\n')}`;
 
 function renderOverviewPanel(d) {
   const lines = [
-    '## 📊 概览',
+ '## 📊 概览',
     '',
     '| 指标 | 数值 | 说明 |',
     '|:-----|-----:|:-----|',
+    `| 活跃用户（7天≥2天） | **${d.activeCount}** | 最近7天有≥2天记账 |`,
+    `| 高活跃用户（7天≥5天） | **${d.highActiveCount}** | 最近7天有≥5天记账（含在活跃内） |`,
+    `| 窗口内记账用户 | **${d.activeUsers}** | 窗口内有创建 entry |`,
     `| 新增用户 | **${d.newUsers}** | 窗口内注册 |`,
-    `| 新增账本 | **${d.newLedgers}** | |`,
+    `| 新增账本 | **${d.newLedgers}** | 个人 ${d.personalLedgers} + 家庭 ${d.sharedLedgers} |`,
     `| 新增记账 | **${d.newEntries}** | 手动 ${d.manualEntries} + 自动 ${d.autoEntries} |`,
     `| 记账总额 | **${fmtAmount(d.entriesAmt)}** | 手动 ${fmtAmountShort(d.manualAmt)} / 自动 ${fmtAmountShort(d.autoAmt)} |`,
     `| 新增邀请 | **${d.newInvites}** | 已使用 ${d.usedInvites} |`,
-    `| 窗口内记账用户 | **${d.activeUsers}** | 窗口内有创建 entry |`,
-    `| 活跃用户（7天≥5天） | **${d.activeCount}** | 最近7天有≥5天记账 |`,
-    `| 低活跃用户（7天2~4天） | **${d.lowActiveCount}** | 最近7天仅2~4天记账 |`,
   ];
 
   // 留存率行
@@ -188,16 +191,18 @@ function renderTrendChart(trend) {
  * @returns {string[]}
  */
 function renderBarChart(labels, values, unit) {
-  const maxVal = Math.max(...values, 1);
-  const maxBarWidth = 30; // 最大柱宽字符数
+const maxVal = Math.max(...values, 1);
+  const maxBarWidth = 30;
   const lines = [];
+  const maxValWidth = String(Math.max(...values)).length;
 
   for (let i = 0; i < labels.length; i++) {
     const barLen = Math.round((values[i] / maxVal) * maxBarWidth);
-    const bar = '█'.repeat(barLen) || (values[i] > 0 ? '▏' : '');
+    const bar = '█'.repeat(barLen);
+    const padding = ' '.repeat(maxBarWidth - barLen);
     const label = labels[i].padEnd(5);
-    const valStr = String(values[i]).padStart(3);
-    lines.push(`  ${label} │${bar} ${valStr}${unit}`);
+    const valStr = String(values[i]).padStart(maxValWidth);
+    lines.push(`  ${label} │${bar}${padding} ${valStr}${unit}`);
   }
   return lines;
 }
@@ -206,19 +211,20 @@ function renderBarChart(labels, values, unit) {
  * 渲染堆叠柱状图（手动 + 自动）
  */
 function renderStackedBarChart(labels, manualVals, autoVals) {
-  const maxVal = Math.max(...manualVals.map((m, i) => m + autoVals[i]), 1);
+const maxVal = Math.max(...manualVals.map((m, i) => m + autoVals[i]), 1);
   const maxBarWidth = 30;
   const lines = [];
 
   for (let i = 0; i < labels.length; i++) {
     const total = manualVals[i] + autoVals[i];
-    const manualLen = Math.round((manualVals[i] / maxVal) * maxBarWidth);
+ const manualLen = Math.round((manualVals[i] / maxVal) * maxBarWidth);
     const autoLen = Math.round((autoVals[i] / maxVal) * maxBarWidth);
     const manualBar = '■'.repeat(manualLen);
     const autoBar = '□'.repeat(autoLen);
+    const padding = ' '.repeat(maxBarWidth - manualLen - autoLen);
     const label = labels[i].padEnd(5);
     const valStr = `${manualVals[i]}+${autoVals[i]}=${total}`;
-    lines.push(`  ${label} │${manualBar}${autoBar} ${valStr}`);
+    lines.push(`  ${label} │${manualBar}${autoBar}${padding} ${valStr}`);
   }
   return lines;
 }
@@ -402,45 +408,45 @@ function renderInvitesSection(invites, threshold, totalCount) {
 // 活跃用户（分级展示）
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function renderActiveSection(activeList, lowActiveList, threshold) {
+function renderActiveSection(highActiveList, normalActiveList, threshold) {
   const lines = ['## 🔥 用户活跃度（最近7天）', ''];
 
-  // 活跃用户
-  lines.push(`### 活跃用户 · 7天内 ≥5天记账（${activeList.length} 人）`);
+  // 高活跃用户
+  lines.push(`### 高活跃用户 · 7天内 ≥5天记账（${highActiveList.length} 人）`);
   lines.push('');
 
-  if (activeList.length === 0) {
-  lines.push('无');
-    lines.push('');
-  } else {
-    lines.push('| 用户名 | 活跃天数 | 手动记账 | 自动记账 | 合计 | 最后记账 |');
-    lines.push('|:-------|--------:|--------:|--------:|-----:|:---------|');
-    const display = activeList.length > threshold ? activeList.slice(0, threshold) : activeList;
-    for (const u of display) {
-      lines.push(`| ${fmtNickname(u.nickname)} | ${u.active_days}天 | ${u.manual_total} | ${u.auto_total} | ${u.entries_total} | ${fmtTime(u.last_entry_at_cst)} |`);
-    }
-    if (activeList.length > threshold) {
-      lines.push(`| _…另 ${activeList.length - threshold} 人_ | | | | | |`);
-    }
-    lines.push('');
-  }
-
-  // 低活跃用户
-  lines.push(`### 低活跃用户 · 7天内 2~4天记账（${lowActiveList.length} 人）`);
-  lines.push('');
-
-  if (lowActiveList.length === 0) {
+  if (highActiveList.length === 0) {
     lines.push('无');
     lines.push('');
   } else {
     lines.push('| 用户名 | 活跃天数 | 手动记账 | 自动记账 | 合计 | 最后记账 |');
     lines.push('|:-------|--------:|--------:|--------:|-----:|:---------|');
-    const display = lowActiveList.length > threshold ? lowActiveList.slice(0, threshold) : lowActiveList;
+    const display = highActiveList.length > threshold ? highActiveList.slice(0, threshold) : highActiveList;
     for (const u of display) {
-      lines.push(`| ${fmtNickname(u.nickname)} | ${u.active_days}天 | ${u.manual_total} | ${u.auto_total} | ${u.entries_total} | ${fmtTime(u.last_entry_at_cst)} |`);
+  lines.push(`| ${fmtNickname(u.nickname)} | ${u.active_days}天 | ${u.manual_total} | ${u.auto_total} | ${u.entries_total} | ${fmtTime(u.last_entry_at_cst)} |`);
     }
-    if (lowActiveList.length > threshold) {
-      lines.push(`| _…另 ${lowActiveList.length - threshold} 人_ | | | | | |`);
+    if (highActiveList.length > threshold) {
+      lines.push(`| _…另 ${highActiveList.length - threshold} 人_ | | | | | |`);
+    }
+    lines.push('');
+  }
+
+  // 活跃用户（2~4天）
+  lines.push(`### 活跃用户 · 7天内 2~4天记账（${normalActiveList.length} 人）`);
+  lines.push('');
+
+  if (normalActiveList.length === 0) {
+    lines.push('无');
+    lines.push('');
+  } else {
+    lines.push('| 用户名 | 活跃天数 | 手动记账 | 自动记账 | 合计 | 最后记账 |');
+    lines.push('|:-------|--------:|--------:|--------:|-----:|:---------|');
+    const display = normalActiveList.length > threshold ? normalActiveList.slice(0, threshold) : normalActiveList;
+    for (const u of display) {
+ lines.push(`| ${fmtNickname(u.nickname)} | ${u.active_days}天 | ${u.manual_total} | ${u.auto_total} | ${u.entries_total} | ${fmtTime(u.last_entry_at_cst)} |`);
+    }
+    if (normalActiveList.length > threshold) {
+      lines.push(`| _…另 ${normalActiveList.length - threshold} 人_ | | | | | |`);
     }
     lines.push('');
   }

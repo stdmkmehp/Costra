@@ -1,6 +1,7 @@
--- 60-active-users.sql · 活跃/低活跃用户（基于最近 7 天记账天数）
--- 活跃：7天内 ≥5 天有记账（手动或自动）
--- 低活跃：7天内 2~4 天有记账
+-- 60-active-users.sql · 活跃/高活跃用户（基于最近 7 天记账天数）
+-- 活跃：7天内 ≥2 天有记账（手动或自动）
+-- 高活跃：7天内 ≥5 天有记账
+-- 活跃用户包含高活跃用户
 -- 参数: :window_end（基于 anchor 往前推7 天）
 
 WITH seven_days AS (
@@ -36,8 +37,8 @@ SELECT
   us.auto_total,
   us.entries_total,
   CASE
-    WHEN us.active_days >= 5 THEN 'active'
-    WHEN us.active_days >= 2 THEN 'low_active'
+    WHEN us.active_days >= 5 THEN 'high_active'
+    WHEN us.active_days >= 2 THEN 'active'
     ELSE 'inactive'
   END AS activity_level,
   to_char(
