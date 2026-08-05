@@ -61,6 +61,7 @@
       bind:categoryToggle="onFilterCategoryToggle"
       bind:categorySolo="onFilterCategorySolo"
       bind:categorySelectAll="onFilterCategorySelectAll"
+      bind:categoryToggleAll="onFilterCategoryToggleAll"
       bind:categoryReset="onFilterCategoryReset"
     />
 

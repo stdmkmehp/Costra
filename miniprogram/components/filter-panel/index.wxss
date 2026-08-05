@@ -136,13 +136,20 @@
   padding: 12rpx 24rpx;
   border-radius: 9999rpx;
   background: rgba(28, 27, 26, 0.06);
+  border: 2rpx solid transparent;
   transition: all 180ms ease;
-  display: flex;
+  display: inline-flex;
   align-items: center;
+  flex: 0 0 auto;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
+/* 选中态：与成员头像同款「绿色描边」+ 黑字 + 加重
+   （不沿用 #1c1b1a 黑底高对比，与成员 #07C160 边框风格统一） */
 .filter-chip.is-active {
-  background: #1c1b1a;
+  background: rgba(7, 193, 96, 0.08);
+  border-color: #07C160;
 }
 
 .filter-chip__text {
@@ -152,7 +159,8 @@
 }
 
 .filter-chip.is-active .filter-chip__text {
-  color: #f1f2ec;
+  color: #1c1b1a;
+  font-weight: 600;
 }
 
 /* 分类 Chip 内图标 */
@@ -163,27 +171,29 @@
 }
 
 .filter-chip.is-active .filter-chip__icon {
-  color: rgba(241, 242, 236, 0.8);
+  color: #1c1b1a;
 }
 
-/* 半选态：右上角小圆点 */
+/* 半选态：右上角小绿点（与成员选中色一致） */
 .filter-chip.is-partial {
   position: relative;
 }
 
 .filter-chip__dot {
   position: absolute;
-  top: 4rpx;
-  right: 4rpx;
-  width: 10rpx;
-  height: 10rpx;
+  top: 2rpx;
+  right: 2rpx;
+  width: 12rpx;
+  height: 12rpx;
   border-radius: 50%;
-  background: #f1f2ec;
+  background: #07C160;
+  border: 2rpx solid #f1f2ec;
+  box-sizing: border-box;
 }
 
-/* 展开态：底部加一条下划线 */
+/* 展开态：底部加一条绿色下划线（与选中同色） */
 .filter-chip.is-expanded {
-  box-shadow: inset 0 -3rpx 0 0 rgba(241, 242, 236, 0.5);
+  box-shadow: inset 0 -3rpx 0 0 #07C160;
 }
 
 /* 小号 Chip（二级分类用） */

@@ -143,10 +143,13 @@ Component({
 
     // ─── 分类 ──────────────────────────────────────────────────────────────
 
-    /** 点击「全部」Chip → 重置分类 */
+    /** 点击「全部」Chip → toggle 全选/全反选
+     *  全部已选 → 反选（清空 _filterCategoryIds）
+     *  非全选 → 重置回全选 */
     onTapCategoryAll() {
-      if (this.properties.categoryAllSelected) return;
-      this.triggerEvent('categoryReset');
+      this.triggerEvent('categoryToggleAll', {
+        allSelected: !!this.properties.categoryAllSelected,
+      });
     },
 
     /** 点击一级 Chip → 展开/收起二级（手风琴） */

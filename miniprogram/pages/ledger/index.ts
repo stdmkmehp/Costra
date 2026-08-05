@@ -337,6 +337,10 @@ Page({
   _filterCategoryIds: new Set<string>(),
   /** 分类筛选是否激活（非全选时为 true） */
   _categoryFilterActive: false as boolean,
+  /** 分类名搜索索引：tier2Id → { tier1Name, tier2Name, tier1NameLc, tier2NameLc }
+   *  由 _buildFilterCategories 在每次分类列表重建时刷新；
+   *  _buildDisplay 关键词搜索用此索引同时匹配一级 + 二级分类名。 */
+  _categorySearchIndex: new Map<string, { tier1Name: string; tier2Name: string; tier1NameLc: string; tier2NameLc: string }>(),
   /** 搜索关键词（trim 后，空 = 不过滤） */
   _filterKeyword: '' as string,
   /** 搜索防抖 timer */
@@ -1195,13 +1199,26 @@ Page({
       entries = entries.filter(e => e.category_id != null && catIds.has(e.category_id));
     }
 
-    // 关键词搜索（备注 + 分类名模糊匹配）
+    // 关键词搜索（备注 + 一级分类名 + 二级分类名模糊匹配）
     if (this._filterKeyword) {
       const kw = this._filterKeyword.toLowerCase();
+      const idx = this._categorySearchIndex;
       entries = entries.filter(e => {
         const note = (e.note || '').toLowerCase();
-        const catName = getCategoryNameById(e.category_id).toLowerCase();
-        return note.includes(kw) || catName.includes(kw);
+        if (note.includes(kw)) return true;
+        // 命中一级或二级分类名即匹配（即使该二级未在 _filterCategoryIds 中）
+        if (e.category_id != null) {
+          const hit = idx.get(e.category_id);
+          if (hit) {
+            if (hit.tier2NameLc.includes(kw)) return true;
+            if (hit.tier1NameLc.includes(kw)) return true;
+          } else {
+            // 索引未命中（分类数据未就绪）时退回到单一分类名匹配
+            const catName = getCategoryNameById(e.category_id).toLowerCase();
+            if (catName.includes(kw)) return true;
+          }
+        }
+        return false;
       });
     }
 
@@ -1546,6 +1563,23 @@ Page({
     this._buildDisplay();
   },
 
+  /** 分类：toggle「全部」Chip（与成员「全选/取消全选」一致）
+   *  - 当前全选 → 反选（清空 _filterCategoryIds）
+   *  - 当前非全选 → 重置为全选（_filterCategoryIds 清空表示不过滤） */
+  onFilterCategoryToggleAll(e: WechatMiniprogram.CustomEvent<{ allSelected: boolean }>) {
+    const { allSelected } = e.detail;
+    if (allSelected) {
+      // 已全选 → 反选：清空选中集
+      this._filterCategoryIds = new Set();
+    } else {
+      // 非全选 → 重置为全选：选中集清空视为不过滤
+      this._filterCategoryIds = new Set();
+    }
+    this._rebuildFilterCategories();
+    this._updateFilterState();
+    this._buildDisplay();
+  },
+
   /** 根据当前选中的二级 ID 集合，重建 filterCategories 的 selected/status */
   _rebuildFilterCategories() {
     const categories = this.data.filterCategories as FilterCategoryItem[];
@@ -1611,24 +1645,33 @@ Page({
     }
 
     const categories: FilterCategoryItem[] = [];
+    // 重建分类名搜索索引：tier2Id → {tier1Name, tier2Name}
+    const searchIndex = new Map<string, { tier1Name: string; tier2Name: string; tier1NameLc: string; tier2NameLc: string }>();
     for (const t of types) {
       const tier1List = tree[t] as CategoryTier1[];
       for (const tier1 of tier1List) {
         if (tier1.children.length === 0) continue;
+        const t1Name = tier1.name;
+        const t1Lc = t1Name.toLowerCase();
         categories.push({
           id: tier1.id,
-          name: tier1.name,
+          name: t1Name,
           icon: tier1.icon,
           status: 'all',
-          children: (tier1.children as CategoryTier2[]).map(c => ({
-            id: c.id,
-            name: c.name,
-            icon: c.icon,
-            selected: true,
-          })),
+          children: (tier1.children as CategoryTier2[]).map(c => {
+            const t2Lc = c.name.toLowerCase();
+            searchIndex.set(c.id, { tier1Name: t1Name, tier2Name: c.name, tier1NameLc: t1Lc, tier2NameLc: t2Lc });
+            return {
+              id: c.id,
+              name: c.name,
+              icon: c.icon,
+              selected: true,
+            };
+          }),
         });
       }
     }
+    this._categorySearchIndex = searchIndex;
 
     // 重置分类状态（类型变更时重建）
     this._filterCategoryIds = new Set();
