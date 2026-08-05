@@ -33,8 +33,12 @@ import { computeBadges } from '../../utils/entryBadges';
 import { getFamilies, getFamilyMembers } from '../../services/familyApi';
 import {
   getCategories,
+  getCategoriesSync,
+  buildCategoryTree,
   getCategoryIconById,
   getCategoryNameById,
+  type CategoryTier1,
+  type CategoryTier2,
 } from '../../services/categoryService';
 import {
   INITIAL_CALC_STATE, inputDigit, inputDot,
@@ -106,6 +110,24 @@ interface FilterMemberItem {
   nickname: string;
   avatar_url: string;
   initial: string;
+  selected: boolean;
+}
+
+/** 分类筛选一级项（用于面板展示） */
+interface FilterCategoryItem {
+  id: string;
+  name: string;
+  icon: string;
+  /** 全选 'all' / 半选 'partial' / 未选 'none' */
+  status: 'all' | 'partial' | 'none';
+  children: FilterSubCategoryItem[];
+}
+
+/** 分类筛选二级项 */
+interface FilterSubCategoryItem {
+  id: string;
+  name: string;
+  icon: string;
   selected: boolean;
 }
 
@@ -237,6 +259,12 @@ Page({
     filterPanelVisible: false,
     filterMembers: [] as FilterMemberItem[],
     filterEntryType: 'all' as EntryTypeFilter,
+    // ─── 分类筛选 ───
+    filterCategories: [] as FilterCategoryItem[],
+    filterExpandedCategoryId: '' as string,
+    filterCategoryAllSelected: true,
+    // ─── 搜索 ───
+    filterSearchKeyword: '' as string,
 
     // ─── 列表 ───
     dateGroups: [] as DateGroup[],
@@ -305,6 +333,14 @@ Page({
   _filterEntryType: 'all' as EntryTypeFilter,
   /** 成员筛选：选中的 user_id 集合（空 = 全选） */
   _filterSelectedMemberIds: [] as string[],
+  /** 分类筛选：选中的二级分类 ID 集合（空 = 不过滤） */
+  _filterCategoryIds: new Set<string>(),
+  /** 分类筛选是否激活（非全选时为 true） */
+  _categoryFilterActive: false as boolean,
+  /** 搜索关键词（trim 后，空 = 不过滤） */
+  _filterKeyword: '' as string,
+  /** 搜索防抖 timer */
+  _searchDebounceTimer: null as ReturnType<typeof setTimeout> | null,
   /** 当前用户 ID（COSTRA-220: 从 auth token 获取 · 用于成员筛选） */
   _currentUserId: '' as string,
   /** 成员映射（user_id → nickname/avatar · 协作账本时构建） */
@@ -419,6 +455,10 @@ Page({
       if (this._allEntries.length > 0) {
         this._buildDisplay();
       }
+      // 面板可见时重建分类列表（fallback → 真实分类数据）
+      if (this.data.filterPanelVisible) {
+        this._buildFilterCategories();
+      }
     };
     this._categoriesLoadedHandler = categoriesLoadedHandler;
     eventBus.on(EventNames.CATEGORIES_LOADED, categoriesLoadedHandler);
@@ -516,6 +556,11 @@ Page({
     }
     this._cancelDeferredLedgerLoading();
     this._endSwipeScrollSettling();
+    // 清理搜索防抖 timer
+    if (this._searchDebounceTimer) {
+      clearTimeout(this._searchDebounceTimer);
+      this._searchDebounceTimer = null;
+    }
   },
 
   // ─── 数据加载 ────────────────────────────────────────────────────────────────
@@ -566,8 +611,26 @@ Page({
       getActiveFamilyKind(),
       getActiveLedgerName(),
     ]);
+    const prevFamilyId = this._familyId;
     this._ledgerId = ledgerId || '';
     this._familyId = familyId || '';
+
+    // familyId 变化时清空分类筛选（不同账本分类 ID 不同，避免残留无效筛选）
+    if (prevFamilyId && prevFamilyId !== this._familyId) {
+      this._filterCategoryIds = new Set();
+      this._categoryFilterActive = false;
+      this._filterKeyword = '';
+      if (this._searchDebounceTimer) {
+        clearTimeout(this._searchDebounceTimer);
+        this._searchDebounceTimer = null;
+      }
+      this.setData({
+        filterCategories: [],
+        filterExpandedCategoryId: '',
+        filterCategoryAllSelected: true,
+        filterSearchKeyword: '',
+      });
+    }
 
     // COSTRA-220: 用 family_kind 替代 !== 'solo' 硬编码判断
     const isMultiMember = familyKind === 'shared';
@@ -629,12 +692,23 @@ Page({
   _resetFiltersForNonShared() {
     this._filterEntryType = 'all';
     this._filterSelectedMemberIds = [];
+    this._filterCategoryIds = new Set();
+    this._categoryFilterActive = false;
+    this._filterKeyword = '';
+    if (this._searchDebounceTimer) {
+      clearTimeout(this._searchDebounceTimer);
+      this._searchDebounceTimer = null;
+    }
     this.setData({
       filterEntryType: 'all',
       filterMembers: [],
       filterActive: false,
       filterPanelVisible: false,
       memberFilterText: '全部',
+      filterCategories: [],
+      filterExpandedCategoryId: '',
+      filterCategoryAllSelected: true,
+      filterSearchKeyword: '',
     });
   },
 
@@ -1115,6 +1189,22 @@ Page({
       entries = entries.filter(e => e.created_by && selectedIds.includes(e.created_by));
     }
 
+    // 分类过滤（按选中的二级 category_id 集合）
+    if (this._categoryFilterActive && this._filterCategoryIds.size > 0) {
+      const catIds = this._filterCategoryIds;
+      entries = entries.filter(e => e.category_id != null && catIds.has(e.category_id));
+    }
+
+    // 关键词搜索（备注 + 分类名模糊匹配）
+    if (this._filterKeyword) {
+      const kw = this._filterKeyword.toLowerCase();
+      entries = entries.filter(e => {
+        const note = (e.note || '').toLowerCase();
+        const catName = getCategoryNameById(e.category_id).toLowerCase();
+        return note.includes(kw) || catName.includes(kw);
+      });
+    }
+
     // 按日期分组
     const groupMap = new Map<string, Entry[]>();
     for (const e of entries) {
@@ -1300,6 +1390,12 @@ Page({
   onTapMemberFilter() {
     // 切换筛选面板显示/隐藏
     const visible = !this.data.filterPanelVisible;
+    if (visible) {
+      // 打开面板时构建分类列表（若尚未构建）
+      if ((this.data.filterCategories as FilterCategoryItem[]).length === 0) {
+        this._buildFilterCategories();
+      }
+    }
     this.setData({ filterPanelVisible: visible });
   },
 
@@ -1308,6 +1404,8 @@ Page({
     const { entryType } = e.detail;
     this._filterEntryType = entryType;
     this.setData({ filterEntryType: entryType });
+    // 类型变更时重建分类列表（联动过滤）+ 重置分类选中状态
+    this._buildFilterCategories();
     this._updateFilterState();
     this._buildDisplay();
   },
@@ -1357,13 +1455,200 @@ Page({
     this._buildDisplay();
   },
 
+  // ─── 交互：搜索 ──────────────────────────────────────────────────────────────
+
+  /** 搜索输入（防抖 300ms） */
+  onFilterSearchInput(e: WechatMiniprogram.CustomEvent<{ keyword: string }>) {
+    const keyword = (e.detail.keyword || '').trim();
+    // 立即更新输入框显示值
+    this.setData({ filterSearchKeyword: keyword });
+    if (this._searchDebounceTimer) {
+      clearTimeout(this._searchDebounceTimer);
+    }
+    this._searchDebounceTimer = setTimeout(() => {
+      this._filterKeyword = keyword;
+      this._searchDebounceTimer = null;
+      this._updateFilterState();
+      this._buildDisplay();
+    }, 300);
+  },
+
+  // ─── 交互：分类筛选 ──────────────────────────────────────────────────────────
+
+  /** 分类：展开/收起一级（手风琴） */
+  onFilterCategoryExpand(e: WechatMiniprogram.CustomEvent<{ categoryId: string }>) {
+    this.setData({ filterExpandedCategoryId: e.detail.categoryId });
+  },
+
+  /** 分类：toggle 二级 */
+  onFilterCategoryToggle(e: WechatMiniprogram.CustomEvent<{ categoryId: string }>) {
+    const catId = e.detail.categoryId;
+    if (!catId) return;
+    const ids = new Set(this._filterCategoryIds);
+    if (ids.has(catId)) {
+      ids.delete(catId);
+    } else {
+      ids.add(catId);
+    }
+    this._filterCategoryIds = ids;
+    this._rebuildFilterCategories();
+    this._updateFilterState();
+    this._buildDisplay();
+  },
+
+  /** 分类：长按 solo（仅保留此一级） */
+  onFilterCategorySolo(e: WechatMiniprogram.CustomEvent<{ categoryId: string }>) {
+    const parentId = e.detail.categoryId;
+    if (!parentId) return;
+    // 找到该一级下的所有二级 ID，设为唯一选中集
+    const categories = this.data.filterCategories as FilterCategoryItem[];
+    const found = categories.find(c => c.id === parentId);
+    if (!found) return;
+    const ids = new Set<string>(found.children.map(c => c.id));
+    this._filterCategoryIds = ids;
+    this._rebuildFilterCategories();
+    this._updateFilterState();
+    this._buildDisplay();
+  },
+
+  /** 分类：某一级下全选二级 */
+  onFilterCategorySelectAll(e: WechatMiniprogram.CustomEvent<{ parentId: string }>) {
+    const parentId = e.detail.parentId;
+    if (!parentId) return;
+    const categories = this.data.filterCategories as FilterCategoryItem[];
+    const found = categories.find(c => c.id === parentId);
+    if (!found) return;
+    const ids = new Set(this._filterCategoryIds);
+    // 检查是否已全选
+    const allSelected = found.children.every(c => ids.has(c.id));
+    if (allSelected) {
+      // 取消全选
+      for (const c of found.children) {
+        ids.delete(c.id);
+      }
+    } else {
+      // 全选
+      for (const c of found.children) {
+        ids.add(c.id);
+      }
+    }
+    this._filterCategoryIds = ids;
+    this._rebuildFilterCategories();
+    this._updateFilterState();
+    this._buildDisplay();
+  },
+
+  /** 分类：重置（全部恢复全选） */
+  onFilterCategoryReset() {
+    this._filterCategoryIds = new Set();
+    this._rebuildFilterCategories();
+    this._updateFilterState();
+    this._buildDisplay();
+  },
+
+  /** 根据当前选中的二级 ID 集合，重建 filterCategories 的 selected/status */
+  _rebuildFilterCategories() {
+    const categories = this.data.filterCategories as FilterCategoryItem[];
+    if (categories.length === 0) return;
+
+    const ids = this._filterCategoryIds;
+    let allCategorySelected = true;
+
+    const updated = categories.map(cat => {
+      let selectedCount = 0;
+      const children = cat.children.map(sub => {
+        const selected = ids.has(sub.id);
+        if (selected) selectedCount++;
+        return { ...sub, selected };
+      });
+      let status: 'all' | 'partial' | 'none';
+      if (selectedCount === 0) {
+        status = 'none';
+        allCategorySelected = false;
+      } else if (selectedCount === children.length) {
+        status = 'all';
+      } else {
+        status = 'partial';
+        allCategorySelected = false;
+      }
+      return { ...cat, children, status };
+    });
+
+    this._categoryFilterActive = !allCategorySelected;
+    this.setData({
+      filterCategories: updated,
+      filterCategoryAllSelected: allCategorySelected,
+    });
+  },
+
+  /** 构建分类筛选列表（从 categoryService 拉取 + 类型联动过滤） */
+  _buildFilterCategories() {
+    const familyId = this._familyId;
+    if (!familyId) return;
+
+    const items = getCategoriesSync(familyId);
+    if (items.length === 0) return;
+
+    const tree = buildCategoryTree(items);
+
+    // 根据当前 entryType 决定展示哪些 type 的分类
+    const types: Array<'expense' | 'income' | 'transfer'> = [];
+    switch (this._filterEntryType) {
+      case 'personal':
+      case 'shared':
+        types.push('expense');
+        break;
+      case 'income':
+        types.push('income');
+        break;
+      case 'transfer':
+        types.push('transfer');
+        break;
+      case 'all':
+      default:
+        types.push('expense', 'income', 'transfer');
+        break;
+    }
+
+    const categories: FilterCategoryItem[] = [];
+    for (const t of types) {
+      const tier1List = tree[t] as CategoryTier1[];
+      for (const tier1 of tier1List) {
+        if (tier1.children.length === 0) continue;
+        categories.push({
+          id: tier1.id,
+          name: tier1.name,
+          icon: tier1.icon,
+          status: 'all',
+          children: (tier1.children as CategoryTier2[]).map(c => ({
+            id: c.id,
+            name: c.name,
+            icon: c.icon,
+            selected: true,
+          })),
+        });
+      }
+    }
+
+    // 重置分类状态（类型变更时重建）
+    this._filterCategoryIds = new Set();
+    this._categoryFilterActive = false;
+    this.setData({
+      filterCategories: categories,
+      filterCategoryAllSelected: true,
+      filterExpandedCategoryId: '',
+    });
+  },
+
   /** 更新筛选按钮文字和激活态 */
   _updateFilterState() {
     const allMembers = this.data.filterMembers as FilterMemberItem[];
     const selectedCount = allMembers.filter(m => m.selected).length;
     const isAllMembers = selectedCount === 0 || selectedCount === allMembers.length;
     const isAllType = this._filterEntryType === 'all';
-    const filterActive = !isAllMembers || !isAllType;
+    const isAllCategory = !this._categoryFilterActive;
+    const hasKeyword = this._filterKeyword.length > 0;
+    const filterActive = !isAllMembers || !isAllType || !isAllCategory || hasKeyword;
 
     let memberFilterText = '全部';
     if (filterActive) {
@@ -1373,6 +1658,12 @@ Page({
       }
       if (!isAllMembers) {
         parts.push(`${selectedCount}人`);
+      }
+      if (!isAllCategory) {
+        parts.push('分类');
+      }
+      if (hasKeyword) {
+        parts.push('搜索');
       }
       memberFilterText = parts.length > 0 ? parts.join(' · ') : '筛选中';
     }

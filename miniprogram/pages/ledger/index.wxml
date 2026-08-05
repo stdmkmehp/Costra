@@ -34,8 +34,8 @@
         <text class="filter-row__arrow-icon month-switcher__arrow-icon">›</text>
       </view>
     </view>
-    <!-- 成员筛选（仅多人账本显示） -->
-    <view class="filter-row__right {{filterActive ? 'is-active' : ''}}" wx:if="{{showMemberFilter}}" bindtap="onTapMemberFilter">
+    <!-- 筛选按钮（始终显示：支持类型/成员/分类/搜索筛选） -->
+    <view class="filter-row__right {{filterActive ? 'is-active' : ''}}" bindtap="onTapMemberFilter">
       <text class="filter-row__member-text">{{memberFilterText}}</text>
       <text class="filter-row__member-arrow {{filterPanelVisible ? 'is-rotated' : ''}}">▼</text>
     </view>
@@ -48,10 +48,20 @@
       visible="{{filterPanelVisible}}"
       members="{{filterMembers}}"
       entryType="{{filterEntryType}}"
+      categories="{{filterCategories}}"
+      expandedCategoryId="{{filterExpandedCategoryId}}"
+      categoryAllSelected="{{filterCategoryAllSelected}}"
+      searchKeyword="{{filterSearchKeyword}}"
       bind:entryTypeChange="onFilterEntryTypeChange"
       bind:memberToggle="onFilterMemberToggle"
       bind:selectAll="onFilterSelectAll"
       bind:close="onFilterPanelClose"
+      bind:searchInput="onFilterSearchInput"
+      bind:categoryExpand="onFilterCategoryExpand"
+      bind:categoryToggle="onFilterCategoryToggle"
+      bind:categorySolo="onFilterCategorySolo"
+      bind:categorySelectAll="onFilterCategorySelectAll"
+      bind:categoryReset="onFilterCategoryReset"
     />
 
     <scroll-view
