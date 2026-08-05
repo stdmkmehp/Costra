@@ -35,7 +35,7 @@ export interface ListSummary {
 }
 
 const BUCKET_LABELS: Record<string, string> = {
-  dawn: '凌晨', morning: '早上', afternoon: '下午', night: '晚上',
+  dawn: '凌晨', morning: '上午', afternoon: '下午', night: '夜晚',
 };
 
 /**
@@ -63,16 +63,18 @@ export function buildStatusHint(r: Pick<RecurringRule, 'status' | 'last_run_stat
 
 // ─── 纯函数 ──────────────────────────────────────────────────────────────────
 
-export function buildPeriodLabel(period: RecurringPeriod): string {
-  switch (period) {
-    case 'weekly': return '每周';
-    case 'biweekly': return '每两周';
-    case 'monthly': return '每月';
-    case 'bimonthly': return '每两月';
-    case 'trimonthly': return '每三月';
-    case 'yearly': return '每年';
-    default: return '';
+export function buildPeriodLabel(period: RecurringPeriod, periodInterval?: number): string {
+  const interval = periodInterval || 1;
+  if (period === 'yearly') return '每年';
+  if (['weekly', 'biweekly'].includes(period)) {
+    const n = period === 'biweekly' ? 2 : interval;
+    return n === 1 ? '每周' : `每${n}周`;
   }
+  if (['monthly', 'bimonthly', 'trimonthly'].includes(period)) {
+    const n = period === 'bimonthly' ? 2 : period === 'trimonthly' ? 3 : interval;
+    return n === 1 ? '每月' : `每${n}月`;
+  }
+  return '';
 }
 
 export function toDisplayRule(
@@ -91,7 +93,7 @@ export function toDisplayRule(
     days_of_month: r.days_of_month,
     year_month_days: r.year_month_days,
   };
-  const periodDesc = buildPeriodLabel(r.period) + ' ' + formatDaysForSummary(ctx);
+  const periodDesc = buildPeriodLabel(r.period, r.period_interval) + ' ' + formatDaysForSummary(ctx);
   const bucketLabel = BUCKET_LABELS[r.execute_bucket] || '';
   const ledgerName = families.find((f) => f.ledger_id === r.ledger_id)?.ledger_name || '';
   const parts = [periodDesc, bucketLabel, ledgerName].filter(Boolean);

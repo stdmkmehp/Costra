@@ -13,10 +13,9 @@
 .recedit__nav-back { width: 80rpx; height: 100%; display: flex; align-items: center; justify-content: center; }
 .recedit__nav-back-icon { font-size: 48rpx; color: #1c1b1a; font-weight: 300; }
 .recedit__nav-title { font-size: 34rpx; font-weight: 600; color: #1c1b1a; position: absolute; left: 50%; transform: translateX(-50%); }
-.recedit__nav-save { position: absolute; bottom: 0; height: 100%; display: flex; align-items: center; padding: 0 24rpx; font-size: 30rpx; color: rgba(28,27,26,0.28); }
-.recedit__nav-save--active { color: #8AA98F; font-weight: 600; }
 
-.recedit__scroll { padding: 16rpx 24rpx 60rpx; }
+.recedit__scroll { padding: 0 0 60rpx; }
+.recedit__scroll-inner { padding: 24rpx 32rpx 0;}
 
 /* 卡片 */
 .recedit__card {
@@ -47,13 +46,35 @@
 .recedit__arrow { font-size: 28rpx; color: rgba(28,27,26,0.28); margin-left: 8rpx; }
 .recedit__input { flex: 1; font-size: 28rpx; color: #1c1b1a; text-align: right; }
 
-/* Type tabs */
-.recedit__type-tabs { display: flex; padding: 24rpx 0; gap: 0; }
-.recedit__type-tab {
-  flex: 1; text-align: center; font-size: 28rpx; color: rgba(28,27,26,0.48);
-  padding: 16rpx 0; border-bottom: 4rpx solid transparent;
+/* 金额就地输入 */
+.recedit__amount-input-wrap { flex: 1; display: flex; align-items: center; justify-content: flex-end; }
+.recedit__amount-prefix { font-size: 32rpx; font-weight: 600; color: #1c1b1a; margin-right: 8rpx; }
+.recedit__amount-input { width: 240rpx; font-size: 32rpx; font-weight: 600; color: #1c1b1a; text-align: right; font-variant-numeric: tabular-nums; }
+.recedit__amount-placeholder { color: rgba(28,27,26,0.28); font-weight: 400; }
+
+/* 分类行中的类型标签 */
+.recedit__type-badge {
+  display: inline-block;
+  font-size: 22rpx;
+  color: rgba(28,27,26,0.48);
+  background: rgba(28,27,26,0.06);
+  padding: 2rpx 12rpx;
+  border-radius: 8rpx;
+  margin-right: 12rpx;
+  vertical-align: middle;
 }
-.recedit__type-tab--active { color: #1c1b1a; font-weight: 600; border-bottom-color: #8AA98F; }
+
+/* 分类行中的类型标签 */
+.recedit__type-badge {
+  display: inline-block;
+  font-size: 22rpx;
+  color: rgba(28,27,26,0.48);
+  background: rgba(28,27,26,0.06);
+  padding: 2rpx 12rpx;
+  border-radius: 8rpx;
+  margin-right: 12rpx;
+  vertical-align: middle;
+}
 
 /* 归属胶囊 */
 .recedit__capsules { display: flex; gap: 16rpx; flex: 1; justify-content: flex-end; }
@@ -63,9 +84,15 @@
   transition: all 160ms ease-out;
 }
 .recedit__capsule--active { background: #8AA98F; color: #ffffff; }
+.recedit__capsule--disabled { opacity: 0.4; pointer-events: none; }
+.recedit__row--disabled { opacity: 0.5; }
 
 /* Switch */
-.recedit__switch { transform: scale(0.7); }
+.recedit__switch { transform: scale(0.7); margin-right: 8rpx; flex-shrink: 0; }
+
+/* 结束日右侧容器 */
+.recedit__end-date-right { flex: 1; display: flex; align-items: center; justify-content: flex-end; }
+.recedit__end-date-text { flex: none; text-align: right; }
 
 /* 预览卡片 */
 .recedit__card--preview { padding: 28rpx 32rpx; }
@@ -77,3 +104,12 @@
 .recedit__preview-datetime { display: flex; align-items: baseline; gap: 16rpx; }
 .recedit__preview-date { font-size: 44rpx; font-weight: 600; color: #1c1b1a; font-variant-numeric: tabular-nums; }
 .recedit__preview-bucket { font-size: 28rpx; color: rgba(28,27,26,0.48); }
+
+/* 底部保存按钮 */
+.recedit__save-btn {
+  margin: 16rpx auto 60rpx; width: calc(100% - 48rpx); height: 88rpx; line-height: 88rpx;
+  text-align: center; background: rgba(138,169,143,0.4); color: #ffffff;
+  font-size: 30rpx; font-weight: 500; border-radius: 44rpx;
+  transition: background 200ms ease-out;
+}
+.recedit__save-btn--active { background: #8AA98F; }

@@ -13,8 +13,6 @@
 .reclist__nav-back { width: 80rpx; height: 100%; display: flex; align-items: center; justify-content: center; }
 .reclist__nav-back-icon { font-size: 48rpx; color: #1c1b1a; font-weight: 300; }
 .reclist__nav-title { font-size: 34rpx; font-weight: 600; color: #1c1b1a; position: absolute; left: 50%; transform: translateX(-50%); }
-.reclist__nav-add { position: absolute; bottom: 0; width: 80rpx; height: 100%; display: flex; align-items: center; justify-content: center; }
-.reclist__nav-add-icon { font-size: 44rpx; color: #1c1b1a; font-weight: 300; }
 
 /* 内容区 */
 .reclist__content { padding: 0 24rpx; }
@@ -77,3 +75,10 @@
 }
 .reclist__ctx-item { padding: 24rpx 32rpx; font-size: 28rpx; color: #1c1b1a; }
 .reclist__ctx-item--danger { color: #C08A7B; }
+
+/* 底部添加按钮（有数据时） */
+.reclist__add-bottom {
+  margin: 40rpx auto 60rpx; width: 60%; height: 80rpx; line-height: 80rpx;
+  text-align: center; font-size: 28rpx; color: #8AA98F;
+  border: 1rpx solid #8AA98F; border-radius: 40rpx;
+}

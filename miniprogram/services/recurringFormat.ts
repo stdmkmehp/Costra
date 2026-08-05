@@ -88,7 +88,7 @@ function formatDom(days: number[], mode: FormatMode): string {
 
 /**
  * 每年 (月, 日) 组合格式化
- *   full · "1 月 1 日、2 月 14、22 日、12 月 25 日"
+ *   full · "1月5,17,31日、4月19,25日"
  *   compact · ≥4 组 → "1/1、2/2、…、11/11、12/12"
  */
 function formatYearMonthDays(encoded: number[], mode: FormatMode): string {
@@ -113,9 +113,41 @@ function formatYearMonthDays(encoded: number[], mode: FormatMode): string {
   const parts: string[] = [];
   for (const m of months) {
     const ds = byMonth.get(m)!;
-    parts.push(`${m} 月 ${compressRuns(ds)} 日`);
+    parts.push(`${m}月${compressRunsComma(ds)}日`);
   }
   return parts.join('、');
+}
+
+/**
+ * 数组压缩（逗号版· 用于年月日格式化）
+ *   [5,17,31] → "5,17,31"
+ *   [5,6,7,8] → "5~8"
+ *   [1,2,3,10,15] → "1~3,10,15"
+ */
+function compressRunsComma(sorted: number[]): string {
+  if (sorted.length === 0) return '';
+  const groups: Array<[number, number]> = [];
+  let start = sorted[0];
+  let prev = sorted[0];
+  for (let i = 1; i < sorted.length; i++) {
+    const v = sorted[i];
+    if (v === prev + 1) {
+      prev = v;
+    } else {
+      groups.push([start, prev]);
+      start = v;
+      prev = v;
+    }
+  }
+  groups.push([start, prev]);
+
+  const parts = groups.map(([a, b]) => {
+    const runLen = b - a + 1;
+    if (runLen >= 3) return `${a}~${b}`;
+    if (runLen === 2) return `${a},${b}`;
+    return `${a}`;
+  });
+  return parts.join(',');
 }
 
 /**

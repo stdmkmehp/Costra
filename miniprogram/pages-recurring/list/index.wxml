@@ -6,17 +6,14 @@
       <text class="reclist__nav-back-icon">‹</text>
     </view>
     <text class="reclist__nav-title">定时记账</text>
-    <view class="reclist__nav-add" style="right: {{navActionRight}}px;" bindtap="onTapAdd">
-      <text class="reclist__nav-add-icon">+</text>
-    </view>
   </view>
 
   <!-- 内容区 -->
   <view class="reclist__content" style="padding-top: {{navBarTotalHeight}}px;">
     <!-- 加载态 -->
-    <view wx:if="{{loading}}" class="reclist__loading">
+  <view wx:if="{{loading}}" class="reclist__loading">
       <text class="reclist__loading-text">加载中…</text>
-    </view>
+ </view>
 
     <!-- 错误态 -->
     <view wx:elif="{{error}}" class="reclist__error">
@@ -27,67 +24,70 @@
     <!-- 空态 -->
     <view wx:elif="{{isEmpty}}" class="reclist__empty">
       <text class="reclist__empty-title">还没有定时记账</text>
-      <text class="reclist__empty-sub">设一次，Costra 帮你自动记</text>
+ <text class="reclist__empty-sub">设一次，Costra 帮你自动记</text>
       <view class="reclist__empty-btn" bindtap="onTapAdd">+ 添加定时</view>
     </view>
 
     <!-- 有数据 -->
     <view wx:else class="reclist__body">
-      <!-- 顶部计数摘要 -->
-      <view class="reclist__summary" wx:if="{{summaryText}}">
-        <text>{{summaryText}}</text>
+   <!-- 顶部计数摘要 -->
+    <view class="reclist__summary" wx:if="{{summaryText}}">
+      <text>{{summaryText}}</text>
       </view>
 
       <!-- 启用分组 -->
       <view class="reclist__card" wx:if="{{enabledRules.length > 0}}">
-        <view wx:for="{{enabledRules}}" wx:key="id"
-              class="reclist__item {{longPressRuleId === item.id ? 'reclist__item--highlight' : ''}}"
+   <view wx:for="{{enabledRules}}" wx:key="id"
+       class="reclist__item {{longPressRuleId === item.id ? 'reclist__item--highlight' : ''}}"
               data-id="{{item.id}}" bindtap="onTapRule"
-              bindlongpress="onLongPressRule"
+      bindlongpress="onLongPressRule"
               hover-class="reclist__item--hover" hover-stay-time="60">
-          <view class="reclist__item-sep" wx:if="{{index > 0}}"></view>
-          <view class="reclist__item-inner">
+   <view class="reclist__item-sep" wx:if="{{index > 0}}"></view>
+  <view class="reclist__item-inner">
             <view class="reclist__icon">{{item.categoryIcon}}</view>
-            <view class="reclist__mid">
+ <view class="reclist__mid">
               <text class="reclist__title">{{item.title}}</text>
-              <text class="reclist__sub">{{item.subtitle}}</text>
-            </view>
+        <text class="reclist__sub">{{item.subtitle}}</text>
+         </view>
             <text class="reclist__amount tnum">{{item.amountText}}</text>
           </view>
         </view>
       </view>
 
       <!-- 禁用分组 -->
-      <view wx:if="{{disabledRules.length > 0}}" class="reclist__disabled-section">
+    <view wx:if="{{disabledRules.length > 0}}" class="reclist__disabled-section">
         <view class="reclist__disabled-title">── 已禁用 ──</view>
         <view class="reclist__card reclist__card--disabled">
           <view wx:for="{{disabledRules}}" wx:key="id"
-                class="reclist__item reclist__item--disabled {{longPressRuleId === item.id ? 'reclist__item--highlight' : ''}}"
-                data-id="{{item.id}}" bindtap="onTapRule"
-                bindlongpress="onLongPressRule"
-                hover-class="reclist__item--hover" hover-stay-time="60">
-            <view class="reclist__item-sep" wx:if="{{index > 0}}"></view>
-            <view class="reclist__item-inner">
+      class="reclist__item reclist__item--disabled {{longPressRuleId === item.id ? 'reclist__item--highlight' : ''}}"
+       data-id="{{item.id}}" bindtap="onTapRule"
+           bindlongpress="onLongPressRule"
+  hover-class="reclist__item--hover" hover-stay-time="60">
+    <view class="reclist__item-sep" wx:if="{{index > 0}}"></view>
+    <view class="reclist__item-inner">
               <view class="reclist__icon">{{item.categoryIcon}}</view>
-              <view class="reclist__mid">
+         <view class="reclist__mid">
                 <text class="reclist__title">{{item.title}}</text>
-                <text class="reclist__sub">{{item.subtitle}} · <text class="reclist__tag--amber">{{item.statusHint}}</text></text>
-              </view>
-              <text class="reclist__amount tnum">{{item.amountText}}</text>
+           <text class="reclist__sub">{{item.subtitle}} · <text class="reclist__tag--amber">{{item.statusHint}}</text></text>
             </view>
+       <text class="reclist__amount tnum">{{item.amountText}}</text>
+         </view>
           </view>
-        </view>
+    </view>
       </view>
+
+      <!-- 底部添加按钮 -->
+      <view class="reclist__add-bottom" bindtap="onTapAdd">+ 添加定时</view>
     </view>
   </view>
 
   <!-- 长按上下文菜单 -->
   <view wx:if="{{ctxMenuVisible}}" class="reclist__ctx-mask" bindtap="onCloseCtxMenu">
-    <view class="reclist__ctx-menu" style="left:{{ctxMenuX}}px;top:{{ctxMenuY}}px;" catchtap="onCtxMenuNoop">
+ <view class="reclist__ctx-menu" style="left:{{ctxMenuX}}px;top:{{ctxMenuY}}px;" catchtap="onCtxMenuNoop">
       <view class="reclist__ctx-item" bindtap="onCtxCopy">📋 复制规则</view>
       <view class="reclist__ctx-item" bindtap="onCtxEdit">✎ 修改规则</view>
-      <view class="reclist__ctx-item" bindtap="onCtxToggle">
-        {{ctxMenuRule.status === 'active' ? '⏸ 禁用' : '▶ 启用'}}
+ <view class="reclist__ctx-item" bindtap="onCtxToggle">
+   {{ctxMenuRule.status === 'active' ? '⏸ 禁用' : '▶ 启用'}}
       </view>
       <view class="reclist__ctx-item reclist__ctx-item--danger" bindtap="onCtxDelete">🗑 删除</view>
     </view>

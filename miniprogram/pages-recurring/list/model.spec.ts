@@ -20,6 +20,7 @@ function makeRule(overrides: Partial<RecurringRule> = {}): RecurringRule {
     note: null,
     shared_type: null,
     period: 'weekly',
+    period_interval: 1,
     days_of_week: [1, 3, 5],
     days_of_month: null,
     year_month_days: null,

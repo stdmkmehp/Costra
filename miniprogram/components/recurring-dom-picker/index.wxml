@@ -1,17 +1,18 @@
 <!-- components/recurring-dom-picker/index.wxml -->
 <view class="rdom">
-  <view class="rdom__summary-bar">
-    <text class="rdom__summary-count" wx:if="{{summaryCount}}">已选 <text class="rdom__count-bold">{{summaryCount}}</text> / {{domMax}}</text>
-    <text class="rdom__summary-list">{{summaryList || '请点选下方日期'}}</text>
-    <text class="rdom__clear {{value.length > 0 ? '' : 'rdom__clear--disabled'}}" bindtap="onClear">清空</text>
-  </view>
   <view class="rdom__grid">
     <view wx:for="{{domItems}}" wx:key="day"
     class="rdom__tag {{item.selected ? 'rdom__tag--selected' : ''}} {{item.rejected ? 'rdom__tag--rejected' : ''}}"
    data-day="{{item.day}}" bindtap="onTapDom">
       <text>{{item.label}}</text>
     </view>
-</view>
+  </view>
+  <view class="rdom__summary-bar">
+    <text class="rdom__summary-count" wx:if="{{summaryCount}}">已选 <text class="rdom__count-bold">{{summaryCount}}</text> / {{domMax}}</text>
+    <text class="rdom__summary-sep" wx:if="{{summaryCount && summaryList}}">｜</text>
+    <text class="rdom__summary-list">{{summaryList || '请点选上方日期'}}</text>
+    <text class="rdom__clear {{value.length > 0 ? '' : 'rdom__clear--disabled'}}" bindtap="onClear">清空</text>
+  </view>
   <view wx:if="{{showHint}}" class="rdom__hint">
     ⓘ 勾中 29/30/31 时，当月无该日会顺延到当月最后一天
   </view>

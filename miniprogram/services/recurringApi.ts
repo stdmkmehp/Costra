@@ -32,6 +32,7 @@ export interface RecurringRule {
   note: string | null;
   shared_type: 'personal' | 'shared' | null;
   period: RecurringPeriod;
+  period_interval: number;
   days_of_week: number[] | null;
   days_of_month: number[] | null;
   year_month_days: number[] | null;
@@ -61,6 +62,7 @@ export interface CreateRecurringPayload {
   note?: string | null;
   shared_type?: 'personal' | 'shared' | null;
   period: RecurringPeriod;
+  period_interval?: number;
   days_of_week?: number[] | null;
   days_of_month?: number[] | null;
   year_month_days?: number[] | null;
@@ -80,6 +82,7 @@ export interface UpdateRecurringPayload {
   note?: string | null;
   shared_type?: 'personal' | 'shared' | null;
   period?: RecurringPeriod;
+  period_interval?: number;
   days_of_week?: number[] | null;
   days_of_month?: number[] | null;
   year_month_days?: number[] | null;

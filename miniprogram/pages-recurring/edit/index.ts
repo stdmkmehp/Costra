@@ -1,6 +1,4 @@
-// pages-recurring/edit/index.ts · 定时记账编辑页（三卡片 · 创建/编辑/复制模式）
-// 卡号占位：COSTRA-5xx（T3 · Sprint-4 · Epic-E）
-// Refs: COSTRA-5xx
+// pages-recurring/edit/index.ts · 定时记账编辑页（创建/编辑/复制模式）
 // 产品事实源：docs/design/recurring-entry-product-spec.md §5.3
 
 import type {
@@ -31,17 +29,43 @@ import {
 
 type EditMode = 'create' | 'edit' | 'copy';
 
-const PERIOD_OPTIONS: { value: RecurringPeriod; label: string }[] = [
-  { value: 'weekly', label: '每周' },
-  { value: 'biweekly', label: '每两周' },
-  { value: 'monthly', label: '每月' },
-  { value: 'bimonthly', label: '每两月' },
-  { value: 'trimonthly', label: '每三月' },
-  { value: 'yearly', label: '每年' },
-];
+/**
+ * 根据 period + interval 生成展示标签
+ */
+function computePeriodLabel(period: RecurringPeriod, interval: number): string {
+  if (period === 'yearly') return '每年';
+  if (['weekly', 'biweekly'].includes(period)) {
+    if (interval === 1) return '每周';
+    return `每${interval}周`;
+  }
+  if (['monthly', 'bimonthly', 'trimonthly'].includes(period)) {
+    if (interval === 1) return '每月';
+    return `每${interval}月`;
+  }
+  return '每周';
+}
+
+/**
+ * 从 period 值解析 interval
+ */
+function parsePeriodInterval(period: RecurringPeriod): number {
+  switch (period) {
+    case 'weekly': return 1;
+    case 'biweekly': return 2;
+    case 'monthly': return 1;
+    case 'bimonthly': return 2;
+    case 'trimonthly': return 3;
+    case 'yearly': return 1;
+    default: return 1;
+  }
+}
 
 const BUCKET_LABELS: Record<string, string> = {
-  dawn: '凌晨', morning: '早上', afternoon: '下午', night: '晚上',
+  dawn: '凌晨', morning: '上午', afternoon: '下午', night: '夜晚',
+};
+
+const TYPE_LABELS: Record<string, string> = {
+  expense: '支出', income: '收入', transfer: '转账',
 };
 
 function todayStr(): string {
@@ -55,6 +79,18 @@ function shiftDate(dateText: string, options: { days?: number; years?: number })
   if (options.days) date.setDate(date.getDate() + options.days);
   if (options.years) date.setFullYear(date.getFullYear() + options.years);
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * 根据当前小时数返回默认时段
+ * 0~5 → dawn, 6~11 → morning, 12~17 → afternoon, 18~23 → night
+ */
+function getDefaultBucket(): RecurringBucket {
+  const hour = new Date().getHours();
+  if (hour < 6) return 'dawn';
+  if (hour < 12) return 'morning';
+  if (hour < 18) return 'afternoon';
+  return 'night';
 }
 
 interface AppWithBootstrap {
@@ -71,6 +107,7 @@ Page({
 
     // 卡片1：记什么
     entryType: 'expense' as 'income' | 'expense' | 'transfer',
+    entryTypeLabel: '支出',
     amountCents: 0,
     amountDisplay: '',
     categoryId: '',
@@ -80,15 +117,17 @@ Page({
     ledgerName: '',
     ledgerFamilyId: '',
     timezone: 'Asia/Shanghai',
-    sharedType: 'shared' as 'personal' | 'shared',
+    sharedType: 'personal' as 'personal' | 'shared',
+    sharedDisabled: false,
     note: '',
     showCategoryPicker: false,
 
     // 卡片2：什么时候记
     period: 'weekly' as RecurringPeriod,
+    periodInterval: 1,
     periodLabel: '每周',
     showPeriodSheet: false,
-    bucket: 'morning' as RecurringBucket,
+    bucket: getDefaultBucket() as RecurringBucket,
     startDate: todayStr(),
     startDateMin: shiftDate(todayStr(), { days: -1 }),
     startDateMax: shiftDate(todayStr(), { years: 3 }),
@@ -182,6 +221,7 @@ Page({
     }
 
     // 初始表单尚无用户修改，不开启系统离开告警。
+    this._updateSharedState();
     this._updatePreview();
     this._validate();
   },
@@ -194,6 +234,8 @@ Page({
       categories = getCategoriesSync(familyId);
     }
     const cat = categories.find((c) => c.id === r.category_id);
+    const catParent = cat?.parentId ? categories.find((c) => c.id === cat.parentId) : null;
+    const catDisplayName = cat ? (catParent ? `${catParent.name}·${cat.name}` : cat.name) : '';
 
     // 编辑模式保留服务端 execute_hour/minute
     if (mode === 'edit') {
@@ -204,10 +246,11 @@ Page({
     this.setData({
       ruleVersion: mode === 'edit' ? r.version : 1,
       entryType: r.type,
-      amountCents: r.amount,
+      entryTypeLabel: TYPE_LABELS[r.type] || '',
+ amountCents: r.amount,
       amountDisplay: toYuan(r.amount),
       categoryId: r.category_id || '',
-      categoryName: cat?.name || '',
+      categoryName: catDisplayName,
       categoryIcon: cat?.icon || '',
       ledgerId: r.ledger_id,
       ledgerName: family?.ledger_name || '',
@@ -216,7 +259,8 @@ Page({
       sharedType: (r.shared_type as 'personal' | 'shared') || 'shared',
       note: r.note || '',
       period: r.period,
-      periodLabel: PERIOD_OPTIONS.find((p) => p.value === r.period)?.label || '',
+      periodInterval: r.period_interval || parsePeriodInterval(r.period),
+      periodLabel: computePeriodLabel(r.period, r.period_interval || parsePeriodInterval(r.period)),
       bucket: r.execute_bucket,
       startDate: r.start_date,
       hasEndDate: !!r.end_date,
@@ -272,40 +316,23 @@ Page({
 
   // ─── 卡片1 交互 ──────────────────────────────────────────────────────────
 
-  onTypeChange(e: WechatMiniprogram.TouchEvent) {
-    const type = e.currentTarget.dataset.type as 'income' | 'expense' | 'transfer';
-    if (type === this.data.entryType) return;
-    this.setData({
-      entryType: type,
-      categoryId: '',
-      categoryName: '',
-      categoryIcon: '',
-      sharedType: type === 'expense' ? this.data.sharedType : 'shared',
-    });
-    this._markDirty();
-    this._validate();
-    this._updatePreview();
+  onAmountInput(e: WechatMiniprogram.Input) {
+    // 仅同步显示值，不做格式化，让用户自由输入
+    this.setData({ amountDisplay: e.detail.value });
   },
 
-  onTapAmount() {
-    wx.showModal({
-      title: '输入金额（元）',
-      editable: true,
-      placeholderText: '0.00',
-      content: this.data.amountDisplay || '',
-      success: (res) => {
-        if (res.confirm && res.content) {
-          const cents = parseAmountInputToCents(res.content);
-          this.setData({
-            amountCents: cents,
-            amountDisplay: cents > 0 ? toYuan(cents) : '',
-          });
-          this._markDirty();
-          this._validate();
-          this._updatePreview();
-        }
-      },
-    });
+  onAmountBlur(e: WechatMiniprogram.Input) {
+    const raw = e.detail.value || '';
+    const cents = parseAmountInputToCents(raw);
+    this.setData({
+      amountCents: cents,
+      amountDisplay: cents > 0 ? toYuan(cents) : '',
+  });
+    if (cents > 0) {
+      this._markDirty();
+    }
+    this._validate();
+    this._updatePreview();
   },
 
   onShowCategoryPicker() {
@@ -313,21 +340,23 @@ Page({
   },
 
   onCategorySelect(e: WechatMiniprogram.CustomEvent) {
-    const { id, name, icon, type } = e.detail;
-    const updates: Record<string, any> = {
+    const { id, name, icon, type, parentName } = e.detail;
+    const fullName = parentName ? `${parentName}·${name}` : name;
+const updates: Record<string, any> = {
       categoryId: id,
-      categoryName: name,
+      categoryName: fullName,
       categoryIcon: icon,
       showCategoryPicker: false,
     };
     if (type && type !== this.data.entryType) {
       updates.entryType = type;
-      if (type !== 'expense') updates.sharedType = 'shared';
-    }
+      updates.entryTypeLabel = TYPE_LABELS[type] || '';
+  }
     this.setData(updates);
+    this._updateSharedState();
     this._markDirty();
     this._validate();
-    this._updatePreview();
+ this._updatePreview();
   },
 
   onCategoryClose() {
@@ -342,22 +371,24 @@ Page({
         const f = this._families[res.tapIndex];
         if (f && f.ledger_id !== this.data.ledgerId) {
           this.setData({
-            ledgerId: f.ledger_id,
+         ledgerId: f.ledger_id,
             ledgerName: f.ledger_name,
             ledgerFamilyId: f.id,
             categoryId: '',
-            categoryName: '',
-            categoryIcon: '',
+categoryName: '',
+         categoryIcon: '',
           });
-          this._markDirty();
+          this._updateSharedState();
+    this._markDirty();
           this._validate();
-          this._updatePreview();
+        this._updatePreview();
         }
       },
     });
   },
 
   onToggleShared(e: WechatMiniprogram.TouchEvent) {
+    if (this.data.sharedDisabled) return;
     const val = e.currentTarget.dataset.val as 'personal' | 'shared';
     if (val === this.data.sharedType) return;
     this.setData({ sharedType: val });
@@ -373,12 +404,14 @@ Page({
 
   onPeriodChange(e: WechatMiniprogram.CustomEvent) {
     const value = e.detail.value as RecurringPeriod;
+    const interval = (e.detail.periodInterval as number) || parsePeriodInterval(value);
     const oldPeriod = this.data.period;
-    const label = PERIOD_OPTIONS.find((p) => p.value === value)?.label || '';
+    const label = computePeriodLabel(value, interval);
     const clearDays = shouldClearDaysOnPeriodChange(oldPeriod, value);
 
     const updates: Record<string, any> = {
       period: value,
+      periodInterval: interval,
       periodLabel: label,
       showPeriodSheet: false,
     };
@@ -387,7 +420,7 @@ Page({
       updates.daysOfWeek = [];
       updates.daysOfMonth = [];
       updates.yearMonthDays = [];
-      wx.showToast({ title: '已重置日子选择', icon: 'none', duration: 1500 });
+      wx.showToast({ title: '日期选择已重置', icon: 'none', duration: 1000 });
     }
 
     this.setData(updates);
@@ -484,8 +517,14 @@ Page({
 
   onToggleEndDate() {
     const has = !this.data.hasEndDate;
-    this.setData({ hasEndDate: has });
-    if (!has) this.setData({ endDate: '' });
+    if (has && !this.data.endDate) {
+      // 默认结束日 = 起始日次日
+      const defaultEnd = shiftDate(this.data.startDate, { days: 1 });
+      this.setData({ hasEndDate: true, endDate: defaultEnd });
+    } else {
+      this.setData({ hasEndDate: has });
+      if (!has) this.setData({ endDate: '' });
+    }
     this._markDirty();
     this._validate();
     this._updatePreview();
@@ -498,11 +537,32 @@ Page({
     this._updatePreview();
   },
 
+  // ─── 归属联动 ──────────────────────────────────────────────────────────
+
+  /**
+   * 当类型/账本变更时，重新计算归属是否可切换。
+   * 规则：只有家庭账本(kind=shared) + 支出类型才允许选"公共"；
+   * 否则强制设为"个人"并置灰。
+   */
+  _updateSharedState() {
+    const { entryType, ledgerFamilyId } = this.data;
+    const family = this._families.find((f) => f.id === ledgerFamilyId);
+    const isSharedLedger = family?.kind === 'shared';
+    const isExpense = entryType === 'expense';
+    const disabled = !isSharedLedger || !isExpense;
+
+    if (disabled) {
+    this.setData({ sharedType: 'personal', sharedDisabled: true });
+    } else {
+      this.setData({ sharedDisabled: false });
+    }
+  },
+
   // ─── 预览 ──────────────────────────────────────────────────────────────
 
   _updatePreview() {
-    const { period, bucket, ledgerName } = this.data;
-    const periodLabel = PERIOD_OPTIONS.find((p) => p.value === period)?.label || '';
+    const { period, periodInterval, bucket, ledgerName } = this.data;
+    const periodLabel = computePeriodLabel(period, periodInterval);
     const bucketLabel = BUCKET_LABELS[bucket] || '';
 
     // 日子描述
@@ -587,16 +647,20 @@ Page({
 
     const payload: CreateRecurringPayload = {
       ledger_id: this.data.ledgerId,
-      type: this.data.entryType,
+    type: this.data.entryType,
       amount: this.data.amountCents,
       currency: 'CNY',
       category_id: this.data.categoryId || null,
       note: this.data.note || null,
-      shared_type: this.data.entryType === 'expense' ? this.data.sharedType : null,
+      shared_type: this.data.entryType === 'expense' ? this.data.sharedType : undefined,
       period: this.data.period,
-      days_of_week: ['weekly', 'biweekly'].includes(this.data.period) ? this.data.daysOfWeek : null,
-      days_of_month: ['monthly', 'bimonthly', 'trimonthly'].includes(this.data.period) ? this.data.daysOfMonth : null,
-      year_month_days: this.data.period === 'yearly' ? this.data.yearMonthDays : null,
+      period_interval: this.data.periodInterval,
+      days_of_week: ['weekly', 'biweekly'].includes(this.data.period)
+        ? (this.data.daysOfWeek.length > 0 ? this.data.daysOfWeek : null) : null,
+      days_of_month: ['monthly', 'bimonthly', 'trimonthly'].includes(this.data.period)
+        ? (this.data.daysOfMonth.length > 0 ? this.data.daysOfMonth : null) : null,
+    year_month_days: this.data.period === 'yearly'
+        ? (this.data.yearMonthDays.length > 0 ? this.data.yearMonthDays : null) : null,
       execute_bucket: this.data.bucket,
       timezone: this.data.timezone,
       start_date: this.data.startDate,
@@ -637,7 +701,9 @@ Page({
         wx.showToast({ title: '网络不佳，已暂存', icon: 'none' });
         setTimeout(() => wx.navigateBack(), 1500);
       } else {
-        wx.showToast({ title: '保存失败', icon: 'none' });
+        const msg = e?.message || e?.data?.message || '保存失败';
+        wx.showToast({ title: msg, icon: 'none' });
+ console.error('[recurring-edit] save error:', JSON.stringify(e));
       }
     } finally {
       this.setData({ saving: false });

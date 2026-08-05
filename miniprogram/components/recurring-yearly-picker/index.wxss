@@ -1,19 +1,11 @@
 /* components/recurring-yearly-picker/index.wxss */
 .ryear { padding: 16rpx 0 24rpx; }
-.ryear__summary-bar {
-  display: flex; align-items: center; flex-wrap: wrap;
-  background: rgba(28,27,26,0.03); border-radius: 16rpx; padding: 16rpx 24rpx; margin-bottom: 16rpx;
-}
-.ryear__summary-count { font-size: 26rpx; color: rgba(28,27,26,0.48); margin-right: 16rpx; }
-.ryear__count-bold { font-weight: 700; color: #8AA98F; }
-.ryear__summary-list { font-size: 26rpx; color: rgba(28,27,26,0.48); flex: 1; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-overflow: ellipsis; }
-.ryear__clear { font-size: 26rpx; color: rgba(28,27,26,0.48); margin-left: 16rpx; }
-.ryear__clear--disabled { color: rgba(28,27,26,0.28); }
+.ryear__months-hint { font-size: 22rpx; color: rgba(28,27,26,0.32); text-align: center; margin-bottom: 8rpx; }
 .ryear__months { white-space: nowrap; margin-bottom: 16rpx; }
 .ryear__month-tab {
   display: inline-flex; position: relative; align-items: center; justify-content: center;
-  width: 72rpx; height: 72rpx; font-size: 28rpx; font-weight: 500; color: #1c1b1a;
-  border-radius: 50%; margin-right: 8rpx;
+  min-width: 80rpx; height: 72rpx; font-size: 26rpx; font-weight: 500; color: #1c1b1a;
+  border-radius: 36rpx; margin-right: 8rpx; padding: 0 12rpx;
 }
 .ryear__month-tab--active { background: #ffffff; border: 1rpx solid #1c1b1a; }
 .ryear__month-badge {
@@ -42,4 +34,14 @@
   0%, 100% { background: #ffffff; }
   50% { background: #C08A7B; }
 }
+.ryear__summary-bar {
+  display: flex; align-items: baseline; flex-wrap: wrap;
+  background: rgba(28,27,26,0.03); border-radius: 16rpx; padding: 16rpx 24rpx; margin-top: 16rpx;
+}
+.ryear__summary-count { font-size: 26rpx; color: rgba(28,27,26,0.48); flex-shrink: 0; }
+.ryear__summary-sep { font-size: 22rpx; color: rgba(28,27,26,0.20); margin: 0 12rpx; flex-shrink: 0; }
+.ryear__count-bold { font-weight: 700; color: #8AA98F; }
+.ryear__summary-list { font-size: 26rpx; color: rgba(28,27,26,0.48); flex: 1; }
+.ryear__clear { font-size: 26rpx; color: rgba(28,27,26,0.48); margin-left: 16rpx; flex-shrink: 0; }
+.ryear__clear--disabled { color: rgba(28,27,26,0.28); }
 .ryear__hint { font-size: 22rpx; color: #A0A69C; margin-top: 16rpx; padding: 0 4rpx; }

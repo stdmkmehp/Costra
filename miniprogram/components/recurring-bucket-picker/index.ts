@@ -6,9 +6,9 @@ import type { RecurringBucket } from '../../services/recurringApi';
 
 const BUCKET_OPTIONS: { value: RecurringBucket; label: string }[] = [
   { value: 'dawn', label: '凌晨' },
-  { value: 'morning', label: '早上' },
+  { value: 'morning', label: '上午' },
   { value: 'afternoon', label: '下午' },
-  { value: 'night', label: '晚上' },
+  { value: 'night', label: '夜晚' },
 ];
 
 Component({

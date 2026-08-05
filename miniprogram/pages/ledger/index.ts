@@ -36,7 +36,6 @@ import {
   getCategoryIconById,
   getCategoryNameById,
 } from '../../services/categoryService';
-import { loadCategoriesSync, refreshCategoryDataAsync } from '../../components/expense-overlay/categories';
 import {
   INITIAL_CALC_STATE, inputDigit, inputDot,
   inputOperator, inputBackspace, pressEquals,
@@ -254,19 +253,13 @@ Page({
     // ─── 左滑 ───
     swipingRefId: '',
 
-    // ─── COSTRA-227: 编辑状态 ───
+    // ─── COSTRA-227: 分类编辑状态 ───
     editCategoryVisible: false,
-    editTier1Categories: [] as { id: string; icon: string; name: string; children: { id: string; name: string; icon: string }[] }[],
-    editDedupedSubCategories: [] as { id: string; name: string; icon: string }[],
-    editExpandedTier1Id: null as string | null,
-    editExpandedChildren: [] as { id: string; name: string; icon: string }[],
-    editSelectedTier1Id: '',
     editSelectedTier2Id: '',
-    editDimmedTier1Ids: [] as string[],
+    /** 正在编辑（金额/备注/分类）的流水 client_ref_id */
+    editActiveRefId: '',
     editingNoteRefId: '',
     editNoteValue: '',
-    /** 正在编辑（金额/备注/分类）的流水 client_ref_id · 复用长按暖光高亮提醒用户当前编辑对象 */
-    editActiveRefId: '',
     editAmountVisible: false,
     editAmountDisplay: '0',
     editAmountCalc: { ...INITIAL_CALC_STATE } as CalcState,
@@ -274,22 +267,10 @@ Page({
     editAmountSharedType: 'personal' as 'personal' | 'shared',
     editAmountDate: '',
     editAmountDateText: '今天',
-    editCategoryType: 'expense' as 'expense' | 'income' | 'transfer',
-    /** 分类编辑只允许在原 entry.type 内改分类，避免 category.type 与 entry.type 不一致 */
+    /** 分类编辑锁定类型（只允许在原 entry.type 内改分类） */
     editCategoryLockedType: 'expense' as 'expense' | 'income' | 'transfer',
-    /** COSTRA-228 / migration 0004: swiper current 绑定（0=支出 / 1=收入 / 2=转移） */
-    editCategoryTypeIndex: 0,
-    /** COSTRA-228: swiper 切换动画时长 */
-    editCategorySwiperDuration: 240,
-    editCategoryList: [] as { id: string; icon: string; name: string }[],
-    editSelectedCategoryId: '',
-    // COSTRA-228 / migration 0004: 三 pane 数据（手势横滑期间各 pane 都已渲染）
-    editExpenseTier1Categories: [] as { id: string; icon: string; name: string; children: { id: string; name: string; icon: string }[] }[],
-    editIncomeTier1Categories: [] as { id: string; icon: string; name: string; children: { id: string; name: string; icon: string }[] }[],
-    editTransferTier1Categories: [] as { id: string; icon: string; name: string; children: { id: string; name: string; icon: string }[] }[],
-    editExpenseDedupedSubCategories: [] as { id: string; name: string; icon: string }[],
-    editIncomeDedupedSubCategories: [] as { id: string; name: string; icon: string }[],
-    editTransferDedupedSubCategories: [] as { id: string; name: string; icon: string }[],
+    /** category-grid 组件用的 familyId */
+    activeFamilyId: '' as string,
 
     // ─── 列表滚动位置（COSTRA-220: 月份切换后滚动到顶部） ───
     listScrollTop: 0,
@@ -318,10 +299,7 @@ Page({
   _swipeScrollIdleTimer: null as ReturnType<typeof setTimeout> | null,
   _lastSwipeEndAt: 0 as number,
   _shouldRefreshEmptyHintOnNextEmpty: false as boolean,
-  /** 分类编辑面板横滑手势起点（用于识别横滑并弹「不能跨类型」弱提示） */
-  _editCatTouchX: 0 as number,
-  _editCatTouchY: 0 as number,
-  /** 「不能跨类型修改分类」弱提示节流时间戳（防连滑/连点刷屏） */
+  /** 「不能跨类型修改分类」弱提示节流时间戳 */
   _lastTypeLockToastAt: 0 as number,
   /** 流水类型筛选状态 */
   _filterEntryType: 'all' as EntryTypeFilter,
@@ -1770,10 +1748,7 @@ Page({
   // ─── COSTRA-227: 条目区域点击编辑 ────────────────────────────────────────────
 
   /**
-   * 点击分类图标 → 全屏分类选择面板（和记账界面一致）。
-   *
-   * 设计原则（2026-06-05 重构）：永不 await 网络。
-   * 同步用 loadCategoriesSync 立即打开，再后台 fire-and-forget 调 refreshCategoryDataAsync 增量刷新。
+   * 点击分类图标 → 全屏分类选择面板。
    */
   onTapEntryCategory(e: WechatMiniprogram.TouchEvent) {
     if (this._consumeNoteEditingIfActive()) return;
@@ -1793,149 +1768,32 @@ Page({
     const familyId = this._familyId;
     if (!familyId) return;
 
-    // —— 阶段 1：同步加载分类（内存缓存 → fallback）——
-    const categoryData = loadCategoriesSync(familyId);
-    (this as unknown as Record<string, unknown>)._editCategoryData = categoryData;
-
     const entryType: 'expense' | 'income' | 'transfer' = entry.type || 'expense';
-    const tier1 = entryType === 'expense'
-      ? categoryData.expense
-      : entryType === 'income'
-        ? categoryData.income
-        : categoryData.transfer;
-    const deduped = entryType === 'expense'
-      ? categoryData.expenseDedupedSubs
-      : entryType === 'income'
-        ? categoryData.incomeDedupedSubs
-        : categoryData.transferDedupedSubs;
-
-    // 找到当前选中的分类
-    let selectedTier1Id = '';
     const selectedTier2Id = entry.category_id || '';
-    if (selectedTier2Id) {
-      for (const t of tier1) {
-        if (t.children.some(c => c.id === selectedTier2Id)) {
-          selectedTier1Id = t.id;
-          break;
-        }
-      }
-    }
 
-    // COSTRA-227: 通知 tabbar 隐藏
+  // COSTRA-227: 通知 tabbar 隐藏
     eventBus.emit(EventNames.HIDE_TAB_BAR);
 
-    // —— 阶段 2：同步打开面板 ——
+    // 打开 category-grid 组件（组件自行加载分类数据）
     this.setData({
       editCategoryVisible: true,
       editActiveRefId: refId,
-      editCategoryType: entryType,
       editCategoryLockedType: entryType,
-      editCategoryTypeIndex: entryType === 'transfer' ? 2 : entryType === 'income' ? 1 : 0,
-      editCategorySwiperDuration: 0,
-      // COSTRA-228: 三 pane 数据
-      editExpenseTier1Categories: categoryData.expense,
-      editIncomeTier1Categories: categoryData.income,
-      editTransferTier1Categories: categoryData.transfer,
-      editExpenseDedupedSubCategories: categoryData.expenseDedupedSubs,
-      editIncomeDedupedSubCategories: categoryData.incomeDedupedSubs,
-      editTransferDedupedSubCategories: categoryData.transferDedupedSubs,
-      editTier1Categories: tier1,
-      editDedupedSubCategories: deduped,
-      editExpandedTier1Id: null,
-      editExpandedChildren: [],
-      editSelectedTier1Id: selectedTier1Id,
       editSelectedTier2Id: selectedTier2Id,
-      editDimmedTier1Ids: [],
-    });
-
-    // COSTRA-228: 50ms 后恢复 swiper 动画时长
-    setTimeout(() => {
-      this.setData({ editCategorySwiperDuration: 240 });
-    }, 50);
-
-    // —— 阶段 3：后台 fire-and-forget 刷新（仅签名变化时增量更新列表，不动 selected*）——
-    void this._refreshEditCategoriesAsync(familyId, categoryData.signature);
-  },
-
-  /**
-   * 后台刷新分类编辑面板的分类列表。
-   * 守护：面板关闭/正在保存/签名相等 → 跳过。不覆盖 selected*。
-   */
-  async _refreshEditCategoriesAsync(familyId: string, oldSignature: string) {
-    let next: Awaited<ReturnType<typeof refreshCategoryDataAsync>>;
-    try {
-      next = await refreshCategoryDataAsync(familyId);
-    } catch {
-      return; // 静默
-    }
-    if (next.signature === oldSignature) return;
-    if (!this.data.editCategoryVisible) {
-      // 面板已关，仅更新实例属性
-      (this as unknown as Record<string, unknown>)._editCategoryData = next;
-      return;
-    }
-    (this as unknown as Record<string, unknown>)._editCategoryData = next;
-
-    const editType = this.data.editCategoryType;
-    const tier1 = editType === 'expense'
-      ? next.expense
-      : editType === 'income'
-        ? next.income
-        : next.transfer;
-    const deduped = editType === 'expense'
-      ? next.expenseDedupedSubs
-      : editType === 'income'
-        ? next.incomeDedupedSubs
-        : next.transferDedupedSubs;
-
-    // COSTRA-228: 三 pane 数据同时刷新
-    this.setData({
-      editExpenseTier1Categories: next.expense,
-      editIncomeTier1Categories: next.income,
-      editTransferTier1Categories: next.transfer,
-      editExpenseDedupedSubCategories: next.expenseDedupedSubs,
-      editIncomeDedupedSubCategories: next.incomeDedupedSubs,
-      editTransferDedupedSubCategories: next.transferDedupedSubs,
-      editTier1Categories: tier1,
-      editDedupedSubCategories: deduped,
+      activeFamilyId: familyId,
     });
   },
 
-  /** 分类面板：点击一级分类 → 展开子分类 */
-  onEditTapTier1(e: WechatMiniprogram.TouchEvent) {
-    const tier1Id = (e.currentTarget.dataset as Record<string, string>).id;
-    if (!tier1Id) return;
-
-    const tier1 = this.data.editTier1Categories.find(c => c.id === tier1Id);
-    if (!tier1) return;
-
-    // 如果点击已展开的一级分类 → 收起
-    if (this.data.editExpandedTier1Id === tier1Id) {
-      this.setData({
-        editExpandedTier1Id: null,
-        editExpandedChildren: [],
-        editDimmedTier1Ids: [],
-      });
-      return;
-    }
-
-    const dimmed = this.data.editTier1Categories
-      .filter(c => c.id !== tier1Id)
-      .map(c => c.id);
-
-    this.setData({
-      editExpandedTier1Id: tier1Id,
-      editExpandedChildren: tier1.children,
-      editSelectedTier1Id: tier1Id,
-      editDimmedTier1Ids: dimmed,
-    });
+  onCloseEditCategory() {
+    this._closeEditCategory();
   },
 
-  /** 分类面板：选中二级分类 → 保存并关闭 */
-  async onEditTapSubCategory(e: WechatMiniprogram.TouchEvent) {
-    const catId = (e.currentTarget.dataset as Record<string, string>).id;
+  /** category-grid 组件选中事件 → 保存并关闭 */
+  async onEditCategoryGridSelect(e: WechatMiniprogram.CustomEvent) {
+    const catId = e.detail.id as string;
+    const type = e.detail.type as 'expense' | 'income' | 'transfer';
 
-    // SOP 步骤 1: 幂等 guard
+    // 幂等 guard
     const refId = this._editingRefId;
     this._editingRefId = '';
     if (!catId || !refId) {
@@ -1943,41 +1801,36 @@ Page({
       return;
     }
 
-    // SOP 步骤 2: 取内存对象
     const entry = this._findRawEntry(refId);
     if (!entry) {
       this._closeEditCategory();
       return;
     }
 
-    // 分类编辑只允许在原 entry.type 内改分类；跨类型改账需独立产品能力承载。
-    if (this.data.editCategoryType !== entry.type) {
+    // 类型一致性 guard：分类编辑只允许在原 entry.type 内改分类
+    if (type !== entry.type) {
       this._closeEditCategory();
       this._showTypeLockToast();
       return;
     }
 
-    // SOP 步骤 3: 同等性 guard
+    // 同等性 guard
     if (entry.category_id === catId) {
       this._closeEditCategory();
       return;
     }
 
-    // SOP 步骤 4: 同步赋值内存
+    // 同步赋值内存
     const now = new Date().toISOString();
     entry.category_id = catId;
     entry.updated_at = now;
 
-    // SOP 步骤 5: 关闭面板
+    // 关闭面板 + 同步渲染
     this._closeEditCategory();
-
-    // SOP 步骤 6: 同步渲染
     this._buildDisplay();
 
-    // SOP 步骤 7: await 持久化
+    // 持久化 + 入队
     await updateEntryFields(entry.client_ref_id, { category_id: catId, updated_at: now });
-
-    // SOP 步骤 8: await 入队
     await enqueue({
       op: 'update',
       entity: 'entry',
@@ -1987,114 +1840,18 @@ Page({
     });
   },
 
-  onCloseEditCategory() {
-    this._closeEditCategory();
-  },
-
-  /** 关闭分类编辑面板（统一出口：隐藏面板 + 恢复 tabbar + 取消行内编辑高亮） */
+  /** 关闭分类编辑面板 */
   _closeEditCategory() {
     this.setData({ editCategoryVisible: false, editActiveRefId: '' });
     eventBus.emit(EventNames.SHOW_TAB_BAR);
   },
 
-  /**
-   * 「禁止修改流水类型」弱提示（统一出口 · 带 1.5s 节流防连滑/连点刷屏）。
-   * icon:'none' 纯文字弱提醒 + 短时长，不打断操作。
-   */
+  /** 「禁止修改流水类型」弱提示（1.5s 节流） */
   _showTypeLockToast() {
     const now = Date.now();
     if (now - this._lastTypeLockToastAt < 1500) return;
     this._lastTypeLockToastAt = now;
     wx.showToast({ title: '禁止修改流水类型', icon: 'none', duration: 800 });
-  },
-
-  /** 分类面板：点击 tab 切换收支（修改分类锁定类型，点击其它类型仅弱提示不切换） */
-  onEditCategoryTypeTab(e: WechatMiniprogram.TouchEvent) {
-    const type = (e.currentTarget.dataset as Record<string, string>).type as 'expense' | 'income' | 'transfer';
-    if (type !== this.data.editCategoryLockedType) {
-      this._showTypeLockToast();
-      return;
-    }
-    const targetIdx = type === 'transfer' ? 2 : type === 'income' ? 1 : 0;
-    if (targetIdx === this.data.editCategoryTypeIndex) return;
-    this.setData({ editCategoryTypeIndex: targetIdx });
-  },
-
-  /**
-   * 分类面板：横滑手势起点记录。
-   * swiper 保留 disable-touch（不真正翻页），但 touch 事件仍照常派发，
-   * 借此识别用户的横滑意图并在 touchend 弹「禁止修改流水类型」弱提示。
-   */
-  onEditCategoryTouchStart(e: WechatMiniprogram.TouchEvent) {
-    const t = e.touches[0] || e.changedTouches[0];
-    if (!t) return;
-    this._editCatTouchX = t.clientX;
-    this._editCatTouchY = t.clientY;
-  },
-
-  /**
-   * 分类面板：横滑手势判定（需明确横扫才提示，尽量减少误触）。
-   * 条件：横向位移 > 100px 且横向明显主导（dx > dy*1.5）；
-   * 过滤掉点击微抖、斜滑、纵向滚动带出的横向分量。
-   */
-  onEditCategoryTouchEnd(e: WechatMiniprogram.TouchEvent) {
-    const t = e.changedTouches[0];
-    if (!t) return;
-    const dx = Math.abs(t.clientX - this._editCatTouchX);
-    const dy = Math.abs(t.clientY - this._editCatTouchY);
-    if (dx > 100 && dx > dy * 1.5) {
-      this._showTypeLockToast();
-    }
-  },
-
-  /** 分类面板：swiper 横滑切换回调（统一更新 editCategoryType + 分类列表） */
-  onEditCategorySwiperChange(e: WechatMiniprogram.SwiperChange) {
-    const idx = e.detail.current;
-    const nextType: 'expense' | 'income' | 'transfer' =
-      idx === 2 ? 'transfer' : idx === 1 ? 'income' : 'expense';
-    if (nextType !== this.data.editCategoryLockedType) {
-      const locked = this.data.editCategoryLockedType;
-      this.setData({ editCategoryTypeIndex: locked === 'transfer' ? 2 : locked === 'income' ? 1 : 0 });
-      return;
-    }
-    if (nextType === this.data.editCategoryType) return;
-    this._switchEditCategoryType(nextType);
-  },
-
-  /** 分类面板：收支切换核心逻辑 */
-  _switchEditCategoryType(type: 'expense' | 'income' | 'transfer') {
-    const catData = (this as unknown as Record<string, unknown>)._editCategoryData as {
-      expense: { id: string; icon: string; name: string; children: { id: string; name: string; icon: string }[] }[];
-      income: { id: string; icon: string; name: string; children: { id: string; name: string; icon: string }[] }[];
-      transfer: { id: string; icon: string; name: string; children: { id: string; name: string; icon: string }[] }[];
-      expenseDedupedSubs: { id: string; name: string; icon: string }[];
-      incomeDedupedSubs: { id: string; name: string; icon: string }[];
-      transferDedupedSubs: { id: string; name: string; icon: string }[];
-    } | undefined;
-    if (!catData) return;
-
-    const tier1 = type === 'expense'
-      ? catData.expense
-      : type === 'income'
-        ? catData.income
-        : catData.transfer;
-    const deduped = type === 'expense'
-      ? catData.expenseDedupedSubs
-      : type === 'income'
-        ? catData.incomeDedupedSubs
-        : catData.transferDedupedSubs;
-
-    this.setData({
-      editCategoryType: type,
-      editCategoryTypeIndex: type === 'transfer' ? 2 : type === 'income' ? 1 : 0,
-      editTier1Categories: tier1,
-      editDedupedSubCategories: deduped,
-      editExpandedTier1Id: null,
-      editExpandedChildren: [],
-      editSelectedTier1Id: '',
-      editSelectedTier2Id: '',
-      editDimmedTier1Ids: [],
-    });
   },
 
   /** 点击文字区域 → 原地 inline 编辑备注 */

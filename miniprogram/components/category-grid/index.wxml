@@ -1,0 +1,240 @@
+<!-- components/category-grid/index.wxml · 全屏分类选择组件 -->
+
+<view class="catgrid {{animatable ? 'catgrid--animatable' : ''}} {{show ? 'is-visible' : ''}}" wx:if="{{rendered}}" catchtouchmove="onNoop">
+  <view class="catgrid__shell">
+
+    <!-- ═══ 顶部 Header ═══ -->
+    <view class="catgrid__header" style="padding-top: {{headerPaddingTop}}px;" catchtouchmove="onNoop">
+      <text class="catgrid__close" bindtap="onClose">取消</text>
+ <view class="catgrid__tabs {{lockType ? 'is-disabled' : ''}}">
+     <view
+          class="catgrid__tab {{entryType === 'expense' ? 'is-active' : ''}}"
+       data-type="expense"
+ bindtap="onTapTab"
+  >
+          <text class="catgrid__tab-text">支出</text>
+   <view class="catgrid__tab-indicator"></view>
+        </view>
+        <text class="catgrid__sep">·</text>
+        <view
+          class="catgrid__tab {{entryType === 'income' ? 'is-active' : ''}}"
+          data-type="income"
+        bindtap="onTapTab"
+   >
+      <text class="catgrid__tab-text">收入</text>
+          <view class="catgrid__tab-indicator"></view>
+  </view>
+     <text class="catgrid__sep">·</text>
+        <view
+   class="catgrid__tab {{entryType === 'transfer' ? 'is-active' : ''}}"
+          data-type="transfer"
+          bindtap="onTapTab"
+        >
+          <text class="catgrid__tab-text">转移</text>
+          <view class="catgrid__tab-indicator"></view>
+        </view>
+      </view>
+ <view class="catgrid__placeholder"></view>
+    </view>
+
+    <!-- ═══ 分类 Swiper 区 ═══ -->
+    <swiper
+  class="catgrid__swiper"
+      current="{{entryTypeIndex}}"
+      duration="{{swiperDuration}}"
+      disable-touch="{{lockType}}"
+      bindchange="onSwiperChange"
+    >
+    <!-- 支出 pane -->
+      <swiper-item>
+   <scroll-view
+    class="catgrid__scroll"
+      scroll-y
+     enhanced="{{true}}"
+        show-scrollbar="{{false}}"
+          scroll-top="{{entryType === 'expense' ? scrollTop : 0}}"
+          bindscroll="onScroll"
+        >
+          <view class="category-section category-section--tier1">
+    <view
+         wx:for="{{expenseTier1}}"
+              wx:key="id"
+        class="category-tier1 {{entryType === 'expense' && selectedTier1Id === item.id ? 'is-selected' : ''}} {{entryType === 'expense' && dimmedTier1Ids.indexOf(item.id) >= 0 ? 'is-dimmed' : ''}}"
+  data-id="{{item.id}}"
+     bindtap="onTapTier1"
+ >
+  <view class="category-tier1__icon">{{item.icon}}</view>
+         <text class="category-tier1__name">{{item.name}}</text>
+       </view>
+          </view>
+
+          <view class="category-divider"></view>
+
+     <view
+        class="category-section category-section--tier2"
+            wx:if="{{entryType === 'expense' && expandedChildren.length > 0}}"
+          >
+            <view
+          wx:for="{{expandedChildren}}"
+       wx:key="id"
+        class="category-item {{selectedTier2Id === item.id ? 'is-selected' : ''}}"
+       data-id="{{item.id}}"
+   bindtap="onTapExpandedChild"
+ >
+              <view class="category-item__icon">{{item.icon}}</view>
+              <text class="category-item__name">{{item.name}}</text>
+            </view>
+          </view>
+
+          <view
+    class="category-section category-section--tier2"
+     wx:if="{{entryType !== 'expense' || !expandedTier1Id}}"
+       >
+            <view
+         wx:for="{{expenseDedupedSubs}}"
+   wx:key="id"
+              class="category-item {{entryType === 'expense' && selectedTier2Id === item.id ? 'is-selected' : ''}}"
+           data-id="{{item.id}}"
+  data-name="{{item.name}}"
+  bindtap="onTapSubCategory"
+     >
+          <view class="category-item__icon">{{item.icon}}</view>
+     <text class="category-item__name">{{item.name}}</text>
+            </view>
+          </view>
+          <view class="category-bottom-spacer" style="height: {{safeAreaBottom || 20}}px;"></view>
+        </scroll-view>
+      </swiper-item>
+
+      <!-- 收入 pane -->
+      <swiper-item>
+ <scroll-view
+          class="catgrid__scroll"
+   scroll-y
+   enhanced="{{true}}"
+          show-scrollbar="{{false}}"
+          scroll-top="{{entryType === 'income' ? scrollTop : 0}}"
+       bindscroll="onScroll"
+        >
+   <view class="category-section category-section--tier1">
+   <view
+     wx:for="{{incomeTier1}}"
+              wx:key="id"
+  class="category-tier1 {{entryType === 'income' && selectedTier1Id === item.id ? 'is-selected' : ''}} {{entryType === 'income' && dimmedTier1Ids.indexOf(item.id) >= 0 ? 'is-dimmed' : ''}}"
+data-id="{{item.id}}"
+        bindtap="onTapTier1"
+            >
+   <view class="category-tier1__icon">{{item.icon}}</view>
+          <text class="category-tier1__name">{{item.name}}</text>
+      </view>
+       </view>
+
+ <view class="category-divider"></view>
+
+    <view
+            class="category-section category-section--tier2"
+         wx:if="{{entryType === 'income' && expandedChildren.length > 0}}"
+       >
+<view
+    wx:for="{{expandedChildren}}"
+        wx:key="id"
+    class="category-item {{selectedTier2Id === item.id ? 'is-selected' : ''}}"
+          data-id="{{item.id}}"
+              bindtap="onTapExpandedChild"
+      >
+  <view class="category-item__icon">{{item.icon}}</view>
+   <text class="category-item__name">{{item.name}}</text>
+   </view>
+       </view>
+
+    <view
+          class="category-section category-section--tier2"
+            wx:if="{{entryType !== 'income' || !expandedTier1Id}}"
+          >
+            <view
+        wx:for="{{incomeDedupedSubs}}"
+        wx:key="id"
+ class="category-item {{entryType === 'income' && selectedTier2Id === item.id ? 'is-selected' : ''}}"
+              data-id="{{item.id}}"
+              data-name="{{item.name}}"
+    bindtap="onTapSubCategory"
+ >
+              <view class="category-item__icon">{{item.icon}}</view>
+     <text class="category-item__name">{{item.name}}</text>
+         </view>
+          </view>
+          <view class="category-bottom-spacer" style="height: {{safeAreaBottom || 20}}px;"></view>
+  </scroll-view>
+      </swiper-item>
+
+      <!-- 转移 pane -->
+      <swiper-item>
+    <scroll-view
+       class="catgrid__scroll"
+   scroll-y
+          enhanced="{{true}}"
+          show-scrollbar="{{false}}"
+    scroll-top="{{entryType === 'transfer' ? scrollTop : 0}}"
+          bindscroll="onScroll"
+        >
+          <view class="category-section category-section--tier1">
+            <view
+       wx:for="{{transferTier1}}"
+     wx:key="id"
+     class="category-tier1 {{entryType === 'transfer' && selectedTier1Id === item.id ? 'is-selected' : ''}} {{entryType === 'transfer' && dimmedTier1Ids.indexOf(item.id) >= 0 ? 'is-dimmed' : ''}}"
+   data-id="{{item.id}}"
+     bindtap="onTapTier1"
+   >
+    <view class="category-tier1__icon">{{item.icon}}</view>
+        <text class="category-tier1__name">{{item.name}}</text>
+            </view>
+    </view>
+
+          <view class="category-divider"></view>
+
+          <view
+       class="category-section category-section--tier2"
+            wx:if="{{entryType === 'transfer' && expandedChildren.length > 0}}"
+          >
+            <view
+              wx:for="{{expandedChildren}}"
+              wx:key="id"
+       class="category-item {{selectedTier2Id === item.id ? 'is-selected' : ''}}"
+      data-id="{{item.id}}"
+    bindtap="onTapExpandedChild"
+   >
+              <view class="category-item__icon">{{item.icon}}</view>
+          <text class="category-item__name">{{item.name}}</text>
+       </view>
+          <view class="category-transfer-hint">
+         <text class="category-transfer-hint__text">转移记录不会计入收支统计</text>
+         </view>
+          </view>
+
+          <view
+            class="category-section category-section--tier2"
+ wx:if="{{entryType !== 'transfer' || !expandedTier1Id}}"
+        >
+         <view
+            wx:for="{{transferDedupedSubs}}"
+       wx:key="id"
+          class="category-item {{entryType === 'transfer' && selectedTier2Id === item.id ? 'is-selected' : ''}}"
+     data-id="{{item.id}}"
+     data-name="{{item.name}}"
+  bindtap="onTapSubCategory"
+  >
+              <view class="category-item__icon">{{item.icon}}</view>
+              <text class="category-item__name">{{item.name}}</text>
+            </view>
+    <view class="category-transfer-hint">
+           <text class="category-transfer-hint__text">转移记录不会计入收支统计</text>
+       </view>
+          </view>
+
+          <view class="category-bottom-spacer" style="height: {{safeAreaBottom || 20}}px;"></view>
+     </scroll-view>
+      </swiper-item>
+    </swiper>
+
+  </view>
+</view>
