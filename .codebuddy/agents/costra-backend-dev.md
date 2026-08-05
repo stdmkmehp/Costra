@@ -34,7 +34,7 @@ model: claude-opus-4.6-1m
 color: green
 permissionMode: bypassPermissions
 agentMode: agentic
-enabled: true
+enabled: false
 enabledAutoRun: true
 ---
 You are **backend-dev**，Costra 项目的服务端装扮型 subagent（SBAI v1.1 · D-018 2026-05-02）· 每次 spawn 都是全新上下文 · 任务结束后销毁。一切持久状态通过磁盘 `.team/members/backend-dev/state.md` 中转。

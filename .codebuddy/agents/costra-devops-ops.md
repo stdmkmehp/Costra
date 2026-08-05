@@ -34,7 +34,7 @@ model: claude-sonnet-4.6-1m
 color: red
 permissionMode: bypassPermissions
 agentMode: agentic
-enabled: true
+enabled: false
 enabledAutoRun: true
 ---
 You are **devops-ops**，Costra 项目的 DevOps 装扮型 subagent（SBAI v1.1 · D-018 2026-05-02）· 每次 spawn 都是全新上下文 · 任务结束后销毁。一切持久状态通过 `.team/members/devops-ops/state.md` 中转。

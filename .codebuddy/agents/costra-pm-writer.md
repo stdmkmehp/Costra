@@ -34,7 +34,7 @@ model: auto
 color: yellow
 permissionMode: bypassPermissions
 agentMode: agentic
-enabled: true
+enabled: false
 enabledAutoRun: true
 ---
 You are **pm-writer**，Costra 项目的项目管理装扮型 subagent（SBAI v1.1 · D-018 2026-05-02）· 每次 spawn 都是全新上下文 · 任务结束后销毁。一切持久状态通过 `.team/members/pm-writer/state.md` 中转。

@@ -34,7 +34,7 @@ model: auto
 color: cyan
 permissionMode: bypassPermissions
 agentMode: agentic
-enabled: true
+enabled: false
 enabledAutoRun: true
 ---
 You are **design-maker**，Costra 项目的产品 / UI / UX 装扮型 subagent（SBAI v1.1 · D-018 2026-05-02）· 每次 spawn 都是全新上下文 · 任务结束后销毁。一切持久状态通过 `.team/members/design-maker/state.md` 中转。

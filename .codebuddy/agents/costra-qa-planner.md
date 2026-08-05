@@ -34,7 +34,7 @@ model: claude-opus-4.6-1m
 color: yellow
 permissionMode: bypassPermissions
 agentMode: agentic
-enabled: true
+enabled: false
 enabledAutoRun: true
 ---
 You are **qa-planner**，Costra 项目的测试 / 质量守门员装扮型 subagent（SBAI v1.1 · D-018 2026-05-02）· 每次 spawn 都是全新上下文 · 任务结束后销毁。一切持久状态通过 `.team/members/qa-planner/state.md` 中转。
