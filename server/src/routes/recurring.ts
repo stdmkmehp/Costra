@@ -131,9 +131,9 @@ function ruleToResponse(r: RecurringRuleEntity) {
 
 // ---- schema 定义 ----
 
-const arrayOfInt = { type: 'array', items: { type: 'integer' } };
 const nullableArrayOfInt = {
-  oneOf: [{ type: 'null' }, arrayOfInt],
+  type: ['array', 'null'],
+  items: { type: 'integer' },
 };
 
 const createBodySchema = {
@@ -145,13 +145,11 @@ const createBodySchema = {
     type: { type: 'string', enum: ['income', 'expense', 'transfer'] },
     amount: { type: 'integer', minimum: 1 },
     currency: { type: 'string' },
-    category_id: { oneOf: [{ type: 'string', format: 'uuid' }, { type: 'null' }] },
-    account_id: { oneOf: [{ type: 'string', format: 'uuid' }, { type: 'null' }] },
-    to_account_id: { oneOf: [{ type: 'string', format: 'uuid' }, { type: 'null' }] },
-    note: { oneOf: [{ type: 'string', maxLength: 200 }, { type: 'null' }] },
-    shared_type: {
-      oneOf: [{ type: 'string', enum: ['personal', 'shared'] }, { type: 'null' }],
-    },
+    category_id: { type: ['string', 'null'], format: 'uuid' },
+    account_id: { type: ['string', 'null'], format: 'uuid' },
+    to_account_id: { type: ['string', 'null'], format: 'uuid' },
+    note: { type: ['string', 'null'], maxLength: 200 },
+    shared_type: { type: ['string', 'null'], enum: ['personal', 'shared', null] },
     period: {
       type: 'string',
       enum: ['weekly', 'biweekly', 'monthly', 'bimonthly', 'trimonthly', 'yearly'],
@@ -166,7 +164,7 @@ const createBodySchema = {
     },
     timezone: { type: 'string' },
     start_date: { type: 'string', format: 'date' },
-    end_date: { oneOf: [{ type: 'string', format: 'date' }, { type: 'null' }] },
+    end_date: { type: ['string', 'null'], format: 'date' },
   },
 } as const;
 
@@ -178,13 +176,11 @@ const patchBodySchema = {
     version: { type: 'integer', minimum: 1 },
     type: { type: 'string', enum: ['income', 'expense', 'transfer'] },
     amount: { type: 'integer', minimum: 1 },
-    category_id: { oneOf: [{ type: 'string', format: 'uuid' }, { type: 'null' }] },
-    account_id: { oneOf: [{ type: 'string', format: 'uuid' }, { type: 'null' }] },
-    to_account_id: { oneOf: [{ type: 'string', format: 'uuid' }, { type: 'null' }] },
-    note: { oneOf: [{ type: 'string', maxLength: 200 }, { type: 'null' }] },
-    shared_type: {
-      oneOf: [{ type: 'string', enum: ['personal', 'shared'] }, { type: 'null' }],
-    },
+    category_id: { type: ['string', 'null'], format: 'uuid' },
+    account_id: { type: ['string', 'null'], format: 'uuid' },
+    to_account_id: { type: ['string', 'null'], format: 'uuid' },
+    note: { type: ['string', 'null'], maxLength: 200 },
+    shared_type: { type: ['string', 'null'], enum: ['personal', 'shared', null] },
     period: {
       type: 'string',
       enum: ['weekly', 'biweekly', 'monthly', 'bimonthly', 'trimonthly', 'yearly'],
@@ -199,7 +195,7 @@ const patchBodySchema = {
     },
     timezone: { type: 'string' },
     start_date: { type: 'string', format: 'date' },
-    end_date: { oneOf: [{ type: 'string', format: 'date' }, { type: 'null' }] },
+    end_date: { type: ['string', 'null'], format: 'date' },
   },
 } as const;
 
