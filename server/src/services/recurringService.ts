@@ -66,6 +66,8 @@ export interface CreateRecurringPayload {
   note?: string | null;
   shared_type?: SharedType | null;
   period: Period;
+  /** 周期间隔（如每3周=3）· 当前版本暂不持久化，仅透传以避免 schema拒绝 */
+  period_interval?: number;
   days_of_week?: number[] | null;
   days_of_month?: number[] | null;
   year_month_days?: number[] | null;
@@ -84,6 +86,8 @@ export interface UpdateRecurringPayload {
   shared_type?: SharedType | null;
   type?: EntryType;
   period?: Period;
+  /** 周期间隔（如每3周=3）· 当前版本暂不持久化，仅透传以避免 schema 拒绝 */
+  period_interval?: number;
   days_of_week?: number[] | null;
   days_of_month?: number[] | null;
   year_month_days?: number[] | null;
