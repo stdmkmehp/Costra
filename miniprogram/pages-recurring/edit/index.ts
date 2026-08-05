@@ -20,6 +20,7 @@ import { getActiveFamilyId } from '../../services/family';
 import { getToken } from '../../services/auth';
 import { getFamilies, type FamilyItem } from '../../services/familyApi';
 import { getCategoriesSync, type CategoryItem } from '../../services/categoryService';
+import { resolveIconGlyph } from '../../services/iconMap';
 import { getSafeAreaMetrics } from '../../utils/safeArea';
 import {
   shouldClearDaysOnPeriodChange,
@@ -251,7 +252,7 @@ Page({
       amountDisplay: toYuan(r.amount),
       categoryId: r.category_id || '',
       categoryName: catDisplayName,
-      categoryIcon: cat?.icon || '',
+      categoryIcon: resolveIconGlyph(cat?.icon),
       ledgerId: r.ledger_id,
       ledgerName: family?.ledger_name || '',
       ledgerFamilyId: family?.id || '',
@@ -342,10 +343,10 @@ Page({
   onCategorySelect(e: WechatMiniprogram.CustomEvent) {
     const { id, name, icon, type, parentName } = e.detail;
     const fullName = parentName ? `${parentName}·${name}` : name;
-const updates: Record<string, any> = {
+    const updates: Record<string, any> = {
       categoryId: id,
       categoryName: fullName,
-      categoryIcon: icon,
+      categoryIcon: resolveIconGlyph(icon),
       showCategoryPicker: false,
     };
     if (type && type !== this.data.entryType) {
@@ -371,12 +372,12 @@ const updates: Record<string, any> = {
         const f = this._families[res.tapIndex];
         if (f && f.ledger_id !== this.data.ledgerId) {
           this.setData({
-         ledgerId: f.ledger_id,
+            ledgerId: f.ledger_id,
             ledgerName: f.ledger_name,
             ledgerFamilyId: f.id,
             categoryId: '',
-categoryName: '',
-         categoryIcon: '',
+            categoryName: '',
+            categoryIcon: resolveIconGlyph(null),
           });
           this._updateSharedState();
     this._markDirty();

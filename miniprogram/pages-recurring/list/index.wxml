@@ -33,6 +33,7 @@
    <!-- 顶部计数摘要 -->
     <view class="reclist__summary" wx:if="{{summaryText}}">
       <text>{{summaryText}}</text>
+      <text class="reclist__summary-hint">· 长按规则可展开更多操作</text>
       </view>
 
       <!-- 启用分组 -->
@@ -44,7 +45,7 @@
               hover-class="reclist__item--hover" hover-stay-time="60">
    <view class="reclist__item-sep" wx:if="{{index > 0}}"></view>
   <view class="reclist__item-inner">
-            <view class="reclist__icon">{{item.categoryIcon}}</view>
+            <view class="reclist__icon reclist__icon--glyph">{{item.categoryIcon}}</view>
  <view class="reclist__mid">
               <text class="reclist__title">{{item.title}}</text>
         <text class="reclist__sub">{{item.subtitle}}</text>
@@ -65,7 +66,7 @@
   hover-class="reclist__item--hover" hover-stay-time="60">
     <view class="reclist__item-sep" wx:if="{{index > 0}}"></view>
     <view class="reclist__item-inner">
-              <view class="reclist__icon">{{item.categoryIcon}}</view>
+              <view class="reclist__icon reclist__icon--glyph">{{item.categoryIcon}}</view>
          <view class="reclist__mid">
                 <text class="reclist__title">{{item.title}}</text>
            <text class="reclist__sub">{{item.subtitle}} · <text class="reclist__tag--amber">{{item.statusHint}}</text></text>
@@ -81,15 +82,32 @@
     </view>
   </view>
 
-  <!-- 长按上下文菜单 -->
-  <view wx:if="{{ctxMenuVisible}}" class="reclist__ctx-mask" bindtap="onCloseCtxMenu">
- <view class="reclist__ctx-menu" style="left:{{ctxMenuX}}px;top:{{ctxMenuY}}px;" catchtap="onCtxMenuNoop">
-      <view class="reclist__ctx-item" bindtap="onCtxCopy">📋 复制规则</view>
-      <view class="reclist__ctx-item" bindtap="onCtxEdit">✎ 修改规则</view>
- <view class="reclist__ctx-item" bindtap="onCtxToggle">
-   {{ctxMenuRule.status === 'active' ? '⏸ 禁用' : '▶ 启用'}}
+  <!-- 长按上下文菜单（与明细页共用 .ctx-menu* 设计语言） -->
+  <view wx:if="{{ctxMenuVisible}}" class="ctx-menu-overlay" bindtap="onCloseCtxMenu">
+<view class="ctx-menu" style="left:{{ctxMenuX}}px;top:{{ctxMenuY}}px;" catchtap="onCtxMenuNoop">
+      <view class="ctx-menu__item" bindtap="onCtxCopy">
+        <view class="ctx-ic ctx-ic--copy"><view></view><view></view></view>
+        <text class="ctx-menu__text">复制规则</text>
       </view>
-      <view class="reclist__ctx-item reclist__ctx-item--danger" bindtap="onCtxDelete">🗑 删除</view>
+      <view class="ctx-menu__item" bindtap="onCtxEdit">
+        <view class="ctx-ic ctx-ic--edit">
+          <view class="pencil">
+            <view class="pencil-tip"></view>
+            <view class="pencil-ferrule"></view>
+            <view class="pencil-end"></view>
+          </view>
+        </view>
+        <text class="ctx-menu__text">修改规则</text>
+      </view>
+      <view class="ctx-menu__item" bindtap="onCtxToggle">
+        <view class="ctx-ic ctx-ic--play" wx:if="{{ctxMenuRule.status === 'paused' || ctxMenuRule.status === 'ended' || ctxMenuRule.status === 'auto_paused'}}"></view>
+        <view class="ctx-ic ctx-ic--pause" wx:else><view></view><view></view></view>
+        <text class="ctx-menu__text">{{ctxMenuRule.status === 'active' ? '禁用' : '启用'}}</text>
+      </view>
+      <view class="ctx-menu__item ctx-menu__item--danger" bindtap="onCtxDelete">
+        <view class="ctx-ic ctx-ic--trash"><view class="lid"></view><view class="can"></view></view>
+        <text class="ctx-menu__text">删除</text>
+      </view>
     </view>
   </view>
 </view>

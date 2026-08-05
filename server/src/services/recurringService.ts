@@ -411,7 +411,17 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
       .startOf('day')
       .minus({ minutes: 1 }) // 让 computeNextRunAt 内部 +1min 后回到 00:00
       .toJSDate();
-    const nextRunAt = computeNextRunAt(forCompute, fromStart);
+    let nextRunAt = computeNextRunAt(forCompute, fromStart);
+
+    // 产品规格 §4.4：起始日 = 今天且今日恰好是被勾中的日 →
+    //   若"今日的执行时段"仍未过 → 今天就会触发一次
+    //   若已过 → 等下一个匹配日
+    // computeNextRunAt 从 start_date 00:00 计算，会算出今天的 execute_hour:execute_minute，
+    // 但如果这个时间点已经过了当前时刻，说明今天的执行时段已过，应该跳到下一个匹配日。
+    const now = new Date();
+    if (nextRunAt <= now) {
+      nextRunAt = computeNextRunAt(forCompute, now);
+    }
 
     // 检查 end_date 边界：若 next_run_at 已超 end_date → 直接拒绝创建
     if (payload.end_date != null) {

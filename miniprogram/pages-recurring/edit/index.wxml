@@ -29,7 +29,7 @@
         <text class="recedit__label">分类</text>
         <view class="recedit__value">
     <text wx:if="{{categoryId && entryTypeLabel}}" class="recedit__type-badge">{{entryTypeLabel}}</text>
-          <text wx:if="{{categoryIcon}}">{{categoryIcon}} </text>
+          <text wx:if="{{categoryIcon}}" class="recedit__category-icon">{{categoryIcon}}</text>
           <text>{{categoryName || '请选择'}}</text>
         </view>
     <text class="recedit__arrow">›</text>

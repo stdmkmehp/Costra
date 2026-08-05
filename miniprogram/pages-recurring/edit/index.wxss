@@ -64,16 +64,13 @@
   vertical-align: middle;
 }
 
-/* 分类行中的类型标签 */
-.recedit__type-badge {
-  display: inline-block;
-  font-size: 22rpx;
-  color: rgba(28,27,26,0.48);
-  background: rgba(28,27,26,0.06);
-  padding: 2rpx 12rpx;
-  border-radius: 8rpx;
-  margin-right: 12rpx;
-  vertical-align: middle;
+/* 分类行中的图标字形（costra-icons 字体渲染 icon_key → PUA 字形） */
+.recedit__category-icon {
+  font-family: "costra-icons";
+  font-size: 30rpx;
+  color: rgba(28,27,26,0.72);
+  margin-right: 8rpx;
+  line-height: 1;
 }
 
 /* 归属胶囊 */

@@ -3,8 +3,11 @@
 // Refs: COSTRA-5xx
 
 import { describe, it, expect } from 'vitest';
-import { groupRules, clampMenuPosition, buildPeriodLabel, buildStatusHint } from './model';
+import { groupRules, clampMenuPosition, buildPeriodLabel, buildStatusHint, toDisplayRule } from './model';
+import { ICON_GLYPH } from '../../services/iconMap';
 import type { RecurringRule } from '../../services/recurringApi';
+import type { CategoryItem } from '../../services/categoryService';
+import type { FamilyItem } from '../../services/familyApi';
 
 function makeRule(overrides: Partial<RecurringRule> = {}): RecurringRule {
   return {
@@ -133,6 +136,90 @@ describe('list/model', () => {
     it('auto_paused · 未知原因 → 已自动停用', () => {
     expect(buildStatusHint({ status: 'auto_paused', last_run_status: 'anything_else' }))
         .toBe('已自动停用');
+    });
+  });
+
+  describe('toDisplayRule · 分类图标与标题', () => {
+    const family: FamilyItem = {
+      id: 'fam1', name: 'F1', kind: 'shared', owner_id: 'u1',
+      ledger_id: 'l1', ledger_name: '账本认',
+      member_count: 1, created_at: '2026-01-01T00:00:00.000Z', version: 1,
+    };
+    const baseRule: RecurringRule = {
+      id: 'r1', ledger_id: 'l1', created_by: 'u1',
+      type: 'income', amount: 45500, currency: 'CNY',
+      category_id: 'c-child', account_id: null, to_account_id: null,
+      note: null, shared_type: null,
+      period: 'monthly', period_interval: 1,
+      days_of_week: null, days_of_month: [2, 4, 13], year_month_days: null,
+      execute_bucket: 'night', execute_hour: 21, execute_minute: 0,
+      timezone: 'Asia/Shanghai', start_date: '2026-01-01', end_date: null,
+      status: 'active', next_run_at: '', last_run_at: null, last_run_status: null,
+      created_at: '', updated_at: '', version: 1,
+    };
+
+    it('cat.icon 经 resolveIconGlyph 解析为 PUA 字形，不再渲染原始 key', () => {
+      const categories: CategoryItem[] = [{
+        id: 'c-child', familyId: 'fam1', name: '兼职', type: 'income',
+        icon: 'part_time', sortOrder: 3, isSystem: true, parentId: 'c-parent',
+        isDirectDefault: true, isParentDefault: false, displayOrder: 2, childrenCount: 0,
+      }];
+      const display = toDisplayRule(baseRule, categories, [family]);
+      // 关键断言：渲染的字形等于 ICON_GLYPH['part_time']，绝不是 'part_time' 字符串
+      expect(display.categoryIcon).toBe(ICON_GLYPH['part_time']);
+      expect(display.categoryIcon).not.toBe('part_time');
+    });
+
+    it('二级分类标题为「父·子」，例：兼职 → 职业收入·兼职', () => {
+      const categories: CategoryItem[] = [
+        { id: 'c-parent', familyId: 'fam1', name: '职业收入', type: 'income',
+          icon: 'salary', sortOrder: 1, isSystem: true, parentId: null,
+          isDirectDefault: false, isParentDefault: true, displayOrder: null, childrenCount: 4 },
+        { id: 'c-child', familyId: 'fam1', name: '兼职', type: 'income',
+          icon: 'part_time', sortOrder: 3, isSystem: true, parentId: 'c-parent',
+          isDirectDefault: true, isParentDefault: false, displayOrder: 2, childrenCount: 0 },
+      ];
+      const display = toDisplayRule(baseRule, categories, [family]);
+      expect(display.title).toBe('职业收入·兼职');
+    });
+
+    it('无父级的一级分类，标题只显示子名', () => {
+      const categories: CategoryItem[] = [{
+        id: 'c-child', familyId: 'fam1', name: '转账', type: 'transfer',
+        icon: 'transfer', sortOrder: 1, isSystem: true, parentId: null,
+        isDirectDefault: true, isParentDefault: true, displayOrder: null, childrenCount: 3,
+      }];
+      const display = toDisplayRule(baseRule, categories, [family]);
+      expect(display.title).toBe('转账');
+      expect(display.categoryIcon).toBe(ICON_GLYPH['transfer']);
+    });
+
+    it('note 优先级高于分类名', () => {
+      const ruleWithNote: RecurringRule = { ...baseRule, note: '收入定时' };
+      const categories: CategoryItem[] = [{
+        id: 'c-child', familyId: 'fam1', name: '兼职', type: 'income',
+        icon: 'part_time', sortOrder: 3, isSystem: true, parentId: 'c-parent',
+        isDirectDefault: true, isParentDefault: false, displayOrder: 2, childrenCount: 0,
+      }];
+      const display = toDisplayRule(ruleWithNote, categories, [family]);
+      expect(display.title).toBe('收入定时');
+    });
+
+    it('无分类且无 note → 未分类', () => {
+      const ruleNoCat: RecurringRule = { ...baseRule, category_id: null, note: null };
+      const display = toDisplayRule(ruleNoCat, [], [family]);
+      expect(display.title).toBe('未分类');
+    });
+
+    it('未知 icon_key 不崩，回退到「其他」字形', () => {
+      const categories: CategoryItem[] = [{
+        id: 'c-child', familyId: 'fam1', name: 'X', type: 'expense',
+        icon: 'unknown_icon_key', sortOrder: 1, isSystem: true, parentId: null,
+        isDirectDefault: true, isParentDefault: true, displayOrder: null, childrenCount: 0,
+      }];
+      const display = toDisplayRule(baseRule, categories, [family]);
+      // resolveIconGlyph 兜底 → other
+      expect(display.categoryIcon).toBe(ICON_GLYPH['other']);
     });
   });
 });

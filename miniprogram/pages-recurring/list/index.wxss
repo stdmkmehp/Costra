@@ -41,7 +41,8 @@
 
 /* 有数据 */
 .reclist__body { padding-top: 40rpx; padding-bottom: 60rpx; }
-.reclist__summary { padding: 0 8rpx 24rpx; font-size: 26rpx; color: rgba(28,27,26,0.48); }
+.reclist__summary { padding: 0 8rpx 24rpx; font-size: 26rpx; color: rgba(28,27,26,0.48); display: flex; align-items: baseline; gap: 12rpx; flex-wrap: wrap; }
+.reclist__summary-hint { font-size: 22rpx; color: rgba(28,27,26,0.32); }
 
 /* 卡片 */
 .reclist__card { background: #ffffff; border-radius: 24rpx; overflow: hidden; }
@@ -56,6 +57,11 @@
 .reclist__item-inner { display: flex; align-items: center; padding: 28rpx 32rpx; }
 
 .reclist__icon { width: 56rpx; height: 56rpx; font-size: 40rpx; line-height: 56rpx; text-align: center; flex-shrink: 0; }
+/* costra-icons 字形渲染：item.categoryIcon 已是 PUA 字形，需切到 iconfont 字体 */
+.reclist__icon--glyph {
+  font-family: "costra-icons";
+  color: rgba(28,27,26,0.72);
+}
 .reclist__mid { flex: 1; margin-left: 24rpx; overflow: hidden; }
 .reclist__title { display: block; font-size: 30rpx; font-weight: 500; color: #1c1b1a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .reclist__sub { display: block; font-size: 24rpx; color: rgba(28,27,26,0.48); margin-top: 6rpx; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -66,15 +72,8 @@
 .reclist__disabled-section { margin-top: 32rpx; }
 .reclist__disabled-title { text-align: center; font-size: 24rpx; color: rgba(28,27,26,0.48); line-height: 60rpx; }
 
-/* 上下文菜单 */
-.reclist__ctx-mask { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 999; }
-.reclist__ctx-menu {
-  position: fixed; z-index: 1000; background: #ffffff; border-radius: 16rpx;
-  box-shadow: 0 4rpx 24rpx rgba(28,27,26,0.12); min-width: 260rpx;
-  transform: translate(-50%, -20rpx);
-}
-.reclist__ctx-item { padding: 24rpx 32rpx; font-size: 28rpx; color: #1c1b1a; }
-.reclist__ctx-item--danger { color: #C08A7B; }
+/* 长按上下文菜单（与明细页共用 .ctx-menu* 设计语言 · 极简单色几何图标、居中、删除用 #FA5151） */
+@import '../../styles/ctx-menu.wxss';
 
 /* 底部添加按钮（有数据时） */
 .reclist__add-bottom {

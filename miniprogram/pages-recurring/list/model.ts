@@ -5,6 +5,7 @@
 import type { RecurringRule, RecurringPeriod } from '../../services/recurringApi';
 import { toYuan } from '../../utils/money';
 import { formatDaysForSummary, type FormatContext } from '../../services/recurringFormat';
+import { resolveIconGlyph } from '../../services/iconMap';
 import type { CategoryItem } from '../../services/categoryService';
 import type { FamilyItem } from '../../services/familyApi';
 
@@ -83,8 +84,11 @@ export function toDisplayRule(
   families: FamilyItem[],
 ): DisplayRule {
   const cat = categories.find((c) => c.id === r.category_id);
-  const categoryIcon = cat?.icon || '📝';
-  const title = r.note || cat?.name || '未分类';
+  const catParent = cat?.parentId ? categories.find((c) => c.id === cat.parentId) : null;
+  // icon_key 必须经 resolveIconGlyph 解析为 PUA 字形；否则会直接渲染 "part_time" 这类 key 文本。
+  const categoryIcon = resolveIconGlyph(cat?.icon);
+  // 标题：二级 · 一级，例如「兼职 · 职业收入」；没有父级时只显示二级名。
+  const title = r.note || (cat ? (catParent ? `${catParent.name}·${cat.name}` : cat.name) : '未分类');
 
   const ctx: FormatContext = {
     period: r.period,
@@ -143,11 +147,11 @@ export function groupRules(
   if (total === 0) {
     summaryText = '';
   } else if (disabledCount === 0) {
-    summaryText = `你已设置 ${total} 条定时`;
+    summaryText = `你已设置 ${total} 条定时规则`;
   } else if (disabledCount === total) {
-    summaryText = `你的 ${total} 条定时全部处于禁用状态`;
+    summaryText = `你的 ${total} 条定时规则全部处于禁用状态`;
   } else {
-    summaryText = `你已设置 ${total} 条定时（${disabledCount} 条已禁用）`;
+    summaryText = `你已设置 ${total} 条定时规则（${disabledCount} 条已禁用）`;
   }
 
   return { enabled, disabled, summary: { total, enabledCount, disabledCount, summaryText } };

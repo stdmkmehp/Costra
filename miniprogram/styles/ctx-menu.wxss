@@ -1,0 +1,241 @@
+/* styles/ctx-menu.wxss · 长按上下文菜单（共享设计语言） */
+/* 由明细页（pages/ledger）与定时记账页（pages-recurring/list）共用 */
+/* 设计要点：                                                              */
+/*   · 极简单色几何图标，纯 CSS 绘制，随 item color 变色                    */
+/*   · 容器 .ctx-ic 自身尺寸 34rpx，使用 flex 居中保证图标与文字基线对齐    */
+/*   · 删除项使用 --color-semantic-danger（#FA5151）以与全 App 危险色统一   */
+
+/* ─── 全屏透明遮罩：捕获点击关闭菜单，拦截滚动防穿透 ─── */
+.ctx-menu-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+}
+
+/* ─── 菜单卡片：暖调浮起白 + 毛玻璃 ─── */
+.ctx-menu {
+  position: fixed;
+  width: 300rpx;
+  background: rgba(250, 249, 245, 0.82);
+  -webkit-backdrop-filter: blur(26rpx) saturate(180%);
+  backdrop-filter: blur(26rpx) saturate(180%);
+  border-radius: 30rpx;
+  box-shadow: 0 10rpx 50rpx rgba(0, 0, 0, 0.16), 0 2rpx 8rpx rgba(0, 0, 0, 0.05);
+  padding: 8rpx 0;
+  overflow: hidden;
+  transform-origin: center top;
+  animation: ctx-menu-in 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* 不支持毛玻璃时回退为不透明暖白 */
+@supports not (backdrop-filter: blur(1px)) {
+  .ctx-menu { background: #faf9f5; }
+}
+
+@keyframes ctx-menu-in {
+  from { opacity: 0; transform: scale(0.9); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* ─── 菜单项 ─── */
+.ctx-menu__item {
+  display: flex;
+  align-items: center;        /* 关键：让 .ctx-ic 与文字基线在同一中线上 */
+  gap: 20rpx;
+  height: 96rpx;
+  padding: 0 30rpx;
+  color: var(--color-role-text-primary, #1c1b1a);
+  transition: background 120ms ease;
+}
+.ctx-menu__item:active {
+  background: rgba(28, 27, 26, 0.06);
+}
+
+.ctx-menu__text {
+  font-size: 30rpx;
+  color: inherit;
+  line-height: 1;
+}
+
+/* 删除项：靠间距 + 极浅内投影 + 红色 区隔 */
+.ctx-menu__item--danger {
+  margin-top: 6rpx;
+  box-shadow: inset 0 1rpx 0 rgba(28, 27, 26, 0.05);
+  color: var(--color-semantic-danger, #FA5151);
+}
+
+/* ════════════════════════════════════════════════════════════════════════ */
+/* 极简单色图标（纯 CSS 几何）                                              */
+/* 关键：所有图标容器是 34rpx 的 flex 居中盒子，图标本体用 absolute 居中摆放  */
+/* ════════════════════════════════════════════════════════════════════════ */
+.ctx-ic {
+  position: relative;
+  width: 34rpx;
+  min-width: 34rpx;
+  height: 34rpx;
+  flex-shrink: 0;
+  color: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 复制：两枚叠放的描边圆角矩形 */
+.ctx-ic--copy view {
+  position: absolute;
+  width: 20rpx;
+  height: 24rpx;
+  border: 2rpx solid currentColor;
+  border-radius: 4rpx;
+  box-sizing: border-box;
+}
+.ctx-ic--copy view:nth-child(1) { right: 3rpx; top: 2rpx; }
+.ctx-ic--copy view:nth-child(2) { left: 3rpx; bottom: 2rpx; background: rgba(250, 249, 245, 0.98); }
+
+/* 备注：便签外框 + 两条文本线 */
+.ctx-ic--note::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 28rpx;
+  height: 26rpx;
+  border: 2rpx solid currentColor;
+  border-radius: 4rpx;
+  box-sizing: border-box;
+}
+.ctx-ic--note {
+  flex-direction: column;
+  justify-content: center;
+  gap: 4rpx;
+}
+.ctx-ic--note view {
+  width: 16rpx;
+  height: 2rpx;
+  background: currentColor;
+  border-radius: 2rpx;
+}
+.ctx-ic--note view:nth-child(2) { width: 10rpx; }
+
+/* 金额：¥ 符号 */
+.ctx-ic--amount text {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: currentColor;
+  line-height: 1;
+}
+
+/* 分类：2×2 四宫格 */
+.ctx-ic--grid {
+  flex-wrap: wrap;
+  width: 24rpx;
+  height: 24rpx;
+  gap: 4rpx;
+}
+.ctx-ic--grid view {
+  width: 10rpx;
+  height: 10rpx;
+  background: currentColor;
+  border-radius: 2rpx;
+}
+
+/* 修改（铅笔）：斜放的一根笔。
+   父 .ctx-ic 是 34rpx 居中容器。.pencil 是 24×6rpx 的隐形坐标系（旋转 -45°），
+   3 个子元素共享同一旋转：笔尖三角（左） + 笔杆（中） + 笔尾方块（右）。 */
+.ctx-ic--edit .pencil {
+  position: relative;
+  width: 24rpx;
+  height: 6rpx;
+  transform: rotate(-45deg);
+}
+.ctx-ic--edit .pencil-tip,
+.ctx-ic--edit .pencil-ferrule,
+.ctx-ic--edit .pencil-end {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  box-sizing: border-box;
+}
+/* 笔尖：左端实心三角（apex 朝左） */
+.ctx-ic--edit .pencil-tip {
+  left: 0;
+  width: 0; height: 0;
+  border-top: 4rpx solid transparent;
+  border-bottom: 4rpx solid transparent;
+  border-left: 6rpx solid currentColor;
+}
+/* 笔杆：从笔尖右侧延伸到分笔线（描边矩形） */
+.ctx-ic--edit .pencil-ferrule {
+  left: 4rpx;          /* 给笔尖让位，避免重叠 */
+  width: 16rpx;
+  height: 6rpx;
+  border: 2rpx solid currentColor;
+  border-left: none;   /* 左侧让笔尖补齐 */
+  background: transparent;
+  border-radius: 0 1rpx 1rpx 0;
+}
+/* 笔尾：实心方块（与笔杆同色，区分笔头和笔尾） */
+.ctx-ic--edit .pencil-end {
+  right: 0;
+  width: 4rpx;
+  height: 6rpx;
+  background: currentColor;
+  border-radius: 0 1rpx 1rpx 0;
+}
+
+/* 启用：线条三角（沿用线条语言） */
+.ctx-ic--play {
+  position: relative;
+  margin-left: 4rpx;  /* 视觉重心补偿：三角的视觉中心偏右 */
+  width: 0;
+  height: 0;
+  border-left: 14rpx solid currentColor;
+  border-top: 9rpx solid transparent;
+  border-bottom: 9rpx solid transparent;
+  background: transparent;
+}
+
+/* 禁用：两根等高竖线，居中于 34rpx 容器 */
+.ctx-ic--pause {
+  gap: 6rpx;
+}
+.ctx-ic--pause view {
+  width: 4rpx;
+  height: 18rpx;
+  background: currentColor;
+  border-radius: 2rpx;
+}
+
+/* 删除：垃圾桶（盖 + 把手 + 桶身）
+   整组用 column 居中，lid 与 can 均为描边，叠成完整垃圾桶 */
+.ctx-ic--trash { flex-direction: column; align-items: center; }
+.ctx-ic--trash .lid {
+  position: relative;
+  width: 24rpx;
+  height: 2rpx;
+  background: currentColor;
+  border-radius: 2rpx;
+}
+.ctx-ic--trash .lid::before {
+  content: '';
+  position: absolute;
+  top: -5rpx;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 12rpx;
+  height: 5rpx;
+  border: 2rpx solid currentColor;
+  border-bottom: none;
+  border-radius: 3rpx 3rpx 0 0;
+  box-sizing: border-box;
+}
+.ctx-ic--trash .can {
+  margin-top: 3rpx;
+  width: 18rpx;
+  height: 18rpx;
+  border: 2rpx solid currentColor;
+  border-top: none;
+  border-radius: 0 0 5rpx 5rpx;
+  box-sizing: border-box;
+}
