@@ -13,7 +13,7 @@ import {
   createRecurringRule,
   updateRecurringRule,
 } from '../../services/recurringApi';
-import { invalidateCache, enqueueMutation, generateIdempotencyKey } from '../../services/recurringLocal';
+import { invalidateCache, generateIdempotencyKey } from '../../services/recurringLocal';
 import { toYuan, parseAmountInputToCents } from '../../utils/money';
 import { formatDaysForSummary, type FormatContext } from '../../services/recurringFormat';
 import { getActiveFamilyId } from '../../services/family';
@@ -28,8 +28,17 @@ import {
   computePreviewNextRun,
   isVersionConflict,
 } from './model';
+import { setRecurringReturnToast } from '../returnFeedback';
 
 type EditMode = 'create' | 'edit' | 'copy';
+
+/** 自动保存 / 手动保存的统一结果 */
+type SaveOutcome =
+  | { status: 'success' }
+  | { status: 'invalid'; error: string }
+  | { status: 'network_error' }
+  | { status: 'version_conflict' }
+  | { status: 'error'; message: string };
 
 /**
  * 根据 period + interval 生成展示标签
@@ -168,6 +177,7 @@ Page({
   _originalRule: null as RecurringRule | null,
   _executeHour: undefined as number | undefined,
   _executeMinute: undefined as number | undefined,
+  _saveFailedOnBack: false as boolean,
 
   async onLoad(options: Record<string, string | undefined>) {
     // 安全区
@@ -302,6 +312,7 @@ Page({
 
   _markDirty() {
     if (!this.data.dirty) this.setData({ dirty: true });
+    this._saveFailedOnBack = false;
     this._enableUnloadAlert();
   },
 
@@ -319,23 +330,47 @@ Page({
     } catch { /* 兼容 */ }
   },
 
-  onTapBack() {
-    if (this.data.dirty) {
-      wx.showModal({
-        title: '放弃编辑？',
-        content: '你有未保存的修改',
-        confirmText: '离开',
-        confirmColor: '#C08A7B',
-        success: (res) => {
-          if (res.confirm) {
-            this._disableUnloadAlert();
-            wx.navigateBack();
-          }
-        },
-      });
-    } else {
+  async onTapBack() {
+    // 无修改 → 直接退出
+    if (!this.data.dirty) {
       this._disableUnloadAlert();
       wx.navigateBack();
+      return;
+    }
+    // 上次返回时保存失败 → 直接退出，不重复尝试
+    if (this._saveFailedOnBack) {
+      this._disableUnloadAlert();
+      wx.navigateBack();
+      return;
+    }
+    // 有修改 → 自动保存后退出
+    const outcome = await this._doSave();
+    switch (outcome.status) {
+      case 'success':
+        wx.vibrateShort({ type: 'medium' });
+        this._disableUnloadAlert();
+        setRecurringReturnToast('已保存');
+        wx.navigateBack();
+        break;
+      case 'invalid':
+        this._disableUnloadAlert();
+        setRecurringReturnToast('修改不符合规范，已还原');
+        wx.navigateBack();
+        break;
+      case 'network_error':
+        // 网络失败：不退出，让用户决定是否重试或再次返回
+        this._saveFailedOnBack = true;
+        wx.showToast({ title: '网络失败', icon: 'none' });
+        break;
+      case 'version_conflict':
+        this._disableUnloadAlert();
+        setRecurringReturnToast('数据已更新，已还原');
+        wx.navigateBack();
+        break;
+      case 'error':
+        this._saveFailedOnBack = true;
+        wx.showToast({ title: outcome.message, icon: 'none' });
+        break;
     }
   },
 
@@ -669,23 +704,23 @@ Page({
 
   // ─── 保存 ──────────────────────────────────────────────────────────────
 
-  async onSave() {
+  /**
+   * 执行保存（不处理 UI 反馈），返回保存结果。
+   * 调用方根据 outcome 决定如何展示 toast / 是否退出。
+   */
+  async _doSave(): Promise<SaveOutcome> {
     this._validate();
     if (!this.data.isValid) {
-      wx.showToast({ title: this.data.validationError, icon: 'none' });
-      // 保存无效：卡片陶土红边框 flash
-      this.setData({ saveFlashError: true });
-      setTimeout(() => this.setData({ saveFlashError: false }), 600);
-      return;
+      return { status: 'invalid', error: this.data.validationError };
     }
-    if (this.data.saving) return;
+    if (this.data.saving) return { status: 'error', message: '正在保存中' };
     this.setData({ saving: true });
 
     const idempotencyKey = generateIdempotencyKey();
 
     const payload: CreateRecurringPayload = {
       ledger_id: this.data.ledgerId,
-    type: this.data.entryType,
+      type: this.data.entryType,
       amount: this.data.amountCents,
       currency: 'CNY',
       category_id: this.data.categoryId || null,
@@ -697,7 +732,7 @@ Page({
         ? (this.data.daysOfWeek.length > 0 ? this.data.daysOfWeek : null) : null,
       days_of_month: ['monthly', 'bimonthly', 'trimonthly'].includes(this.data.period)
         ? (this.data.daysOfMonth.length > 0 ? this.data.daysOfMonth : null) : null,
-    year_month_days: this.data.period === 'yearly'
+      year_month_days: this.data.period === 'yearly'
         ? (this.data.yearMonthDays.length > 0 ? this.data.yearMonthDays : null) : null,
       execute_bucket: this.data.bucket,
       timezone: this.data.timezone,
@@ -715,13 +750,10 @@ Page({
       await invalidateCache();
       this.setData({ dirty: false });
       this._disableUnloadAlert();
-      wx.vibrateShort({ type: 'medium' });
-      wx.showToast({ title: '已保存', icon: 'none' });
-      setTimeout(() => wx.navigateBack(), 280);
+      return { status: 'success' };
     } catch (e: any) {
       if (isVersionConflict(e)) {
         // 乐观锁冲突 → 拉最新覆盖
-        wx.showToast({ title: '数据已更新，请重新编辑', icon: 'none' });
         try {
           const fresh = await getRecurringRule(this.data.ruleId);
           // 与 onLoad 路径对齐：重新拉一次当前账本的分类，确保分类名解析命中真实数据
@@ -730,24 +762,43 @@ Page({
           this._fillForm(fresh, 'edit', categories);
           this.setData({ ruleId: fresh.id });
         } catch { /* 静默 */ }
+        return { status: 'version_conflict' };
       } else if (e?.code === 'CLIENT_NETWORK_ERROR') {
-        // 网络失败 → 入 mutation queue
-        if (this.data.mode === 'edit') {
-          await enqueueMutation({ kind: 'update', id: this.data.ruleId, payload: { ...payload, version: this.data.ruleVersion }, idempotencyKey, enqueuedAt: Date.now() });
-        } else {
-          await enqueueMutation({ kind: 'create', payload, idempotencyKey, enqueuedAt: Date.now() });
-        }
-        this.setData({ dirty: false });
-        this._disableUnloadAlert();
-        wx.showToast({ title: '网络不佳，已暂存', icon: 'none' });
-        setTimeout(() => wx.navigateBack(), 1500);
+        return { status: 'network_error' };
       } else {
         const msg = e?.message || e?.data?.message || '保存失败';
-        wx.showToast({ title: msg, icon: 'none' });
- console.error('[recurring-edit] save error:', JSON.stringify(e));
+        console.error('[recurring-edit] save error:', JSON.stringify(e));
+        return { status: 'error', message: msg };
       }
     } finally {
       this.setData({ saving: false });
+    }
+  },
+
+  async onSave() {
+    const outcome = await this._doSave();
+    switch (outcome.status) {
+      case 'success':
+        wx.vibrateShort({ type: 'medium' });
+        this._disableUnloadAlert();
+        setRecurringReturnToast('已保存');
+        wx.navigateBack();
+        break;
+      case 'invalid':
+        wx.showToast({ title: outcome.error, icon: 'none' });
+        // 保存无效：卡片陶土红边框 flash
+        this.setData({ saveFlashError: true });
+        setTimeout(() => this.setData({ saveFlashError: false }), 600);
+        break;
+      case 'network_error':
+        wx.showToast({ title: '网络失败', icon: 'none' });
+        break;
+      case 'version_conflict':
+        wx.showToast({ title: '数据已更新，请重新编辑', icon: 'none' });
+        break;
+      case 'error':
+        wx.showToast({ title: outcome.message, icon: 'none' });
+        break;
     }
   },
 

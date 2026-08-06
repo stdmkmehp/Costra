@@ -3,8 +3,8 @@
 <!-- 自定义导航栏 -->
   <view class="recedit__nav" style="padding-top: {{statusBarHeight}}px; height: {{navBarHeight}}px;">
     <view class="recedit__nav-back" bindtap="onTapBack">
-      <text class="recedit__nav-back-icon">‹</text>
-  </view>
+      <view class="recedit__nav-back-arrow"></view>
+    </view>
     <text class="recedit__nav-title">{{mode === 'edit' ? '编辑定时' : '新建定时'}}</text>
   </view>
 

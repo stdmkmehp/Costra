@@ -3,7 +3,7 @@
   <!-- 自定义导航栏 -->
   <view class="reclist__nav" style="padding-top: {{statusBarHeight}}px; height: {{navBarHeight}}px;">
     <view class="reclist__nav-back" bindtap="onTapBack">
-      <text class="reclist__nav-back-icon">‹</text>
+      <view class="reclist__nav-back-arrow"></view>
     </view>
     <text class="reclist__nav-title">定时记账</text>
   </view>

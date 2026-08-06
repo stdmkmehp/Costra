@@ -11,7 +11,12 @@
   background: #f1f2ec;
 }
 .recedit__nav-back { width: 80rpx; height: 100%; display: flex; align-items: center; justify-content: center; }
-.recedit__nav-back-icon { font-size: 48rpx; color: #1c1b1a; font-weight: 300; }
+.recedit__nav-back-arrow {
+  width: 20rpx; height: 20rpx;
+  border-left: 4rpx solid #1c1b1a;
+  border-bottom: 4rpx solid #1c1b1a;
+  transform: rotate(45deg);
+}
 .recedit__nav-title { font-size: 34rpx; font-weight: 600; color: #1c1b1a; position: absolute; left: 50%; transform: translateX(-50%); }
 
 .recedit__scroll { padding: 0 0 60rpx; }

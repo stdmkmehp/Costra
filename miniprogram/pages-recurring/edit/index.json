@@ -1,5 +1,6 @@
 {
   "navigationStyle": "custom",
+  "disableSwipeBack": true,
   "usingComponents": {
     "category-grid": "../../components/category-grid/index",
     "recurring-period-selector": "../../components/recurring-period-selector/index",

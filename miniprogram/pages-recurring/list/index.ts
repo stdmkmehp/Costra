@@ -24,6 +24,7 @@ import { getSafeAreaMetrics } from '../../utils/safeArea';
 import { syncOnce } from '../../services/syncScheduler';
 import { eventBus, EventNames } from '../../services/eventBus';
 import { groupRules, clampMenuPosition, type DisplayRule } from './model';
+import { consumeRecurringReturnToast } from '../returnFeedback';
 
 // ─── Page ──────────────────────────────────────────────────────────────────
 
@@ -82,6 +83,12 @@ Page({
   },
 
   async onShow() {
+    // 消费编辑页返回后的一次性反馈（如「已保存」/「已还原」）。
+    // 放在 _loaded 判断之前，确保任何进入本页的 onShow 都能取到并展示。
+    const returnToast = consumeRecurringReturnToast();
+    if (returnToast) {
+      wx.showToast({ title: returnToast, icon: 'none' });
+    }
     // 避免 onLoad/onShow 并发双拉：仅在 _loaded 后才触发 onShow 刷新
     if (!this._loaded) return;
     await syncOnce('page-show');
