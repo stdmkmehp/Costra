@@ -223,8 +223,8 @@ export function validateCreate(p: CreateRecurringPayload): void {
   if (p.end_date != null) {
     if (!isValidDate(p.end_date))
       invalid('end_date must be YYYY-MM-DD or null', 'end_date');
-    if (p.end_date <= p.start_date)
-      invalid('end_date must be strictly greater than start_date', 'end_date');
+    if (p.end_date < p.start_date)
+      invalid('end_date must not be earlier than start_date', 'end_date');
   }
   if (p.note != null && p.note.length > 200)
     invalid('note max length is 200', 'note');

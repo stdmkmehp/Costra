@@ -91,6 +91,18 @@
 .recedit__end-date-right { flex: 1; display: flex; align-items: center; justify-content: flex-end; }
 .recedit__end-date-text { flex: none; text-align: right; }
 
+/* 起始日/结束日 · 日期 + 边界时刻后缀
+   后缀用固定宽度容器，吸收 "0点"(2字符) 与 "24点"(3字符) 的宽度差，
+   保证日期数字左端严格对齐 */
+.recedit__date-value { display: flex; align-items: baseline; justify-content: flex-end; }
+.recedit__date-suffix {
+  display: inline-block;
+  width: 64rpx; text-align: center;
+  font-size: 22rpx; color: rgba(28,27,26,0.36);
+  font-variant-numeric: tabular-nums;
+  margin-left: 8rpx;
+}
+
 /* 预览卡片 */
 .recedit__card--preview { padding: 28rpx 32rpx; }
 .recedit__preview-main { display: flex; align-items: flex-start; margin-bottom: 24rpx; }

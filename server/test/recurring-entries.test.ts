@@ -193,6 +193,52 @@ describe('recurring-entries · CRUD basics', () => {
     expect(res.statusCode).toBe(400);
   });
 
+  it('POST · end_date = start_date · 同日生效（规则只跑一天）· 201', async () => {
+    // 语义：起始日 0 点生效、结束日 23:59:59 截止，闭区间允许同一天
+    // 用未来日期确保 next_run_at 落在 [start_date, end_date] 闭区间内
+    // 2027-08-05 是周四，选 days_of_week=[4]
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 100,
+        shared_type: 'personal',
+        period: 'weekly',
+        days_of_week: [4],
+        execute_bucket: 'morning',
+        start_date: '2027-08-05',
+        end_date: '2027-08-05',
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.json() as Record<string, unknown>;
+    expect(body.start_date).toBe('2027-08-05');
+    expect(body.end_date).toBe('2027-08-05');
+  });
+
+  it('POST · end_date < start_date · 早于起始日 → 400', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 100,
+        shared_type: 'personal',
+        period: 'weekly',
+        days_of_week: [4],
+        execute_bucket: 'morning',
+        start_date: '2027-08-10',
+        end_date: '2027-08-05',
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
   it('POST · shared_type on income → 422 BUSINESS_RULE_VIOLATION', async () => {
     const res = await app.inject({
       method: 'POST',

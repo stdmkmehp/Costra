@@ -134,7 +134,7 @@ Page({
     startDateMax: shiftDate(todayStr(), { years: 3 }),
     hasEndDate: false,
     endDate: '',
-    endDateMin: shiftDate(todayStr(), { days: 1 }),
+    endDateMin: todayStr(),
     endDateMax: shiftDate(todayStr(), { years: 10 }),
 
     // 控件数据
@@ -266,7 +266,7 @@ Page({
       startDate: r.start_date,
       hasEndDate: !!r.end_date,
       endDate: r.end_date || '',
-      endDateMin: shiftDate(r.start_date, { days: 1 }),
+      endDateMin: r.start_date,
       endDateMax: shiftDate(r.start_date, { years: 10 }),
       daysOfWeek: r.days_of_week || [],
       daysOfMonth: r.days_of_month || [],
@@ -371,13 +371,26 @@ Page({
       success: (res) => {
         const f = this._families[res.tapIndex];
         if (f && f.ledger_id !== this.data.ledgerId) {
+          // 切换账本后，仅当当前选中的分类在新账本中不存在时才清空。
+          // 系统预设分类（familyId===null）所有账本通用，家庭自定义分类仅在该家庭有效。
+          let categoryUpdates: Record<string, any> = {};
+          const currentCategoryId = this.data.categoryId;
+          if (currentCategoryId) {
+            const newFamilyCategories = getCategoriesSync(f.id);
+            const stillExists = newFamilyCategories.some((c) => c.id === currentCategoryId);
+            if (!stillExists) {
+              categoryUpdates = {
+                categoryId: '',
+                categoryName: '',
+                categoryIcon: resolveIconGlyph(null),
+              };
+            }
+          }
           this.setData({
             ledgerId: f.ledger_id,
             ledgerName: f.ledger_name,
             ledgerFamilyId: f.id,
-            categoryId: '',
-            categoryName: '',
-            categoryIcon: resolveIconGlyph(null),
+            ...categoryUpdates,
           });
           this._updateSharedState();
     this._markDirty();
@@ -503,7 +516,7 @@ Page({
   // 起始日/结束日
   onStartDateChange(e: WechatMiniprogram.PickerChange) {
     const startDate = e.detail.value as string;
-    const endDateMin = shiftDate(startDate, { days: 1 });
+    const endDateMin = startDate;
     const endDateMax = shiftDate(startDate, { years: 10 });
     this.setData({
       startDate,
@@ -519,8 +532,8 @@ Page({
   onToggleEndDate() {
     const has = !this.data.hasEndDate;
     if (has && !this.data.endDate) {
-      // 默认结束日 = 起始日次日
-      const defaultEnd = shiftDate(this.data.startDate, { days: 1 });
+      // 默认结束日 = 起始日同一天（规则只跑一天）
+      const defaultEnd = this.data.startDate;
       this.setData({ hasEndDate: true, endDate: defaultEnd });
     } else {
       this.setData({ hasEndDate: has });
@@ -625,7 +638,7 @@ Page({
       else if (['monthly', 'bimonthly', 'trimonthly'].includes(period) && daysOfMonth.length === 0) { error = '请至少选 1 天'; section = 2; }
       else if (period === 'yearly' && yearMonthDays.length === 0) { error = '请至少选 1 天'; section = 2; }
       else if (this.data.hasEndDate && !this.data.endDate) { error = '请选择结束日'; section = 2; }
-      else if (this.data.hasEndDate && this.data.endDate <= this.data.startDate) { error = '结束日需晚于起始日'; section = 2; }
+      else if (this.data.hasEndDate && this.data.endDate < this.data.startDate) { error = '结束日不能早于起始日'; section = 2; }
     }
     this.setData({ isValid: !error, validationError: error, validationSection: section });
   },

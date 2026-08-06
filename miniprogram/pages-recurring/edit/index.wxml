@@ -108,7 +108,10 @@
    <picker mode="date" value="{{startDate}}" start="{{startDateMin}}" end="{{startDateMax}}" bindchange="onStartDateChange">
         <view class="recedit__row" hover-class="recedit__row--hover">
           <text class="recedit__label">起始日</text>
-          <text class="recedit__value">{{startDate}}</text>
+          <view class="recedit__value recedit__date-value">
+            <text class="tnum">{{startDate}}</text>
+            <text class="recedit__date-suffix">0点</text>
+          </view>
   <text class="recedit__arrow">›</text>
         </view>
       </picker>
@@ -119,7 +122,10 @@
         <view class="recedit__end-date-right">
           <switch class="recedit__switch" checked="{{hasEndDate}}" bindchange="onToggleEndDate" color="#8AA98F" />
           <picker wx:if="{{hasEndDate}}" mode="date" value="{{endDate}}" start="{{endDateMin}}" end="{{endDateMax}}" bindchange="onEndDateChange">
-            <text class="recedit__value recedit__end-date-text">{{endDate || '请选择'}}</text>
+            <view class="recedit__value recedit__end-date-text recedit__date-value">
+              <text class="tnum">{{endDate || '请选择'}}</text>
+              <text class="recedit__date-suffix">24点</text>
+            </view>
           </picker>
           <text wx:else class="recedit__value recedit__end-date-text">永不结束</text>
           <text wx:if="{{hasEndDate}}" class="recedit__arrow">›</text>
