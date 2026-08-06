@@ -217,6 +217,12 @@ export interface CreateRecurringRuleInput {
    * 与 update 路径的 end_date 收敛语义对齐（不再抛 BUSINESS_RULE_VIOLATION）。
    */
   status?: RecurringStatus;
+  /**
+   * 初始 last_run_status · 默认 null。
+   * create 路径用：当规则处于"结束期窗口内已无有效执行点"（lapsed_in_window）
+   * 时，status 保持 active 但记录该标记，供列表页区分「已到期」与「已失效」。
+   */
+  lastRunStatus?: string | null;
 }
 
 export async function insertRule(
@@ -231,10 +237,10 @@ export async function insertRule(
        type, amount, currency, category_id, account_id, to_account_id, note, shared_type,
        period, days_of_week, days_of_month, year_month_days,
        execute_bucket, execute_hour, execute_minute, timezone,
-       start_date, end_date, next_run_at, status
+       start_date, end_date, next_run_at, status, last_run_status
      ) VALUES (
        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-       $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23
+       $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
      )
      RETURNING *`,
     [
@@ -261,6 +267,7 @@ export async function insertRule(
       input.endDate ?? null,
       input.nextRunAt,
       status,
+      input.lastRunStatus ?? null,
     ],
   );
   if (!res.rows[0]) {
@@ -368,6 +375,11 @@ export interface UpdateRecurringRuleInput {
   nextRunAt?: Date;
   /** T2 · PATCH end_date 后若已过期，可一并置 'ended' */
   status?: RecurringStatus;
+  /**
+   * update 路径：当规则处于"结束期窗口内已无有效执行点"（lapsed_in_window）
+   * 时写入，status 保持 active 但记录该标记供列表页区分「已到期」与「已失效」。
+   */
+  lastRunStatus?: string | null;
 }
 
 /**
@@ -415,6 +427,8 @@ export async function updateRuleByVersion(
   if (input.endDate !== undefined) push('end_date', input.endDate);
   if (input.nextRunAt !== undefined) push('next_run_at', input.nextRunAt);
   if (input.status !== undefined) push('status', input.status);
+  if (input.lastRunStatus !== undefined)
+    push('last_run_status', input.lastRunStatus);
 
   if (fields.length === 0) {
     // 无实际字段变更 · 直接返回当前行（保持幂等）

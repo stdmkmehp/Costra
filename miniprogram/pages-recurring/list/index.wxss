@@ -70,8 +70,19 @@
 .reclist__mid { flex: 1; margin-left: 24rpx; overflow: hidden; }
 .reclist__title { display: block; font-size: 30rpx; font-weight: 500; color: #1c1b1a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .reclist__sub { display: block; font-size: 24rpx; color: rgba(28,27,26,0.48); margin-top: 6rpx; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.reclist__tag--amber { color: #C2A56A; }
 .reclist__amount { font-size: 32rpx; font-weight: 500; color: #1c1b1a; flex-shrink: 0; margin-left: 16rpx; font-variant-numeric: tabular-nums; }
+
+/* 行首状态 tag（禁用/已到期/已失效/已自动停用等）· 醒目前置 */
+.reclist__status-tag {
+  flex-shrink: 0;
+  margin-left: 20rpx;
+  padding: 6rpx 16rpx;
+  font-size: 22rpx;
+  line-height: 1.2;
+  border-radius: 8rpx;
+  color: #C2A56A;          /* 莫兰迪琥珀 · 弱提示 */
+  background: rgba(194, 165, 106, 0.14);
+}
 
 /* 禁用分组 */
 .reclist__disabled-section { margin-top: 32rpx; }

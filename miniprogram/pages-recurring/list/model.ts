@@ -20,8 +20,13 @@ export interface DisplayRule {
   isDisabled: boolean;
   status: string;
   /**
-   * 已禁用/自动停用行的原因短文案，例如"已禁用"、"账本已删除"、"已退出家庭"。
-   * status === 'active' 时为空。
+   * 行首状态 tag 短标签，例如"已禁用"、"已到期"、"已失效"、"账本已删除"。
+   * status === 'active' 时为空。用于列表行首醒目位置。
+   */
+  statusTag: string;
+  /**
+   * 完整原因文案（可能比 statusTag 更长，例如"已失效（结束日 X 前已无执行点）"）。
+   * 供长按/详情等需要更完整说明的场景使用；status === 'active' 时为空。
    */
   statusHint: string;
   version: number;
@@ -40,26 +45,44 @@ const BUCKET_LABELS: Record<string, string> = {
 };
 
 /**
- * 把服务端返回的 status + last_run_status 翻译为一句给用户看的原因短语。
- * 供 UI 在"已禁用"分组中区分「用户主动禁用」和「系统兜底停用」的具体原因。
+ * 把服务端返回的 status + last_run_status 翻译为一句给用户看的「状态短标签」。
+ * 供列表行首醒目位置使用；status === 'active' 时为空。
  */
-export function buildStatusHint(r: Pick<RecurringRule, 'status' | 'last_run_status'>): string {
+export function buildStatusTag(r: Pick<RecurringRule, 'status' | 'last_run_status'>): string {
   if (r.status === 'active') return '';
-  if (r.status === 'ended') return '已到期';
+  if (r.status === 'ended') {
+    // ended 但 last_run_status 标记了"窗口内已无有效执行点"（结束日未到但
+    // 下一次执行已越过）→ 归为"已失效"，区别于真正到期的"已到期"。
+    return r.last_run_status === 'lapsed_in_window' ? '已失效' : '已到期';
+  }
   if (r.status === 'paused') return '已禁用';
   // auto_paused：解析 last_run_status
   switch (r.last_run_status) {
     case 'failed_ledger_deleted':
       return '账本已删除';
     case 'failed_family_deleted':
-      return '所在家庭已解散';
+      return '家庭已解散';
     case 'failed_user_left_family':
-      return '你已退出该家庭';
+      return '已退出家庭';
     case 'auto_paused_after_3_failures':
-      return '连续失败已停用';
+      return '连续失败停用';
     default:
     return '已自动停用';
   }
+}
+
+/**
+ * 完整原因文案（可能比 statusTag 更长）。status === 'active' 时为空。
+ * 供需要更完整说明的场景（如"已失效"附结束日）使用。
+ */
+export function buildStatusHint(
+  r: Pick<RecurringRule, 'status' | 'last_run_status'> & { end_date?: string | null },
+): string {
+  if (r.status === 'active') return '';
+  if (r.status === 'ended' && r.last_run_status === 'lapsed_in_window') {
+    return r.end_date ? `已失效（结束日 ${r.end_date} 前已无执行点）` : '已失效';
+  }
+  return buildStatusTag(r);
 }
 
 // ─── 纯函数 ──────────────────────────────────────────────────────────────────
@@ -117,6 +140,7 @@ export function toDisplayRule(
     amountText,
   isDisabled: r.status !== 'active',
   status: r.status,
+    statusTag: buildStatusTag(r),
     statusHint: buildStatusHint(r),
     version: r.version,
     raw: r,

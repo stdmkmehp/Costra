@@ -3,7 +3,7 @@
 // Refs: COSTRA-5xx
 
 import { describe, it, expect } from 'vitest';
-import { groupRules, clampMenuPosition, buildPeriodLabel, buildStatusHint, toDisplayRule } from './model';
+import { groupRules, clampMenuPosition, buildPeriodLabel, buildStatusTag, buildStatusHint, toDisplayRule } from './model';
 import { ICON_GLYPH } from '../../services/iconMap';
 import type { RecurringRule } from '../../services/recurringApi';
 import type { CategoryItem } from '../../services/categoryService';
@@ -107,6 +107,25 @@ describe('list/model', () => {
     it('yearly → 每年', () => expect(buildPeriodLabel('yearly')).toBe('每年'));
   });
 
+  describe('buildStatusTag', () => {
+    it('active → 空文案', () => {
+      expect(buildStatusTag({ status: 'active', last_run_status: null })).toBe('');
+    });
+    it('paused → 已禁用', () => {
+      expect(buildStatusTag({ status: 'paused', last_run_status: null })).toBe('已禁用');
+    });
+    it('ended · 正常到期 → 已到期', () => {
+      expect(buildStatusTag({ status: 'ended', last_run_status: 'ended_by_end_date' })).toBe('已到期');
+    });
+    it('ended · lapsed_in_window → 已失效（区别于已到期）', () => {
+      expect(buildStatusTag({ status: 'ended', last_run_status: 'lapsed_in_window' })).toBe('已失效');
+    });
+    it('auto_paused · 账本被删 → 账本已删除', () => {
+      expect(buildStatusTag({ status: 'auto_paused', last_run_status: 'failed_ledger_deleted' }))
+        .toBe('账本已删除');
+    });
+  });
+
   describe('buildStatusHint', () => {
     it('active → 空文案', () => {
       expect(buildStatusHint({ status: 'active', last_run_status: null })).toBe('');
@@ -117,21 +136,29 @@ describe('list/model', () => {
     it('ended → 已到期', () => {
       expect(buildStatusHint({ status: 'ended', last_run_status: 'ok' })).toBe('已到期');
     });
+    it('ended · lapsed_in_window · 无结束日 → 已失效', () => {
+      expect(buildStatusHint({ status: 'ended', last_run_status: 'lapsed_in_window', end_date: null }))
+        .toBe('已失效');
+    });
+    it('ended · lapsed_in_window · 附结束日 → 已失效（结束日 X 前已无执行点）', () => {
+      expect(buildStatusHint({ status: 'ended', last_run_status: 'lapsed_in_window', end_date: '2026-08-06' }))
+        .toBe('已失效（结束日 2026-08-06 前已无执行点）');
+    });
     it('auto_paused · 账本被删 → 账本已删除', () => {
       expect(buildStatusHint({ status: 'auto_paused', last_run_status: 'failed_ledger_deleted' }))
  .toBe('账本已删除');
     });
-    it('auto_paused · 家庭解散 → 所在家庭已解散', () => {
+    it('auto_paused · 家庭解散 → 家庭已解散', () => {
       expect(buildStatusHint({ status: 'auto_paused', last_run_status: 'failed_family_deleted' }))
-     .toBe('所在家庭已解散');
+     .toBe('家庭已解散');
     });
-    it('auto_paused · 用户退出家庭 → 你已退出该家庭', () => {
+    it('auto_paused · 用户退出家庭 → 已退出家庭', () => {
       expect(buildStatusHint({ status: 'auto_paused', last_run_status: 'failed_user_left_family' }))
-        .toBe('你已退出该家庭');
+        .toBe('已退出家庭');
     });
-    it('auto_paused · 连续失败 3 次 → 连续失败已停用', () => {
+    it('auto_paused · 连续失败 3 次 → 连续失败停用', () => {
       expect(buildStatusHint({ status: 'auto_paused', last_run_status: 'auto_paused_after_3_failures' }))
-        .toBe('连续失败已停用');
+        .toBe('连续失败停用');
     });
     it('auto_paused · 未知原因 → 已自动停用', () => {
     expect(buildStatusHint({ status: 'auto_paused', last_run_status: 'anything_else' }))

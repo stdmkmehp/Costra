@@ -470,13 +470,20 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
     // 历史 bug：此处置 throw 让「end_date == start_date 且首个匹配日 > end_date」的合法组合
     // （如 weekly + 周六 + start=end=今天周四）无法创建，与同 commit (e9a0555) 放宽的 validateCreate
     // 「end_date >= start_date」语义自相矛盾。
+    // 结束状态收敛：区分「真正到期」与「窗口内已无有效执行点」。
+    //   - now > endBoundary            → ended + last_run_status='ended_by_end_date'
+    //   - 未到期但 nextRunAt 已越过     → 仍置 ended，但 last_run_status='lapsed_in_window'
+    //     （创建即告知用户"结束日前已无执行点"，避免"还没到期却已禁用"的困惑）。
+    //     status 置 ended 让列表页将其归入"已禁用"分组并展示"已失效"而非"已到期"。
     let initialStatus: 'active' | 'ended' = 'active';
+    let initialLastRunStatus: string | null = null;
     if (payload.end_date != null) {
       const endBoundary = DateTime.fromISO(payload.end_date, { zone: timezone })
         .endOf('day')
         .toJSDate();
       if (nextRunAt > endBoundary) {
         initialStatus = 'ended';
+        initialLastRunStatus = now <= endBoundary ? 'lapsed_in_window' : 'ended_by_end_date';
       }
     }
 
@@ -505,6 +512,7 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
       endDate: payload.end_date ?? null,
       nextRunAt,
       status: initialStatus,
+      lastRunStatus: initialLastRunStatus,
     });
     return entity;
   }
@@ -628,19 +636,24 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
     if (payload.end_date !== undefined) input.endDate = payload.end_date;
  if (nextRunAt !== undefined) input.nextRunAt = nextRunAt;
 
-    // end_date 收敛：合并后的 end_date 若使规则永远无法再次执行，立即置 'ended'。
-    // 判定基准：
-    //   - 新 next_run_at 已算出且 > end_boundary，或
-    //   - 未重算 next_run_at 但 end_date 缩短到现有 next_run_at 之前。
+    // end_date 收敛：合并后的 end_date 若使规则永远无法再次执行，做状态归位。
+    // 区分两种场景（判定基准均为 cursor = 合并后的 next_run_at）：
+    //   - cursor > end_boundary 且 now > end_boundary → 真正到期，置 'ended'；
+    //   - cursor > end_boundary 但 now <= end_boundary → 窗口内已无有效执行点，
+    //     status 保持 active，仅写 last_run_status='lapsed_in_window'。
+    // 这样避免"结束日还没到、规则却显示已到期"的困惑。
     const effectiveEndDate = payload.end_date !== undefined ? payload.end_date : existing.endDate;
     const effectiveTimezone = payload.timezone !== undefined ? payload.timezone : existing.timezone;
     if (effectiveEndDate) {
- const endBoundary = DateTime.fromISO(effectiveEndDate, { zone: effectiveTimezone })
-    .endOf('day')
-    .toJSDate();
-const cursor = nextRunAt ?? existing.nextRunAt;
+      const endBoundary = DateTime.fromISO(effectiveEndDate, { zone: effectiveTimezone })
+        .endOf('day')
+        .toJSDate();
+      const cursor = nextRunAt ?? existing.nextRunAt;
       if (cursor > endBoundary && existing.status === 'active') {
-    input.status = 'ended';
+        input.status = 'ended';
+        input.lastRunStatus = new Date() <= endBoundary
+          ? 'lapsed_in_window'
+          : 'ended_by_end_date';
       }
     }
 
@@ -684,7 +697,8 @@ const cursor = nextRunAt ?? existing.nextRunAt;
     await assertUserOwnsLedger(userId, existing.ledgerId);
     // resume 时重算 next_run_at（从当前时刻起算 · 不补跑历史）
     const forCompute = toComputeShape(existing);
-    const nextRunAt = computeNextRunAt(forCompute, new Date());
+    const now = new Date();
+    const nextRunAt = computeNextRunAt(forCompute, now);
 
     // 若已过 end_date → 拒绝（ended 规则同样适用）
     if (existing.endDate != null) {
@@ -694,8 +708,12 @@ const cursor = nextRunAt ?? existing.nextRunAt;
         .endOf('day')
         .toJSDate();
       if (nextRunAt > endBoundary) {
+        // 结束日尚未到，但重算后的下一次执行已越过结束边界 → 窗口内已无有效执行点
+        const message = now <= endBoundary
+          ? '该规则在结束日期前已无有效执行点，请先延后结束日期再启用'
+          : '该规则已到期，请先修改结束日期再启用';
         throw new AppError(ErrorCode.BUSINESS_RULE_VIOLATION, {
-          message: '该规则已到期，请先修改结束日期再启用',
+          message,
           details: { rule_id: ruleId, end_date: existing.endDate },
         });
       }
@@ -826,6 +844,34 @@ if (!isMember) return { ok: false, reason: 'failed_user_left_family' };
     return { ok: true };
   }
 
+  /**
+   * 判断规则是否处于"结束期窗口内已无有效执行点"状态。
+   *
+   * 语义：规则尚未真正到期（now <= end_date 当日 24:00），但下一次执行时点
+   * （next_run_at）已经越过 end_date。此时规则在结束期内再也不会有有效执行日，
+   * 继续跑只会空转。区别于 `ended`：
+   *   - ended：now 已过 end_date，生命周期真实结束；
+   *   - lapsed_in_window：end_date 未到，但从"还能不能执行"角度已经失效。
+   *
+   * 纯函数，供 create / update / processOneRule（写 last_run_status）与
+   * resume（拒绝提示）共用。nextRunAt 由调用方显式传入，因不同路径
+   * 各自计算（create/update 用待落库的 next_run_at，processOneRule 用
+   * 推进后的 cursor，resume 用重算后的 next_run_at）。
+   */
+  function isLapsedInWindow(
+    endDate: string | null,
+    timezone: string,
+    nextRunAt: Date,
+    now: Date,
+  ): boolean {
+    if (endDate == null) return false;
+    const endBoundary = DateTime.fromISO(endDate, { zone: timezone })
+      .endOf('day')
+      .toJSDate();
+    // next_run_at 已越过结束边界，且当前时刻尚未越过 → 窗口内已无有效执行点
+    return nextRunAt > endBoundary && now <= endBoundary;
+  }
+
   async function processOneRule(
     rule: RecurringRuleEntity,
     now: Date,
@@ -913,16 +959,21 @@ consecutive_failures = 0,
     // 计算最终状态与 next_run_at
     let newStatus: 'active' | 'ended' = 'active';
     let newNextRunAt = cursor;
+    let lastRunStatus = skipped.length > 0 ? 'ok_with_skipped' : 'ok';
     if (rule.endDate != null) {
       const endBoundary = DateTime.fromISO(rule.endDate, { zone: rule.timezone })
         .endOf('day')
         .toJSDate();
       if (cursor > endBoundary) {
+        // 结束日已过或窗口内已无有效执行点 → 结束。
+        // last_run_status 区分「真正到期」与「未到期但已无有效执行点」，
+        // 供列表页展示"已到期" / "已失效"。
         newStatus = 'ended';
+        lastRunStatus = isLapsedInWindow(rule.endDate, rule.timezone, cursor, now)
+          ? 'lapsed_in_window'
+          : 'ended_by_end_date';
       }
     }
-
-    const lastRunStatus = skipped.length > 0 ? 'ok_with_skipped' : 'ok';
     await client.query(
       `UPDATE recurring_rules
           SET next_run_at = $1,

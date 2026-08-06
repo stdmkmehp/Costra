@@ -220,10 +220,11 @@ describe('recurring-entries · CRUD basics', () => {
     expect(body.status).toBe('active');
   });
 
-  it('POST · end_date = start_date · 首个匹配日已超 end_date → 201 + status=ended（不再 throw）', async () => {
+  it('POST · end_date = start_date · 首个匹配日已超 end_date 但尚未到期 → 201 + ended + last_run_status=lapsed_in_window', async () => {
     // 回归：bug 截图场景——start_date=end_date=2027-08-05（周四），选周六（days_of_week=[6]）
     // 首个匹配日 2027-08-07 21:00 > end_date 23:59:59 → 历史会 throw BUSINESS_RULE_VIOLATION
-    // 修复后：与 update 路径对齐，直接置 'ended'、不抛错
+    // 修复后：不再 throw；且因 end_date（2027-08-05）尚未真正到期，last_run_status 标记为
+    // 'lapsed_in_window'（窗口内已无有效执行点），供列表页展示"已失效"而非"已到期"。
     const res = await app.inject({
       method: 'POST',
       url: '/v1/recurring-entries',
@@ -243,12 +244,14 @@ describe('recurring-entries · CRUD basics', () => {
     expect(res.statusCode).toBe(201);
     const body = res.json() as Record<string, unknown>;
     expect(body.status).toBe('ended');
+    expect(body.last_run_status).toBe('lapsed_in_window');
     expect(body.end_date).toBe('2027-08-05');
   });
 
-  it('POST · end_date 在首个匹配日之前（但 > start_date）→ 201 + status=ended', async () => {
+  it('POST · end_date 在首个匹配日之前（但 > start_date）且尚未到期 → 201 + ended + last_run_status=lapsed_in_window', async () => {
     // 进一步回归：start_date=2027-08-05（周四），end_date=2027-08-06（周五），选周六
-    // 首个匹配日 2027-08-07 > end_date 2027-08-06 23:59:59 → ended
+    // 首个匹配日 2027-08-07 > end_date 2027-08-06 23:59:59 → 因 end_date 尚未到期，
+    // last_run_status='lapsed_in_window'（区别于真正到期的 ended_by_end_date）。
     const res = await app.inject({
       method: 'POST',
       url: '/v1/recurring-entries',
@@ -268,6 +271,7 @@ describe('recurring-entries · CRUD basics', () => {
     expect(res.statusCode).toBe(201);
     const body = res.json() as Record<string, unknown>;
     expect(body.status).toBe('ended');
+    expect(body.last_run_status).toBe('lapsed_in_window');
   });
 
   it('POST · end_date < start_date · 早于起始日 → 400', async () => {
@@ -1147,6 +1151,89 @@ describe('recurring-entries · pre-flight auto_paused', () => {
     });
     // ledger 已删 → assertUserOwnsLedger 抛 NOT_FOUND
     expect([403, 404]).toContain(resumeRes.statusCode);
+  });
+});
+
+// ==============================================================================
+// 结束期窗口内已无有效执行点 · lapsed_in_window
+// ==============================================================================
+
+describe('recurring-entries · lapsed_in_window', () => {
+  let app: FastifyInstance;
+  let token: string;
+  let userId: string;
+
+  beforeEach(async () => {
+    app = await buildApp({ disableLogger: true, autoStartScheduler: false });
+    await app.ready();
+    const login1 = await login(app, 'openid-recur-lapsed');
+    token = login1.token;
+    userId = login1.userId;
+    await setupFamilyAndLedger(userId);
+  });
+
+  /**
+   * 创建一个"结束日未到、但下一次执行点已越过结束日"的规则。
+   * 做法：先创建正常 weekly 规则（无 end_date），再 PATCH 一个
+   * 早于 next_run_at 的 end_date（但晚于 start_date），触发 update 路径的
+   * end_date 收敛逻辑。
+   */
+  async function createLapsedRule(): Promise<{ id: string }> {
+    // start_date 用过去固定日期，weekly + 周一，确保 next_run_at 落在 2026-08-10 之后
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 100,
+        shared_type: 'personal',
+        period: 'weekly',
+        days_of_week: [1], // 周一
+        execute_bucket: 'morning',
+        start_date: '2026-07-27',
+      },
+    });
+    expect(createRes.statusCode).toBe(201);
+    const created = createRes.json() as { id: string };
+
+    // 把 end_date 设为早于下一次执行点（08-10 周一早上）的 08-09 周日，
+    // 使 next_run 越过 end_date 闭区间、但 end_date 尚未真正到期（now=08-06）。
+    const patchRes = await app.inject({
+      method: 'PATCH',
+      url: `/v1/recurring-entries/${created.id}`,
+      headers: authHeader(token),
+      payload: {
+        end_date: '2026-08-09',
+        version: 1,
+      },
+    });
+    expect(patchRes.statusCode).toBe(200);
+    return { id: created.id };
+  }
+
+  it('update · end_date 未到期但 next_run 已越过 → ended + last_run_status=lapsed_in_window', async () => {
+    const { id } = await createLapsedRule();
+    const pool = getPool();
+    const ruleRes = await pool.query<{ status: string; last_run_status: string | null }>(
+      `SELECT status, last_run_status FROM recurring_rules WHERE id = $1`,
+      [id],
+    );
+    expect(ruleRes.rows[0].status).toBe('ended');
+    expect(ruleRes.rows[0].last_run_status).toBe('lapsed_in_window');
+  });
+
+  it('resume 一条 lapsed_in_window 规则 → 拒绝并返回专属提示（区别于已到期）', async () => {
+    const { id } = await createLapsedRule();
+    const resumeRes = await app.inject({
+      method: 'POST',
+      url: `/v1/recurring-entries/${id}/resume`,
+      headers: authHeaderNoBody(token),
+    });
+    expect(resumeRes.statusCode).toBe(422); // BUSINESS_RULE_VIOLATION
+    const body = resumeRes.json() as { message?: string };
+    expect(body.message).toContain('已无有效执行点');
   });
 });
 

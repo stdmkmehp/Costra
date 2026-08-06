@@ -67,9 +67,10 @@
     <view class="reclist__item-sep" wx:if="{{index > 0}}"></view>
     <view class="reclist__item-inner">
               <view class="reclist__icon reclist__icon--glyph">{{item.categoryIcon}}</view>
+         <text class="reclist__status-tag">{{item.statusTag}}</text>
          <view class="reclist__mid">
                 <text class="reclist__title">{{item.title}}</text>
-           <text class="reclist__sub">{{item.subtitle}} · <text class="reclist__tag--amber">{{item.statusHint}}</text></text>
+           <text class="reclist__sub">{{item.subtitle}}</text>
             </view>
        <text class="reclist__amount tnum">{{item.amountText}}</text>
          </view>
