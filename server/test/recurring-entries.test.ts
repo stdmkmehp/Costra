@@ -18,7 +18,7 @@
  *   - 跨月 12 天规则一次生成 12 条
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app.js';
 import { setWxFetchForTests } from '../src/wx/code2Session.js';
@@ -1170,6 +1170,14 @@ describe('recurring-entries · lapsed_in_window', () => {
     token = login1.token;
     userId = login1.userId;
     await setupFamilyAndLedger(userId);
+    // setup 完成后再固定系统时钟到 2026-08-06 12:00 CST，确保 end_date=2026-08-09 始终未到期，
+    // 消除「测试在 2026-08-10 之后运行 → now > endBoundary → 被判定为真正到期」的时间炸弹。
+    // 注意：必须在 buildApp/login/setupFamilyAndLedger 之后 fake，否则会劫持其内部 setTimeout/setInterval。
+    vi.setSystemTime(new Date('2026-08-06T12:00:00+08:00'));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   /**
@@ -1179,7 +1187,7 @@ describe('recurring-entries · lapsed_in_window', () => {
    * end_date 收敛逻辑。
    */
   async function createLapsedRule(): Promise<{ id: string }> {
-    // start_date 用过去固定日期，weekly + 周一，确保 next_run_at 落在 2026-08-10 之后
+    // start_date 用过去固定日期，weekly + 周一；fake now=2026-08-06 → next_run_at 落在 2026-08-10 周一早上
     const createRes = await app.inject({
       method: 'POST',
       url: '/v1/recurring-entries',
@@ -1199,7 +1207,7 @@ describe('recurring-entries · lapsed_in_window', () => {
     const created = createRes.json() as { id: string };
 
     // 把 end_date 设为早于下一次执行点（08-10 周一早上）的 08-09 周日，
-    // 使 next_run 越过 end_date 闭区间、但 end_date 尚未真正到期（now=08-06）。
+    // 使 next_run 越过 end_date 闭区间、但 end_date 尚未真正到期（fake now=08-06）。
     const patchRes = await app.inject({
       method: 'PATCH',
       url: `/v1/recurring-entries/${created.id}`,

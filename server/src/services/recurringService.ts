@@ -483,7 +483,9 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
         .toJSDate();
       if (nextRunAt > endBoundary) {
         initialStatus = 'ended';
-        initialLastRunStatus = now <= endBoundary ? 'lapsed_in_window' : 'ended_by_end_date';
+        initialLastRunStatus = isLapsedInWindow(payload.end_date, timezone, nextRunAt, now)
+          ? 'lapsed_in_window'
+          : 'ended_by_end_date';
       }
     }
 
@@ -550,6 +552,10 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
     };
     validateCreate(merged);
 
+    // update 函数入口统一取 now，供重算 next_run_at 与 end_date 收敛共用，
+    // 避免 new Date() 在多处分散调用（影响一致性 & 未来注入时钟做测试）。
+    const now = new Date();
+
     // 若 ledger 变更（不允许 · 不在 payload 里）· 若 timezone 变化则重算
     // 若 execute_bucket 变化 → 重算 hour/minute
     // 若 period / days_of_* / start_date / execute_bucket / timezone 任一变化 → 重算 next_run_at
@@ -603,11 +609,11 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
         year_month_days: newYmd,
       };
       // 若 start_date 是未来 → 从 start_date 起算；否则从 now 起算
-      const nowMs = Date.now();
+      const nowMs = now.getTime();
       const startMs = DateTime.fromISO(newStartDate, { zone: newTimezone })
         .startOf('day')
         .toMillis();
-      const from = startMs > nowMs ? new Date(startMs - 60_000) : new Date(nowMs);
+      const from = startMs > nowMs ? new Date(startMs - 60_000) : now;
       nextRunAt = computeNextRunAt(forCompute, from);
     }
 
@@ -637,11 +643,11 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
  if (nextRunAt !== undefined) input.nextRunAt = nextRunAt;
 
     // end_date 收敛：合并后的 end_date 若使规则永远无法再次执行，做状态归位。
-    // 区分两种场景（判定基准均为 cursor = 合并后的 next_run_at）：
-    //   - cursor > end_boundary 且 now > end_boundary → 真正到期，置 'ended'；
-    //   - cursor > end_boundary 但 now <= end_boundary → 窗口内已无有效执行点，
-    //     status 保持 active，仅写 last_run_status='lapsed_in_window'。
-    // 这样避免"结束日还没到、规则却显示已到期"的困惑。
+    // 判定基准为 cursor = 合并后的 next_run_at：
+    //   - cursor > end_boundary → 统一置 'ended'，再用 isLapsedInWindow 区分 lastRunStatus：
+    //     · now <= end_boundary → 'lapsed_in_window'（窗口内已无有效执行点）
+    //     · now > end_boundary  → 'ended_by_end_date'（真正到期）
+    //   这样避免「结束日还没到、规则却显示已到期」的困惑，统一与 create 路径对齐。
     const effectiveEndDate = payload.end_date !== undefined ? payload.end_date : existing.endDate;
     const effectiveTimezone = payload.timezone !== undefined ? payload.timezone : existing.timezone;
     if (effectiveEndDate) {
@@ -651,7 +657,7 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
       const cursor = nextRunAt ?? existing.nextRunAt;
       if (cursor > endBoundary && existing.status === 'active') {
         input.status = 'ended';
-        input.lastRunStatus = new Date() <= endBoundary
+        input.lastRunStatus = isLapsedInWindow(effectiveEndDate, effectiveTimezone, cursor, now)
           ? 'lapsed_in_window'
           : 'ended_by_end_date';
       }
