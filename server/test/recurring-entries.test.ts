@@ -217,6 +217,57 @@ describe('recurring-entries · CRUD basics', () => {
     const body = res.json() as Record<string, unknown>;
     expect(body.start_date).toBe('2027-08-05');
     expect(body.end_date).toBe('2027-08-05');
+    expect(body.status).toBe('active');
+  });
+
+  it('POST · end_date = start_date · 首个匹配日已超 end_date → 201 + status=ended（不再 throw）', async () => {
+    // 回归：bug 截图场景——start_date=end_date=2027-08-05（周四），选周六（days_of_week=[6]）
+    // 首个匹配日 2027-08-07 21:00 > end_date 23:59:59 → 历史会 throw BUSINESS_RULE_VIOLATION
+    // 修复后：与 update 路径对齐，直接置 'ended'、不抛错
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 100,
+        shared_type: 'personal',
+        period: 'weekly',
+        days_of_week: [6], // 周六
+        execute_bucket: 'night',
+        start_date: '2027-08-05', // 周四
+        end_date: '2027-08-05',
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.json() as Record<string, unknown>;
+    expect(body.status).toBe('ended');
+    expect(body.end_date).toBe('2027-08-05');
+  });
+
+  it('POST · end_date 在首个匹配日之前（但 > start_date）→ 201 + status=ended', async () => {
+    // 进一步回归：start_date=2027-08-05（周四），end_date=2027-08-06（周五），选周六
+    // 首个匹配日 2027-08-07 > end_date 2027-08-06 23:59:59 → ended
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 100,
+        shared_type: 'personal',
+        period: 'weekly',
+        days_of_week: [6], // 周六
+        execute_bucket: 'morning',
+        start_date: '2027-08-05', // 周四
+        end_date: '2027-08-06', // 周五
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.json() as Record<string, unknown>;
+    expect(body.status).toBe('ended');
   });
 
   it('POST · end_date < start_date · 早于起始日 → 400', async () => {

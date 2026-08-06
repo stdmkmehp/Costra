@@ -828,7 +828,7 @@ Page({
         this._backHandled = true;
         wx.vibrateShort({ type: 'medium' });
         this._disableUnloadAlert();
-        setRecurringReturnToast('修改已保存');
+        setRecurringReturnToast('已保存');
         wx.navigateBack();
         break;
       case 'invalid':

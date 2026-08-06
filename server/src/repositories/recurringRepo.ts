@@ -211,6 +211,12 @@ export interface CreateRecurringRuleInput {
   startDate: string;
   endDate?: string | null;
   nextRunAt: Date;
+  /**
+   * 初始 status · 默认 'active'。
+   * 仅 create 路径用得到：当 next_run_at 已超 end_date 闭区间时直接落 'ended'，
+   * 与 update 路径的 end_date 收敛语义对齐（不再抛 BUSINESS_RULE_VIOLATION）。
+   */
+  status?: RecurringStatus;
 }
 
 export async function insertRule(
@@ -218,16 +224,17 @@ export async function insertRule(
   client?: Runner,
 ): Promise<RecurringRuleEntity> {
   const runner = client ?? exec();
+  const status = input.status ?? 'active';
   const res = await runner.query(
     `INSERT INTO recurring_rules (
        id, ledger_id, created_by,
        type, amount, currency, category_id, account_id, to_account_id, note, shared_type,
        period, days_of_week, days_of_month, year_month_days,
        execute_bucket, execute_hour, execute_minute, timezone,
-       start_date, end_date, next_run_at
+       start_date, end_date, next_run_at, status
      ) VALUES (
        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-       $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
+       $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23
      )
      RETURNING *`,
     [
@@ -253,6 +260,7 @@ export async function insertRule(
       input.startDate,
       input.endDate ?? null,
       input.nextRunAt,
+      status,
     ],
   );
   if (!res.rows[0]) {

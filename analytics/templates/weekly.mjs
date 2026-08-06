@@ -116,7 +116,7 @@ function renderOverviewPanel(d) {
     '',
     '| 指标 | 数值 | 说明 |',
     '|:-----|-----:|:-----|',
-    `| 日活用户 | **${d.activeUsers}** | 窗口内有记账行为的人数 |`,
+    `| 日活用户 | **${d.activeUsers}** | 过去 ${d.windowDays} 天窗口内有记账行为的人数 |`,
     `| 活跃用户（7天≥2天） | **${d.activeCount}** | 最近7天有≥2天记账 |`,
     `| 高活跃用户（7天≥5天） | **${d.highActiveCount}** | 最近7天有≥5天记账（含在活跃内） |`,
     `| 新增用户 | **${d.newUsers}** | 窗口内注册 |`,
@@ -262,16 +262,19 @@ function renderLedgersSection(ledgers, threshold, totalCount) {
     return lines.join('\n');
   }
 
-  lines.push('| 账本名称 | 类型 | 所属家庭 | 创建者 | 创建时间 |');
-  lines.push('|:---------|:-----|:---------|:-------|:---------|');
+  lines.push('| 账本名称 | 类型 | 所属家庭 | 创建者 | 成员数 | 成员 | 创建时间 |');
+  lines.push('|:---------|:-----|:---------|:-------|------:|:-----|:---------|');
 
   const display = ledgers.length > threshold ? ledgers.slice(0, threshold) : ledgers;
   for (const l of display) {
-    lines.push(`| ${fmtText(l.ledger_name)} | ${fmtBadge(l.family_kind)} | ${fmtText(l.family_name)} | ${fmtNickname(l.owner_nickname)} | ${fmtTime(l.created_at_cst)} |`);
+    const deletedTag = l.is_deleted === 't' || l.is_deleted === 'true' ? ' [已删除]' : '';
+    const memberCount = Number(l.member_count || 0);
+    const memberNames = l.member_names ? fmtText(l.member_names) : '—';
+    lines.push(`| ${fmtText(l.ledger_name)}${deletedTag} | ${fmtBadge(l.family_kind)} | ${fmtText(l.family_name)} | ${fmtNickname(l.owner_nickname)} | ${memberCount} | ${memberNames} | ${fmtTime(l.created_at_cst)} |`);
   }
 
   if (ledgers.length > threshold) {
-    lines.push(`| _…另 ${ledgers.length - threshold} 个_ | | | | |`);
+    lines.push(`| _…另 ${ledgers.length - threshold} 个_ | | | | | | |`);
   }
   lines.push('');
   return lines.join('\n');
@@ -306,7 +309,6 @@ function renderEntriesSection(entries, threshold) {
     .map(([name, es]) => ({
    name: fmtText(name),
       count: es.length,
-      amt: es.reduce((s, e) => s + Number(e.amount || 0), 0),
       badge: fmtBadge(es[0]?.family_kind),
       manual: es.filter(e => e.source === 'manual').length,
  auto: es.filter(e => e.source === 'auto').length,
@@ -317,10 +319,10 @@ function renderEntriesSection(entries, threshold) {
 
   lines.push('**分账本统计：**');
   lines.push('');
-  lines.push('| 账本 | 类型 | 家庭成员数 | 条数（手动/自动） | 金额 | 成员记账分布 |');
-  lines.push('|:-----|:-----|----------:|------------------:|-----:|:-------------|');
+  lines.push('| 账本 | 类型 | 家庭成员数 | 条数（手动/自动） | 成员记账分布 |');
+  lines.push('|:-----|:-----|----------:|------------------:|:-------------|');
   for (const l of ledgerStats) {
-    lines.push(`| ${l.name} | ${l.badge} | ${l.familyMemberCount} | ${l.count}（${l.manual}/${l.auto}） | ${fmtAmountShort(l.amt)} | ${l.memberBreakdown} |`);
+    lines.push(`| ${l.name} | ${l.badge} | ${l.familyMemberCount} | ${l.count}（${l.manual}/${l.auto}） | ${l.memberBreakdown} |`);
   }
   lines.push('');
 

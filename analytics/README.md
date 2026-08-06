@@ -185,7 +185,7 @@ analytics/
 ├── sql/
 │   ├── 10-summary.sql          # 各维度汇总（含手动/自动记账区分）
 │   ├── 20-new-users.sql        # 新增用户明细（含来源/家庭数/首笔记账耗时）
-│   ├── 30-new-ledgers.sql      # 新增账本明细
+│   ├── 30-new-ledgers.sql      # 新增账本明细（含已软删·家庭成员数·成员昵称）
 │   ├── 40-new-entries.sql      # 新增记账明细（含 source: auto/manual）
 │   ├── 50-new-invites.sql      # 新增邀请明细
 │   ├── 60-active-users.sql     # 活跃/低活跃用户（7天≥5天/2~4天）

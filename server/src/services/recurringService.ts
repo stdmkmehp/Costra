@@ -440,10 +440,18 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
     //   (1) 当前时刻 < 窗口起点 → 今天会触发（窗口还没开始，hash 落点必然在未来）
     //   (2) 当前时刻 >= 窗口起点 → 跳过今天（hash 落点可能在当前时刻之前或之后，行为不确定）
     //   这样保证用户在创建时就能确定今天会不会触发，不依赖 hash 随机落点。
+    //
+    // ⚠️ 仅当 start_date 就是今天时才进入此分支：
+    //   - start_date 在未来 → nextRunAt 必然 > now，但本分支的逻辑（看「今天的 bucket 窗口」）
+    //     与未来起始日无关，强行走会把 nextRunAt 错误地拉回到「从今天起算的下一个匹配日」，
+    //     违反「起始日在未来时从起始日起算」的语义。
+    //   - nextRunAt 已过（start_date 在过去且首个匹配日也过去）→ 走 else 分支从 now 重算。
     const now = new Date();
-    if (nextRunAt > now) {
+    const nowZ = DateTime.fromJSDate(now, { zone: timezone });
+    const startDateZ = DateTime.fromISO(payload.start_date, { zone: timezone }).startOf('day');
+    const isStartToday = nowZ.hasSame(startDateZ, 'day');
+    if (isStartToday && nextRunAt > now) {
       // nextRunAt 在未来 → 还需要确认它是否落在今天的 bucket 窗口内且窗口已开始
-      const nowZ = DateTime.fromJSDate(now, { zone: timezone });
       const window = BUCKET_WINDOWS[payload.execute_bucket];
       // bucket 窗口起点（今天 window.startHour:00 in tz）
       const windowStartToday = nowZ.set({ hour: window.startHour, minute: 0, second: 0, millisecond: 0 });
@@ -451,21 +459,24 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
         // 当前时刻已进入或超过 bucket 窗口起点 → 跳过今天
         nextRunAt = computeNextRunAt(forCompute, now);
       }
-    } else {
+    } else if (nextRunAt <= now) {
       // nextRunAt 已过 → 从当前时刻重算下一个匹配日
       nextRunAt = computeNextRunAt(forCompute, now);
     }
 
-    // 检查 end_date 边界：若 next_run_at 已超 end_date → 直接拒绝创建
+    // 检查 end_date 边界：若 next_run_at 已超 end_date 闭区间 → 直接置 'ended'
+    // 语义对齐 update 路径（line ~625）与 product-spec §4.4「结束日到期置 ended，不再执行」、
+    // tech-spec §7.2「若返回值 > end_date at 23:59:59 in timezone：由 caller 决定置 status='ended'」。
+    // 历史 bug：此处置 throw 让「end_date == start_date 且首个匹配日 > end_date」的合法组合
+    // （如 weekly + 周六 + start=end=今天周四）无法创建，与同 commit (e9a0555) 放宽的 validateCreate
+    // 「end_date >= start_date」语义自相矛盾。
+    let initialStatus: 'active' | 'ended' = 'active';
     if (payload.end_date != null) {
       const endBoundary = DateTime.fromISO(payload.end_date, { zone: timezone })
         .endOf('day')
         .toJSDate();
       if (nextRunAt > endBoundary) {
-        throw new AppError(ErrorCode.BUSINESS_RULE_VIOLATION, {
-          message: 'no matching execution date within [start_date, end_date]',
-          details: { start_date: payload.start_date, end_date: payload.end_date },
-        });
+        initialStatus = 'ended';
       }
     }
 
@@ -493,6 +504,7 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
       startDate: payload.start_date,
       endDate: payload.end_date ?? null,
       nextRunAt,
+      status: initialStatus,
     });
     return entity;
   }
