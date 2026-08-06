@@ -71,7 +71,7 @@
 
       <!-- DOW 控件（每周/每两周） -->
       <recurring-dow-picker
-        wx:if="{{period === 'weekly' || period === 'biweekly'}}"
+        wx:if="{{period === 'weekly'}}"
         value="{{daysOfWeek}}"
     period="{{period}}"
       bind:change="onDowChange"
@@ -81,7 +81,7 @@
 
       <!-- DOM 控件（每月/每两月/每三月） -->
       <recurring-dom-picker
-        wx:if="{{period === 'monthly' || period === 'bimonthly' || period === 'trimonthly'}}"
+        wx:if="{{period === 'monthly'}}"
    value="{{daysOfMonth}}"
         period="{{period}}"
      bind:change="onDomChange"

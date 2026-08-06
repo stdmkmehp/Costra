@@ -255,7 +255,8 @@ function applyMigrations(db: IMemoryDb): void {
       shared_type     TEXT,
 
       period          TEXT NOT NULL CHECK (period IN
-        ('weekly','biweekly','monthly','bimonthly','trimonthly','yearly')),
+        ('weekly','monthly','yearly')),
+      period_interval SMALLINT NOT NULL DEFAULT 1,
       days_of_week    SMALLINT[],
       days_of_month   SMALLINT[],
       year_month_days INTEGER[],

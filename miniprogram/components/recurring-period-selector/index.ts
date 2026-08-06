@@ -19,10 +19,7 @@ type PeriodType = 'weekly' | 'monthly' | 'yearly';
 function parsePeriod(period: RecurringPeriod): { type: PeriodType; interval: number } {
   switch (period) {
     case 'weekly': return { type: 'weekly', interval: 1 };
-    case 'biweekly': return { type: 'weekly', interval: 2 };
     case 'monthly': return { type: 'monthly', interval: 1 };
-    case 'bimonthly': return { type: 'monthly', interval: 2 };
-    case 'trimonthly': return { type: 'monthly', interval: 3 };
     case 'yearly': return { type: 'yearly', interval: 1 };
     default: return { type: 'weekly', interval: 1 };
   }
@@ -32,18 +29,9 @@ function parsePeriod(period: RecurringPeriod): { type: PeriodType; interval: num
  * 将基础类型和间隔组合为 RecurringPeriod。
  * 对于超出已有枚举范围的值（n>2 周 或 n>3 月），使用 weekly/monthly 作为基底搭配 period_interval 扩展。
  */
-function composePeriod(type: PeriodType, interval: number): RecurringPeriod {
-  if (type === 'weekly') {
-    if (interval === 1) return 'weekly';
-    if (interval === 2) return 'biweekly';
-    return 'weekly';
-  }
-  if (type === 'monthly') {
-    if (interval === 1) return 'monthly';
-    if (interval === 2) return 'bimonthly';
-    if (interval === 3) return 'trimonthly';
-    return 'monthly';
-  }
+function composePeriod(type: PeriodType, _interval: number): RecurringPeriod {
+  if (type === 'weekly') return 'weekly';
+  if (type === 'monthly') return 'monthly';
   return 'yearly';
 }
 

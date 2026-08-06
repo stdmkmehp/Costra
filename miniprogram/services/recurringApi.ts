@@ -9,10 +9,7 @@ import { request } from './request';
 
 export type RecurringPeriod =
   | 'weekly'
-  | 'biweekly'
   | 'monthly'
-  | 'bimonthly'
-  | 'trimonthly'
   | 'yearly';
 
 export type RecurringBucket = 'dawn' | 'morning' | 'afternoon' | 'night';

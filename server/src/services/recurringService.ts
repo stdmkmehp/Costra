@@ -67,7 +67,7 @@ export interface CreateRecurringPayload {
   note?: string | null;
   shared_type?: SharedType | null;
   period: Period;
-  /** 周期间隔（如每3周=3）· 当前版本暂不持久化，仅透传以避免 schema拒绝 */
+  /** 周期间隔倍数（如每3周=3）· 默认1 */
   period_interval?: number;
   days_of_week?: number[] | null;
   days_of_month?: number[] | null;
@@ -87,7 +87,7 @@ export interface UpdateRecurringPayload {
   shared_type?: SharedType | null;
   type?: EntryType;
   period?: Period;
-  /** 周期间隔（如每3周=3）· 当前版本暂不持久化，仅透传以避免 schema 拒绝 */
+  /** 周期间隔倍数（如每3周=3）· 默认1 */
   period_interval?: number;
   days_of_week?: number[] | null;
   days_of_month?: number[] | null;
@@ -104,10 +104,7 @@ export interface UpdateRecurringPayload {
 
 const PERIODS: readonly Period[] = [
   'weekly',
-  'biweekly',
   'monthly',
-  'bimonthly',
-  'trimonthly',
   'yearly',
 ];
 const BUCKETS: readonly ExecuteBucket[] = ['dawn', 'morning', 'afternoon', 'night'];
@@ -159,16 +156,19 @@ export function validateCreate(p: CreateRecurringPayload): void {
       });
   }
 
-  if (!PERIODS.includes(p.period)) invalid('invalid period', 'period');
+  if (!PERIODS.includes(p.period)) invalid('invalid period','period');
+  if (p.period_interval !== undefined) {
+    if (!Number.isInteger(p.period_interval) || p.period_interval < 1)
+      invalid('period_interval must be a positive integer', 'period_interval');
+    if (p.period === 'yearly' && p.period_interval > 1)
+      invalid('period_interval > 1 is not supported for yearly', 'period_interval');
+  }
   if (!BUCKETS.includes(p.execute_bucket))
     invalid('invalid execute_bucket', 'execute_bucket');
 
   // period 与三个数组字段互斥
-  const isWeekly = p.period === 'weekly' || p.period === 'biweekly';
-  const isMonthly =
-    p.period === 'monthly' ||
-    p.period === 'bimonthly' ||
-    p.period === 'trimonthly';
+  const isWeekly = p.period === 'weekly';
+  const isMonthly = p.period === 'monthly';
   const isYearly = p.period === 'yearly';
 
   if (isWeekly) {
@@ -361,6 +361,7 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
 
   function toComputeShape(rule: {
     period: Period;
+    periodInterval: number;
     timezone: string;
     startDate: string;
     executeHour: number;
@@ -371,6 +372,7 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
   }): RecurringRuleForCompute {
     return {
       period: rule.period,
+      period_interval: rule.periodInterval,
       timezone: rule.timezone,
       start_date: rule.startDate,
       execute_hour: rule.executeHour,
@@ -418,6 +420,7 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
 
     const forCompute: RecurringRuleForCompute = {
       period: payload.period,
+      period_interval: payload.period_interval ?? 1,
       timezone,
       start_date: payload.start_date,
       execute_hour: hour,
@@ -503,6 +506,7 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
       sharedType:
         payload.type === 'expense' ? payload.shared_type ?? null : null,
       period: payload.period,
+      periodInterval: payload.period_interval ??1,
       daysOfWeek: payload.days_of_week ?? null,
       daysOfMonth: payload.days_of_month ?? null,
       yearMonthDays: payload.year_month_days ?? null,
@@ -571,6 +575,7 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
     const newTimezone = payload.timezone ?? existing.timezone;
     const newStartDate = payload.start_date ?? existing.startDate;
     const newPeriod = payload.period ?? existing.period;
+    const newPeriodInterval = payload.period_interval ?? existing.periodInterval;
 
     // 数组字段选择：如果 period 变更，用 payload 提供的新数组；如果 period 未变，则 payload 的新数组或旧值
     const newDow =
@@ -589,6 +594,7 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
     // 是否需要重算 next_run_at
     const needsRecompute =
       payload.period !== undefined ||
+      payload.period_interval !== undefined ||
       payload.days_of_week !== undefined ||
       payload.days_of_month !== undefined ||
       payload.year_month_days !== undefined ||
@@ -600,6 +606,7 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
     if (needsRecompute) {
       const forCompute: RecurringRuleForCompute = {
         period: newPeriod,
+        period_interval: newPeriodInterval,
         timezone: newTimezone,
         start_date: newStartDate,
         execute_hour: hour,
@@ -627,6 +634,7 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
     if (payload.shared_type !== undefined) input.sharedType = payload.shared_type;
     if (payload.type !== undefined) input.type = payload.type;
     if (payload.period !== undefined) input.period = payload.period;
+    if (payload.period_interval !== undefined) input.periodInterval = payload.period_interval;
     if (payload.days_of_week !== undefined) input.daysOfWeek = payload.days_of_week;
     if (payload.days_of_month !== undefined)
       input.daysOfMonth = payload.days_of_month;

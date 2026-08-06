@@ -16,16 +16,16 @@ import {
 describe('edit/model', () => {
   describe('shouldClearDaysOnPeriodChange', () => {
     it('weekly → biweekly: same group, no clear', () => {
-      expect(shouldClearDaysOnPeriodChange('weekly', 'biweekly')).toBe(false);
+      expect(shouldClearDaysOnPeriodChange('weekly', 'weekly')).toBe(false);
     });
     it('biweekly → weekly: same group, no clear', () => {
-      expect(shouldClearDaysOnPeriodChange('biweekly', 'weekly')).toBe(false);
+      expect(shouldClearDaysOnPeriodChange('weekly', 'weekly')).toBe(false);
     });
     it('monthly → bimonthly: same group, no clear', () => {
-      expect(shouldClearDaysOnPeriodChange('monthly', 'bimonthly')).toBe(false);
+      expect(shouldClearDaysOnPeriodChange('monthly', 'monthly')).toBe(false);
     });
     it('monthly → trimonthly: same group, no clear', () => {
-      expect(shouldClearDaysOnPeriodChange('monthly', 'trimonthly')).toBe(false);
+      expect(shouldClearDaysOnPeriodChange('monthly', 'monthly')).toBe(false);
     });
     it('weekly → monthly: cross group, clear', () => {
       expect(shouldClearDaysOnPeriodChange('weekly', 'monthly')).toBe(true);

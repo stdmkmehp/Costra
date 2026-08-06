@@ -34,6 +34,7 @@ function makeRule(
 ): RecurringRuleForCompute {
   return {
     period: 'weekly',
+    period_interval: 1,
     timezone: TZ,
     start_date: '2026-01-01',
     execute_hour: 9,
@@ -305,7 +306,7 @@ describe('computeNextRunAt · biweekly (12 cases)', () => {
   // 基准周 = start_date 所在自然周。start=2026-01-05 (Mon) · W0=2026-01-05..11
   // W2 = 2026-01-19..25, W4 = 2026-02-02..08
   const RULE_MONDAY_BIWEEKLY = makeRule({
-    period: 'biweekly',
+    period: 'weekly', period_interval: 2,
     days_of_week: [1],
     start_date: '2026-01-05',
   });
@@ -344,7 +345,7 @@ describe('computeNextRunAt · biweekly (12 cases)', () => {
 
   it('biweekly · multi-dow Mon+Fri · from W0 Mon after → W0 Fri', () => {
     const rule = makeRule({
-      period: 'biweekly',
+      period: 'weekly', period_interval: 2,
       days_of_week: [1, 5],
       start_date: '2026-01-05',
     });
@@ -354,7 +355,7 @@ describe('computeNextRunAt · biweekly (12 cases)', () => {
 
   it('biweekly · multi-dow Mon+Fri · from W0 Fri after → W2 Mon', () => {
     const rule = makeRule({
-      period: 'biweekly',
+      period: 'weekly', period_interval: 2,
       days_of_week: [1, 5],
       start_date: '2026-01-05',
     });
@@ -367,7 +368,7 @@ describe('computeNextRunAt · biweekly (12 cases)', () => {
     // W0 = week of 2025-12-29
     // If we then ask from 2026-01-05 (Mon in W1) · biweekly should skip → answer in W2
     const rule = makeRule({
-      period: 'biweekly',
+      period: 'weekly', period_interval: 2,
       days_of_week: [1],
       start_date: '2026-01-04',
     });
@@ -378,7 +379,7 @@ describe('computeNextRunAt · biweekly (12 cases)', () => {
 
   it('biweekly · from date before start_date → next matching in future', () => {
     const rule = makeRule({
-      period: 'biweekly',
+      period: 'weekly', period_interval: 2,
       days_of_week: [1],
       start_date: '2026-02-01',
     });
@@ -393,7 +394,7 @@ describe('computeNextRunAt · biweekly (12 cases)', () => {
   it('biweekly · cross-year · W2 in early Jan', () => {
     // start=2026-12-28 (Mon) · W2 = 2027-01-11
     const rule = makeRule({
-      period: 'biweekly',
+      period: 'weekly', period_interval: 2,
       days_of_week: [1],
       start_date: '2026-12-28',
     });
@@ -404,7 +405,7 @@ describe('computeNextRunAt · biweekly (12 cases)', () => {
   it('biweekly · Wed only · from Sun in W0 → W0 Wed hits (before execute)', () => {
     // start=2026-01-05 (Mon) · W0 covers 2026-01-05..11 · Wed=2026-01-07
     const rule = makeRule({
-      period: 'biweekly',
+      period: 'weekly', period_interval: 2,
       days_of_week: [3],
       start_date: '2026-01-05',
     });
@@ -426,7 +427,7 @@ describe('computeNextRunAt · biweekly (12 cases)', () => {
 
   it('biweekly · all 7 dows selected · still respects biweekly cadence', () => {
     const rule = makeRule({
-      period: 'biweekly',
+      period: 'weekly', period_interval: 2,
       days_of_week: [1, 2, 3, 4, 5, 6, 7],
       start_date: '2026-01-05',
     });
@@ -623,7 +624,7 @@ describe('computeNextRunAt · monthly (20 cases)', () => {
 
 describe('computeNextRunAt · bimonthly (8 cases)', () => {
   const RULE_JAN_15 = makeRule({
-    period: 'bimonthly',
+    period: 'monthly', period_interval: 2,
     days_of_month: [15],
     start_date: '2026-01-01',
   });
@@ -650,7 +651,7 @@ describe('computeNextRunAt · bimonthly (8 cases)', () => {
 
   it('bimonthly · start Feb → active months are 2,4,6,8,10,12', () => {
     const rule = makeRule({
-      period: 'bimonthly',
+      period: 'monthly', period_interval: 2,
       days_of_month: [1],
       start_date: '2026-02-01',
     });
@@ -666,7 +667,7 @@ describe('computeNextRunAt · bimonthly (8 cases)', () => {
 
   it('bimonthly · multi-dom · in active month → each dom hits', () => {
     const rule = makeRule({
-      period: 'bimonthly',
+      period: 'monthly', period_interval: 2,
       days_of_month: [1, 15],
       start_date: '2026-01-01',
     });
@@ -687,7 +688,7 @@ describe('computeNextRunAt · bimonthly (8 cases)', () => {
 
   it('bimonthly · 31 in odd-month (Jan, Mar, May) works · in Nov (30 days) → Nov 30', () => {
     const rule = makeRule({
-      period: 'bimonthly',
+      period: 'monthly', period_interval: 2,
       days_of_month: [31],
       start_date: '2026-01-01',
     });
@@ -700,7 +701,7 @@ describe('computeNextRunAt · bimonthly (8 cases)', () => {
 
   it('bimonthly · cross-year advance', () => {
     const rule = makeRule({
-      period: 'bimonthly',
+      period: 'monthly', period_interval: 2,
       days_of_month: [15],
       start_date: '2026-01-01',
     });
@@ -710,7 +711,7 @@ describe('computeNextRunAt · bimonthly (8 cases)', () => {
 
   it('bimonthly · dom [1,15,31] · Jan produces 3 hits', () => {
     const rule = makeRule({
-      period: 'bimonthly',
+      period: 'monthly', period_interval: 2,
       days_of_month: [1, 15, 31],
       start_date: '2026-01-01',
     });
@@ -728,7 +729,7 @@ describe('computeNextRunAt · bimonthly (8 cases)', () => {
 
 describe('computeNextRunAt · trimonthly (8 cases)', () => {
   const RULE_JAN = makeRule({
-    period: 'trimonthly',
+    period: 'monthly', period_interval: 3,
     days_of_month: [1],
     start_date: '2026-01-01',
   });
@@ -763,7 +764,7 @@ describe('computeNextRunAt · trimonthly (8 cases)', () => {
 
   it('trimonthly · start Feb → active Feb/May/Aug/Nov', () => {
     const rule = makeRule({
-      period: 'trimonthly',
+      period: 'monthly', period_interval: 3,
       days_of_month: [1],
       start_date: '2026-02-01',
     });
@@ -779,7 +780,7 @@ describe('computeNextRunAt · trimonthly (8 cases)', () => {
 
   it('trimonthly · dom [31] in Apr (30d) · Apr 30', () => {
     const rule = makeRule({
-      period: 'trimonthly',
+      period: 'monthly', period_interval: 3,
       days_of_month: [31],
       start_date: '2026-01-01',
     });
@@ -790,7 +791,7 @@ describe('computeNextRunAt · trimonthly (8 cases)', () => {
 
   it('trimonthly · multi-dom [1,15] in Jan → 2 hits', () => {
     const rule = makeRule({
-      period: 'trimonthly',
+      period: 'monthly', period_interval: 3,
       days_of_month: [1, 15],
       start_date: '2026-01-01',
     });
@@ -815,7 +816,7 @@ describe('computeNextRunAt · trimonthly (8 cases)', () => {
 
   it('trimonthly · start Mar → active Mar/Jun/Sep/Dec', () => {
     const rule = makeRule({
-      period: 'trimonthly',
+      period: 'monthly', period_interval: 3,
       days_of_month: [15],
       start_date: '2026-03-01',
     });
@@ -1266,7 +1267,7 @@ describe('computeNextRunAt · timezone (10 cases)', () => {
 
   it('Pacific/Auckland · biweekly · handles zone with +13 offset', () => {
     const rule = makeRule({
-      period: 'biweekly',
+      period: 'weekly', period_interval: 2,
       days_of_week: [1],
       timezone: 'Pacific/Auckland',
       start_date: '2026-01-05',
@@ -1379,7 +1380,7 @@ describe('formatDaysForSummary · dow (weekly/biweekly)', () => {
 
   it('biweekly period uses same dow formatter', () => {
     const s = formatDaysForSummary({
-      period: 'biweekly',
+      period: 'weekly', period_interval: 2,
       mode: 'full',
       days_of_week: [1, 3],
       days_of_month: null,
@@ -1431,7 +1432,7 @@ describe('formatDaysForSummary · dom (monthly/bimonthly/trimonthly)', () => {
 
   it('bimonthly period · same dom formatter', () => {
     const s = formatDaysForSummary({
-      period: 'bimonthly',
+      period: 'monthly', period_interval: 2,
       mode: 'full',
       days_of_week: null,
       days_of_month: [1, 15],
@@ -1442,7 +1443,7 @@ describe('formatDaysForSummary · dom (monthly/bimonthly/trimonthly)', () => {
 
   it('trimonthly period · same dom formatter', () => {
     const s = formatDaysForSummary({
-      period: 'trimonthly',
+      period: 'monthly', period_interval: 3,
       mode: 'full',
       days_of_week: null,
       days_of_month: [15],

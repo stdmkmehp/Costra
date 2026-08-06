@@ -25,10 +25,7 @@ import { getPool } from '../db/pool.js';
 
 export type Period =
   | 'weekly'
-  | 'biweekly'
   | 'monthly'
-  | 'bimonthly'
-  | 'trimonthly'
   | 'yearly';
 
 export type ExecuteBucket = 'dawn' | 'morning' | 'afternoon' | 'night';
@@ -56,6 +53,7 @@ export interface RecurringRuleEntity {
 
   // 周期配置
   period: Period;
+  periodInterval: number;
   daysOfWeek: number[] | null;
   daysOfMonth: number[] | null;
   yearMonthDays: number[] | null;
@@ -100,6 +98,7 @@ interface RecurringRuleRow {
   shared_type: SharedType | null;
 
   period: Period;
+  period_interval: number;
   days_of_week: number[] | null;
   days_of_month: number[] | null;
   year_month_days: number[] | null;
@@ -147,6 +146,7 @@ function rowToEntity(r: RecurringRuleRow): RecurringRuleEntity {
     note: r.note,
     sharedType: r.shared_type,
     period: r.period,
+    periodInterval: r.period_interval,
     daysOfWeek: r.days_of_week,
     daysOfMonth: r.days_of_month,
     yearMonthDays: r.year_month_days,
@@ -201,6 +201,7 @@ export interface CreateRecurringRuleInput {
   note?: string | null;
   sharedType?: SharedType | null;
   period: Period;
+  periodInterval: number;
   daysOfWeek?: number[] | null;
   daysOfMonth?: number[] | null;
   yearMonthDays?: number[] | null;
@@ -235,12 +236,12 @@ export async function insertRule(
     `INSERT INTO recurring_rules (
        id, ledger_id, created_by,
        type, amount, currency, category_id, account_id, to_account_id, note, shared_type,
-       period, days_of_week, days_of_month, year_month_days,
+       period, period_interval, days_of_week, days_of_month, year_month_days,
        execute_bucket, execute_hour, execute_minute, timezone,
        start_date, end_date, next_run_at, status, last_run_status
      ) VALUES (
        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-       $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
+       $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25
      )
      RETURNING *`,
     [
@@ -256,6 +257,7 @@ export async function insertRule(
       input.note ?? null,
       input.sharedType ?? null,
       input.period,
+      input.periodInterval,
       input.daysOfWeek ?? null,
       input.daysOfMonth ?? null,
       input.yearMonthDays ?? null,
@@ -363,6 +365,7 @@ export interface UpdateRecurringRuleInput {
   sharedType?: SharedType | null;
   type?: EntryType;
   period?: Period;
+  periodInterval?: number;
   daysOfWeek?: number[] | null;
   daysOfMonth?: number[] | null;
   yearMonthDays?: number[] | null;
@@ -413,6 +416,7 @@ export async function updateRuleByVersion(
   if (input.sharedType !== undefined) push('shared_type', input.sharedType);
   if (input.type !== undefined) push('type', input.type);
   if (input.period !== undefined) push('period', input.period);
+  if (input.periodInterval !== undefined) push('period_interval', input.periodInterval);
   if (input.daysOfWeek !== undefined) push('days_of_week', input.daysOfWeek);
   if (input.daysOfMonth !== undefined) push('days_of_month', input.daysOfMonth);
   if (input.yearMonthDays !== undefined)

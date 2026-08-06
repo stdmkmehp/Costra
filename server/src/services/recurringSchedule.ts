@@ -16,10 +16,7 @@ import { DateTime } from 'luxon';
 
 export type Period =
   | 'weekly'
-  | 'biweekly'
   | 'monthly'
-  | 'bimonthly'
-  | 'trimonthly'
   | 'yearly';
 
 export type ExecuteBucket = 'dawn' | 'morning' | 'afternoon' | 'night';
@@ -30,13 +27,14 @@ export type ExecuteBucket = 'dawn' | 'morning' | 'afternoon' | 'night';
  */
 export interface RecurringRuleForCompute {
   period: Period;
-  timezone: string; // IANA 时区名 · 例 'Asia/Shanghai'
+  period_interval: number; // 周期间隔倍数 · 默认 1
+  timezone: string; // IANA 时区名· 例'Asia/Shanghai'
   start_date: string; // 'YYYY-MM-DD'
   execute_hour: number; // 0-23
   execute_minute: number; // 0-59
-  days_of_week: number[] | null; // 1=周一...7=周日 · weekly/biweekly 用
-  days_of_month: number[] | null; // 1..31 · monthly/bimonthly/trimonthly 用
-  year_month_days: number[] | null; // 编码 month*100+day · yearly 用
+  days_of_week: number[] | null; // 1=周一...7=周日 · weekly用
+  days_of_month: number[] | null; // 1..31 · monthly 用
+  year_month_days: number[] | null; // 编码month*100+day · yearly 用
 }
 
 // ===== 时段窗口常量（tech-spec §3.5 v0.2.1 · 内缩边界）=====
@@ -174,35 +172,28 @@ function tryMatchOnDay(
   rule: RecurringRuleForCompute,
   cursor: DateTime,
 ): DateTime | null {
+  const interval = rule.period_interval;
+
   switch (rule.period) {
     case 'weekly': {
       const dows = rule.days_of_week;
       if (!dows || dows.length === 0) return null;
+      if (interval > 1) {
+        const baseMonday = DateTime.fromISO(rule.start_date, {
+          zone: rule.timezone,
+        }).startOf('week');
+        const cursorMonday = cursor.startOf('week');
+        const weeksDiff = Math.round(
+          cursorMonday.diff(baseMonday, 'weeks').weeks,
+        );
+        if (weeksDiff < 0 || weeksDiff % interval !== 0) return null;
+      }
       return dows.includes(cursor.weekday) ? cursor : null;
     }
 
-    case 'biweekly': {
-      const dows = rule.days_of_week;
-      if (!dows || dows.length === 0) return null;
-      // 基准周 = start_date 所在自然周（Luxon 默认 startOfWeek = 周一）
-      const baseMonday = DateTime.fromISO(rule.start_date, {
-        zone: rule.timezone,
-      }).startOf('week');
-      const cursorMonday = cursor.startOf('week');
-      const weeksDiff = Math.round(
-        cursorMonday.diff(baseMonday, 'weeks').weeks,
-      );
-      if (weeksDiff < 0 || weeksDiff % 2 !== 0) return null;
-      return dows.includes(cursor.weekday) ? cursor : null;
-    }
-
-    case 'monthly':
-    case 'bimonthly':
-    case 'trimonthly': {
+    case 'monthly': {
       const doms = rule.days_of_month;
       if (!doms || doms.length === 0) return null;
-      const step =
-        rule.period === 'monthly' ? 1 : rule.period === 'bimonthly' ? 2 : 3;
       const baseMonth = DateTime.fromISO(rule.start_date, {
         zone: rule.timezone,
       }).startOf('month');
@@ -210,7 +201,7 @@ function tryMatchOnDay(
       const monthsDiff = Math.round(
         cursorMonth.diff(baseMonth, 'months').months,
       );
-      if (monthsDiff < 0 || monthsDiff % step !== 0) return null;
+      if (monthsDiff < 0 || monthsDiff % interval !== 0) return null;
       return matchDayOfMonth(cursor, doms);
     }
 

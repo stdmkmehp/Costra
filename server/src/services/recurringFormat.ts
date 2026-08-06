@@ -13,10 +13,7 @@
 
 export type Period =
   | 'weekly'
-  | 'biweekly'
   | 'monthly'
-  | 'bimonthly'
-  | 'trimonthly'
   | 'yearly';
 
 // ===== formatDaysForSummary · 已选日子的展示格式化 =====
@@ -42,11 +39,8 @@ export interface FormatContext {
 export function formatDaysForSummary(ctx: FormatContext): string {
   switch (ctx.period) {
     case 'weekly':
-    case 'biweekly':
       return formatDow(ctx.days_of_week ?? [], ctx.mode);
     case 'monthly':
-    case 'bimonthly':
-    case 'trimonthly':
       return formatDom(ctx.days_of_month ?? [], ctx.mode);
     case 'yearly':
       return formatYearMonthDays(ctx.year_month_days ?? [], ctx.mode);

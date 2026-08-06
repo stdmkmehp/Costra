@@ -2330,21 +2330,21 @@ components:
           description: "仅 expense 有值; income/transfer 必须为 null"
         period:
           type: string
-          enum: [weekly, biweekly, monthly, bimonthly, trimonthly, yearly]
+          enum: [weekly, monthly, yearly]
         days_of_week:
           type: array
           items: { type: integer, minimum: 1, maximum: 7 }
           minItems: 1
           maxItems: 7
           nullable: true
-          description: "1=周一, 7=周日; weekly/biweekly 用"
+          description: "1=周一, 7=周日; weekly 用"
         days_of_month:
           type: array
           items: { type: integer, minimum: 1, maximum: 31 }
           minItems: 1
           maxItems: 14
           nullable: true
-          description: "monthly/bimonthly/trimonthly 用"
+          description: "monthly 用"
         year_month_days:
           type: array
           items: { type: integer, minimum: 101, maximum: 1231 }
@@ -2414,7 +2414,7 @@ components:
           nullable: true
         period:
           type: string
-          enum: [weekly, biweekly, monthly, bimonthly, trimonthly, yearly]
+          enum: [weekly, monthly, yearly]
         days_of_week:
           type: array
           items: { type: integer, minimum: 1, maximum: 7 }
@@ -2458,7 +2458,7 @@ components:
           nullable: true
         period:
           type: string
-          enum: [weekly, biweekly, monthly, bimonthly, trimonthly, yearly]
+          enum: [weekly, monthly, yearly]
         days_of_week: { type: array, items: { type: integer }, nullable: true }
         days_of_month: { type: array, items: { type: integer }, nullable: true }
         year_month_days: { type: array, items: { type: integer }, nullable: true }

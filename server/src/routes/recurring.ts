@@ -110,6 +110,7 @@ function ruleToResponse(r: RecurringRuleEntity) {
     note: r.note,
     shared_type: r.sharedType,
     period: r.period,
+    period_interval: r.periodInterval,
     days_of_week: r.daysOfWeek,
     days_of_month: r.daysOfMonth,
     year_month_days: r.yearMonthDays,
@@ -152,7 +153,7 @@ const createBodySchema = {
     shared_type: { type: ['string', 'null'], enum: ['personal', 'shared', null] },
     period: {
       type: 'string',
-      enum: ['weekly', 'biweekly', 'monthly', 'bimonthly', 'trimonthly', 'yearly'],
+      enum: ['weekly', 'monthly', 'yearly'],
     },
     period_interval: { type: 'integer', minimum: 1 },
     days_of_week: nullableArrayOfInt,
@@ -183,7 +184,7 @@ const patchBodySchema = {
     shared_type: { type: ['string', 'null'], enum: ['personal', 'shared', null] },
     period: {
       type: 'string',
-      enum: ['weekly', 'biweekly', 'monthly', 'bimonthly', 'trimonthly', 'yearly'],
+      enum: ['weekly', 'monthly', 'yearly'],
     },
     period_interval: { type: 'integer', minimum: 1 },
     days_of_week: nullableArrayOfInt,

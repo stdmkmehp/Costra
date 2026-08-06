@@ -38,8 +38,8 @@ export function shouldKeepCategoryOnLedgerChange(
 
 // ─── 周期同组保留/跨组清空逻辑 ──────────────────────────────────────────────
 
-const WEEK_GROUP: RecurringPeriod[] = ['weekly', 'biweekly'];
-const MONTH_GROUP: RecurringPeriod[] = ['monthly', 'bimonthly', 'trimonthly'];
+const WEEK_GROUP: RecurringPeriod[] = ['weekly'];
+const MONTH_GROUP: RecurringPeriod[] = ['monthly'];
 
 export function shouldClearDaysOnPeriodChange(
   oldPeriod: RecurringPeriod,
@@ -80,6 +80,7 @@ export function bucketRepresentativeTime(bucket: RecurringBucket): { hour: numbe
 
 export interface PreviewInput {
   period: RecurringPeriod;
+  periodInterval: number;
   bucket: RecurringBucket;
   startDate: string;
   daysOfWeek: number[];
@@ -117,6 +118,7 @@ export function computePreviewNextRun(
 
   const rule: RecurringRuleForCompute = {
     period,
+    period_interval: input.periodInterval,
     timezone,
     start_date: startDate,
     execute_hour: hour,

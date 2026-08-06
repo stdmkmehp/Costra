@@ -45,11 +45,11 @@ type SaveOutcome =
  */
 function computePeriodLabel(period: RecurringPeriod, interval: number): string {
   if (period === 'yearly') return '每年';
-  if (['weekly', 'biweekly'].includes(period)) {
+  if (period === 'weekly') {
     if (interval === 1) return '每周';
     return `每${interval}周`;
   }
-  if (['monthly', 'bimonthly', 'trimonthly'].includes(period)) {
+  if (period === 'monthly') {
     if (interval === 1) return '每月';
     return `每${interval}月`;
   }
@@ -60,12 +60,10 @@ function computePeriodLabel(period: RecurringPeriod, interval: number): string {
  * 从 period 值解析 interval
  */
 function parsePeriodInterval(period: RecurringPeriod): number {
+  // period_interval 由 API 字段直接获取，此函数仅作fallback
   switch (period) {
     case 'weekly': return 1;
-    case 'biweekly': return 2;
     case 'monthly': return 1;
-    case 'bimonthly': return 2;
-    case 'trimonthly': return 3;
     case 'yearly': return 1;
     default: return 1;
   }
@@ -664,6 +662,7 @@ Page({
     if (this._isFormComplete()) {
       const result = computePreviewNextRun({
         period,
+        periodInterval: this.data.periodInterval,
         bucket,
         startDate: this.data.startDate,
         daysOfWeek: this.data.daysOfWeek,
@@ -685,8 +684,8 @@ Page({
   _isFormComplete(): boolean {
     if (this.data.amountCents <= 0) return false;
     const { period, daysOfWeek, daysOfMonth, yearMonthDays } = this.data;
-    if (['weekly', 'biweekly'].includes(period) && daysOfWeek.length === 0) return false;
-    if (['monthly', 'bimonthly', 'trimonthly'].includes(period) && daysOfMonth.length === 0) return false;
+    if (period === 'weekly' && daysOfWeek.length === 0) return false;
+    if (period === 'monthly' && daysOfMonth.length === 0) return false;
     if (period === 'yearly' && yearMonthDays.length === 0) return false;
     return true;
   },
@@ -701,8 +700,8 @@ Page({
     else if (!this.data.ledgerId) { error = '请选择账本'; section = 1; }
     else {
       const { period, daysOfWeek, daysOfMonth, yearMonthDays } = this.data;
-      if (['weekly', 'biweekly'].includes(period) && daysOfWeek.length === 0) { error = '请至少选 1 天'; section = 2; }
-      else if (['monthly', 'bimonthly', 'trimonthly'].includes(period) && daysOfMonth.length === 0) { error = '请至少选 1 天'; section = 2; }
+      if (period === 'weekly' && daysOfWeek.length === 0) { error = '请至少选 1 天'; section = 2; }
+      else if (period === 'monthly' && daysOfMonth.length === 0) { error = '请至少选 1 天'; section = 2; }
       else if (period === 'yearly' && yearMonthDays.length === 0) { error = '请至少选 1 天'; section = 2; }
       else if (this.data.hasEndDate && !this.data.endDate) { error = '请选择结束日'; section = 2; }
       else if (this.data.hasEndDate && this.data.endDate < this.data.startDate) { error = '结束日不能早于起始日'; section = 2; }
@@ -727,9 +726,9 @@ Page({
       shared_type: this.data.entryType === 'expense' ? this.data.sharedType : undefined,
       period: this.data.period,
       period_interval: this.data.periodInterval,
-      days_of_week: ['weekly', 'biweekly'].includes(this.data.period)
+      days_of_week: this.data.period === 'weekly'
         ? (this.data.daysOfWeek.length > 0 ? this.data.daysOfWeek : null) : null,
-      days_of_month: ['monthly', 'bimonthly', 'trimonthly'].includes(this.data.period)
+      days_of_month: this.data.period === 'monthly'
         ? (this.data.daysOfMonth.length > 0 ? this.data.daysOfMonth : null) : null,
       year_month_days: this.data.period === 'yearly'
         ? (this.data.yearMonthDays.length > 0 ? this.data.yearMonthDays : null) : null,
