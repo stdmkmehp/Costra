@@ -16,7 +16,7 @@
   display: flex; align-items: center; justify-content: space-between;
   min-height: 100rpx; padding: 0 40rpx; font-size: 30rpx; color: #1c1b1a;
   border-bottom: 1rpx solid rgba(28,27,26,0.06);
-  transition: background160ms ease-out;
+  transition: background 160ms ease-out;
 }
 .rps__item--active { background: rgba(138,169,143,0.06); }
 .rps__item-main { display: flex; align-items: center; gap: 8rpx; }
@@ -24,18 +24,34 @@
 .rps__interval-input {
   width: 80rpx; height: 60rpx; line-height: 60rpx;
   text-align: center; font-size: 32rpx; font-weight: 600; color: #1c1b1a;
-  border: 2rpx solid #8AA98F; border-radius: 12rpx;
-  background: rgba(138,169,143,0.06);
+  border: 2rpx solid rgba(28,27,26,0.12); border-radius: 12rpx;
+  background: #ffffff;
   font-variant-numeric: tabular-nums;
 }
-.rps__interval-display {
-  display: inline-block; width: 80rpx; height: 60rpx; line-height: 60rpx;
-  text-align: center; font-size: 32rpx; font-weight: 600; color: rgba(28,27,26,0.48);
-  border: 2rpx solid rgba(28,27,26,0.12); border-radius: 12rpx;
+.rps__interval-input--active {
+  border-color: #8AA98F;
+  background: rgba(138,169,143,0.06);
+}
+.rps__interval-input--muted {
+  border-color: rgba(28,27,26,0.12);
+  color: rgba(28,27,26,0.48);
 }
 
 .rps__check { color: #8AA98F; font-size: 32rpx; }
-.rps__cancel {
-  text-align: center; height: 100rpx; line-height: 100rpx;
-  font-size: 30rpx; color: rgba(28,27,26,0.48); border-top: 8rpx solid #f1f2ec;
+
+.rps__actions {
+  display: flex; gap: 16rpx;
+  padding: 24rpx 24rpx 16rpx; border-top: 8rpx solid #f1f2ec;
+}
+.rps__btn {
+  flex: 1; height: 88rpx; line-height: 88rpx;
+  text-align: center; font-size: 30rpx; font-weight: 600;
+  border-radius: 16rpx;
+}
+.rps__btn--cancel {
+  background: #ffffff; color: rgba(28,27,26,0.48);
+  border: 1rpx solid rgba(28,27,26,0.12);
+}
+.rps__btn--confirm {
+  background: #8AA98F; color: #ffffff;
 }

@@ -316,6 +316,25 @@ export async function listByUser(
   return res.rows.map(rowToEntity);
 }
 
+/**
+ * 统计用户当前拥有的规则总数（含 active / paused / ended / auto_paused · 不含软删）。
+ * 用于「单用户规则上限」校验：创建 / 复制前先 count，达上限即拒绝。
+ */
+export async function countByUser(
+  userId: string,
+  client?: Runner,
+): Promise<number> {
+  const runner = client ?? exec();
+  const res = await runner.query(
+    `SELECT COUNT(*) AS cnt
+       FROM recurring_rules
+      WHERE created_by = $1 AND deleted_at IS NULL`,
+    [userId],
+  );
+  const row = res.rows[0] as unknown as { cnt?: string | number } | undefined;
+  return Number(row?.cnt ?? 0);
+}
+
 // ==============================================================================
 // 更新（乐观锁）
 // ==============================================================================

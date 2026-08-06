@@ -19,11 +19,12 @@ import { formatDaysForSummary, type FormatContext } from '../../services/recurri
 import { getActiveFamilyId } from '../../services/family';
 import { getToken } from '../../services/auth';
 import { getFamilies, type FamilyItem } from '../../services/familyApi';
-import { getCategories, getCategoriesSync, type CategoryItem } from '../../services/categoryService';
+import { getCategories, getCategoriesSync, getCategoryById, type CategoryItem } from '../../services/categoryService';
 import { resolveIconGlyph } from '../../services/iconMap';
 import { getSafeAreaMetrics } from '../../utils/safeArea';
 import {
   shouldClearDaysOnPeriodChange,
+  shouldKeepCategoryOnLedgerChange,
   computePreviewNextRun,
   isVersionConflict,
 } from './model';
@@ -394,20 +395,20 @@ Page({
       success: (res) => {
         const f = this._families[res.tapIndex];
         if (f && f.ledger_id !== this.data.ledgerId) {
-          // 切换账本后，仅当当前选中的分类在新账本中不存在时才清空。
-          // 系统预设分类（familyId===null）所有账本通用，家庭自定义分类仅在该家庭有效。
+          // 切换账本后，仅当当前选中的分类在目标账本中不适用时才清空。
+          // 判定依据不能依赖 getCategoriesSync(f.id)：内存缓存只保留单个家庭的数据，
+          // 跨家庭时它返回的是系统预设 fallback，会把"家庭自定义分类"误判为不存在而错误重置。
+          // 正确做法：按分类自身的归属（familyId）判定——
+          //   系统预设分类（familyId===null）所有账本通用 → 保留；
+          //   家庭自定义分类仅在其所属家庭有效 → 仅当属于目标家庭才保留。
           let categoryUpdates: Record<string, any> = {};
           const currentCategoryId = this.data.categoryId;
-          if (currentCategoryId) {
-            const newFamilyCategories = getCategoriesSync(f.id);
-            const stillExists = newFamilyCategories.some((c) => c.id === currentCategoryId);
-            if (!stillExists) {
-              categoryUpdates = {
-                categoryId: '',
-                categoryName: '',
-                categoryIcon: resolveIconGlyph(null),
-              };
-            }
+          if (currentCategoryId && !shouldKeepCategoryOnLedgerChange(getCategoryById(currentCategoryId), f.id)) {
+            categoryUpdates = {
+              categoryId: '',
+              categoryName: '',
+              categoryIcon: resolveIconGlyph(null),
+            };
           }
           this.setData({
             ledgerId: f.ledger_id,

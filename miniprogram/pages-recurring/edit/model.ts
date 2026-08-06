@@ -11,6 +11,31 @@ import {
   type RecurringRuleForCompute,
 } from '../../services/recurringSchedule';
 
+// ─── 账本切换时分类保留判定 ────────────────────────────────────────────────────
+
+/**
+ * 切换账本后是否应保留当前已选分类。
+ *
+ * 判定依据（对齐产品设计）：
+ *   - 系统预设分类（familyId===null）所有账本通用 → 保留；
+ *   - 家庭自定义分类仅在其所属家庭有效 → 仅当属于目标家庭（familyId === targetFamilyId）才保留；
+ *   - 分类信息无法解析（currentCategory 为 undefined）→ 保守保留，避免误删用户已选分类。
+ *
+ * 注意：不能用"目标家庭的全量分类是否含该 id"来判定——分类数据内存缓存只保留单个家庭，
+ * 跨家庭读取会退化为系统预设 fallback，从而把家庭自定义分类误判为不存在而错误重置。
+ *
+ * @param currentCategory 当前选中的分类（含 id 与归属 familyId）
+ * @param targetFamilyId  切换后目标家庭 ID
+ */
+export function shouldKeepCategoryOnLedgerChange(
+  currentCategory: { id: string; familyId: string | null } | undefined,
+  targetFamilyId: string,
+): boolean {
+  if (!currentCategory) return true; // 无法判定 → 保守保留
+  if (currentCategory.familyId === null) return true; // 系统预设 · 通用
+  return currentCategory.familyId === targetFamilyId; // 家庭自定义 · 仅限所属家庭
+}
+
 // ─── 周期同组保留/跨组清空逻辑 ──────────────────────────────────────────────
 
 const WEEK_GROUP: RecurringPeriod[] = ['weekly', 'biweekly'];

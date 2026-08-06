@@ -497,6 +497,106 @@ describe('recurring-entries · CRUD basics', () => {
     });
     expect(res.statusCode).toBe(403);
   });
+
+  it('POST · 达到单用户规则上限（32）→ 422', async () => {
+    // 先批量插入 32 条规则（直接写库 · 跳过 API 循环）
+    const pool = getPool();
+    for (let i = 0; i < 32; i++) {
+      await pool.query(
+        `INSERT INTO recurring_rules (
+           id, ledger_id, created_by, type, amount, currency,
+           category_id, account_id, to_account_id, note, shared_type,
+           period, days_of_week, days_of_month, year_month_days,
+           execute_bucket, execute_hour, execute_minute, timezone,
+           start_date, end_date, next_run_at, status, consecutive_failures, version
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)`,
+        [
+          `00000000-0000-0000-0000-${String(i).padStart(12, '0')}`,
+          LEDGER_ID,
+          userId,
+          'expense',
+          100,
+          'CNY',
+          null, null, null, null, null,
+          'weekly',
+          [1],
+          null,
+          null,
+          'morning',
+          9,
+          30,
+          'Asia/Shanghai',
+          '2026-08-01',
+          null,
+          new Date(Date.now() + 86400000),
+          'active',
+          0,
+          0,
+        ],
+      );
+    }
+
+    // 第 33 条 → 422
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 100,
+        shared_type: 'personal',
+        period: 'weekly',
+        days_of_week: [1],
+        execute_bucket: 'morning',
+        start_date: '2026-08-01',
+      },
+    });
+    expect(res.statusCode).toBe(422);
+    const body = res.json() as { code: string };
+    expect(body.code).toBe('BUSINESS_RULE_VIOLATION');
+  });
+
+  it('POST /copy · 达到规则上限 → 422', async () => {
+    // 先创建 1 条再复制 31 次 → 共 32 条
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 100,
+        shared_type: 'personal',
+        period: 'weekly',
+        days_of_week: [1],
+        execute_bucket: 'morning',
+        start_date: '2026-08-01',
+      },
+    });
+    expect(createRes.statusCode).toBe(201);
+    const original = createRes.json() as { id: string };
+
+    // 复制 31 次 → 累计 32 条
+    for (let i = 0; i < 31; i++) {
+      const r = await app.inject({
+        method: 'POST',
+        url: `/v1/recurring-entries/${original.id}/copy`,
+        headers: authHeaderNoBody(token),
+      });
+      expect(r.statusCode).toBe(201);
+    }
+
+    // 第 33 条（复制）→ 422
+    const overRes = await app.inject({
+      method: 'POST',
+      url: `/v1/recurring-entries/${original.id}/copy`,
+      headers: authHeaderNoBody(token),
+    });
+    expect(overRes.statusCode).toBe(422);
+    const body = overRes.json() as { code: string };
+    expect(body.code).toBe('BUSINESS_RULE_VIOLATION');
+  });
 });
 
 // ==============================================================================

@@ -112,6 +112,12 @@ const PERIODS: readonly Period[] = [
 ];
 const BUCKETS: readonly ExecuteBucket[] = ['dawn', 'morning', 'afternoon', 'night'];
 
+/**
+ * 单用户定时记账规则上限（含启用 / 禁用 / 已到期 / 自动停用 · 不含软删）。
+ * 事实源：用户需求 2026-08-06。
+ */
+const MAX_RULES_PER_USER = 32;
+
 function unique(arr: number[]): boolean {
   return new Set(arr).size === arr.length;
 }
@@ -339,6 +345,20 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
     }
   }
 
+  /**
+   * 单用户规则上限校验：创建 / 复制前 count，达到 MAX_RULES_PER_USER 即拒绝。
+   * 计数含所有未软删规则（active / paused / ended / auto_paused）。
+   */
+  async function assertUnderRuleLimit(userId: string): Promise<void> {
+    const count = await recurringRepo.countByUser(userId);
+    if (count >= MAX_RULES_PER_USER) {
+      throw new AppError(ErrorCode.BUSINESS_RULE_VIOLATION, {
+        message: `recurring rule limit reached (max ${MAX_RULES_PER_USER} per user)`,
+        details: { current: count, limit: MAX_RULES_PER_USER },
+      });
+    }
+  }
+
   function toComputeShape(rule: {
     period: Period;
     timezone: string;
@@ -383,6 +403,7 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
   ): Promise<RecurringRuleEntity> {
     validateCreate(payload);
     await assertUserOwnsLedger(userId, payload.ledger_id);
+    await assertUnderRuleLimit(userId);
 
     // 时区快照：优先请求体，缺失时从 users.timezone 拿
     let timezone = payload.timezone;

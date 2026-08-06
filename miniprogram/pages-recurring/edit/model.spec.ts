@@ -5,6 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   shouldClearDaysOnPeriodChange,
+  shouldKeepCategoryOnLedgerChange,
   bucketRepresentativeTime,
   isVersionConflict,
   findNearestSelectedMonth,
@@ -37,6 +38,21 @@ describe('edit/model', () => {
     });
     it('same period: no clear', () => {
       expect(shouldClearDaysOnPeriodChange('weekly', 'weekly')).toBe(false);
+    });
+  });
+
+  describe('shouldKeepCategoryOnLedgerChange', () => {
+    it('系统预设分类（familyId=null）：任意账本保留', () => {
+      expect(shouldKeepCategoryOnLedgerChange({ id: 'sys', familyId: null }, 'family-A')).toBe(true);
+    });
+    it('家庭自定义分类：属于目标家庭 → 保留', () => {
+      expect(shouldKeepCategoryOnLedgerChange({ id: 'cat', familyId: 'family-A' }, 'family-A')).toBe(true);
+    });
+    it('家庭自定义分类：不属于目标家庭 → 清空', () => {
+      expect(shouldKeepCategoryOnLedgerChange({ id: 'cat', familyId: 'family-A' }, 'family-B')).toBe(false);
+    });
+    it('分类无法解析（undefined）→ 保守保留', () => {
+      expect(shouldKeepCategoryOnLedgerChange(undefined, 'family-B')).toBe(true);
     });
   });
 

@@ -1,5 +1,12 @@
-// components/recurring-period-selector/index.ts ·周期选择组件
+// components/recurring-period-selector/index.ts · 周期选择组件
 // 支持：每n周（n≥1）、每n月（n≥1）、每年
+//
+// 交互模型：面板始终保持打开状态供用户编辑。
+// - 点击档位行 → 仅本地切换 periodType（预览），不提交。
+// - 编辑数字框 → 仅本地更新对应 interval（预览），不提交。
+// - 点击「完成」 → 一次性提交 change + 关闭面板。
+// - 点击「取消」/ 蒙层 → 仅关闭，不提交。
+// 这样"切档"与"确认"解耦，避免用户点数字框时被误认为已确认。
 
 import type { RecurringPeriod } from '../../services/recurringApi';
 
@@ -7,7 +14,7 @@ import type { RecurringPeriod } from '../../services/recurringApi';
 type PeriodType = 'weekly' | 'monthly' | 'yearly';
 
 /**
- * 从RecurringPeriod 提取基础类型和间隔
+ * 从 RecurringPeriod 提取基础类型和间隔
  */
 function parsePeriod(period: RecurringPeriod): { type: PeriodType; interval: number } {
   switch (period) {
@@ -22,21 +29,19 @@ function parsePeriod(period: RecurringPeriod): { type: PeriodType; interval: num
 }
 
 /**
- * 将基础类型和间隔组合为RecurringPeriod（兼容已有枚举）
- * 对于超出已有枚举范围的值，使用 weekly/monthly 作为基底+ period_interval 扩展
+ * 将基础类型和间隔组合为 RecurringPeriod。
+ * 对于超出已有枚举范围的值（n>2 周 或 n>3 月），使用 weekly/monthly 作为基底搭配 period_interval 扩展。
  */
 function composePeriod(type: PeriodType, interval: number): RecurringPeriod {
   if (type === 'weekly') {
     if (interval === 1) return 'weekly';
     if (interval === 2) return 'biweekly';
-    // n>2 的情况 → 使用 weekly作为基底，搭配 period_interval
     return 'weekly';
   }
   if (type === 'monthly') {
     if (interval === 1) return 'monthly';
     if (interval === 2) return 'bimonthly';
     if (interval === 3) return 'trimonthly';
-    // n>3 的情况 → 使用 monthly 作为基底，搭配 period_interval
     return 'monthly';
   }
   return 'yearly';
@@ -53,6 +58,9 @@ Component({
     periodType: 'weekly' as PeriodType,
     weekInterval: 1,
     monthInterval: 1,
+    /** 数字框展示值：用户清空时不强制回填 1，让用户继续输入 */
+    weekIntervalDisplay: '1',
+    monthIntervalDisplay: '1',
   },
   observers: {
     'value, periodInterval'() {
@@ -69,62 +77,68 @@ Component({
       const parsed = parsePeriod(this.properties.value as RecurringPeriod);
       const interval = (this.properties.periodInterval as number) || parsed.interval;
 
-      const updates: Record<string, any> = { periodType: parsed.type };
-      if (parsed.type === 'weekly') {
-        updates.weekInterval = interval;
-      } else if (parsed.type === 'monthly') {
-        updates.monthInterval = interval;
-      }
-      this.setData(updates);
+      // 当前档位对应的数字框用 props 同步；另一档位的数字框保留本地上一次值，
+      // 让用户切档时不用重新输入。
+      const weekInterval = parsed.type === 'weekly' ? interval : (this.data.weekInterval || 1);
+      const monthInterval = parsed.type === 'monthly' ? interval : (this.data.monthInterval || 1);
+
+      this.setData({
+        periodType: parsed.type,
+        weekInterval,
+        weekIntervalDisplay: String(weekInterval),
+        monthInterval,
+        monthIntervalDisplay: String(monthInterval),
+      });
     },
 
+    /** 点击档位行 → 仅本地切换预览态 */
     onSelectType(e: WechatMiniprogram.TouchEvent) {
       const type = e.currentTarget.dataset.type as PeriodType;
+      if (type === this.data.periodType) return;
       this.setData({ periodType: type });
-
-      const interval = type === 'weekly'
-        ? this.data.weekInterval
-        : type === 'monthly'
-          ? this.data.monthInterval
-          : 1;
-
-      const period = composePeriod(type, interval);
-      this.triggerEvent('change', { value: period, periodInterval: interval });
     },
 
     onWeekIntervalInput(e: WechatMiniprogram.Input) {
-      const raw = e.detail.value;
-      // 允许用户自由输入，中间态可以为空（blur 时兜底）
-      const parsed = raw === '' ? '' : (parseInt(raw, 10) || '');
-      this.setData({ weekInterval: parsed as any });
+      // 允许用户自由输入（中间态可以为空），不要在 input 时就强制兜底
+      this.setData({ weekIntervalDisplay: e.detail.value });
     },
 
     onWeekIntervalBlur(e: WechatMiniprogram.Input) {
       let val = parseInt(e.detail.value, 10);
       if (!val || val < 1) val = 1;
-      this.setData({ weekInterval: val });
-      const period = composePeriod('weekly', val);
-      this.triggerEvent('change', { value: period, periodInterval: val });
+      this.setData({ weekInterval: val, weekIntervalDisplay: String(val) });
     },
 
     onMonthIntervalInput(e: WechatMiniprogram.Input) {
-      const raw = e.detail.value;
-      // 允许用户自由输入，中间态可以为空（blur 时兜底）
-      const parsed = raw === '' ? '' : (parseInt(raw, 10) || '');
-      this.setData({ monthInterval: parsed as any });
+      this.setData({ monthIntervalDisplay: e.detail.value });
     },
 
     onMonthIntervalBlur(e: WechatMiniprogram.Input) {
       let val = parseInt(e.detail.value, 10);
       if (!val || val < 1) val = 1;
-      this.setData({ monthInterval: val });
-      const period = composePeriod('monthly', val);
-      this.triggerEvent('change', { value: period, periodInterval: val });
+      this.setData({ monthInterval: val, monthIntervalDisplay: String(val) });
     },
 
+    /** 点击「完成」→ 提交 + 关闭 */
+    onConfirm() {
+      const periodType = this.data.periodType as PeriodType;
+      const interval = periodType === 'weekly'
+        ? this.data.weekInterval
+        : periodType === 'monthly'
+          ? this.data.monthInterval
+          : 1;
+      const period = composePeriod(periodType, interval);
+      // 一次性提交：父页面收到 change 后会更新表单态，收到 close 后会关面板。
+      // 两个事件一起发，避免父页面逻辑还要感知"提交时是否需要顺手关面板"的耦合。
+      this.triggerEvent('change', { value: period, periodInterval: interval });
+      this.triggerEvent('close');
+    },
+
+    /** 点击「取消」或蒙层 → 仅关闭 */
     onClose() {
       this.triggerEvent('close');
     },
+
     onNoop() { /* catchtap noop handler */ },
   },
 });

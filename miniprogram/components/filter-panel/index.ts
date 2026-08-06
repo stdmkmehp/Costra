@@ -91,6 +91,8 @@ Component({
     expandedCategoryName: '',
     /** 当前展开一级下二级是否全选（控制「全选」Chip 激活态） */
     expandedAllSelected: true,
+    /** 分类栏是否展开（默认收起，仅保留标题行，节省面板空间） */
+    categoryExpanded: false,
   },
 
   observers: {
@@ -144,6 +146,11 @@ Component({
     },
 
     // ─── 分类 ──────────────────────────────────────────────────────────────
+
+    /** 点击「展开/收起」→ toggle 分类栏可见性 */
+    onTapCategoryToggle() {
+      this.setData({ categoryExpanded: !this.data.categoryExpanded });
+    },
 
     /** 点击「全部」Chip → toggle 全选/全反选
      *  全部已选 → 反选（清空 _filterCategoryIds）

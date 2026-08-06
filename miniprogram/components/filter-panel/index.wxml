@@ -104,8 +104,11 @@
     <view class="filter-section" wx:if="{{categories.length > 0}}">
       <view class="filter-section__header">
         <text class="filter-section__title">分类</text>
+        <text class="filter-section__action" bindtap="onTapCategoryToggle">{{categoryExpanded ? '收起' : '展开'}}</text>
       </view>
 
+      <!-- 分类栏内容：收起时隐藏，仅保留标题行 -->
+      <block wx:if="{{categoryExpanded}}">
       <!-- 一级 Chip 行 -->
       <view class="filter-chips">
         <!-- 全部 -->
@@ -154,6 +157,7 @@
           </view>
         </view>
       </view>
+      </block>
     </view>
 
   </view>

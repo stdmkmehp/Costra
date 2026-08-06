@@ -8,12 +8,11 @@
           data-type="weekly" bindtap="onSelectType">
       <view class="rps__item-main">
         <text>每</text>
-        <input wx:if="{{periodType === 'weekly'}}"
-               class="rps__interval-input tnum" type="number"
-               value="{{weekInterval}}" bindinput="onWeekIntervalInput"
-               bindblur="onWeekIntervalBlur"
-               catchtap="onNoop" />
-        <text wx:else class="rps__interval-display">{{weekInterval}}</text>
+        <input class="rps__interval-input tnum {{periodType === 'weekly' ? 'rps__interval-input--active' : 'rps__interval-input--muted'}}"
+               type="number"
+               value="{{weekIntervalDisplay}}"
+               bindinput="onWeekIntervalInput"
+               bindblur="onWeekIntervalBlur" />
         <text>周</text>
       </view>
       <text wx:if="{{periodType === 'weekly'}}" class="rps__check">✓</text>
@@ -24,12 +23,11 @@
           data-type="monthly" bindtap="onSelectType">
       <view class="rps__item-main">
         <text>每</text>
-        <input wx:if="{{periodType === 'monthly'}}"
-               class="rps__interval-input tnum" type="number"
-               value="{{monthInterval}}" bindinput="onMonthIntervalInput"
-               bindblur="onMonthIntervalBlur"
-               catchtap="onNoop" />
-        <text wx:else class="rps__interval-display">{{monthInterval}}</text>
+        <input class="rps__interval-input tnum {{periodType === 'monthly' ? 'rps__interval-input--active' : 'rps__interval-input--muted'}}"
+               type="number"
+               value="{{monthIntervalDisplay}}"
+               bindinput="onMonthIntervalInput"
+               bindblur="onMonthIntervalBlur" />
         <text>月</text>
       </view>
       <text wx:if="{{periodType === 'monthly'}}" class="rps__check">✓</text>
@@ -44,6 +42,9 @@
       <text wx:if="{{periodType === 'yearly'}}" class="rps__check">✓</text>
     </view>
 
-    <view class="rps__cancel" bindtap="onClose">取消</view>
+    <view class="rps__actions">
+      <view class="rps__btn rps__btn--cancel" bindtap="onClose">取消</view>
+      <view class="rps__btn rps__btn--confirm" bindtap="onConfirm">完成</view>
+    </view>
   </view>
 </view>
