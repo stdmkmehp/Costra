@@ -8,7 +8,7 @@
     <text class="recedit__nav-title">{{mode === 'edit' ? '编辑定时' : '新建定时'}}</text>
   </view>
 
-  <scroll-view class="recedit__scroll" scroll-y
+  <scroll-view wx:if="{{!loading}}" class="recedit__scroll" scroll-y
     style="padding-top: {{navBarTotalHeight + 8}}px;">
     <view class="recedit__scroll-inner">
     <!-- 卡片1：记什么 -->
@@ -154,6 +154,12 @@
     </view>
     </view><!-- .recedit__scroll-inner -->
   </scroll-view>
+
+  <!-- 加载态：编辑/复制模式拉取规则 + 分类时遮罩，避免分类栏短促显示"请选择" -->
+  <view wx:if="{{loading}}" class="recedit__loading" style="padding-top: {{navBarTotalHeight + 8}}px;">
+    <view class="recedit__loading-spinner"></view>
+    <text class="recedit__loading-text">加载中…</text>
+  </view>
 
   <!-- 周期选择 action-sheet -->
   <recurring-period-selector

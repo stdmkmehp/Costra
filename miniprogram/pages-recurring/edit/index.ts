@@ -19,7 +19,7 @@ import { formatDaysForSummary, type FormatContext } from '../../services/recurri
 import { getActiveFamilyId } from '../../services/family';
 import { getToken } from '../../services/auth';
 import { getFamilies, type FamilyItem } from '../../services/familyApi';
-import { getCategoriesSync, type CategoryItem } from '../../services/categoryService';
+import { getCategories, getCategoriesSync, type CategoryItem } from '../../services/categoryService';
 import { resolveIconGlyph } from '../../services/iconMap';
 import { getSafeAreaMetrics } from '../../utils/safeArea';
 import {
@@ -158,6 +158,9 @@ Page({
     statusBarHeight: 0,
     navBarHeight: 0,
     navActionRight: 0,
+
+    // 编辑/复制模式拉取规则 + 分类时遮罩整个表单，避免短促显示占位文本
+    loading: true,
   },
 
   _families: [] as FamilyItem[],
@@ -204,12 +207,17 @@ Page({
       }
     } catch { /* 静默 */ }
 
-    // 编辑/复制模式：加载已有规则
+    // 编辑/复制模式：加载已有规则（先取账本 → 拉规则 → 拉规则所属账本的分类 → 回填）
+    // 注意：必须先等分类数据就绪再 _fillForm，否则 getCategoriesSync 只返回 fallback
+    // （UUID 与真实数据不一致），会导致 categoryName 为空，UI 错误显示"请选择"。
     if ((mode === 'edit' || mode === 'copy') && id) {
       try {
         const rule = await getRecurringRule(id);
         this._originalRule = rule;
-        this._fillForm(rule, mode);
+        const ruleFamily = this._families.find((f) => f.ledger_id === rule.ledger_id);
+        const ruleFamilyId = ruleFamily?.id || '';
+        const categories = await this._loadCategoriesForFamily(ruleFamilyId);
+        this._fillForm(rule, mode, categories);
         if (mode === 'copy') {
           // 复制模式清空内部 ruleId
           this.setData({ ruleId: '' });
@@ -225,17 +233,32 @@ Page({
     this._updateSharedState();
     this._updatePreview();
     this._validate();
+    this.setData({ loading: false });
   },
 
-  _fillForm(r: RecurringRule, mode: EditMode) {
+  /**
+   * 加载指定家庭的全量分类（异步 + 同步降级）。
+   * 异步路径：缓存 → API → fallback；同步降级路径仅在异步异常时使用，避免 UI 一直转圈。
+   */
+  async _loadCategoriesForFamily(familyId: string): Promise<CategoryItem[]> {
+    if (!familyId) return [];
+    try {
+      return await getCategories(familyId);
+    } catch {
+      return getCategoriesSync(familyId);
+    }
+  },
+
+  _fillForm(r: RecurringRule, mode: EditMode, categories: CategoryItem[]) {
     const family = this._families.find((f) => f.ledger_id === r.ledger_id);
     const familyId = family?.id || '';
-    let categories: CategoryItem[] = [];
-    if (familyId) {
-      categories = getCategoriesSync(familyId);
-    }
-    const cat = categories.find((c) => c.id === r.category_id);
-    const catParent = cat?.parentId ? categories.find((c) => c.id === cat.parentId) : null;
+    // 优先用调用方传入的 categories（已 await getCategories 拉到的真实数据）；
+    // 兼容传入空数组时再回退一次（极端降级，例如 ruleFamilyId 解析失败时）。
+    const resolvedCategories = categories.length > 0
+      ? categories
+      : (familyId ? getCategoriesSync(familyId) : []);
+    const cat = r.category_id ? resolvedCategories.find((c) => c.id === r.category_id) : null;
+    const catParent = cat?.parentId ? resolvedCategories.find((c) => c.id === cat.parentId) : null;
     const catDisplayName = cat ? (catParent ? `${catParent.name}·${cat.name}` : cat.name) : '';
 
     // 编辑模式保留服务端 execute_hour/minute
@@ -700,7 +723,10 @@ Page({
         wx.showToast({ title: '数据已更新，请重新编辑', icon: 'none' });
         try {
           const fresh = await getRecurringRule(this.data.ruleId);
-          this._fillForm(fresh, 'edit');
+          // 与 onLoad 路径对齐：重新拉一次当前账本的分类，确保分类名解析命中真实数据
+          const family = this._families.find((f) => f.ledger_id === fresh.ledger_id);
+          const categories = await this._loadCategoriesForFamily(family?.id || this.data.ledgerFamilyId);
+          this._fillForm(fresh, 'edit', categories);
           this.setData({ ruleId: fresh.id });
         } catch { /* 静默 */ }
       } else if (e?.code === 'CLIENT_NETWORK_ERROR') {
