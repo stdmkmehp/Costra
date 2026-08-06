@@ -28,7 +28,7 @@ import {
   computePreviewNextRun,
   isVersionConflict,
 } from './model';
-import { setRecurringReturnToast } from '../returnFeedback';
+import { setRecurringReturnToast, setPendingSave, type PendingSaveResult } from '../returnFeedback';
 
 type EditMode = 'create' | 'edit' | 'copy';
 
@@ -178,6 +178,9 @@ Page({
   _executeHour: undefined as number | undefined,
   _executeMinute: undefined as number | undefined,
   _saveFailedOnBack: false as boolean,
+  // 主动返回路径（左上角返回 / 保存按钮）在navigateBack 前置 true，
+  // 用于让 onUnload 区分「主动返回（已写反馈）」与「右滑返回（未写反馈）」。
+  _backHandled: false as boolean,
 
   async onLoad(options: Record<string, string | undefined>) {
     // 安全区
@@ -331,6 +334,9 @@ Page({
   },
 
   async onTapBack() {
+    // 进入主动返回路径：先标记，避免 onUnload 误补写「未保存」提示。
+    // 若最终决定「不退出」（网络/其他错误），会在对应分支重置回 false。
+    this._backHandled = true;
     // 无修改 → 直接退出
     if (!this.data.dirty) {
       this._disableUnloadAlert();
@@ -359,6 +365,7 @@ Page({
         break;
       case 'network_error':
         // 网络失败：不退出，让用户决定是否重试或再次返回
+        this._backHandled = false;
         this._saveFailedOnBack = true;
         wx.showToast({ title: '网络失败', icon: 'none' });
         break;
@@ -368,6 +375,7 @@ Page({
         wx.navigateBack();
         break;
       case 'error':
+        this._backHandled = false;
         this._saveFailedOnBack = true;
         wx.showToast({ title: outcome.message, icon: 'none' });
         break;
@@ -705,20 +713,11 @@ Page({
   // ─── 保存 ──────────────────────────────────────────────────────────────
 
   /**
-   * 执行保存（不处理 UI 反馈），返回保存结果。
-   * 调用方根据 outcome 决定如何展示 toast / 是否退出。
+   * 从当前表单状态构建保存 payload（纯函数，不发起请求，不依赖网络）。
+   * 供 _doSave（await 路径）与 onUnload 右滑 fire-and-forget 路径共用。
    */
-  async _doSave(): Promise<SaveOutcome> {
-    this._validate();
-    if (!this.data.isValid) {
-      return { status: 'invalid', error: this.data.validationError };
-    }
-    if (this.data.saving) return { status: 'error', message: '正在保存中' };
-    this.setData({ saving: true });
-
-    const idempotencyKey = generateIdempotencyKey();
-
-    const payload: CreateRecurringPayload = {
+  _buildSavePayload(): CreateRecurringPayload {
+    return {
       ledger_id: this.data.ledgerId,
       type: this.data.entryType,
       amount: this.data.amountCents,
@@ -739,6 +738,53 @@ Page({
       start_date: this.data.startDate,
       end_date: this.data.hasEndDate && this.data.endDate ? this.data.endDate : null,
     };
+  },
+
+  /**
+   * 右滑返回时在 onUnload 发起的 fire-and-forget 保存。
+   * 页面即将销毁，不能 await，也不能在回调里操作 this.setData（页面已不在）。
+   * 保存由 AppService 承载，页面销毁后仍会跑完；结果通过 setPendingSave 交给列表页 onShow 消费。
+   * 成功后 invalidateCache 让列表页 onShow 拉到最新数据。
+   */
+  _fireAndForgetViewSave(): Promise<PendingSaveResult> {
+    const idempotencyKey = generateIdempotencyKey();
+    const payload = this._buildSavePayload();
+    const mode = this.data.mode;
+    const ruleId = this.data.ruleId;
+    const ruleVersion = this.data.ruleVersion;
+
+    const task = mode === 'edit'
+      ? updateRecurringRule(ruleId, { ...payload, version: ruleVersion }, { idempotencyKey })
+      : createRecurringRule(payload, { idempotencyKey });
+
+    return task
+      .then(async (): Promise<PendingSaveResult> => {
+        await invalidateCache();
+        return { status: 'success' };
+      })
+      .catch((e: any): PendingSaveResult => {
+        if (isVersionConflict(e)) return { status: 'version_conflict' };
+        if (e?.code === 'CLIENT_NETWORK_ERROR') return { status: 'network_error' };
+        const msg = e?.message || e?.data?.message || '保存失败';
+        console.error('[recurring-edit] fire-and-forget save error:', JSON.stringify(e));
+        return { status: 'error', message: msg };
+      });
+  },
+
+  /**
+   * 执行保存（不处理 UI 反馈），返回保存结果。
+   * 调用方根据 outcome 决定如何展示 toast / 是否退出。
+   */
+  async _doSave(): Promise<SaveOutcome> {
+    this._validate();
+    if (!this.data.isValid) {
+      return { status: 'invalid', error: this.data.validationError };
+    }
+    if (this.data.saving) return { status: 'error', message: '正在保存中' };
+    this.setData({ saving: true });
+
+    const idempotencyKey = generateIdempotencyKey();
+    const payload = this._buildSavePayload();
 
     try {
       if (this.data.mode === 'edit') {
@@ -779,9 +825,10 @@ Page({
     const outcome = await this._doSave();
     switch (outcome.status) {
       case 'success':
+        this._backHandled = true;
         wx.vibrateShort({ type: 'medium' });
         this._disableUnloadAlert();
-        setRecurringReturnToast('已保存');
+        setRecurringReturnToast('修改已保存');
         wx.navigateBack();
         break;
       case 'invalid':
@@ -804,5 +851,17 @@ Page({
 
   onUnload() {
     this._disableUnloadAlert();
+    // 右滑返回无法被 JS 拦截，页面直接销毁。
+    // onUnload 是销毁前最后一个同步回调，此处同步发起 fire-and-forget 保存：
+    //   - 表单有效 → 发起保存（AppService 承载，页面销毁后仍跑完），结果通过 setPendingSave 交列表页 onShow 弹 toast + 刷新。
+    //   - 表单无效 → 写一次性 toast「修改未保存（不符合规范）」，不发起保存。
+    // 主动返回路径（onTapBack / onSave）已置 _backHandled=true 并写好各自反馈，此处跳过避免覆盖。
+    if (this._backHandled || !this.data.dirty) return;
+    this._validate();
+    if (!this.data.isValid) {
+      setRecurringReturnToast('修改未保存（不符合规范）');
+      return;
+    }
+    setPendingSave(this._fireAndForgetViewSave());
   },
 });

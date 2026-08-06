@@ -116,9 +116,9 @@ function renderOverviewPanel(d) {
     '',
     '| 指标 | 数值 | 说明 |',
     '|:-----|-----:|:-----|',
+    `| 日活用户 | **${d.activeUsers}** | 窗口内有记账行为的人数 |`,
     `| 活跃用户（7天≥2天） | **${d.activeCount}** | 最近7天有≥2天记账 |`,
     `| 高活跃用户（7天≥5天） | **${d.highActiveCount}** | 最近7天有≥5天记账（含在活跃内） |`,
-    `| 窗口内记账用户 | **${d.activeUsers}** | 窗口内有创建 entry |`,
     `| 新增用户 | **${d.newUsers}** | 窗口内注册 |`,
     `| 新增账本 | **${d.newLedgers}** | 个人 ${d.personalLedgers} + 家庭 ${d.sharedLedgers} |`,
     `| 新增记账 | **${d.newEntries}** | 手动 ${d.manualEntries} + 自动 ${d.autoEntries} |`,
@@ -310,15 +310,17 @@ function renderEntriesSection(entries, threshold) {
       badge: fmtBadge(es[0]?.family_kind),
       manual: es.filter(e => e.source === 'manual').length,
  auto: es.filter(e => e.source === 'auto').length,
+      familyMemberCount: Number(es[0]?.family_member_count || 0),
+      memberBreakdown: fmtText(es[0]?.member_breakdown || '—'),
     }))
     .sort((a, b) => b.count - a.count);
 
   lines.push('**分账本统计：**');
   lines.push('');
-  lines.push('| 账本 | 类型 | 条数（手动/自动） | 金额 |');
-  lines.push('|:-----|:-----|------------------:|-----:|');
+  lines.push('| 账本 | 类型 | 家庭成员数 | 条数（手动/自动） | 金额 | 成员记账分布 |');
+  lines.push('|:-----|:-----|----------:|------------------:|-----:|:-------------|');
   for (const l of ledgerStats) {
-    lines.push(`| ${l.name} | ${l.badge} | ${l.count}（${l.manual}/${l.auto}） | ${fmtAmountShort(l.amt)} |`);
+    lines.push(`| ${l.name} | ${l.badge} | ${l.familyMemberCount} | ${l.count}（${l.manual}/${l.auto}） | ${fmtAmountShort(l.amt)} | ${l.memberBreakdown} |`);
   }
   lines.push('');
 

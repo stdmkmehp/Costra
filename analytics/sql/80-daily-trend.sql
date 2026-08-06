@@ -1,5 +1,6 @@
--- 80-daily-trend.sql · 过去 7 天每日趋势数据（活跃用户数+ 新注册数 + 记账条数）
+-- 80-daily-trend.sql · 过去 7 天每日趋势数据（活跃用户数 + 新注册数 + 记账条数）
 -- 参数: :window_end
+-- generate_series 含两端点；要拿到 [end-7d, end) 这 7 个日期，end::date 必须包含。
 
 WITH bounds AS (
   SELECT
@@ -9,7 +10,7 @@ WITH bounds AS (
 days AS (
   SELECT generate_series(
     (SELECT start_ts::date FROM bounds),
-    (SELECT (end_ts - interval '1 day')::date FROM bounds),
+    (SELECT end_ts::date FROM bounds),
     '1 day'::interval
   )::date AS day
 ),

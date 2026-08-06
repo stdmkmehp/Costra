@@ -24,12 +24,23 @@ import { getSafeAreaMetrics } from '../../utils/safeArea';
 import { syncOnce } from '../../services/syncScheduler';
 import { eventBus, EventNames } from '../../services/eventBus';
 import { groupRules, clampMenuPosition, type DisplayRule } from './model';
-import { consumeRecurringReturnToast } from '../returnFeedback';
+import { consumeRecurringReturnToast, consumePendingSave, type PendingSaveResult } from '../returnFeedback';
 
 // ─── Page ──────────────────────────────────────────────────────────────────
 
 interface AppWithBootstrap {
   bootstrapPromise: Promise<void>;
+}
+
+/** 右滑自动保存最终结果 → toast 文案。返回 null 表示不弹（如 network_error 已无意义，不再打扰）。 */
+function pendingSaveTitle(result: PendingSaveResult): string | null {
+  switch (result.status) {
+    case 'success': return '已保存';
+    case 'invalid': return '修改未保存（不符合规范）';
+    case 'version_conflict': return '数据已被他人更新，已还原为最新';
+    case 'network_error': return '网络失败，未保存';
+    case 'error': return result.message || '保存失败';
+  }
 }
 
 Page({
@@ -83,11 +94,23 @@ Page({
   },
 
   async onShow() {
-    // 消费编辑页返回后的一次性反馈（如「已保存」/「已还原」）。
+    // 消费编辑页返回后的一次性反馈（如「已保存」/「已还原」/「修改未保存（不符合规范）」）。
     // 放在 _loaded 判断之前，确保任何进入本页的 onShow 都能取到并展示。
     const returnToast = consumeRecurringReturnToast();
     if (returnToast) {
       wx.showToast({ title: returnToast, icon: 'none' });
+    }
+    // 右滑自动保存的异步结果：编辑页 onUnload 发起 fire-and-forget 保存，
+    // 此处 await 拿最终结果决定 toast + 触发列表刷新。
+    const pendingSave = consumePendingSave();
+    if (pendingSave) {
+      const result = await pendingSave;
+      const title = pendingSaveTitle(result);
+      if (title) wx.showToast({ title, icon: 'none' });
+      // 保存成功 / 版本冲突都需要刷新列表（后者服务端已是最新态）
+      if (result.status === 'success' || result.status === 'version_conflict') {
+        await this._loadList(false);
+      }
     }
     // 避免 onLoad/onShow 并发双拉：仅在 _loaded 后才触发 onShow 刷新
     if (!this._loaded) return;
