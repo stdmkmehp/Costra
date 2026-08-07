@@ -10,7 +10,8 @@ import { request } from './request';
 export type RecurringPeriod =
   | 'weekly'
   | 'monthly'
-  | 'yearly';
+  | 'yearly'
+  | 'workday';
 
 export type RecurringBucket = 'dawn' | 'morning' | 'afternoon' | 'night';
 

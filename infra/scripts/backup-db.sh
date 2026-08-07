@@ -3,11 +3,12 @@
 # Costra · DB + Avatars 定时备份（pg_dump + gzip · tar · 每 4 小时错峰 · 保留 14 天）
 # =============================================================================
 # 适用场景：cron 定时调用 · 生成 gzip 压缩的 SQL 备份 + avatars 目录打包
+#           也可被 redeploy.sh 调用（--db-only 只备份 DB · 跳过 avatars · 最小化停机窗口）
 #
 # 流程：
 #   1. 前置检查（容器 healthy · 磁盘空间 · 源目录存在）
 #   2. pg_dump + gzip（ionice 降低 I/O 优先级 · 不影响线上）+ 校验
-#   3. avatars 目录 tar + gzip 打包 + 校验
+#   3. avatars 目录 tar + gzip 打包 + 校验（--db-only 时跳过）
 #   4. 清理过期备份（保留最近 N 天 · sql.gz 与 avatars.tar.gz 同规则）
 #   5. 输出摘要
 #
@@ -15,6 +16,7 @@
 #   ./backup-db.sh                    # 标准执行
 #   ./backup-db.sh --retain-days 7    # 自定义保留天数
 #   ./backup-db.sh --no-cleanup       # 跳过清理旧备份
+#   ./backup-db.sh --db-only          # 只备份 DB · 跳过 avatars（被 redeploy.sh 调用）
 #   ./backup-db.sh --dry-run          # 仅打印不执行
 #
 # cron 配置（推荐统一走 maintenance.sh 入口 · 见 docs/db/maintenance-cron-plan.md）：
@@ -37,6 +39,7 @@ BACKUP_DIR="${COSTRA_DATA}/backups"
 AVATARS_SRC="${COSTRA_DATA}/uploads/avatars"
 RETAIN_DAYS=14
 NO_CLEANUP=0
+DB_ONLY=0
 BACKUP_PREFIX="scheduled"
 
 # --- 解析参数 ---
@@ -49,6 +52,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --no-cleanup)
       NO_CLEANUP=1
+      shift
+      ;;
+    --db-only)
+      DB_ONLY=1
       shift
       ;;
     --prefix)
@@ -107,9 +114,12 @@ require_file "${COSTRA_ENV_FILE}"
 PG_COSTRA_PW=$(grep '^PG_COSTRA_PW=' "${COSTRA_ENV_FILE}" | cut -d= -f2-)
 [[ -n "${PG_COSTRA_PW}" ]] || die "未能从 ${COSTRA_ENV_FILE} 读取 PG_COSTRA_PW"
 
-# avatars 源目录检查（缺失则跳过 avatars 步骤 · 不阻断 DB 备份）
+# avatars 源目录检查（缺失或 --db-only 时跳过 avatars 步骤 · 不阻断 DB 备份）
 AVATARS_SKIP=0
-if [[ ! -d "${AVATARS_SRC}" ]]; then
+if [[ "${DB_ONLY}" == "1" ]]; then
+  log_info "--db-only · 跳过 avatars 备份"
+  AVATARS_SKIP=1
+elif [[ ! -d "${AVATARS_SRC}" ]]; then
   log_warn "avatars 目录不存在：${AVATARS_SRC} · 将跳过 avatars 备份"
   AVATARS_SKIP=1
 fi

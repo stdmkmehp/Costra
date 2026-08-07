@@ -14,7 +14,8 @@
 export type Period =
   | 'weekly'
   | 'monthly'
-  | 'yearly';
+  | 'yearly'
+  | 'workday';
 
 // ===== formatDaysForSummary · 已选日子的展示格式化 =====
 
@@ -44,6 +45,8 @@ export function formatDaysForSummary(ctx: FormatContext): string {
       return formatDom(ctx.days_of_month ?? [], ctx.mode);
     case 'yearly':
       return formatYearMonthDays(ctx.year_month_days ?? [], ctx.mode);
+    case 'workday':
+      return '每个工作日';
   }
 }
 

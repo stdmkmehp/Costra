@@ -24,7 +24,9 @@ infra/scripts/
 ├── 08-finalize-nginx.sh       # nginx -t + up nginx + cron 续期
 ├── 09-verify-gates.sh         # 闸门 5 条验证
 │
+├── redeploy.sh                # ⭐ 安全重部署（备份镜像 + 构建 + migration +回滚）
 ├── backup-db.sh               # DB 定时备份（pg_dump + gzip · 被 maintenance.sh backup 委托）
+├── import-holidays.sh         # 节假日 JSON → workday_calendars 表（--target prod|verify · 幂等 upsert）
 └── maintenance.sh             # ⭐ 运维定时任务统一入口（backup / purge-* / install-cron）
 ```
 
@@ -51,6 +53,109 @@ infra/scripts/
 ```
 
 清理任务依赖 migration `0009_session_index_fix.sql`（把 `idx_user_sessions_expires` 改为无谓词，使 `purge-sessions` 走索引而非全表扫）。
+
+---
+
+## 节假日数据导入（import-holidays.sh · 每年）
+
+> 每年底国务院发布下一年放假安排后，跑 `fetch-holidays.mjs` 生成 JSON → 提交仓库 → 部署时用 `import-holidays.sh` 导入 DB。详见 [`workday-recurring-tech-spec.md`](../../docs/design/workday-recurring-tech-spec.md) §11。
+
+```bash
+# 先用开发机跑 fetch（不操作 DB）
+node scripts/fetch-holidays.mjs 2027
+
+# verify 隔离库验证导入效果
+./import-holidays.sh 2027
+
+# 导入 prod（高危 · 强制 confirm · 建议先 backup-db.sh）
+./import-holidays.sh --target prod 2027
+
+# 一路 yes（CI / 已确认场景）
+./import-holidays.sh --target prod 2027 -y
+
+# 只看会跑什么
+./import-holidays.sh --dry-run
+```
+
+| 参数 | 含义 |
+|---|---|
+| `--target prod\|verify` | 目标容器（默认 verify） |
+| `--dry-run` | 只打印不执行 |
+| `-y` / `--yes` | 跳过 confirm（prod 慎用） |
+| 位置参数 `2027` | 指定年份（可多个 · 默认全部） |
+
+---
+
+## 安全重部署（redeploy.sh · 日常更新）
+
+> 日常更新 server代码时使用。支持**镜像备份 + 可选构建 + 可选 migration + 失败自动回滚**，确保更新失败不会对玩家数据和服务造成影响。
+
+### 核心安全机制
+
+1. **镜像备份**：构建新镜像前，先 `docker tag` 备份当前运行镜像（方便回滚）
+2. **最小停机窗口**：构建成功后才停服务
+3. **Migration 前 DB 备份**：复用 `backup-db.sh --db-only`（pg_dump + gzip + 完整性校验 · 只备份 DB · 最小化停机 · 不可跳过）
+4. **失败自动回滚**：migration 失败 → 复用 `restore-db.sh --no-restart` 还原 DB → 老镜像拉起服务
+5. **感知 postgres 重启**：若需重启 postgres，先启动 postgres 并等待 healthy 后再跑 migration
+
+### 典型用法
+
+```bash
+# 最简：只重启 server（不构建 · 不跑 migration）
+./redeploy.sh
+
+# 本地构建 + 重启 server
+./redeploy.sh --build-mode local
+
+# 构建 + 跑全部 migration + 重启
+./redeploy.sh --build-mode local --migrate
+
+# 指定某几个 migration 文件
+./redeploy.sh --build-mode local --migrate \
+    --migration-files "server/db/migrations/0011_recurring_entries.sql,server/db/migrations/0012_workday_calendars.sql"
+
+# 从私有仓库拉镜像 + migration
+./redeploy.sh --build-mode registry \
+    --registry-image weizhao/costra-server:v2.0 \
+    --migrate
+
+# 需要重启 postgres 的场景（migration 会在 postgres 重启后执行）
+./redeploy.sh --build-mode local --restart-psql --migrate
+
+# 只重启 nginx（不动 server）
+./redeploy.sh --restart-nginx --no-restart-server
+
+# 自动确认（CI / 已确认场景）
+./redeploy.sh --build-mode local --migrate -y
+```
+
+### 参数速查
+
+| 参数 | 含义 |
+|---|---|
+| `--build-mode<local\|load\|registry>` | 构建模式（不传则跳过构建） |
+| `--image-tar<path>` | load 模式：tar.gz 路径 |
+| `--registry-image <full>` | registry 模式：完整镜像名 |
+| `--migrate` | 启用 migration（构建后、启动前执行） |
+| `--migration-files <paths>` | 指定 SQL 文件（逗号分隔 · 相对于项目根） |
+| `--migration-dir <dir>` | 指定 migration 目录（默认 `server/db/migrations`） |
+| `--restart-nginx` | 额外重启 nginx |
+| `--restart-redis` | 额外重启 redis |
+| `--restart-psql` | 额外重启 postgres |
+| `--no-restart-server` | 不重启 server |
+| `--timeout <seconds>` | healthy 超时（默认 90s） |
+
+### Migration 失败回滚流程
+
+```
+Migration SQL 执行失败
+  ↓
+1. 调用 restore-db.sh --no-restart 还原数据库（DROP schema + 单事务恢复 + 重装扩展 + 验证）
+2. docker tag 恢复老镜像
+3. docker compose up -d 用老镜像拉起所有服务
+  ↓
+服务恢复到更新前状态 · exit 1
+```
 
 ---
 

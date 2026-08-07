@@ -450,6 +450,7 @@ describe('recurring-entries · CRUD basics', () => {
         shared_type: 'personal',
         note: '外卖',
         period: 'weekly',
+        period_interval: 2,
         days_of_week: [1, 3, 5],
         execute_bucket: 'morning',
         start_date: '2026-08-01',
@@ -468,6 +469,7 @@ describe('recurring-entries · CRUD basics', () => {
     expect(copy.amount).toBe(original.amount);
     expect(copy.note).toBe(original.note);
     expect(copy.days_of_week).toEqual(original.days_of_week);
+    expect(copy.period_interval).toBe(2);
     expect(copy.end_date).toBe(null);
   });
 
@@ -1413,5 +1415,147 @@ describe('recurring-entries · mutation idempotency', () => {
     expect(replay.statusCode).toBe(200);
     expect(replay.json()).toEqual(first.json());
     expect((replay.json() as { version: number }).version).toBe(rule.version + 1);
+  });
+});
+
+// ==============================================================================
+// workday period · E2E
+// ==============================================================================
+
+describe('recurring-entries · workday period', () => {
+  let app: FastifyInstance;
+  let token: string;
+  let userId: string;
+
+  beforeEach(async () => {
+    app = await buildApp({ disableLogger: true, autoStartScheduler: false });
+    await app.ready();
+    const login1 = await login(app);
+    token = login1.token;
+    userId = login1.userId;
+    await setupFamilyAndLedger(userId);
+
+    // seed workday_calendars 数据（buildApp 时 refreshWorkdayCache 读到空表，需重刷）
+    const pool = getPool();
+    await pool.query(
+      `INSERT INTO workday_calendars (year, holidays, workdays) VALUES
+        (2026, ARRAY['08-03','12-31'], ARRAY[]::TEXT[]),
+        (2027, ARRAY['01-01'], ARRAY['01-02'])`,
+    );
+    const { refreshCache } = await import('../src/services/workdayProvider.js');
+    await refreshCache();
+  });
+
+  afterEach(async () => {
+    vi.useRealTimers();
+    await app.close();
+  });
+
+  it('POST /recurring-entries · period=workday · 201 · days arrays 全 null', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 5000,
+        shared_type: 'personal',
+        note: '通勤',
+        period: 'workday',
+        execute_bucket: 'morning',
+        start_date: '2026-08-01',
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const rule = res.json() as Record<string, unknown>;
+    expect(rule.period).toBe('workday');
+    expect(rule.days_of_week).toBeNull();
+    expect(rule.days_of_month).toBeNull();
+    expect(rule.year_month_days).toBeNull();
+    expect(rule.period_interval).toBe(1);
+  });
+
+  it('POST /recurring-entries · workday + days_of_week → 400', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 5000,
+        period: 'workday',
+        days_of_week: [1],
+        execute_bucket: 'morning',
+        start_date: '2026-08-01',
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('POST /recurring-entries · workday + period_interval=2 → 400', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 5000,
+        period: 'workday',
+        period_interval: 2,
+        execute_bucket: 'morning',
+        start_date: '2026-08-01',
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('E2E · workday · create 时跳过法定假日 → next_run_at 落在下一个工作日', async () => {
+    // beforeEach 已 seed 2026 holidays=['08-03','12-31'] + 2027 holidays=['01-01'] workdays=['01-02']
+    // 固定系统时间到 8/2（start_date=8/3 是未来日，避免 create 走 now 重算分支）
+    vi.setSystemTime(new Date('2026-08-02T12:00:00+08:00'));
+
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 5000,
+        period: 'workday',
+        execute_bucket: 'morning',
+        start_date: '2026-08-03', // 8/3 周一放假
+      },
+    });
+    const rule = createRes.json() as {
+      next_run_at: string;
+      timezone: string;
+    };
+
+    // next_run_at 应该跳过 8/3 放假日 → 8/4 周二
+    const { DateTime } = await import('luxon');
+    const nextRun = DateTime.fromISO(rule.next_run_at, {
+      zone: rule.timezone,
+    });
+    expect(nextRun.day).toBe(4);
+
+    vi.useRealTimers();
+  });
+
+  it('E2E · workday · 跨年 cursor.year 查数据（不按 start_date 降级）· 纯函数层', async () => {
+    // 跨年逻辑由 recurringSchedule.test.ts 的 computeNextRunAt · workday 单元测试覆盖。
+    // 这里验证 service 层 resolveWorkdayData 返回多年数组，不按 start_date 固化。
+    const { getAllWorkdayData } = await import('../src/services/workdayProvider.js');
+    const allData = getAllWorkdayData();
+    // beforeEach seed 了 2026 和 2027
+    const years = allData.map((d) => d.year).sort();
+    expect(years).toContain(2026);
+    expect(years).toContain(2027);
+    // 2027 的补班日 '01-02' 在数据中
+    const data2027 = allData.find((d) => d.year === 2027);
+    expect(data2027?.workdays).toContain('01-02');
   });
 });

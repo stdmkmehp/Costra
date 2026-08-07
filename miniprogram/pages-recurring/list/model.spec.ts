@@ -102,9 +102,10 @@ describe('list/model', () => {
 
   describe('buildPeriodLabel', () => {
     it('weekly → 每周', () => expect(buildPeriodLabel('weekly')).toBe('每周'));
-    it('biweekly → 每两周', () => expect(buildPeriodLabel('weekly')).toBe('每两周'));
+    it('weekly + interval=2 → 每两周', () => expect(buildPeriodLabel('weekly', 2)).toBe('每2周'));
     it('monthly → 每月', () => expect(buildPeriodLabel('monthly')).toBe('每月'));
     it('yearly → 每年', () => expect(buildPeriodLabel('yearly')).toBe('每年'));
+    it('workday → 每个工作日', () => expect(buildPeriodLabel('workday')).toBe('每个工作日'));
   });
 
   describe('buildStatusTag', () => {

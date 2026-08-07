@@ -42,6 +42,15 @@
       <text wx:if="{{periodType === 'yearly'}}" class="rps__check">✓</text>
     </view>
 
+    <!-- 每个工作日 -->
+    <view class="rps__item {{periodType === 'workday' ? 'rps__item--active' : ''}}"
+          data-type="workday" bindtap="onSelectType">
+      <view class="rps__item-main">
+        <text>每个工作日</text>
+      </view>
+      <text wx:if="{{periodType === 'workday'}}" class="rps__check">✓</text>
+    </view>
+
     <view class="rps__actions">
       <view class="rps__btn rps__btn--cancel" bindtap="onClose">取消</view>
       <view class="rps__btn rps__btn--confirm" bindtap="onConfirm">完成</view>

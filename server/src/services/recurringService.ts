@@ -47,7 +47,9 @@ import {
   BACKFILL_WINDOW_MS,
   MAX_BACKFILL_ITER,
   type RecurringRuleForCompute,
+  type WorkdayData,
 } from './recurringSchedule.js';
+import { getAllWorkdayData } from './workdayProvider.js';
 import type { EntryService } from './entryService.js';
 import { DateTime } from 'luxon';
 import type { PoolClient } from 'pg';
@@ -106,6 +108,7 @@ const PERIODS: readonly Period[] = [
   'weekly',
   'monthly',
   'yearly',
+  'workday',
 ];
 const BUCKETS: readonly ExecuteBucket[] = ['dawn', 'morning', 'afternoon', 'night'];
 
@@ -162,6 +165,8 @@ export function validateCreate(p: CreateRecurringPayload): void {
       invalid('period_interval must be a positive integer', 'period_interval');
     if (p.period === 'yearly' && p.period_interval > 1)
       invalid('period_interval > 1 is not supported for yearly', 'period_interval');
+    if (p.period === 'workday' && p.period_interval > 1)
+      invalid('period_interval > 1 is not supported for workday', 'period_interval');
   }
   if (!BUCKETS.includes(p.execute_bucket))
     invalid('invalid execute_bucket', 'execute_bucket');
@@ -170,6 +175,7 @@ export function validateCreate(p: CreateRecurringPayload): void {
   const isWeekly = p.period === 'weekly';
   const isMonthly = p.period === 'monthly';
   const isYearly = p.period === 'yearly';
+  const isWorkday = p.period === 'workday';
 
   if (isWeekly) {
     if (p.days_of_month != null || p.year_month_days != null)
@@ -222,6 +228,11 @@ export function validateCreate(p: CreateRecurringPayload): void {
       if (d < 1 || d > daysInMonth(m))
         invalid(`year_month_days day invalid for month ${m}: ${encoded}`, 'year_month_days');
     }
+  }
+
+  if (isWorkday) {
+    if (p.days_of_week != null || p.days_of_month != null || p.year_month_days != null)
+      invalid('days_of_week/days_of_month/year_month_days must be null for workday');
   }
 
   if (!isValidDate(p.start_date))
@@ -359,6 +370,14 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
     }
   }
 
+  /**
+   * 获取所有已缓存的 workday 节假日数据（供 workday 周期计算）。
+   * 计算时按 cursor.year 动态查找；某年缺失则降级周一~周五。
+   */
+  function resolveWorkdayData(): WorkdayData[] {
+    return getAllWorkdayData();
+  }
+
   function toComputeShape(rule: {
     period: Period;
     periodInterval: number;
@@ -380,6 +399,7 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
       days_of_week: rule.daysOfWeek,
       days_of_month: rule.daysOfMonth,
       year_month_days: rule.yearMonthDays,
+      workday_data: resolveWorkdayData(),
     };
   }
 
@@ -428,6 +448,7 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
       days_of_week: payload.days_of_week ?? null,
       days_of_month: payload.days_of_month ?? null,
       year_month_days: payload.year_month_days ?? null,
+      workday_data: resolveWorkdayData(),
     };
 
     // 起点：start_date 00:00 in tz（严格 > 该时刻的下一个匹配日）
@@ -546,7 +567,8 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
       note: payload.note !== undefined ? payload.note : existing.note,
   shared_type: payload.shared_type !== undefined ? payload.shared_type : existing.sharedType,
       period: payload.period ?? existing.period,
- days_of_week: payload.days_of_week !== undefined ? payload.days_of_week : existing.daysOfWeek,
+      period_interval: payload.period_interval ?? existing.periodInterval,
+      days_of_week: payload.days_of_week !== undefined ? payload.days_of_week : existing.daysOfWeek,
       days_of_month: payload.days_of_month !== undefined ? payload.days_of_month : existing.daysOfMonth,
     year_month_days: payload.year_month_days !== undefined ? payload.year_month_days : existing.yearMonthDays,
       execute_bucket: payload.execute_bucket ?? existing.executeBucket,
@@ -614,6 +636,7 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
         days_of_week: newDow,
         days_of_month: newDom,
         year_month_days: newYmd,
+        workday_data: resolveWorkdayData(),
       };
       // 若 start_date 是未来 → 从 start_date 起算；否则从 now 起算
       const nowMs = now.getTime();
@@ -758,6 +781,7 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
       note: existing.note,
       shared_type: existing.sharedType,
       period: existing.period,
+      period_interval: existing.periodInterval,
       days_of_week: existing.daysOfWeek,
       days_of_month: existing.daysOfMonth,
       year_month_days: existing.yearMonthDays,

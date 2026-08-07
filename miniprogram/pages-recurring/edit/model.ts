@@ -5,6 +5,7 @@
 import { DateTime } from 'luxon';
 import { findFirstSelectedMonth } from '../../components/recurring-selection';
 import type { RecurringPeriod, RecurringBucket } from '../../services/recurringApi';
+import type { WorkdayData } from '../../services/workdayApi';
 import {
   computeNextRunAt,
   BUCKET_WINDOWS,
@@ -54,6 +55,9 @@ export function shouldClearDaysOnPeriodChange(
   const newInMonth = MONTH_GROUP.includes(newPeriod);
   if (oldInMonth && newInMonth) return false;
 
+  // 切换进/出 workday → 跨组 · 清空已选日子（workday 本身无日子概念）
+  if (oldPeriod === 'workday' || newPeriod === 'workday') return true;
+
   // yearly → yearly 不清（不可能 · 同值已排除）
   return true;
 }
@@ -90,6 +94,8 @@ export interface PreviewInput {
   /** 编辑已有规则时使用服务端的 execute_hour/minute */
   executeHour?: number;
   executeMinute?: number;
+  /** workday 周期的节假日数据（编辑页预加载传入）· 按年份组织 · 某年缺失降级周一~周五 */
+  workdayData?: WorkdayData[];
 }
 
 /**
@@ -126,6 +132,7 @@ export function computePreviewNextRun(
     days_of_week: daysOfWeek.length > 0 ? daysOfWeek : null,
     days_of_month: daysOfMonth.length > 0 ? daysOfMonth : null,
     year_month_days: yearMonthDays.length > 0 ? yearMonthDays : null,
+    workday_data: input.workdayData ?? [],
   };
 
   try {

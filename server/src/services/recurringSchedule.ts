@@ -17,9 +17,23 @@ import { DateTime } from 'luxon';
 export type Period =
   | 'weekly'
   | 'monthly'
-  | 'yearly';
+  | 'yearly'
+  | 'workday';
 
 export type ExecuteBucket = 'dawn' | 'morning' | 'afternoon' | 'night';
+
+/**
+ * 工作日节假日数据（workday 周期用）
+ * 由调用方从 workdayProvider（server）或 workdayApi（miniprogram）加载后传入，
+ * 保证 computeNextRunAt 是纯同步函数。
+ * 按年份组织为数组，计算时按 cursor.year 动态查找对应年份数据；
+ * 某年缺失则降级为周一~周五判定。
+ */
+export interface WorkdayData {
+  year: number;
+  holidays: string[]; // 'MM-DD'
+  workdays: string[]; // 'MM-DD'
+}
 
 /**
  * 用于 computeNextRunAt 计算的最小字段集
@@ -35,6 +49,7 @@ export interface RecurringRuleForCompute {
   days_of_week: number[] | null; // 1=周一...7=周日 · weekly用
   days_of_month: number[] | null; // 1..31 · monthly 用
   year_month_days: number[] | null; // 编码month*100+day · yearly 用
+  workday_data: WorkdayData[]; // workday 周期用 · 按 year 查 · 空数组降级周一~周五
 }
 
 // ===== 时段窗口常量（tech-spec §3.5 v0.2.1 · 内缩边界）=====
@@ -221,7 +236,47 @@ function tryMatchOnDay(
       }
       return null;
     }
+
+    case 'workday': {
+      const weekday = cursor.weekday; // 1=Mon...7=Sun (Luxon)
+      // Luxon 用 `MM-dd`（小写 d）表示两位日期；`DD` 是长日期格式名，非 MM-DD
+      const monthDay = cursor.toFormat('MM-dd');
+      // 按 cursor.year 从数据数组中查找对应年份的节假日数据
+      const yearData = rule.workday_data.find((d) => d.year === cursor.year) ?? null;
+      return isWorkdaySync(yearData, cursor.year, weekday, monthDay)
+        ? cursor
+        : null;
+    }
   }
+}
+
+/**
+ * 纯同步 · 判断某天是否为工作日（workday 周期共用 · 跨端 byte-level 一致）
+ *
+ * @param data     节假日数据 · null 时降级为周一~周五
+ * @param year     年份
+ * @param weekday  ISO 周几 (1=Mon, 7=Sun)
+ * @param monthDay 'MM-DD' 格式
+ * @returns true = 工作日, false = 非工作日
+ */
+export function isWorkdaySync(
+  data: WorkdayData | null,
+  year: number,
+  weekday: number,
+  monthDay: string,
+): boolean {
+  if (!data || data.year !== year) {
+    // 降级：无数据 → 按周一~周五
+    return weekday <= 5;
+  }
+  const holidays = new Set(data.holidays);
+  const workdays = new Set(data.workdays);
+  // 周末补班日 → 是工作日
+  if (workdays.has(monthDay)) return true;
+  // 节假日放假 → 不是工作日
+  if (holidays.has(monthDay)) return false;
+  // 普通日 → 按周一~五判断
+  return weekday <= 5;
 }
 
 /**

@@ -16,6 +16,7 @@ import {
 import { invalidateCache, generateIdempotencyKey } from '../../services/recurringLocal';
 import { toYuan, parseAmountInputToCents } from '../../utils/money';
 import { formatDaysForSummary, type FormatContext } from '../../services/recurringFormat';
+import { getWorkdayData, type WorkdayData } from '../../services/workdayApi';
 import { getActiveFamilyId } from '../../services/family';
 import { getToken } from '../../services/auth';
 import { getFamilies, type FamilyItem } from '../../services/familyApi';
@@ -53,6 +54,7 @@ function computePeriodLabel(period: RecurringPeriod, interval: number): string {
     if (interval === 1) return '每月';
     return `每${interval}月`;
   }
+  if (period === 'workday') return '每个工作日';
   return '每周';
 }
 
@@ -65,6 +67,7 @@ function parsePeriodInterval(period: RecurringPeriod): number {
     case 'weekly': return 1;
     case 'monthly': return 1;
     case 'yearly': return 1;
+    case 'workday': return 1;
     default: return 1;
   }
 }
@@ -175,6 +178,8 @@ Page({
   _originalRule: null as RecurringRule | null,
   _executeHour: undefined as number | undefined,
   _executeMinute: undefined as number | undefined,
+  /** workday 周期预览用的节假日数据（多年份数组）· 某年缺失降级周一~周五 */
+  _workdayData: [] as WorkdayData[],
   _saveFailedOnBack: false as boolean,
   // 主动返回路径（左上角返回 / 保存按钮）在navigateBack 前置 true，
   // 用于让 onUnload 区分「主动返回（已写反馈）」与「右滑返回（未写反馈）」。
@@ -200,6 +205,18 @@ Page({
     const mode = (options.mode || 'create') as EditMode;
     const id = options.id || '';
     this.setData({ mode, ruleId: mode === 'copy' ? '' : id });
+
+    // workday 周期预览：预加载当前年 + 明年的节假日数据（fire-and-forget · 失败降级 null）
+    const currentYear = new Date().getFullYear();
+    Promise.all([getWorkdayData(currentYear), getWorkdayData(currentYear + 1)])
+      .then(([cur, next]) => {
+        const list: WorkdayData[] = [];
+        if (cur) list.push(cur);
+        if (next) list.push(next);
+        this._workdayData = list;
+        this._updatePreview();
+      })
+      .catch(() => { /* 降级：无数据按周一~周五 */ });
 
     // 加载账本
     try {
@@ -653,13 +670,16 @@ Page({
       year_month_days: this.data.yearMonthDays.length > 0 ? this.data.yearMonthDays : null,
     };
     const daysDesc = formatDaysForSummary(ctx);
-    const parts = [`${periodLabel} ${daysDesc}`.trim(), bucketLabel, ledgerName].filter(Boolean);
+    // workday 的 daysDesc 已是完整描述（"每个工作日"）· 前缀留空避免重复
+    const periodPrefix = period === 'workday' ? '' : periodLabel;
+    const parts = [`${periodPrefix} ${daysDesc}`.trim(), bucketLabel, ledgerName].filter(Boolean);
     const previewDesc = parts.join(' · ');
 
     // 下次执行时间
     let previewDate = '—';
     let previewBucket = '';
     if (this._isFormComplete()) {
+      const workdayData = this._workdayData;
       const result = computePreviewNextRun({
         period,
         periodInterval: this.data.periodInterval,
@@ -671,6 +691,7 @@ Page({
         timezone: this.data.timezone,
         executeHour: this._executeHour,
         executeMinute: this._executeMinute,
+        workdayData,
       }, new Date());
       if (result) {
         previewDate = result.dateStr;
@@ -687,6 +708,7 @@ Page({
     if (period === 'weekly' && daysOfWeek.length === 0) return false;
     if (period === 'monthly' && daysOfMonth.length === 0) return false;
     if (period === 'yearly' && yearMonthDays.length === 0) return false;
+    if (period === 'workday') return true; // 无需选日子
     return true;
   },
 

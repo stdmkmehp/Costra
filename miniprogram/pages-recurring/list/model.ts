@@ -96,6 +96,7 @@ export function buildPeriodLabel(period: RecurringPeriod, periodInterval?: numbe
   if (period === 'monthly') {
     return interval === 1 ? '每月' : `每${interval}月`;
   }
+  if (period === 'workday') return '每个工作日';
   return '';
 }
 
@@ -118,7 +119,10 @@ export function toDisplayRule(
     days_of_month: r.days_of_month,
     year_month_days: r.year_month_days,
   };
-  const periodDesc = buildPeriodLabel(r.period, r.period_interval) + ' ' + formatDaysForSummary(ctx);
+  const dayDesc = formatDaysForSummary(ctx);
+  // workday 的 dayDesc 已是完整描述（"每个工作日"）· 前缀留空避免重复
+  const periodPrefix = r.period === 'workday' ? '' : buildPeriodLabel(r.period, r.period_interval);
+  const periodDesc = `${periodPrefix} ${dayDesc}`.trim();
   const bucketLabel = BUCKET_LABELS[r.execute_bucket] || '';
   const ledgerName = families.find((f) => f.ledger_id === r.ledger_id)?.ledger_name || '';
   const parts = [periodDesc, bucketLabel, ledgerName].filter(Boolean);

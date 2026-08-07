@@ -1,36 +1,39 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Costra · 快速重部署（[可选构建] → 停止 → 启动 → 等待 healthy）
+# Costra · 安全重部署（备份镜像 → [构建] → 停止 → [migration] → 启动 → healthy）
 # =============================================================================
-# 适用场景：prod 环境已搭建完毕，只需要：
-#   1. （可选）重新构建镜像（旧服务仍在线，构建失败不影响线上）
-#   2. 停止服务（构建成功后才停，最小化停机窗口）
-#   3. 启动服务
-#   4. 等待容器 healthy
+# 适用场景：prod 环境已搭建完毕，需要更新服务并可选执行 DB migration。
 #
-# 本脚本不会跑 migration，也不会 git pull。
-# 如需 migration，请单独执行 ./06-migrate.sh。
-# 如需更新代码，请自行 git pull。
+# 核心安全机制：
+#   1. 构建新镜像前备份当前 server 镜像（以便回滚）
+#   2. 构建成功后才停止服务（最小化停机窗口）
+#   3. migration 执行前自动 DB 备份（复用 backup-db.sh --db-only · 不可跳过）
+#   4. migration 失败时自动回滚：还原 DB（复用 restore-db.sh）+ 用老镜像拉起服务
+#   5. 感知 postgres 重启：若需重启 postgres，则在其 healthy 后再跑 migration
+#
+# 流程（带 migration）：
+#   1. 备份当前 server 镜像（tag → backup）
+#   2. 构建新镜像（旧服务仍在线 · 失败不影响线上）
+#   3. 停止服务
+#   4. 若需重启 postgres：先启动 postgres，等待 healthy
+#   5. DB 备份（backup-db.sh --db-only · 只备份 DB · 最小化停机窗口）
+#   6. 执行 migration SQL 文件（失败则还原 DB + 老镜像拉起 → 退出）
+#   7. 启动剩余服务（用新镜像）
+#   8. 等待容器 healthy
 #
 # 重启目标：
 #   默认只重启 server。可通过 --restart-* 额外添加，--no-restart-server 移除。
 #
-# 与现有脚本的关系（不要混用）：
-#   - 05-start-stack.sh  : 首次/全量启动 stack（拉镜像 · 起四服务）
-#   - 04-build-server.sh : 只 build 镜像（不停服 · 不重启）
-#   - 06-migrate.sh      : 单独跑 migration（幂等）
-#   - 本脚本             : [可选 build] + 按参数重启指定服务 · 不跑 migration
-#
 # 用法：
-#   ./redeploy.sh                                          # 默认：只重启 server（不构建）
+#   ./redeploy.sh                                          # 默认：只重启 server（不构建 · 不跑 migration）
 #   ./redeploy.sh --build-mode local                       # 本地构建 + 重启 server
-#   ./redeploy.sh --build-mode registry --registry-image weizhao/costra-server:v2.0
-#   ./redeploy.sh --build-mode load --image-tar /tmp/costra-server.tar.gz
-#   ./redeploy.sh --restart-nginx                          # 重启 server + nginx（不构建）
-#   ./redeploy.sh --restart-psql --restart-redis           # 重启 server + postgres + redis
-#   ./redeploy.sh --restart-nginx --no-restart-server      # 只重启 nginx（不动 server）
-#   ./redeploy.sh --timeout 120                            # healthy 等待超时（默认 90s）
-#   ./redeploy.sh --dry-run / -y / --yes / -h / --help
+#   ./redeploy.sh --build-mode local --migrate             # 构建 + migration + 重启
+#   ./redeploy.sh --build-mode local --migrate --migration-files server/db/migrations/0012_workday_calendars.sql
+#   ./redeploy.sh --migrate --migration-dir server/db/migrations  # 跑目录下全部 SQL
+#   ./redeploy.sh --migrate --migration-files "0011_recurring_entries.sql,0012_workday_calendars.sql"
+#   ./redeploy.sh --build-mode registry --registry-image weizhao/costra-server:v2.0 --migrate
+#   ./redeploy.sh --restart-psql --migrate                 # 重启 postgres + 跑 migration
+#   ./redeploy.sh --timeout 120 -y
 #
 # 选项：
 #   --restart-nginx                     额外重启 nginx
@@ -40,12 +43,15 @@
 #   --build-mode <local|load|registry>  指定后才会构建镜像（不传则跳过构建）
 #   --image-tar <path>                  load 模式：tar.gz 路径
 #   --registry-image <full>             registry 模式：完整镜像名
+#   --migrate                           启用 migration（构建后、启动前执行）
+#   --migration-files <paths>           指定 migration SQL 文件（逗号分隔 · 相对于项目根）
+#   --migration-dir <dir>               指定 migration 目录（执行目录下所有 .sql）
 #   --timeout <seconds>                 healthy 等待超时（默认 90s）
-#   --dry-run / -y / --yes / -h / --help
+#   -y / --yes / -h / --help
 #
 # 退出码：
 #   0 = 重部署成功
-#   1 = 失败
+#   1 = 失败（migration 失败时已自动回滚）
 # =============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -61,6 +67,10 @@ BUILD_MODE=""
 IMAGE_TAR=""
 REGISTRY_IMAGE=""
 HEALTHY_TIMEOUT=90
+DO_MIGRATE=0
+MIGRATION_FILES=""
+MIGRATION_DIR=""
+IMAGE_TAG="costra-server:latest"
 
 # --- 解析参数 ---
 parse_common_args "$@"
@@ -73,8 +83,11 @@ while [[ $# -gt 0 ]]; do
     --build-mode)        BUILD_MODE=$2; shift 2 ;;
     --image-tar)         IMAGE_TAR=$2; shift 2 ;;
     --registry-image)    REGISTRY_IMAGE=$2; shift 2 ;;
+    --migrate)           DO_MIGRATE=1; shift ;;
+    --migration-files)   MIGRATION_FILES=$2; shift 2 ;;
+    --migration-dir)     MIGRATION_DIR=$2; shift 2 ;;
     --timeout)           HEALTHY_TIMEOUT=$2; shift 2 ;;
-    --dry-run|-y|--yes)  shift ;;
+    -y|--yes)            shift ;;
     -h|--help)
       grep '^#' "$0" | sed 's/^# \{0,1\}//' | head -55
       exit 0
@@ -122,13 +135,78 @@ RESTART_DESC="${UP_SERVICES[*]}"
 
 # --- 通用透传参数（给子脚本）---
 COMMON_FLAGS=()
-[[ "${DRY_RUN}" == "1" ]]    && COMMON_FLAGS+=(--dry-run)
 [[ "${ASSUME_YES}" == "1" ]] && COMMON_FLAGS+=(--yes)
+
+# --- Migration 文件解析 ---
+# migration 文件名白名单：只允许字母/数字/点/下划线/中划线 · 防止 shell 注入
+_MIG_NAME_RE='^[A-Za-z0-9._-]+\.sql$'
+
+RESOLVED_MIGRATION_FILES=()
+if [[ "${DO_MIGRATE}" == "1" ]]; then
+  if [[ -n "${MIGRATION_FILES}" ]]; then
+    # 逗号分隔的文件列表
+    IFS=',' read -ra _FILES <<< "${MIGRATION_FILES}"
+    for f in "${_FILES[@]}"; do
+      f=$(echo "$f" | xargs)  # trim whitespace
+      # 校验文件名安全性
+      fname=$(basename "${f}")
+      if [[ ! "${fname}" =~ ${_MIG_NAME_RE} ]]; then
+        die "migration 文件名不合法（仅允许字母/数字/点/下划线/中划线）：${fname}"
+      fi
+      # 如果是相对路径，基于项目根解析
+      if [[ "${f}" != /* ]]; then
+        f="${COSTRA_ROOT}/${f}"
+      fi
+      require_file "${f}"
+      RESOLVED_MIGRATION_FILES+=("${f}")
+    done
+  elif [[ -n "${MIGRATION_DIR}" ]]; then
+    # 指定目录
+    _mig_dir="${MIGRATION_DIR}"
+    if [[ "${_mig_dir}" != /* ]]; then
+      _mig_dir="${COSTRA_ROOT}/${_mig_dir}"
+    fi
+    [[ -d "${_mig_dir}" ]] || die "migration 目录不存在：${_mig_dir}"
+    while IFS= read -r filepath; do
+      [[ -z "${filepath}" ]] && continue
+      RESOLVED_MIGRATION_FILES+=("${filepath}")
+    done < <(find "${_mig_dir}" -maxdepth 1 -name '*.sql' -type f | sort)
+  else
+    # 默认目录
+    _mig_dir="${COSTRA_ROOT}/server/db/migrations"
+    [[ -d "${_mig_dir}" ]] || die "默认 migration 目录不存在：${_mig_dir}"
+    while IFS= read -r filepath; do
+      [[ -z "${filepath}" ]] && continue
+      RESOLVED_MIGRATION_FILES+=("${filepath}")
+    done < <(find "${_mig_dir}" -maxdepth 1 -name '*.sql' -type f | sort)
+  fi
+
+  if [[ ${#RESOLVED_MIGRATION_FILES[@]} -eq 0 ]]; then
+    die "启用了 --migrate 但未找到任何 .sql 文件"
+  fi
+
+  # 校验所有文件名（包括从目录扫描的）· 防止恶意文件名注入到容器内 shell 脚本
+  for filepath in "${RESOLVED_MIGRATION_FILES[@]}"; do
+    fname=$(basename "${filepath}")
+    if [[ ! "${fname}" =~ ${_MIG_NAME_RE} ]]; then
+      die "migration 文件名不合法（仅允许字母/数字/点/下划线/中划线）：${fname}"
+    fi
+  done
+fi
+
+# --- Postgres 连接信息 ---
+PG_CONTAINER="costra-postgres"
+COMPOSE_NETWORK="${COSTRA_COMPOSE_NET}"
+
+if [[ "${DO_MIGRATE}" == "1" ]]; then
+  PG_COSTRA_PW=$(grep '^PG_COSTRA_PW=' "${COSTRA_ENV_FILE}" | cut -d= -f2-)
+  [[ -n "${PG_COSTRA_PW}" ]] || die "未能从 ${COSTRA_ENV_FILE} 读取 PG_COSTRA_PW（migration 执行需要）"
+fi
 
 # =============================================================================
 # 主流程
 # =============================================================================
-print_section_header "Costra · 快速重部署"
+print_section_header "Costra · 安全重部署"
 
 log_info "restart         = ${RESTART_DESC}"
 if [[ -n "${BUILD_MODE}" ]]; then
@@ -136,91 +214,273 @@ if [[ -n "${BUILD_MODE}" ]]; then
 else
   log_info "build mode      = (skip · 未指定 --build-mode)"
 fi
+if [[ "${DO_MIGRATE}" == "1" ]]; then
+  log_info "migration       = ✓（${#RESOLVED_MIGRATION_FILES[@]} 个 SQL 文件）"
+  for mf in "${RESOLVED_MIGRATION_FILES[@]}"; do
+    log_info "                  - $(basename "${mf}")"
+  done
+else
+  log_info "migration       = (skip · 未指定 --migrate)"
+fi
 log_info "healthy timeout = ${HEALTHY_TIMEOUT}s"
-[[ "${DRY_RUN}" == "1" ]] && log_warn "DRY-RUN 模式 · 不真正执行命令"
 
 if [[ "${ASSUME_YES}" != "1" ]]; then
   echo ""
-  log_warn "本脚本不会跑 migration · 如需迁移请单独执行 ./06-migrate.sh"
+  if [[ "${DO_MIGRATE}" == "1" ]]; then
+    log_warn "本次部署将执行 migration · 失败时自动回滚（还原 DB + 老镜像拉起）"
+  fi
   confirm "确认开始重部署？将停止 ${RESTART_DESC}" || die "用户取消"
 fi
 
-TOTAL_STEPS=2
-[[ -n "${BUILD_MODE}" ]] && TOTAL_STEPS=$((TOTAL_STEPS + 1))
+# 计算总步数
+TOTAL_STEPS=2                # 停止 + 启动
+TOTAL_STEPS=$((TOTAL_STEPS + 1))                # 镜像备份（始终执行）
+[[ -n "${BUILD_MODE}" ]] && TOTAL_STEPS=$((TOTAL_STEPS + 1))      # 构建
+[[ "${DO_MIGRATE}" == "1" ]] && TOTAL_STEPS=$((TOTAL_STEPS + 1))  # migration（含 DB 备份）
 CURRENT=0
 
-# 注意：bash `set -e` 下 `((var++))` 当 var 自增前为 0 时整条命令退出码为 1，
-# 会触发 ERR trap。统一改用 `var=$((var + 1))` 形式（赋值语句退出码恒为 0）。
+# =============================================================================
+# Step: 备份当前 server 镜像
+# =============================================================================
+CURRENT=$((CURRENT + 1))
+log_step "[${CURRENT}/${TOTAL_STEPS}] 备份当前 server 镜像"
 
-# --- Step 1（可选）: 构建（先构建，旧服务仍在线，构建失败不影响线上）---
+BACKUP_TAG="costra-server:backup-$(date +%Y%m%d-%H%M%S)"
+
+# 检查当前镜像是否存在
+if docker images --format '{{.Repository}}:{{.Tag}}' | grep -qFx "${IMAGE_TAG}"; then
+  docker tag "${IMAGE_TAG}" "${BACKUP_TAG}"
+  log_success "镜像已备份: ${IMAGE_TAG} → ${BACKUP_TAG}"
+else
+  log_warn "当前镜像 ${IMAGE_TAG} 不存在 · 跳过备份（首次部署？）"
+  BACKUP_TAG=""
+fi
+
+# =============================================================================
+# Step（可选）: 构建新镜像（旧服务仍在线 · 失败不影响线上）
+# =============================================================================
 if [[ -n "${BUILD_MODE}" ]]; then
   CURRENT=$((CURRENT + 1))
   log_step "[${CURRENT}/${TOTAL_STEPS}] 构建镜像（mode=${BUILD_MODE}）"
 
   BUILD_ARGS=("${COMMON_FLAGS[@]}" --mode "${BUILD_MODE}")
-  [[ -n "${IMAGE_TAR}" ]]      && BUILD_ARGS+=(--image-tar "${IMAGE_TAR}")
+  [[ -n "${IMAGE_TAR}" ]] && BUILD_ARGS+=(--image-tar "${IMAGE_TAR}")
   [[ -n "${REGISTRY_IMAGE}" ]] && BUILD_ARGS+=(--registry-image "${REGISTRY_IMAGE}")
 
   if ! "${SCRIPT_DIR}/04-build-server.sh" "${BUILD_ARGS[@]}"; then
-    die "构建失败 · 请检查日志（服务未停止，线上不受影响）"
+    die "构建失败 · 请检查日志（服务未停止 · 线上不受影响）"
   fi
   log_success "镜像构建完成"
 fi
 
-# --- Step 2: 停止服务（构建成功后才停，最小化停机窗口）---
+# =============================================================================
+# Step: 停止服务（构建成功后才停 · 最小化停机窗口）
+# =============================================================================
 CURRENT=$((CURRENT + 1))
 log_step "[${CURRENT}/${TOTAL_STEPS}] 停止服务（${RESTART_DESC}）"
 
 cd "${COSTRA_INFRA}"
-run_cmd docker compose -f "${COSTRA_COMPOSE_FILE}" --env-file "${COSTRA_ENV_FILE}" \
+docker compose -f "${COSTRA_COMPOSE_FILE}" --env-file "${COSTRA_ENV_FILE}" \
   stop "${STOP_SERVICES[@]}"
 log_success "已停止 ${RESTART_DESC}"
 
-# --- Step 3: 启动服务 ---
+# =============================================================================
+# Step（可选）: Migration（DB 备份 → migrate · 失败回滚）
+# =============================================================================
+if [[ "${DO_MIGRATE}" == "1" ]]; then
+  CURRENT=$((CURRENT + 1))
+  log_step "[${CURRENT}/${TOTAL_STEPS}] 执行 DB Migration"
+
+  # --- 如果需要重启 postgres，先把 postgres 拉起来 ---
+  if [[ "${RESTART_PSQL}" == "1" ]]; then
+    log_info "本次需要重启 postgres · 先启动 postgres 以便执行 migration"
+    cd "${COSTRA_INFRA}"
+    docker compose -f "${COSTRA_COMPOSE_FILE}" --env-file "${COSTRA_ENV_FILE}" \
+      up -d postgres
+
+    # 等待 postgres healthy
+    log_info "等待 postgres healthy..."
+    PG_WAIT_START=$(date +%s)
+    while true; do
+      PG_STATUS=$(docker inspect --format '{{.State.Health.Status}}' "${PG_CONTAINER}" 2>/dev/null || echo "missing")
+      if [[ "${PG_STATUS}" == "healthy" ]]; then
+        log_success "postgres healthy ✓"
+        break
+      fi
+      PG_ELAPSED=$(( $(date +%s) - PG_WAIT_START ))
+      if [[ "${PG_ELAPSED}" -ge "${HEALTHY_TIMEOUT}" ]]; then
+        die "postgres 未能在 ${HEALTHY_TIMEOUT}s 内 healthy（status=${PG_STATUS}）· migration 中止"
+      fi
+      echo -n "."
+      sleep 3
+    done
+  else
+    # 不重启 postgres 时，确认 postgres 在运行
+    PG_STATUS=$(docker inspect --format '{{.State.Status}}' "${PG_CONTAINER}" 2>/dev/null || echo "missing")
+    if [[ "${PG_STATUS}" != "running" ]]; then
+      die "${PG_CONTAINER} 不在运行（status=${PG_STATUS}）· 无法执行 migration"
+    fi
+  fi
+
+  # --- DB 备份（复用 backup-db.sh --db-only · 不可跳过 · 失败回滚依赖此备份）---
+  # 使用唯一 prefix（含 PID）· 避免并发或同分钟内多次执行时拿错文件
+  BACKUP_PREFIX="pre-redeploy-$(date +%Y%m%d-%H%M%S)-$$"
+  log_info "调用 backup-db.sh 备份当前 DB（--db-only · 跳过 avatars · 最小化停机）..."
+
+  if ! "${SCRIPT_DIR}/backup-db.sh" \
+    --prefix "${BACKUP_PREFIX}" \
+    --db-only \
+    --no-cleanup \
+    -y; then
+    die "backup-db.sh 失败 · migration 中止 · 数据未变更"
+  fi
+
+  # 找到刚生成的备份文件（唯一 prefix · 精确匹配）
+  DUMP_FILE=$(find "${COSTRA_DATA}/backups" -maxdepth 1 -name "${BACKUP_PREFIX}-*.sql.gz" -type f 2>/dev/null | head -1)
+  [[ -n "${DUMP_FILE}" && -f "${DUMP_FILE}" ]] || die "备份文件未找到 · 请检查 ${COSTRA_DATA}/backups/"
+  log_success "DB 备份完成: ${DUMP_FILE}"
+
+  # --- 执行 migration SQL ---
+  log_info "执行 ${#RESOLVED_MIGRATION_FILES[@]} 个 migration SQL..."
+
+  # 构建执行脚本（文件名已通过白名单校验 · 安全拼接到容器内 shell 脚本）
+  MIGRATE_SCRIPT='set -e
+'
+  for filepath in "${RESOLVED_MIGRATION_FILES[@]}"; do
+    fname=$(basename "${filepath}")
+    MIGRATE_SCRIPT+="echo \"=== ${fname} ===\"
+psql -v ON_ERROR_STOP=1 -h postgres -U costra -d costra -f \"/migrations/${fname}\"
+"
+  done
+
+  # 收集 migration 文件到临时目录统一挂载
+  MIGRATE_TMP=$(mktemp -d)
+  for filepath in "${RESOLVED_MIGRATION_FILES[@]}"; do
+    cp "${filepath}" "${MIGRATE_TMP}/"
+  done
+
+  # 临时关闭 errexit · 让失败进入回滚逻辑而非直接退出脚本
+  set +e
+  trap - ERR
+  docker run --rm \
+    --network "${COMPOSE_NETWORK}" \
+    -v "${MIGRATE_TMP}:/migrations:ro" \
+    -e PGPASSWORD="${PG_COSTRA_PW}" \
+    postgres:15-alpine \
+    bash -c "${MIGRATE_SCRIPT}"
+  MIGRATE_EXIT=$?
+  set -e
+  trap 'on_error ${LINENO}' ERR
+
+  rm -rf "${MIGRATE_TMP}"
+
+  # --- Migration 失败：回滚 ---
+  if [[ ${MIGRATE_EXIT} -ne 0 ]]; then
+    echo ""
+    log_error "═══════════════════════════════════════════════════════════"
+    log_error "  Migration 失败！正在自动回滚..."
+    log_error "═══════════════════════════════════════════════════════════"
+
+    # 回滚过程中关闭 errexit · 尽力恢复每一步
+    set +e
+    trap - ERR
+
+    # 还原 DB（复用 restore-db.sh --no-restart · 跳过 server 生命周期管理 · -y 跳过确认）
+    log_info "调用 restore-db.sh 还原数据库（从 ${DUMP_FILE}）..."
+
+    if "${SCRIPT_DIR}/restore-db.sh" \
+      --backup-file "${DUMP_FILE}" \
+      --no-restart \
+      -y; then
+      log_success "数据库已还原"
+    else
+      log_error "数据库还原也失败！请手动用 restore-db.sh 恢复"
+      log_error "备份文件: ${DUMP_FILE}"
+    fi
+
+    # 用老镜像拉起服务
+    if [[ -n "${BACKUP_TAG}" ]]; then
+      log_info "使用老镜像 ${BACKUP_TAG} 拉起服务..."
+      docker tag "${BACKUP_TAG}" "${IMAGE_TAG}" || log_warn "恢复镜像 tag 失败"
+    fi
+
+    # 拉起服务（用老镜像）
+    log_info "拉起服务（回滚到更新前状态）..."
+    cd "${COSTRA_INFRA}"
+    docker compose -f "${COSTRA_COMPOSE_FILE}" --env-file "${COSTRA_ENV_FILE}" \
+      up -d "${UP_SERVICES[@]}" || log_warn "拉起服务失败 · 请手动处理"
+
+    echo ""
+    log_error "═══════════════════════════════════════════════════════════"
+    log_error "  回滚完成 · 服务已恢复到更新前状态"
+    log_error "  Migration 失败详情请检查上方输出"
+    log_error "  备份文件: ${DUMP_FILE}"
+    log_error "  老镜像: ${BACKUP_TAG:-无}"
+    log_error "═══════════════════════════════════════════════════════════"
+    exit 1
+  fi
+
+  log_success "所有 migration 执行成功"
+fi
+
+# =============================================================================
+# Step: 启动服务
+# =============================================================================
 CURRENT=$((CURRENT + 1))
 log_step "[${CURRENT}/${TOTAL_STEPS}] 启动服务（${RESTART_DESC}）"
 
-# 用 up -d 而不是 start：up 会用最新镜像重新创建容器（拿到刚 build 的新镜像）
-# start 只会启动旧容器（拿不到新镜像），这是关键差别
-cd "${COSTRA_INFRA}"
-run_cmd docker compose -f "${COSTRA_COMPOSE_FILE}" --env-file "${COSTRA_ENV_FILE}" \
-  up -d "${UP_SERVICES[@]}"
+# 确定本步需要启动哪些服务
+# 如果 postgres 已在 migration 阶段启动，则此处不需要再启动它
+FINAL_UP_SERVICES=()
+for svc in "${UP_SERVICES[@]}"; do
+  if [[ "${svc}" == "postgres" && "${DO_MIGRATE}" == "1" && "${RESTART_PSQL}" == "1" ]]; then
+    # postgres 已在 migration 阶段启动 · 跳过
+    continue
+  fi
+  FINAL_UP_SERVICES+=("${svc}")
+done
+
+if [[ ${#FINAL_UP_SERVICES[@]} -gt 0 ]]; then
+  # 用 up -d 而不是 start：up 会用最新镜像重新创建容器（拿到刚 build 的新镜像）
+  # start 只会启动旧容器（拿不到新镜像），这是关键差别
+  cd "${COSTRA_INFRA}"
+  docker compose -f "${COSTRA_COMPOSE_FILE}" --env-file "${COSTRA_ENV_FILE}" \
+    up -d "${FINAL_UP_SERVICES[@]}"
+fi
 
 # 等待 healthy
-if [[ "${DRY_RUN}" != "1" ]]; then
-  log_info "等待容器 healthy..."
-  START_TS=$(date +%s)
+log_info "等待容器 healthy..."
+START_TS=$(date +%s)
 
-  while true; do
-    ALL_HEALTHY=1
-    for c in "${HEALTH_CONTAINERS[@]}"; do
-      STATUS=$(docker inspect --format '{{.State.Health.Status}}' "$c" 2>/dev/null || echo "missing")
-      if [[ "${STATUS}" != "healthy" ]]; then
-        ALL_HEALTHY=0
-        break
-      fi
-    done
-
-    if [[ "${ALL_HEALTHY}" == "1" ]]; then
-      log_success "所有容器 healthy"
+while true; do
+  ALL_HEALTHY=1
+  for c in "${HEALTH_CONTAINERS[@]}"; do
+    STATUS=$(docker inspect --format '{{.State.Health.Status}}' "$c" 2>/dev/null || echo "missing")
+    if [[ "${STATUS}" != "healthy" ]]; then
+      ALL_HEALTHY=0
       break
     fi
-
-    ELAPSED=$(( $(date +%s) - START_TS ))
-    if [[ "${ELAPSED}" -ge "${HEALTHY_TIMEOUT}" ]]; then
-      log_error "等待超时（${HEALTHY_TIMEOUT}s）· 当前状态："
-      docker compose -f "${COSTRA_COMPOSE_FILE}" ps
-      echo ""
-      log_error "诊断建议："
-      log_error "  docker logs <container> --tail 80"
-      log_error "  docker compose -f ${COSTRA_COMPOSE_FILE} ps"
-      die "容器未能在 ${HEALTHY_TIMEOUT}s 内变为 healthy"
-    fi
-
-    echo -n "."
-    sleep 3
   done
-fi
+
+  if [[ "${ALL_HEALTHY}" == "1" ]]; then
+    log_success "所有容器 healthy"
+    break
+  fi
+
+  ELAPSED=$(( $(date +%s) - START_TS ))
+  if [[ "${ELAPSED}" -ge "${HEALTHY_TIMEOUT}" ]]; then
+    log_error "等待超时（${HEALTHY_TIMEOUT}s）· 当前状态："
+    docker compose -f "${COSTRA_COMPOSE_FILE}" ps
+    echo ""
+    log_error "诊断建议："
+    log_error "  docker logs <container> --tail 80"
+    log_error "  docker compose -f ${COSTRA_COMPOSE_FILE} ps"
+    die "容器未能在 ${HEALTHY_TIMEOUT}s 内变为 healthy"
+  fi
+
+  echo -n "."
+  sleep 3
+done
 
 # =============================================================================
 # 总结
@@ -228,14 +488,17 @@ fi
 echo ""
 print_section_header "✅ 重部署完成（${RESTART_DESC}）"
 
-if [[ "${DRY_RUN}" != "1" ]]; then
+echo ""
+docker compose -f "${COSTRA_COMPOSE_FILE}" ps
+echo ""
+log_info "验证建议："
+log_info "  - curl -s http://localhost:8080/healthz"
+log_info "  - curl -s https://${COSTRA_DOMAIN}/healthz"
+log_info "  - docker logs costra-server --tail 50"
+if [[ -n "${BACKUP_TAG}" ]]; then
   echo ""
-  docker compose -f "${COSTRA_COMPOSE_FILE}" ps
-  echo ""
-  log_info "验证建议："
-  log_info "  - curl -s http://localhost:8080/healthz"
-  log_info "  - curl -s https://${COSTRA_DOMAIN}/healthz"
-  log_info "  - docker logs costra-server --tail 50"
+  log_info "老镜像备份: ${BACKUP_TAG}"
+  log_info "  若需回滚: docker tag ${BACKUP_TAG} ${IMAGE_TAG} && docker compose up -d server"
 fi
 
 exit 0

@@ -26,7 +26,8 @@ import { getPool } from '../db/pool.js';
 export type Period =
   | 'weekly'
   | 'monthly'
-  | 'yearly';
+  | 'yearly'
+  | 'workday';
 
 export type ExecuteBucket = 'dawn' | 'morning' | 'afternoon' | 'night';
 

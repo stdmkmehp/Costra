@@ -39,6 +39,15 @@ describe('edit/model', () => {
     it('same period: no clear', () => {
       expect(shouldClearDaysOnPeriodChange('weekly', 'weekly')).toBe(false);
     });
+    it('weekly → workday: cross group, clear', () => {
+      expect(shouldClearDaysOnPeriodChange('weekly', 'workday')).toBe(true);
+    });
+    it('workday → monthly: cross group, clear', () => {
+      expect(shouldClearDaysOnPeriodChange('workday', 'monthly')).toBe(true);
+    });
+    it('workday → workday: same, no clear', () => {
+      expect(shouldClearDaysOnPeriodChange('workday', 'workday')).toBe(false);
+    });
   });
 
   describe('shouldKeepCategoryOnLedgerChange', () => {

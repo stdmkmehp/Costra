@@ -6,19 +6,20 @@
 # 支持备份格式：.sql / .sql.gz
 #
 # 流程：
-#   1. 停止 server（防止恢复期间有新写入）
+#   1. 停止 server（防止恢复期间有新写入）· --no-restart 时跳过
 #   2. DROP SCHEMA public CASCADE → 清空所有用户对象
 #   3. CREATE SCHEMA public + 授权
 #   4. 恢复备份（--single-transaction · 原子性 · 任何错误全回滚）
 #   5. 重装扩展（pgcrypto / citext）
 #   6. 验证表结构
-#   7. 重启 server
+#   7. 重启 server · --no-restart 时跳过
 #
 # 用法：
 #   ./restore-db.sh /data/backups/pre-migrate-20260610-172000.sql
 #   ./restore-db.sh /data/backups/scheduled-20260611-011700.sql.gz
 #   ./restore-db.sh --backup-file /data/backups/xxx.sql
 #   ./restore-db.sh --backup-file /data/backups/xxx.sql.gz
+#   ./restore-db.sh --no-restart --backup-file /data/backups/xxx.sql.gz -y  # 只还原 DB · 不动 server（被 redeploy.sh 调用）
 #   ./restore-db.sh --list                                # 列出可用备份（.sql / .sql.gz）
 #   ./restore-db.sh --dry-run /data/backups/xxx.sql.gz    # 仅打印不执行
 #
@@ -36,6 +37,7 @@ source "${SCRIPT_DIR}/lib/common.sh"
 # --- 默认参数 ---
 BACKUP_FILE=""
 LIST_MODE=0
+NO_RESTART=0
 PG_CONTAINER="costra-postgres"
 BACKUP_DIR="${COSTRA_DATA}/backups"
 
@@ -46,6 +48,10 @@ while [[ $# -gt 0 ]]; do
       [[ $# -ge 2 ]] || die "--backup-file 需要一个备份文件路径"
       BACKUP_FILE=$2
       shift 2
+      ;;
+    --no-restart)
+      NO_RESTART=1
+      shift
       ;;
     --list)
       LIST_MODE=1
@@ -127,14 +133,19 @@ PG_COSTRA_PW=$(grep '^PG_COSTRA_PW=' "${COSTRA_ENV_FILE}" | cut -d= -f2-)
 [[ -n "${PG_COSTRA_PW}" ]] || die "未能从 ${COSTRA_ENV_FILE} 读取 PG_COSTRA_PW"
 
 # =============================================================================
-# 确认（三重保护）
+# 确认（三重保护 · -y/--yes 跳过 · --no-restart 不影响确认）
 # =============================================================================
 print_section_header "⚠️  Costra · DB 灾难恢复"
 
 log_warn "此操作将："
-log_warn "  1. 停止 costra-server"
-log_warn "  2. 清空当前数据库所有表和数据"
-log_warn "  3. 用备份文件覆盖恢复"
+if [[ "${NO_RESTART}" != "1" ]]; then
+  log_warn "  1. 停止 costra-server"
+  log_warn "  2. 清空当前数据库所有表和数据"
+  log_warn "  3. 用备份文件覆盖恢复"
+else
+  log_warn "  1. 清空当前数据库所有表和数据（--no-restart · 不动 server）"
+  log_warn "  2. 用备份文件覆盖恢复"
+fi
 echo ""
 log_info "备份文件：${BACKUP_FILE}"
 log_info "文件大小：$(ls -lh "${BACKUP_FILE}" | awk '{print $5}')"
@@ -151,12 +162,16 @@ confirm "⚠️  再次确认：当前 DB 所有数据将丢失！" || die "用�
 # 主流程
 # =============================================================================
 
-# --- Step 1: 停止 server ---
-log_step "[1/6] 停止 costra-server（防止恢复期间写入）"
+# --- Step 1: 停止 server（--no-restart 时跳过 · 调用方已管理服务生命周期）---
+if [[ "${NO_RESTART}" != "1" ]]; then
+  log_step "[1/6] 停止 costra-server（防止恢复期间写入）"
 
-cd "${COSTRA_INFRA}"
-run_cmd docker compose -f "${COSTRA_COMPOSE_FILE}" --env-file "${COSTRA_ENV_FILE}" stop server
-log_success "server 已停止（容器保留 · 恢复后 up -d 重启）"
+  cd "${COSTRA_INFRA}"
+  run_cmd docker compose -f "${COSTRA_COMPOSE_FILE}" --env-file "${COSTRA_ENV_FILE}" stop server
+  log_success "server 已停止（容器保留 · 恢复后 up -d 重启）"
+else
+  log_step "[1/6] 停止 server → 已 --no-restart · 跳过"
+fi
 
 # --- Step 2: 清空 public schema ---
 log_step "[2/6] 清空 public schema（DROP CASCADE）"
@@ -172,14 +187,23 @@ log_success "public schema 已重建"
 log_step "[3/6] 恢复备份（--single-transaction · 原子性）"
 
 if [[ "${BACKUP_FILE}" == *.sql.gz ]]; then
-  run_cmd bash -c "gzip -dc '${BACKUP_FILE}' | docker exec -i '${PG_CONTAINER}' psql -U costra -d costra \
-    --single-transaction \
-    -v ON_ERROR_STOP=1"
+  # gzip 解压后管道给 psql · 不拼接路径到 bash -c（避免 shell 注入）
+  if [[ "${DRY_RUN}" == "1" ]]; then
+    log_dry "gzip -dc '${BACKUP_FILE}' | docker exec -i '${PG_CONTAINER}' psql ..."
+  else
+    gzip -dc -- "${BACKUP_FILE}" | docker exec -i "${PG_CONTAINER}" psql -U costra -d costra \
+      --single-transaction \
+      -v ON_ERROR_STOP=1
+  fi
 else
-  run_cmd bash -c "docker exec -i '${PG_CONTAINER}' psql -U costra -d costra \
-    --single-transaction \
-    -v ON_ERROR_STOP=1 \
-    < '${BACKUP_FILE}'"
+  if [[ "${DRY_RUN}" == "1" ]]; then
+    log_dry "docker exec -i '${PG_CONTAINER}' psql ... < '${BACKUP_FILE}'"
+  else
+    docker exec -i "${PG_CONTAINER}" psql -U costra -d costra \
+      --single-transaction \
+      -v ON_ERROR_STOP=1 \
+      < "${BACKUP_FILE}"
+  fi
 fi
 
 log_success "备份恢复完成"
@@ -222,35 +246,39 @@ if [[ "${DRY_RUN}" != "1" ]]; then
   done
 fi
 
-# --- Step 6: 重启 server ---
-log_step "[6/6] 重启 costra-server"
+# --- Step 6: 重启 server（--no-restart 时跳过 · 调用方自行拉起服务）---
+if [[ "${NO_RESTART}" != "1" ]]; then
+  log_step "[6/6] 重启 costra-server"
 
-cd "${COSTRA_INFRA}"
-run_cmd docker compose -f "${COSTRA_COMPOSE_FILE}" --env-file "${COSTRA_ENV_FILE}" up -d server
+  cd "${COSTRA_INFRA}"
+  run_cmd docker compose -f "${COSTRA_COMPOSE_FILE}" --env-file "${COSTRA_ENV_FILE}" up -d server
 
-# 等待 healthy
-if [[ "${DRY_RUN}" != "1" ]]; then
-  log_info "等待 server healthy..."
-  HEALTHY_TIMEOUT=60
-  START_TS=$(date +%s)
+  # 等待 healthy
+  if [[ "${DRY_RUN}" != "1" ]]; then
+    log_info "等待 server healthy..."
+    HEALTHY_TIMEOUT=60
+    START_TS=$(date +%s)
 
-  while true; do
-    HEALTH=$(docker inspect --format '{{.State.Health.Status}}' costra-server 2>/dev/null || echo "unknown")
-    if [[ "${HEALTH}" == "healthy" ]]; then
-      log_success "server healthy ✓"
-      break
-    fi
+    while true; do
+      HEALTH=$(docker inspect --format '{{.State.Health.Status}}' costra-server 2>/dev/null || echo "unknown")
+      if [[ "${HEALTH}" == "healthy" ]]; then
+        log_success "server healthy ✓"
+        break
+      fi
 
-    ELAPSED=$(( $(date +%s) - START_TS ))
-    if [[ "${ELAPSED}" -ge "${HEALTHY_TIMEOUT}" ]]; then
-      log_warn "等待超时（${HEALTHY_TIMEOUT}s）· server 状态: ${HEALTH}"
-      log_warn "请手动检查：docker logs costra-server --tail 50"
-      break
-    fi
+      ELAPSED=$(( $(date +%s) - START_TS ))
+      if [[ "${ELAPSED}" -ge "${HEALTHY_TIMEOUT}" ]]; then
+        log_warn "等待超时（${HEALTHY_TIMEOUT}s）· server 状态: ${HEALTH}"
+        log_warn "请手动检查：docker logs costra-server --tail 50"
+        break
+      fi
 
-    echo -n "."
-    sleep 3
-  done
+      echo -n "."
+      sleep 3
+    done
+  fi
+else
+  log_step "[6/6] 重启 server → 已 --no-restart · 跳过"
 fi
 
 # =============================================================================

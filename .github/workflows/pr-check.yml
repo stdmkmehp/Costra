@@ -53,6 +53,11 @@ jobs:
       - name: Recurring Schedule Parity Check
         run: npm run parity
 
+      # ---- Workday Holiday Data Check (T2 · Sprint-4 · Epic-E) ----
+      # Validates server/src/data/workday-cn-*.json schema (MM-DD + disjoint).
+      - name: Workday Holiday Data Check
+        run: node scripts/verify-workday-parity.mjs
+
       # ---- Typecheck ----
       - name: Typecheck (miniprogram)
         run: npm run typecheck --if-present

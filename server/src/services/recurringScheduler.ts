@@ -21,6 +21,7 @@ import { getPool } from '../db/pool.js';
 import * as recurringRepo from '../repositories/recurringRepo.js';
 import type { RecurringRuleEntity } from '../repositories/recurringRepo.js';
 import type { RecurringService, ProcessResult } from './recurringService.js';
+import { refreshCache as refreshWorkdayCache } from './workdayProvider.js';
 
 // ==============================================================================
 // 常量
@@ -103,6 +104,9 @@ export function createScheduler(
   let timerHandle: NodeJS.Timeout | null = null;
   let running = false;
 
+  /** 最后一次 workday 缓存刷新的日期（YYYY-MM-DD）· 用于每天只刷一次 */
+  let lastWorkdayRefreshDate = '';
+
   async function tickOnce(nowOverride?: Date): Promise<TickReport> {
     const now = nowOverride ?? nowProvider();
     const report: TickReport = {
@@ -112,6 +116,21 @@ export function createScheduler(
       failedCount: 0,
       results: [],
     };
+
+    // workday 节假日缓存：每天凌晨第一次 tick 触发刷新，之后当天不再重复刷新。
+    const today = now.toISOString().slice(0, 10);
+    if (today !== lastWorkdayRefreshDate) {
+      try {
+        await refreshWorkdayCache();
+        lastWorkdayRefreshDate = today;
+      } catch (err) {
+        // 刷新失败不阻塞 tick 主流程 · 下次 tick 会再试
+        report.results.push({
+          ruleId: '__workday_refresh__',
+          result: { error: (err as Error).message },
+        });
+      }
+    }
 
     const pool = getPool();
     const lockClient = await pool.connect();

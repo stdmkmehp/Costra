@@ -255,7 +255,7 @@ function applyMigrations(db: IMemoryDb): void {
       shared_type     TEXT,
 
       period          TEXT NOT NULL CHECK (period IN
-        ('weekly','monthly','yearly')),
+        ('weekly','monthly','yearly','workday')),
       period_interval SMALLINT NOT NULL DEFAULT 1,
       days_of_week    SMALLINT[],
       days_of_month   SMALLINT[],
@@ -288,6 +288,21 @@ function applyMigrations(db: IMemoryDb): void {
       WHERE status = 'active' AND deleted_at IS NULL;
     CREATE INDEX idx_recurring_rules_created_by ON recurring_rules (created_by)
       WHERE deleted_at IS NULL;
+
+    -- ═══════════════════════════════════════════════════════════════════════
+    -- migration 0012_workday_calendars.sql · 简化 pg-mem 兼容版
+    --   * chk_holidays_workdays_disjoint（数组重叠 && 运算符）→ pg-mem 不支持 · 省略
+    --     约束由真实 PG migration 兜底
+    -- ═══════════════════════════════════════════════════════════════════════
+    CREATE TABLE workday_calendars (
+      year        SMALLINT PRIMARY KEY,
+      holidays    TEXT[] NOT NULL,
+      workdays    TEXT[] NOT NULL,
+      source      TEXT,
+      source_url  TEXT,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
 
     -- entries 表新增 source_recurring_id 列（migration 0011 ALTER）
     ALTER TABLE entries ADD COLUMN source_recurring_id UUID REFERENCES recurring_rules(id) ON DELETE SET NULL;
@@ -350,7 +365,7 @@ function registerPgMemFunctions(db: IMemoryDb): void {
 function resetPgMem(): void {
   if (memDb) {
     memDb.public.none(
-      'DELETE FROM recurring_rules; DELETE FROM entries; DELETE FROM category_redirects; DELETE FROM categories; DELETE FROM family_invites; DELETE FROM family_members; DELETE FROM ledgers; DELETE FROM families; DELETE FROM user_sessions; DELETE FROM users; DELETE FROM idempotency_keys; DELETE FROM announcement_reads; DELETE FROM announcements;',
+      'DELETE FROM recurring_rules; DELETE FROM workday_calendars; DELETE FROM entries; DELETE FROM category_redirects; DELETE FROM categories; DELETE FROM family_invites; DELETE FROM family_members; DELETE FROM ledgers; DELETE FROM families; DELETE FROM user_sessions; DELETE FROM users; DELETE FROM idempotency_keys; DELETE FROM announcement_reads; DELETE FROM announcements;',
     );
   }
 }

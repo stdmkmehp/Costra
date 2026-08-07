@@ -36,9 +36,11 @@ import { registerStatisticsRoutes } from './routes/statistics.js';
 import { registerUploadRoutes } from './routes/upload.js';
 import { registerAnnouncementsRoutes } from './routes/announcements.js';
 import { registerRecurringRoutes } from './routes/recurring.js';
+import { registerWorkdayCalendarRoutes } from './routes/workdayCalendar.js';
 import { createRecurringService } from './services/recurringService.js';
 import { createEntryService } from './services/entryService.js';
 import { createScheduler, type RecurringScheduler } from './services/recurringScheduler.js';
+import { refreshCache as refreshWorkdayCache } from './services/workdayProvider.js';
 
 // 让 app.recurringScheduler 可访问（测试和优雅关停用）
 declare module 'fastify' {
@@ -102,6 +104,8 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   if (opts.autoStartScheduler !== false) {
     scheduler.start(); // test 环境内部会自动跳过 setInterval
   }
+  // T2 · workday 节假日缓存：服务启动时预载一次（每日凌晨由 scheduler tick 刷新）
+  await refreshWorkdayCache();
   app.addHook('onClose', async () => {
     await scheduler.stop();
   });
@@ -119,6 +123,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
     await registerUploadRoutes(v1);
     await registerAnnouncementsRoutes(v1);
     await registerRecurringRoutes(v1, { service: recurringService });
+    await registerWorkdayCalendarRoutes(v1);
   }, { prefix: '/v1' });
 
   return app;

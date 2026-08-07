@@ -11,7 +11,7 @@
 import type { RecurringPeriod } from '../../services/recurringApi';
 
 /** 周期基础类型 */
-type PeriodType = 'weekly' | 'monthly' | 'yearly';
+type PeriodType = 'weekly' | 'monthly' | 'yearly' | 'workday';
 
 /**
  * 从 RecurringPeriod 提取基础类型和间隔
@@ -21,6 +21,7 @@ function parsePeriod(period: RecurringPeriod): { type: PeriodType; interval: num
     case 'weekly': return { type: 'weekly', interval: 1 };
     case 'monthly': return { type: 'monthly', interval: 1 };
     case 'yearly': return { type: 'yearly', interval: 1 };
+    case 'workday': return { type: 'workday', interval: 1 };
     default: return { type: 'weekly', interval: 1 };
   }
 }
@@ -32,6 +33,7 @@ function parsePeriod(period: RecurringPeriod): { type: PeriodType; interval: num
 function composePeriod(type: PeriodType, _interval: number): RecurringPeriod {
   if (type === 'weekly') return 'weekly';
   if (type === 'monthly') return 'monthly';
+  if (type === 'workday') return 'workday';
   return 'yearly';
 }
 

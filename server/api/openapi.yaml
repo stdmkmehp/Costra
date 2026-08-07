@@ -1237,6 +1237,44 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/RecurringRule' }
 
+  # ============ workday calendar ============
+  # 事实源：docs/design/workday-recurring-tech-spec.md §7.2
+  /workday-calendar/{year}:
+    get:
+      operationId: getWorkdayCalendar
+      tags: [recurring]
+      summary: 获取指定年份的节假日数据（放假日 + 调休补班日）
+      description: |
+        供小程序「每个工作日」周期在编辑页预览时做本地降级判定。
+        数据来源 workday_calendars 表（由 fetch-holidays + import-holidays 脚本灌入）。
+        无需鉴权（节假日数据非隐私）。
+      security: []
+      parameters:
+        - name: year
+          in: path
+          required: true
+          schema: { type: integer, minimum: 2020, maximum: 2099 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [year, holidays, workdays]
+                properties:
+                  year: { type: integer }
+                  holidays:
+                    type: array
+                    description: 放假日 · MM-DD 格式
+                    items: { type: string, pattern: '^\d{2}-\d{2}$' }
+                  workdays:
+                    type: array
+                    description: 调休补班日 · MM-DD 格式
+                    items: { type: string, pattern: '^\d{2}-\d{2}$' }
+        '404':
+          description: 该年份无数据
+
 components:
   securitySchemes:
     BearerAuth:
@@ -2330,7 +2368,13 @@ components:
           description: "仅 expense 有值; income/transfer 必须为 null"
         period:
           type: string
-          enum: [weekly, monthly, yearly]
+          enum: [weekly, monthly, yearly, workday]
+          description: "workday = 每个工作日（按法定节假日+调休补班判定）"
+        period_interval:
+          type: integer
+          minimum: 1
+          default: 1
+          description: "周期间隔倍数 · period=weekly+interval=3 表示每3周 · yearly 恒为1"
         days_of_week:
           type: array
           items: { type: integer, minimum: 1, maximum: 7 }
@@ -2414,7 +2458,13 @@ components:
           nullable: true
         period:
           type: string
-          enum: [weekly, monthly, yearly]
+          enum: [weekly, monthly, yearly, workday]
+          description: "workday = 每个工作日（按法定节假日+调休补班判定）"
+        period_interval:
+          type: integer
+          minimum: 1
+          default: 1
+          description: "周期间隔倍数 · yearly 恒为1"
         days_of_week:
           type: array
           items: { type: integer, minimum: 1, maximum: 7 }
@@ -2458,7 +2508,11 @@ components:
           nullable: true
         period:
           type: string
-          enum: [weekly, monthly, yearly]
+          enum: [weekly, monthly, yearly, workday]
+        period_interval:
+          type: integer
+          minimum: 1
+          description: "周期间隔倍数"
         days_of_week: { type: array, items: { type: integer }, nullable: true }
         days_of_month: { type: array, items: { type: integer }, nullable: true }
         year_month_days: { type: array, items: { type: integer }, nullable: true }

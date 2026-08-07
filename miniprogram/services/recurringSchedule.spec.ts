@@ -21,6 +21,7 @@ import {
   computeNextRunAt,
   fnv1a64,
   formatDaysForSummary,
+  isWorkdaySync,
   type RecurringRuleForCompute,
 } from './recurringSchedule';
 
@@ -46,6 +47,7 @@ function makeRule(
     days_of_week: null,
     days_of_month: null,
     year_month_days: null,
+    workday_data: [],
     ...partial,
   };
 }
@@ -1481,21 +1483,21 @@ describe('formatDaysForSummary · yearly', () => {
       year_month_days: encoded,
     });
 
-  it('full · single [1225] → 12 月 25 日', () => {
-    expect(ymd([1225])).toBe('12 月 25 日');
+  it('full · single [1225] → 12月25日', () => {
+    expect(ymd([1225])).toBe('12月25日');
   });
 
-  it('full · same-month multiple · [1224, 1225] → 12 月 24、25 日', () => {
-    expect(ymd([1224, 1225])).toBe('12 月 24、25 日');
+  it('full · same-month multiple · [1224, 1225] → 12月24,25日', () => {
+    expect(ymd([1224, 1225])).toBe('12月24,25日');
   });
 
-  it('full · same-month consecutive 3+ · [301,302,303] → 3 月 1~3 日', () => {
-    expect(ymd([301, 302, 303])).toBe('3 月 1~3 日');
+  it('full · same-month consecutive 3+ · [301,302,303] → 3月1~3日', () => {
+    expect(ymd([301, 302, 303])).toBe('3月1~3日');
   });
 
-  it('full · cross-month · [101, 214, 1225] → 1 月 1 日、2 月 14 日、12 月 25 日', () => {
+  it('full · cross-month · [101, 214, 1225] → 1月1日、2月14日、12月25日', () => {
     expect(ymd([101, 214, 1225])).toBe(
-      '1 月 1 日、2 月 14 日、12 月 25 日',
+      '1月1日、2月14日、12月25日',
     );
   });
 
@@ -1506,7 +1508,7 @@ describe('formatDaysForSummary · yearly', () => {
     const s = ymd(days);
     // full mode shows all 12
     expect(s).toBe(
-      '1 月 1 日、2 月 2 日、3 月 3 日、4 月 4 日、5 月 5 日、6 月 6 日、7 月 7 日、8 月 8 日、9 月 9 日、10 月 10 日、11 月 11 日、12 月 12 日',
+      '1月1日、2月2日、3月3日、4月4日、5月5日、6月6日、7月7日、8月8日、9月9日、10月10日、11月11日、12月12日',
     );
   });
 
@@ -1519,7 +1521,7 @@ describe('formatDaysForSummary · yearly', () => {
 
   it('compact · 3 hits → 完整', () => {
     expect(ymd([101, 214, 1225], 'compact')).toBe(
-      '1 月 1 日、2 月 14 日、12 月 25 日',
+      '1月1日、2月14日、12月25日',
     );
   });
 
@@ -1534,11 +1536,109 @@ describe('formatDaysForSummary · yearly', () => {
   });
 
   it('unsorted input · sorted output', () => {
-    expect(ymd([1225, 101])).toBe('1 月 1 日、12 月 25 日');
+    expect(ymd([1225, 101])).toBe('1月1日、12月25日');
   });
 
   it('same-month mixed consecutive and non-consecutive', () => {
-    // 3/1, 3/2, 3/3, 3/10, 3/15 → 3 月 1~3、10、15 日
-    expect(ymd([301, 302, 303, 310, 315])).toBe('3 月 1~3、10、15 日');
+    // 3/1, 3/2, 3/3, 3/10, 3/15 → 3月1~3,10,15日
+    expect(ymd([301, 302, 303, 310, 315])).toBe('3月1~3,10,15日');
+  });
+
+  it('workday → 每个工作日', () => {
+    expect(
+      formatDaysForSummary({
+        period: 'workday',
+        mode: 'full',
+        days_of_week: null,
+        days_of_month: null,
+        year_month_days: null,
+      }),
+    ).toBe('每个工作日');
+  });
+});
+
+// ===== 14. workday · isWorkdaySync =====
+
+describe('isWorkdaySync', () => {
+  const year = 2026;
+  const data = {
+    year,
+    holidays: ['01-01', '02-15'], // 元旦、春节首日（周二）
+    workdays: ['02-08'], // 周日补班
+  };
+
+  it('null data → 周一~周五降级', () => {
+    expect(isWorkdaySync(null, year, 7, '01-01')).toBe(false); // Sun → false
+    expect(isWorkdaySync(null, year, 1, '01-05')).toBe(true); // Mon → true
+  });
+
+  it('数据年份不匹配 → 降级周一~周五', () => {
+    expect(isWorkdaySync(data, 2027, 7, '01-01')).toBe(false);
+    expect(isWorkdaySync(data, 2027, 1, '01-05')).toBe(true);
+  });
+
+  it('补班日（周末）→ 是工作日', () => {
+    expect(isWorkdaySync(data, year, 7, '02-08')).toBe(true);
+  });
+
+  it('放假日（周一~周五）→ 不是工作日', () => {
+    expect(isWorkdaySync(data, year, 4, '01-01')).toBe(false);
+  });
+
+  it('普通工作日（周一~周五非假日）→ 是工作日', () => {
+    expect(isWorkdaySync(data, year, 1, '01-05')).toBe(true);
+  });
+
+  it('普通周末（非补班）→ 不是工作日', () => {
+    expect(isWorkdaySync(data, year, 7, '01-11')).toBe(false);
+  });
+});
+
+// ===== 15. computeNextRunAt · workday =====
+
+describe('computeNextRunAt · workday', () => {
+  const year = 2026;
+  const workdayData = [{
+    year,
+    holidays: ['01-01', '02-15', '02-16', '02-17'],
+    workdays: ['02-08'],
+  }];
+
+  const rule = makeRule({
+    period: 'workday',
+    workday_data: workdayData,
+    execute_hour: 9,
+    execute_minute: 30,
+  });
+
+  it('跳过放假日（周四元旦）→ 下一个工作日在周五', () => {
+    const next = computeNextRunAt(rule, localToUtc(2026, 1, 1, 0, 0));
+    expect(local(next)).toMatchObject({ y: 2026, mo: 1, d: 2 });
+  });
+
+  it('从普通周五推进 → 下周一（跳过周末）', () => {
+    const next = computeNextRunAt(rule, localToUtc(2026, 1, 9, 10, 0));
+    expect(local(next)).toMatchObject({ y: 2026, mo: 1, d: 12, weekday: 1 });
+  });
+
+  it('补班周日 → 是工作日（当天 09:30 命中）', () => {
+    const next = computeNextRunAt(rule, localToUtc(2026, 2, 8, 8, 0));
+    expect(local(next)).toMatchObject({ y: 2026, mo: 2, d: 8, h: 9, mi: 30 });
+  });
+
+  it('春节连续放假（2/15-2/17）→ 跳过到节后', () => {
+    const next = computeNextRunAt(rule, localToUtc(2026, 2, 17, 0, 0));
+    expect(local(next)).toMatchObject({ y: 2026, mo: 2, d: 18 });
+  });
+
+  it('workday_data 为空数组 → 降级周一~周五', () => {
+    const fallbackRule = makeRule({
+      period: 'workday',
+      workday_data: [],
+      execute_hour: 9,
+      execute_minute: 30,
+    });
+    const next = computeNextRunAt(fallbackRule, localToUtc(2026, 1, 1, 0, 0));
+    expect(local(next)).toMatchObject({ y: 2026, mo: 1, d: 1 });
   });
 });
