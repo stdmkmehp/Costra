@@ -9,11 +9,16 @@
  *   - PATCH /ledgers/{id}/balance  body: { balance_cents, balance_version }
  *       → 200 { balance_cents, balance_baseline_seq, balance_version }
  *       → 409 VERSION_CONFLICT（含 current_balance_* 便于客户端弹冲突弹窗）
+ *   - POST  /ledgers/{id}/balance + X-HTTP-Method-Override: PATCH → 委托 PATCH handler（K3 兜底）
+ *
+ * K3 兜底说明（与 users / entries / recurring 路由同构）：
+ *   wx.request 不支持 PATCH method · 客户端降级为 POST + X-HTTP-Method-Override header
+ *   本路由的 POST handler 识别该 header 后委托 PATCH handler · 不做全局中间件
  *
  * 路由层只做 "HTTP 参数解析 / 响应装配"，业务编排统一交给 ledgerService。
  */
 
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { AppError } from '../errors/AppError.js';
 import { ErrorCode } from '../errors/ErrorCode.js';
 import * as ledgerService from '../services/ledgerService.js';
@@ -70,33 +75,58 @@ export async function registerLedgersRoutes(app: FastifyInstance): Promise<void>
   );
 
   // PATCH /ledgers/{ledger_id}/balance —— 用户修改资产
-  app.patch<{ Params: { ledger_id: string }; Body: { balance_cents: number; balance_version: number } }>(
-    '/ledgers/:ledger_id/balance',
-    { schema: { params: ledgerIdParamsSchema, body: patchBalanceBodySchema } },
-    async (req, reply) => {
-      const userId = await parseUserId(req);
-      const { ledger_id: ledgerId } = req.params;
-      const { balance_cents: newBalanceCents, balance_version: clientBaseVersion } = req.body;
+  const PATCH_BALANCE_ENDPOINT = '/ledgers/:ledger_id/balance';
 
-      const result = await ledgerService.rebaseBalance(userId, {
+  async function handlePatchBalance(
+    req: FastifyRequest<{ Params: { ledger_id: string }; Body: { balance_cents: number; balance_version: number } }>,
+    reply: FastifyReply,
+  ): Promise<void> {
+    const userId = await parseUserId(req);
+    const { ledger_id: ledgerId } = req.params;
+    const { balance_cents: newBalanceCents, balance_version: clientBaseVersion } = req.body;
+
+    const result = await ledgerService.rebaseBalance(userId, {
+      ledgerId,
+      newBalanceCents,
+      clientBaseVersion,
+    });
+
+    req.log.info(
+      {
+        action: 'ledger.balance.rebase',
+        userId,
         ledgerId,
         newBalanceCents,
-        clientBaseVersion,
-      });
+        newBaselineSeq: result.balance_baseline_seq,
+        newBalanceVersion: result.balance_version,
+      },
+      'ledger balance rebased',
+    );
 
-      req.log.info(
-        {
-          action: 'ledger.balance.rebase',
-          userId,
-          ledgerId,
-          newBalanceCents,
-          newBaselineSeq: result.balance_baseline_seq,
-          newBalanceVersion: result.balance_version,
+    reply.code(200).send(result);
+  }
+
+  app.patch<{ Params: { ledger_id: string }; Body: { balance_cents: number; balance_version: number } }>(
+    PATCH_BALANCE_ENDPOINT,
+    { schema: { params: ledgerIdParamsSchema, body: patchBalanceBodySchema } },
+    handlePatchBalance,
+  );
+
+  // POST /ledgers/{ledger_id}/balance（K3 method-override · wx.request PATCH 降级兜底）
+  app.post<{ Params: { ledger_id: string }; Body: { balance_cents: number; balance_version: number } }>(
+    PATCH_BALANCE_ENDPOINT,
+    { schema: { params: ledgerIdParamsSchema, body: patchBalanceBodySchema } },
+    async (req, reply) => {
+      const override = req.headers['x-http-method-override'];
+      if (typeof override === 'string' && override.toUpperCase() === 'PATCH') {
+        return handlePatchBalance(req, reply);
+      }
+      reply.code(405).send({
+        error: {
+          code: 'METHOD_NOT_ALLOWED',
+          message: 'POST /ledgers/{id}/balance requires X-HTTP-Method-Override: PATCH',
         },
-        'ledger balance rebased',
-      );
-
-      reply.code(200).send(result);
+      });
     },
   );
 }
