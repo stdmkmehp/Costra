@@ -15,8 +15,29 @@
       <text class="header__total-expense tnum">{{totalExpense}}</text>
       <!-- 收入 + 结余 辅助行 · 28rpx / secondary -->
       <text class="header__sub">{{totalBalance}}</text>
+      <!-- COSTRA-4xx · 第 3 行：资产 + 预算 -->
+      <view class="header__asset-budget">
+        <!-- 资产（带 ✎ 编辑图标） -->
+        <view class="header__asset" catchtap="onTapAssetEdit">
+          <text class="header__asset-label">资产</text>
+          <text class="header__asset-value tnum">{{assetDisplay}}</text>
+          <text class="header__edit-icon" aria-hidden="true">✎</text>
+        </view>
+        <!-- 预算（剩余 / 上限） -->
+        <view class="header__budget" catchtap="onTapBudgetEdit">
+          <text class="header__budget-label">预算</text>
+          <block wx:if="{{budgetDisplay}}">
+            <text class="header__budget-remain tnum {{budgetColorClass}}">{{budgetDisplay.remain}}</text>
+            <text class="header__budget-sep">/</text>
+            <text class="header__budget-total tnum">{{budgetDisplay.total}}</text>
+          </block>
+          <text wx:else class="header__budget-unset">未设置</text>
+          <text class="header__edit-icon" aria-hidden="true">✎</text>
+        </view>
+      </view>
     </view>
   </view>
+
 
   <!-- ─── 时间导航 + 筛选行（支出/收入下方、流水上方） ───────────────────────── -->
   <view class="filter-row">
@@ -310,6 +331,62 @@
       <view class="ctx-menu__item ctx-menu__item--danger" catchtap="onCtxDelete">
         <view class="ctx-ic ctx-ic--trash"><view class="lid"></view><view class="can"></view></view>
         <text class="ctx-menu__text">删除流水</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- ═══ COSTRA-4xx: 资产修改面板（拉起系统数字键盘 · 参考 recedit 视觉） ═══ -->
+  <view class="edit-amount-panel {{editAssetVisible ? 'is-visible' : ''}}">
+    <view class="edit-amount-panel__mask" bindtap="onCloseEditAsset"></view>
+    <view class="keypad-sheet" style="padding-bottom: env(safe-area-inset-bottom, 0px);">
+      <view class="quickedit-nav">
+        <text class="quickedit-nav__btn" bindtap="onCloseEditAsset">取消</text>
+        <text class="quickedit-nav__title">修改资产</text>
+        <text class="quickedit-nav__btn quickedit-nav__btn--primary" bindtap="onConfirmEditAssetInput">保存</text>
+      </view>
+      <view class="quickedit-amount">
+        <text class="quickedit-amount__prefix">¥</text>
+        <input
+          class="quickedit-amount__input tnum"
+          type="digit"
+          value="{{editAssetDisplay}}"
+          focus="{{editAssetVisible}}"
+          bindinput="onEditAssetInput"
+          bindconfirm="onConfirmEditAssetInput"
+          maxlength="14"
+          placeholder="0"
+        />
+      </view>
+      <view class="quickedit-hint">
+        <text>修改后仅之后的流水会继续叠加到资产上</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- ═══ COSTRA-4xx: 预算修改面板（拉起系统数字键盘 · 参考 recedit 视觉） ═══ -->
+  <view class="edit-amount-panel {{editBudgetVisible ? 'is-visible' : ''}}">
+    <view class="edit-amount-panel__mask" bindtap="onCloseEditBudget"></view>
+    <view class="keypad-sheet" style="padding-bottom: env(safe-area-inset-bottom, 0px);">
+      <view class="quickedit-nav">
+        <text class="quickedit-nav__btn" bindtap="onCloseEditBudget">取消</text>
+        <text class="quickedit-nav__title">设置当月预算</text>
+        <text class="quickedit-nav__btn quickedit-nav__btn--primary" bindtap="onConfirmEditBudgetInput">保存</text>
+      </view>
+      <view class="quickedit-amount">
+        <text class="quickedit-amount__prefix">¥</text>
+        <input
+          class="quickedit-amount__input tnum"
+          type="digit"
+          value="{{editBudgetDisplay}}"
+          focus="{{editBudgetVisible}}"
+          bindinput="onEditBudgetInput"
+          bindconfirm="onConfirmEditBudgetInput"
+          maxlength="14"
+          placeholder="0"
+        />
+      </view>
+      <view class="quickedit-hint">
+        <text>设置当月预算上限</text>
       </view>
     </view>
   </view>

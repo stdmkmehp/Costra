@@ -1,0 +1,147 @@
+// services/ledgerBalanceApi.ts · 账本资产 API + 本地缓存
+// 卡号：COSTRA-4xx · 事实源：docs/design/asset-and-budget-spec.md §5
+//
+// 职责：
+//   - rebaseLedgerBalance：修改资产 → PATCH /ledgers/:id/balance
+//   - sync-pull 接收 ledger 增量时调 applyLedgerBalanceFromSync 更新本地缓存
+//   - getCachedLedgerBalance*：本地读取（内存 + storage）
+//
+// 缓存策略：
+//   - 内存缓存 + storage 持久化（key: `ledger_balance:${ledger_id}`）
+//   - sync-pull / login-bootstrap 自动写入
+//   - 明细页读时优先命中内存，无则降级到 storage
+//
+// 客户端不本地累加资产（服务端权威）；
+// 修改资产时乐观锁失败 → 抛冲突让 UI 弹冲突弹窗（不静默覆盖敏感字段）。
+//
+// 注意：本服务不主动发起 GET /ledgers/:id（服务端没暴露这个端点）；
+// 资产的更新完全依赖 sync-pull 的 ledgers[] 增量下发。
+
+import { request, ApiError } from './request';
+import { getItem, setItem } from './storage';
+import { logger } from '../utils/logger';
+
+export interface LedgerBalance {
+  ledger_id: string;
+  balance_cents: number;
+  balance_baseline_seq: number;
+  balance_version: number;
+  /** 客户端拉取/同步时间戳 · 用于判断缓存新鲜度 */
+  fetched_at: number;
+}
+
+const MEMORY_CACHE = new Map<string, LedgerBalance>();
+const TTL_MS = 5 * 60 * 1000; // 5 分钟内的内存缓存视为新鲜
+
+function cacheKey(ledgerId: string): string {
+  return `ledger_balance:${ledgerId}`;
+}
+
+/**
+ * 从内存读取资产缓存（不发起网络请求）。
+ * 用于明细页快速渲染。
+ */
+export function getCachedLedgerBalance(ledgerId: string): LedgerBalance | null {
+  return MEMORY_CACHE.get(ledgerId) ?? null;
+}
+
+/**
+ * 从 storage 读取资产缓存（冷启动后内存尚未预热时用）。
+ */
+export async function getCachedLedgerBalanceFromStorage(ledgerId: string): Promise<LedgerBalance | null> {
+  const cached = MEMORY_CACHE.get(ledgerId);
+  if (cached) return cached;
+  const stored = await getItem<LedgerBalance>(cacheKey(ledgerId));
+  if (stored) {
+    MEMORY_CACHE.set(ledgerId, stored);
+    return stored;
+  }
+  return null;
+}
+
+/**
+ * 修改账本资产（重锚）。
+ *
+ * 失败处理：
+ *   - 409 VERSION_CONFLICT：抛出 ApiError(status=409)，UI 据此弹冲突弹窗
+ *   - 其他错误：直接 throw（UI 走通用错误处理）
+ */
+export async function rebaseLedgerBalance(
+  ledgerId: string,
+  newBalanceCents: number,
+  clientBaseVersion: number,
+): Promise<LedgerBalance> {
+  const resp = await request<{
+    balance_cents: number;
+    balance_baseline_seq: number;
+    balance_version: number;
+  }>({
+    method: 'PATCH',
+    path: `/ledgers/${ledgerId}/balance`,
+    body: {
+      balance_cents: newBalanceCents,
+      balance_version: clientBaseVersion,
+    },
+  });
+
+  const balance: LedgerBalance = {
+    ledger_id: ledgerId,
+    balance_cents: resp.balance_cents,
+    balance_baseline_seq: resp.balance_baseline_seq,
+    balance_version: resp.balance_version,
+    fetched_at: Date.now(),
+  };
+  await applyLedgerBalance(balance);
+  return balance;
+}
+
+/**
+ * 把服务端 sync-pull 下发的 ledger 增量数据写入本地缓存。
+ *
+ * 调用方：services/sync.ts 在 applyServerChanges 之后调用
+ *   for (const wireLedger of changes.ledgers || []) { applyLedgerBalanceFromSync(wireLedger); }
+ */
+export async function applyLedgerBalanceFromSync(wire: {
+  id: string;
+  balance_cents?: number;
+  balance_baseline_seq?: number;
+  balance_version?: number;
+}): Promise<void> {
+  if (wire.balance_cents == null || wire.balance_baseline_seq == null || wire.balance_version == null) {
+    return; // 旧版 ledger 增量可能不含 balance 字段
+  }
+  const balance: LedgerBalance = {
+    ledger_id: wire.id,
+    balance_cents: wire.balance_cents,
+    balance_baseline_seq: wire.balance_baseline_seq,
+    balance_version: wire.balance_version,
+    fetched_at: Date.now(),
+  };
+  await applyLedgerBalance(balance);
+}
+
+/**
+ * 内部统一写入：内存 + storage。
+ */
+async function applyLedgerBalance(balance: LedgerBalance): Promise<void> {
+  MEMORY_CACHE.set(balance.ledger_id, balance);
+  await setItem(cacheKey(balance.ledger_id), balance);
+}
+
+/**
+ * 清除缓存（logout 时调）。
+ */
+export function clearLedgerBalanceCache(): void {
+  MEMORY_CACHE.clear();
+}
+
+/**
+ * 判断缓存是否仍新鲜（TTL 内）。
+ */
+export function isCacheFresh(balance: LedgerBalance): boolean {
+  return Date.now() - balance.fetched_at < TTL_MS;
+}
+
+// 消除未使用 import 警告（logger 保留供后续扩展使用）
+void logger;
+

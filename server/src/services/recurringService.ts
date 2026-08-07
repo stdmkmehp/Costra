@@ -424,6 +424,60 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
     return `rec_${ruleId.replace(/-/g, '').slice(0, 8)}_${dayLocal}`;
   }
 
+  /**
+   * 当从 `now` 重算 next_run_at 时，判断当前时刻是否已进入或超过 bucket 窗口起点。
+   *
+   * 产品规格 §4.4：如果当前时刻已进入 bucket 窗口（now >= window.startHour），
+   * 且算出的 nextRunAt 落在今天（说明今天恰好是匹配日），则应跳过今天，
+   * 从今天窗口结束时刻重算，确保今天不触发。
+   *
+   * 这样保证用户在修改 / 启用规则时就能确定今天会不会触发，不依赖 hash 随机落点。
+   *
+   * 与 create 路径中 inline 逻辑等价，提取为公共函数供 update / resume 共用。
+   *
+   * @param forCompute  规则计算字段
+   * @param nextRunAt   初步算出的下次执行时点
+   * @param now         当前时刻
+   * @param bucket      bucket 类型
+   * @param timezone    规则时区
+   * @returns           可能修正后的 nextRunAt
+   */
+  function applyBucketWindowSkip(
+    forCompute: RecurringRuleForCompute,
+    nextRunAt: Date,
+    now: Date,
+    bucket: ExecuteBucket,
+    timezone: string,
+  ): Date {
+    const nowZ = DateTime.fromJSDate(now, { zone: timezone });
+    const nextZ = DateTime.fromJSDate(nextRunAt, { zone: timezone });
+    // 仅当 nextRunAt 落在今天且 > now 时才需要检查窗口
+    if (!nextZ.hasSame(nowZ, 'day') || nextRunAt <= now) {
+      return nextRunAt;
+    }
+    const window = BUCKET_WINDOWS[bucket];
+    const windowStartToday = nowZ.set({
+      hour: window.startHour,
+      minute: 0,
+      second: 0,
+      millisecond: 0,
+    });
+    if (nowZ >= windowStartToday) {
+      // 当前时刻已进入或超过 bucket 窗口起点 → 跳过今天。
+      // from 设为今天窗口结束时刻，确保 hash 落点必然 < from，
+      // computeNextRunAt 内部 cursor 推进到今天 hash 落点时 cursor <= from →
+      // 推进到下一天，从而保证今天不触发，与 hash 落点无关。
+      const windowEndToday = nowZ.set({
+        hour: window.endHour,
+        minute: 0,
+        second: 0,
+        millisecond: 0,
+      });
+      return computeNextRunAt(forCompute, windowEndToday.toJSDate());
+    }
+    return nextRunAt;
+  }
+
   // ------------ CRUD ------------
 
   async function create(
@@ -482,22 +536,13 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
     const startDateZ = DateTime.fromISO(payload.start_date, { zone: timezone }).startOf('day');
     const isStartToday = nowZ.hasSame(startDateZ, 'day');
     if (isStartToday && nextRunAt > now) {
-      // nextRunAt 在未来 → 还需要确认它是否落在今天的 bucket 窗口内且窗口已开始
-      const window = BUCKET_WINDOWS[payload.execute_bucket];
-      // bucket 窗口起点（今天 window.startHour:00 in tz）
-      const windowStartToday = nowZ.set({ hour: window.startHour, minute: 0, second: 0, millisecond: 0 });
-      if (nowZ >= windowStartToday) {
-        // 当前时刻已进入或超过 bucket 窗口起点 → 跳过今天。
-        // from 设为今天窗口结束时刻（endHour:00 in tz），确保 hash 落点
-        // （严格在 [startHour*60+30, endHour*60-30) 内）必然 < from，
-        // computeNextRunAt 内部 cursor 推进到今天 hash 落点时 cursor <= from →
-        // 推进到下一天，从而保证今天不触发，与 hash 落点无关。
-        const windowEndToday = nowZ.set({ hour: window.endHour, minute: 0, second: 0, millisecond: 0 });
-        nextRunAt = computeNextRunAt(forCompute, windowEndToday.toJSDate());
-      }
+      nextRunAt = applyBucketWindowSkip(forCompute, nextRunAt, now, payload.execute_bucket, timezone);
     } else if (nextRunAt <= now) {
       // nextRunAt 已过 → 从当前时刻重算下一个匹配日
+      // ⚠️ start_date 在过去的场景：从 now 重算也可能落在今天的 bucket 窗口内，
+      //    同样需要跳过今天的保护。
       nextRunAt = computeNextRunAt(forCompute, now);
+      nextRunAt = applyBucketWindowSkip(forCompute, nextRunAt, now, payload.execute_bucket, timezone);
     }
 
     // 检查 end_date 边界：若 next_run_at 已超 end_date 闭区间 → 直接置 'ended'
@@ -655,8 +700,15 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
       const startMs = DateTime.fromISO(newStartDate, { zone: newTimezone })
         .startOf('day')
         .toMillis();
-      const from = startMs > nowMs ? new Date(startMs - 60_000) : now;
+      const fromStartIsFuture = startMs > nowMs;
+      const from = fromStartIsFuture ? new Date(startMs - 60_000) : now;
       nextRunAt = computeNextRunAt(forCompute, from);
+      // 若 start_date 在未来，nextRunAt 必然也在未来，无需 bucket 窗口保护。
+      // 若从 now 起算，需要检查当前是否已进入 bucket 窗口 → 跳过今天。
+      if (!fromStartIsFuture) {
+        const newBucket = payload.execute_bucket ?? existing.executeBucket;
+        nextRunAt = applyBucketWindowSkip(forCompute, nextRunAt, now, newBucket, newTimezone);
+      }
     }
 
     const input: UpdateRecurringRuleInput = {};
@@ -747,7 +799,9 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
     // resume 时重算 next_run_at（从当前时刻起算 · 不补跑历史）
     const forCompute = toComputeShape(existing);
     const now = new Date();
-    const nextRunAt = computeNextRunAt(forCompute, now);
+    let nextRunAt = computeNextRunAt(forCompute, now);
+    // 与 create / update 路径一致：当前已进入 bucket 窗口 → 跳过今天
+    nextRunAt = applyBucketWindowSkip(forCompute, nextRunAt, now, existing.executeBucket, existing.timezone);
 
     // 若已过 end_date → 拒绝（ended 规则同样适用）
     if (existing.endDate != null) {

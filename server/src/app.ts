@@ -37,6 +37,8 @@ import { registerUploadRoutes } from './routes/upload.js';
 import { registerAnnouncementsRoutes } from './routes/announcements.js';
 import { registerRecurringRoutes } from './routes/recurring.js';
 import { registerWorkdayCalendarRoutes } from './routes/workdayCalendar.js';
+import { registerLedgersRoutes } from './routes/ledgers.js';
+import { registerBudgetsRoutes } from './routes/budgets.js';
 import { createRecurringService } from './services/recurringService.js';
 import { createEntryService } from './services/entryService.js';
 import { createScheduler, type RecurringScheduler } from './services/recurringScheduler.js';
@@ -121,6 +123,8 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
     await registerAnnouncementsRoutes(v1);
     await registerRecurringRoutes(v1, { service: recurringService });
     await registerWorkdayCalendarRoutes(v1);
+    await registerLedgersRoutes(v1);
+    await registerBudgetsRoutes(v1);
   }, { prefix: '/v1' });
 
   return app;

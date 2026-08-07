@@ -763,6 +763,71 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Ledger' }
 
+  /ledgers/{ledger_id}/balance:
+    patch:
+      tags: [ledgers]
+      summary: 修改账本资产（重锚）
+      description: |
+        用户修改账本资产值。服务端会：
+        1) 把 balance_cents 设为传入值
+        2) 把 balance_baseline_seq 推进到当前 MAX(entries.change_seq)
+           → "重锚之前的所有流水都已消化，之后的新流水才继续叠加"
+
+        乐观锁：用 balance_version 判定冲突；失败返 409，客户端需重拉最新值后弹冲突弹窗。
+
+        敏感字段策略：不允许并发写入静默胜出（对齐 conflict-strategy.md §敏感字段策略）。
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - name: ledger_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [balance_cents, balance_version]
+              additionalProperties: false
+              properties:
+                balance_cents:
+                  type: integer
+                  format: int64
+                  description: 新的资产净值（分）· 允许负数
+                balance_version:
+                  type: integer
+                  minimum: 1
+                  description: 客户端持有的当前 balance_version（乐观锁）
+      responses:
+        '200':
+          description: 修改成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [balance_cents, balance_baseline_seq, balance_version]
+                properties:
+                  balance_cents: { type: integer, format: int64 }
+                  balance_baseline_seq: { type: integer, format: int64 }
+                  balance_version: { type: integer }
+        '409':
+          description: 版本冲突 · 客户端需重拉最新值后弹冲突弹窗
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: object
+                    properties:
+                      code: { type: string, example: VERSION_CONFLICT }
+                      details:
+                        type: object
+                        properties:
+                          current_balance_version: { type: integer }
+                          current_balance_cents: { type: integer, format: int64 }
+
   # ============ categories ============
   /categories:
     get:
@@ -916,39 +981,64 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
 
   # ============ budgets ============
+  # COSTRA-4xx · v2：删除/重建旧 budgets 表后契约更新为月度总预算
   /budgets:
     get:
       tags: [budgets]
-      summary: 预算列表
+      summary: 获取月度预算
+      description: |
+        返回指定 (ledger_id, month) 的预算信息：
+          - amount_cents：用户设定的上限
+          - spent_cents：服务端聚合的当月 expense 总和
+          - remain_cents：amount_cents - spent_cents（可为负）
+
+        未设置预算时返 404，客户端据此展示"预算 未设置"。
       parameters:
         - name: ledger_id
           in: query
           required: true
           schema: { type: string, format: uuid }
+        - name: month
+          in: query
+          required: true
+          schema: { type: string, pattern: '^\d{4}-\d{2}$' }
       responses:
         '200':
           description: OK
           content:
             application/json:
-              schema:
-                type: array
-                items: { $ref: '#/components/schemas/Budget' }
-    post:
+              schema: { $ref: '#/components/schemas/Budget' }
+        '404':
+          description: 未设置预算
+          content:
+            application/json:
+              schema: { $ref: '#/components/responses/NotFound' }
+    put:
       tags: [budgets]
-      summary: 创建预算
+      summary: 创建或修改月度预算
+      description: |
+        - 不传 version：创建预算（若已存在 → 转 update 走 latest）
+        - 传 version：修改已存在的预算（乐观锁 · 失败返 409）
+
+        幂等：客户端 outbox 重放时保证同 (ledger_id, month) 不会重复创建。
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/BudgetCreate' }
+            schema: { $ref: '#/components/schemas/BudgetUpsert' }
       responses:
-        '201':
-          description: 创建成功
+        '200':
+          description: 创建或修改成功
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Budget' }
+        '409':
+          description: 版本冲突 · 客户端需重拉 version 后重试
+          content:
+            application/json:
+              schema: { $ref: '#/components/responses/Conflict' }
 
   # ============ sync ============
   /sync/pull:
@@ -1831,7 +1921,7 @@ components:
 
     Ledger:
       type: object
-      required: [id, family_id, name, currency, created_at, version]
+      required: [id, family_id, name, currency, created_at, version, balance_cents, balance_baseline_seq, balance_version]
       properties:
         id: { type: string, format: uuid }
         family_id: { type: string, format: uuid }
@@ -1840,6 +1930,21 @@ components:
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
         version: { type: integer }
+        # COSTRA-4xx · 资产字段（migration 0012）
+        balance_cents:
+          type: integer
+          format: int64
+          description: 账本资产净值（分）· 用户可修改 · entries 变化时服务端自动累加
+        balance_baseline_seq:
+          type: integer
+          format: int64
+          description: |
+            资产累加基线（entries.change_seq）。
+            仅 change_seq > baseline_seq 的流水才叠加到 balance_cents。
+            用户重锚资产后置为当时的 MAX(entries.change_seq)。
+        balance_version:
+          type: integer
+          description: 资产独立乐观锁版本（独立于 ledgers.version，避免与账本名修改互相 conflict）
 
     # ---- accounts ----
     # COSTRA-020 Round-2 P0-1：对齐 DB schema §3.4 accounts 表
@@ -2118,35 +2223,38 @@ components:
 
     Budget:
       type: object
-      required: [id, ledger_id, period, amount, currency, used, created_at, version]
+      required: [id, ledger_id, month, amount_cents, spent_cents, remain_cents, currency, version]
+      description: |
+        月度总预算（v2 · COSTRA-4xx）。
+        仅 (ledger_id, month) 维度，不做分类预算。
+        amount_cents = 用户设定上限；spent_cents = 服务端聚合的当月支出；
+        remain_cents = amount_cents - spent_cents（可为负 = 超支）。
       properties:
         id: { type: string, format: uuid }
         ledger_id: { type: string, format: uuid }
-        category_id: { type: string, format: uuid, nullable: true, description: null 表示总预算 }
-        period: { type: string, enum: [monthly], description: MVP 仅支持月度 }
         month: { type: string, pattern: '^\d{4}-\d{2}$' }
-        amount: { type: integer, format: int64 }
-        used: { type: integer, format: int64, description: 服务端聚合的已用金额（分） }
+        amount_cents: { type: integer, format: int64, description: 预算上限（分） }
+        spent_cents: { type: integer, format: int64, description: 当月已支出（分）· 服务端聚合 }
+        remain_cents: { type: integer, format: int64, description: 剩余预算（分）· 可为负 }
         currency: { type: string, example: CNY }
-        alert_threshold:
-          type: integer
-          minimum: 50
-          maximum: 100
-          default: 80
-          description: 百分比，触达后推送订阅消息
-        created_at: { type: string, format: date-time }
-        updated_at: { type: string, format: date-time }
         version: { type: integer }
 
-    BudgetCreate:
+    BudgetUpsert:
       type: object
-      required: [ledger_id, month, amount]
+      required: [ledger_id, month, amount_cents]
       properties:
         ledger_id: { type: string, format: uuid }
-        category_id: { type: string, format: uuid }
         month: { type: string, pattern: '^\d{4}-\d{2}$' }
-        amount: { type: integer, format: int64, minimum: 1 }
-        alert_threshold: { type: integer, minimum: 50, maximum: 100 }
+        amount_cents: { type: integer, format: int64, minimum: 1, description: 预算上限（分） }
+        version:
+          type: integer
+          nullable: true
+          minimum: 1
+          description: |
+            可选 · 当前预算版本（乐观锁）。
+            - 首次设置：不传或 null，服务端创建
+            - 修改已存在的预算：传上次 GET 拿到的 version
+            - 不传但已存在：服务端用 latest version 做 base，仍走 update 路径
 
     SyncPullResponse:
       type: object

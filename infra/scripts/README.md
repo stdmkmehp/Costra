@@ -27,6 +27,7 @@ infra/scripts/
 ├── redeploy.sh                # ⭐ 安全重部署（备份镜像 + 构建 + migration +回滚）
 ├── backup-db.sh               # DB 定时备份（pg_dump + gzip · 被 maintenance.sh backup 委托）
 ├── import-holidays.sh         # 节假日 JSON → workday_calendars 表（--target prod|verify · 幂等 upsert）
+├── migrate-ledger-asset.sh    # 停服迁移 · 账本资产回填（--target prod|verify · --verify 仅校验 · 幂等）
 └── maintenance.sh             # ⭐ 运维定时任务统一入口（backup / purge-* / install-cron）
 ```
 
@@ -83,6 +84,37 @@ node scripts/fetch-holidays.mjs 2027
 | `--dry-run` | 只打印不执行 |
 | `-y` / `--yes` | 跳过 confirm（prod 慎用） |
 | 位置参数 `2027` | 指定年份（可多个 · 默认全部） |
+
+---
+
+## 停服迁移 · 账本资产回填（migrate-ledger-asset.sh · 一次性）
+
+> 部署 migration 0012（ledgers 新增 balance_cents / balance_baseline_seq / balance_version）后，在停服窗口把所有 ledgers 的 balance 回填为历史 entries 净值。详见 [`asset-and-budget-spec.md`](../../docs/design/asset-and-budget-spec.md) §6。
+
+```bash
+# 先在 verify 隔离库演练（默认 target=verify）
+./migrate-ledger-asset.sh
+./migrate-ledger-asset.sh --verify          # 仅校验不回填
+
+# 对 prod 跑（高危 · 必 confirm + 建议先 backup-db.sh）
+./migrate-ledger-asset.sh --target prod
+./migrate-ledger-asset.sh --target prod --verify
+
+# 一路 yes（CI / 已确认场景）
+./migrate-ledger-asset.sh --target prod -y
+
+# 只看会跑什么
+./migrate-ledger-asset.sh --dry-run
+```
+
+| 参数 | 含义 |
+|---|---|
+| `--target prod\|verify` | 目标容器（默认 verify） |
+| `--verify` | 仅校验不回填（对比 balance_cents + baseline_seq 与 entries 净值） |
+| `--dry-run` | 只打印不执行 |
+| `-y` / `--yes` | 跳过 confirm（prod 慎用） |
+
+幂等：回填后 `balance_baseline_seq` 已是 `MAX(change_seq)`，重跑 delta=0 无影响。
 
 ---
 

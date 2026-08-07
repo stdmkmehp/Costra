@@ -50,6 +50,96 @@
   font-feature-settings: "tnum";
 }
 
+/* ---- COSTRA-4xx · 第 3 行：资产 + 预算 ---- */
+.header__asset-budget {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+  margin-top: 4rpx;
+}
+
+.header__asset,
+.header__budget {
+  display: flex;
+  align-items: baseline;
+  gap: 8rpx;
+}
+
+/* 资产/预算与上一行「收入/结余」使用同字号同色：28rpx / secondary，保持视觉一致 */
+.header__asset-label,
+.header__budget-label {
+  font-size: 28rpx;
+  color: var(--color-role-text-secondary, rgba(28,27,26,0.48));
+  line-height: 1.5;
+}
+
+.header__asset-value {
+  font-size: 28rpx;
+  color: var(--color-role-text-secondary, rgba(28,27,26,0.48));
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* ✎ 编辑图标：unicode 字符 ✎（U+270E）+ 水平翻转，
+   使笔尖朝左下、笔尾朝右上。资产/预算共用，暗示可点击修改。 */
+.header__edit-icon {
+  font-size: 24rpx;
+  line-height: 1;
+  margin-left: 4rpx;
+  transform: scaleX(-1);
+  display: inline-block;
+}
+.header__asset,
+.header__budget {
+  color: var(--color-role-text-secondary, rgba(28,27,26,0.48));
+}
+
+/* 预算剩余数值莫兰迪 4 段色阶 */
+.header__budget-remain {
+  font-size: 28rpx;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+.header__budget-remain.is-safe { color: #8AA689; }   /* 莫兰迪绿灰 · p ≥ 50% */
+.header__budget-remain.is-hint { color: #C4B58D; }   /* 莫兰迪米黄 · 20~50% */
+.header__budget-remain.is-warn { color: #C39A80; }   /* 莫兰迪陶土 · 0~20% */
+.header__budget-remain.is-over { color: #A87878; }    /* 莫兰迪暗玫瑰 · ≤ 0 */
+
+.header__budget-sep {
+  font-size: 28rpx;
+  color: var(--color-role-text-secondary, rgba(28,27,26,0.48));
+  margin: 0 2rpx;
+}
+.header__budget-total {
+  font-size: 28rpx;
+  color: var(--color-role-text-secondary, rgba(28,27,26,0.48));
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+.header__budget-unset {
+  font-size: 28rpx;
+  color: var(--color-role-text-secondary, rgba(28,27,26,0.48));
+  text-decoration: underline;
+  text-underline-offset: 4rpx;
+}
+
+/* 资产/预算编辑键盘的提示行（共用 .keypad-sheet 已有样式） */
+.keypad-sheet__hint {
+  text-align: center;
+  font-size: 24rpx;
+  color: var(--color-role-text-tertiary, rgba(28,27,26,0.28));
+  padding: 4rpx 0 16rpx;
+}
+
+/* 空白键位（资产/预算键盘行尾留白） */
+.keypad__key--placeholder {
+  background: transparent;
+  pointer-events: none;
+}
+
 /* ---- 时间导航 + 筛选行 ---- */
 .filter-row {
   position: relative;
@@ -455,7 +545,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 200rpx 48rpx 0;
+  padding: 96rpx 48rpx 0;
   gap: 16rpx;
 }
 
@@ -643,4 +733,66 @@
 
 /* 长按上下文菜单共享样式（与定时记账页共用同一套设计） */
 @import '../../styles/ctx-menu.wxss';
+
+/* ─── COSTRA-4xx: 资产/预算快速编辑面板（拉起系统数字键盘） ─── */
+/* 视觉参考 pages-recurring/edit 的金额输入区 · 顶部取消/标题/保存 三段式 */
+.quickedit-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20rpx 32rpx 16rpx;
+}
+.quickedit-nav__title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #1c1b1a;
+}
+.quickedit-nav__btn {
+  font-size: 28rpx;
+  color: rgba(28, 27, 26, 0.48);
+  padding: 8rpx 0;
+  min-width: 80rpx;
+  transition: opacity 120ms ease;
+}
+.quickedit-nav__btn:active {
+  opacity: 0.6;
+}
+.quickedit-nav__btn--primary {
+  color: #1c1b1a;
+  font-weight: 600;
+  text-align: right;
+}
+
+/* 金额输入区（与 recedit__amount-input 同视觉） */
+.quickedit-amount {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  padding: 24rpx 32rpx 16rpx;
+  min-height: 80rpx;
+}
+.quickedit-amount__prefix {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #1c1b1a;
+  margin-right: 8rpx;
+}
+.quickedit-amount__input {
+  flex: 1;
+  min-width: 0;
+  font-size: 48rpx;
+  font-weight: 600;
+  color: #1c1b1a;
+  text-align: left;
+  caret-color: #1c1b1a;
+  line-height: 1.2;
+  letter-spacing: -1rpx;
+}
+
+.quickedit-hint {
+  text-align: center;
+  font-size: 24rpx;
+  color: var(--color-role-text-tertiary, rgba(28, 27, 26, 0.28));
+  padding: 4rpx 32rpx 24rpx;
+}
 

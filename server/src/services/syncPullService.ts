@@ -26,6 +26,7 @@
 
 import { findEntriesByFamilySince, type PullEntryRow } from '../repositories/entryRepo.js';
 import { getPool } from '../db/pool.js';
+import * as ledgerRepo from '../repositories/ledgerRepo.js';
 import { AppError } from '../errors/AppError.js';
 import { ErrorCode } from '../errors/ErrorCode.js';
 
@@ -163,6 +164,11 @@ export async function syncPull(input: SyncPullInput): Promise<SyncPullResult> {
   // 4. 计算系统分类签名（spec §4）
   const categoriesRevision = await computeSystemCategoriesRevision();
 
+  // 5. COSTRA-4xx：下发该 family 下所有 active ledger 的最新状态（含 balance 字段）
+  //    1:1 语义下，一个 family 就一行 ledger，数据量可忽略，每次都全量下发
+  //    客户端据此更新本地缓存的 balance_cents / balance_baseline_seq / balance_version
+  const ledgers = await listLedgersForFamily(input.familyId);
+
   return {
     watermark,
     has_more: hasMore,
@@ -171,8 +177,44 @@ export async function syncPull(input: SyncPullInput): Promise<SyncPullResult> {
       entries: rows.map(entryToWire),
       categories: [],
       budgets: [],
-      ledgers: [],
+      ledgers,
     },
+  };
+}
+
+/**
+ * 拉取 family 下所有 active ledger（含 balance 字段），用于 sync-pull 下发。
+ * 1:1 语义下至多一行。
+ */
+async function listLedgersForFamily(familyId: string): Promise<LedgerWire[]> {
+  const ledger = await ledgerRepo.findFirstByFamilyId(familyId);
+  if (!ledger) return [];
+  return [ledgerToWire(ledger)];
+}
+
+interface LedgerWire {
+  id: string;
+  family_id: string;
+  name: string;
+  currency: string;
+  balance_cents: number;
+  balance_baseline_seq: number;
+  balance_version: number;
+  updated_at: string;
+  version: number;
+}
+
+function ledgerToWire(l: import('../repositories/ledgerRepo.js').LedgerEntity): LedgerWire {
+  return {
+    id: l.id,
+    family_id: l.familyId,
+    name: l.name,
+    currency: l.currency,
+    balance_cents: l.balanceCents,
+    balance_baseline_seq: l.balanceBaselineSeq,
+    balance_version: l.balanceVersion,
+    updated_at: l.updatedAt.toISOString(),
+    version: l.version,
   };
 }
 

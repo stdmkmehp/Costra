@@ -1,20 +1,30 @@
 /**
  * Costra · Server · 流水业务编排层
  *
- * 卡号：COSTRA-104 · 事实源：server/api/openapi.yaml §entries-create/list + sync-protocol.md §2
+ * 卡号：COSTRA-104 / COSTRA-4xx · 事实源：server/api/openapi.yaml §entries-create/list + sync-protocol.md §2
  *
  * 职责：
  *   - createWithIdempotency：写 entries + 防重（ledger_id+client_ref_id UNIQUE 约束）
+ *     + 同事务累加 ledgers.balance_cents（COSTRA-4xx 资产）
  *   - updateWithVersion：乐观锁 update（WHERE version = baseVersion）
- *   - softDelete：软删 + 乐观锁
+ *     + 同事务回退旧贡献 + 叠加新贡献（资产重锚谓词双重判定）
+ *   - softDelete：软删 + 乐观锁 + 资产旧贡献回退
  *   - list：游标分页（updated_at DESC, id DESC 复合 cursor）
  *   - findById：含 ledger/权限校验
+ *
+ * 资产累加规则（COSTRA-4xx · 见 asset-and-budget-spec.md §4）：
+ *   - income  → balance += amount
+ *   - expense → balance -= amount
+ *   - transfer → balance 不变（delta = 0，跳过 UPDATE）
+ *   - 幂等谓词：仅当 new_change_seq > balance_baseline_seq 才叠加
+ *   - update/softDelete 时先 FOR UPDATE 读旧 seq，再用 old_seq / new_seq 独立判
  *
  * 依赖注入：所有依赖通过工厂函数 createEntryService(deps) 注入。
  */
 
 import { AppError } from '../errors/AppError.js';
 import { ErrorCode } from '../errors/ErrorCode.js';
+import { withTx } from '../db/pool.js';
 import * as entryRepo from '../repositories/entryRepo.js';
 import type { EntryEntity } from '../repositories/entryRepo.js';
 import * as ledgerRepo from '../repositories/ledgerRepo.js';
@@ -49,6 +59,9 @@ export interface CreateEntryOpts {
   /**
    * 事务运行时 client · 若传入，findByLedgerAndClientRefId 与 insertEntry 都在此事务内。
    * 用于定时调度器把 rule 水位更新与 entry insert 串在同一事务，避免 crash 半态。
+   *
+   * ⚠️ COSTRA-4xx：若传入，资产累加也必须复用此 client（同事务保证一致性）；
+   *   若不传，service 内部用 withTx 开新事务。
    */
   client?: import('pg').PoolClient;
 }
@@ -172,6 +185,22 @@ function validateCreatePayload(p: CreateEntryPayload): void {
   }
 }
 
+// --- 资产 delta 辅助函数（COSTRA-4xx）---
+
+/**
+ * 根据流水类型与金额，算出对资产的 delta（单位分）。
+ *   income  → +amount
+ *   expense → -amount
+ *   transfer → 0
+ */
+function computeBalanceDelta(type: 'income' | 'expense' | 'transfer', amount: number): number {
+  switch (type) {
+    case 'income': return amount;
+    case 'expense': return -amount;
+    case 'transfer': return 0;
+  }
+}
+
 // --- 工厂函数 ---
 
 export function createEntryService(deps: EntryServiceDeps = {}): EntryService {
@@ -255,6 +284,16 @@ export function createEntryService(deps: EntryServiceDeps = {}): EntryService {
     return { categoryId: fallback ?? null };
   }
 
+  /**
+   * createWithIdempotency：
+   *   1) 防重 check（client_ref_id）
+   *   2) resolveSharedType + resolveCategory
+   *   3) 事务内：INSERT entries + UPDATE ledgers.balance_cents（delta + 幂等谓词）
+   *
+   * 事务策略：
+   *   - opts.client 存在 → 复用 caller 事务（recurring scheduler 路径）
+   *   - 否则 → service 内部 withTx 开新事务
+   */
   async function createWithIdempotency(
     userId: string,
     payload: CreateEntryPayload,
@@ -263,7 +302,7 @@ export function createEntryService(deps: EntryServiceDeps = {}): EntryService {
   ): Promise<EntryResult> {
     validateCreatePayload(payload);
 
-  // 事务 client 由 caller（如定时调度器）注入；未传则走全局 pool（默认路径）。
+    // 事务 client 由 caller（如定时调度器）注入；未传则走全局 pool（默认路径）。
     // 关键：findByLedgerAndClientRefId 与 insertEntry 走同一 client，
     // 保证 recurring tick 内 entry insert 与 rule 水位更新在同一事务下要么全成功要么全回滚。
     const txClient = opts?.client;
@@ -271,12 +310,12 @@ export function createEntryService(deps: EntryServiceDeps = {}): EntryService {
     // 防重：若 client_ref_id 存在，先查 ledger_id+client_ref_id 是否已有
     if (clientRefId) {
       const existing = await entryRepo.findByLedgerAndClientRefId(
- payload.ledger_id,
+        payload.ledger_id,
         clientRefId,
         txClient as unknown as Parameters<typeof entryRepo.findByLedgerAndClientRefId>[2],
       );
       if (existing) {
-    return { status: 'conflict', serverVersion: existing.version };
+        return { status: 'conflict', serverVersion: existing.version };
       }
     }
 
@@ -303,25 +342,47 @@ export function createEntryService(deps: EntryServiceDeps = {}): EntryService {
       return { status: 'rejected', error: resolvedCategory.error };
     }
 
+    // ─── 事务包装（COSTRA-4xx）────────────────────────────────────────
+    // 若 caller 注入 txClient，复用之；否则在本 service 内开新事务。
+    // 关键：INSERT entries + UPDATE ledgers.balance_cents 必须在同一事务，
+    //       保证"流水成功 ↔ 资产累加成功"原子性。
+    const runInTx = async <T>(fn: (client: import('pg').PoolClient) => Promise<T>): Promise<T> => {
+      if (txClient) return fn(txClient);
+      return withTx(fn);
+    };
+
     try {
-    const entry = await entryRepo.insertEntry(
-      {
-          ledgerId: payload.ledger_id,
-          amount: payload.amount,
-   currency: payload.currency,
-          type: payload.type,
-          categoryId: resolvedCategory.categoryId,
-          accountId: payload.account_id,
-     toAccountId: payload.to_account_id,
-          note: payload.note,
-  occurredAt: payload.occurred_at,
-          createdBy: userId,
-    clientRefId: clientRefId ?? null,
-     sharedType, // COSTRA-217 B2 + R1.x 默认规则
-   sourceRecurringId: opts?.sourceRecurringId ?? null, // T2
-     },
-    txClient as unknown as Parameters<typeof entryRepo.insertEntry>[1],
-      );
+      const entry = await runInTx(async (client) => {
+        const inserted = await entryRepo.insertEntry(
+          {
+            ledgerId: payload.ledger_id,
+            amount: payload.amount,
+            currency: payload.currency,
+            type: payload.type,
+            categoryId: resolvedCategory.categoryId,
+            accountId: payload.account_id,
+            toAccountId: payload.to_account_id,
+            note: payload.note,
+            occurredAt: payload.occurred_at,
+            createdBy: userId,
+            clientRefId: clientRefId ?? null,
+            sharedType, // COSTRA-217 B2 + R1.x 默认规则
+            sourceRecurringId: opts?.sourceRecurringId ?? null, // T2
+          },
+          client as unknown as Parameters<typeof entryRepo.insertEntry>[1],
+        );
+
+        // COSTRA-4xx：同事务累加 ledgers.balance_cents
+        // delta = income: +amount / expense: -amount / transfer: 0
+        // 幂等谓词：newSeq > balance_baseline_seq
+        const delta = computeBalanceDelta(payload.type, payload.amount);
+        await ledgerRepo.applyBalanceDelta(
+          { ledgerId: payload.ledger_id, delta, newSeq: inserted.changeSeq },
+          client as unknown as Parameters<typeof ledgerRepo.applyBalanceDelta>[1],
+        );
+
+        return inserted;
+      });
       return { status: 'ok', serverId: entry.id, serverVersion: entry.version };
     } catch (err: unknown) {
       const msg = (err as { message?: string }).message ?? '';
@@ -367,7 +428,59 @@ export function createEntryService(deps: EntryServiceDeps = {}): EntryService {
     if (payload.occurred_at !== undefined) repoInput.occurredAt = payload.occurred_at;
     if (payload.shared_type !== undefined) repoInput.sharedType = payload.shared_type; // COSTRA-217 B2
 
-    const updated = await entryRepo.updateEntryByVersion(entryId, repoInput, baseVersion);
+    // ─── 事务包装（COSTRA-4xx · spec §4.2 update 分支）────────────────
+    // 事务内：
+    //   1) SELECT FOR UPDATE entries → 拿到 old_amount / old_type / old_seq（entries 行锁）
+    //   2) UPDATE entries（乐观锁 WHERE version=baseVersion）→ 拿到 new_seq
+    //   3) UPDATE ledgers.balance_cents：单条 SQL 双 delta swap
+    //      - 旧贡献回退：仅当 old_seq > baseline
+    //      - 新贡献叠加：仅当 new_seq > baseline
+    //      - 单次 UPDATE 保证 balance_version 只 +1（一次业务动作 = 一次版本推进）
+    const updated = await withTx(async (client) => {
+      // 1) 事务内 FOR UPDATE 读旧值（entries 行锁 · spec §4.2 明文要求）
+      //    防御 sync-push 批处理 / 定时补偿等未来路径绕过 entries.version 乐观锁时读到脏 old 值
+      const locked = await entryRepo.findByIdForUpdate(
+        entryId,
+        client as unknown as Parameters<typeof entryRepo.findByIdForUpdate>[1],
+      );
+      if (!locked) return null;
+      const oldAmount = locked.amount;
+      const oldType = locked.type;
+      const oldSeq = locked.changeSeq;
+
+      // 2) UPDATE entries（乐观锁 · 拿到 newSeq / 新 amount / 新 type）
+      const result = await entryRepo.updateEntryByVersion(
+        entryId,
+        repoInput,
+        baseVersion,
+        client as unknown as Parameters<typeof entryRepo.updateEntryByVersion>[3],
+      );
+      if (!result) return null;
+
+      const newAmount = result.amount;
+      const newType = result.type;
+      const newSeq = result.changeSeq;
+
+      // 3) 双 delta 独立判· 单条 UPDATE（applyBalanceSwap 内部含 short-circuit）
+      //   oldDelta = "原来这条流水对资产的贡献"（要回退，传 swap 后转-oldDelta）
+      //   newDelta = "新流水对资产的贡献"（要叠加）
+      const oldDelta = computeBalanceDelta(oldType, oldAmount);
+      const newDelta = computeBalanceDelta(newType, newAmount);
+
+      await ledgerRepo.applyBalanceSwap(
+        {
+          ledgerId: result.ledgerId,
+          oldDelta,
+          newDelta,
+          oldSeq,
+          newSeq,
+        },
+        client as unknown as Parameters<typeof ledgerRepo.applyBalanceSwap>[1],
+      );
+
+      return result;
+    });
+
     if (!updated) {
       const current = await entryRepo.findById(entryId);
       return { status: 'conflict', serverVersion: current?.version ?? 0 };
@@ -376,8 +489,47 @@ export function createEntryService(deps: EntryServiceDeps = {}): EntryService {
   }
 
   async function softDelete(userId: string, entryId: string, baseVersion: number): Promise<EntryResult> {
+    // 先做权限校验（读entry + JOIN family_members · 只做守门，不读 old值）
     await findById(userId, entryId);
-    const deleted = await entryRepo.softDeleteEntry(entryId, baseVersion);
+
+    // ─── 事务包装（COSTRA-4xx · spec §4.2 softDelete 分支）───────────
+    // 事务内：
+    //   1) SELECT FOR UPDATE entries →拿 old_amount / old_type / old_seq（行锁）
+    //   2) UPDATE entries SET deleted_at + 乐观锁 → 拿到 newSeq
+    //   3) UPDATE ledgers.balance_cents：旧贡献回退
+    //      - 仅当 old_seq > baseline 才回退（防止回退已重锚前的老流水）
+    const deleted = await withTx(async (client) => {
+      // 1) 事务内 FOR UPDATE 读旧值（spec §4.2 明文要求）
+      const locked = await entryRepo.findByIdForUpdate(
+        entryId,
+        client as unknown as Parameters<typeof entryRepo.findByIdForUpdate>[1],
+      );
+      if (!locked) return null;
+      const oldAmount = locked.amount;
+      const oldType = locked.type;
+      const oldSeq = locked.changeSeq;
+
+      // 2) softDelete（乐观锁 ·拿新 changeSeq）
+      const result = await entryRepo.softDeleteEntry(
+        entryId,
+        baseVersion,
+        client as unknown as Parameters<typeof entryRepo.softDeleteEntry>[2],
+      );
+      if (!result) return null;
+
+      // 3) 旧贡献回退 · 新贡献=0（deletion）
+      const oldDelta = computeBalanceDelta(oldType, oldAmount);
+      if (oldDelta === 0) return result; // transfer 类无影响
+
+      // 仅当 old_seq > baseline 时才回退（复用 applyBalanceDelta 单谓词，语义正确）
+      await ledgerRepo.applyBalanceDelta(
+        { ledgerId: result.ledgerId, delta: -oldDelta, newSeq: oldSeq },
+        client as unknown as Parameters<typeof ledgerRepo.applyBalanceDelta>[1],
+      );
+
+      return result;
+    });
+
     if (!deleted) {
       const current = await entryRepo.findById(entryId);
       return { status: 'conflict', serverVersion: current?.version ?? 0 };

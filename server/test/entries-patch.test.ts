@@ -120,7 +120,7 @@ describe('PATCH /entries/{entry_id}', () => {
 
   it('T4 update 成功 200 + version 递增', async () => {
     const res = await app.inject({
-      method: 'PATCH',
+      method:'PATCH',
       url: `/v1/entries/${entryId}`,
       headers: authHeader(),
       payload: { version: 1, amount: 2000, note: 'updated note' },

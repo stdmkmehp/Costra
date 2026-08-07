@@ -450,6 +450,34 @@ export async function findById(entryId: string, userIdOrClient?: string | Runner
 }
 
 /**
+ * 事务内 SELECT ... FOR UPDATE 读取 entry（COSTRA-4xx · spec §4.2）
+ *
+ * 用途：update/softDelete 分支在推进 change_seq 之前，需要拿到旧值（amount/type/change_seq）
+ *并锁住行，防止 sync-push 批处理/定时补偿等未来路径绕过entries.version 乐观锁
+ *      时读到脏 old 值。
+ *
+ *⚠️ 必须在事务内调用（传 PoolClient）；否则 FOR UPDATE 在自动提交模式下无意义。
+ *
+ *不 JOIN family_members（不做权限校验）· 权限守门由 caller 在事务外用 findById(userId, entryId) 完成。
+ */
+export async function findByIdForUpdate(
+  entryId: string,
+  client: Runner,
+): Promise<EntryEntity | null> {
+  const res = await client.query(
+    `SELECT id, ledger_id, amount, currency, type, category_id,
+            account_id, to_account_id, note, occurred_at,
+            created_by, created_at, updated_at, deleted_at, version, client_ref_id, change_seq, shared_type, source_recurring_id
+       FROM entries
+      WHERE id = $1 AND deleted_at IS NULL
+      LIMIT 1
+      FOR UPDATE`,
+    [entryId],
+  );
+  return res.rows[0] ? rowToEntity(res.rows[0]) : null;
+}
+
+/**
  * 按 ledger_id + client_ref_id 查重（用于 sync/push 去重）。
  */
 export async function findByLedgerAndClientRefId(ledgerId: string, clientRefId: string, client?: Runner): Promise<EntryEntity | null> {

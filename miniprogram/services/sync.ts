@@ -14,6 +14,7 @@ import {
   refreshCategories,
   warmUpMemoryCache,
 } from './categoryService';
+import { applyLedgerBalanceFromSync } from './ledgerBalanceApi';
 
 export type Entity = 'entry' | 'category' | 'budget';
 
@@ -83,6 +84,12 @@ export async function syncPull(
     logger.debug('sync:pull', `received · watermark=${resp.watermark} entries=${entryCount} categories=${catCount} has_more=${resp.has_more}`);
     if (resp.changes) {
       await applyServerChanges(resp.changes);
+      // COSTRA-4xx：把 sync-pull 下发的 ledgers[] 增量写入 ledgerBalanceApi 缓存
+      if (resp.changes.ledgers && resp.changes.ledgers.length > 0) {
+        for (const wire of resp.changes.ledgers) {
+          await applyLedgerBalanceFromSync(wire as { id: string; balance_cents?: number; balance_baseline_seq?: number; balance_version?: number });
+        }
+      }
     }
     await setWatermark(familyId, resp.watermark);
     // migration 0004: 检查分类签名是否变化，触发强刷（fire-and-forget）

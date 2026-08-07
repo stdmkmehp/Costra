@@ -4,7 +4,7 @@
 // 金额 ADR-0002: 全部走 decimal.js（utils/money.ts）
 
 import Decimal from '../../utils/vendor/decimal';
-import { toYuan, parseClipboardToAmount } from '../../utils/money';
+import { toYuan, parseAmountInputToCents as parseYuanToCents, parseClipboardToAmount } from '../../utils/money';
 import { getSafeAreaMetrics, rpxToPx } from '../../utils/safeArea';
 import { listMonthEntries, deleteEntry, updateEntryFields, putEntry, getEntry, type Entry, type MonthEntriesResult } from '../../services/db';
 import { fetchMonthEntries } from '../../services/entriesApi';
@@ -47,6 +47,19 @@ import {
   type CalcState,
 } from '../../utils/calc';
 import { buildAppShareContent, buildTimelineShareContent } from '../../utils/share';
+import {
+  getCachedLedgerBalanceFromStorage,
+  rebaseLedgerBalance,
+} from '../../services/ledgerBalanceApi';
+import {
+  getCachedBudgetFromStorage,
+  getCachedBudget,
+  optimisticUpdateSpent,
+  fetchBudget,
+  upsertBudget,
+  type Budget,
+} from '../../services/budgetApi';
+import { ApiError } from '../../services/request';
 
 // ─── 类型 ────────────────────────────────────────────────────────────────────────
 
@@ -236,6 +249,35 @@ function buildEmptyTitle(monthValue: string): string {
 const LEDGER_RECENT_ENTRY_LIMIT = 50;
 const SWIPE_SCROLL_IDLE_GRACE_MS = 220;
 
+// ─── COSTRA-4xx · 资产/预算展示辅助 ────────────────────────────────────────────
+
+/** 格式化金额为 ¥X,XXX.XX（带千分位） */
+function formatYuan(cents: number): string {
+  const yuanStr = toYuan(Math.abs(cents));
+  const parts = yuanStr.split('.');
+  const intPart = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  const sign = cents < 0 ? '-' : '';
+  return `${sign}¥${intPart}.${parts[1]}`;
+}
+
+/** 格式化金额为 X,XXX.XX（不带¥和符号） */
+function formatYuanShort(cents: number): string {
+  const yuanStr = toYuan(Math.abs(cents));
+  const parts = yuanStr.split('.');
+  const intPart = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return `${intPart}.${parts[1]}`;
+}
+
+/** 根据剩余百分比计算莫兰迪色阶 class */
+function computeBudgetColorClass(remain: number, total: number): string {
+  if (total <= 0) return 'is-safe';
+  const p = remain / total;
+  if (p >= 0.5) return 'is-safe';
+  if (p >= 0.2) return 'is-hint';
+  if (p > 0) return 'is-warn';
+  return 'is-over';
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────────
 
 Page({
@@ -263,6 +305,18 @@ Page({
     filterPanelVisible: false,
     filterMembers: [] as FilterMemberItem[],
     filterEntryType: 'all' as EntryTypeFilter,
+    // ─── COSTRA-4xx · 资产/预算展示 ───
+    assetDisplay: '--',
+    assetCents: 0,
+    assetVersion: 0,
+    budgetDisplay: null as null | { remain: string; total: string; remainCents: number; totalCents: number },
+    budgetColorClass: '',
+    // ─── COSTRA-4xx · 资产编辑态（系统数字键盘） ───
+    editAssetVisible: false,
+    editAssetDisplay: '0',
+    // ─── COSTRA-4xx · 预算编辑态（系统数字键盘） ───
+    editBudgetVisible: false,
+    editBudgetDisplay: '0',
     // ─── 分类筛选 ───
     filterCategories: [] as FilterCategoryItem[],
     filterExpandedCategoryId: '' as string,
@@ -391,6 +445,8 @@ Page({
   /** 窗口可视区宽高（px，onLoad 记一次，用于菜单定位防溢出） */
   _winW: 0 as number,
   _winH: 0 as number,
+  /** COSTRA-4xx · 当前预算的服务端 version（用于 PUT 时的乐观锁 base_version） */
+  _editBudgetVersion: null as number | null,
 
   // ─── 生命周期 ────────────────────────────────────────────────────────────────
 
@@ -690,6 +746,11 @@ Page({
       hasLedgerId: !!this._ledgerId,
       hasFamilyId: !!this._familyId,
     });
+
+    // COSTRA-4xx：加载资产 + 预算（fire-and-forget，不阻塞明细页渲染）
+    if (this._ledgerId) {
+      void this._loadAssetAndBudget(this._ledgerId, this.data.currentMonth);
+    }
   },
 
   /**
@@ -1325,6 +1386,31 @@ Page({
     this._renderedLedgerId = this._ledgerId;
     this._renderedMonth = targetMonth;
     this._shouldRefreshEmptyHintOnNextEmpty = false;
+
+    // COSTRA-4xx · spec §5.3：预算 spent 用本地 monthExpense 立即校准
+    // 当月支出是本地权威（entries 全量已在本地），不用等服务端 SUM 回来
+    // budget 页面只需要用最新 totalExpenseCents覆盖 spent + remain
+    this._recomputeBudgetSpentLocally(targetMonth, totalExpenseCents.toNumber());
+  },
+
+  /**
+   * spec §5.3 乐观预算刷新：当前月 monthExpense 变化后，用本地权威值即时校准 spent/remain。
+   * 仅在渲染的月份就是当前展示月份，且预算有缓存时生效。
+   */
+  _recomputeBudgetSpentLocally(targetMonth: string, monthExpenseCents: number) {
+    // 只在当前月生效（跨月切换不做乐观算，等fetchBudget 服务端权威）
+    if (targetMonth !== this.data.currentMonth) return;
+    const cached = getCachedBudget(this._ledgerId, targetMonth);
+    if (!cached) return;
+    const remain = cached.amount_cents - monthExpenseCents;
+    // 同步更新缓存里的 spent/remain（存内存，等 sync 拉到服务端权威后覆盖）
+    optimisticUpdateSpent(this._ledgerId, targetMonth, monthExpenseCents - cached.spent_cents);
+    // 立即更新 UI
+    this._renderBudget({
+      ...cached,
+      spent_cents: monthExpenseCents,
+      remain_cents: remain,
+    });
   },
 
   _emitLedgerDisplayReady(month: string, entryCount: number) {
@@ -1382,6 +1468,9 @@ Page({
     this._shouldRefreshEmptyHintOnNextEmpty = true;
     this.setData({ currentMonth: prev, monthDisplay: formatMonthDisplay(prev) });
     this._loadEntries(prev);
+    if (this._ledgerId) {
+      void this._loadBudgetOnly(this._ledgerId, prev);
+    }
     this._scrollTopToTop();
   },
 
@@ -1391,6 +1480,9 @@ Page({
     this._shouldRefreshEmptyHintOnNextEmpty = true;
     this.setData({ currentMonth: nxt, monthDisplay: formatMonthDisplay(nxt) });
     this._loadEntries(nxt);
+    if (this._ledgerId) {
+      void this._loadBudgetOnly(this._ledgerId, nxt);
+    }
     this._scrollTopToTop();
   },
 
@@ -1402,6 +1494,10 @@ Page({
       monthDisplay: formatMonthDisplay(value),
     });
     this._loadEntries(value);
+    // COSTRA-4xx：切月时刷新预算（资产是账本级不变）
+    if (this._ledgerId) {
+      void this._loadBudgetOnly(this._ledgerId, value);
+    }
     // COSTRA-220: 月份切换后滚动到顶部
     this._scrollTopToTop();
   },
@@ -1737,6 +1833,8 @@ Page({
   async _onEntrySaved() {
     // 记账保存成功后刷新明细页数据
     await this._loadEntries();
+    // COSTRA-4xx：记账后资产以服务端为准 → 触发 syncPull 即可同步；预算 spent 走乐观更新
+    // 实际 _loadEntries 完成后 SYNC_DONE 会回灌最新 balance_cents
   },
 
   // ─── COSTRA-227: 编辑保存后响应式刷新 ─────────────────────────────────────────
@@ -2575,5 +2673,281 @@ Page({
 
   onShareTimeline() {
     return buildTimelineShareContent();
+  },
+
+  // ─── COSTRA-4xx · 资产/预算 加载与展示 ────────────────────────────────────
+
+  /**
+   * 加载资产 + 预算。
+   * - 资产：先读本地缓存（内存→storage）即时渲染，再后台拉新值校准
+   * - 预算：先读本地缓存，再后台拉新值校准
+   */
+  async _loadAssetAndBudget(ledgerId: string, month: string) {
+    // 资产：本地缓存即时渲染
+    const cachedAsset = await getCachedLedgerBalanceFromStorage(ledgerId);
+    if (cachedAsset) {
+      this._renderAsset(cachedAsset.balance_cents, cachedAsset.balance_version);
+    }
+    // 预算：本地缓存即时渲染
+    const cachedBudget = await getCachedBudgetFromStorage(ledgerId, month);
+    if (cachedBudget) {
+      this._renderBudget(cachedBudget);
+      this._editBudgetVersion = cachedBudget.version;
+    } else {
+      this._renderBudgetEmpty();
+      this._editBudgetVersion = null;
+    }
+    // 后台拉新值
+    // 资产不主动拉取(无 GET /ledgers/:id 端点)，靠 sync-pull 下发 ledgers[] 自动更新
+    void this._loadBudgetOnly(ledgerId, month);
+  },
+
+  /**
+   * 资产当前不需要主动拉取 · 完全依赖 sync-pull 下发。
+   * 保留方法名给后续扩展(如登录后 bootstrap 预热)。
+   */
+  async _loadAssetOnly(_ledgerId: string) {
+    // noop · sync-pull 已在 sync.ts applyLedgerBalanceFromSync 写入 ledgerBalanceApi 缓存
+    // 明细页下次 onShow 或 SYNC_DONE 时会读到最新值
+  },
+
+  async _loadBudgetOnly(ledgerId: string, month: string) {
+    const budget = await fetchBudget(ledgerId, month);
+    if (budget) {
+      this._renderBudget(budget);
+      this._editBudgetVersion = budget.version;
+    } else {
+      this._renderBudgetEmpty();
+      this._editBudgetVersion = null;
+    }
+  },
+
+  _renderAsset(balanceCents: number, version: number) {
+    this.setData({
+      assetDisplay: formatYuan(balanceCents),
+      assetCents: balanceCents,
+      assetVersion: version,
+    });
+  },
+
+  _renderBudget(budget: Budget) {
+    const colorClass = computeBudgetColorClass(budget.remain_cents, budget.amount_cents);
+    this.setData({
+      budgetDisplay: {
+        remain: formatYuanShort(budget.remain_cents),
+        total: formatYuanShort(budget.amount_cents),
+        remainCents: budget.remain_cents,
+        totalCents: budget.amount_cents,
+      },
+      budgetColorClass: colorClass,
+    });
+  },
+
+  _renderBudgetEmpty() {
+    this.setData({
+      budgetDisplay: null,
+      budgetColorClass: '',
+    });
+  },
+
+  // ─── COSTRA-4xx · 资产编辑（拉起系统数字键盘） ─────────────────────
+
+  onTapAssetEdit() {
+    if (this._consumeNoteEditingIfActive()) return;
+    const yuanStr = this.data.assetCents > 0
+      ? toYuan(this.data.assetCents)
+      : '0';
+    eventBus.emit(EventNames.HIDE_TAB_BAR);
+    this.setData({
+      editAssetVisible: true,
+      editAssetDisplay: yuanStr,
+    });
+  },
+
+  onCloseEditAsset() {
+    this.setData({ editAssetVisible: false });
+    eventBus.emit(EventNames.SHOW_TAB_BAR);
+  },
+
+  onEditAssetInput(e: WechatMiniprogram.Input) {
+    const raw = e.detail.value ?? '';
+    // 只保留数字 + 一个小数点（系统 type=digit 多数机型已限制，但 iOS 偶有 - 等）
+    const cleaned = raw.replace(/[^\d.]/g, '');
+    const firstDotIdx = cleaned.indexOf('.');
+    const sanitized = firstDotIdx < 0
+      ? cleaned
+      : cleaned.slice(0, firstDotIdx + 1) + cleaned.slice(firstDotIdx + 1).replace(/\./g, '');
+    this.setData({ editAssetDisplay: sanitized });
+  },
+
+  async onConfirmEditAssetInput() {
+    const cents = parseYuanToCents(this.data.editAssetDisplay);
+    if (cents < 0) {
+      wx.showToast({ title: '请输入有效金额', icon: 'none' });
+      return;
+    }
+
+    if (!this._ledgerId) {
+      this.onCloseEditAsset();
+      return;
+    }
+
+    // 二次确认：修改资产是敏感操作
+    wx.showModal({
+      title: '修改资产',
+      content: '修改后仅之后的流水会继续叠加到资产上，是否确认？',
+      confirmText: '确认修改',
+      cancelText: '取消',
+      success: async (res) => {
+        if (!res.confirm) return;
+
+        const ledgerId = this._ledgerId;
+        const baseVersion = this.data.assetVersion;
+        try {
+          const updated = await rebaseLedgerBalance(ledgerId, cents, baseVersion);
+          this._renderAsset(updated.balance_cents, updated.balance_version);
+          this.onCloseEditAsset();
+          wx.showToast({ title: '资产已更新', icon: 'success' });
+        } catch (err) {
+          const apiErr = err as ApiError;
+          if (apiErr?.status === 0 || apiErr?.code === 'CLIENT_NETWORK_ERROR') {
+            //敏感字段不走outbox 排队（spec §5.4 v2）· 网络失败直接提示用户
+            wx.showToast({ title: '网络异常，请稍后再试', icon: 'none' });
+            return;
+          }
+          if (apiErr?.status === 409) {
+            // 冲突弹窗（敏感字段不静默覆盖 · 对齐 conflict-strategy.md）
+            const details = apiErr.details as { current_balance_cents?: number; current_balance_version?: number } | undefined;
+            const currentCents = details?.current_balance_cents;
+            const currentVersion = details?.current_balance_version;
+            const currentDisplay = currentCents != null ? formatYuan(currentCents) : '最新值';
+            wx.showModal({
+              title: '资产已被其他成员修改',
+              content: `其他成员已把资产改为 ${currentDisplay}。\n是否用你的值覆盖？`,
+              confirmText: '覆盖',
+              cancelText: '放弃',
+              success: async (r2) => {
+                if (!r2.confirm) {
+                  // 放弃 → 用服务端最新值刷新 UI
+                  if (currentCents != null && currentVersion != null) {
+                    this._renderAsset(currentCents, currentVersion);
+                  }
+                  this.onCloseEditAsset();
+                  return;
+                }
+                // 用户确认覆盖 → 用 409 返回的 current version 再试一次
+                if (currentVersion == null) {
+                  wx.showToast({ title: '获取最新版本失败', icon: 'none' });
+                  return;
+                }
+                try {
+                  const updated2 = await rebaseLedgerBalance(ledgerId, cents, currentVersion);
+                  this._renderAsset(updated2.balance_cents, updated2.balance_version);
+                  this.onCloseEditAsset();
+                  wx.showToast({ title: '资产已更新', icon: 'success' });
+                } catch (err2) {
+                  wx.showToast({ title: '修改失败，请重试', icon: 'none' });
+                }
+              },
+            });
+          } else {
+            wx.showToast({ title: '修改失败，请重试', icon: 'none' });
+          }
+        }
+      },
+    });
+  },
+
+  // ─── COSTRA-4xx · 预算编辑（拉起系统数字键盘） ─────────────────────
+
+  onTapBudgetEdit() {
+    if (this._consumeNoteEditingIfActive()) return;
+    const currentCents = this.data.budgetDisplay?.totalCents ?? 0;
+    const yuanStr = currentCents > 0 ? toYuan(currentCents) : '0';
+    eventBus.emit(EventNames.HIDE_TAB_BAR);
+    this.setData({
+      editBudgetVisible: true,
+      editBudgetDisplay: yuanStr,
+    });
+  },
+
+  onCloseEditBudget() {
+    this.setData({ editBudgetVisible: false });
+    eventBus.emit(EventNames.SHOW_TAB_BAR);
+  },
+
+  onEditBudgetInput(e: WechatMiniprogram.Input) {
+    const raw = e.detail.value ?? '';
+    const cleaned = raw.replace(/[^\d.]/g, '');
+    const firstDotIdx = cleaned.indexOf('.');
+    const sanitized = firstDotIdx < 0
+      ? cleaned
+      : cleaned.slice(0, firstDotIdx + 1) + cleaned.slice(firstDotIdx + 1).replace(/\./g, '');
+    this.setData({ editBudgetDisplay: sanitized });
+  },
+
+  async onConfirmEditBudgetInput() {
+    const cents = parseYuanToCents(this.data.editBudgetDisplay);
+    if (cents <= 0) {
+      wx.showToast({ title: '预算须大于0', icon: 'none' });
+      return;
+    }
+
+    if (!this._ledgerId) {
+      this.onCloseEditBudget();
+      return;
+    }
+
+    const ledgerId = this._ledgerId;
+    const month = this.data.currentMonth;
+    const version = this._editBudgetVersion;
+
+    try {
+      const updated = await upsertBudget(ledgerId, month, cents, version);
+      this._renderBudget(updated);
+      this._editBudgetVersion = updated.version;
+      this.onCloseEditBudget();
+      wx.showToast({ title: '预算已设置', icon: 'success' });
+    } catch (err) {
+      const apiErr = err as ApiError;
+      if (apiErr?.status === 0 || apiErr?.code === 'CLIENT_NETWORK_ERROR') {
+        // 预算修改不走 outbox（spec §5.4 v2）· 网络失败直接提示
+        wx.showToast({ title: '网络异常，请稍后再试', icon: 'none' });
+        return;
+      }
+      if (apiErr?.status === 409) {
+        // 冲突弹窗（与资产冲突弹窗同构）
+        wx.showModal({
+          title: '预算已被其他成员修改',
+          content: '是否重新拉取并覆盖为你的值？',
+          confirmText: '覆盖',
+          cancelText: '放弃',
+          success: async (r2) => {
+            if (!r2.confirm) {
+              void this._loadBudgetOnly(ledgerId, month);
+              this.onCloseEditBudget();
+              return;
+            }
+            const fresh = await fetchBudget(ledgerId, month);
+            if (!fresh) {
+              this._editBudgetVersion = null;
+            } else {
+              this._editBudgetVersion = fresh.version;
+            }
+            try {
+              const updated2 = await upsertBudget(ledgerId, month, cents, this._editBudgetVersion);
+              this._renderBudget(updated2);
+              this._editBudgetVersion = updated2.version;
+              this.onCloseEditBudget();
+              wx.showToast({ title: '预算已设置', icon: 'success' });
+            } catch {
+              wx.showToast({ title: '修改失败，请重试', icon: 'none' });
+            }
+          },
+        });
+      } else {
+        wx.showToast({ title: '修改失败，请重试', icon: 'none' });
+      }
+    }
   },
 });

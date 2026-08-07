@@ -1901,3 +1901,163 @@ describe('recurring-entries · start_date=today + window already entered', () =>
     expect(nextRun.day).toBe(7);
   });
 });
+
+// ==============================================================================
+// update / resume 路径的 bucket 窗口跳过保护
+//
+// 回归场景：用户在 bucket 窗口期内修改或恢复规则时，如果重算的 next_run_at
+// 落在今天，应跳过今天（与 create 路径行为一致），避免当天意外触发。
+// ==============================================================================
+
+describe('recurring-entries · update/resume bucket window skip', () => {
+  let app: FastifyInstance;
+  let token: string;
+  let userId: string;
+
+  beforeEach(async () => {
+    app = await buildApp({ disableLogger: true, autoStartScheduler: false });
+    await app.ready();
+    const login1 = await login(app, 'openid-recur-window-skip');
+    token = login1.token;
+    userId = login1.userId;
+    await setupFamilyAndLedger(userId);
+  });
+  afterEach(async () => {
+    vi.useRealTimers();
+    await app.close();
+  });
+
+  it('PATCH · 在 bucket 窗口期内修改匹配日 → 跳过今天，next_run_at 不落在今天', async () => {
+    // 2026-08-07 周五。now = 14:00（已进入下午窗口 12:00~17:59）。
+    // 先创建一条 start_date 在未来的 weekly 规则（避免 create 时触发跳过逻辑），
+    // 然后通过 PATCH 把 start_date 改成今天 → update 路径重算 next_run_at。
+    vi.setSystemTime(new Date('2026-08-07T14:00:00+08:00'));
+
+    // 创建 start_date=2026-08-20（未来），days_of_week=[5]（周五）
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 2000,
+        period: 'weekly',
+        days_of_week: [5],
+        execute_bucket: 'afternoon',
+        start_date: '2026-08-20',
+      },
+    });
+    expect(createRes.statusCode).toBe(201);
+    const created = createRes.json() as { id: string; version: number; timezone: string };
+
+    // PATCH：把 start_date 改成今天 2026-08-07 → update 路径从 now 重算
+    // 7 号是周五（匹配日），afternoon 窗口 hash 落点会在今天 12:30~17:30 之间。
+    // 但 now=14:00 已进入窗口 → 应跳过今天 → 下一个匹配日 = 下周五 8/14
+    const patchRes = await app.inject({
+      method: 'PATCH',
+      url: `/v1/recurring-entries/${created.id}`,
+      headers: authHeader(token),
+      payload: {
+        version: created.version,
+        start_date: '2026-08-07',
+      },
+    });
+    expect(patchRes.statusCode).toBe(200);
+    const patched = patchRes.json() as { next_run_at: string; timezone: string };
+
+    const { DateTime } = await import('luxon');
+    const nextRun = DateTime.fromISO(patched.next_run_at, { zone: patched.timezone });
+    // 不应落在今天 8/7 → 应该是下周五 8/14
+    expect(nextRun.day).toBe(14);
+    expect(nextRun.month).toBe(8);
+  });
+
+  it('PATCH · 在 bucket 窗口期之前修改匹配日 → 今天会触发，next_run_at 落在今天', async () => {
+    // 2026-08-07 周五。now = 07:00（早上，下午窗口 12:00 还没开始）。
+    // 修改 start_date → 重算的 next_run_at 落在今天 → 今天应触发。
+    vi.setSystemTime(new Date('2026-08-07T07:00:00+08:00'));
+
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 2000,
+        period: 'weekly',
+        days_of_week: [5],
+        execute_bucket: 'afternoon',
+        start_date: '2026-08-20',
+      },
+    });
+    expect(createRes.statusCode).toBe(201);
+    const created = createRes.json() as { id: string; version: number };
+
+    const patchRes = await app.inject({
+      method: 'PATCH',
+      url: `/v1/recurring-entries/${created.id}`,
+      headers: authHeader(token),
+      payload: {
+        version: created.version,
+        start_date: '2026-08-07',
+      },
+    });
+    expect(patchRes.statusCode).toBe(200);
+    const patched = patchRes.json() as { next_run_at: string; timezone: string };
+
+    const { DateTime } = await import('luxon');
+    const nextRun = DateTime.fromISO(patched.next_run_at, { zone: patched.timezone });
+    // 窗口还没开始 → 今天会触发
+    expect(nextRun.day).toBe(7);
+  });
+
+  it('resume · 在 bucket 窗口期内恢复规则 → 跳过今天，next_run_at 不落在今天', async () => {
+    // 2026-08-07 周五。now = 14:00（已进入下午窗口）。
+    // 创建 → pause → resume，resume 时 today 是匹配日且已进入窗口 → 应跳过今天。
+    vi.setSystemTime(new Date('2026-08-07T07:00:00+08:00'));
+
+    // 早上 07:00 创建（窗口还没开始 → next_run_at 落在今天）
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 2000,
+        period: 'weekly',
+        days_of_week: [5],
+        execute_bucket: 'afternoon',
+        start_date: '2026-08-07',
+      },
+    });
+    expect(createRes.statusCode).toBe(201);
+    const created = createRes.json() as { id: string };
+
+    // pause
+    const pauseRes = await app.inject({
+      method: 'POST',
+      url: `/v1/recurring-entries/${created.id}/pause`,
+      headers: authHeaderNoBody(token),
+    });
+    expect(pauseRes.statusCode).toBe(200);
+
+    // 时间推进到下午 14:00（已进入 afternoon 窗口）→ resume
+    vi.setSystemTime(new Date('2026-08-07T14:00:00+08:00'));
+    const resumeRes = await app.inject({
+      method: 'POST',
+      url: `/v1/recurring-entries/${created.id}/resume`,
+      headers: authHeaderNoBody(token),
+    });
+    expect(resumeRes.statusCode).toBe(200);
+    const resumed = resumeRes.json() as { next_run_at: string; timezone: string };
+
+    const { DateTime } = await import('luxon');
+    const nextRun = DateTime.fromISO(resumed.next_run_at, { zone: resumed.timezone });
+    // 已进入下午窗口 → 跳过今天 → 下周五 8/14
+    expect(nextRun.day).toBe(14);
+    expect(nextRun.month).toBe(8);
+  });
+});

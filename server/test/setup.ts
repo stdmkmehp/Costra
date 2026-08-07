@@ -111,7 +111,11 @@ function applyMigrations(db: IMemoryDb): void {
       created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
       updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
       deleted_at      TIMESTAMPTZ,
-      version         INTEGER NOT NULL DEFAULT 1
+      version         INTEGER NOT NULL DEFAULT 1,
+      -- COSTRA-4xx · migration 0012：资产字段
+      balance_cents        BIGINT NOT NULL DEFAULT 0,
+      balance_baseline_seq BIGINT NOT NULL DEFAULT 0,
+      balance_version     INTEGER NOT NULL DEFAULT 1
     );
     CREATE TYPE family_role AS ENUM ('owner', 'member', 'viewer');
     CREATE TABLE family_members (
@@ -310,6 +314,28 @@ function applyMigrations(db: IMemoryDb): void {
     ALTER TABLE entries ADD COLUMN source_recurring_id UUID REFERENCES recurring_rules(id) ON DELETE SET NULL;
     CREATE INDEX idx_entries_source_recurring ON entries (source_recurring_id)
       WHERE source_recurring_id IS NOT NULL AND deleted_at IS NULL;
+
+    -- ═══════════════════════════════════════════════════════════════════════
+    -- COSTRA-4xx · migration 0013：budgets v2 表（月度总预算 · 仅 ledger_id+month 维度）
+    -- v1 旧表从未启用，直接重建
+    -- ═══════════════════════════════════════════════════════════════════════
+    DROP TABLE IF EXISTS budgets;
+    CREATE TABLE budgets (
+      id             UUID PRIMARY KEY,
+      ledger_id      UUID NOT NULL,
+      month          CHAR(7) NOT NULL,
+      amount_cents   BIGINT NOT NULL CHECK (amount_cents > 0),
+      currency       TEXT NOT NULL DEFAULT 'CNY',
+      updated_by     UUID NOT NULL,
+      created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+      deleted_at     TIMESTAMPTZ,
+      version        INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE UNIQUE INDEX uq_budgets_ledger_month
+      ON budgets (ledger_id, month) WHERE deleted_at IS NULL;
+    CREATE INDEX idx_budgets_ledger_month ON budgets (ledger_id, month);
+    CREATE INDEX idx_budgets_updated_at ON budgets (updated_at);
   `;
   db.public.none(ddl);
 
@@ -367,7 +393,7 @@ function registerPgMemFunctions(db: IMemoryDb): void {
 function resetPgMem(): void {
   if (memDb) {
     memDb.public.none(
-      'DELETE FROM recurring_rules; DELETE FROM workday_calendars; DELETE FROM entries; DELETE FROM category_redirects; DELETE FROM categories; DELETE FROM family_invites; DELETE FROM family_members; DELETE FROM ledgers; DELETE FROM families; DELETE FROM user_sessions; DELETE FROM users; DELETE FROM idempotency_keys; DELETE FROM announcement_reads; DELETE FROM announcements;',
+      'DELETE FROM recurring_rules; DELETE FROM workday_calendars; DELETE FROM entries; DELETE FROM budgets; DELETE FROM category_redirects; DELETE FROM categories; DELETE FROM family_invites; DELETE FROM family_members; DELETE FROM ledgers; DELETE FROM families; DELETE FROM user_sessions; DELETE FROM users; DELETE FROM idempotency_keys; DELETE FROM announcement_reads; DELETE FROM announcements;',
     );
   }
 }
