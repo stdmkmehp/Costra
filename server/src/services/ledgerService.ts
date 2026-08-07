@@ -126,3 +126,48 @@ export async function getBalance(
     balance_version: ledger.balanceVersion,
   };
 }
+
+/**
+ * 带权限校验的资产读取（GET /ledgers/{id}/balance · 客户端主动拉取）。
+ *
+ * 与 rebaseBalance 保持同构的权限守门：
+ *   - ledger 不存在 → 404
+ *   - 用户不是该 family 的 active 成员 → 403
+ *
+ * 存在性 + 权限两步与 rebaseBalance 复用同一套 repo 判断，防止越权读取他人账本资产。
+ */
+export async function getBalanceForUser(
+  userId: string,
+  ledgerId: string,
+): Promise<{
+  balance_cents: number;
+  balance_baseline_seq: number;
+  balance_version: number;
+}> {
+  const ledger = await ledgerRepo.findById(ledgerId);
+  if (!ledger) {
+    throw new AppError(ErrorCode.NOT_FOUND, {
+      message: 'ledger not found',
+      details: { ledger_id: ledgerId },
+    });
+  }
+
+  const family = await familyRepo.findById(ledger.familyId);
+  if (!family) {
+    throw new AppError(ErrorCode.NOT_FOUND, { message: 'family not found' });
+  }
+
+  const isActive = await familyMemberRepo.isActiveMember(userId, ledger.familyId);
+  if (!isActive) {
+    throw new AppError(ErrorCode.PERMISSION_DENIED, {
+      message: 'user is not an active member of this family',
+      details: { family_id: ledger.familyId },
+    });
+  }
+
+  return {
+    balance_cents: ledger.balanceCents,
+    balance_baseline_seq: ledger.balanceBaselineSeq,
+    balance_version: ledger.balanceVersion,
+  };
+}

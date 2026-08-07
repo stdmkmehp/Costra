@@ -4,6 +4,8 @@
  * 卡号：COSTRA-4xx · 事实源：server/api/openapi.yaml paths /ledgers/{id}/balance
  *
  * 契约约束：
+ *   - GET   /ledgers/{id}/balance  → 200 { balance_cents, balance_baseline_seq, balance_version }
+ *       → 404 账本不存在 · 403 非 active 成员（防越权读取）
  *   - PATCH /ledgers/{id}/balance  body: { balance_cents, balance_version }
  *       → 200 { balance_cents, balance_baseline_seq, balance_version }
  *       → 409 VERSION_CONFLICT（含 current_balance_* 便于客户端弹冲突弹窗）
@@ -52,6 +54,21 @@ const patchBalanceBodySchema = {
 // --- 注册 ---
 
 export async function registerLedgersRoutes(app: FastifyInstance): Promise<void> {
+  // GET /ledgers/{ledger_id}/balance —— 客户端主动拉取资产（明细页首屏校准）
+  // 与 sync-pull 下发的 ledgers[] 增量互为补充：首屏无需等 sync，主动拉最新值即时渲染
+  app.get<{ Params: { ledger_id: string } }>(
+    '/ledgers/:ledger_id/balance',
+    { schema: { params: ledgerIdParamsSchema } },
+    async (req, reply) => {
+      const userId = await parseUserId(req);
+      const { ledger_id: ledgerId } = req.params;
+
+      const result = await ledgerService.getBalanceForUser(userId, ledgerId);
+
+      reply.code(200).send(result);
+    },
+  );
+
   // PATCH /ledgers/{ledger_id}/balance —— 用户修改资产
   app.patch<{ Params: { ledger_id: string }; Body: { balance_cents: number; balance_version: number } }>(
     '/ledgers/:ledger_id/balance',

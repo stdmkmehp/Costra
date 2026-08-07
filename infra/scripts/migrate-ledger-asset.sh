@@ -111,7 +111,7 @@ fi
 # =============================================================================
 print_section_header "💰 Costra · migrate-ledger-asset → ${TARGET} (${MODE})"
 
-local mode_desc
+mode_desc=
 if [[ "${MODE}" == "verify" ]]; then
   mode_desc="仅校验不回填"
 else

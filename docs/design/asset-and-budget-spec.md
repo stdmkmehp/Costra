@@ -631,6 +631,7 @@ A: PG 行锁绑定 backend 进程,client 连接断开自动 rollback 释放锁�
 ## 8. 契约变更
 
 - `Ledger` schema 加 `balance_cents / balance_baseline_seq / balance_version`
+- 新增 `GET /ledgers/{id}/balance` API（客户端主动拉取资产 · 明细页首屏即时校准）
 - 新增 `PATCH /ledgers/{id}/balance` API
 - 新增 `GET /budgets`、`PUT /budgets` API
 - `sync/pull` 的 `ledgers[]`:每次都返回 family 下所有 ledger(1:1,数据量可忽略),不引入 ledger change_seq 复杂度

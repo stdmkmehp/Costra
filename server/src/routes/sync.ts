@@ -20,7 +20,7 @@ import { createHash } from 'node:crypto';
 import { AppError } from '../errors/AppError.js';
 import { ErrorCode } from '../errors/ErrorCode.js';
 import { createEntryService } from '../services/entryService.js';
-import { findByClientRefId, softDeleteEntry } from '../repositories/entryRepo.js';
+import { findByClientRefId } from '../repositories/entryRepo.js';
 import { checkAndGet, save } from '../services/idempotencyService.js';
 import { syncPull } from '../services/syncPullService.js';
 import type { CreateEntryPayload, UpdateEntryPayload } from '../services/entryService.js';
@@ -157,7 +157,8 @@ async function processEntryOp(
     return { client_ref_id: op.client_ref_id, status: 'rejected', error: result.error };
   }
 
-  // delete
+  // delete — 走 entryService.softDelete（含事务 + 资产旧贡献回退）
+  // 直接调 repo 层 softDeleteEntry 会跳过 ledgers.balance_cents 回退
   if (op.base_version == null) {
     return { client_ref_id: op.client_ref_id, status: 'rejected', error: { code: ErrorCode.INVALID_ARGUMENT, message: 'delete requires base_version' } };
   }
@@ -165,11 +166,14 @@ async function processEntryOp(
   if (!entry) {
     return { client_ref_id: op.client_ref_id, status: 'rejected', error: { code: ErrorCode.NOT_FOUND, message: `entry ${op.client_ref_id} not found` } };
   }
-  const deleted = await softDeleteEntry(entry.id, op.base_version);
-  if (!deleted) {
-    return { client_ref_id: op.client_ref_id, status: 'conflict', server_version: entry.version };
+  const result = await entryService.softDelete(userId, entry.id, op.base_version);
+  if (result.status === 'ok') {
+    return { client_ref_id: op.client_ref_id, status: 'ok', server_id: result.serverId, server_version: result.serverVersion };
   }
-  return { client_ref_id: op.client_ref_id, status: 'ok', server_id: entry.id, server_version: deleted.version };
+  if (result.status === 'conflict') {
+    return { client_ref_id: op.client_ref_id, status: 'conflict', server_version: result.serverVersion };
+  }
+  return { client_ref_id: op.client_ref_id, status: 'rejected', error: result.error };
 }
 
 // --- 注册 ---

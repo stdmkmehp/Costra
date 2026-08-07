@@ -734,7 +734,51 @@
 /* 长按上下文菜单共享样式（与定时记账页共用同一套设计） */
 @import '../../styles/ctx-menu.wxss';
 
-/* ─── COSTRA-4xx: 资产/预算快速编辑面板（拉起系统数字键盘） ─── */
+/* ─── COSTRA-4xx: 资产/预算快速编辑弹窗（系统数字键盘 · 键盘高度驱动避让） ─── */
+/* 关键：不用 position:fixed 半屏面板承载 input，而用「全屏遮罩 + 贴底 sheet」，
+   sheet 由 bindkeyboardheightchange 驱动 inline transform 上移（expense-overlay 同构），
+   彻底规避 fixed 定位被系统键盘挤压错位（数字/按钮被挤到左上角）的问题。 */
+
+/* 全屏遮罩：点遮罩 = 取消，保证修改需用户明确确认/取消 */
+.quickedit-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  background: rgba(28, 27, 26, 0.4);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 200ms ease;
+}
+.quickedit-mask.is-visible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+/* 贴底 sheet：transform 完全由 inline style（editAssetOffsetY）驱动键盘避让；
+   显隐仅靠 opacity/visibility，位移只随键盘高度变化，避免 CSS/内联 transform 抢占冲突 */
+.quickedit-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
+  background: #ffffff;
+  border-top-left-radius: 24rpx;
+  border-top-right-radius: 24rpx;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition-property: transform, opacity;
+  transition-timing-function: cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+.quickedit-sheet.is-visible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
 /* 视觉参考 pages-recurring/edit 的金额输入区 · 顶部取消/标题/保存 三段式 */
 .quickedit-nav {
   display: flex;

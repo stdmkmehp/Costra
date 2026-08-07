@@ -335,59 +335,59 @@
     </view>
   </view>
 
-  <!-- ═══ COSTRA-4xx: 资产修改面板（拉起系统数字键盘 · 参考 recedit 视觉） ═══ -->
-  <view class="edit-amount-panel {{editAssetVisible ? 'is-visible' : ''}}">
-    <view class="edit-amount-panel__mask" bindtap="onCloseEditAsset"></view>
-    <view class="keypad-sheet" style="padding-bottom: env(safe-area-inset-bottom, 0px);">
-      <view class="quickedit-nav">
-        <text class="quickedit-nav__btn" bindtap="onCloseEditAsset">取消</text>
-        <text class="quickedit-nav__title">修改资产</text>
-        <text class="quickedit-nav__btn quickedit-nav__btn--primary" bindtap="onConfirmEditAssetInput">保存</text>
-      </view>
-      <view class="quickedit-amount">
-        <text class="quickedit-amount__prefix">¥</text>
-        <input
-          class="quickedit-amount__input tnum"
-          type="digit"
-          value="{{editAssetDisplay}}"
-          focus="{{editAssetVisible}}"
-          bindinput="onEditAssetInput"
-          bindconfirm="onConfirmEditAssetInput"
-          maxlength="14"
-          placeholder="0"
-        />
-      </view>
-      <view class="quickedit-hint">
-        <text>修改后仅之后的流水会继续叠加到资产上</text>
-      </view>
+  <!-- ═══ COSTRA-4xx: 资产修改弹窗（系统数字键盘 · 键盘高度驱动避让） ═══ -->
+  <view class="quickedit-mask {{editAssetVisible ? 'is-visible' : ''}}" bindtap="onCloseEditAsset"></view>
+  <view class="quickedit-sheet {{editAssetVisible ? 'is-visible' : ''}}" style="padding-bottom: env(safe-area-inset-bottom, 0px); transform: translateY({{editAssetOffsetY}}px); transition-duration: {{editAssetTransitionMs}}ms;">
+    <view class="quickedit-nav">
+      <text class="quickedit-nav__btn" bindtap="onCloseEditAsset">取消</text>
+      <text class="quickedit-nav__title">修改资产</text>
+      <text class="quickedit-nav__btn quickedit-nav__btn--primary" bindtap="onConfirmEditAssetInput">保存</text>
+    </view>
+    <view class="quickedit-amount">
+      <text class="quickedit-amount__prefix">¥</text>
+      <input
+        class="quickedit-amount__input tnum"
+        type="digit"
+        value="{{editAssetDisplay}}"
+        focus="{{editAssetVisible}}"
+        adjust-position="{{false}}"
+        bindinput="onEditAssetInput"
+        bindconfirm="onConfirmEditAssetInput"
+        bindkeyboardheightchange="onEditAssetKeyboardHeightChange"
+        maxlength="14"
+        placeholder="0"
+      />
+    </view>
+    <view class="quickedit-hint">
+      <text>修改后仅之后的流水会继续叠加到资产上</text>
     </view>
   </view>
 
-  <!-- ═══ COSTRA-4xx: 预算修改面板（拉起系统数字键盘 · 参考 recedit 视觉） ═══ -->
-  <view class="edit-amount-panel {{editBudgetVisible ? 'is-visible' : ''}}">
-    <view class="edit-amount-panel__mask" bindtap="onCloseEditBudget"></view>
-    <view class="keypad-sheet" style="padding-bottom: env(safe-area-inset-bottom, 0px);">
-      <view class="quickedit-nav">
-        <text class="quickedit-nav__btn" bindtap="onCloseEditBudget">取消</text>
-        <text class="quickedit-nav__title">设置当月预算</text>
-        <text class="quickedit-nav__btn quickedit-nav__btn--primary" bindtap="onConfirmEditBudgetInput">保存</text>
-      </view>
-      <view class="quickedit-amount">
-        <text class="quickedit-amount__prefix">¥</text>
-        <input
-          class="quickedit-amount__input tnum"
-          type="digit"
-          value="{{editBudgetDisplay}}"
-          focus="{{editBudgetVisible}}"
-          bindinput="onEditBudgetInput"
-          bindconfirm="onConfirmEditBudgetInput"
-          maxlength="14"
-          placeholder="0"
-        />
-      </view>
-      <view class="quickedit-hint">
-        <text>设置当月预算上限</text>
-      </view>
+  <!-- ═══ COSTRA-4xx: 预算修改弹窗（系统数字键盘 · 键盘高度驱动避让） ═══ -->
+  <view class="quickedit-mask {{editBudgetVisible ? 'is-visible' : ''}}" bindtap="onCloseEditBudget"></view>
+  <view class="quickedit-sheet {{editBudgetVisible ? 'is-visible' : ''}}" style="padding-bottom: env(safe-area-inset-bottom, 0px); transform: translateY({{editBudgetOffsetY}}px); transition-duration: {{editBudgetTransitionMs}}ms;">
+    <view class="quickedit-nav">
+      <text class="quickedit-nav__btn" bindtap="onCloseEditBudget">取消</text>
+      <text class="quickedit-nav__title">设置当月预算</text>
+      <text class="quickedit-nav__btn quickedit-nav__btn--primary" bindtap="onConfirmEditBudgetInput">保存</text>
+    </view>
+    <view class="quickedit-amount">
+      <text class="quickedit-amount__prefix">¥</text>
+      <input
+        class="quickedit-amount__input tnum"
+        type="digit"
+        value="{{editBudgetDisplay}}"
+        focus="{{editBudgetVisible}}"
+        adjust-position="{{false}}"
+        bindinput="onEditBudgetInput"
+        bindconfirm="onConfirmEditBudgetInput"
+        bindkeyboardheightchange="onEditBudgetKeyboardHeightChange"
+        maxlength="14"
+        placeholder="0"
+      />
+    </view>
+    <view class="quickedit-hint">
+      <text>设置当月预算上限</text>
     </view>
   </view>
 

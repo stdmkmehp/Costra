@@ -49,6 +49,8 @@ import {
 import { buildAppShareContent, buildTimelineShareContent } from '../../utils/share';
 import {
   getCachedLedgerBalanceFromStorage,
+  getCachedLedgerBalance,
+  fetchLedgerBalance,
   rebaseLedgerBalance,
 } from '../../services/ledgerBalanceApi';
 import {
@@ -314,9 +316,17 @@ Page({
     // ─── COSTRA-4xx · 资产编辑态（系统数字键盘） ───
     editAssetVisible: false,
     editAssetDisplay: '0',
+    /** 资产弹窗 sheet 的键盘避让位移（px，负数=上移） */
+    editAssetOffsetY: 0,
+    /** 资产弹窗 sheet 位移过渡时长（ms，取系统键盘动画时长） */
+    editAssetTransitionMs: 0,
     // ─── COSTRA-4xx · 预算编辑态（系统数字键盘） ───
     editBudgetVisible: false,
     editBudgetDisplay: '0',
+    /** 预算弹窗 sheet 的键盘避让位移（px，负数=上移） */
+    editBudgetOffsetY: 0,
+    /** 预算弹窗 sheet 位移过渡时长（ms，取系统键盘动画时长） */
+    editBudgetTransitionMs: 0,
     // ─── 分类筛选 ───
     filterCategories: [] as FilterCategoryItem[],
     filterExpandedCategoryId: '' as string,
@@ -503,9 +513,15 @@ Page({
     this._entryUpdatedHandler = updatedHandler;
     eventBus.on(EventNames.ENTRY_UPDATED, updatedHandler);
 
-    // sync-refresh: 订阅 SYNC_DONE 事件 → sync 完成后即时刷新明细页（仅在 pulled > 0 时）
+    // sync-refresh: 订阅 SYNC_DONE 事件 → sync 完成后即时刷新明细页
+    // 资产是账本级 · 任何 sync（push 记账 / pull 增量 / 他端修改）都会把最新 balance
+    // 经 sync.ts 的 applyLedgerBalanceFromSync 写入 ledgerBalanceApi 缓存。
+    // 因此无论 pulled 是否 > 0，都从缓存重渲资产（首次进入 / 记账后 / 协作端改动全覆盖）。
     const syncDoneHandler = (payload?: unknown) => {
       const p = payload as SyncDonePayload | undefined;
+      if (this._ledgerId) {
+        this._renderAssetFromCache(this._ledgerId);
+      }
       // ledger 只关心 pulled（本地 storage 数据可能已变）；pushed 仅是本机数据上行，不影响明细页展示
       if (!p || p.pulled <= 0) return;
       void this._refreshIfChanged();
@@ -1832,9 +1848,9 @@ Page({
 
   async _onEntrySaved() {
     // 记账保存成功后刷新明细页数据
+    // 资产：push 尚未完成时缓存仍是旧值，此处不读；真正的资产刷新由 sync 完成后
+    // 的 SYNC_DONE → _renderAssetFromCache 消费服务端下发的最新 balance。
     await this._loadEntries();
-    // COSTRA-4xx：记账后资产以服务端为准 → 触发 syncPull 即可同步；预算 spent 走乐观更新
-    // 实际 _loadEntries 完成后 SYNC_DONE 会回灌最新 balance_cents
   },
 
   // ─── COSTRA-227: 编辑保存后响应式刷新 ─────────────────────────────────────────
@@ -2679,7 +2695,9 @@ Page({
 
   /**
    * 加载资产 + 预算。
-   * - 资产：先读本地缓存（内存→storage）即时渲染，再后台拉新值校准
+   * - 资产：先读本地缓存（内存→storage）即时渲染，再主动拉服务端权威值校准。
+   *   首次进入本地无缓存时，主动拉取让资产不必干等 sync-pull 的 ledgers[] 增量
+   *   （拉取结果经 applyLedgerBalance 写缓存后即时渲染）。
    * - 预算：先读本地缓存，再后台拉新值校准
    */
   async _loadAssetAndBudget(ledgerId: string, month: string) {
@@ -2687,6 +2705,11 @@ Page({
     const cachedAsset = await getCachedLedgerBalanceFromStorage(ledgerId);
     if (cachedAsset) {
       this._renderAsset(cachedAsset.balance_cents, cachedAsset.balance_version);
+    }
+    // 资产：主动拉服务端权威值（与预算 fetchBudget 对齐 · 失败静默，由 sync-pull 兜底）
+    const freshAsset = await fetchLedgerBalance(ledgerId);
+    if (freshAsset && (this._ledgerId === ledgerId)) {
+      this._renderAsset(freshAsset.balance_cents, freshAsset.balance_version);
     }
     // 预算：本地缓存即时渲染
     const cachedBudget = await getCachedBudgetFromStorage(ledgerId, month);
@@ -2697,18 +2720,19 @@ Page({
       this._renderBudgetEmpty();
       this._editBudgetVersion = null;
     }
-    // 后台拉新值
-    // 资产不主动拉取(无 GET /ledgers/:id 端点)，靠 sync-pull 下发 ledgers[] 自动更新
+    // 预算：后台拉新值
     void this._loadBudgetOnly(ledgerId, month);
   },
 
   /**
-   * 资产当前不需要主动拉取 · 完全依赖 sync-pull 下发。
-   * 保留方法名给后续扩展(如登录后 bootstrap 预热)。
+   * 从 ledgerBalanceApi 缓存（内存）读取当前资产并渲染。
+   * 数据由 sync.ts 的 applyLedgerBalanceFromSync 在每次 sync 后写入（服务端每次下发 ledgers[]）。
+   * 首次进入 / 记账 push / 协作端修改 任一 sync 完成后，都应调用此方法让 UI 消费最新缓存。
    */
-  async _loadAssetOnly(_ledgerId: string) {
-    // noop · sync-pull 已在 sync.ts applyLedgerBalanceFromSync 写入 ledgerBalanceApi 缓存
-    // 明细页下次 onShow 或 SYNC_DONE 时会读到最新值
+  _renderAssetFromCache(ledgerId: string) {
+    const cached = getCachedLedgerBalance(ledgerId);
+    if (!cached) return;
+    this._renderAsset(cached.balance_cents, cached.balance_version);
   },
 
   async _loadBudgetOnly(ledgerId: string, month: string) {
@@ -2761,11 +2785,17 @@ Page({
     this.setData({
       editAssetVisible: true,
       editAssetDisplay: yuanStr,
+      editAssetOffsetY: 0,
+      editAssetTransitionMs: 0,
     });
   },
 
   onCloseEditAsset() {
-    this.setData({ editAssetVisible: false });
+    this.setData({
+      editAssetVisible: false,
+      editAssetOffsetY: 0,
+      editAssetTransitionMs: 0,
+    });
     eventBus.emit(EventNames.SHOW_TAB_BAR);
   },
 
@@ -2778,6 +2808,21 @@ Page({
       ? cleaned
       : cleaned.slice(0, firstDotIdx + 1) + cleaned.slice(firstDotIdx + 1).replace(/\./g, '');
     this.setData({ editAssetDisplay: sanitized });
+  },
+
+  /**
+   * 资产弹窗 · 系统键盘高度变化驱动 sheet 上移避让。
+   * 与 expense-overlay 同构：adjust-position 已关（不靠微信自动上推），
+   * 键盘弹起时把贴底 sheet 整体 translateY(-keyboardHeight)，使其底部恰好落在键盘顶部正上方，
+   * 输入框与保存按钮始终保持可见，彻底规避 fixed 定位被系统键盘挤压错位的问题。
+   */
+  onEditAssetKeyboardHeightChange(e: WechatMiniprogram.InputKeyboardHeightChange) {
+    const height = e.detail.height || 0;
+    const duration = e.detail.duration || 0;
+    this.setData({
+      editAssetOffsetY: -height,
+      editAssetTransitionMs: duration > 0 ? duration : 0,
+    });
   },
 
   async onConfirmEditAssetInput() {
@@ -2868,11 +2913,17 @@ Page({
     this.setData({
       editBudgetVisible: true,
       editBudgetDisplay: yuanStr,
+      editBudgetOffsetY: 0,
+      editBudgetTransitionMs: 0,
     });
   },
 
   onCloseEditBudget() {
-    this.setData({ editBudgetVisible: false });
+    this.setData({
+      editBudgetVisible: false,
+      editBudgetOffsetY: 0,
+      editBudgetTransitionMs: 0,
+    });
     eventBus.emit(EventNames.SHOW_TAB_BAR);
   },
 
@@ -2884,6 +2935,18 @@ Page({
       ? cleaned
       : cleaned.slice(0, firstDotIdx + 1) + cleaned.slice(firstDotIdx + 1).replace(/\./g, '');
     this.setData({ editBudgetDisplay: sanitized });
+  },
+
+  /**
+   * 预算弹窗 · 系统键盘高度变化驱动 sheet 上移避让（与 onEditAssetKeyboardHeightChange 同构）。
+   */
+  onEditBudgetKeyboardHeightChange(e: WechatMiniprogram.InputKeyboardHeightChange) {
+    const height = e.detail.height || 0;
+    const duration = e.detail.duration || 0;
+    this.setData({
+      editBudgetOffsetY: -height,
+      editBudgetTransitionMs: duration > 0 ? duration : 0,
+    });
   },
 
   async onConfirmEditBudgetInput() {

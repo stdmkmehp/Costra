@@ -14,6 +14,9 @@
  *   B8  rebase 后老流水 softDelete：old_seq ≤ baseline 不回退（balance 不变）
  *   B9  rebase乐观锁：正确 clientBaseVersion → 200；错误 → 409
  *   B10 rebase 上限校验：>10^15 → 400
+ *   B11 GET /ledgers/:id/balance 主动拉取 → 200 + 三字段（客户端首屏校准）
+ *   B12 GET /ledgers/:id/balance 非成员越权 → 403
+ *   B13 GET /ledgers/:id/balance 账本不存在 → 404
  *
  *   Bud1 GET /budgets 未设置 → 404
  *   Bud2 PUT /budgets 首次 (version=null) → 200+ version=1
@@ -199,6 +202,61 @@ describe('COSTRA-4xx · 账本资产累加', () => {
     expect(after.balance_version).toBe(afterCreate.balance_version + 1);
   });
 
+  it('B6.1 sync push delete entry → 旧贡献回退（processEntryOp 必须走 entryService.softDelete）', async () => {
+    // 1) 通过 sync push 创建 entry（模拟客户端离线记账 → 上行）
+    const clientRefId = 'local-B6-1';
+    const pushCreate = await app.inject({
+      method: 'POST',
+      url: '/v1/sync/push',
+      headers: { ...auth(), 'idempotency-key': 'idem-B6-1-create' },
+      payload: {
+        ops: [{
+          op: 'create',
+          entity: 'entry',
+          client_ref_id: clientRefId,
+          base_version: null,
+          payload: {
+            ledger_id: LEDGER_ID,
+            amount: 3000,
+            type: 'expense',
+            occurred_at: '2026-08-01T10:00:00.000Z',
+          },
+        }],
+      },
+    });
+    expect(pushCreate.statusCode).toBe(200);
+    const createBody = pushCreate.json() as { results: Array<{ status: string; server_version: number }> };
+    expect(createBody.results[0].status).toBe('ok');
+    const serverVersion = createBody.results[0].server_version;
+
+    const afterCreate = await getLedgerRow();
+    expect(afterCreate.balance_cents).toBe(-3000);
+
+    // 2) 通过 sync push 删除 entry（模拟客户端左滑删除 → 上行）
+    const pushDelete = await app.inject({
+      method: 'POST',
+      url: '/v1/sync/push',
+      headers: { ...auth(), 'idempotency-key': 'idem-B6-1-delete' },
+      payload: {
+        ops: [{
+          op: 'delete',
+          entity: 'entry',
+          client_ref_id: clientRefId,
+          base_version: serverVersion,
+          payload: {},
+        }],
+      },
+    });
+    expect(pushDelete.statusCode).toBe(200);
+    const deleteBody = pushDelete.json() as { results: Array<{ status: string }> };
+    expect(deleteBody.results[0].status).toBe('ok');
+
+    // 3) 资产必须回退到 0
+    const after = await getLedgerRow();
+    expect(after.balance_cents).toBe(0);
+    expect(after.balance_version).toBe(afterCreate.balance_version + 1);
+  });
+
   it('B7 rebase 后老流水的 update：old_seq ≤ baseline 不回退 · new_seq > baseline 叠加', async () => {
     // 1) 记一笔 expense 500
     const created = await createEntry({ amount: 500, type: 'expense' });
@@ -289,6 +347,47 @@ describe('COSTRA-4xx · 账本资产累加', () => {
       payload: { balance_cents: 2_000_000_000_000_000, balance_version: row0.balance_version },
     });
     expect(res.statusCode).toBe(400);
+  });
+
+  it('B11 GET /ledgers/:id/balance 主动拉取 → 200 + 当前 balance 三字段', async () => {
+    // 先记一笔，让 balance 非零，便于断言读到的是权威值
+    await createEntry({ amount: 5000, type: 'income' });
+    const row = await getLedgerRow();
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/v1/ledgers/${LEDGER_ID}/balance`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as {
+      balance_cents: number;
+      balance_baseline_seq: number;
+      balance_version: number;
+    };
+    expect(body.balance_cents).toBe(row.balance_cents);
+    expect(body.balance_baseline_seq).toBe(row.balance_baseline_seq);
+    expect(body.balance_version).toBe(row.balance_version);
+  });
+
+  it('B12 GET /ledgers/:id/balance 非成员越权读取 → 403', async () => {
+    // 用另一个 openid 登录（未加入当前 family），尝试读取 → 403
+    const otherToken = await login(app, 'openid-balance-intruder');
+    const res = await app.inject({
+      method: 'GET',
+      url: `/v1/ledgers/${LEDGER_ID}/balance`,
+      headers: { authorization: `Bearer ${otherToken}` },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('B13 GET /ledgers/:id/balance 账本不存在 → 404', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/ledgers/00000000-0000-0000-0000-00000000dead/balance',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(404);
   });
 });
 

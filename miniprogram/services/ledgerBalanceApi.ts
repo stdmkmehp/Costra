@@ -2,20 +2,22 @@
 // 卡号：COSTRA-4xx · 事实源：docs/design/asset-and-budget-spec.md §5
 //
 // 职责：
+//   - fetchLedgerBalance：主动拉取资产 → GET /ledgers/:id/balance（明细页首屏即时校准）
 //   - rebaseLedgerBalance：修改资产 → PATCH /ledgers/:id/balance
 //   - sync-pull 接收 ledger 增量时调 applyLedgerBalanceFromSync 更新本地缓存
 //   - getCachedLedgerBalance*：本地读取（内存 + storage）
 //
 // 缓存策略：
 //   - 内存缓存 + storage 持久化（key: `ledger_balance:${ledger_id}`）
-//   - sync-pull / login-bootstrap 自动写入
+//   - 主动拉取 / sync-pull / login-bootstrap 自动写入
 //   - 明细页读时优先命中内存，无则降级到 storage
 //
 // 客户端不本地累加资产（服务端权威）；
 // 修改资产时乐观锁失败 → 抛冲突让 UI 弹冲突弹窗（不静默覆盖敏感字段）。
 //
-// 注意：本服务不主动发起 GET /ledgers/:id（服务端没暴露这个端点）；
-// 资产的更新完全依赖 sync-pull 的 ledgers[] 增量下发。
+// 资产更新双通道：
+//   1) 主动拉取 GET /ledgers/:id/balance（首屏等不了 sync 时即时校准）
+//   2) sync-pull 下发的 ledgers[] 增量（协作端修改 / 记账后同步校准）
 
 import { request, ApiError } from './request';
 import { getItem, setItem } from './storage';
@@ -93,6 +95,42 @@ export async function rebaseLedgerBalance(
   };
   await applyLedgerBalance(balance);
   return balance;
+}
+
+/**
+ * 主动拉取账本资产（GET /ledgers/:id/balance）。
+ *
+ * 与预算的 fetchBudget 对齐：明细页首屏先读缓存即时渲染，再主动拉服务端权威值校准，
+ * 避免首次进入干等 sync-pull 下发的 ledgers[] 才更新资产。
+ *
+ * 失败处理：
+ *   - 404 / 403：账本不可读，返回 null（UI 降级显示上次缓存或 '--'）
+ *   - 其他错误：静默返回 null，不打断首屏（资产由 sync-pull 通道兜底）
+ */
+export async function fetchLedgerBalance(ledgerId: string): Promise<LedgerBalance | null> {
+  try {
+    const resp = await request<{
+      balance_cents: number;
+      balance_baseline_seq: number;
+      balance_version: number;
+    }>({
+      method: 'GET',
+      path: `/ledgers/${ledgerId}/balance`,
+    });
+
+    const balance: LedgerBalance = {
+      ledger_id: ledgerId,
+      balance_cents: resp.balance_cents,
+      balance_baseline_seq: resp.balance_baseline_seq,
+      balance_version: resp.balance_version,
+      fetched_at: Date.now(),
+    };
+    await applyLedgerBalance(balance);
+    return balance;
+  } catch (err) {
+    logger.warn('ledgerBalanceApi', 'fetchLedgerBalance failed', err);
+    return null;
+  }
 }
 
 /**

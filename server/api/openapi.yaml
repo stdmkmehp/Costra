@@ -764,6 +764,35 @@ paths:
               schema: { $ref: '#/components/schemas/Ledger' }
 
   /ledgers/{ledger_id}/balance:
+    get:
+      tags: [ledgers]
+      summary: 主动拉取账本资产
+      description: |
+        客户端主动拉取账本最新资产（明细页首屏即时校准）。
+        与 sync-pull 下发的 ledgers[] 增量互为补充：首屏无需等 sync，主动拉最新值即时渲染。
+
+        权限：用户必须是该账本所属 family 的 active 成员，否则 403。
+      parameters:
+        - name: ledger_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: 拉取成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [balance_cents, balance_baseline_seq, balance_version]
+                properties:
+                  balance_cents: { type: integer, format: int64 }
+                  balance_baseline_seq: { type: integer, format: int64 }
+                  balance_version: { type: integer }
+        '403':
+          description: 非该 family 的 active 成员 · 越权读取
+        '404':
+          description: 账本不存在
     patch:
       tags: [ledgers]
       summary: 修改账本资产（重锚）
