@@ -132,9 +132,9 @@ export async function getBudget(
   // 1) 精确匹配当月
   let budget = await budgetRepo.findByLedgerAndMonth(input.ledgerId, input.month);
 
-  // 2) 当月未设置 → 回退取该账本最近一次设定的预算
+  // 2) 当月未设置 → 回退取该账本距离最近的一条预算（先往前，再往后）
   if (!budget) {
-    budget = await budgetRepo.findLatestBeforeOrEqual(input.ledgerId, input.month);
+    budget = await budgetRepo.findNearestActive(input.ledgerId, input.month);
   }
 
   // 3) 从未设过任何预算 → 404

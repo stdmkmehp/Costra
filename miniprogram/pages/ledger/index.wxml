@@ -15,14 +15,8 @@
       <text class="header__total-expense tnum">{{totalExpense}}</text>
       <!-- 收入 + 结余 辅助行 · 28rpx / secondary -->
       <text class="header__sub">{{totalBalance}}</text>
-      <!-- COSTRA-4xx · 第 3 行：资产 + 预算 -->
+      <!-- COSTRA-4xx · 第 3 行：预算 + 资产 · 顺序：预算 在前、资产 在后，中点分隔 -->
       <view class="header__asset-budget">
-        <!-- 资产（带 ✎ 编辑图标） -->
-        <view class="header__asset" catchtap="onTapAssetEdit">
-          <text class="header__asset-label">资产</text>
-          <text class="header__asset-value tnum">{{assetDisplay}}</text>
-          <text class="header__edit-icon" aria-hidden="true">✎</text>
-        </view>
         <!-- 预算（剩余 / 上限） -->
         <view class="header__budget" catchtap="onTapBudgetEdit">
           <text class="header__budget-label">预算</text>
@@ -32,6 +26,14 @@
             <text class="header__budget-total tnum">{{budgetDisplay.total}}</text>
           </block>
           <text wx:else class="header__budget-unset">未设置</text>
+          <text class="header__edit-icon" aria-hidden="true">✎</text>
+        </view>
+        <!-- 中点分隔符（与「收入 · 结余」视觉一致） -->
+        <text class="header__asset-budget__sep" aria-hidden="true">·</text>
+        <!-- 资产（带 ✎ 编辑图标） -->
+        <view class="header__asset" catchtap="onTapAssetEdit">
+          <text class="header__asset-label">资产</text>
+          <text class="header__asset-value tnum">{{assetDisplay}}</text>
           <text class="header__edit-icon" aria-hidden="true">✎</text>
         </view>
       </view>

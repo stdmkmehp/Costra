@@ -50,12 +50,26 @@
   font-feature-settings: "tnum";
 }
 
-/* ---- COSTRA-4xx · 第 3 行：资产 + 预算 ---- */
+/* ---- COSTRA-4xx · 第 3 行：预算 · 资产 ---- */
+/* 单行显示·数字可溢出：负数资产 / 长预算「剩余/上限」天然容易超宽，
+   整行必须保持一行（否则 ✎ 图标会掉到下一行，体验更差），
+   数字必须完整显示（不许省略号截断），超宽部分允许溢出到屏幕外。 */
 .header__asset-budget {
   display: flex;
   align-items: center;
-  gap: 24rpx;
+  gap: 16rpx;
   margin-top: 4rpx;
+  flex-wrap: nowrap;
+  /* 不设 overflow:hidden / min-width:0 · 允许内容溢出屏幕外 */
+}
+
+/* 资产 / 预算 中点分隔符（与「收入 · 结余」视觉一致） */
+.header__asset-budget__sep {
+  font-size: 28rpx;
+  line-height: 1.5;
+  color: var(--color-role-text-secondary, rgba(28,27,26,0.48));
+  flex-shrink: 0;
+  user-select: none;
 }
 
 .header__asset,
@@ -63,6 +77,10 @@
   display: flex;
   align-items: baseline;
   gap: 8rpx;
+  /* 按内容尺寸自然展开，不被父级压缩；超宽直接溢出到屏幕外 */
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }
 
 /* 资产/预算与上一行「收入/结余」使用同字号同色：28rpx / secondary，保持视觉一致 */
@@ -71,6 +89,9 @@
   font-size: 28rpx;
   color: var(--color-role-text-secondary, rgba(28,27,26,0.48));
   line-height: 1.5;
+  /* label 永不拆字（"资产" / "预算" 始终整体显示） */
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .header__asset-value {
@@ -79,16 +100,24 @@
   line-height: 1.5;
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";
+  /* 数字完整显示·禁止任何截断/换行，超宽部分溢出到屏幕外 */
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* ✎ 编辑图标：unicode 字符 ✎（U+270E）+ 水平翻转，
-   使笔尖朝左下、笔尾朝右上。资产/预算共用，暗示可点击修改。 */
+   使笔尖朝左下、笔尾朝右上。资产/预算共用，暗示可点击修改。
+   ✎ 字形固有左右内边距较大，用负 margin 收紧视觉间距；
+   字号略大于标签(28rpx)使铅笔更显眼。 */
 .header__edit-icon {
-  font-size: 24rpx;
+  font-size: 30rpx;
   line-height: 1;
-  margin-left: 4rpx;
+  margin-left: -2rpx;
+  margin-right: -4rpx;
   transform: scaleX(-1);
   display: inline-block;
+  /* 图标永不压缩：保证"资产"和"预算"各自的 ✎ 总在行尾可见 */
+  flex-shrink: 0;
 }
 .header__asset,
 .header__budget {
@@ -101,6 +130,9 @@
   line-height: 1.5;
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";
+  /* 数字完整显示·禁止任何截断/换行 */
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .header__budget-remain.is-safe { color: #8AA689; }   /* 莫兰迪绿灰 · p ≥ 40% */
 .header__budget-remain.is-hint { color: #C4B58D; }   /* 莫兰迪米黄 · 20~40% */
@@ -111,6 +143,7 @@
   font-size: 28rpx;
   color: var(--color-role-text-secondary, rgba(28,27,26,0.48));
   margin: 0 2rpx;
+  flex-shrink: 0;
 }
 .header__budget-total {
   font-size: 28rpx;
@@ -118,12 +151,16 @@
   line-height: 1.5;
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .header__budget-unset {
   font-size: 28rpx;
   color: var(--color-role-text-secondary, rgba(28,27,26,0.48));
   text-decoration: underline;
   text-underline-offset: 4rpx;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* 资产/预算编辑键盘的提示行（共用 .keypad-sheet 已有样式） */

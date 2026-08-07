@@ -91,20 +91,28 @@ export async function findByLedgerAndMonth(
 }
 
 /**
- * 查指定账本中 month <= givenMonth 的最近一条 active 预算。
+ * 查指定账本中距离 givenMonth 最近的一条 active 预算。
  *
  * 用于"预算跟随账本走"回退逻辑：当月未单独设置预算时，
  * 继承该账本最近一次设定的预算上限（amount_cents）。
  *
+ * 查找顺序：
+ *   1. month <= givenMonth 中最近的（往前找）
+ *   2. month > givenMonth 中最近的（往后找）
+ *
+ * 典型场景：用户 8 月设了预算，回看 6 月时 6 月没设过 → 往前没有 →
+ * 往后找到 8 月的预算，继承其上限。
+ *
  * 返回 null 表示该账本从未设过任何预算。
  */
-export async function findLatestBeforeOrEqual(
+export async function findNearestActive(
   ledgerId: string,
   month: string,
   client?: Runner,
 ): Promise<BudgetEntity | null> {
   const runner = client ?? exec();
-  const res = await runner.query(
+  // 先往前找
+  const before = await runner.query(
     `SELECT ${SELECT_COLUMNS}
        FROM budgets
       WHERE ledger_id = $1
@@ -114,7 +122,20 @@ export async function findLatestBeforeOrEqual(
       LIMIT 1`,
     [ledgerId, month],
   );
-  return res.rows[0] ? rowToEntity(res.rows[0]) : null;
+  if (before.rows[0]) return rowToEntity(before.rows[0]);
+
+  // 往后找
+  const after = await runner.query(
+    `SELECT ${SELECT_COLUMNS}
+       FROM budgets
+      WHERE ledger_id = $1
+        AND month > $2
+        AND deleted_at IS NULL
+      ORDER BY month ASC
+      LIMIT 1`,
+    [ledgerId, month],
+  );
+  return after.rows[0] ? rowToEntity(after.rows[0]) : null;
 }
 
 /**
