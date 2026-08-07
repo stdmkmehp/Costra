@@ -487,8 +487,13 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
       // bucket 窗口起点（今天 window.startHour:00 in tz）
       const windowStartToday = nowZ.set({ hour: window.startHour, minute: 0, second: 0, millisecond: 0 });
       if (nowZ >= windowStartToday) {
-        // 当前时刻已进入或超过 bucket 窗口起点 → 跳过今天
-        nextRunAt = computeNextRunAt(forCompute, now);
+        // 当前时刻已进入或超过 bucket 窗口起点 → 跳过今天。
+        // from 设为今天窗口结束时刻（endHour:00 in tz），确保 hash 落点
+        // （严格在 [startHour*60+30, endHour*60-30) 内）必然 < from，
+        // computeNextRunAt 内部 cursor 推进到今天 hash 落点时 cursor <= from →
+        // 推进到下一天，从而保证今天不触发，与 hash 落点无关。
+        const windowEndToday = nowZ.set({ hour: window.endHour, minute: 0, second: 0, millisecond: 0 });
+        nextRunAt = computeNextRunAt(forCompute, windowEndToday.toJSDate());
       }
     } else if (nextRunAt <= now) {
       // nextRunAt 已过 → 从当前时刻重算下一个匹配日

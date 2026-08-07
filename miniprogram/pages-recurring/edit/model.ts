@@ -147,8 +147,15 @@ export function computePreviewNextRun(
       ? (() => {
           const window = BUCKET_WINDOWS[bucket];
           const windowStartToday = nowZ.set({ hour: window.startHour, minute: 0, second: 0, millisecond: 0 });
-          // 当前时刻已进入或超过 bucket 窗口起点 → 从 now 起算（跳过今天）
-          if (nowZ >= windowStartToday) return now;
+          if (nowZ >= windowStartToday) {
+            // 当前时刻已进入或超过 bucket 窗口起点 → 跳过今天。
+            // from 设为今天窗口结束时刻，与后端 recurringService.ts create 逻辑同步。
+            // hash 落点严格在窗口内缩区间 [startHour*60+30, endHour*60-30)，
+            // 必然 < endHour:00 → computeNextRunAt cursor 推进到今天 hash 落点时
+            // cursor <= from → 推进到下一天，保证今天不触发。
+            const windowEndToday = nowZ.set({ hour: window.endHour, minute: 0, second: 0, millisecond: 0 });
+            return windowEndToday.toJSDate();
+          }
           // 窗口还没开始 → 从 start_date 00:00 起算（今天触发）
           return startDateZ.minus({ minutes: 1 }).toJSDate();
         })()

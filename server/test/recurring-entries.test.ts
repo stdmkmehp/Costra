@@ -1734,3 +1734,170 @@ describe('recurring-entries · daily period', () => {
     expect(zoned.month).toBe(8);
   });
 });
+
+// ==============================================================================
+// 起始日=今天 + bucket 窗口已进入 → 跳过今天（§4.4 顺延规则）
+// ==============================================================================
+
+describe('recurring-entries · start_date=today + window already entered', () => {
+  let app: FastifyInstance;
+  let token: string;
+  let userId: string;
+
+  beforeEach(async () => {
+    app = await buildApp({ disableLogger: true, autoStartScheduler: false });
+    await app.ready();
+    const login1 = await login(app);
+    token = login1.token;
+    userId = login1.userId;
+    await setupFamilyAndLedger(userId);
+  });
+
+  afterEach(async () => {
+    vi.useRealTimers();
+    await app.close();
+  });
+
+  it('weekly · 起始日=今天且今天匹配 + 当前时刻已进入下午窗口 → 跳过今天，next_run_at 落在下一个匹配日', async () => {
+    // 2026-08-07 是周五（weekday=5）。设 start_date=今天，days_of_week=[5]（周五）。
+    // now = 13:02（已进入下午窗口 12:00~17:59）→ 应跳过今天。
+    // 下一个匹配日 = 下周五 2026-08-14。
+    vi.setSystemTime(new Date('2026-08-07T13:02:00+08:00'));
+
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 2000,
+        period: 'weekly',
+        days_of_week: [5],
+        execute_bucket: 'afternoon',
+        start_date: '2026-08-07',
+      },
+    });
+    expect(createRes.statusCode).toBe(201);
+    const rule = createRes.json() as { next_run_at: string; timezone: string };
+
+    const { DateTime } = await import('luxon');
+    const nextRun = DateTime.fromISO(rule.next_run_at, { zone: rule.timezone });
+    // 应跳过今天 → 下周五 8/14
+    expect(nextRun.day).toBe(14);
+    expect(nextRun.month).toBe(8);
+  });
+
+  it('weekly · 起始日=今天且今天匹配 + 当前时刻在窗口之前 → 今天触发', async () => {
+    // 2026-08-07 周五。now = 07:00（早上，下午窗口 12:00 还没开始）→ 今天会触发。
+    vi.setSystemTime(new Date('2026-08-07T07:00:00+08:00'));
+
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 2000,
+        period: 'weekly',
+        days_of_week: [5],
+        execute_bucket: 'afternoon',
+        start_date: '2026-08-07',
+      },
+    });
+    expect(createRes.statusCode).toBe(201);
+    const rule = createRes.json() as { next_run_at: string; timezone: string };
+
+    const { DateTime } = await import('luxon');
+    const nextRun = DateTime.fromISO(rule.next_run_at, { zone: rule.timezone });
+    // 窗口还没开始 → 今天会触发
+    expect(nextRun.day).toBe(7);
+  });
+
+  it('daily · 起始日=今天 + 当前时刻已进入下午窗口 → 跳过今天，next_run_at 落在 interval 天后', async () => {
+    // 2026-08-07。daily interval=2，start_date=今天，afternoon 窗口。
+    // now = 13:02（已进入下午窗口 12:00~17:59）→ 应跳过今天。
+    // 下一个匹配日 = 今天 + 2 = 2026-08-09。
+    vi.setSystemTime(new Date('2026-08-07T13:02:00+08:00'));
+
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 4550,
+        period: 'daily',
+        period_interval: 2,
+        execute_bucket: 'afternoon',
+        start_date: '2026-08-07',
+      },
+    });
+    expect(createRes.statusCode).toBe(201);
+    const rule = createRes.json() as { next_run_at: string; timezone: string };
+
+    const { DateTime } = await import('luxon');
+    const nextRun = DateTime.fromISO(rule.next_run_at, { zone: rule.timezone });
+    // 应跳过今天 → 2 天后 8/9
+    expect(nextRun.day).toBe(9);
+    expect(nextRun.month).toBe(8);
+  });
+
+  it('daily · 起始日=今天 + 当前时刻在窗口之前 → 今天触发', async () => {
+    // now = 07:00（早上，下午窗口 12:00 还没开始）→ 今天会触发。
+    vi.setSystemTime(new Date('2026-08-07T07:00:00+08:00'));
+
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 4550,
+        period: 'daily',
+        period_interval: 2,
+        execute_bucket: 'afternoon',
+        start_date: '2026-08-07',
+      },
+    });
+    expect(createRes.statusCode).toBe(201);
+    const rule = createRes.json() as { next_run_at: string; timezone: string };
+
+    const { DateTime } = await import('luxon');
+    const nextRun = DateTime.fromISO(rule.next_run_at, { zone: rule.timezone });
+    // 窗口还没开始 → 今天会触发
+    expect(nextRun.day).toBe(7);
+  });
+
+  it('monthly · 起始日=今天且今天匹配 + 当前时刻已进入窗口 → 跳过今天', async () => {
+    // 2026-08-07。monthly days_of_month=[7]，start_date=今天，afternoon 窗口。
+    // now = 14:00（已进入下午窗口）→ 应跳过今天 → 下月 9/7。
+    vi.setSystemTime(new Date('2026-08-07T14:00:00+08:00'));
+
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 3000,
+        period: 'monthly',
+        days_of_month: [7],
+        execute_bucket: 'afternoon',
+        start_date: '2026-08-07',
+      },
+    });
+    expect(createRes.statusCode).toBe(201);
+    const rule = createRes.json() as { next_run_at: string; timezone: string };
+
+    const { DateTime } = await import('luxon');
+    const nextRun = DateTime.fromISO(rule.next_run_at, { zone: rule.timezone });
+    // 应跳过今天 → 下月 9/7
+    expect(nextRun.month).toBe(9);
+    expect(nextRun.day).toBe(7);
+  });
+});
