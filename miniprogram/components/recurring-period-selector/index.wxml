@@ -1,7 +1,6 @@
 <!-- components/recurring-period-selector/index.wxml -->
-<view wx:if="{{show}}" class="rps__mask" bindtap="onClose">
-  <view class="rps__sheet" catchtap="onNoop"
-        style="transform: translateY({{sheetOffsetY}}px); transition-duration: {{sheetTransitionMs}}ms;">
+<view wx:if="{{show}}" class="rps__mask">
+  <view class="rps__sheet" catchtap="onNoop">
     <view class="rps__title">选择周期</view>
 
     <!-- 1. 每n天 -->
@@ -13,12 +12,7 @@
                type="number"
                value="{{dayIntervalDisplay}}"
                bindinput="onDayIntervalInput"
-               bindblur="onDayIntervalBlur"
-               bindfocus="onIntervalFocus"
-               bindkeyboardheightchange="onKeyboardHeightChange"
-               data-input-key="daily"
-               adjust-position="{{false}}"
-               cursor-spacing="0" />
+               bindblur="onDayIntervalBlur" />
         <text>天</text>
       </view>
       <text wx:if="{{periodType === 'daily'}}" class="rps__check">✓</text>
@@ -42,12 +36,7 @@
                type="number"
                value="{{weekIntervalDisplay}}"
                bindinput="onWeekIntervalInput"
-               bindblur="onWeekIntervalBlur"
-               bindfocus="onIntervalFocus"
-               bindkeyboardheightchange="onKeyboardHeightChange"
-               data-input-key="weekly"
-               adjust-position="{{false}}"
-               cursor-spacing="0" />
+               bindblur="onWeekIntervalBlur" />
         <text>周</text>
       </view>
       <text wx:if="{{periodType === 'weekly'}}" class="rps__check">✓</text>
@@ -62,12 +51,7 @@
                type="number"
                value="{{monthIntervalDisplay}}"
                bindinput="onMonthIntervalInput"
-               bindblur="onMonthIntervalBlur"
-               bindfocus="onIntervalFocus"
-               bindkeyboardheightchange="onKeyboardHeightChange"
-               data-input-key="monthly"
-               adjust-position="{{false}}"
-               cursor-spacing="0" />
+               bindblur="onMonthIntervalBlur" />
         <text>月</text>
       </view>
       <text wx:if="{{periodType === 'monthly'}}" class="rps__check">✓</text>
