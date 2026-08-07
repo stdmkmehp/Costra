@@ -62,8 +62,8 @@ CREATE TABLE IF NOT EXISTS recurring_rules (
   created_by      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 
   -- ─── 记账模板字段（透传给生成的 entry）────────────────────────────
-  typeentry_type NOT NULL,
-  amountBIGINT NOT NULL CHECK (amount > 0),
+  type            entry_type NOT NULL,
+  amount          BIGINT NOT NULL CHECK (amount > 0),
   currency        TEXT NOT NULL DEFAULT 'CNY',
   category_id     UUID REFERENCES categories(id),
   account_id      UUID,
