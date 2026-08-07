@@ -15,7 +15,8 @@ export type Period =
   | 'weekly'
   | 'monthly'
   | 'yearly'
-  | 'workday';
+  | 'workday'
+  | 'daily';
 
 // ===== formatDaysForSummary · 已选日子的展示格式化 =====
 
@@ -47,6 +48,10 @@ export function formatDaysForSummary(ctx: FormatContext): string {
       return formatYearMonthDays(ctx.year_month_days ?? [], ctx.mode);
     case 'workday':
       return '每个工作日';
+    case 'daily':
+      // daily 无日子概念 · 语义已完全由 period 前缀（"每天" / "每 N 天"）表达
+      // 返回空串，让调用方 trim 后拼接不出现多余空格
+      return '';
   }
 }
 

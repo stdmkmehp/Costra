@@ -51,6 +51,15 @@
 .recedit__arrow { font-size: 28rpx; color: rgba(28,27,26,0.28); margin-left: 8rpx; }
 .recedit__input { flex: 1; font-size: 28rpx; color: #1c1b1a; text-align: right; }
 
+/* 工作日周期说明 */
+.recedit__workday-hint {
+  font-size: 22rpx;
+  color: rgba(28,27,26,0.48);
+  line-height: 36rpx;
+  padding: 12rpx 0;
+  border-bottom: 1rpx solid rgba(28,27,26,0.06);
+}
+
 /* 金额就地输入 */
 .recedit__amount-input-wrap { flex: 1; display: flex; align-items: center; justify-content: flex-end; }
 .recedit__amount-prefix { font-size: 32rpx; font-weight: 600; color: #1c1b1a; margin-right: 8rpx; }

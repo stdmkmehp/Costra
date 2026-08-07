@@ -153,7 +153,7 @@ const createBodySchema = {
     shared_type: { type: ['string', 'null'], enum: ['personal', 'shared', null] },
     period: {
       type: 'string',
-      enum: ['weekly', 'monthly', 'yearly', 'workday'],
+      enum: ['weekly', 'monthly', 'yearly', 'workday', 'daily'],
     },
     period_interval: { type: 'integer', minimum: 1 },
     days_of_week: nullableArrayOfInt,
@@ -184,7 +184,7 @@ const patchBodySchema = {
     shared_type: { type: ['string', 'null'], enum: ['personal', 'shared', null] },
     period: {
       type: 'string',
-      enum: ['weekly', 'monthly', 'yearly', 'workday'],
+      enum: ['weekly', 'monthly', 'yearly', 'workday', 'daily'],
     },
     period_interval: { type: 'integer', minimum: 1 },
     days_of_week: nullableArrayOfInt,

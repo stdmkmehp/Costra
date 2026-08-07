@@ -234,10 +234,12 @@ function applyMigrations(db: IMemoryDb): void {
 
     -- ═══════════════════════════════════════════════════════════════
     -- migration 0011_recurring_entries.sql · 简化 pg-mem 兼容版
+    -- （含 workday_calendars · 原 0012/0013 在上线前合并进来）
     -- 依据 docs/spike/pgmem-array-check.md 的适配策略：
     --   * ENUM → TEXT + CHECK IN (...)
     --   * 数组元素范围 / 长度 CHECK → 省略（service 层 validateCreate 兜底）
     --   * 复合 chk_recurring_period_fields → 省略（service 层校验）
+    --   * chk_holidays_workdays_disjoint（数组重叠 && 运算符）→ pg-mem 不支持 · 省略
     --   * pg-mem 已验证支持 SMALLINT[] / INTEGER[] 列基础 INSERT/SELECT
     -- ═══════════════════════════════════════════════════════════════
     CREATE TABLE recurring_rules (
@@ -255,7 +257,7 @@ function applyMigrations(db: IMemoryDb): void {
       shared_type     TEXT,
 
       period          TEXT NOT NULL CHECK (period IN
-        ('weekly','monthly','yearly','workday')),
+        ('weekly','monthly','yearly','workday','daily')),
       period_interval SMALLINT NOT NULL DEFAULT 1,
       days_of_week    SMALLINT[],
       days_of_month   SMALLINT[],
@@ -290,7 +292,7 @@ function applyMigrations(db: IMemoryDb): void {
       WHERE deleted_at IS NULL;
 
     -- ═══════════════════════════════════════════════════════════════════════
-    -- migration 0012_workday_calendars.sql · 简化 pg-mem 兼容版
+    -- workday_calendars 表（同属 migration 0011 · 原 0012 合并进来）
     --   * chk_holidays_workdays_disjoint（数组重叠 && 运算符）→ pg-mem 不支持 · 省略
     --     约束由真实 PG migration 兜底
     -- ═══════════════════════════════════════════════════════════════════════

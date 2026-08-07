@@ -90,6 +90,9 @@ export function buildStatusHint(
 export function buildPeriodLabel(period: RecurringPeriod, periodInterval?: number): string {
   const interval = periodInterval || 1;
   if (period === 'yearly') return '每年';
+  if (period === 'daily') {
+    return interval === 1 ? '每天' : `每${interval}天`;
+  }
   if (period === 'weekly') {
     return interval === 1 ? '每周' : `每${interval}周`;
   }

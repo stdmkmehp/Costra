@@ -55,8 +55,9 @@ export function shouldClearDaysOnPeriodChange(
   const newInMonth = MONTH_GROUP.includes(newPeriod);
   if (oldInMonth && newInMonth) return false;
 
-  // 切换进/出 workday → 跨组 · 清空已选日子（workday 本身无日子概念）
+  // 切换进/出 workday / daily → 跨组 · 清空已选日子（两档均无日子概念）
   if (oldPeriod === 'workday' || newPeriod === 'workday') return true;
+  if (oldPeriod === 'daily' || newPeriod === 'daily') return true;
 
   // yearly → yearly 不清（不可能 · 同值已排除）
   return true;

@@ -28,7 +28,7 @@
 #   ./redeploy.sh                                          # 默认：只重启 server（不构建 · 不跑 migration）
 #   ./redeploy.sh --build-mode local                       # 本地构建 + 重启 server
 #   ./redeploy.sh --build-mode local --migrate             # 构建 + migration + 重启
-#   ./redeploy.sh --build-mode local --migrate --migration-files "0011_recurring_entries.sql,0012_workday_calendars.sql"
+#   ./redeploy.sh --build-mode local --migrate --migration-files "0011_recurring_entries.sql"
 #   ./redeploy.sh --migrate --migration-dir server/db/migrations  # 跑目录下全部 SQL
 #   ./redeploy.sh --build-mode registry --registry-image weizhao/costra-server:v2.0 --migrate
 #   ./redeploy.sh --restart-psql --migrate                 # 重启 postgres + 跑 migration
@@ -168,7 +168,7 @@ if [[ "${DO_MIGRATE}" == "1" ]]; then
 
   if [[ -n "${MIGRATION_FILES}" ]]; then
     # 逗号分隔的文件列表 · 只接受纯文件名（带 .sql）· 自动拼 server/db/migrations/
-    # 例：--migration-files "0011_recurring_entries.sql,0012_workday_calendars.sql"
+    # 例：--migration-files "0011_recurring_entries.sql"
     IFS=',' read -ra _FILES <<< "${MIGRATION_FILES}"
     for f in "${_FILES[@]}"; do
       f=$(echo "$f" | xargs)  # trim whitespace

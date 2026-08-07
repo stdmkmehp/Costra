@@ -11,7 +11,8 @@ export type RecurringPeriod =
   | 'weekly'
   | 'monthly'
   | 'yearly'
-  | 'workday';
+  | 'workday'
+  | 'daily';
 
 export type RecurringBucket = 'dawn' | 'morning' | 'afternoon' | 'night';
 

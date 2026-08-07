@@ -1,5 +1,10 @@
 # 定时记账「工作日」支持 · 技术设计文档
 
+> ★ 合并说明（2026-08-07）：功能上线前，原 0012 `workday_calendars` 与 0013 `daily`
+> 两个 migration 已合并进 0011 `recurring_entries`。本文档以下提及 "migration 0012" /
+> "0012_workday_calendars.sql" 的地方，实际落点为 0011 的 workday_calendars 段。
+> 文档内容保留作为设计决策留痕，不再反映最终 migration 文件编号。
+
 ## 0. 背景与目标
 
 ### 0.1 现有周期

@@ -46,6 +46,10 @@ type SaveOutcome =
  */
 function computePeriodLabel(period: RecurringPeriod, interval: number): string {
   if (period === 'yearly') return '每年';
+  if (period === 'daily') {
+    if (interval === 1) return '每天';
+    return `每${interval}天`;
+  }
   if (period === 'weekly') {
     if (interval === 1) return '每周';
     return `每${interval}周`;
@@ -62,8 +66,9 @@ function computePeriodLabel(period: RecurringPeriod, interval: number): string {
  * 从 period 值解析 interval
  */
 function parsePeriodInterval(period: RecurringPeriod): number {
-  // period_interval 由 API 字段直接获取，此函数仅作fallback
+  // period_interval 由 API 字段直接获取，此函数仅作 fallback
   switch (period) {
+    case 'daily': return 1;
     case 'weekly': return 1;
     case 'monthly': return 1;
     case 'yearly': return 1;
@@ -516,7 +521,6 @@ Page({
       updates.daysOfWeek = [];
       updates.daysOfMonth = [];
       updates.yearMonthDays = [];
-      wx.showToast({ title: '日期选择已重置', icon: 'none', duration: 1000 });
     }
 
     this.setData(updates);
@@ -709,6 +713,7 @@ Page({
     if (period === 'monthly' && daysOfMonth.length === 0) return false;
     if (period === 'yearly' && yearMonthDays.length === 0) return false;
     if (period === 'workday') return true; // 无需选日子
+    if (period === 'daily') return true;   // 无需选日子
     return true;
   },
 

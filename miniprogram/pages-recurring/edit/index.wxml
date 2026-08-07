@@ -69,6 +69,16 @@
      <text class="recedit__arrow">›</text>
       </view>
 
+      <!-- 工作日说明 -->
+      <view wx:if="{{period === 'workday'}}" class="recedit__workday-hint">
+        工作日定义依据中国国务院办公厅发布的节假日安排，包含调休补班日，自动跳过法定节假日。
+      </view>
+
+      <!-- 每 N 天说明 -->
+      <view wx:if="{{period === 'daily'}}" class="recedit__workday-hint">
+        从起始日起算，每 {{periodInterval}} 天自动执行一次，不区分工作日与节假日。
+      </view>
+
       <!-- DOW 控件（每周/每两周） -->
       <recurring-dow-picker
         wx:if="{{period === 'weekly'}}"

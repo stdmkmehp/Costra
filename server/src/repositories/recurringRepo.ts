@@ -27,7 +27,8 @@ export type Period =
   | 'weekly'
   | 'monthly'
   | 'yearly'
-  | 'workday';
+  | 'workday'
+  | 'daily';
 
 export type ExecuteBucket = 'dawn' | 'morning' | 'afternoon' | 'night';
 

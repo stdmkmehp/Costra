@@ -1,18 +1,32 @@
 --============================================================================
--- Costra · Migration 0011 · Recurring Entries（定时记账）
+-- Costra · Migration 0011 · Recurring Entries（定时记账 · 含 workday + daily）
 -- ============================================================================
--- 卡号占位：COSTRA-5xx（T2· Sprint-4· Epic-E）
+-- 卡号占位：COSTRA-5xx（T2 · Sprint-4 · Epic-E）
 -- 事实源：
 --   docs/design/recurring-entry-product-spec.md v0.3.2
 --   docs/design/recurring-entry-tech-spec.md v0.2.1 §4
+--   docs/design/workday-recurring-tech-spec.md §4
+--   docs/design/daily-recurring-tech-spec.md §3
 --
 -- 主要变更：
 --   1. 新增 3 个 ENUM：recurring_period / recurring_bucket / recurring_status
---   2. 新增主表 `recurring_rules`（含数组字段 · 长度 CHECK · period与字段互斥 CHECK）
---   3. `entries` 表新增 `source_recurring_id` 外键（ON DELETE SET NULL）
+--      recurring_period 直接定义全部 5 档：weekly / monthly / yearly / workday / daily
+--   2. 新增主表 `recurring_rules`（含数组字段 · 长度 CHECK · period 与字段互斥 CHECK ·
+--      5 档全部纳入 chk_recurring_period_fields 一次性写定）
+--   3. 新增表 `workday_calendars`（一年一行 · 存放假日 + 调休补班日）
+--   4. `entries` 表新增 `source_recurring_id` 外键（ON DELETE SET NULL）
 --
--- ★硬约定：本SQL 必须与 `server/test/setup.ts` 的简化 pg-mem DDL 同步
---   （见 docs/spike/pgmem-array-check.md 说明的ENUM → TEXT + CHECK 替代规则）
+-- ★硬约定：本 SQL 必须与 `server/test/setup.ts` 的简化 pg-mem DDL 同步
+--   （见 docs/spike/pgmem-array-check.md 说明的 ENUM → TEXT + CHECK 替代规则）
+--
+-- ★合并说明（2026-08-07）：
+--   原 0011 / 0012 / 0013 三 migration 在功能上线前合并为本单一 0011。
+--   合并优势：
+--     - recurring_period ENUM 在 CREATE TYPE 时直接列出全部 5 值，无需 ALTER TYPE ADD VALUE
+--       的两段式（隐式提交 + 独立事务重建 CHECK）。
+--     - chk_recurring_period_fields 在 CREATE TABLE 时一次性写定 5 分支版本，
+--       无需后续 DROP + 重建。
+--     - workday_calendars 表与 recurring_rules 主表一起建，语义更聚合。
 -- ============================================================================
 
 BEGIN;
@@ -22,10 +36,16 @@ BEGIN;
 -- ═══════════════════════════════════════════════════════════════════════════
 
 DO $$ BEGIN
+  -- recurring_period 直接定义全部 5 档：
+  --   weekly  每周      monthly 每月      yearly  每年
+  --   workday 每个工作日（依赖 workday_calendars 表）
+  --   daily   每 N 天（period_interval 承载 N，从 start_date 起算）
   CREATE TYPE recurring_period AS ENUM (
-    'weekly',      -- 每周
-    'monthly',     -- 每月
-    'yearly'       -- 每年
+    'weekly',
+    'monthly',
+    'yearly',
+    'workday',
+    'daily'
   );
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
@@ -77,7 +97,9 @@ CREATE TABLE IF NOT EXISTS recurring_rules (
   -- ─── 周期配置 ────────────────────────────────────────────────────
   period          recurring_period NOT NULL,
 
-  -- 周期间隔倍数：period=weekly + period_interval=3表示"每3周"
+  -- 周期间隔倍数：period=weekly + period_interval=3 表示"每3周"
+  --                period=daily + period_interval=3 表示"每3天"
+  --                yearly/workday 恒为 1（服务层 validateCreate 强制）
   period_interval SMALLINT NOT NULL DEFAULT 1
                 CONSTRAINT chk_period_interval_positive CHECK (period_interval >= 1),
 
@@ -97,7 +119,7 @@ CREATE TABLE IF NOT EXISTS recurring_rules (
   execute_hour    SMALLINT NOT NULL CHECK (execute_hour   BETWEEN 0 AND 23),
   execute_minute  SMALLINT NOT NULL CHECK (execute_minute BETWEEN 0 AND 59),
 
-  timezone        TEXT NOT NULL,-- 快照自users.timezone
+  timezone        TEXT NOT NULL, -- 快照自 users.timezone
 
   -- ─── 生命周期 ────────────────────────────────────────────────
   start_date      DATE NOT NULL,
@@ -109,21 +131,24 @@ CREATE TABLE IF NOT EXISTS recurring_rules (
   last_run_at     TIMESTAMPTZ,
   last_run_status TEXT,
     -- 枚举：ok | ok_with_skipped
-    --failed_ledger_deleted | failed_user_left_family | failed_other
-    --      auto_paused_after_3_failures
+    --       failed_ledger_deleted | failed_user_left_family | failed_other
+    --       auto_paused_after_3_failures
+    --       ended_by_end_date | lapsed_in_window（create/update/processOneRule 收敛用）
   consecutive_failures SMALLINT NOT NULL DEFAULT 0
                        CHECK (consecutive_failures >= 0),
 
   -- ─── 审计 / 版本 ─────────────────────────────────────────────
-  -- 复用 entries 的全局单调递增序列（recurring_rules与 entries 都写它）
+  -- 复用 entries 的全局单调递增序列（recurring_rules 与 entries 都写它）
   change_seq      BIGINT NOT NULL DEFAULT nextval('entries_change_seq'),
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   deleted_at      TIMESTAMPTZ,
   version         INTEGER NOT NULL DEFAULT 1,
 
-  -- ═══ 完整性CHECK ══════════════════════════════════════════════
-  -- period 与字段的互斥关系
+  -- ═══ 完整性 CHECK ══════════════════════════════════════════════
+  -- period 与字段的互斥关系（5 档一次性定稿）
+  --   weekly / monthly / yearly：对应数组非 NULL，其它两数组 NULL
+  --   workday / daily：三个数组全 NULL（无日子概念）
   CONSTRAINT chk_recurring_period_fields CHECK (
     (period = 'weekly'
        AND days_of_week    IS NOT NULL
@@ -136,7 +161,15 @@ CREATE TABLE IF NOT EXISTS recurring_rules (
     (period = 'yearly'
        AND year_month_days IS NOT NULL
        AND days_of_week    IS NULL
-       AND days_of_month   IS NULL)
+       AND days_of_month   IS NULL) OR
+    (period = 'workday'
+       AND days_of_week    IS NULL
+       AND days_of_month   IS NULL
+       AND year_month_days IS NULL) OR
+    (period = 'daily'
+       AND days_of_week    IS NULL
+       AND days_of_month   IS NULL
+       AND year_month_days IS NULL)
   ),
 
   -- 数组长度上限（差异化 · 对应产品 §4.2）
@@ -158,8 +191,8 @@ CREATE TABLE IF NOT EXISTS recurring_rules (
     end_date IS NULL OR end_date >= start_date
   )
 
-  -- 说明：数组元素范围 CHECK（如 dow∈ [1,7]、dom ∈ [1,31]、
-  --      year_month_days 元素形如 MMDD 合法性）由recurringService.validateCreate校验
+  -- 说明：数组元素范围 CHECK（如 dow ∈ [1,7]、dom ∈ [1,31]、
+  --      year_month_days 元素形如 MMDD 合法性）由 recurringService.validateCreate 校验
   --      不下沉到 DB 层，避免复杂子查询导致 pg-mem 不兼容
 );
 
@@ -179,7 +212,7 @@ CREATE INDEX IF NOT EXISTS idx_recurring_rules_ledger
   ON recurring_rules (ledger_id)
   WHERE deleted_at IS NULL;
 
--- sync change_seq 用（当前v0.2规则不参与 pull sync · 但保留索引供审计查询）
+-- sync change_seq 用（当前 v0.2 规则不参与 pull sync · 但保留索引供审计查询）
 CREATE INDEX IF NOT EXISTS idx_recurring_rules_change_seq
   ON recurring_rules (change_seq);
 
@@ -189,7 +222,26 @@ CREATE TRIGGER trg_recurring_rules_updated_at
   FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- 3. entries 表新增 source_recurring_id
+-- 3. workday_calendars 表（节假日数据 · 供 workday 周期判定）
+-- ═══════════════════════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS workday_calendars (
+  year        SMALLINT PRIMARY KEY,
+  holidays    TEXT[] NOT NULL,      -- ['01-01', '02-15', ...]  MM-DD 格式 · 放假日
+  workdays    TEXT[] NOT NULL,      -- ['02-08', '02-28', ...]  MM-DD 格式 · 调休补班日
+  source      TEXT,                 -- '国务院办公厅关于XXXX年部分节假日安排的通知'
+  source_url  TEXT,                 -- 公告链接
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- 约束：holidays 和 workdays 不能有交集（不能又放假又补班）
+-- pg-mem 可能不支持数组重叠运算符 && → 测试环境跳过此 CHECK（见 setup.ts）
+ALTER TABLE workday_calendars ADD CONSTRAINT chk_holidays_workdays_disjoint
+  CHECK (NOT (holidays && workdays));
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 4. entries 表新增 source_recurring_id
 -- ═══════════════════════════════════════════════════════════════════════════
 
 ALTER TABLE entries

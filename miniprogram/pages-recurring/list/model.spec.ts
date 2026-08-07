@@ -106,6 +106,8 @@ describe('list/model', () => {
     it('monthly → 每月', () => expect(buildPeriodLabel('monthly')).toBe('每月'));
     it('yearly → 每年', () => expect(buildPeriodLabel('yearly')).toBe('每年'));
     it('workday → 每个工作日', () => expect(buildPeriodLabel('workday')).toBe('每个工作日'));
+    it('daily → 每天', () => expect(buildPeriodLabel('daily')).toBe('每天'));
+    it('daily + interval=3 → 每3天', () => expect(buildPeriodLabel('daily', 3)).toBe('每3天'));
   });
 
   describe('buildStatusTag', () => {

@@ -1243,7 +1243,7 @@ describe('recurring-entries · lapsed_in_window', () => {
     });
     expect(resumeRes.statusCode).toBe(422); // BUSINESS_RULE_VIOLATION
     const body = resumeRes.json() as { message?: string };
-    expect(body.message).toContain('已无有效执行点');
+    expect(body.message).toContain('无有效执行日');
   });
 });
 
@@ -1557,5 +1557,180 @@ describe('recurring-entries · workday period', () => {
     // 2027 的补班日 '01-02' 在数据中
     const data2027 = allData.find((d) => d.year === 2027);
     expect(data2027?.workdays).toContain('01-02');
+  });
+});
+
+// ==============================================================================
+// daily period · E2E
+// ==============================================================================
+
+describe('recurring-entries · daily period', () => {
+  let app: FastifyInstance;
+  let token: string;
+  let userId: string;
+
+  beforeEach(async () => {
+    app = await buildApp({ disableLogger: true, autoStartScheduler: false });
+    await app.ready();
+    const login1 = await login(app);
+    token = login1.token;
+    userId = login1.userId;
+    await setupFamilyAndLedger(userId);
+  });
+
+  afterEach(async () => {
+    vi.useRealTimers();
+    await app.close();
+  });
+
+  it('POST /recurring-entries · period=daily interval=1 · 201 · days arrays 全 null', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 1000,
+        shared_type: 'personal',
+        note: '每天早餐',
+        period: 'daily',
+        period_interval: 1,
+        execute_bucket: 'morning',
+        start_date: '2026-08-15',
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const rule = res.json() as Record<string, unknown>;
+    expect(rule.period).toBe('daily');
+    expect(rule.days_of_week).toBeNull();
+    expect(rule.days_of_month).toBeNull();
+    expect(rule.year_month_days).toBeNull();
+    expect(rule.period_interval).toBe(1);
+  });
+
+  it('POST /recurring-entries · period=daily interval=3 · 201 · interval persisted', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 3000,
+        period: 'daily',
+        period_interval: 3,
+        execute_bucket: 'morning',
+        start_date: '2026-08-15',
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const rule = res.json() as Record<string, unknown>;
+    expect(rule.period).toBe('daily');
+    expect(rule.period_interval).toBe(3);
+  });
+
+  it('POST /recurring-entries · daily + days_of_week → 400', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 5000,
+        period: 'daily',
+        days_of_week: [1],
+        execute_bucket: 'morning',
+        start_date: '2026-08-15',
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('POST /recurring-entries · daily + days_of_month → 400', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 5000,
+        period: 'daily',
+        days_of_month: [15],
+        execute_bucket: 'morning',
+        start_date: '2026-08-15',
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('PATCH /recurring-entries · weekly → daily · clears days_of_week', async () => {
+    // 先创建 weekly 规则
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 2000,
+        period: 'weekly',
+        days_of_week: [1, 3, 5],
+        execute_bucket: 'morning',
+        start_date: '2026-08-15',
+      },
+    });
+    expect(createRes.statusCode).toBe(201);
+    const created = createRes.json() as { id: string; version: number };
+
+    // PATCH 改为 daily · days_of_week 应清空
+    const patchRes = await app.inject({
+      method: 'PATCH',
+      url: `/v1/recurring-entries/${created.id}`,
+      headers: authHeader(token),
+      payload: {
+        version: created.version,
+        period: 'daily',
+        period_interval: 2,
+        days_of_week: null,
+        days_of_month: null,
+        year_month_days: null,
+      },
+    });
+    expect(patchRes.statusCode).toBe(200);
+    const updated = patchRes.json() as Record<string, unknown>;
+    expect(updated.period).toBe('daily');
+    expect(updated.days_of_week).toBeNull();
+    expect(updated.period_interval).toBe(2);
+  });
+
+  it('E2E · daily · next_run_at 落在 start_date 当日（interval=1 · start_date 未来日）', async () => {
+    // 用 service 层 + computeNextRunAt 验证，避开 vi.setSystemTime 导致 token 过期的 HTTP 路径问题
+    // （参照 MEMORY.md 的 workday E2E 教训）
+    const { computeNextRunAt } = await import('../src/services/recurringSchedule.js');
+
+    const now = new Date('2026-08-14T12:00:00+08:00');
+    const nextRun = computeNextRunAt(
+      {
+        period: 'daily',
+        period_interval: 1,
+        timezone: 'Asia/Shanghai',
+        start_date: '2026-08-15',
+        execute_hour: 9,
+        execute_minute: 30,
+        days_of_week: null,
+        days_of_month: null,
+        year_month_days: null,
+        workday_data: [],
+      },
+      now,
+    );
+
+    const { DateTime } = await import('luxon');
+    const zoned = DateTime.fromJSDate(nextRun, { zone: 'Asia/Shanghai' });
+    expect(zoned.day).toBe(15);
+    expect(zoned.month).toBe(8);
   });
 });

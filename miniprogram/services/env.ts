@@ -85,7 +85,7 @@ function detectEnv(): EnvName {
   }
 }
 
-const CURRENT_ENV: EnvName = detectEnv();
+const CURRENT_ENV: EnvName = 'staging';//detectEnv();
 
 export function getEnv(): EnvConfig {
   return ENV_MAP[CURRENT_ENV];

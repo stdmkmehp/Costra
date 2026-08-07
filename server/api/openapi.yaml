@@ -2368,13 +2368,15 @@ components:
           description: "仅 expense 有值; income/transfer 必须为 null"
         period:
           type: string
-          enum: [weekly, monthly, yearly, workday]
-          description: "workday = 每个工作日（按法定节假日+调休补班判定）"
+          enum: [weekly, monthly, yearly, workday, daily]
+          description: |
+            "workday = 每个工作日（按法定节假日+调休补班判定）
+             daily = 每 N 天（与 period_interval 组合，从 start_date 起算的纯算术节拍）"
         period_interval:
           type: integer
           minimum: 1
           default: 1
-          description: "周期间隔倍数 · period=weekly+interval=3 表示每3周 · yearly 恒为1"
+          description: "周期间隔倍数 · period=weekly+interval=3 表示每3周 · period=daily+interval=3 表示每3天 · yearly/workday 恒为1"
         days_of_week:
           type: array
           items: { type: integer, minimum: 1, maximum: 7 }
@@ -2458,8 +2460,8 @@ components:
           nullable: true
         period:
           type: string
-          enum: [weekly, monthly, yearly, workday]
-          description: "workday = 每个工作日（按法定节假日+调休补班判定）"
+          enum: [weekly, monthly, yearly, workday, daily]
+          description: "workday = 每个工作日 · daily = 每 N 天（与 period_interval 组合）"
         period_interval:
           type: integer
           minimum: 1
@@ -2508,7 +2510,7 @@ components:
           nullable: true
         period:
           type: string
-          enum: [weekly, monthly, yearly, workday]
+          enum: [weekly, monthly, yearly, workday, daily]
         period_interval:
           type: integer
           minimum: 1

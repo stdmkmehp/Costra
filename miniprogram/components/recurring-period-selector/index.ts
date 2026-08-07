@@ -11,13 +11,14 @@
 import type { RecurringPeriod } from '../../services/recurringApi';
 
 /** 周期基础类型 */
-type PeriodType = 'weekly' | 'monthly' | 'yearly' | 'workday';
+type PeriodType = 'weekly' | 'monthly' | 'yearly' | 'workday' | 'daily';
 
 /**
  * 从 RecurringPeriod 提取基础类型和间隔
  */
 function parsePeriod(period: RecurringPeriod): { type: PeriodType; interval: number } {
   switch (period) {
+    case 'daily': return { type: 'daily', interval: 1 };
     case 'weekly': return { type: 'weekly', interval: 1 };
     case 'monthly': return { type: 'monthly', interval: 1 };
     case 'yearly': return { type: 'yearly', interval: 1 };
@@ -31,6 +32,7 @@ function parsePeriod(period: RecurringPeriod): { type: PeriodType; interval: num
  * 对于超出已有枚举范围的值（n>2 周 或 n>3 月），使用 weekly/monthly 作为基底搭配 period_interval 扩展。
  */
 function composePeriod(type: PeriodType, _interval: number): RecurringPeriod {
+  if (type === 'daily') return 'daily';
   if (type === 'weekly') return 'weekly';
   if (type === 'monthly') return 'monthly';
   if (type === 'workday') return 'workday';
@@ -46,9 +48,11 @@ Component({
   },
   data: {
     periodType: 'weekly' as PeriodType,
+    dayInterval: 1,
     weekInterval: 1,
     monthInterval: 1,
     /** 数字框展示值：用户清空时不强制回填 1，让用户继续输入 */
+    dayIntervalDisplay: '1',
     weekIntervalDisplay: '1',
     monthIntervalDisplay: '1',
   },
@@ -67,13 +71,16 @@ Component({
       const parsed = parsePeriod(this.properties.value as RecurringPeriod);
       const interval = (this.properties.periodInterval as number) || parsed.interval;
 
-      // 当前档位对应的数字框用 props 同步；另一档位的数字框保留本地上一次值，
+      // 当前档位对应的数字框用 props 同步；其它档位的数字框保留本地上一次值，
       // 让用户切档时不用重新输入。
+      const dayInterval = parsed.type === 'daily' ? interval : (this.data.dayInterval || 1);
       const weekInterval = parsed.type === 'weekly' ? interval : (this.data.weekInterval || 1);
       const monthInterval = parsed.type === 'monthly' ? interval : (this.data.monthInterval || 1);
 
       this.setData({
         periodType: parsed.type,
+        dayInterval,
+        dayIntervalDisplay: String(dayInterval),
         weekInterval,
         weekIntervalDisplay: String(weekInterval),
         monthInterval,
@@ -86,6 +93,17 @@ Component({
       const type = e.currentTarget.dataset.type as PeriodType;
       if (type === this.data.periodType) return;
       this.setData({ periodType: type });
+    },
+
+    onDayIntervalInput(e: WechatMiniprogram.Input) {
+      // 允许用户自由输入（中间态可以为空），不要在 input 时就强制兜底
+      this.setData({ dayIntervalDisplay: e.detail.value });
+    },
+
+    onDayIntervalBlur(e: WechatMiniprogram.Input) {
+      let val = parseInt(e.detail.value, 10);
+      if (!val || val < 1) val = 1;
+      this.setData({ dayInterval: val, dayIntervalDisplay: String(val) });
     },
 
     onWeekIntervalInput(e: WechatMiniprogram.Input) {
@@ -112,11 +130,13 @@ Component({
     /** 点击「完成」→ 提交 + 关闭 */
     onConfirm() {
       const periodType = this.data.periodType as PeriodType;
-      const interval = periodType === 'weekly'
-        ? this.data.weekInterval
-        : periodType === 'monthly'
-          ? this.data.monthInterval
-          : 1;
+      const interval = periodType === 'daily'
+        ? this.data.dayInterval
+        : periodType === 'weekly'
+          ? this.data.weekInterval
+          : periodType === 'monthly'
+            ? this.data.monthInterval
+            : 1;
       const period = composePeriod(periodType, interval);
       // 一次性提交：父页面收到 change 后会更新表单态，收到 close 后会关面板。
       // 两个事件一起发，避免父页面逻辑还要感知"提交时是否需要顺手关面板"的耦合。

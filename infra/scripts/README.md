@@ -112,7 +112,7 @@ node scripts/fetch-holidays.mjs 2027
 
 # 指定某几个 migration 文件
 ./redeploy.sh --build-mode local --migrate \
-    --migration-files "server/db/migrations/0011_recurring_entries.sql,server/db/migrations/0012_workday_calendars.sql"
+    --migration-files "server/db/migrations/0011_recurring_entries.sql"
 
 # 从私有仓库拉镜像 + migration
 ./redeploy.sh --build-mode registry \

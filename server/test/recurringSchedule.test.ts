@@ -3,9 +3,10 @@
 // 卡号占位：COSTRA-5xx（T1）
 // 事实源：docs/design/recurring-entry-tech-spec.md §7.6 · 100+ 用例矩阵
 //
-// 测试覆盖 8 大组（合计 106 例）：
+// 测试覆盖 9 大组（合计 120 例）：
 //   weekly (15) · biweekly (12) · monthly (20) · bimonthly (8) · trimonthly (8)
-//   yearly (25) · timezone (10) · boundary (8)
+//   yearly (25) · timezone (10) · boundary (8) · workday (7)
+//   daily (12) · formatDaily (2)
 //
 // 断言时点均以 rule.timezone 的本地时间表述，转换 UTC 后与结果 Date 比对
 // 使用 luxon 的 DateTime.fromJSDate(result, { zone: tz }) 提取本地日期便于阅读
@@ -1382,7 +1383,7 @@ describe('formatDaysForSummary · dow (weekly/biweekly)', () => {
 
   it('biweekly period uses same dow formatter', () => {
     const s = formatDaysForSummary({
-      period: 'weekly', period_interval: 2,
+      period: 'weekly',
       mode: 'full',
       days_of_week: [1, 3],
       days_of_month: null,
@@ -1434,7 +1435,7 @@ describe('formatDaysForSummary · dom (monthly/bimonthly/trimonthly)', () => {
 
   it('bimonthly period · same dom formatter', () => {
     const s = formatDaysForSummary({
-      period: 'monthly', period_interval: 2,
+      period: 'monthly',
       mode: 'full',
       days_of_week: null,
       days_of_month: [1, 15],
@@ -1445,7 +1446,7 @@ describe('formatDaysForSummary · dom (monthly/bimonthly/trimonthly)', () => {
 
   it('trimonthly period · same dom formatter', () => {
     const s = formatDaysForSummary({
-      period: 'monthly', period_interval: 3,
+      period: 'monthly',
       mode: 'full',
       days_of_week: null,
       days_of_month: [15],
@@ -1646,5 +1647,203 @@ describe('computeNextRunAt · workday', () => {
     // 2026-01-01 周四 · 无数据 → 按周一~五 → 当天命中
     const next = computeNextRunAt(fallbackRule, localToUtc(2026, 1, 1, 0, 0));
     expect(local(next)).toMatchObject({ y: 2026, mo: 1, d: 1 });
+  });
+});
+
+// ===== 16. computeNextRunAt · daily (12 cases) =====
+//
+// 每 N 天：从 start_date 起算，daysDiff % interval === 0 命中
+// start_date 当日为 daysDiff = 0 · 即触发日（若时段未过）
+// 与 workday 完全独立 · 不消费 workday_data
+
+describe('computeNextRunAt · daily (12 cases)', () => {
+  it('daily · interval=1 · from Sun before execute → today Sun', () => {
+    // start=2026-01-04 (Sun) · execute 09:30 · from 08:00 → 当天命中
+    const rule = makeRule({
+      period: 'daily',
+      period_interval: 1,
+      start_date: '2026-01-04',
+      execute_hour: 9,
+      execute_minute: 30,
+    });
+    const next = computeNextRunAt(rule, localToUtc(2026, 1, 4, 8, 0));
+    expect(local(next)).toMatchObject({ y: 2026, mo: 1, d: 4, h: 9, mi: 30 });
+  });
+
+  it('daily · interval=1 · from same day after execute → next day', () => {
+    // 2026-01-04 (Sun) 10:00 · execute 09:30 已过 → 下一天 2026-01-05
+    const rule = makeRule({
+      period: 'daily',
+      period_interval: 1,
+      start_date: '2026-01-04',
+      execute_hour: 9,
+      execute_minute: 30,
+    });
+    const next = computeNextRunAt(rule, localToUtc(2026, 1, 4, 10, 0));
+    expect(local(next)).toMatchObject({ y: 2026, mo: 1, d: 5, h: 9, mi: 30 });
+  });
+
+  it('daily · interval=1 · from exact execute moment → strictly next day', () => {
+    // from = 2026-01-04 09:30:00 · 返回值必须 > from
+    const rule = makeRule({
+      period: 'daily',
+      period_interval: 1,
+      start_date: '2026-01-04',
+      execute_hour: 9,
+      execute_minute: 30,
+    });
+    const next = computeNextRunAt(rule, localToUtc(2026, 1, 4, 9, 30));
+    expect(local(next)).toMatchObject({ y: 2026, mo: 1, d: 5 });
+  });
+
+  it('daily · interval=3 · start=2026-01-01 · from start before execute → same day', () => {
+    // start=2026-01-01 · interval=3 · 命中日 = 1, 4, 7, 10...
+    // from 2026-01-01 08:00 < 09:30 → 今天命中
+    const rule = makeRule({
+      period: 'daily',
+      period_interval: 3,
+      start_date: '2026-01-01',
+      execute_hour: 9,
+      execute_minute: 30,
+    });
+    const next = computeNextRunAt(rule, localToUtc(2026, 1, 1, 8, 0));
+    expect(local(next)).toMatchObject({ y: 2026, mo: 1, d: 1, h: 9, mi: 30 });
+  });
+
+  it('daily · interval=3 · from non-matching day → next matching', () => {
+    // from 2026-01-03 (daysDiff=2 · 2%3=2≠0) → 2026-01-04 (daysDiff=3 · 3%3=0)
+    const rule = makeRule({
+      period: 'daily',
+      period_interval: 3,
+      start_date: '2026-01-01',
+      execute_hour: 9,
+      execute_minute: 30,
+    });
+    const next = computeNextRunAt(rule, localToUtc(2026, 1, 3, 10, 0));
+    expect(local(next)).toMatchObject({ y: 2026, mo: 1, d: 4, h: 9, mi: 30 });
+  });
+
+  it('daily · interval=7 · cross-month', () => {
+    // start=2026-01-01 · interval=7 · from 2026-01-30 (daysDiff=29 · 29%7=1) → 2026-02-04 (daysDiff=34 · 34%7=6? no)
+    // 1/1=day0, 1/8=day7, 1/15=day14, 1/22=day21, 1/29=day28, 2/5=day35
+    // from 2026-01-29 after execute → 2026-02-05 (day 35)
+    const rule = makeRule({
+      period: 'daily',
+      period_interval: 7,
+      start_date: '2026-01-01',
+      execute_hour: 9,
+      execute_minute: 30,
+    });
+    const next = computeNextRunAt(rule, localToUtc(2026, 1, 29, 10, 0));
+    expect(local(next)).toMatchObject({ y: 2026, mo: 2, d: 5, h: 9, mi: 30 });
+  });
+
+  it('daily · interval=2 · cross-year 2026-12-31 → 2027-01-02', () => {
+    // start=2026-01-01 · interval=2 · from 2026-12-31 (daysDiff=364 · 364%2=0 · but after execute)
+    // → next matching day = 2027-01-02 (daysDiff=366 · 366%2=0)
+    const rule = makeRule({
+      period: 'daily',
+      period_interval: 2,
+      start_date: '2026-01-01',
+      execute_hour: 9,
+      execute_minute: 30,
+    });
+    const next = computeNextRunAt(rule, localToUtc(2026, 12, 31, 10, 0));
+    expect(local(next)).toMatchObject({ y: 2027, mo: 1, d: 2 });
+  });
+
+  it('daily · interval=1 · start_date in future → first execution on start_date', () => {
+    // start=2026-02-15 · from 2026-01-05 (before start) → 2026-02-15
+    const rule = makeRule({
+      period: 'daily',
+      period_interval: 1,
+      start_date: '2026-02-15',
+      execute_hour: 9,
+      execute_minute: 30,
+    });
+    const next = computeNextRunAt(rule, localToUtc(2026, 1, 5, 12, 0));
+    expect(local(next)).toMatchObject({ y: 2026, mo: 2, d: 15, h: 9, mi: 30 });
+  });
+
+  it('daily · interval=30 · long interval sanity', () => {
+    // start=2026-01-01 · interval=30 · from 2026-01-01 after execute → 2026-01-31 (day 30)
+    const rule = makeRule({
+      period: 'daily',
+      period_interval: 30,
+      start_date: '2026-01-01',
+      execute_hour: 9,
+      execute_minute: 30,
+    });
+    const next = computeNextRunAt(rule, localToUtc(2026, 1, 1, 10, 0));
+    expect(local(next)).toMatchObject({ y: 2026, mo: 1, d: 31 });
+  });
+
+  it('daily · execute at 00:00 boundary', () => {
+    const rule = makeRule({
+      period: 'daily',
+      period_interval: 1,
+      start_date: '2026-01-04',
+      execute_hour: 0,
+      execute_minute: 0,
+    });
+    // from 2026-01-04 00:00 · execute 00:00 · 返回 > from → 2026-01-05 00:00
+    const next = computeNextRunAt(rule, localToUtc(2026, 1, 4, 0, 0));
+    expect(local(next)).toMatchObject({ y: 2026, mo: 1, d: 5, h: 0, mi: 0 });
+  });
+
+  it('daily · timezone Asia/Shanghai · no DST sanity', () => {
+    // 上海无 DST · startOf('day') 永远 = 00:00 local
+    const rule = makeRule({
+      period: 'daily',
+      period_interval: 1,
+      start_date: '2026-06-15',
+      execute_hour: 9,
+      execute_minute: 30,
+    });
+    const next = computeNextRunAt(rule, localToUtc(2026, 6, 15, 10, 0));
+    expect(local(next)).toMatchObject({ y: 2026, mo: 6, d: 16 });
+  });
+
+  it('daily · timezone America/New_York · DST forward boundary', () => {
+    // 2026-03-08 是美国 DST 开始日（春进 · 02:00 → 03:00）
+    // start=2026-03-07 (Sat) · interval=1 · execute 09:00
+    // from 2026-03-07 10:00 → 2026-03-08 09:00 NY
+    const rule = makeRule({
+      period: 'daily',
+      period_interval: 1,
+      timezone: 'America/New_York',
+      start_date: '2026-03-07',
+      execute_hour: 9,
+      execute_minute: 0,
+    });
+    const next = computeNextRunAt(rule, localToUtc(2026, 3, 7, 10, 0, 'America/New_York'));
+    const l = local(next, 'America/New_York');
+    expect(l).toMatchObject({ y: 2026, mo: 3, d: 8, h: 9, mi: 0 });
+  });
+});
+
+// ===== 17. formatDaysForSummary · daily =====
+
+describe('formatDaysForSummary · daily', () => {
+  it('daily returns empty string', () => {
+    const s = formatDaysForSummary({
+      period: 'daily',
+      mode: 'full',
+      days_of_week: null,
+      days_of_month: null,
+      year_month_days: null,
+    });
+    expect(s).toBe('');
+  });
+
+  it('daily compact mode also empty', () => {
+    const s = formatDaysForSummary({
+      period: 'daily',
+      mode: 'compact',
+      days_of_week: null,
+      days_of_month: null,
+      year_month_days: null,
+    });
+    expect(s).toBe('');
   });
 });

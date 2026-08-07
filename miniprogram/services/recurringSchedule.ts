@@ -18,7 +18,8 @@ export type Period =
   | 'weekly'
   | 'monthly'
   | 'yearly'
-  | 'workday';
+  | 'workday'
+  | 'daily';
 
 export type ExecuteBucket = 'dawn' | 'morning' | 'afternoon' | 'night';
 
@@ -246,6 +247,20 @@ function tryMatchOnDay(
       return isWorkdaySync(yearData, cursor.year, weekday, monthDay)
         ? cursor
         : null;
+    }
+
+    case 'daily': {
+      // 每 N 天：从 start_date 起算，daysDiff % interval === 0 时命中
+      // 用 startOf('day') 消除时段偏移（cursor 已 set 到 execute_hour:execute_minute）
+      // 与 workday 完全独立 · 不消费 workday_data
+      const baseDay = DateTime.fromISO(rule.start_date, {
+        zone: rule.timezone,
+      }).startOf('day');
+      const cursorDay = cursor.startOf('day');
+      const daysDiff = Math.round(cursorDay.diff(baseDay, 'days').days);
+      if (daysDiff < 0) return null; // 早于起始日
+      if (daysDiff % interval !== 0) return null; // 未到节拍
+      return cursor;
     }
   }
 }

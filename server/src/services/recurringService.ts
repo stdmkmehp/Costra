@@ -109,6 +109,7 @@ const PERIODS: readonly Period[] = [
   'monthly',
   'yearly',
   'workday',
+  'daily',
 ];
 const BUCKETS: readonly ExecuteBucket[] = ['dawn', 'morning', 'afternoon', 'night'];
 
@@ -176,6 +177,7 @@ export function validateCreate(p: CreateRecurringPayload): void {
   const isMonthly = p.period === 'monthly';
   const isYearly = p.period === 'yearly';
   const isWorkday = p.period === 'workday';
+  const isDaily = p.period === 'daily';
 
   if (isWeekly) {
     if (p.days_of_month != null || p.year_month_days != null)
@@ -233,6 +235,11 @@ export function validateCreate(p: CreateRecurringPayload): void {
   if (isWorkday) {
     if (p.days_of_week != null || p.days_of_month != null || p.year_month_days != null)
       invalid('days_of_week/days_of_month/year_month_days must be null for workday');
+  }
+
+  if (isDaily) {
+    if (p.days_of_week != null || p.days_of_month != null || p.year_month_days != null)
+      invalid('days_of_week/days_of_month/year_month_days must be null for daily');
   }
 
   if (!isValidDate(p.start_date))
@@ -747,7 +754,7 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
       if (nextRunAt > endBoundary) {
         // 结束日尚未到，但重算后的下一次执行已越过结束边界 → 窗口内已无有效执行点
         const message = now <= endBoundary
-          ? '该规则在结束日期前已无有效执行点，请先延后结束日期再启用'
+          ? '结束日期前无有效执行日，请延后结束日期'
           : '该规则已到期，请先修改结束日期再启用';
         throw new AppError(ErrorCode.BUSINESS_RULE_VIOLATION, {
           message,
