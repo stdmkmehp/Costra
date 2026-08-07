@@ -157,6 +157,7 @@
                 class="entry-member__avatar"
                 src="{{entry.avatarUrl}}"
                 mode="aspectFill"
+                lazy-load
               />
               <view wx:elif="{{entry.memberInitial}}" class="entry-member__fallback">
                 <text class="entry-member__initial">{{entry.memberInitial}}</text>

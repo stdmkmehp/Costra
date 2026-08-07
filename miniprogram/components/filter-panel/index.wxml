@@ -88,6 +88,7 @@
             class="filter-member__avatar"
             src="{{item.avatar_url}}"
             mode="aspectFill"
+            lazy-load
           />
           <view wx:else class="filter-member__fallback">
             <text class="filter-member__initial">{{item.initial}}</text>

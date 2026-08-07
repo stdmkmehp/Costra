@@ -20,7 +20,7 @@
 
 import { getActiveFamilyId } from './family';
 import { getMonthlyStatistics } from './statisticsApi';
-import { getFamilySummary } from './familyApi';
+import { getFamilySummary, getFamilyMembers, primeMembersCache } from './familyApi';
 import { getUserOverview } from './userOverviewApi';
 import { eventBus, EventNames } from './eventBus';
 import { logger } from '../utils/logger';
@@ -139,13 +139,22 @@ export async function prefetchHomeData(): Promise<void> {
     }).catch((err) => {
       logger.warn('prefetch', 'monthly statistics failed', err);
     });
-    const summaryTask = getFamilySummary(familyId, { month }, { topN: 20 }).catch((err) => {
+    const summaryTask = getFamilySummary(familyId, { month }, { topN: 20 }).then((summary) => {
+      // 复用 summary 返回的 members 数组预热成员缓存，明细页 onShow 时直接命中
+      if (summary.members && summary.members.length > 0) {
+        primeMembersCache(familyId, summary.members);
+      }
+    }).catch((err) => {
       logger.warn('prefetch', 'family summary failed', err);
+    });
+    // 独立预取成员列表（summary 不含 left 成员的完整字段时作为补充）
+    const membersTask = getFamilyMembers(familyId).catch((err) => {
+      logger.warn('prefetch', 'family members failed', err);
     });
     const overviewTask = getUserOverview().catch((err) => {
       logger.warn('prefetch', 'user overview failed', err);
     });
-    await Promise.allSettled([monthlyTask, summaryTask, overviewTask]);
+    await Promise.allSettled([monthlyTask, summaryTask, membersTask, overviewTask]);
     markPerf('prefetch.after-ledger.done', { familyId, month });
   } catch (err) {
     // getActiveFamilyId() 自身出错（storage 异常等）· 静默

@@ -20,8 +20,8 @@ import cors from '@fastify/cors';
 import sensible from '@fastify/sensible';
 import multipart from '@fastify/multipart';
 import { randomUUID } from 'node:crypto';
-import { stdTimeFunctions } from 'pino';
 import { appEnv } from './config/env.js';
+import { createLogger } from './logger.js';
 import { registerErrorHandler } from './plugins/errorHandler.js';
 import { registerJwt } from './plugins/jwt.js';
 import { registerAuthRoutes } from './routes/auth.js';
@@ -60,14 +60,11 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   const env = appEnv();
 
   const fastifyOpts: FastifyServerOptions = {
-    // pino logger（test 环境可关）
-    logger: opts.disableLogger
-      ? false
-      : {
-          level: env.logLevel,
-          // ISO 8601 时间戳替代 epoch 毫秒，人可直读（UTC，带 Z 后缀）
-          timestamp: stdTimeFunctions.isoTime,
-        },
+    // pino logger（production 落盘 + stdout；test 环境可关）
+    logger: createLogger(env.nodeEnv, env.logLevel, {
+      disable: opts.disableLogger,
+      logFile: env.logFile,
+    }),
     // 每个请求生成 trace_id（作为 req.id 透传到日志 + 错误响应 trace_id 字段）
     genReqId: () => randomUUID(),
     // 严格 JSON 模式：body 非 JSON 时 Fastify 直接 400；由 errorHandler 映射为 MALFORMED_JSON

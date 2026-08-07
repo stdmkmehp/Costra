@@ -148,7 +148,7 @@ export interface InvitePreviewResponse {
 
 const SUMMARY_CACHE_TTL = 5 * 60 * 1000; // 5 分钟
 const FAMILY_LIST_CACHE_TTL = 60 * 1000; // M1-B: families 短缓存
-const FAMILY_MEMBERS_CACHE_TTL = 30 * 1000; // M1-B: members 短缓存
+const FAMILY_MEMBERS_CACHE_TTL = 5 * 60 * 1000; // 成员数据变更频率低，5 分钟缓存
 const MAX_CACHE_SIZE = 20; // P1-4: 缓存上限
 
 interface CacheEntry<T> {
@@ -299,6 +299,18 @@ export async function getFamilySummary(
   // P1-2: 请求成功后写入缓存（stale-while-revalidate · COSTRA-223 R1.x.1）
   setCachedSummary(familyId, scope, summary);
   return summary;
+}
+
+/**
+ * 用已有 summary 数据中的 members 预热成员缓存（零额外网络请求）。
+ * summary 接口返回的 members 数组与 getFamilyMembers 返回结构一致（均为 FamilyMember[]），
+ * 可直接写入 _membersCache，避免明细页 onShow 时再发起独立请求。
+ */
+export function primeMembersCache(familyId: string, members: FamilyMember[]): void {
+  // 仅在缓存不存在或已过期时写入，避免覆盖更新鲜的 getFamilyMembers 结果
+  const cached = _membersCache.get(familyId);
+  if (cached && isFresh(cached.timestamp, FAMILY_MEMBERS_CACHE_TTL)) return;
+  _membersCache.set(familyId, { data: members, timestamp: Date.now() });
 }
 
 /**
