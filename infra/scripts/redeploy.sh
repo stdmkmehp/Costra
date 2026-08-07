@@ -28,9 +28,8 @@
 #   ./redeploy.sh                                          # 默认：只重启 server（不构建 · 不跑 migration）
 #   ./redeploy.sh --build-mode local                       # 本地构建 + 重启 server
 #   ./redeploy.sh --build-mode local --migrate             # 构建 + migration + 重启
-#   ./redeploy.sh --build-mode local --migrate --migration-files server/db/migrations/0012_workday_calendars.sql
+#   ./redeploy.sh --build-mode local --migrate --migration-files "0011_recurring_entries.sql,0012_workday_calendars.sql"
 #   ./redeploy.sh --migrate --migration-dir server/db/migrations  # 跑目录下全部 SQL
-#   ./redeploy.sh --migrate --migration-files "0011_recurring_entries.sql,0012_workday_calendars.sql"
 #   ./redeploy.sh --build-mode registry --registry-image weizhao/costra-server:v2.0 --migrate
 #   ./redeploy.sh --restart-psql --migrate                 # 重启 postgres + 跑 migration
 #   ./redeploy.sh --timeout 120 -y
@@ -44,7 +43,7 @@
 #   --image-tar <path>                  load 模式：tar.gz 路径
 #   --registry-image <full>             registry 模式：完整镜像名
 #   --migrate                           启用 migration（构建后、启动前执行）
-#   --migration-files <paths>           指定 migration SQL 文件（逗号分隔 · 相对于项目根）
+#   --migration-files <names>           指定 migration SQL（逗号分隔 · 纯文件名带 .sql · 自动拼 server/db/migrations/）
 #   --migration-dir <dir>               指定 migration 目录（执行目录下所有 .sql）
 #   --timeout <seconds>                 healthy 等待超时（默认 90s）
 #   -y / --yes / -h / --help
@@ -137,28 +136,52 @@ RESTART_DESC="${UP_SERVICES[*]}"
 COMMON_FLAGS=()
 [[ "${ASSUME_YES}" == "1" ]] && COMMON_FLAGS+=(--yes)
 
+# --- 停服后、migration 前的早期失败：用老镜像把服务拉起，避免长期停服 ---
+# 适用：DB 备份失败 / postgres 未就绪 等「尚未变更 DB」的阶段。
+# 这些阶段 DB 未动，只需恢复老镜像并拉起服务即可回到停服前状态（无需还原 DB）。
+bring_up_old_and_exit() {
+  set +e
+  trap - ERR
+  log_error "═══════════════════════════════════════════════════════════"
+  log_error "  部署中止 · 自动恢复服务到停服前状态（DB 未变更）"
+  log_error "═══════════════════════════════════════════════════════════"
+  if [[ -n "${BACKUP_TAG}" ]]; then
+    docker tag "${BACKUP_TAG}" "${IMAGE_TAG}" || log_warn "恢复镜像 tag 失败"
+  fi
+  cd "${COSTRA_INFRA}"
+  docker compose -f "${COSTRA_COMPOSE_FILE}" --env-file "${COSTRA_ENV_FILE}" \
+    up -d "${UP_SERVICES[@]}" || log_warn "拉起服务失败 · 请手动处理"
+  set -e
+  trap 'on_error ${LINENO}' ERR
+  exit 1
+}
+
 # --- Migration 文件解析 ---
 # migration 文件名白名单：只允许字母/数字/点/下划线/中划线 · 防止 shell 注入
 _MIG_NAME_RE='^[A-Za-z0-9._-]+\.sql$'
 
 RESOLVED_MIGRATION_FILES=()
 if [[ "${DO_MIGRATE}" == "1" ]]; then
+  if [[ -z "${MIGRATION_FILES}" && -z "${MIGRATION_DIR}" ]]; then
+    die "--migrate 必须搭配 --migration-files 或 --migration-dir · 显式指定要执行的 SQL"
+  fi
+
   if [[ -n "${MIGRATION_FILES}" ]]; then
-    # 逗号分隔的文件列表
+    # 逗号分隔的文件列表 · 只接受纯文件名（带 .sql）· 自动拼 server/db/migrations/
+    # 例：--migration-files "0011_recurring_entries.sql,0012_workday_calendars.sql"
     IFS=',' read -ra _FILES <<< "${MIGRATION_FILES}"
     for f in "${_FILES[@]}"; do
       f=$(echo "$f" | xargs)  # trim whitespace
-      # 校验文件名安全性
-      fname=$(basename "${f}")
-      if [[ ! "${fname}" =~ ${_MIG_NAME_RE} ]]; then
-        die "migration 文件名不合法（仅允许字母/数字/点/下划线/中划线）：${fname}"
+      # 校验文件名安全性（必须纯文件名 · 带路径分隔符则拒绝）
+      if [[ "${f}" == */* ]]; then
+        die "--migration-files 只接受纯文件名（不允许含路径）：${f}"
       fi
-      # 如果是相对路径，基于项目根解析
-      if [[ "${f}" != /* ]]; then
-        f="${COSTRA_ROOT}/${f}"
+      if [[ ! "${f}" =~ ${_MIG_NAME_RE} ]]; then
+        die "migration 文件名不合法（格式：NNNN_name.sql · 仅字母/数字/点/下划线/中划线）：${f}"
       fi
-      require_file "${f}"
-      RESOLVED_MIGRATION_FILES+=("${f}")
+      _full="${COSTRA_ROOT}/server/db/migrations/${f}"
+      require_file "${_full}"
+      RESOLVED_MIGRATION_FILES+=("${_full}")
     done
   elif [[ -n "${MIGRATION_DIR}" ]]; then
     # 指定目录
@@ -167,14 +190,6 @@ if [[ "${DO_MIGRATE}" == "1" ]]; then
       _mig_dir="${COSTRA_ROOT}/${_mig_dir}"
     fi
     [[ -d "${_mig_dir}" ]] || die "migration 目录不存在：${_mig_dir}"
-    while IFS= read -r filepath; do
-      [[ -z "${filepath}" ]] && continue
-      RESOLVED_MIGRATION_FILES+=("${filepath}")
-    done < <(find "${_mig_dir}" -maxdepth 1 -name '*.sql' -type f | sort)
-  else
-    # 默认目录
-    _mig_dir="${COSTRA_ROOT}/server/db/migrations"
-    [[ -d "${_mig_dir}" ]] || die "默认 migration 目录不存在：${_mig_dir}"
     while IFS= read -r filepath; do
       [[ -z "${filepath}" ]] && continue
       RESOLVED_MIGRATION_FILES+=("${filepath}")
@@ -309,7 +324,8 @@ if [[ "${DO_MIGRATE}" == "1" ]]; then
       fi
       PG_ELAPSED=$(( $(date +%s) - PG_WAIT_START ))
       if [[ "${PG_ELAPSED}" -ge "${HEALTHY_TIMEOUT}" ]]; then
-        die "postgres 未能在 ${HEALTHY_TIMEOUT}s 内 healthy（status=${PG_STATUS}）· migration 中止"
+        log_error "postgres 未能在 ${HEALTHY_TIMEOUT}s 内 healthy（status=${PG_STATUS}）· migration 中止"
+        bring_up_old_and_exit
       fi
       echo -n "."
       sleep 3
@@ -318,7 +334,8 @@ if [[ "${DO_MIGRATE}" == "1" ]]; then
     # 不重启 postgres 时，确认 postgres 在运行
     PG_STATUS=$(docker inspect --format '{{.State.Status}}' "${PG_CONTAINER}" 2>/dev/null || echo "missing")
     if [[ "${PG_STATUS}" != "running" ]]; then
-      die "${PG_CONTAINER} 不在运行（status=${PG_STATUS}）· 无法执行 migration"
+      log_error "${PG_CONTAINER} 不在运行（status=${PG_STATUS}）· 无法执行 migration"
+      bring_up_old_and_exit
     fi
   fi
 
@@ -332,7 +349,8 @@ if [[ "${DO_MIGRATE}" == "1" ]]; then
     --db-only \
     --no-cleanup \
     -y; then
-    die "backup-db.sh 失败 · migration 中止 · 数据未变更"
+    log_error "backup-db.sh 失败 · migration 中止（DB 未变更）"
+    bring_up_old_and_exit
   fi
 
   # 找到刚生成的备份文件（唯一 prefix · 精确匹配）
