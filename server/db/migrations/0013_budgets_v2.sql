@@ -25,11 +25,8 @@ BEGIN;
 
 DROP TABLE IF EXISTS budgets CASCADE;
 
--- budget_period ENUM 仅旧表用，一并删除
-DO $$ BEGIN
-  DROP TYPE IF EXISTS budget_period;
-EXCEPTION WHEN dependent_object THEN NULL;
-END $$;
+-- budget_period ENUM 仅旧表用，一并删除（IF EXISTS 已容错，无需 EXCEPTION 兜底）
+DROP TYPE IF EXISTS budget_period;
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- 2. 重建 budgets 表
