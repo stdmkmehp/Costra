@@ -91,6 +91,33 @@ export async function findByLedgerAndMonth(
 }
 
 /**
+ * 查指定账本中 month <= givenMonth 的最近一条 active 预算。
+ *
+ * 用于"预算跟随账本走"回退逻辑：当月未单独设置预算时，
+ * 继承该账本最近一次设定的预算上限（amount_cents）。
+ *
+ * 返回 null 表示该账本从未设过任何预算。
+ */
+export async function findLatestBeforeOrEqual(
+  ledgerId: string,
+  month: string,
+  client?: Runner,
+): Promise<BudgetEntity | null> {
+  const runner = client ?? exec();
+  const res = await runner.query(
+    `SELECT ${SELECT_COLUMNS}
+       FROM budgets
+      WHERE ledger_id = $1
+        AND month <= $2
+        AND deleted_at IS NULL
+      ORDER BY month DESC
+      LIMIT 1`,
+    [ledgerId, month],
+  );
+  return res.rows[0] ? rowToEntity(res.rows[0]) : null;
+}
+
+/**
  * 创建预算（用于首次设置）。
  * 唯一约束 uq_budgets_ledger_month 保证幂等性；冲突由 service 层捕获并改走 update。
  */

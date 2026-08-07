@@ -262,19 +262,20 @@ function formatYuan(cents: number): string {
   return `${sign}¥${intPart}.${parts[1]}`;
 }
 
-/** 格式化金额为 X,XXX.XX（不带¥和符号） */
+/** 格式化金额为 X,XXX.XX（不带¥和符号）· 负数保留负号（预算超支时显示 -2,956.29） */
 function formatYuanShort(cents: number): string {
+  const sign = cents < 0 ? '-' : '';
   const yuanStr = toYuan(Math.abs(cents));
   const parts = yuanStr.split('.');
   const intPart = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return `${intPart}.${parts[1]}`;
+  return `${sign}${intPart}.${parts[1]}`;
 }
 
 /** 根据剩余百分比计算莫兰迪色阶 class */
 function computeBudgetColorClass(remain: number, total: number): string {
   if (total <= 0) return 'is-safe';
   const p = remain / total;
-  if (p >= 0.5) return 'is-safe';
+  if (p >= 0.4) return 'is-safe';
   if (p >= 0.2) return 'is-hint';
   if (p > 0) return 'is-warn';
   return 'is-over';
@@ -300,7 +301,7 @@ Page({
     totalExpense: '¥0.00',
     totalExpenseCents: 0,
     totalIncomeCents: 0,
-    totalBalance: '',
+    totalBalance: '收入 -- · 结余 --',  // 行占位：避免资产/预算先出时把第3行挤出1格闪烁
     showMemberFilter: false,
     memberFilterText: '全部',
     filterActive: false,
@@ -313,20 +314,12 @@ Page({
     assetVersion: 0,
     budgetDisplay: null as null | { remain: string; total: string; remainCents: number; totalCents: number },
     budgetColorClass: '',
-    // ─── COSTRA-4xx · 资产编辑态（系统数字键盘） ───
+    // ─── COSTRA-4xx · 资产编辑态 ───
     editAssetVisible: false,
     editAssetDisplay: '0',
-    /** 资产弹窗 sheet 的键盘避让位移（px，负数=上移） */
-    editAssetOffsetY: 0,
-    /** 资产弹窗 sheet 位移过渡时长（ms，取系统键盘动画时长） */
-    editAssetTransitionMs: 0,
-    // ─── COSTRA-4xx · 预算编辑态（系统数字键盘） ───
+    // ─── COSTRA-4xx · 预算编辑态 ───
     editBudgetVisible: false,
     editBudgetDisplay: '0',
-    /** 预算弹窗 sheet 的键盘避让位移（px，负数=上移） */
-    editBudgetOffsetY: 0,
-    /** 预算弹窗 sheet 位移过渡时长（ms，取系统键盘动画时长） */
-    editBudgetTransitionMs: 0,
     // ─── 分类筛选 ───
     filterCategories: [] as FilterCategoryItem[],
     filterExpandedCategoryId: '' as string,
@@ -2785,16 +2778,12 @@ Page({
     this.setData({
       editAssetVisible: true,
       editAssetDisplay: yuanStr,
-      editAssetOffsetY: 0,
-      editAssetTransitionMs: 0,
     });
   },
 
   onCloseEditAsset() {
     this.setData({
       editAssetVisible: false,
-      editAssetOffsetY: 0,
-      editAssetTransitionMs: 0,
     });
     eventBus.emit(EventNames.SHOW_TAB_BAR);
   },
@@ -2810,21 +2799,6 @@ Page({
     this.setData({ editAssetDisplay: sanitized });
   },
 
-  /**
-   * 资产弹窗 · 系统键盘高度变化驱动 sheet 上移避让。
-   * 与 expense-overlay 同构：adjust-position 已关（不靠微信自动上推），
-   * 键盘弹起时把贴底 sheet 整体 translateY(-keyboardHeight)，使其底部恰好落在键盘顶部正上方，
-   * 输入框与保存按钮始终保持可见，彻底规避 fixed 定位被系统键盘挤压错位的问题。
-   */
-  onEditAssetKeyboardHeightChange(e: WechatMiniprogram.InputKeyboardHeightChange) {
-    const height = e.detail.height || 0;
-    const duration = e.detail.duration || 0;
-    this.setData({
-      editAssetOffsetY: -height,
-      editAssetTransitionMs: duration > 0 ? duration : 0,
-    });
-  },
-
   async onConfirmEditAssetInput() {
     const cents = parseYuanToCents(this.data.editAssetDisplay);
     if (cents < 0) {
@@ -2837,70 +2811,59 @@ Page({
       return;
     }
 
-    // 二次确认：修改资产是敏感操作
-    wx.showModal({
-      title: '修改资产',
-      content: '修改后仅之后的流水会继续叠加到资产上，是否确认？',
-      confirmText: '确认修改',
-      cancelText: '取消',
-      success: async (res) => {
-        if (!res.confirm) return;
-
-        const ledgerId = this._ledgerId;
-        const baseVersion = this.data.assetVersion;
-        try {
-          const updated = await rebaseLedgerBalance(ledgerId, cents, baseVersion);
-          this._renderAsset(updated.balance_cents, updated.balance_version);
-          this.onCloseEditAsset();
-          wx.showToast({ title: '资产已更新', icon: 'success' });
-        } catch (err) {
-          const apiErr = err as ApiError;
-          if (apiErr?.status === 0 || apiErr?.code === 'CLIENT_NETWORK_ERROR') {
-            //敏感字段不走outbox 排队（spec §5.4 v2）· 网络失败直接提示用户
-            wx.showToast({ title: '网络异常，请稍后再试', icon: 'none' });
-            return;
-          }
-          if (apiErr?.status === 409) {
-            // 冲突弹窗（敏感字段不静默覆盖 · 对齐 conflict-strategy.md）
-            const details = apiErr.details as { current_balance_cents?: number; current_balance_version?: number } | undefined;
-            const currentCents = details?.current_balance_cents;
-            const currentVersion = details?.current_balance_version;
-            const currentDisplay = currentCents != null ? formatYuan(currentCents) : '最新值';
-            wx.showModal({
-              title: '资产已被其他成员修改',
-              content: `其他成员已把资产改为 ${currentDisplay}。\n是否用你的值覆盖？`,
-              confirmText: '覆盖',
-              cancelText: '放弃',
-              success: async (r2) => {
-                if (!r2.confirm) {
-                  // 放弃 → 用服务端最新值刷新 UI
-                  if (currentCents != null && currentVersion != null) {
-                    this._renderAsset(currentCents, currentVersion);
-                  }
-                  this.onCloseEditAsset();
-                  return;
-                }
-                // 用户确认覆盖 → 用 409 返回的 current version 再试一次
-                if (currentVersion == null) {
-                  wx.showToast({ title: '获取最新版本失败', icon: 'none' });
-                  return;
-                }
-                try {
-                  const updated2 = await rebaseLedgerBalance(ledgerId, cents, currentVersion);
-                  this._renderAsset(updated2.balance_cents, updated2.balance_version);
-                  this.onCloseEditAsset();
-                  wx.showToast({ title: '资产已更新', icon: 'success' });
-                } catch (err2) {
-                  wx.showToast({ title: '修改失败，请重试', icon: 'none' });
-                }
-              },
-            });
-          } else {
-            wx.showToast({ title: '修改失败，请重试', icon: 'none' });
-          }
-        }
-      },
-    });
+    const ledgerId = this._ledgerId;
+    const baseVersion = this.data.assetVersion;
+    try {
+      const updated = await rebaseLedgerBalance(ledgerId, cents, baseVersion);
+      this._renderAsset(updated.balance_cents, updated.balance_version);
+      this.onCloseEditAsset();
+      wx.showToast({ title: '资产已更新', icon: 'success' });
+    } catch (err) {
+      const apiErr = err as ApiError;
+      if (apiErr?.status === 0 || apiErr?.code === 'CLIENT_NETWORK_ERROR') {
+        //敏感字段不走outbox 排队（spec §5.4 v2）· 网络失败直接提示用户
+        wx.showToast({ title: '网络异常，请稍后再试', icon: 'none' });
+        return;
+      }
+      if (apiErr?.status === 409) {
+        // 冲突弹窗（敏感字段不静默覆盖 · 对齐 conflict-strategy.md）
+        const details = apiErr.details as { current_balance_cents?: number; current_balance_version?: number } | undefined;
+        const currentCents = details?.current_balance_cents;
+        const currentVersion = details?.current_balance_version;
+        const currentDisplay = currentCents != null ? formatYuan(currentCents) : '最新值';
+        wx.showModal({
+          title: '资产已被其他成员修改',
+          content: `其他成员已把资产改为 ${currentDisplay}。\n是否用你的值覆盖？`,
+          confirmText: '覆盖',
+          cancelText: '放弃',
+          success: async (r2) => {
+            if (!r2.confirm) {
+              // 放弃 → 用服务端最新值刷新 UI
+              if (currentCents != null && currentVersion != null) {
+                this._renderAsset(currentCents, currentVersion);
+              }
+              this.onCloseEditAsset();
+              return;
+            }
+            // 用户确认覆盖 → 用 409 返回的 current version 再试一次
+            if (currentVersion == null) {
+              wx.showToast({ title: '获取最新版本失败', icon: 'none' });
+              return;
+            }
+            try {
+              const updated2 = await rebaseLedgerBalance(ledgerId, cents, currentVersion);
+              this._renderAsset(updated2.balance_cents, updated2.balance_version);
+              this.onCloseEditAsset();
+              wx.showToast({ title: '资产已更新', icon: 'success' });
+            } catch (err2) {
+              wx.showToast({ title: '修改失败，请重试', icon: 'none' });
+            }
+          },
+        });
+      } else {
+        wx.showToast({ title: '修改失败，请重试', icon: 'none' });
+      }
+    }
   },
 
   // ─── COSTRA-4xx · 预算编辑（拉起系统数字键盘） ─────────────────────
@@ -2913,16 +2876,12 @@ Page({
     this.setData({
       editBudgetVisible: true,
       editBudgetDisplay: yuanStr,
-      editBudgetOffsetY: 0,
-      editBudgetTransitionMs: 0,
     });
   },
 
   onCloseEditBudget() {
     this.setData({
       editBudgetVisible: false,
-      editBudgetOffsetY: 0,
-      editBudgetTransitionMs: 0,
     });
     eventBus.emit(EventNames.SHOW_TAB_BAR);
   },
@@ -2935,18 +2894,6 @@ Page({
       ? cleaned
       : cleaned.slice(0, firstDotIdx + 1) + cleaned.slice(firstDotIdx + 1).replace(/\./g, '');
     this.setData({ editBudgetDisplay: sanitized });
-  },
-
-  /**
-   * 预算弹窗 · 系统键盘高度变化驱动 sheet 上移避让（与 onEditAssetKeyboardHeightChange 同构）。
-   */
-  onEditBudgetKeyboardHeightChange(e: WechatMiniprogram.InputKeyboardHeightChange) {
-    const height = e.detail.height || 0;
-    const duration = e.detail.duration || 0;
-    this.setData({
-      editBudgetOffsetY: -height,
-      editBudgetTransitionMs: duration > 0 ? duration : 0,
-    });
   },
 
   async onConfirmEditBudgetInput() {

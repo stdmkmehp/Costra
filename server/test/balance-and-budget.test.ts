@@ -24,6 +24,8 @@
  *   Bud4 PUT /budgets 修改（错version） → 409
  *   Bud5 GET /budgets 已设置 → 200 + spent 累加 expense
  *   Bud6 uniq (ledger_id, month) 索引：不能同月度两条 active budget
+ *   Bud7 GET /budgets 当月未设但账本有历史预算 → 回退继承 amount + spent 按当月算
+ *   Bud8 GET /budgets 回退后修改当月预算 → 当月独立记录，不影响回退源
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -493,5 +495,77 @@ describe('COSTRA-4xx · 月度预算', () => {
         ['00000000-0000-0000-0000-000000000b02', LEDGER_ID, userId],
       ),
     ).rejects.toThrow();
+  });
+
+  it('Bud7 GET /budgets 当月未设但账本有历史预算 → 回退继承 amount + spent 按当月算', async () => {
+    // 在 2026-08 设置预算 300000（3000 元）
+    await app.inject({
+      method: 'PUT',
+      url: '/v1/budgets',
+      headers: auth(),
+      payload: { ledger_id: LEDGER_ID, month: '2026-08', amount_cents: 300000 },
+    });
+    // 在 2026-09 记一笔 expense（花 5000 分）
+    await createEntry({ amount: 5000, type: 'expense', occurred_at: '2026-09-01T08:00:00.000Z' });
+
+    // 查 2026-09 预算 → 当月未设，应回退继承 8 月的 300000
+    const res = await app.inject({
+      method: 'GET',
+      url: `/v1/budgets?ledger_id=${LEDGER_ID}&month=2026-09`,
+      headers: auth(),
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as {
+      amount_cents: number;
+      spent_cents: number;
+      remain_cents: number;
+      month: string;
+      version: number;
+    };
+    expect(body.amount_cents).toBe(300000);      // 继承 8 月的上限
+    expect(body.spent_cents).toBe(5000);          // 但 spent 按 9 月实际算
+    expect(body.remain_cents).toBe(295000);
+    expect(body.month).toBe('2026-09');           // 返回查询月，非源预算月
+    expect(body.version).toBe(1);                 // 源预算的 version
+  });
+
+  it('Bud8 回退后修改当月预算 → 当月独立记录，不影响回退源', async () => {
+    // 8 月设 300000
+    await app.inject({
+      method: 'PUT',
+      url: '/v1/budgets',
+      headers: auth(),
+      payload: { ledger_id: LEDGER_ID, month: '2026-08', amount_cents: 300000 },
+    });
+
+    // 9 月通过回退拿到 300000，然后 PUT 修改为 500000（version=null 首次创建 9 月预算）
+    const put9 = await app.inject({
+      method: 'PUT',
+      url: '/v1/budgets',
+      headers: auth(),
+      payload: { ledger_id: LEDGER_ID, month: '2026-09', amount_cents: 500000 },
+    });
+    expect(put9.statusCode).toBe(200);
+    const put9Body = put9.json() as { amount_cents: number; version: number };
+    expect(put9Body.amount_cents).toBe(500000);
+    expect(put9Body.version).toBe(1); // 9 月是新记录，version=1
+
+    // 8 月预算不受影响
+    const get8 = await app.inject({
+      method: 'GET',
+      url: `/v1/budgets?ledger_id=${LEDGER_ID}&month=2026-08`,
+      headers: auth(),
+    });
+    const get8Body = get8.json() as { amount_cents: number };
+    expect(get8Body.amount_cents).toBe(300000);
+
+    // 10 月未设 → 回退应取最近的 9 月（500000），而非 8 月
+    const get10 = await app.inject({
+      method: 'GET',
+      url: `/v1/budgets?ledger_id=${LEDGER_ID}&month=2026-10`,
+      headers: auth(),
+    });
+    const get10Body = get10.json() as { amount_cents: number };
+    expect(get10Body.amount_cents).toBe(500000);
   });
 });

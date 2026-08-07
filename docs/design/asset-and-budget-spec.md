@@ -44,10 +44,11 @@
 - **归属**:新建 `budgets_v2` 表(现表**删除重建** ·见 §3.2)
 - **粒度**:仅"账本月度总预算"(不做分类预算)
 - **上限**:`budgets.amount_cents`,用户设定
-- **已消耗**:当月 `entries.type='expense' AND deleted_at IS NULL AND occurred_at ∈ [monthStart, monthEnd)` 的 `SUM(amount)`
+- **跟随账本走**:当月未单独设置预算时,自动继承该账本最近一次设定的预算上限(`month <= 查询月`取最大)。用户在任意月修改预算 → 该月创建独立记录,后续月份回退时优先取最近的。仅当账本从未设过任何预算时才显示"未设置"。
+- **已消耗**:当月 `entries.type='expense' AND deleted_at IS NULL AND occurred_at ∈ [monthStart, monthEnd)` 的 `SUM(amount)`(始终按查询月实际计算,不受回退影响)
 - **剩余**:`amount_cents - spent`(可为负 = 超支)
 - **展示格式**:`预算 ¥1,000.00 / ¥3,000.00`(左剩余、右上限)
-- 未设置 → `预算 未设置`(灰度、点击进设置)
+- 从未设过 → `预算 未设置`(灰度、点击进设置)
 
 ---
 
@@ -66,10 +67,10 @@
 
 | p = remain/total | 语义 | token | hex |
 |-----------------|------|-------|-----|
-| p ≥ 50% | 宽裕 | `--budget-safe` | `#8AA689` |
-| 20~50%  | 提示 | `--budget-hint` | `#C4B58D` |
-| 0~20%   | 警戒 | `--budget-warn` | `#C39A80` |
-| p ≤ 0   | 超支 | `--budget-over` | `#A87878` |
+| p ≥ 40% | 宽裕 | `--budget-safe` | `#8AA689` |
+| 20~40%  | 提示 | `--budget-hint` | `#C4B58D` |
+| 0~20%   | 警戒 | `--budget-warn` | `#B07A5C` |
+| p ≤ 0   | 超支 | `--budget-over` | `#8B5A5A` |
 
 - 上限数字永远 secondary 灰;只染剩余数字
 - 深浅色模式各出一版token(Design 精修)
