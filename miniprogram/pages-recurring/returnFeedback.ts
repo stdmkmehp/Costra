@@ -14,7 +14,7 @@
 
 /** 右滑自动保存的结果类型（与编辑页 SaveOutcome 对齐，仅保留列表页需要展示的状态） */
 export type PendingSaveResult =
-  | { status: 'success' }
+  | { status: 'success'; wasDisabled: boolean }
   | { status: 'invalid' }
   | { status: 'network_error' }
   | { status: 'version_conflict' }

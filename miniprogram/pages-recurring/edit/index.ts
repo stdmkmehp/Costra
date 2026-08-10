@@ -5,6 +5,7 @@ import type {
   RecurringRule,
   RecurringPeriod,
   RecurringBucket,
+  RecurringStatus,
   CreateRecurringPayload,
   UpdateRecurringPayload,
 } from '../../services/recurringApi';
@@ -14,7 +15,7 @@ import {
   updateRecurringRule,
 } from '../../services/recurringApi';
 import { invalidateCache, generateIdempotencyKey } from '../../services/recurringLocal';
-import { toYuan, parseAmountInputToCents } from '../../utils/money';
+import { toYuanForEdit, parseAmountInputToCents } from '../../utils/money';
 import { formatDaysForSummary, type FormatContext } from '../../services/recurringFormat';
 import { getWorkdayData, type WorkdayData } from '../../services/workdayApi';
 import { getActiveFamilyId } from '../../services/family';
@@ -182,6 +183,9 @@ Page({
 
   _families: [] as FamilyItem[],
   _originalRule: null as RecurringRule | null,
+  /** edit 模式下加载规则时的原始 status；用于「编辑已禁用/已失效规则后保存」时
+   *  把 toast 文案从「已保存」切换为「已保存，但未启用」。copy 模式不设置（保持 ''）。 */
+  _originalStatus: '' as '' | RecurringStatus,
   _executeHour: undefined as number | undefined,
   _executeMinute: undefined as number | undefined,
   /** workday 周期预览用的节假日数据（多年份数组）· 某年缺失降级周一~周五 */
@@ -315,13 +319,15 @@ Page({
     // 缓存服务端 next_run_at（edit 模式）· 预览"预计下次执行"时优先使用
     this._serverNextRunAt = mode === 'edit' ? r.next_run_at : null;
     this._periodFieldsDirty = false;
+    // 记录编辑目标的原始状态：仅 edit 模式有意义（copy 模式会创建一条新激活规则，不沿用此状态）。
+    this._originalStatus = mode === 'edit' ? r.status : '';
 
     this.setData({
       ruleVersion: mode === 'edit' ? r.version : 1,
       entryType: r.type,
       entryTypeLabel: TYPE_LABELS[r.type] || '',
  amountCents: r.amount,
-      amountDisplay: toYuan(r.amount),
+      amountDisplay: toYuanForEdit(r.amount),
       categoryId: r.category_id || '',
       categoryName: catDisplayName,
       categoryIcon: resolveIconGlyph(cat?.icon),
@@ -390,7 +396,7 @@ Page({
       case 'success':
         wx.vibrateShort({ type: 'medium' });
         this._disableUnloadAlert();
-        setRecurringReturnToast('已保存');
+        setRecurringReturnToast(this._successReturnToast());
         wx.navigateBack();
         break;
       case 'invalid':
@@ -429,7 +435,7 @@ Page({
     const cents = parseAmountInputToCents(raw);
     this.setData({
       amountCents: cents,
-      amountDisplay: cents > 0 ? toYuan(cents) : '',
+      amountDisplay: cents > 0 ? toYuanForEdit(cents) : '',
   });
     if (cents > 0) {
       this._markDirty();
@@ -777,6 +783,19 @@ Page({
   // ─── 保存 ──────────────────────────────────────────────────────────────
 
   /**
+   * 返回/保存成功后的一句话反馈文案。
+   * 若正在编辑的是「已禁用/已失效」规则（保存不会改其 status，仍保持未启用），
+   * 提示用户「已保存，但未启用」；否则普通「已保存」。copy 模式创建新规则、必为激活态，不触发后者。
+   */
+  _successReturnToast(): string {
+    if (this.data.mode === 'edit' && this._originalStatus !== '' && this._originalStatus !== 'active') {
+      return '已保存，但未启用';
+    }
+    return '已保存';
+  },
+
+
+  /**
    * 从当前表单状态构建保存 payload（纯函数，不发起请求，不依赖网络）。
    * 供 _doSave（await 路径）与 onUnload 右滑 fire-and-forget 路径共用。
    *
@@ -867,7 +886,9 @@ Page({
     return task
       .then(async (): Promise<PendingSaveResult> => {
         await invalidateCache();
-        return { status: 'success' };
+        const wasDisabled = this.data.mode === 'edit'
+          && this._originalStatus !== '' && this._originalStatus !== 'active';
+        return { status: 'success', wasDisabled };
       })
       .catch((e: any): PendingSaveResult => {
         if (isVersionConflict(e)) return { status: 'version_conflict' };
@@ -935,7 +956,7 @@ Page({
         this._backHandled = true;
         wx.vibrateShort({ type: 'medium' });
         this._disableUnloadAlert();
-        setRecurringReturnToast('已保存');
+        setRecurringReturnToast(this._successReturnToast());
         wx.navigateBack();
         break;
       case 'invalid':

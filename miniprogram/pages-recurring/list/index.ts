@@ -34,13 +34,13 @@ interface AppWithBootstrap {
 
 /** 右滑自动保存最终结果 → toast 文案。返回 null 表示不弹（如 network_error 已无意义，不再打扰）。 */
 function pendingSaveTitle(result: PendingSaveResult): string | null {
-  switch (result.status) {
-    case 'success': return '已保存';
-    case 'invalid': return '修改未保存（不符合规范）';
-    case 'version_conflict': return '数据已被他人更新，已还原为最新';
-    case 'network_error': return '网络失败，未保存';
-    case 'error': return result.message || '保存失败';
-  }
+    switch (result.status) {
+      case 'success': return result.wasDisabled ? '已保存，但未启用' : '已保存';
+      case 'invalid': return '修改未保存（不符合规范）';
+      case 'version_conflict': return '数据已被他人更新，已还原为最新';
+      case 'network_error': return '网络失败，未保存';
+      case 'error': return result.message || '保存失败';
+    }
 }
 
 Page({
