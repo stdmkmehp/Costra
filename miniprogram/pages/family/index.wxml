@@ -250,10 +250,6 @@
                       <view class="family-l3__avatar">
                         <image wx:if="{{e.avatarUrl}}" class="family-l3__avatar-img" src="{{e.avatarUrl}}" mode="aspectFill" lazy-load />
                         <view wx:else class="family-l3__avatar-placeholder">{{e.initial}}</view>
-                        <view wx:if="{{e.isRecurring || e.isShared}}" class="family-l3__badge">
-                          <text wx:if="{{e.isRecurring}}" class="family-l3__badge-text family-l3__badge-text--recurring">定</text>
-                          <text wx:if="{{e.isShared}}" class="family-l3__badge-text family-l3__badge-text--shared">公</text>
-                        </view>
                       </view>
                       <view class="family-l3__main">
                         <view class="family-l3__top">
@@ -263,6 +259,9 @@
                         </view>
                         <view class="family-l3__bottom">
                           <text class="family-l3__time">{{e.timeLabel}}</text>
+                          <!-- 「定时」「公共」按顺序追加，视觉与统计页 L3 一致 -->
+                          <text wx:if="{{e.isRecurring}}" class="family-l3__tag family-l3__tag--recurring">定时</text>
+                          <text wx:if="{{e.isShared}}" class="family-l3__tag family-l3__tag--shared">公共</text>
                         </view>
                       </view>
                     </view>

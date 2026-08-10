@@ -533,38 +533,25 @@
   color: rgba(28,27,26,0.4);
 }
 
-.family-l3__badge {
-  position: absolute;
-  right: -6rpx;
-  bottom: -6rpx;
-  display: flex;
-  align-items: center;
-  gap: 1rpx;
-  white-space: nowrap;
-  pointer-events: none;
-}
-
-.family-l3__badge-text {
-  font-size: 18rpx;
+/* 「定时 / 公共」内联 tag（协作页下钻列表专用）
+ * 视觉与统计页 .l3__tag 一致：莫兰迪色字 + 12% 透明同色背景，圆角 4rpx */
+.family-l3__tag {
+  font-size: 20rpx;
   line-height: 1;
-  font-weight: 800;
-  text-shadow:
-    1rpx 0 0 var(--color-role-bg-app, #f1f2ec),
-    -1rpx 0 0 var(--color-role-bg-app, #f1f2ec),
-    0 1rpx 0 var(--color-role-bg-app, #f1f2ec),
-    0 -1rpx 0 var(--color-role-bg-app, #f1f2ec),
-    1rpx 1rpx 0 var(--color-role-bg-app, #f1f2ec),
-    -1rpx -1rpx 0 var(--color-role-bg-app, #f1f2ec),
-    1rpx -1rpx 0 var(--color-role-bg-app, #f1f2ec),
-    -1rpx 1rpx 0 var(--color-role-bg-app, #f1f2ec);
+  padding: 4rpx 8rpx;
+  border-radius: 4rpx;
+  white-space: nowrap;
+  font-weight: 500;
 }
 
-.family-l3__badge-text--recurring {
-  color: #A88A5E;
+.family-l3__tag--recurring {
+  color: #AD9168;
+  background: rgba(173, 145, 104, 0.12);
 }
 
-.family-l3__badge-text--shared {
+.family-l3__tag--shared {
   color: #6B9B8F;
+  background: rgba(107, 155, 143, 0.12);
 }
 
 .family-l3__more {
