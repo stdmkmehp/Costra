@@ -54,6 +54,8 @@ export interface StatTotals {
 export interface MonthlyExtremes {
   avg_daily_expense: number;
   max_single_expense: number;
+  max_single_note: string | null;
+  max_single_category_name: string | null;
   max_day_expense: number;
 }
 
@@ -92,6 +94,8 @@ export interface MonthlyTrendItem {
 export interface YearlyExtremes {
   avg_monthly_expense: number;
   max_single_expense: number;
+  max_single_note: string | null;
+  max_single_category_name: string | null;
   max_month_expense: number;
   max_month_label: string;          // '8月' · 没数据时空串
   top_category_name: string | null;
@@ -414,6 +418,8 @@ export async function getMonthlyStatistics(
   let totalIncome = 0;
   let entryCount = 0;
   let maxSingleExpense = 0;
+  let maxSingleNote: string | null = null;
+  let maxSingleCategoryId: string | null = null;
 
   for (const e of entries) {
     entryCount += 1;
@@ -422,7 +428,11 @@ export async function getMonthlyStatistics(
     if (e.type === 'expense') {
       totalExpense += e.amount;
       dailyExpense[day] += e.amount;
-      if (e.amount > maxSingleExpense) maxSingleExpense = e.amount;
+      if (e.amount > maxSingleExpense) {
+        maxSingleExpense = e.amount;
+        maxSingleNote = e.note;
+        maxSingleCategoryId = e.category_id;
+      }
     } else if (e.type === 'income') {
       totalIncome += e.amount;
       dailyIncome[day] += e.amount;
@@ -448,6 +458,11 @@ export async function getMonthlyStatistics(
   const l2Ids = l2Aggs.map((a) => a.category_id);
   const l2Metas = await statsRepo.getCategoriesByIds(l2Ids);
   const l2MetaMap = new Map(l2Metas.map((m) => [m.id, m]));
+
+  // 最大单笔的二级分类名（从 l2MetaMap 查，无需额外查询）
+  const maxSingleCategoryName = maxSingleCategoryId
+    ? (l2MetaMap.get(maxSingleCategoryId)?.name ?? null)
+    : null;
 
   const l1 = foldL2ToL1(l2Aggs, l2MetaMap);
 
@@ -479,6 +494,8 @@ export async function getMonthlyStatistics(
     extremes: {
       avg_daily_expense: avgDaily,
       max_single_expense: maxSingleExpense,
+      max_single_note: maxSingleNote,
+      max_single_category_name: maxSingleCategoryName,
       max_day_expense: maxDayExpense,
     },
     category_ranks: categoryRanks,
@@ -531,6 +548,8 @@ export async function getYearlyStatistics(
   let totalIncome = 0;
   let entryCount = 0;
   let maxSingleExpense = 0;
+  let maxSingleNote: string | null = null;
+  let maxSingleCategoryId: string | null = null;
 
   for (const e of entries) {
     entryCount += 1;
@@ -540,7 +559,11 @@ export async function getYearlyStatistics(
     if (e.type === 'expense') {
       totalExpense += e.amount;
       monthlyExpense[m] += e.amount;
-      if (e.amount > maxSingleExpense) maxSingleExpense = e.amount;
+      if (e.amount > maxSingleExpense) {
+        maxSingleExpense = e.amount;
+        maxSingleNote = e.note;
+        maxSingleCategoryId = e.category_id;
+      }
     } else if (e.type === 'income') {
       totalIncome += e.amount;
       monthlyIncome[m] += e.amount;
@@ -572,6 +595,11 @@ export async function getYearlyStatistics(
   const l2Ids = l2Aggs.map((a) => a.category_id);
   const l2Metas = await statsRepo.getCategoriesByIds(l2Ids);
   const l2MetaMap = new Map(l2Metas.map((m) => [m.id, m]));
+
+  // 最大单笔的二级分类名（从 l2MetaMap 查，无需额外查询）
+  const maxSingleCategoryName = maxSingleCategoryId
+    ? (l2MetaMap.get(maxSingleCategoryId)?.name ?? null)
+    : null;
 
   const l1 = foldL2ToL1(l2Aggs, l2MetaMap);
 
@@ -606,6 +634,8 @@ export async function getYearlyStatistics(
     extremes: {
       avg_monthly_expense: avgMonthly,
       max_single_expense: maxSingleExpense,
+      max_single_note: maxSingleNote,
+      max_single_category_name: maxSingleCategoryName,
       max_month_expense: maxMonthExpense,
       max_month_label: maxMonthIdx > 0 ? `${maxMonthIdx}月` : '',
       top_category_name: top ? top.category_name : null,

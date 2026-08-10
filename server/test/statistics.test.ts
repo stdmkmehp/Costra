@@ -121,6 +121,8 @@ describe('COSTRA-224: Statistics API · monthly', () => {
     expect(body.daily_trend.every((d: { expense: number; income: number }) => d.expense === 0 && d.income === 0)).toBe(true);
     expect(body.extremes.avg_daily_expense).toBe(0);
     expect(body.extremes.max_single_expense).toBe(0);
+    expect(body.extremes.max_single_note).toBeNull();
+    expect(body.extremes.max_single_category_name).toBeNull();
     expect(body.extremes.max_day_expense).toBe(0);
     expect(body.category_ranks).toEqual([]);
     expect(body.timezone).toBe('Asia/Shanghai');
@@ -176,7 +178,7 @@ describe('COSTRA-224: Statistics API · monthly', () => {
     await insertEntry({ ledgerId, amount: 2000, type: 'expense', createdBy: userId, occurredAt: '2026-06-05T03:00:00.000Z', categoryId: cat, sharedType: 'personal' });
 
     // day 10: 5000 (single max)
-    await insertEntry({ ledgerId, amount: 5000, type: 'expense', createdBy: userId, occurredAt: '2026-06-10T05:00:00.000Z', categoryId: cat, sharedType: 'personal' });
+    await insertEntry({ ledgerId, amount: 5000, type: 'expense', createdBy: userId, occurredAt: '2026-06-10T05:00:00.000Z', categoryId: cat, sharedType: 'personal', note: '机票' });
 
     // day 20: 4000 + 1000 = 5000 (tie max_day)
     await insertEntry({ ledgerId, amount: 4000, type: 'expense', createdBy: userId, occurredAt: '2026-06-20T05:00:00.000Z', categoryId: cat, sharedType: 'personal' });
@@ -191,6 +193,8 @@ describe('COSTRA-224: Statistics API · monthly', () => {
     const body = res.json();
     expect(body.totals.expense).toBe(13000);
     expect(body.extremes.max_single_expense).toBe(5000);
+    expect(body.extremes.max_single_note).toBe('机票');
+    expect(body.extremes.max_single_category_name).toBe('购物');
     expect(body.extremes.max_day_expense).toBe(5000);
     // avg = 13000 / 30 = 433.33 → round 433
     expect(body.extremes.avg_daily_expense).toBe(Math.round(13000 / 30));
@@ -280,7 +284,7 @@ describe('COSTRA-224: Statistics API · yearly', () => {
     await insertEntry({ ledgerId, amount: 2000, type: 'expense', createdBy: userId, occurredAt: '2026-03-05T05:00:00.000Z', categoryId: cat, sharedType: 'personal' });
     await insertEntry({ ledgerId, amount: 1000, type: 'expense', createdBy: userId, occurredAt: '2026-03-15T05:00:00.000Z', categoryId: cat, sharedType: 'personal' });
     // August: 8000 (max month)
-    await insertEntry({ ledgerId, amount: 8000, type: 'expense', createdBy: userId, occurredAt: '2026-08-05T05:00:00.000Z', categoryId: cat, sharedType: 'personal' });
+    await insertEntry({ ledgerId, amount: 8000, type: 'expense', createdBy: userId, occurredAt: '2026-08-05T05:00:00.000Z', categoryId: cat, sharedType: 'personal', note: '度假酒店' });
 
     const res = await app.inject({
       method: 'GET',
@@ -299,6 +303,9 @@ describe('COSTRA-224: Statistics API · yearly', () => {
     expect(aug.expense).toBe(8000);
     expect(body.extremes.max_month_expense).toBe(8000);
     expect(body.extremes.max_month_label).toBe('8月');
+    expect(body.extremes.max_single_expense).toBe(8000);
+    expect(body.extremes.max_single_note).toBe('度假酒店');
+    expect(body.extremes.max_single_category_name).toBe('日常');
     expect(body.extremes.top_category_name).toBe('吃喝');
     expect(body.extremes.top_category_amount).toBe(11000);
   });

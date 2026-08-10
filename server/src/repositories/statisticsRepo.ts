@@ -36,6 +36,7 @@ export interface RawEntryForStat {
   occurred_at: string;        // ISO UTC
   shared_type: 'shared' | 'personal' | null;
   category_id: string | null;
+  note: string | null;
 }
 
 /** 分类排行行（含 category 元信息） */
@@ -103,7 +104,8 @@ export async function listEntriesInRange(
        e.type AS type,
        e.occurred_at AS occurred_at,
        e.shared_type AS shared_type,
-       e.category_id AS category_id
+       e.category_id AS category_id,
+       e.note AS note
      FROM entries e
      WHERE e.ledger_id = $1
        AND e.deleted_at IS NULL
@@ -123,6 +125,7 @@ export async function listEntriesInRange(
       : (r.occurred_at as Date).toISOString(),
     shared_type: (r.shared_type as 'shared' | 'personal' | null) ?? null,
     category_id: r.category_id ? String(r.category_id) : null,
+    note: (r.note as string | null) ?? null,
   }));
 }
 

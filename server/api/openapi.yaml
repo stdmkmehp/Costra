@@ -1812,10 +1812,12 @@ components:
 
     MonthlyExtremes:
       type: object
-      required: [avg_daily_expense, max_single_expense, max_day_expense]
+      required: [avg_daily_expense, max_single_expense, max_single_note, max_single_category_name, max_day_expense]
       properties:
         avg_daily_expense: { type: integer, format: int64, description: '日均支出 = expense / 当月天数' }
         max_single_expense: { type: integer, format: int64 }
+        max_single_note: { type: string, nullable: true, description: '最大单笔的备注，无备注时为 null' }
+        max_single_category_name: { type: string, nullable: true, description: '最大单笔的二级分类名，无支出时为 null' }
         max_day_expense: { type: integer, format: int64, description: '当月单日最高支出' }
 
     MonthlyStatistics:
@@ -1861,10 +1863,12 @@ components:
 
     YearlyExtremes:
       type: object
-      required: [avg_monthly_expense, max_single_expense, max_month_expense, max_month_label, top_category_amount]
+      required: [avg_monthly_expense, max_single_expense, max_single_note, max_single_category_name, max_month_expense, max_month_label, top_category_amount]
       properties:
         avg_monthly_expense: { type: integer, format: int64, description: '月均 = 总支出 / 已过月份数' }
         max_single_expense: { type: integer, format: int64 }
+        max_single_note: { type: string, nullable: true, description: '最大单笔的备注，无备注时为 null' }
+        max_single_category_name: { type: string, nullable: true, description: '最大单笔的二级分类名，无支出时为 null' }
         max_month_expense: { type: integer, format: int64 }
         max_month_label: { type: string, description: '如「8月」· 无数据时空串' }
         top_category_name: { type: string, nullable: true }

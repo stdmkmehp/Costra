@@ -70,6 +70,7 @@ export async function insertEntry(params: {
   categoryId?: string | null;
   sharedType?: 'personal' | 'shared' | null;
   sourceRecurringId?: string | null;
+  note?: string | null;
 }): Promise<void> {
   if (params.sourceRecurringId) {
     await getPool().query(
@@ -84,8 +85,8 @@ export async function insertEntry(params: {
 
   const id = crypto.randomUUID();
   await getPool().query(
-    `INSERT INTO entries (id, ledger_id, amount, currency, type, category_id, occurred_at, created_by, shared_type, source_recurring_id)
-     VALUES ($1, $2, $3, 'CNY', $4, $5, $6, $7, $8, $9)`,
+    `INSERT INTO entries (id, ledger_id, amount, currency, type, category_id, occurred_at, created_by, shared_type, source_recurring_id, note)
+     VALUES ($1, $2, $3, 'CNY', $4, $5, $6, $7, $8, $9, $10)`,
     [
       id,
       params.ledgerId,
@@ -96,6 +97,7 @@ export async function insertEntry(params: {
       params.createdBy,
       params.sharedType ?? null,
       params.sourceRecurringId ?? null,
+      params.note ?? null,
     ],
   );
 }
