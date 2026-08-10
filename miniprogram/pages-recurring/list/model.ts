@@ -187,34 +187,44 @@ export function groupRules(
 }
 
 /**
- * 屏幕边界 clamp：确保菜单不超出可视区域
+ * 菜单位置自适应：参照明细页长按菜单的逻辑，根据触点坐标计算菜单左上角位置。
+ *
+ * - 菜单尺寸通过 rpx → px 换算（与 .ctx-menu CSS 保持同步），而非硬编码 px 值。
+ * - 水平方向：菜单居中于触点，左右 clamp 防溢出。
+ * - 垂直方向：优先向下展开（菜单顶部对齐触点），下方空间不足时向上翻转（菜单底部对齐触点）。
+ * - 上边界保护：不低于 statusBarHeight + 8，避免被状态栏/导航栏遮挡。
+ *
+ * @param x           触点 clientX
+ * @param y           触点 clientY
+ * @param windowWidth 窗口宽度（px），用于 rpx→px 换算
+ * @param windowHeight 窗口高度（px）
+ * @param statusBarHeight 状态栏高度（px），用于上边界保护
+ * @returns 菜单左上角坐标 { left, top }（px）
  */
 export function clampMenuPosition(
   x: number,
   y: number,
   windowWidth: number,
   windowHeight: number,
-  menuWidth = 140,
-  menuHeight = 200,
-): { x: number; y: number } {
+  statusBarHeight = 0,
+): { left: number; top: number } {
+  const rpxToPx = (windowWidth || 375) / 750;
+  // 菜单尺寸须与 styles/ctx-menu.wxss .ctx-menu 保持同步：
+  // 宽 300rpx；高 = 4×96rpx item + 上下 padding 8rpx×2 + 删除项 margin 6rpx = 408rpx
+  const menuW = 300 * rpxToPx;
+  const menuH = 408 * rpxToPx;
   const margin = 12;
-  let cx = x;
-  let cy = y;
-  // 右边界
-  if (cx + menuWidth / 2 > windowWidth - margin) {
-    cx = windowWidth - margin - menuWidth / 2;
-  }
-  // 左边界
-  if (cx - menuWidth / 2 < margin) {
-    cx = margin + menuWidth / 2;
-  }
-  // 下边界
-  if (cy + menuHeight > windowHeight - margin) {
-    cy = windowHeight - margin - menuHeight;
-  }
-  // 上边界
-  if (cy < margin) {
-    cy = margin;
-  }
-  return { x: cx, y: cy };
+
+  // 水平：居中于触点，边界收拢防溢出
+  let left = x - menuW / 2;
+  if (left < margin) left = margin;
+  if (left > windowWidth - menuW - margin) left = windowWidth - menuW - margin;
+
+  // 垂直：优先向下展开，下方空间不足则向上翻转
+  let top = y + menuH + margin <= windowHeight ? y : y - menuH;
+  const minTop = statusBarHeight + 8;
+  if (top < minTop) top = minTop;
+  if (top > windowHeight - menuH - margin) top = windowHeight - menuH - margin;
+
+  return { left, top };
 }

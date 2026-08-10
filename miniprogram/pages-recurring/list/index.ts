@@ -217,11 +217,13 @@ Page({
       touch?.clientY || 300,
       metrics.windowWidth,
       metrics.windowHeight,
+      metrics.statusBarHeight,
     );
+    wx.vibrateShort({ type: 'light' });
     this.setData({
       ctxMenuVisible: true,
-      ctxMenuX: pos.x,
-      ctxMenuY: pos.y,
+      ctxMenuX: pos.left,
+      ctxMenuY: pos.top,
       ctxMenuRule: rule,
       longPressRuleId: id,
     });

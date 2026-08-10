@@ -83,20 +83,40 @@ describe('list/model', () => {
   });
 
   describe('clampMenuPosition', () => {
-    it('center position stays unchanged', () => {
-      const { x, y } = clampMenuPosition(200, 300, 400, 800);
-      expect(x).toBe(200);
-      expect(y).toBe(300);
+    // 窗口 400×800，rpxToPx = 400/750 ≈ 0.5333
+    // menuW = 300 × 0.5333 = 160, menuH = 408 × 0.5333 ≈ 217.6
+    it('居中触点：left = x - menuW/2，向下展开 top = y', () => {
+      const { left, top } = clampMenuPosition(200, 300, 400, 800, 0);
+      // left = 200 - 160/2 = 120
+      expect(left).toBe(120);
+      // 下方空间 800-300=500 > menuH+margin，向下展开
+      expect(top).toBe(300);
     });
 
-    it('right overflow clamped', () => {
-      const { x } = clampMenuPosition(390, 300, 400, 800);
-      expect(x).toBeLessThan(390);
+    it('右溢出：left 被 clamp 到 winW - menuW - margin', () => {
+      const { left } = clampMenuPosition(390, 300, 400, 800, 0);
+      // 左上角 left = 390 - 80 = 310 > 400 - 160 - 12 = 228 → clamp 到 228
+      expect(left).toBe(228);
+      expect(left).toBeLessThan(390);
     });
 
-    it('bottom overflow clamped', () => {
-      const { y } = clampMenuPosition(200, 750, 400, 800);
-      expect(y).toBeLessThan(750);
+    it('左溢出：left 被 clamp 到 margin', () => {
+      const { left } = clampMenuPosition(10, 300, 400, 800, 0);
+      // left = 10 - 80 = -70 < 12 → clamp 到 12
+      expect(left).toBe(12);
+    });
+
+    it('下溢出：下方空间不足时向上翻转，top = y - menuH', () => {
+      const { top } = clampMenuPosition(200, 750, 400, 800, 0);
+      // 750 + 217.6 + 12 > 800 → 向上翻转 top = 750 - 217.6 = 532.4
+      expect(top).toBeLessThan(750);
+      expect(top).toBeCloseTo(750 - 408 * (400 / 750), 1);
+    });
+
+    it('上边界保护：top 不低于 statusBarHeight + 8', () => {
+      const { top } = clampMenuPosition(200, 50, 400, 800, 44);
+      // 向上翻转 top = 50 - 217.6 = -167.6 < 44+8=52 → clamp 到 52
+      expect(top).toBe(52);
     });
   });
 

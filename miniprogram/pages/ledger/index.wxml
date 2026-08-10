@@ -360,7 +360,7 @@
       />
     </view>
     <view class="quickedit-hint">
-      <text>修改后，新流水才能继续叠加到资产上</text>
+      <text>新流水将叠加到修改后资产上</text>
     </view>
     <view class="quickedit-actions">
       <view class="quickedit-actions__btn quickedit-actions__btn--cancel" bindtap="onCloseEditAsset">取消</view>
@@ -372,7 +372,7 @@
   <view class="quickedit-mask {{editBudgetVisible ? 'is-visible' : ''}}" wx:if="{{editBudgetVisible}}" bindtap="onCloseEditBudget"></view>
   <view class="quickedit-sheet {{editBudgetVisible ? 'is-visible' : ''}}" wx:if="{{editBudgetVisible}}">
     <view class="quickedit-header">
-      <text class="quickedit-header__title">设置当月预算</text>
+      <text class="quickedit-header__title">设置当月预算上限</text>
     </view>
     <view class="quickedit-amount">
       <text class="quickedit-amount__prefix">¥</text>
@@ -389,7 +389,7 @@
       />
     </view>
     <view class="quickedit-hint">
-      <text>设置当月预算上限</text>
+      <text>预算余额 = 预算上限 - 当月支出</text>
     </view>
     <view class="quickedit-actions">
       <view class="quickedit-actions__btn quickedit-actions__btn--cancel" bindtap="onCloseEditBudget">取消</view>
