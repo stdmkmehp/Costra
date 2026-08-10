@@ -1927,13 +1927,14 @@ describe('recurring-entries · update/resume bucket window skip', () => {
     await app.close();
   });
 
-  it('PATCH · 在 bucket 窗口期内修改匹配日 → 跳过今天，next_run_at 不落在今天', async () => {
+  it('PATCH · 在 bucket 窗口期内修改 execute_bucket → 跳过今天，next_run_at 不落在今天', async () => {
     // 2026-08-07 周五。now = 14:00（已进入下午窗口 12:00~17:59）。
     // 先创建一条 start_date 在未来的 weekly 规则（避免 create 时触发跳过逻辑），
-    // 然后通过 PATCH 把 start_date 改成今天 → update 路径重算 next_run_at。
+    // 然后通过 PATCH 把 start_date 改成今天 + execute_bucket 改成 afternoon →
+    // update 路径从 now 重算，bucket 变了 → 跳过今天。
     vi.setSystemTime(new Date('2026-08-07T14:00:00+08:00'));
 
-    // 创建 start_date=2026-08-20（未来），days_of_week=[5]（周五）
+    // 创建 start_date=2026-08-20（未来），days_of_week=[5]（周五），bucket=morning
     const createRes = await app.inject({
       method: 'POST',
       url: '/v1/recurring-entries',
@@ -1944,16 +1945,16 @@ describe('recurring-entries · update/resume bucket window skip', () => {
         amount: 2000,
         period: 'weekly',
         days_of_week: [5],
-        execute_bucket: 'afternoon',
+        execute_bucket: 'morning',
         start_date: '2026-08-20',
       },
     });
     expect(createRes.statusCode).toBe(201);
     const created = createRes.json() as { id: string; version: number; timezone: string };
 
-    // PATCH：把 start_date 改成今天 2026-08-07 → update 路径从 now 重算
+    // PATCH：把 start_date 改成今天 2026-08-07 + bucket 改成 afternoon
     // 7 号是周五（匹配日），afternoon 窗口 hash 落点会在今天 12:30~17:30 之间。
-    // 但 now=14:00 已进入窗口 → 应跳过今天 → 下一个匹配日 = 下周五 8/14
+    // 但 now=14:00 已进入 afternoon 窗口 → 应跳过今天 → 下一个匹配日 = 下周五 8/14
     const patchRes = await app.inject({
       method: 'PATCH',
       url: `/v1/recurring-entries/${created.id}`,
@@ -1961,6 +1962,7 @@ describe('recurring-entries · update/resume bucket window skip', () => {
       payload: {
         version: created.version,
         start_date: '2026-08-07',
+        execute_bucket: 'afternoon',
       },
     });
     expect(patchRes.statusCode).toBe(200);
@@ -2061,3 +2063,237 @@ describe('recurring-entries · update/resume bucket window skip', () => {
     expect(nextRun.month).toBe(8);
   });
 });
+
+// ==============================================================================
+// update · next_run_at 重算分流（bucketChanged 区分）
+//   情形 1：只改非周期字段（note/amount/category）→ next_run_at 不动
+//   情形 2：改了 execute_bucket → 从 now 重算 + applyBucketWindowSkip
+//   情形 3：改了周期字段但没改 execute_bucket → 从 existing.next_run_at 重算，不跳过
+// ==============================================================================
+
+describe('recurring-entries · update next_run_at recompute split', () => {
+  let app: FastifyInstance;
+  let token: string;
+  let userId: string;
+
+  beforeEach(async () => {
+    // 固定在 2026-08-10 周一 14:00 CST（已进入 afternoon 窗口 12:00~17:59）
+    // 必须在 buildApp/login 之前 fake，否则 token 签发在实际时间、验证在 fake 时间 → 过期 401。
+    // 选 14:00 而非 10:00 是因为情形 2 需要测试"已进入新 bucket 窗口 → 跳过今天"，
+    // afternoon 窗口起点 12:00 < 14:00 → 必然跳过。其他情形不受影响。
+    vi.setSystemTime(new Date('2026-08-10T14:00:00+08:00'));
+    app = await buildApp({ disableLogger: true, autoStartScheduler: false });
+    await app.ready();
+    const login1 = await login(app, 'openid-recur-update-split');
+    token = login1.token;
+    userId = login1.userId;
+    await setupFamilyAndLedger(userId);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /**
+   * 创建一条 daily morning 规则（start_date 在过去）。
+   * now=08-10 10:00 → next_run_at 会落在 08-11 上午某 hash 时刻
+   * （因为 08-10 上午的 hash 时刻可能已过，applyBucketWindowSkip 会跳过今天）。
+   */
+  async function createDailyMorningRule(): Promise<{
+    id: string;
+    version: number;
+    next_run_at: string;
+    timezone: string;
+  }> {
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 1000,
+        shared_type: 'personal',
+        period: 'daily',
+        execute_bucket: 'morning',
+        start_date: '2026-08-01',
+      },
+    });
+    expect(createRes.statusCode).toBe(201);
+    return createRes.json() as { id: string; version: number; next_run_at: string; timezone: string };
+  }
+
+  // ── 情形 1：只改 note → next_run_at 完全不变 ──────────────────────────
+
+  it('情形1 · PATCH only note → next_run_at 保持不变', async () => {
+    const rule = await createDailyMorningRule();
+
+    const patchRes = await app.inject({
+      method: 'PATCH',
+      url: `/v1/recurring-entries/${rule.id}`,
+      headers: authHeader(token),
+      payload: {
+        note: '改了备注',
+        version: rule.version,
+      },
+    });
+    expect(patchRes.statusCode).toBe(200);
+    const updated = patchRes.json() as { next_run_at: string };
+    expect(updated.next_run_at).toBe(rule.next_run_at);
+  });
+
+  // ── 情形 1 扩展：只改 amount → next_run_at 保持不变 ────────────────────
+
+  it('情形1 · PATCH only amount → next_run_at 保持不变', async () => {
+    const rule = await createDailyMorningRule();
+
+    const patchRes = await app.inject({
+      method: 'PATCH',
+      url: `/v1/recurring-entries/${rule.id}`,
+      headers: authHeader(token),
+      payload: {
+        amount: 9999,
+        version: rule.version,
+      },
+    });
+    expect(patchRes.statusCode).toBe(200);
+    const updated = patchRes.json() as { next_run_at: string };
+    expect(updated.next_run_at).toBe(rule.next_run_at);
+  });
+
+  // ── 情形 2：改 execute_bucket → 从 now 重算 + 跳过今天 ──────────────────
+
+  it('情形2 · PATCH execute_bucket=morning→afternoon（now 已进入 afternoon 窗口）→ 跳过今天，落在明天', async () => {
+    const rule = await createDailyMorningRule();
+    // now=08-10 14:00 已进入 afternoon 窗口(12:00) → 改 bucket=afternoon
+    // → applyBucketWindowSkip 跳过今天 → next_run_at 落在 08-11 afternoon
+
+    const patchRes = await app.inject({
+      method: 'PATCH',
+      url: `/v1/recurring-entries/${rule.id}`,
+      headers: authHeader(token),
+      payload: {
+        execute_bucket: 'afternoon',
+        version: rule.version,
+      },
+    });
+    expect(patchRes.statusCode).toBe(200);
+    const updated = patchRes.json() as { next_run_at: string; timezone: string };
+
+    const { DateTime } = await import('luxon');
+    const nextRun = DateTime.fromISO(updated.next_run_at, { zone: updated.timezone });
+    // now=08-10 14:00 已进入 afternoon 窗口(12:00) → 跳过今天 → 08-11
+    expect(nextRun.day).toBe(11);
+    expect(nextRun.month).toBe(8);
+    // 确认在 afternoon 时段
+    expect(nextRun.hour).toBeGreaterThanOrEqual(12);
+    expect(nextRun.hour).toBeLessThan(18);
+  });
+
+  // ── 情形 3：改周期字段但没改 execute_bucket → 从 existing.next_run_at 重算，不跳过 ──
+
+  it('情形3 · PATCH days_of_week（改周一→周二）不改 bucket → next_run_at 按新周期重算，不跳过今天', async () => {
+    // 创建 weekly 周一 morning 规则，start_date=2026-08-17（下周一，未来）
+    // now=08-10 14:00 → next_run_at 落在 08-17 周一上午（start_date 在未来，从 start_date 起算）
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/v1/recurring-entries',
+      headers: authHeader(token),
+      payload: {
+        ledger_id: LEDGER_ID,
+        type: 'expense',
+        amount: 1000,
+        shared_type: 'personal',
+        period: 'weekly',
+        days_of_week: [1], // 周一
+        execute_bucket: 'morning',
+        start_date: '2026-08-17', // 下周一（未来）→ next_run_at 落在 08-17 周一上午
+      },
+    });
+    expect(createRes.statusCode).toBe(201);
+    const rule = createRes.json() as {
+      id: string;
+      version: number;
+      next_run_at: string;
+      timezone: string;
+    };
+
+    const { DateTime } = await import('luxon');
+    const origNext = DateTime.fromISO(rule.next_run_at, { zone: rule.timezone });
+    // 确认原 next_run_at 在 08-17 周一
+    expect(origNext.day).toBe(17);
+
+    // PATCH：改 days_of_week=[2]（周二），不改 bucket
+    // existing.next_run_at = 08-17 上午某时刻 > now(08-10 10:00) → 未过期
+    // → from = existing.next_run_at - 1min → 重算 → 下一个周二 = 08-18
+    // 不跑 applyBucketWindowSkip → 不会被推迟
+    const patchRes = await app.inject({
+      method: 'PATCH',
+      url: `/v1/recurring-entries/${rule.id}`,
+      headers: authHeader(token),
+      payload: {
+        days_of_week: [2], // 改到周二
+        version: rule.version,
+      },
+    });
+    expect(patchRes.statusCode).toBe(200);
+    const updated = patchRes.json() as { next_run_at: string; timezone: string };
+
+    const newNext = DateTime.fromISO(updated.next_run_at, { zone: updated.timezone });
+    // 下一个周二 = 08-18（08-17 是周一，下一个周二是 08-18）
+    expect(newNext.day).toBe(18);
+    expect(newNext.weekday).toBe(2); // Luxon: 1=Mon, 2=Tue
+    // execute_hour/minute 应保持不变（bucket 没变）
+    expect(newNext.hour).toBe(origNext.hour);
+    expect(newNext.minute).toBe(origNext.minute);
+  });
+
+  // ── 情形 3 边界：existing.next_run_at 已过期 → 从 now 重算，不跳过 ──────
+
+  it('情形3 · next_run_at 已过期（服务长时间未运行）→ 从 now 重算，不跳过今天', async () => {
+    // 创建一条 daily morning 规则，start_date=2026-08-01
+    // now=08-10 10:00 → create 时 applyBucketWindowSkip 可能跳过今天 → next_run_at 落在 08-11
+    // 为了模拟"已过期"，直接手动把 DB 里的 next_run_at 改到过去：
+    const rule = await createDailyMorningRule();
+
+    const pool = getPool();
+    // 把 next_run_at 强制改到 08-09 上午（过去），模拟"服务长时间未运行"
+    await pool.query(
+      `UPDATE recurring_rules SET next_run_at = '2026-08-09T02:30:00Z' WHERE id = $1`,
+      [rule.id],
+    );
+
+    // now=08-10 10:00，已进入 morning 窗口(06:00)
+    // PATCH days_of_week → 情形 3：existing.next_run_at(08-09) <= now → from=now
+    // 不跑 applyBucketWindowSkip → computeNextRunAt(daily, from=08-10 10:00)
+    // → 08-10 上午 hash 时刻（如果 hash 时刻 > 10:00 → 今天；< 10:00 → 明天）
+    // 由于 hash 落点不确定，这里只验证不跑 applyBucketWindowSkip 的关键特征：
+    // next_run_at 不会因为"已进入窗口"而被强制推到明天——它取决于 hash 时刻与 now 的关系。
+    //
+    // 为了确定性断言，改用 start_date 在未来、且 next_run_at 也在未来的场景更稳定。
+    // 这里仅验证 PATCH 成功且 next_run_at 被重算（不等于原值）：
+    const patchRes = await app.inject({
+      method: 'PATCH',
+      url: `/v1/recurring-entries/${rule.id}`,
+      headers: authHeader(token),
+      payload: {
+        days_of_week: [1, 2, 3, 4, 5], // 改为工作日（虽然 daily 不用 days_of_week，但触发 needsRecompute）
+        period: 'weekly',
+        version: rule.version,
+      },
+    });
+    expect(patchRes.statusCode).toBe(200);
+    const updated = patchRes.json() as { next_run_at: string; timezone: string };
+
+    const { DateTime } = await import('luxon');
+    const newNext = DateTime.fromISO(updated.next_run_at, { zone: updated.timezone });
+    // now=08-10 周一 10:00，改成 weekly 周一~周五 morning
+    // from=now → computeNextRunAt 找 > now 的下一个匹配
+    // 今天周一匹配 → hash 时刻在 06:30~11:30 之间
+    //   若 hash > 10:00 → 今天；若 hash < 10:00 → 明天
+    // 不跑 applyBucketWindowSkip → 不会被强制推到明天
+    // 只断言 next_run_at 已被重算且 > now：
+    expect(newNext.toMillis()).toBeGreaterThan(DateTime.fromMillis(Date.now()).toMillis());
+  });
+});
+

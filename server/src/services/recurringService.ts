@@ -695,19 +695,52 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
         year_month_days: newYmd,
         workday_data: resolveWorkdayData(),
       };
-      // 若 start_date 是未来 → 从 start_date 起算；否则从 now 起算
+
+      // bucket 是否真实变化：仅 payload 显式传了 execute_bucket 且与现有值不同
+      const bucketChanged =
+        payload.execute_bucket !== undefined &&
+        payload.execute_bucket !== existing.executeBucket;
+
+      // start_date 是否被改：改了 start_date 意味着用户想"重新从新 start_date 起算"，
+      // 不应从 existing.next_run_at 继承。
+      const startDateChanged =
+        payload.start_date !== undefined &&
+        payload.start_date !== existing.startDate;
+
       const nowMs = now.getTime();
       const startMs = DateTime.fromISO(newStartDate, { zone: newTimezone })
         .startOf('day')
         .toMillis();
       const fromStartIsFuture = startMs > nowMs;
-      const from = fromStartIsFuture ? new Date(startMs - 60_000) : now;
-      nextRunAt = computeNextRunAt(forCompute, from);
-      // 若 start_date 在未来，nextRunAt 必然也在未来，无需 bucket 窗口保护。
-      // 若从 now 起算，需要检查当前是否已进入 bucket 窗口 → 跳过今天。
-      if (!fromStartIsFuture) {
-        const newBucket = payload.execute_bucket ?? existing.executeBucket;
-        nextRunAt = applyBucketWindowSkip(forCompute, nextRunAt, now, newBucket, newTimezone);
+
+      if (bucketChanged || startDateChanged || fromStartIsFuture) {
+        // 情形 2（改了触发时段）或 start_date 被改 / 在未来：
+        //   从 now（或新 start_date）起算。bucket 变了 → 跑 applyBucketWindowSkip；
+        //   仅 start_date 变但 bucket 没变 → 不跑（用户没改时段）。
+        const from = fromStartIsFuture ? new Date(startMs - 60_000) : now;
+        nextRunAt = computeNextRunAt(forCompute, from);
+        if (!fromStartIsFuture && bucketChanged) {
+          const newBucket = payload.execute_bucket ?? existing.executeBucket;
+          nextRunAt = applyBucketWindowSkip(
+            forCompute,
+            nextRunAt,
+            now,
+            newBucket,
+            newTimezone,
+          );
+        }
+      } else {
+        // 情形 3（改了周期字段但没改触发时段）：
+        //   保留原 execute_hour/minute，next_run_at 按新周期重算，
+        //   但不跑 applyBucketWindowSkip——用户没改时段，今天的触发
+        //   机会应由 execute_hour:minute 与 now 的关系决定，而非 bucket 窗口起点。
+        //   from 取 existing.next_run_at（未过期）或 now（已过期，如服务长时间未运行）。
+        const existingNextMs = existing.nextRunAt.getTime();
+        const from =
+          existingNextMs > nowMs
+            ? new Date(existingNextMs - 60_000)
+            : now;
+        nextRunAt = computeNextRunAt(forCompute, from);
       }
     }
 

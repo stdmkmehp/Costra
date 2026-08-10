@@ -741,9 +741,14 @@ Page({
   /**
    * 从当前表单状态构建保存 payload（纯函数，不发起请求，不依赖网络）。
    * 供 _doSave（await 路径）与 onUnload 右滑 fire-and-forget 路径共用。
+   *
+   * edit 模式：基于 _originalRule 做 diff，只输出真正变动的字段。
+   *   这样服务端 update 的 needsRecompute 只在周期字段真实变化时才为 true，
+   *   避免改备注/金额/分类时意外触发 next_run_at 重算导致今天触发被推迟。
+   * create/copy 模式：发全量 payload（_originalRule 为 null）。
    */
-  _buildSavePayload(): CreateRecurringPayload {
-    return {
+  _buildSavePayload(): CreateRecurringPayload | UpdateRecurringPayload {
+    const full: CreateRecurringPayload = {
       ledger_id: this.data.ledgerId,
       type: this.data.entryType,
       amount: this.data.amountCents,
@@ -764,6 +769,44 @@ Page({
       start_date: this.data.startDate,
       end_date: this.data.hasEndDate && this.data.endDate ? this.data.endDate : null,
     };
+
+    // create/copy 模式：无 _originalRule，直接发全量
+    const orig = this._originalRule;
+    if (!orig || this.data.mode !== 'edit') {
+      return full;
+    }
+
+    // edit 模式：diff，只发变动字段
+    const patch: UpdateRecurringPayload = { version: this.data.ruleVersion };
+
+    if (full.type !== orig.type) patch.type = full.type;
+    if (full.amount !== orig.amount) patch.amount = full.amount;
+    if (full.category_id !== (orig.category_id ?? null))
+      patch.category_id = full.category_id;
+    if (full.note !== (orig.note ?? null)) patch.note = full.note;
+    if (this.data.entryType === 'expense' && full.shared_type !== (orig.shared_type ?? null))
+      patch.shared_type = full.shared_type;
+    if (full.period !== orig.period) patch.period = full.period;
+    if (full.period_interval !== orig.period_interval) patch.period_interval = full.period_interval;
+
+    // 数组字段：JSON.stringify 做深比较（null vs [] 也算不同）
+    const dowChanged = JSON.stringify(full.days_of_week) !== JSON.stringify(orig.days_of_week ?? null);
+    if (dowChanged) patch.days_of_week = full.days_of_week;
+
+    const domChanged = JSON.stringify(full.days_of_month) !== JSON.stringify(orig.days_of_month ?? null);
+    if (domChanged) patch.days_of_month = full.days_of_month;
+
+    const ymdChanged = JSON.stringify(full.year_month_days) !== JSON.stringify(orig.year_month_days ?? null);
+    if (ymdChanged) patch.year_month_days = full.year_month_days;
+
+    if (full.execute_bucket !== orig.execute_bucket) patch.execute_bucket = full.execute_bucket;
+    if (full.timezone !== orig.timezone) patch.timezone = full.timezone;
+    if (full.start_date !== orig.start_date) patch.start_date = full.start_date;
+
+    const origEndDate = orig.end_date ?? null;
+    if (full.end_date !== origEndDate) patch.end_date = full.end_date;
+
+    return patch;
   },
 
   /**
@@ -780,8 +823,8 @@ Page({
     const ruleVersion = this.data.ruleVersion;
 
     const task = mode === 'edit'
-      ? updateRecurringRule(ruleId, { ...payload, version: ruleVersion }, { idempotencyKey })
-      : createRecurringRule(payload, { idempotencyKey });
+      ? updateRecurringRule(ruleId, { ...(payload as UpdateRecurringPayload), version: ruleVersion }, { idempotencyKey })
+      : createRecurringRule(payload as CreateRecurringPayload, { idempotencyKey });
 
     return task
       .then(async (): Promise<PendingSaveResult> => {
@@ -814,10 +857,10 @@ Page({
 
     try {
       if (this.data.mode === 'edit') {
-        const updatePayload: UpdateRecurringPayload = { ...payload, version: this.data.ruleVersion };
+        const updatePayload: UpdateRecurringPayload = { ...(payload as UpdateRecurringPayload), version: this.data.ruleVersion };
         await updateRecurringRule(this.data.ruleId, updatePayload, { idempotencyKey });
       } else {
-        await createRecurringRule(payload, { idempotencyKey });
+        await createRecurringRule(payload as CreateRecurringPayload, { idempotencyKey });
       }
       await invalidateCache();
       this.setData({ dirty: false });
