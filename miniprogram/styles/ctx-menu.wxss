@@ -140,13 +140,13 @@
   border-radius: 2rpx;
 }
 
-/* 修改（铅笔）：斜放的一根笔。
-   父 .ctx-ic 是 34rpx 居中容器。.pencil 是 24×6rpx 的隐形坐标系（旋转 -45°），
-   3 个子元素共享同一旋转：笔尖三角（左） + 笔杆（中） + 笔尾方块（右）。 */
+/* 修改（铅笔）：斜放的一根笔（从左下到右上）。
+   父 .ctx-ic 是 34rpx 居中容器。.pencil 是 24×8rpx 的水平坐标系，旋转 -45° 后变
+   成经典斜放铅笔。三段无缝拼接：笔尖(左探三角) + 笔杆(描边矩形) + 笔尾(实心橡皮)。 */
 .ctx-ic--edit .pencil {
   position: relative;
   width: 24rpx;
-  height: 6rpx;
+  height: 8rpx;
   transform: rotate(-45deg);
 }
 .ctx-ic--edit .pencil-tip,
@@ -157,37 +157,37 @@
   transform: translateY(-50%);
   box-sizing: border-box;
 }
-/* 笔尖：左端实心三角（apex 朝左） */
+/* 笔尖：左指实心三角，从笔杆左端完全探出（关键：left 为负，让笔尖是独立尖角而非箭头） */
 .ctx-ic--edit .pencil-tip {
-  left: 0;
+  left: -7rpx;
   width: 0; height: 0;
   border-top: 4rpx solid transparent;
   border-bottom: 4rpx solid transparent;
-  border-left: 6rpx solid currentColor;
+  border-right: 7rpx solid currentColor;
 }
-/* 笔杆：从笔尖右侧延伸到分笔线（描边矩形） */
+/* 笔杆：描边矩形，左侧让笔尖补齐 */
 .ctx-ic--edit .pencil-ferrule {
-  left: 4rpx;          /* 给笔尖让位，避免重叠 */
-  width: 16rpx;
-  height: 6rpx;
+  left: 0;
+  width: 18rpx;
+  height: 8rpx;
   border: 2rpx solid currentColor;
   border-left: none;   /* 左侧让笔尖补齐 */
   background: transparent;
-  border-radius: 0 1rpx 1rpx 0;
+  border-radius: 0 2rpx 2rpx 0;
 }
-/* 笔尾：实心方块（与笔杆同色，区分笔头和笔尾） */
+/* 笔尾：实心方块（橡皮擦），紧贴笔杆右端 */
 .ctx-ic--edit .pencil-end {
   right: 0;
-  width: 4rpx;
-  height: 6rpx;
+  width: 5rpx;
+  height: 8rpx;
   background: currentColor;
-  border-radius: 0 1rpx 1rpx 0;
+  border-radius: 0 2rpx 2rpx 0;
 }
 
 /* 启用：线条三角（沿用线条语言） */
 .ctx-ic--play {
   position: relative;
-  margin-left: 4rpx;  /* 视觉重心补偿：三角的视觉中心偏右 */
+  margin-left: 10rpx;  /* 视觉重心补偿：三角的几何中心≠视觉中心，需左移抵消 */
   width: 0;
   height: 0;
   border-left: 14rpx solid currentColor;

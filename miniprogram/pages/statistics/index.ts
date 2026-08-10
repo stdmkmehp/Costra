@@ -63,6 +63,7 @@ import {
   formatEntryDate,
   formatEntryTime,
   buildEmptyTitleYear,
+  buildMaxSingleLabel,
 } from './formatters';
 import { pickRandomSlogan } from '../../config/slogans';
 import { consumePrefetchedMonthlyView } from '../../services/prefetch';
@@ -568,12 +569,12 @@ Page({
 
     const summary: SummaryGridItem[] = [
       { label: '月均支出', value: fmtYuan(extremes.avg_monthly_expense) },
-      { label: '年度最大单笔', value: fmtYuan(extremes.max_single_expense) },
+      { label: '年度最大单笔', value: buildMaxSingleLabel(extremes.max_single_expense, extremes.max_single_note, extremes.max_single_category_name) },
       { label: '单月最高', value: extremes.max_month_label
         ? `${fmtYuan(extremes.max_month_expense)} · ${extremes.max_month_label}`
         : fmtYuan(extremes.max_month_expense) },
       { label: '全年最贵分类', value: extremes.top_category_name
-        ? `${extremes.top_category_name} · ${fmtYuan(extremes.top_category_amount)}`
+        ? `${fmtYuan(extremes.top_category_amount)} · ${extremes.top_category_name}`
         : '—' },
     ];
 

@@ -95,3 +95,19 @@ export function formatEntryTime(isoUtc: string): string {
   const sh = new Date(utc.getTime() + 8 * 60 * 60 * 1000);
   return `${String(sh.getUTCHours()).padStart(2, '0')}:${String(sh.getUTCMinutes()).padStart(2, '0')}`;
 }
+
+/**
+ * 构造"最大单笔"摘要格的展示文本：`金额 · 备注`。
+ * - 有备注 → `金额 · 备注`（超长由 CSS ellipsis 兜底截断）
+ * - 无备注但有二级分类名 → `金额 · 分类名`
+ * - 都无（或无支出） → 仅金额
+ */
+export function buildMaxSingleLabel(
+  amountCents: number,
+  note: string | null,
+  categoryName: string | null,
+): string {
+  const amount = fmtYuan(amountCents);
+  const label = note || categoryName;
+  return label ? `${amount} · ${label}` : amount;
+}

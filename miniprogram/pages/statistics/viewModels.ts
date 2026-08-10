@@ -4,7 +4,7 @@
 
 import type { MonthlyView, YearlyView, L1Display, SummaryGridItem, TrendChartMeta, MonthRow } from './types';
 import type { MonthlyStatistics, StatCategoryRankItem, DailyTrendItem, MonthlyTrendItem } from '../../services/statisticsApi';
-import { fmtYuan, fmtExpense, fmtRatio, buildEmptyTitleMonth } from './formatters';
+import { fmtYuan, fmtExpense, fmtRatio, buildEmptyTitleMonth, buildMaxSingleLabel } from './formatters';
 import { resolveIconGlyph } from '../../services/iconMap';
 
 /**
@@ -241,7 +241,7 @@ export function buildMonthlyView(
   const { totals, daily_trend, extremes, category_ranks } = stats;
   const summary: SummaryGridItem[] = [
     { label: '日均支出', value: fmtYuan(extremes.avg_daily_expense) },
-    { label: '最大单笔', value: fmtYuan(extremes.max_single_expense) },
+    { label: '最大单笔', value: buildMaxSingleLabel(extremes.max_single_expense, extremes.max_single_note, extremes.max_single_category_name) },
     { label: '单日最高', value: fmtYuan(extremes.max_day_expense) },
     { label: '记账笔数', value: `${totals.entry_count}` },
   ];

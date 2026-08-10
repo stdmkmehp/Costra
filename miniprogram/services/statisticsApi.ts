@@ -26,6 +26,8 @@ export interface StatTotals {
 export interface MonthlyExtremes {
   avg_daily_expense: number;
   max_single_expense: number;
+  max_single_note: string | null;
+  max_single_category_name: string | null;
   max_day_expense: number;
 }
 
@@ -65,6 +67,8 @@ export interface MonthlyTrendItem {
 export interface YearlyExtremes {
   avg_monthly_expense: number;
   max_single_expense: number;
+  max_single_note: string | null;
+  max_single_category_name: string | null;
   max_month_expense: number;
   max_month_label: string;
   top_category_name: string | null;

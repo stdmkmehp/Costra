@@ -278,6 +278,7 @@ page {
 
 .summary-grid__item {
   padding: 12rpx 0;
+  min-width: 0;  /* 允许 grid 子项收缩，使内部 ellipsis 生效 */
 }
 
 .summary-grid__value {
@@ -286,6 +287,9 @@ page {
   color: #1c1b1a;
   line-height: 1.2;
   letter-spacing: -0.5rpx;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .summary-grid__label {
