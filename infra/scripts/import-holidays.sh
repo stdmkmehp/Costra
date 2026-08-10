@@ -9,7 +9,7 @@
 #   - 密码从 /data/conf/server.env 读取（prod）或固定约定值（verify）
 #   - prod 目标强制 confirm + 提示先 backup-db.sh
 #   - 支持 --dry-run / -y / --help
-#   - JSON 校验用 jq（prod 机器需安装 jq · 可通过 apk/apt）
+#   - JSON 校验用 jq（prod 机器需安装 jq · tlinux/yum: yum install -y jq；其他: apt-get install -y jq / apk add jq）
 #
 # 语义：
 #   - INSERT ... ON CONFLICT (year) DO UPDATE（upsert · 幂等 · 可重复执行）
@@ -307,7 +307,7 @@ for file in "${FILES_TO_IMPORT[@]}"; do
   fi
 
   log_success "${year} 年节假日数据已导入"
-  ((IMPORTED++))
+  IMPORTED=$((IMPORTED + 1))
 done
 
 # =============================================================================

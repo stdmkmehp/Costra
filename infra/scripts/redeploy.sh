@@ -11,15 +11,16 @@
 #   4. migration 失败时自动回滚：还原 DB（复用 restore-db.sh）+ 用老镜像拉起服务
 #   5. 感知 postgres 重启：若需重启 postgres，则在其 healthy 后再跑 migration
 #
-# 流程（带 migration）：
+# 流程（带 migration + pre-start-hook）：
 #   1. 备份当前 server 镜像（tag → backup）
 #   2. 构建新镜像（旧服务仍在线 · 失败不影响线上）
 #   3. 停止服务
 #   4. 若需重启 postgres：先启动 postgres，等待 healthy
 #   5. DB 备份（backup-db.sh --db-only · 只备份 DB · 最小化停机窗口）
 #   6. 执行 migration SQL 文件（失败则还原 DB + 老镜像拉起 → 退出）
-#   7. 启动剩余服务（用新镜像）
-#   8. 等待容器 healthy
+#   7. 执行 pre-start-hook 脚本（可选 · 失败则回滚 → 退出）
+#   8. 启动剩余服务（用新镜像）
+#   9. 等待容器 healthy
 #
 # 重启目标：
 #   默认只重启 server。可通过 --restart-* 额外添加，--no-restart-server 移除。
@@ -34,6 +35,12 @@
 #   ./redeploy.sh --restart-psql --migrate                 # 重启 postgres + 跑 migration
 #   ./redeploy.sh --timeout 120 -y
 #
+#   # migration 后、启动前插入自定义脚本（pre-start-hook）
+#   ./redeploy.sh --build-mode local --migrate \
+#     --migration-files "0011_recurring_entries.sql" \
+#     --pre-start-hook ./import-holidays.sh --hook-args "-y --target prod 2026"
+#   ./redeploy.sh --pre-start-hook /path/to/custom-script.sh  # 不跑 migration 也可以用 hook
+#
 # 选项：
 #   --restart-nginx                     额外重启 nginx
 #   --restart-redis                     额外重启 redis
@@ -45,6 +52,8 @@
 #   --migrate                           启用 migration（构建后、启动前执行）
 #   --migration-files <names>           指定 migration SQL（逗号分隔 · 纯文件名带 .sql · 自动拼 server/db/migrations/）
 #   --migration-dir <dir>               指定 migration 目录（执行目录下所有 .sql）
+#   --pre-start-hook <path>             停服/migration 后、启动服务前执行的自定义脚本（可选）
+#   --hook-args <args>                  传给 pre-start-hook 的参数（空格分隔的字符串）
 #   --timeout <seconds>                 healthy 等待超时（默认 90s）
 #   -y / --yes / -h / --help
 #
@@ -69,6 +78,8 @@ HEALTHY_TIMEOUT=90
 DO_MIGRATE=0
 MIGRATION_FILES=""
 MIGRATION_DIR=""
+PRE_START_HOOK=""
+HOOK_ARGS=""
 IMAGE_TAG="costra-server:latest"
 
 # --- 解析参数 ---
@@ -85,6 +96,8 @@ while [[ $# -gt 0 ]]; do
     --migrate)           DO_MIGRATE=1; shift ;;
     --migration-files)   MIGRATION_FILES=$2; shift 2 ;;
     --migration-dir)     MIGRATION_DIR=$2; shift 2 ;;
+    --pre-start-hook)    PRE_START_HOOK=$2; shift 2 ;;
+    --hook-args)         HOOK_ARGS=$2; shift 2 ;;
     --timeout)           HEALTHY_TIMEOUT=$2; shift 2 ;;
     -y|--yes)            shift ;;
     -h|--help)
@@ -209,6 +222,23 @@ if [[ "${DO_MIGRATE}" == "1" ]]; then
   done
 fi
 
+# --- Pre-start-hook 解析与校验 ---
+# 在停服/migration 完成后、启动服务前执行的自定义脚本。
+# 不带 --migrate 也可以用：停服后直接跑 hook 再启动。
+if [[ -n "${PRE_START_HOOK}" ]]; then
+  # 解析路径（支持相对路径 · 相对于脚本 CWD）
+  HOOK_PATH="${PRE_START_HOOK}"
+  if [[ "${HOOK_PATH}" != /* ]]; then
+    HOOK_PATH="$(pwd)/${HOOK_PATH}"
+  fi
+  [[ -f "${HOOK_PATH}" ]] || die "--pre-start-hook 脚本不存在：${HOOK_PATH}"
+  [[ -x "${HOOK_PATH}" ]] || die "--pre-start-hook 脚本不可执行 · 请 chmod +x：${HOOK_PATH}"
+  log_info "pre-start-hook  = ${HOOK_PATH}"
+  if [[ -n "${HOOK_ARGS}" ]]; then
+    log_info "hook args       = ${HOOK_ARGS}"
+  fi
+fi
+
 # --- Postgres 连接信息 ---
 PG_CONTAINER="costra-postgres"
 COMPOSE_NETWORK="${COSTRA_COMPOSE_NET}"
@@ -237,6 +267,11 @@ if [[ "${DO_MIGRATE}" == "1" ]]; then
 else
   log_info "migration       = (skip · 未指定 --migrate)"
 fi
+if [[ -n "${PRE_START_HOOK}" ]]; then
+  log_info "pre-start-hook  = ✓（${HOOK_PATH##*/}）"
+else
+  log_info "pre-start-hook  = (skip · 未指定 --pre-start-hook)"
+fi
 log_info "healthy timeout = ${HEALTHY_TIMEOUT}s"
 
 if [[ "${ASSUME_YES}" != "1" ]]; then
@@ -252,6 +287,7 @@ TOTAL_STEPS=2                # 停止 + 启动
 TOTAL_STEPS=$((TOTAL_STEPS + 1))                # 镜像备份（始终执行）
 [[ -n "${BUILD_MODE}" ]] && TOTAL_STEPS=$((TOTAL_STEPS + 1))      # 构建
 [[ "${DO_MIGRATE}" == "1" ]] && TOTAL_STEPS=$((TOTAL_STEPS + 1))  # migration（含 DB 备份）
+[[ -n "${PRE_START_HOOK}" ]] && TOTAL_STEPS=$((TOTAL_STEPS + 1))  # pre-start-hook
 CURRENT=0
 
 # =============================================================================
@@ -439,6 +475,82 @@ psql -v ON_ERROR_STOP=1 -h postgres -U costra -d costra -f \"/migrations/${fname
   fi
 
   log_success "所有 migration 执行成功"
+fi
+
+# =============================================================================
+# Step（可选）: Pre-start-hook（migration 完成后、启动服务前执行自定义脚本）
+# =============================================================================
+if [[ -n "${PRE_START_HOOK}" ]]; then
+  CURRENT=$((CURRENT + 1))
+  log_step "[${CURRENT}/${TOTAL_STEPS}] 执行 pre-start-hook"
+
+  log_info "脚本: ${HOOK_PATH}"
+  if [[ -n "${HOOK_ARGS}" ]]; then
+    log_info "参数: ${HOOK_ARGS}"
+  fi
+
+  # 将 hook-args 按空格拆分为数组（支持带引号的参数）
+  # shellcheck disable=SC2206
+  HOOK_ARG_ARRAY=(${HOOK_ARGS})
+
+  # hook 失败时的回滚策略：
+  #   - 若已执行 migration（DB 已变更）：需要还原 DB + 老镜像拉起
+  #   - 若未执行 migration（DB 未变更）：只需老镜像拉起（bring_up_old_and_exit）
+  set +e
+  trap - ERR
+  "${HOOK_PATH}" "${HOOK_ARG_ARRAY[@]}"
+  HOOK_EXIT=$?
+  set -e
+  trap 'on_error ${LINENO}' ERR
+
+  if [[ ${HOOK_EXIT} -ne 0 ]]; then
+    echo ""
+    log_error "═══════════════════════════════════════════════════════════"
+    log_error "  Pre-start-hook 失败！退出码=${HOOK_EXIT} · 正在回滚..."
+    log_error "═══════════════════════════════════════════════════════════"
+
+    # 若 migration 已跑 · 还原 DB
+    if [[ "${DO_MIGRATE}" == "1" && -n "${DUMP_FILE:-}" ]]; then
+      set +e
+      trap - ERR
+      log_info "调用 restore-db.sh 还原数据库（从 ${DUMP_FILE}）..."
+      if "${SCRIPT_DIR}/restore-db.sh" \
+        --backup-file "${DUMP_FILE}" \
+        --no-restart \
+        -y; then
+        log_success "数据库已还原"
+      else
+        log_error "数据库还原也失败！请手动用 restore-db.sh 恢复"
+        log_error "备份文件: ${DUMP_FILE}"
+      fi
+      set -e
+      trap 'on_error ${LINENO}' ERR
+    fi
+
+    # 用老镜像拉起服务
+    if [[ -n "${BACKUP_TAG}" ]]; then
+      log_info "使用老镜像 ${BACKUP_TAG} 拉起服务..."
+      docker tag "${BACKUP_TAG}" "${IMAGE_TAG}" || log_warn "恢复镜像 tag 失败"
+    fi
+
+    log_info "拉起服务（回滚到更新前状态）..."
+    cd "${COSTRA_INFRA}"
+    docker compose -f "${COSTRA_COMPOSE_FILE}" --env-file "${COSTRA_ENV_FILE}" \
+      up -d "${UP_SERVICES[@]}" || log_warn "拉起服务失败 · 请手动处理"
+
+    echo ""
+    log_error "═══════════════════════════════════════════════════════════"
+    log_error "  回滚完成 · 服务已恢复到更新前状态"
+    log_error "  Pre-start-hook 失败详情请检查上方输出"
+    if [[ "${DO_MIGRATE}" == "1" && -n "${DUMP_FILE:-}" ]]; then
+      log_error "  备份文件: ${DUMP_FILE}"
+    fi
+    log_error "  老镜像: ${BACKUP_TAG:-无}"
+    log_error "═══════════════════════════════════════════════════════════"
+    exit 1
+  fi
+
+  log_success "pre-start-hook 执行成功"
 fi
 
 # =============================================================================
