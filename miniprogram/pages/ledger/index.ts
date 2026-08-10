@@ -4,7 +4,7 @@
 // 金额 ADR-0002: 全部走 decimal.js（utils/money.ts）
 
 import Decimal from '../../utils/vendor/decimal';
-import { toYuan, toYuanForEdit, parseAmountInputToCents as parseYuanToCents, parseClipboardToAmount } from '../../utils/money';
+import { toYuan, toYuanForEdit, sanitizeAmountInput, parseAmountInputToCents as parseYuanToCents, parseClipboardToAmount } from '../../utils/money';
 import { getSafeAreaMetrics, rpxToPx } from '../../utils/safeArea';
 import { listMonthEntries, deleteEntry, updateEntryFields, putEntry, getEntry, type Entry, type MonthEntriesResult } from '../../services/db';
 import { fetchMonthEntries } from '../../services/entriesApi';
@@ -2809,14 +2809,7 @@ Page({
   },
 
   onEditAssetInput(e: WechatMiniprogram.Input) {
-    const raw = e.detail.value ?? '';
-    // 只保留数字 + 一个小数点（系统 type=digit 多数机型已限制，但 iOS 偶有 - 等）
-    const cleaned = raw.replace(/[^\d.]/g, '');
-    const firstDotIdx = cleaned.indexOf('.');
-    const sanitized = firstDotIdx < 0
-      ? cleaned
-      : cleaned.slice(0, firstDotIdx + 1) + cleaned.slice(firstDotIdx + 1).replace(/\./g, '');
-    this.setData({ editAssetDisplay: sanitized });
+    this.setData({ editAssetDisplay: sanitizeAmountInput(e.detail.value ?? '') });
   },
 
   async onConfirmEditAssetInput() {
@@ -2907,13 +2900,7 @@ Page({
   },
 
   onEditBudgetInput(e: WechatMiniprogram.Input) {
-    const raw = e.detail.value ?? '';
-    const cleaned = raw.replace(/[^\d.]/g, '');
-    const firstDotIdx = cleaned.indexOf('.');
-    const sanitized = firstDotIdx < 0
-      ? cleaned
-      : cleaned.slice(0, firstDotIdx + 1) + cleaned.slice(firstDotIdx + 1).replace(/\./g, '');
-    this.setData({ editBudgetDisplay: sanitized });
+    this.setData({ editBudgetDisplay: sanitizeAmountInput(e.detail.value ?? '') });
   },
 
   async onConfirmEditBudgetInput() {

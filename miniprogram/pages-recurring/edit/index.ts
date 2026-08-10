@@ -15,7 +15,7 @@ import {
   updateRecurringRule,
 } from '../../services/recurringApi';
 import { invalidateCache, generateIdempotencyKey } from '../../services/recurringLocal';
-import { toYuanForEdit, parseAmountInputToCents } from '../../utils/money';
+import { toYuanForEdit, parseAmountInputToCents, sanitizeAmountInput } from '../../utils/money';
 import { formatDaysForSummary, type FormatContext } from '../../services/recurringFormat';
 import { getWorkdayData, type WorkdayData } from '../../services/workdayApi';
 import { getActiveFamilyId } from '../../services/family';
@@ -426,8 +426,7 @@ Page({
   // ─── 卡片1 交互 ──────────────────────────────────────────────────────────
 
   onAmountInput(e: WechatMiniprogram.Input) {
-    // 仅同步显示值，不做格式化，让用户自由输入
-    this.setData({ amountDisplay: e.detail.value });
+    this.setData({ amountDisplay: sanitizeAmountInput(e.detail.value ?? '') });
   },
 
   onAmountBlur(e: WechatMiniprogram.Input) {

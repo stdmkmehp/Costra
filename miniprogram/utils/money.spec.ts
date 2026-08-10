@@ -2,7 +2,7 @@
 // 卡号: COSTRA-102 · D2.10
 // 追加: parseClipboardToAmount（记账面板"粘贴"键，2026-07-16）
 import { describe, it, expect } from 'vitest';
-import { toCents, toYuan, toYuanForEdit, parseAmountInputToCents, parseClipboardToAmount } from './money';
+import { toCents, toYuan, toYuanForEdit, parseAmountInputToCents, parseClipboardToAmount, sanitizeAmountInput } from './money';
 
 describe('utils/money', () => {
   describe('toCents', () => {
@@ -143,6 +143,47 @@ describe('utils/money', () => {
     it('超长文本裁剪：>64 字符仍能取到前部数字', () => {
       const long = '¥12.34' + '_'.repeat(200) + '99.99';
       expect(parseClipboardToAmount(long)).toEqual({ ok: true, value: '12.34' });
+    });
+  });
+
+  describe('sanitizeAmountInput（金额输入框实时清洗）', () => {
+    it('纯整数："123" → "123"', () => {
+      expect(sanitizeAmountInput('123')).toBe('123');
+    });
+
+    it('两位小数保留："12.34" → "12.34"', () => {
+      expect(sanitizeAmountInput('12.34')).toBe('12.34');
+    });
+
+    it('小数超2位截断："12.345" → "12.34"；"0.999" → "0.99"', () => {
+      expect(sanitizeAmountInput('12.345')).toBe('12.34');
+      expect(sanitizeAmountInput('0.999')).toBe('0.99');
+    });
+
+    it('仅保留第一个小数点："1.2.3" → "1.23"；"12..34" → "12.34"', () => {
+      expect(sanitizeAmountInput('1.2.3')).toBe('1.23');
+      expect(sanitizeAmountInput('12..34')).toBe('12.34');
+    });
+
+    it('剔除非数字字符："12a3.b4" → "123.4"', () => {
+      expect(sanitizeAmountInput('12a3.b4')).toBe('123.4');
+    });
+
+    it('只输小数点保留中间态："123." → "123."（不丢小数点）', () => {
+      expect(sanitizeAmountInput('123.')).toBe('123.');
+    });
+
+    it('小数点后一位中间态："12.3" → "12.3"', () => {
+      expect(sanitizeAmountInput('12.3')).toBe('12.3');
+    });
+
+    it('空串 → ""', () => {
+      expect(sanitizeAmountInput('')).toBe('');
+    });
+
+    it('纯非法字符 → ""', () => {
+      expect(sanitizeAmountInput('abc')).toBe('');
+      expect(sanitizeAmountInput('-')).toBe('');
     });
   });
 });

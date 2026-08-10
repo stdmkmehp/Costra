@@ -97,6 +97,37 @@ export function parseAmountInputToCents(input: string): number {
   }
 }
 
+/**
+ * 金额输入框实时清洗（bindinput handler 专用）
+ *
+ * 与计算器 inputDigit 的小数位约束对齐（utils/calc.ts:266）：小数点后最多 2 位。
+ * 用于预算 / 资产 / 定时记账等金额输入框的 bindinput，保证用户在输入过程中
+ * 既看不到也无法提交 > 2 位小数。
+ *
+ * 规则：
+ * 1. 剔除非数字、非小数点字符
+ * 2. 只保留第一个小数点
+ * 3. 小数点后最多保留 2 位（超出截断，回显立即归一）
+ *
+ * 与 parseAmountInputToCents 的区别：后者用于提交时的最终解析（含 decimal 精算），
+ * 本函数用于输入过程中的实时清洗回显，只做字符串层面的归一。
+ */
+export function sanitizeAmountInput(raw: string): string {
+  // 只保留数字 + 小数点
+  const cleaned = raw.replace(/[^\d.]/g, '');
+  // 只保留第一个小数点
+  const firstDotIdx = cleaned.indexOf('.');
+  const noExtraDots = firstDotIdx < 0
+    ? cleaned
+    : cleaned.slice(0, firstDotIdx + 1) + cleaned.slice(firstDotIdx + 1).replace(/\./g, '');
+  // 小数点后最多 2 位
+  if (firstDotIdx < 0) return noExtraDots;
+  const dot = noExtraDots.indexOf('.');
+  const intPart = noExtraDots.slice(0, dot);
+  const decPart = noExtraDots.slice(dot + 1).slice(0, 2);
+  return decPart ? `${intPart}.${decPart}` : `${intPart}.`;
+}
+
 // ─── 剪贴板金额解析 ───────────────────────────────────────────────────────────
 
 /** 计算器整数部分最大位数（与 utils/calc.ts inputDigit 限制对齐） */
