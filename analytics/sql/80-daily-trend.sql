@@ -1,6 +1,10 @@
 -- 80-daily-trend.sql · 过去 7 天每日趋势数据（活跃用户数 + 新注册数 + 记账条数）
 -- 参数: :window_end
--- generate_series 含两端点；要拿到 [end-7d, end) 这 7 个日期，end::date 必须包含。
+--
+-- 窗口 = [window_end - 7d, window_end) 是滑动 7×24h 窗口（window_end 取自 dump mtime，
+-- 不与自然日对齐）。窗口最左端那一天只被截取到 "window_end - 7d" 之后的部分时段，
+-- 数字永远偏低且不可比，故从输出中剔除。days 序列从 start_ts::date + 1 day 开始，
+-- 输出的是 7 个完整自然日（start_ts::date 的次日 ~ end_ts::date）。
 
 WITH bounds AS (
   SELECT
@@ -9,7 +13,7 @@ WITH bounds AS (
 ),
 days AS (
   SELECT generate_series(
-    (SELECT start_ts::date FROM bounds),
+    (SELECT start_ts::date FROM bounds) + 1,
     (SELECT end_ts::date FROM bounds),
     '1 day'::interval
   )::date AS day
