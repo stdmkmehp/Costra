@@ -99,6 +99,8 @@ Page({
     dimension: 'monthly' as 'monthly' | 'yearly',
     currentMonth: getCurrentMonthValue(),
     currentYear: getCurrentYearValue(),
+    isCurrentMonth: true,
+    isCurrentYear: true,
     monthDisplay: '',
     yearDisplay: '',
     loading: true,
@@ -703,10 +705,10 @@ Page({
   onPrevTime() {
     if (this.data.dimension === 'monthly') {
       const prev = prevMonth(this.data.currentMonth);
-      this.setData({ currentMonth: prev, monthDisplay: formatMonthDisplay(prev) });
+      this.setData({ currentMonth: prev, monthDisplay: formatMonthDisplay(prev), isCurrentMonth: prev === getCurrentMonthValue() });
     } else {
       const prev = prevYear(this.data.currentYear);
-      this.setData({ currentYear: prev, yearDisplay: formatYearDisplay(prev) });
+      this.setData({ currentYear: prev, yearDisplay: formatYearDisplay(prev), isCurrentYear: prev === getCurrentYearValue() });
     }
     this._clearCurrentDimViews();
     void this._loadData();
@@ -715,10 +717,10 @@ Page({
   onNextTime() {
     if (this.data.dimension === 'monthly') {
       const nxt = nextMonth(this.data.currentMonth);
-      this.setData({ currentMonth: nxt, monthDisplay: formatMonthDisplay(nxt) });
+      this.setData({ currentMonth: nxt, monthDisplay: formatMonthDisplay(nxt), isCurrentMonth: nxt === getCurrentMonthValue() });
     } else {
       const nxt = nextYear(this.data.currentYear);
-      this.setData({ currentYear: nxt, yearDisplay: formatYearDisplay(nxt) });
+      this.setData({ currentYear: nxt, yearDisplay: formatYearDisplay(nxt), isCurrentYear: nxt === getCurrentYearValue() });
     }
     this._clearCurrentDimViews();
     void this._loadData();
@@ -726,7 +728,7 @@ Page({
 
   onMonthChange(e: WechatMiniprogram.PickerChange) {
     const value = e.detail.value as string;
-    this.setData({ currentMonth: value, monthDisplay: formatMonthDisplay(value) });
+    this.setData({ currentMonth: value, monthDisplay: formatMonthDisplay(value), isCurrentMonth: value === getCurrentMonthValue() });
     this._clearCurrentDimViews();
     void this._loadData();
   },
@@ -734,7 +736,22 @@ Page({
   onYearChange(e: WechatMiniprogram.PickerChange) {
     const value = e.detail.value as string;
     const y = value.split('-')[0] || value;
-    this.setData({ currentYear: y, yearDisplay: formatYearDisplay(y) });
+    this.setData({ currentYear: y, yearDisplay: formatYearDisplay(y), isCurrentYear: y === getCurrentYearValue() });
+    this._clearCurrentDimViews();
+    void this._loadData();
+  },
+
+  /** 快速返回当前自然月/年 */
+  onBackToCurrent() {
+    if (this.data.dimension === 'monthly') {
+      const now = getCurrentMonthValue();
+      if (now === this.data.currentMonth) return;
+      this.setData({ currentMonth: now, monthDisplay: formatMonthDisplay(now), isCurrentMonth: true });
+    } else {
+      const now = getCurrentYearValue();
+      if (now === this.data.currentYear) return;
+      this.setData({ currentYear: now, yearDisplay: formatYearDisplay(now), isCurrentYear: true });
+    }
     this._clearCurrentDimViews();
     void this._loadData();
   },
@@ -775,6 +792,7 @@ Page({
       dimension: 'monthly',
       currentMonth: monthValue,
       monthDisplay: formatMonthDisplay(monthValue),
+      isCurrentMonth: monthValue === getCurrentMonthValue(),
       monthlyByMember: {},
     });
     void this._loadData();

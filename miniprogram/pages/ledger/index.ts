@@ -4,7 +4,7 @@
 // 金额 ADR-0002: 全部走 decimal.js（utils/money.ts）
 
 import Decimal from '../../utils/vendor/decimal';
-import { toYuan, parseAmountInputToCents as parseYuanToCents, parseClipboardToAmount } from '../../utils/money';
+import { toYuan, toYuanForEdit, parseAmountInputToCents as parseYuanToCents, parseClipboardToAmount } from '../../utils/money';
 import { getSafeAreaMetrics, rpxToPx } from '../../utils/safeArea';
 import { listMonthEntries, deleteEntry, updateEntryFields, putEntry, getEntry, type Entry, type MonthEntriesResult } from '../../services/db';
 import { fetchMonthEntries } from '../../services/entriesApi';
@@ -297,6 +297,7 @@ Page({
 
     // ─── 头部汇总 ───
     currentMonth: getCurrentMonthValue(),
+    isCurrentMonth: true,
     monthDisplay: '',
     totalExpense: '¥0.00',
     totalExpenseCents: 0,
@@ -1475,7 +1476,7 @@ Page({
     const [y, m] = this.data.currentMonth.split('-').map(Number);
     const prev = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`;
     this._shouldRefreshEmptyHintOnNextEmpty = true;
-    this.setData({ currentMonth: prev, monthDisplay: formatMonthDisplay(prev) });
+    this.setData({ currentMonth: prev, monthDisplay: formatMonthDisplay(prev), isCurrentMonth: isCurrentMonth(prev) });
     this._loadEntries(prev);
     if (this._ledgerId) {
       void this._loadBudgetOnly(this._ledgerId, prev);
@@ -1487,7 +1488,7 @@ Page({
     const [y, m] = this.data.currentMonth.split('-').map(Number);
     const nxt = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
     this._shouldRefreshEmptyHintOnNextEmpty = true;
-    this.setData({ currentMonth: nxt, monthDisplay: formatMonthDisplay(nxt) });
+    this.setData({ currentMonth: nxt, monthDisplay: formatMonthDisplay(nxt), isCurrentMonth: isCurrentMonth(nxt) });
     this._loadEntries(nxt);
     if (this._ledgerId) {
       void this._loadBudgetOnly(this._ledgerId, nxt);
@@ -1501,6 +1502,7 @@ Page({
     this.setData({
       currentMonth: value,
       monthDisplay: formatMonthDisplay(value),
+      isCurrentMonth: isCurrentMonth(value),
     });
     this._loadEntries(value);
     // COSTRA-4xx：切月时刷新预算（资产是账本级不变）
@@ -1508,6 +1510,19 @@ Page({
       void this._loadBudgetOnly(this._ledgerId, value);
     }
     // COSTRA-220: 月份切换后滚动到顶部
+    this._scrollTopToTop();
+  },
+
+  /** 快速返回当前自然月 */
+  onBackToCurrentMonth() {
+    const now = getCurrentMonthValue();
+    if (now === this.data.currentMonth) return;
+    this._shouldRefreshEmptyHintOnNextEmpty = true;
+    this.setData({ currentMonth: now, monthDisplay: formatMonthDisplay(now), isCurrentMonth: true });
+    this._loadEntries(now);
+    if (this._ledgerId) {
+      void this._loadBudgetOnly(this._ledgerId, now);
+    }
     this._scrollTopToTop();
   },
 
@@ -2777,7 +2792,7 @@ Page({
   onTapAssetEdit() {
     if (this._consumeNoteEditingIfActive()) return;
     const yuanStr = this.data.assetCents > 0
-      ? toYuan(this.data.assetCents)
+      ? toYuanForEdit(this.data.assetCents)
       : '0';
     eventBus.emit(EventNames.HIDE_TAB_BAR);
     this.setData({
@@ -2876,7 +2891,7 @@ Page({
   onTapBudgetEdit() {
     if (this._consumeNoteEditingIfActive()) return;
     const currentCents = this.data.budgetDisplay?.totalCents ?? 0;
-    const yuanStr = currentCents > 0 ? toYuan(currentCents) : '0';
+    const yuanStr = currentCents > 0 ? toYuanForEdit(currentCents) : '0';
     eventBus.emit(EventNames.HIDE_TAB_BAR);
     this.setData({
       editBudgetVisible: true,

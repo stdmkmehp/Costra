@@ -84,6 +84,18 @@
           <view class="time-nav__arrow month-switcher__arrow month-switcher__arrow--next" hover-class="month-switcher__arrow--pressed" hover-stay-time="80" bind:tap="onNextTime">
             <text class="time-nav__arrow-icon month-switcher__arrow-icon">›</text>
           </view>
+
+          <!-- 返回当月/当年按钮：仅在非当前周期时显示 -->
+          <view
+            wx:if="{{dimension === 'monthly' && !isCurrentMonth || dimension === 'yearly' && !isCurrentYear}}"
+            class="month-switcher__today"
+            hover-class="month-switcher__today--pressed"
+            hover-stay-time="80"
+            bind:tap="onBackToCurrent"
+          >
+            <text class="month-switcher__today-icon">⤺</text>
+            <text class="month-switcher__today-text">{{dimension === 'monthly' ? '返回本月' : '返回本年'}}</text>
+          </view>
         </view>
         <!-- 月度/年度切换 -->
         <view class="time-nav__dimension">

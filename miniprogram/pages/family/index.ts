@@ -311,6 +311,8 @@ Page({
     // ─── 时间维度 ───
     currentMonth: getCurrentMonthValue(),
     currentYear: getCurrentYearValue(),
+    isCurrentMonth: true,
+    isCurrentYear: true,
     monthDisplay: '',
     yearDisplay: '',
     dimension: 'monthly' as 'monthly' | 'yearly',
@@ -1141,6 +1143,7 @@ Page({
     this.setData({
       currentMonth: prev,
       monthDisplay: formatMonthDisplay(prev),
+      isCurrentMonth: isCurrentMonth(prev),
     });
     this._shouldRefreshEmptyHint = true;
     this._collapseAllRows();
@@ -1152,6 +1155,7 @@ Page({
     this.setData({
       currentMonth: nxt,
       monthDisplay: formatMonthDisplay(nxt),
+      isCurrentMonth: isCurrentMonth(nxt),
     });
     this._shouldRefreshEmptyHint = true;
     this._collapseAllRows();
@@ -1164,6 +1168,7 @@ Page({
     this.setData({
       currentMonth: value,
       monthDisplay: formatMonthDisplay(value),
+      isCurrentMonth: isCurrentMonth(value),
     });
     this._shouldRefreshEmptyHint = true;
     this._collapseAllRows();
@@ -1177,6 +1182,7 @@ Page({
     this.setData({
       currentYear: prev,
       yearDisplay: formatYearDisplay(prev),
+      isCurrentYear: isCurrentYear(prev),
     });
     this._shouldRefreshEmptyHint = true;
     this._collapseAllRows();
@@ -1188,6 +1194,7 @@ Page({
     this.setData({
       currentYear: nxt,
       yearDisplay: formatYearDisplay(nxt),
+      isCurrentYear: isCurrentYear(nxt),
     });
     this._shouldRefreshEmptyHint = true;
     this._collapseAllRows();
@@ -1202,7 +1209,24 @@ Page({
     this.setData({
       currentYear: value,
       yearDisplay: formatYearDisplay(value),
+      isCurrentYear: isCurrentYear(value),
     });
+    this._shouldRefreshEmptyHint = true;
+    this._collapseAllRows();
+    void this._loadSummary(this._familyId, { hideContentWhileLoading: true });
+  },
+
+  /** 快速返回当前自然月/年 */
+  onBackToCurrent() {
+    if (this.data.dimension === 'monthly') {
+      const now = getCurrentMonthValue();
+      if (now === this.data.currentMonth) return;
+      this.setData({ currentMonth: now, monthDisplay: formatMonthDisplay(now), isCurrentMonth: true });
+    } else {
+      const now = getCurrentYearValue();
+      if (now === this.data.currentYear) return;
+      this.setData({ currentYear: now, yearDisplay: formatYearDisplay(now), isCurrentYear: true });
+    }
     this._shouldRefreshEmptyHint = true;
     this._collapseAllRows();
     void this._loadSummary(this._familyId, { hideContentWhileLoading: true });

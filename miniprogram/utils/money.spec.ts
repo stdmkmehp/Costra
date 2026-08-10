@@ -2,7 +2,7 @@
 // 卡号: COSTRA-102 · D2.10
 // 追加: parseClipboardToAmount（记账面板"粘贴"键，2026-07-16）
 import { describe, it, expect } from 'vitest';
-import { toCents, toYuan, parseAmountInputToCents, parseClipboardToAmount } from './money';
+import { toCents, toYuan, toYuanForEdit, parseAmountInputToCents, parseClipboardToAmount } from './money';
 
 describe('utils/money', () => {
   describe('toCents', () => {
@@ -22,6 +22,28 @@ describe('utils/money', () => {
 
     it('整元补零：toYuan(12300) === "123.00"', () => {
       expect(toYuan(12300)).toBe('123.00');
+    });
+  });
+
+  describe('toYuanForEdit（编辑态：整元不带小数点，非整元去尾零）', () => {
+    it('整元：toYuanForEdit(10000) === "100"（而非 "100.00"）', () => {
+      expect(toYuanForEdit(10000)).toBe('100');
+    });
+
+    it('整元零：toYuanForEdit(0) === "0"', () => {
+      expect(toYuanForEdit(0)).toBe('0');
+    });
+
+    it('一位小数：toYuanForEdit(10050) === "100.5"（去尾零）', () => {
+      expect(toYuanForEdit(10050)).toBe('100.5');
+    });
+
+    it('两位小数：toYuanForEdit(12345) === "123.45"（保留实际小数）', () => {
+      expect(toYuanForEdit(12345)).toBe('123.45');
+    });
+
+    it('十分位为零：toYuanForEdit(12305) === "123.05"（不去中间零）', () => {
+      expect(toYuanForEdit(12305)).toBe('123.05');
     });
   });
 

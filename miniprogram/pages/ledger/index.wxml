@@ -56,6 +56,17 @@
       <view class="filter-row__arrow month-switcher__arrow month-switcher__arrow--next" hover-class="month-switcher__arrow--pressed" hover-stay-time="80" bindtap="onNextMonth">
         <text class="filter-row__arrow-icon month-switcher__arrow-icon">›</text>
       </view>
+      <!-- 返回当月按钮：仅在非当前月时显示 -->
+      <view
+        wx:if="{{!isCurrentMonth}}"
+        class="month-switcher__today"
+        hover-class="month-switcher__today--pressed"
+        hover-stay-time="80"
+        bindtap="onBackToCurrentMonth"
+      >
+        <text class="month-switcher__today-icon">⤺</text>
+        <text class="month-switcher__today-text">返回本月</text>
+      </view>
     </view>
     <!-- 筛选按钮（始终显示：支持类型/成员/分类/搜索筛选） -->
     <view class="filter-row__right {{filterActive ? 'is-active' : ''}}" catchtap="onTapMemberFilter">

@@ -189,6 +189,38 @@ page {
   background: rgba(28,27,26,0.04);
 }
 
+/* ---- 「返回当月」按钮 · 明细页 / 统计页 / 协作页共用 ---- */
+.month-switcher__today {
+  display: flex;
+  align-items: center;
+  gap: 4rpx;
+  margin-left: 8rpx;
+  padding: 0 14rpx;
+  height: 52rpx;
+  box-sizing: border-box;
+  border-radius: var(--radius-pill, 9999rpx);
+  background: transparent;
+  transition: transform 120ms var(--easing-default), background-color 160ms var(--easing-default);
+}
+
+.month-switcher__today--pressed {
+  transform: scale(0.96);
+  background: rgba(28,27,26,0.05);
+}
+
+.month-switcher__today-icon {
+  font-size: 30rpx;
+  line-height: 1;
+  color: var(--color-role-text-secondary, rgba(28,27,26,0.48));
+}
+
+.month-switcher__today-text {
+  font-size: 24rpx;
+  font-weight: 500;
+  color: var(--color-role-text-secondary, rgba(28,27,26,0.48));
+  white-space: nowrap;
+}
+
 /* ---- 排版原子类 ---- */
 .text-display {
   font-size: 112rpx;

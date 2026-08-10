@@ -36,6 +36,25 @@ export function toYuan(cents: number): string {
 }
 
 /**
+ * 分 → 元（编辑态：整元不带小数点，非整元去尾零）
+ *
+ * 用于输入框回填：原先 100 元显示 "100" 而非 "100.00"，
+ * 原先 100.50 元显示 "100.5"，避免用户编辑时需要先删掉 ".00"。
+ */
+export function toYuanForEdit(cents: number): string {
+  const yuan = toYuan(cents);
+  // toYuan 恒返回 2 位小数，如 "100.00" / "100.50" / "100.05"
+  const dot = yuan.indexOf('.');
+  if (dot < 0) return yuan;
+  const intPart = yuan.slice(0, dot);
+  const decPart = yuan.slice(dot + 1); // 恒为 2 位
+  if (decPart === '00') return intPart;
+  // 去尾零："50" → "5"，"05" → "05"
+  const trimmed = decPart.replace(/0+$/, '');
+  return `${intPart}.${trimmed}`;
+}
+
+/**
  * 带 ￥ 符号的 CNY 展示
  */
 export function formatCNY(cents: number, opts: { withSymbol?: boolean } = {}): string {
