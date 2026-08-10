@@ -25,7 +25,7 @@
             <text class="header__budget-sep">/</text>
             <text class="header__budget-total tnum">{{budgetDisplay.total}}</text>
           </block>
-          <text wx:else class="header__budget-unset">未设置</text>
+          <text wx:else class="header__budget-unset">--</text>
           <text class="header__edit-icon" aria-hidden="true">✎</text>
         </view>
         <!-- 中点分隔符（与「收入 · 结余」视觉一致） -->
@@ -389,7 +389,8 @@
       />
     </view>
     <view class="quickedit-hint">
-      <text>预算余额 = 预算上限 - 当月支出</text>
+      <text>余额 = 上限 - 当月支出</text>
+      <text class="quickedit-hint__sub">设为 0 等于不设预算</text>
     </view>
     <view class="quickedit-actions">
       <view class="quickedit-actions__btn quickedit-actions__btn--cancel" bindtap="onCloseEditBudget">取消</view>

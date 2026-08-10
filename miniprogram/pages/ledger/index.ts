@@ -2748,6 +2748,11 @@ Page({
   },
 
   _renderBudget(budget: Budget) {
+    // amount_cents = 0 视为"不设预算"，显示空态
+    if (budget.amount_cents === 0) {
+      this._renderBudgetEmpty();
+      return;
+    }
     const colorClass = computeBudgetColorClass(budget.remain_cents, budget.amount_cents);
     this.setData({
       budgetDisplay: {
@@ -2898,8 +2903,8 @@ Page({
 
   async onConfirmEditBudgetInput() {
     const cents = parseYuanToCents(this.data.editBudgetDisplay);
-    if (cents <= 0) {
-      wx.showToast({ title: '预算须大于0', icon: 'none' });
+    if (cents < 0) {
+      wx.showToast({ title: '请输入有效金额', icon: 'none' });
       return;
     }
 
@@ -2917,16 +2922,14 @@ Page({
       this._renderBudget(updated);
       this._editBudgetVersion = updated.version;
       this.onCloseEditBudget();
-      wx.showToast({ title: '预算已设置', icon: 'success' });
+      wx.showToast({ title: cents === 0 ? '预算已清除' : '预算已设置', icon: 'success' });
     } catch (err) {
       const apiErr = err as ApiError;
       if (apiErr?.status === 0 || apiErr?.code === 'CLIENT_NETWORK_ERROR') {
-        // 预算修改不走 outbox（spec §5.4 v2）· 网络失败直接提示
         wx.showToast({ title: '网络异常，请稍后再试', icon: 'none' });
         return;
       }
       if (apiErr?.status === 409) {
-        // 冲突弹窗（与资产冲突弹窗同构）
         wx.showModal({
           title: '预算已被其他成员修改',
           content: '是否重新拉取并覆盖为你的值？',
@@ -2949,7 +2952,7 @@ Page({
               this._renderBudget(updated2);
               this._editBudgetVersion = updated2.version;
               this.onCloseEditBudget();
-              wx.showToast({ title: '预算已设置', icon: 'success' });
+              wx.showToast({ title: cents === 0 ? '预算已清除' : '预算已设置', icon: 'success' });
             } catch {
               wx.showToast({ title: '修改失败，请重试', icon: 'none' });
             }

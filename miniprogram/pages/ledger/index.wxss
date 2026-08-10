@@ -157,8 +157,9 @@
 .header__budget-unset {
   font-size: 28rpx;
   color: var(--color-role-text-secondary, rgba(28,27,26,0.48));
-  text-decoration: underline;
-  text-underline-offset: 4rpx;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -859,6 +860,14 @@
   font-size: 24rpx;
   color: var(--color-role-text-tertiary, rgba(28, 27, 26, 0.28));
   padding: 4rpx 32rpx 20rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4rpx;
+}
+.quickedit-hint__sub {
+  font-size: 22rpx;
+  color: var(--color-role-text-tertiary, rgba(28, 27, 26, 0.22));
 }
 
 /* 确认/取消按钮区 */

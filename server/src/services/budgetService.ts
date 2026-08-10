@@ -180,9 +180,9 @@ export async function upsertBudget(
   },
 ): Promise<BudgetResult> {
   validateMonth(input.month);
-  if (!Number.isInteger(input.amountCents) || input.amountCents <= 0) {
+  if (!Number.isInteger(input.amountCents) || input.amountCents < 0) {
     throw new AppError(ErrorCode.INVALID_ARGUMENT, {
-      message: 'amount_cents must be positive integer',
+      message: 'amount_cents must be non-negative integer',
       details: { field: 'amount_cents', value: input.amountCents },
     });
   }

@@ -324,7 +324,7 @@ function applyMigrations(db: IMemoryDb): void {
       id             UUID PRIMARY KEY,
       ledger_id      UUID NOT NULL,
       month          CHAR(7) NOT NULL,
-      amount_cents   BIGINT NOT NULL CHECK (amount_cents > 0),
+      amount_cents   BIGINT NOT NULL CHECK (amount_cents >= 0),
       currency       TEXT NOT NULL DEFAULT 'CNY',
       updated_by     UUID NOT NULL,
       created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),

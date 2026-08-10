@@ -65,7 +65,7 @@ const putBudgetBodySchema = {
   properties: {
     ledger_id: { type: 'string', format: 'uuid' },
     month: { type: 'string', pattern: '^[0-9]{4}-[0-9]{2}$' },
-    amount_cents: { type: 'integer', minimum: 1, description: '预算上限（分）' },
+    amount_cents: { type: 'integer', minimum: 0, description: '预算上限（分）· 0 表示不设预算' },
     version: { type: ['integer', 'null'], minimum: 1, description: '可选 · 当前版本（修改已存在的预算时传）' },
   },
 } as const;

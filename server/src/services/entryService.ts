@@ -13,11 +13,11 @@
  *   - findById：含 ledger/权限校验
  *
  * 资产累加规则（COSTRA-4xx · 见 asset-and-budget-spec.md §4）：
- *   - income  → balance += amount
+ *   - income→ balance += amount
  *   - expense → balance -= amount
  *   - transfer → balance 不变（delta = 0，跳过 UPDATE）
- *   - 幂等谓词：仅当 new_change_seq > balance_baseline_seq 才叠加
- *   - update/softDelete 时先 FOR UPDATE 读旧 seq，再用 old_seq / new_seq 独立判
+ *   - 幂等保障：同事务 + 唯一约束（create）/乐观锁（update/softDelete）
+ *   - update/softDelete 时先 FOR UPDATE 读旧值，再无条件回退旧贡献 + 叠加新贡献
  *
  * 依赖注入：所有依赖通过工厂函数 createEntryService(deps) 注入。
  */
@@ -374,7 +374,7 @@ export function createEntryService(deps: EntryServiceDeps = {}): EntryService {
 
         // COSTRA-4xx：同事务累加 ledgers.balance_cents
         // delta = income: +amount / expense: -amount / transfer: 0
-        // 幂等谓词：newSeq > balance_baseline_seq
+        // 幂等由同事务 + uq_entries_ledger_client_ref唯一约束保障
         const delta = computeBalanceDelta(payload.type, payload.amount);
         await ledgerRepo.applyBalanceDelta(
           { ledgerId: payload.ledger_id, delta, newSeq: inserted.changeSeq },
@@ -446,7 +446,6 @@ export function createEntryService(deps: EntryServiceDeps = {}): EntryService {
       if (!locked) return null;
       const oldAmount = locked.amount;
       const oldType = locked.type;
-      const oldSeq = locked.changeSeq;
 
       // 2) UPDATE entries（乐观锁 · 拿到 newSeq / 新 amount / 新 type）
       const result = await entryRepo.updateEntryByVersion(
@@ -467,11 +466,9 @@ export function createEntryService(deps: EntryServiceDeps = {}): EntryService {
       const oldDelta = computeBalanceDelta(oldType, oldAmount);
       const newDelta = computeBalanceDelta(newType, newAmount);
 
-      // 旧贡献回退的谓词用 newSeq（本次操作分配的新 seq），而非 oldSeq。
-      // newSeq 一定 > balance_baseline_seq → 旧贡献回退总是生效。
-      // 这确保 rebase 后修改旧流水金额时，旧贡献也会正确回退，
-      // 而不是被 baseline 谓词静默忽略。
-      // 幂等安全由 entry 级乐观锁（version = baseVersion）保障。
+      // 旧贡献回退 + 新贡献叠加：无条件执行（不依赖 seq 与 baseline 大小关系）。
+      // 幂等安全由 entry 级乐观锁（version = baseVersion）保障：
+      // 同一条流水不会被 updateWithVersion 两次命中。
       await ledgerRepo.applyBalanceSwap(
         {
           ledgerId: result.ledgerId,
@@ -512,7 +509,6 @@ export function createEntryService(deps: EntryServiceDeps = {}): EntryService {
       if (!locked) return null;
       const oldAmount = locked.amount;
       const oldType = locked.type;
-      const oldSeq = locked.changeSeq;
 
       // 2) softDelete（乐观锁 ·拿新 changeSeq）
       const result = await entryRepo.softDeleteEntry(
@@ -526,10 +522,7 @@ export function createEntryService(deps: EntryServiceDeps = {}): EntryService {
       const oldDelta = computeBalanceDelta(oldType, oldAmount);
       if (oldDelta === 0) return result; // transfer 类无影响
 
-      // 用本次删除操作分配的 newSeq（result.changeSeq）来评估回退，而非 oldSeq。
-      // newSeq 一定 > balance_baseline_seq → 旧贡献回退总是生效。
-      // 这确保 rebase 后删除旧流水时资产也会正确回退，
-      // 而不是被 baseline 谓词静默忽略。
+      // 旧贡献回退：无条件执行（不依赖 seq 与 baseline 大小关系）。
       // 幂等安全由 entry 级乐观锁（version = baseVersion）保障，
       // 同一条流水不会被 softDelete 两次。
       await ledgerRepo.applyBalanceDelta(

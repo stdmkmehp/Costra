@@ -32,12 +32,13 @@ export interface EntryEntity {
   version: number;
   clientRefId: string | null;
   /**
-   * 同步引擎一致性水位（BUG-COSTRA-154 v1.2 升级 · 2026-05-22）
-   * - PG SEQUENCE entries_change_seq 严格单调递增 · 不依赖时钟
+   * 同步引擎一致性水位（BUG-COSTRA-154v1.2升级 · 2026-05-22）
+   * - PG SEQUENCE entries_change_seq 严格 distinct · CACHE1下单调递增
+   * - 注意：CACHE > 1 时跨连接不保证时间顺序（已修复为CACHE 1）
    * - 每次 INSERT/UPDATE/softDelete 都分配新 seq
    * - sync pull 增量协议用此字段 · updated_at 仅展示语义
    * - JS Number 安全整数上限 2^53-1 ≈ 9 × 10^15 · MVP 永远跑不到
-   * - 真 PG BIGINT 通过 pg 驱动返 string · pg-mem 返 number · rowToEntity 用 Number() 统一
+   * - 真PG BIGINT 通过 pg驱动返string · pg-mem 返 number · rowToEntity 用 Number() 统一
    */
   changeSeq: number;
   /**
@@ -334,7 +335,8 @@ export async function findEntriesByLedger(
  *
  * BUG-COSTRA-154 v1.2 升级（2026-05-22 选项 B 彻底修复 · 协议 v1.2）：
  *   since 类型从 string（微秒 ISO） 改为 number（BIGINT change_seq）
- *   - PG SEQUENCE 严格单调递增 · 不依赖时钟 · 完全消除 §3.5 残余风险
+ *   - PG SEQUENCE CACHE 1 下单调递增（已从 CACHE 100 修复为 CACHE 1）
+ *   - ⚠️ 残余风险：先取号后提交的毫秒级窗口仍可能导致 watermark 跳过未提交行（独立课题）
  *   - 字符串字典序 → 数字大小比较 · 语义更清晰
  *   - 协议契约：sync-protocol.md §6.3 watermark 铁律（v1.2+）
  */

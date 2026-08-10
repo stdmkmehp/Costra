@@ -17,9 +17,10 @@
  *   - balance_version：资产独立乐观锁版本（独立于 ledgers.version）
  *
  * 资产累加规则（见 asset-and-budget-spec.md §4.2）：
- *   - income  → +amount，expense → -amount，transfer → 0
- *   - 仅当 new_change_seq > balance_baseline_seq 时叠加（幂等谓词）
- *   - 用户重锚资产时 baseline = MAX(entries.change_seq)，旧流水视为已消化
+ *   - income→ +amount，expense → -amount，transfer → 0
+ *   - 幂等由同事务 + 唯一约束（create）/ 乐观锁（update/softDelete）保障
+ *   - 用户重锚资产时baseline = MAX(entries.change_seq)，旧流水视为已消化
+ *   - balance_baseline_seq 仅作审计字段保留，不再参与累加判断
  */
 
 import { getPool } from '../db/pool.js';
@@ -172,18 +173,19 @@ export async function findFirstByFamilyId(
 /**
  * 对账本资产做原子累加（delta 可正可负）。
  *
- * 幂等谓词：仅当 $newSeq > balance_baseline_seq 时才叠加。
+ * 幂等保障：由调用方同事务 + 唯一约束（create）/ 乐观锁（update/softDelete）提供，
+ * 不再依赖 seq 与 baseline 的大小关系。
  *   - delta = 0（如 transfer）时不产生 UPDATE，避免无谓行锁
  *
  * 调用方：entryService 的 create / update / softDelete 分支
  *
- * @returns 是否实际更新了 balance（true=叠加发生，false=被 baseline 谓词过滤掉或 delta=0）
+ * @returns 是否实际更新了 balance（true=叠加发生，false=delta=0 跳过）
  */
 export async function applyBalanceDelta(
   input: {
     ledgerId: string;
     delta: number;           // 单位分；正=资产增加，负=资产减少
-    newSeq: number;          // entry 写入时分配的新 change_seq
+    newSeq: number;          // 保留入参兼容调用方签名（SQL 不再使用）
   },
   client?: Runner,
 ): Promise<boolean> {
@@ -195,9 +197,8 @@ export async function applyBalanceDelta(
     `UPDATE ledgers
         SET balance_cents   = balance_cents + $2,
             balance_version = balance_version + 1
-      WHERE id = $1
-        AND $3 > balance_baseline_seq`,
-    [input.ledgerId, input.delta, input.newSeq],
+      WHERE id = $1`,
+    [input.ledgerId, input.delta],
   );
   return (res.rowCount ?? 0) > 0;
 }
@@ -206,10 +207,12 @@ export async function applyBalanceDelta(
  * 对账本资产做"旧贡献回退 + 新贡献叠加"的双 delta 原子更新。
  *
  * 用于 entryService 的 update / softDelete 路径：
- *   - 旧贡献的回退是否发生，取决于 old_seq > baseline（这条流水之前是否被算过）
- *   - 新贡献的叠加是否发生，取决于 new_seq > baseline（这条流水现在是否要算）
- *   - 两个谓词独立判定，全部在一条 UPDATE 里完成，保证 ledgers 行锁原子性
+ *   - 旧贡献无条件回退（同事务 + 乐观锁保证不重复执行）
+ *   - 新贡献无条件叠加（同上）
  *   - 单次 UPDATE → balance_version 只+1（一次业务动作 = 一次版本推进）
+ *
+ * 幂等保障：由entry 级乐观锁（version = baseVersion）提供，
+ * 同一条流水不会被 update/softDelete 两次。
  *
  * 实现细节（pg-mem 兼容）：
  *   - pg-mem 无法对参数 `$N` 应用 unary minus（"Can only apply - unary operator to numeric types"），
@@ -224,8 +227,8 @@ export async function applyBalanceSwap(
     ledgerId: string;
     oldDelta: number;        // 旧贡献（要回退的值；正=原本是income 已叠加 → 需减去）
     newDelta: number;        // 新贡献（要叠加的值；正=新income，负=新 expense）
-    oldSeq: number;          // 这条流水原来的 change_seq
-    newSeq: number;          // 这条流水更新后的 change_seq
+    oldSeq: number;          // 保留入参兼容调用方签名（SQL 不再使用）
+    newSeq: number;          // 保留入参兼容调用方签名（SQL 不再使用）
   },
   client?: Runner,
 ): Promise<boolean> {
@@ -238,16 +241,10 @@ export async function applyBalanceSwap(
 
   const res = await runner.query(
     `UPDATE ledgers
-        SET balance_cents   = balance_cents
-              + CASE WHEN $2 > balance_baseline_seq THEN $3 ELSE 0 END
-              + CASE WHEN $4 > balance_baseline_seq THEN $5 ELSE 0 END,
+        SET balance_cents   = balance_cents + $2 + $3,
             balance_version = balance_version + 1
       WHERE id = $1`,
-    [
-      input.ledgerId,
-      input.oldSeq, oldRefund,
-      input.newSeq, input.newDelta,
-    ],
+    [input.ledgerId, oldRefund, input.newDelta],
   );
   return (res.rowCount ?? 0) > 0;
 }
@@ -258,7 +255,7 @@ export async function applyBalanceSwap(
  * 语义：
  *   - 把 balance_cents 设为用户新值
  *   - 把 balance_baseline_seq 推进到当前 MAX(entries.change_seq)
- *     → "重锚之前的所有流水都已消化；之后的新流水才继续叠加"
+ *     → 仅作审计记录（不再用于资产累加谓词判断）
  *
  * 乐观锁：用 balance_version 判定冲突，无匹配行返回 null（service 层抛 409）
  *

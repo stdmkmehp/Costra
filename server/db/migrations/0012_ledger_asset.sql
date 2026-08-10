@@ -30,9 +30,9 @@ ALTER TABLE ledgers
 COMMENT ON COLUMN ledgers.balance_cents IS
 '账本资产净值（分）· 用户可修改；服务端在 entries 变化时自动累加/回退';
 COMMENT ON COLUMN ledgers.balance_baseline_seq IS
-'资产累加基线（entries.change_seq）。用户重锚资产后置为当时的 MAX(entries.change_seq)。
- 只有 change_seq > baseline_seq 的流水才被计入 balance_cents。
- 全库共用一个 entries_change_seq SEQUENCE，不同账本 seq 交错，但单账本内部严格单调。';
+'审计字段：记录用户 rebase 时的 MAX(entries.change_seq)。
+ 不再用于资产累加谓词（幂等由同事务+唯一约束/乐观锁保障）。
+ 全库共用一个 entries_change_seq SEQUENCE，CACHE 1 下单调递增。';
 COMMENT ON COLUMN ledgers.balance_version IS
 'balance_cents / balance_baseline_seq 的乐观锁版本（独立于 ledgers.version，
  避免"改资产"与"改账本名"互相 conflict）。';

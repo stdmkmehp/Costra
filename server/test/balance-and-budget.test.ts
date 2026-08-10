@@ -27,6 +27,8 @@
  *   Bud7 GET /budgets 当月未设但账本有历史预算 → 回退继承 amount + spent 按当月算
  *   Bud8 GET /budgets 回退后修改当月预算 → 当月独立记录，不影响回退源
  *   Bud9 GET /budgets 当月未设且之前也没有 → 往后取最近的未来预算
+ *   Bud10 PUT /budgets amount_cents=0 → 200 + version递增（0 是合法值）
+ *   Bud11 GET /budgets amount_cents=0 → 200 + remain = -spent
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -618,5 +620,53 @@ describe('COSTRA-4xx · 月度预算', () => {
     expect(body.amount_cents).toBe(300000);  // 继承 8 月上限
     expect(body.spent_cents).toBe(2000);      // spent 按 6 月实际算
     expect(body.month).toBe('2026-06');       // 返回查询月
+  });
+
+  it('Bud10 PUT /budgets amount_cents=0 → 200 + version递增（0 是合法值）', async () => {
+    // 先正常设置预算
+    const putRes = await app.inject({
+      method: 'PUT',
+      url: '/v1/budgets',
+      headers: auth(),
+      payload: { ledger_id: LEDGER_ID, month: '2026-08', amount_cents: 300000 },
+    });
+    expect(putRes.statusCode).toBe(200);
+    const putBody = putRes.json() as { version: number };
+    expect(putBody.version).toBe(1);
+
+    // 设为 0（不设预算）
+    const zeroRes = await app.inject({
+      method: 'PUT',
+      url: '/v1/budgets',
+      headers: auth(),
+      payload: { ledger_id: LEDGER_ID, month: '2026-08', amount_cents: 0, version: 1 },
+    });
+    expect(zeroRes.statusCode).toBe(200);
+    const zeroBody = zeroRes.json() as { version: number; amount_cents: number };
+    expect(zeroBody.version).toBe(2);
+    expect(zeroBody.amount_cents).toBe(0);
+  });
+
+  it('Bud11 GET /budgets amount_cents=0 → 200 + remain = -spent', async () => {
+    // 设为 0
+    await app.inject({
+      method: 'PUT',
+      url: '/v1/budgets',
+      headers: auth(),
+      payload: { ledger_id: LEDGER_ID, month: '2026-08', amount_cents: 0},
+    });
+    // 记一笔 expense
+    await createEntry({ amount: 5000, type: 'expense', occurred_at: '2026-08-01T08:00:00.000Z' });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/v1/budgets?ledger_id=${LEDGER_ID}&month=2026-08`,
+      headers: auth(),
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { amount_cents: number; spent_cents: number; remain_cents: number };
+    expect(body.amount_cents).toBe(0);
+    expect(body.spent_cents).toBe(5000);
+    expect(body.remain_cents).toBe(-5000); // 0 - 5000
   });
 });
