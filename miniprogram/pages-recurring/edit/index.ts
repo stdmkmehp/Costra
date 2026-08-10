@@ -634,6 +634,7 @@ Page({
       endDate: this.data.endDate && this.data.endDate >= endDateMin ? this.data.endDate : '',
     });
     this._markDirty();
+    this._periodFieldsDirty = true;
     this._validate();
     this._updatePreview();
   },
@@ -649,6 +650,7 @@ Page({
       if (!has) this.setData({ endDate: '' });
     }
     this._markDirty();
+    this._periodFieldsDirty = true;
     this._validate();
     this._updatePreview();
   },
@@ -656,6 +658,7 @@ Page({
   onEndDateChange(e: WechatMiniprogram.PickerChange) {
     this.setData({ endDate: e.detail.value as string });
     this._markDirty();
+    this._periodFieldsDirty = true;
     this._validate();
     this._updatePreview();
   },
