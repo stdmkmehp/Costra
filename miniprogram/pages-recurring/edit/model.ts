@@ -183,6 +183,25 @@ function formatDateInTimezone(
   return { dateStr: zoned.toFormat('yyyy-MM-dd'), timeStr: '' };
 }
 
+/**
+ * 格式化服务端返回的 next_run_at（ISO 字符串）为预览展示用的 dateStr。
+ *
+ * edit 模式下"预计下次执行"优先用服务端权威值，而非本地 computePreviewNextRun 重算——
+ * 后者从 start_date 起算，无法感知服务端已执行过哪些日期，导致显示陈旧到起始日。
+ *
+ * @param nextRunAtIso  服务端 RecurringRule.next_run_at（ISO 字符串）
+ * @param timezone      规则时区（格式化到此时区）
+ * @returns dateStr "YYYY-MM-DD"，或 null 表示无法解析
+ */
+export function formatServerNextRunAt(
+  nextRunAtIso: string,
+  timezone: string,
+): string | null {
+  const zoned = DateTime.fromISO(nextRunAtIso, { zone: timezone });
+  if (!zoned.isValid) return null;
+  return zoned.toFormat('yyyy-MM-dd');
+}
+
 // ─── 409 判定 ──────────────────────────────────────────────────────────────
 
 export function isVersionConflict(e: any): boolean {

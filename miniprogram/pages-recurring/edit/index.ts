@@ -27,6 +27,7 @@ import {
   shouldClearDaysOnPeriodChange,
   shouldKeepCategoryOnLedgerChange,
   computePreviewNextRun,
+  formatServerNextRunAt,
   isVersionConflict,
 } from './model';
 import { setRecurringReturnToast, setPendingSave, type PendingSaveResult } from '../returnFeedback';
@@ -189,6 +190,16 @@ Page({
   // 主动返回路径（左上角返回 / 保存按钮）在navigateBack 前置 true，
   // 用于让 onUnload 区分「主动返回（已写反馈）」与「右滑返回（未写反馈）」。
   _backHandled: false as boolean,
+  /** 服务端返回的 next_run_at（ISO 字符串）· edit 模式加载时缓存。
+   *  预览"预计下次执行"时，若用户未改动周期相关字段，直接用它格式化显示，
+   *  而非本地用 computePreviewNextRun 从 start_date 重算（后者会导致显示陈旧到起始日）。
+   */
+  _serverNextRunAt: null as string | null,
+  /** 周期相关字段是否被用户改动过。
+   *  false = 表单周期部分仍是加载时的原始状态 → 预览用 _serverNextRunAt
+   *  true  = 用户改过周期/时段/起始日 → 预览用 computePreviewNextRun 本地重算
+   */
+  _periodFieldsDirty: false as boolean,
 
   async onLoad(options: Record<string, string | undefined>) {
     // 安全区
@@ -300,6 +311,10 @@ Page({
       this._executeHour = r.execute_hour;
       this._executeMinute = r.execute_minute;
     }
+
+    // 缓存服务端 next_run_at（edit 模式）· 预览"预计下次执行"时优先使用
+    this._serverNextRunAt = mode === 'edit' ? r.next_run_at : null;
+    this._periodFieldsDirty = false;
 
     this.setData({
       ruleVersion: mode === 'edit' ? r.version : 1,
@@ -525,6 +540,7 @@ Page({
 
     this.setData(updates);
     this._markDirty();
+    this._periodFieldsDirty = true;
     this._validate();
     this._updatePreview();
   },
@@ -541,12 +557,14 @@ Page({
   onDowChange(e: WechatMiniprogram.CustomEvent) {
     this.setData({ daysOfWeek: e.detail.value });
     this._markDirty();
+    this._periodFieldsDirty = true;
     this._validate();
     this._updatePreview();
   },
   onDowClear() {
     this.setData({ daysOfWeek: [] });
     this._markDirty();
+    this._periodFieldsDirty = true;
     this._validate();
     this._updatePreview();
   },
@@ -558,12 +576,14 @@ Page({
   onDomChange(e: WechatMiniprogram.CustomEvent) {
     this.setData({ daysOfMonth: e.detail.value });
     this._markDirty();
+    this._periodFieldsDirty = true;
     this._validate();
     this._updatePreview();
   },
   onDomClear() {
     this.setData({ daysOfMonth: [] });
     this._markDirty();
+    this._periodFieldsDirty = true;
     this._validate();
     this._updatePreview();
   },
@@ -575,12 +595,14 @@ Page({
   onYearlyChange(e: WechatMiniprogram.CustomEvent) {
     this.setData({ yearMonthDays: e.detail.value });
     this._markDirty();
+    this._periodFieldsDirty = true;
     this._validate();
     this._updatePreview();
   },
   onYearlyClear() {
     this.setData({ yearMonthDays: [] });
     this._markDirty();
+    this._periodFieldsDirty = true;
     this._validate();
     this._updatePreview();
   },
@@ -596,6 +618,7 @@ Page({
     this._executeHour = undefined;
     this._executeMinute = undefined;
     this._markDirty();
+    this._periodFieldsDirty = true;
     this._updatePreview();
   },
 
@@ -683,23 +706,35 @@ Page({
     let previewDate = '—';
     let previewBucket = '';
     if (this._isFormComplete()) {
-      const workdayData = this._workdayData;
-      const result = computePreviewNextRun({
-        period,
-        periodInterval: this.data.periodInterval,
-        bucket,
-        startDate: this.data.startDate,
-        daysOfWeek: this.data.daysOfWeek,
-        daysOfMonth: this.data.daysOfMonth,
-        yearMonthDays: this.data.yearMonthDays,
-        timezone: this.data.timezone,
-        executeHour: this._executeHour,
-        executeMinute: this._executeMinute,
-        workdayData,
-      }, new Date());
-      if (result) {
-        previewDate = result.dateStr;
-        previewBucket = bucketLabel;
+      // edit 模式且用户未改动周期相关字段 → 直接用服务端 next_run_at
+      // （本地 computePreviewNextRun 从 start_date 起算，无法感知服务端已执行过的日期，
+      //  会导致显示陈旧到起始日）
+      if (this.data.mode === 'edit' && !this._periodFieldsDirty && this._serverNextRunAt) {
+        const formatted = formatServerNextRunAt(this._serverNextRunAt, this.data.timezone);
+        if (formatted) {
+          previewDate = formatted;
+          previewBucket = bucketLabel;
+        }
+      } else {
+        // 新建模式 或 用户已改动周期字段 → 本地计算预览
+        const workdayData = this._workdayData;
+        const result = computePreviewNextRun({
+          period,
+          periodInterval: this.data.periodInterval,
+          bucket,
+          startDate: this.data.startDate,
+          daysOfWeek: this.data.daysOfWeek,
+          daysOfMonth: this.data.daysOfMonth,
+          yearMonthDays: this.data.yearMonthDays,
+          timezone: this.data.timezone,
+          executeHour: this._executeHour,
+          executeMinute: this._executeMinute,
+          workdayData,
+        }, new Date());
+        if (result) {
+          previewDate = result.dateStr;
+          previewBucket = bucketLabel;
+        }
       }
     }
 

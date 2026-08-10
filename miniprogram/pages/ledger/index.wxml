@@ -360,7 +360,7 @@
       />
     </view>
     <view class="quickedit-hint">
-      <text>新流水将叠加到修改后资产上</text>
+      <text>新流水操作将叠加到修改后的资产上</text>
     </view>
     <view class="quickedit-actions">
       <view class="quickedit-actions__btn quickedit-actions__btn--cancel" bindtap="onCloseEditAsset">取消</view>
@@ -389,8 +389,8 @@
       />
     </view>
     <view class="quickedit-hint">
-      <text>余额 = 上限 - 当月支出</text>
-      <text class="quickedit-hint__sub">设为 0 等于不设预算</text>
+      <text>预算余额 = 预算上限 - 当月支出</text>
+      <text class="quickedit-hint__sub">设置 0 意为无预算上限</text>
     </view>
     <view class="quickedit-actions">
       <view class="quickedit-actions__btn quickedit-actions__btn--cancel" bindtap="onCloseEditBudget">取消</view>
