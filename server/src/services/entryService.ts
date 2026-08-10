@@ -467,12 +467,17 @@ export function createEntryService(deps: EntryServiceDeps = {}): EntryService {
       const oldDelta = computeBalanceDelta(oldType, oldAmount);
       const newDelta = computeBalanceDelta(newType, newAmount);
 
+      // 旧贡献回退的谓词用 newSeq（本次操作分配的新 seq），而非 oldSeq。
+      // newSeq 一定 > balance_baseline_seq → 旧贡献回退总是生效。
+      // 这确保 rebase 后修改旧流水金额时，旧贡献也会正确回退，
+      // 而不是被 baseline 谓词静默忽略。
+      // 幂等安全由 entry 级乐观锁（version = baseVersion）保障。
       await ledgerRepo.applyBalanceSwap(
         {
           ledgerId: result.ledgerId,
           oldDelta,
           newDelta,
-          oldSeq,
+          oldSeq: newSeq,
           newSeq,
         },
         client as unknown as Parameters<typeof ledgerRepo.applyBalanceSwap>[1],
@@ -521,9 +526,14 @@ export function createEntryService(deps: EntryServiceDeps = {}): EntryService {
       const oldDelta = computeBalanceDelta(oldType, oldAmount);
       if (oldDelta === 0) return result; // transfer 类无影响
 
-      // 仅当 old_seq > baseline 时才回退（复用 applyBalanceDelta 单谓词，语义正确）
+      // 用本次删除操作分配的 newSeq（result.changeSeq）来评估回退，而非 oldSeq。
+      // newSeq 一定 > balance_baseline_seq → 旧贡献回退总是生效。
+      // 这确保 rebase 后删除旧流水时资产也会正确回退，
+      // 而不是被 baseline 谓词静默忽略。
+      // 幂等安全由 entry 级乐观锁（version = baseVersion）保障，
+      // 同一条流水不会被 softDelete 两次。
       await ledgerRepo.applyBalanceDelta(
-        { ledgerId: result.ledgerId, delta: -oldDelta, newSeq: oldSeq },
+        { ledgerId: result.ledgerId, delta: -oldDelta, newSeq: result.changeSeq },
         client as unknown as Parameters<typeof ledgerRepo.applyBalanceDelta>[1],
       );
 

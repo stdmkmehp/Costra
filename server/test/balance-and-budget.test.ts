@@ -260,7 +260,7 @@ describe('COSTRA-4xx · 账本资产累加', () => {
     expect(after.balance_version).toBe(afterCreate.balance_version + 1);
   });
 
-  it('B7 rebase 后老流水的 update：old_seq ≤ baseline 不回退 · new_seq > baseline 叠加', async () => {
+  it('B7 rebase 后老流水的 update：旧贡献回退 + 新贡献叠加（方案 B · rebase 不锁死历史）', async () => {
     // 1) 记一笔 expense 500
     const created = await createEntry({ amount: 500, type: 'expense' });
     let row = await getLedgerRow();
@@ -278,8 +278,10 @@ describe('COSTRA-4xx · 账本资产累加', () => {
     expect(row.balance_cents).toBe(10000);
     expect(row.balance_baseline_seq).toBeGreaterThan(0);
 
-    // 3) 更新那笔老流水amount = 500→ 800（老流水 old_seq ≤ baseline ·不回退 -500）
-    //    但 update 会推进 change_seq → new_seq > baseline · 叠加 -800
+    // 3) 更新那笔老流水 amount = 500→ 800
+    //    方案 B：旧贡献回退 + 新贡献叠加都用本次操作的 newSeq 判断
+    //    newSeq 一定 > baseline → 旧贡献 -500 回退（+500），新贡献 -800 叠加
+    //    结果：10000 + 500 + (-800) = 9700
     const patch = await app.inject({
       method: 'PATCH',
       url: `/v1/entries/${created.id}`,
@@ -288,11 +290,11 @@ describe('COSTRA-4xx · 账本资产累加', () => {
     });
     expect(patch.statusCode).toBe(200);
     const after = await getLedgerRow();
-    // 结果：10000 + (-800) = 9200（不回退旧的 -500，因为它已被 rebase 消化）
-    expect(after.balance_cents).toBe(9200);
+    // 旧 -500 回退 (+500) + 新 -800 叠加 = 10000 + 500 - 800 = 9700
+    expect(after.balance_cents).toBe(9700);
   });
 
-  it('B8 rebase 后老流水 softDelete：old_seq ≤ baseline 不回退（balance 不变）', async () => {
+  it('B8 rebase 后老流水 softDelete：旧贡献回退（方案 B · rebase 不锁死历史）', async () => {
     const created = await createEntry({ amount: 500, type: 'expense' });
     let row = await getLedgerRow();
 
@@ -306,7 +308,7 @@ describe('COSTRA-4xx · 账本资产累加', () => {
     row = await getLedgerRow();
     expect(row.balance_cents).toBe(10000);
 
-    // 删除老流水 → 不回退（old_seq ≤ baseline）
+    // 删除老流水 → 旧贡献回退（方案 B：用 newSeq 判断，一定 > baseline）
     const del = await app.inject({
       method: 'DELETE',
       url: `/v1/entries/${created.id}?version=1`,
@@ -314,7 +316,8 @@ describe('COSTRA-4xx · 账本资产累加', () => {
     });
     expect(del.statusCode).toBe(204);
     const after = await getLedgerRow();
-    expect(after.balance_cents).toBe(10000); // 不变
+    // 旧 -500 回退 → 10000 + 500 = 10500
+    expect(after.balance_cents).toBe(10500);
   });
 
   it('B9 rebase 乐观锁：正确 clientBaseVersion → 200；错误 → 409', async () => {
