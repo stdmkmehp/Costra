@@ -299,9 +299,9 @@ for file in "${FILES_TO_IMPORT[@]}"; do
   log_info "upsert → ${DB}.workday_calendars (year=${year})"
 
   if [[ "${DRY_RUN}" == "1" ]]; then
-    log_dry "docker exec -i -e PGPASSWORD=*** '${CONTAINER}' psql -h 127.0.0.1 -U '${PG_USER}' -d '${DB}' -v ON_ERROR_STOP=1 -c \"INSERT ... ON CONFLICT ...\""
+    log_dry "docker exec -e PGPASSWORD=*** '${CONTAINER}' psql -h 127.0.0.1 -U '${PG_USER}' -d '${DB}' -v ON_ERROR_STOP=1 -c \"INSERT ... ON CONFLICT ...\""
   else
-    docker exec -i -e "PGPASSWORD=${PG_PW}" "${CONTAINER}" \
+    docker exec -e "PGPASSWORD=${PG_PW}" "${CONTAINER}" \
       psql -h 127.0.0.1 -U "${PG_USER}" -d "${DB}" -v ON_ERROR_STOP=1 -c "${SQL}" \
       || die "${file}: upsert 失败"
   fi
