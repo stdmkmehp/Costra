@@ -426,7 +426,8 @@ Page({
   // ─── 卡片1 交互 ──────────────────────────────────────────────────────────
 
   onAmountInput(e: WechatMiniprogram.Input) {
-    this.setData({ amountDisplay: sanitizeAmountInput(e.detail.value ?? '') });
+    const sanitized = sanitizeAmountInput(e.detail.value ?? '');
+    this.setData({ amountDisplay: sanitized });
   },
 
   onAmountBlur(e: WechatMiniprogram.Input) {

@@ -2809,7 +2809,8 @@ Page({
   },
 
   onEditAssetInput(e: WechatMiniprogram.Input) {
-    this.setData({ editAssetDisplay: sanitizeAmountInput(e.detail.value ?? '') });
+    const sanitized = sanitizeAmountInput(e.detail.value ?? '');
+    this.setData({ editAssetDisplay: sanitized });
   },
 
   async onConfirmEditAssetInput() {
@@ -2900,7 +2901,8 @@ Page({
   },
 
   onEditBudgetInput(e: WechatMiniprogram.Input) {
-    this.setData({ editBudgetDisplay: sanitizeAmountInput(e.detail.value ?? '') });
+    const sanitized = sanitizeAmountInput(e.detail.value ?? '');
+    this.setData({ editBudgetDisplay: sanitized });
   },
 
   async onConfirmEditBudgetInput() {
