@@ -67,11 +67,28 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh"
 
 # --- 关键路径时间戳 ---
-# 重部署关键路径（各 Step 标题 + healthy 等待）统一带时间戳，便于事后核查各阶段耗时。
-# 仅覆盖本脚本用到的 log_step，不改动 common.sh，不影响其他脚本。
+# 重部署关键路径（各 Step 标题 + healthy 等待 + 每步耗时）统一带时间戳，便于事后核查各阶段耗时。
+# 仅覆盖本脚本用到的 log_step / 新增计时助手，不改动 common.sh，不影响其他脚本。
 _ts() { date '+%Y-%m-%d %H:%M:%S'; }
+
+# 关键步骤计时：
+#   log_step 记录起点 → _step_done 在步骤结束时打印「耗时 Ns」
+#   _phase_begin / _phase_done 用于步骤内部的重操作（如 DB 备份 / SQL 执行）单独计时
+_STEP_START=0
+_PHASE_START=0
+
 log_step() {
+  _STEP_START=$(date +%s)
   printf "\n${C_BOLD}${C_CYAN}===> %s %s${C_RESET}\n" "$(_ts)" "$*"
+}
+_step_done() {
+  local elapsed=$(( $(date +%s) - _STEP_START ))
+  log_success "$(_ts) ${1:-步骤}完成 · 耗时 ${elapsed}s"
+}
+_phase_begin() { _PHASE_START=$(date +%s); }
+_phase_done() {
+  local elapsed=$(( $(date +%s) - _PHASE_START ))
+  log_info "$(_ts)   └ ${1:-子阶段}耗时 ${elapsed}s"
 }
 
 # --- 默认参数 ---
@@ -317,6 +334,7 @@ else
   log_warn "当前镜像 ${IMAGE_TAG} 不存在 · 跳过备份（首次部署？）"
   BACKUP_TAG=""
 fi
+_step_done "镜像备份"
 
 # =============================================================================
 # Step（可选）: 构建新镜像（旧服务仍在线 · 失败不影响线上）
@@ -333,6 +351,7 @@ if [[ -n "${BUILD_MODE}" ]]; then
     die "构建失败 · 请检查日志（服务未停止 · 线上不受影响）"
   fi
   log_success "镜像构建完成"
+  _step_done "镜像构建"
 fi
 
 # =============================================================================
@@ -345,6 +364,7 @@ cd "${COSTRA_INFRA}"
 docker compose -f "${COSTRA_COMPOSE_FILE}" --env-file "${COSTRA_ENV_FILE}" \
   stop "${STOP_SERVICES[@]}"
 log_success "已停止 ${RESTART_DESC}"
+_step_done "服务停止"
 
 # =============================================================================
 # Step（可选）: Migration（DB 备份 → migrate · 失败回滚）
@@ -391,6 +411,7 @@ if [[ "${DO_MIGRATE}" == "1" ]]; then
   BACKUP_PREFIX="pre-redeploy-$(date +%Y%m%d-%H%M%S)-$$"
   log_info "调用 backup-db.sh 备份当前 DB（--db-only · 跳过 avatars · 最小化停机）..."
 
+  _phase_begin
   if ! "${SCRIPT_DIR}/backup-db.sh" \
     --prefix "${BACKUP_PREFIX}" \
     --db-only \
@@ -404,6 +425,7 @@ if [[ "${DO_MIGRATE}" == "1" ]]; then
   DUMP_FILE=$(find "${COSTRA_DATA}/backups" -maxdepth 1 -name "${BACKUP_PREFIX}-*.sql.gz" -type f 2>/dev/null | head -1)
   [[ -n "${DUMP_FILE}" && -f "${DUMP_FILE}" ]] || die "备份文件未找到 · 请检查 ${COSTRA_DATA}/backups/"
   log_success "DB 备份完成: ${DUMP_FILE}"
+  _phase_done "DB 备份"
 
   # --- 执行 migration SQL ---
   log_info "执行 ${#RESOLVED_MIGRATION_FILES[@]} 个 migration SQL..."
@@ -427,6 +449,7 @@ psql -v ON_ERROR_STOP=1 -h postgres -U costra -d costra -f \"/migrations/${fname
   # 临时关闭 errexit · 让失败进入回滚逻辑而非直接退出脚本
   set +e
   trap - ERR
+  _phase_begin
   docker run --rm \
     --network "${COMPOSE_NETWORK}" \
     -v "${MIGRATE_TMP}:/migrations:ro" \
@@ -438,6 +461,7 @@ psql -v ON_ERROR_STOP=1 -h postgres -U costra -d costra -f \"/migrations/${fname
   trap 'on_error ${LINENO}' ERR
 
   rm -rf "${MIGRATE_TMP}"
+  _phase_done "Migration SQL 执行"
 
   # --- Migration 失败：回滚 ---
   if [[ ${MIGRATE_EXIT} -ne 0 ]]; then
@@ -486,6 +510,7 @@ psql -v ON_ERROR_STOP=1 -h postgres -U costra -d costra -f \"/migrations/${fname
   fi
 
   log_success "所有 migration 执行成功"
+  _step_done "DB Migration"
 fi
 
 # =============================================================================
@@ -562,6 +587,7 @@ if [[ -n "${PRE_START_HOOK}" ]]; then
   fi
 
   log_success "pre-start-hook 执行成功"
+  _step_done "pre-start-hook"
 fi
 
 # =============================================================================
@@ -585,8 +611,10 @@ if [[ ${#FINAL_UP_SERVICES[@]} -gt 0 ]]; then
   # 用 up -d 而不是 start：up 会用最新镜像重新创建容器（拿到刚 build 的新镜像）
   # start 只会启动旧容器（拿不到新镜像），这是关键差别
   cd "${COSTRA_INFRA}"
+  _phase_begin
   docker compose -f "${COSTRA_COMPOSE_FILE}" --env-file "${COSTRA_ENV_FILE}" \
     up -d "${FINAL_UP_SERVICES[@]}"
+  _phase_done "容器创建(up -d)"
 fi
 
 # 等待 healthy
@@ -607,6 +635,7 @@ while true; do
   ELAPSED=$(( $(date +%s) - START_TS ))
   if [[ "${ALL_HEALTHY}" == "1" ]]; then
     log_success "$(_ts) 所有容器 healthy（耗时 ${ELAPSED}s）"
+    _step_done "服务启动"
     break
   fi
 
