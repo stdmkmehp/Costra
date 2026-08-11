@@ -79,6 +79,13 @@ server {
         proxy_read_timeout 10s;
     }
 
+    # ============== 防扫探 · 拒绝所有 dotfile 访问（.env/.git/.htaccess 等）==============
+    # 扫描器常探 /uploads/.env、/.git/config 等 · 统一 404（不暴露存在性）
+    # 正则 location 优先级高于前缀 location /uploads/ · dotfile 请求在此截断
+    location ~ /\. {
+        return 404;
+    }
+
     # ============== /uploads/ 静态文件（用户头像等持久化上传内容）==============
     # server 容器写入 /var/costra/uploads，bind mount 到宿主机 /data/uploads
     # nginx 容器只读挂载 /data/uploads，直接静态服务，不经过 Fastify
