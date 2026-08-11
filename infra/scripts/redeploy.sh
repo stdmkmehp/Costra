@@ -66,6 +66,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
 
+# --- 关键路径时间戳 ---
+# 重部署关键路径（各 Step 标题 + healthy 等待）统一带时间戳，便于事后核查各阶段耗时。
+# 仅覆盖本脚本用到的 log_step，不改动 common.sh，不影响其他脚本。
+_ts() { date '+%Y-%m-%d %H:%M:%S'; }
+log_step() {
+  printf "\n${C_BOLD}${C_CYAN}===> %s %s${C_RESET}\n" "$(_ts)" "$*"
+}
+
 # --- 默认参数 ---
 RESTART_SERVER=1
 RESTART_NGINX=0
@@ -282,6 +290,9 @@ if [[ "${ASSUME_YES}" != "1" ]]; then
   confirm "确认开始重部署？将停止 ${RESTART_DESC}" || die "用户取消"
 fi
 
+# 部署实际开始时刻（用于末尾统计总耗时 · 不含交互确认等待）
+DEPLOY_START=$(date +%s)
+
 # 计算总步数
 TOTAL_STEPS=2                # 停止 + 启动
 TOTAL_STEPS=$((TOTAL_STEPS + 1))                # 镜像备份（始终执行）
@@ -350,20 +361,20 @@ if [[ "${DO_MIGRATE}" == "1" ]]; then
       up -d postgres
 
     # 等待 postgres healthy
-    log_info "等待 postgres healthy..."
+    log_info "$(_ts) 等待 postgres healthy..."
     PG_WAIT_START=$(date +%s)
     while true; do
       PG_STATUS=$(docker inspect --format '{{.State.Health.Status}}' "${PG_CONTAINER}" 2>/dev/null || echo "missing")
+      PG_ELAPSED=$(( $(date +%s) - PG_WAIT_START ))
       if [[ "${PG_STATUS}" == "healthy" ]]; then
-        log_success "postgres healthy ✓"
+        log_success "$(_ts) postgres healthy ✓（耗时 ${PG_ELAPSED}s）"
         break
       fi
-      PG_ELAPSED=$(( $(date +%s) - PG_WAIT_START ))
       if [[ "${PG_ELAPSED}" -ge "${HEALTHY_TIMEOUT}" ]]; then
-        log_error "postgres 未能在 ${HEALTHY_TIMEOUT}s 内 healthy（status=${PG_STATUS}）· migration 中止"
+        log_error "$(_ts) postgres 未能在 ${HEALTHY_TIMEOUT}s 内 healthy（status=${PG_STATUS}）· migration 中止"
         bring_up_old_and_exit
       fi
-      echo -n "."
+      log_info "$(_ts) 等待 postgres healthy · 已 ${PG_ELAPSED}s · status=${PG_STATUS}"
       sleep 3
     done
   else
@@ -579,27 +590,28 @@ if [[ ${#FINAL_UP_SERVICES[@]} -gt 0 ]]; then
 fi
 
 # 等待 healthy
-log_info "等待容器 healthy..."
+log_info "$(_ts) 开始等待容器 healthy..."
 START_TS=$(date +%s)
 
 while true; do
   ALL_HEALTHY=1
+  NOT_HEALTHY_STATUS=""
   for c in "${HEALTH_CONTAINERS[@]}"; do
     STATUS=$(docker inspect --format '{{.State.Health.Status}}' "$c" 2>/dev/null || echo "missing")
     if [[ "${STATUS}" != "healthy" ]]; then
       ALL_HEALTHY=0
-      break
+      NOT_HEALTHY_STATUS+=" ${c}=${STATUS}"
     fi
   done
 
+  ELAPSED=$(( $(date +%s) - START_TS ))
   if [[ "${ALL_HEALTHY}" == "1" ]]; then
-    log_success "所有容器 healthy"
+    log_success "$(_ts) 所有容器 healthy（耗时 ${ELAPSED}s）"
     break
   fi
 
-  ELAPSED=$(( $(date +%s) - START_TS ))
   if [[ "${ELAPSED}" -ge "${HEALTHY_TIMEOUT}" ]]; then
-    log_error "等待超时（${HEALTHY_TIMEOUT}s）· 当前状态："
+    log_error "$(_ts) 等待超时（${HEALTHY_TIMEOUT}s）· 当前状态：${NOT_HEALTHY_STATUS}"
     docker compose -f "${COSTRA_COMPOSE_FILE}" ps
     echo ""
     log_error "诊断建议："
@@ -608,7 +620,7 @@ while true; do
     die "容器未能在 ${HEALTHY_TIMEOUT}s 内变为 healthy"
   fi
 
-  echo -n "."
+  log_info "$(_ts) 等待 healthy · 已 ${ELAPSED}s ·${NOT_HEALTHY_STATUS}"
   sleep 3
 done
 
@@ -617,6 +629,7 @@ done
 # =============================================================================
 echo ""
 print_section_header "✅ 重部署完成（${RESTART_DESC}）"
+log_info "$(_ts) 总耗时 $(( $(date +%s) - DEPLOY_START ))s"
 
 echo ""
 docker compose -f "${COSTRA_COMPOSE_FILE}" ps
