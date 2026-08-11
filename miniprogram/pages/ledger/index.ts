@@ -395,14 +395,16 @@ Page({
   _filterEntryType: 'all' as EntryTypeFilter,
   /** 成员筛选：选中的 user_id 集合（空 = 全选） */
   _filterSelectedMemberIds: [] as string[],
-  /** 分类筛选：选中的二级分类 ID 集合（空 = 不过滤） */
-  _filterCategoryIds: new Set<string>(),
+  /** 分类筛选：选中的二级分类 ID 集合（空 = 不过滤）
+   *  初值 null：onLoad 中实例化为 Set，避免 Page 构造期 deep clone Set/Map 触发微信 warning */
+  _filterCategoryIds: null as Set<string> | null,
   /** 分类筛选是否激活（非全选时为 true） */
   _categoryFilterActive: false as boolean,
   /** 分类名搜索索引：tier2Id → { tier1Name, tier2Name, tier1NameLc, tier2NameLc }
    *  由 _buildFilterCategories 在每次分类列表重建时刷新；
-   *  _buildDisplay 关键词搜索用此索引同时匹配一级 + 二级分类名。 */
-  _categorySearchIndex: new Map<string, { tier1Name: string; tier2Name: string; tier1NameLc: string; tier2NameLc: string }>(),
+   *  _buildDisplay 关键词搜索用此索引同时匹配一级 + 二级分类名。
+   *  初值 null：onLoad 中实例化为 Map，避免 Page 构造期 deep clone Set/Map 触发微信 warning */
+  _categorySearchIndex: null as Map<string, { tier1Name: string; tier2Name: string; tier1NameLc: string; tier2NameLc: string }> | null,
   /** 搜索关键词（trim 后，空 = 不过滤） */
   _filterKeyword: '' as string,
   /** 搜索防抖 timer */
@@ -470,6 +472,9 @@ Page({
 
   // onLoad gate（冗余兜底 · onShow gate 是主防线）
   onLoad() {
+    // 实例化 Set/Map 字段：初值 null 避免 Page 构造期 deep clone 触发微信 warning
+    this._filterCategoryIds = new Set();
+    this._categorySearchIndex = new Map();
     this._refreshSafeAreaLayout();
     this.setData({
       monthDisplay: formatMonthDisplay(this.data.currentMonth),
@@ -1269,7 +1274,7 @@ Page({
     }
 
     // 分类过滤（按选中的二级 category_id 集合）
-    if (this._categoryFilterActive && this._filterCategoryIds.size > 0) {
+    if (this._categoryFilterActive && this._filterCategoryIds && this._filterCategoryIds.size > 0) {
       const catIds = this._filterCategoryIds;
       entries = entries.filter(e => e.category_id != null && catIds.has(e.category_id));
     }
@@ -1283,7 +1288,7 @@ Page({
         if (note.includes(kw)) return true;
         // 命中一级或二级分类名即匹配（即使该二级未在 _filterCategoryIds 中）
         if (e.category_id != null) {
-          const hit = idx.get(e.category_id);
+          const hit = idx?.get(e.category_id);
           if (hit) {
             if (hit.tier2NameLc.includes(kw)) return true;
             if (hit.tier1NameLc.includes(kw)) return true;
@@ -1643,7 +1648,7 @@ Page({
   onFilterCategoryToggle(e: WechatMiniprogram.CustomEvent<{ categoryId: string }>) {
     const catId = e.detail.categoryId;
     if (!catId) return;
-    const ids = new Set(this._filterCategoryIds);
+    const ids = new Set(this._filterCategoryIds ?? []);
     if (ids.has(catId)) {
       ids.delete(catId);
     } else {
@@ -1677,7 +1682,7 @@ Page({
     const categories = this.data.filterCategories as FilterCategoryItem[];
     const found = categories.find(c => c.id === parentId);
     if (!found) return;
-    const ids = new Set(this._filterCategoryIds);
+    const ids = new Set(this._filterCategoryIds ?? []);
     // 检查是否已全选
     const allSelected = found.children.every(c => ids.has(c.id));
     if (allSelected) {
@@ -1735,6 +1740,7 @@ Page({
     if (categories.length === 0) return;
 
     const ids = this._filterCategoryIds;
+    if (!ids) return;
     let allCategorySelected = true;
 
     const updated = categories.map(cat => {
