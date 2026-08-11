@@ -80,6 +80,7 @@ interface AppOption {
   onShow(): void;
   onHide(): void;
   onError(msg: string): void;
+  checkForUpdate(): void;
 }
 
 App<AppOption>({
@@ -98,6 +99,10 @@ App<AppOption>({
     setPerfContext({ appEnv: this.globalData.env.name, launch: 'cold' });
     captureNetworkType();
     logger.info('Costra', 'onLaunch', { env: this.globalData.env.name });
+
+    // 版本更新检查：微信平台在冷启动时后台下载新版本，下载完成后引导用户重启应用。
+    // 不阻断 bootstrap 与首屏渲染，纯异步 fire-and-forget。
+    this.checkForUpdate();
 
     // COSTRA-901: 隐私授权回调不在此处全局注册。
     // chooseAvatar/nickname 仅在 profile-setup 页面使用，弹窗由该页面的 privacy-popup 组件自行处理。
@@ -208,6 +213,50 @@ App<AppOption>({
           });
         }
       }
+    });
+  },
+
+  /**
+   * 版本更新检查（wx.getUpdateManager）。
+   *
+   * 微信平台行为：冷启动时若检测到新版本，会在后台异步下载，本次仍用旧版启动。
+   * 下载完成后通过 onUpdateReady 回调通知，此时调用 applyUpdate 重启即用上新版本，
+   * 省掉用户再次冷启动的等待。onUpdateFailed 时提示用户手动删除小程序重进。
+   *
+   * 注意：
+   * - 开发者工具 / 低版本基础库无此 API，需 typeof 守卫
+   * - 纯异步，不阻塞 bootstrap 与首屏
+   * - onCheckForUpdate 仅用于日志，不在此做任何 UI 干预
+   */
+  checkForUpdate() {
+    if (typeof wx.getUpdateManager !== 'function') return;
+    const updateManager = wx.getUpdateManager();
+
+    updateManager.onCheckForUpdate((res) => {
+      logger.info('Costra', 'update-check', { hasUpdate: res.hasUpdate });
+    });
+
+    updateManager.onUpdateReady(() => {
+      wx.showModal({
+        title: '更新提示',
+        content: '新版本已下载，是否重启应用？',
+        confirmText: '重启',
+        cancelText: '稍后',
+        success: (res) => {
+          if (res.confirm) {
+            updateManager.applyUpdate();
+          }
+        }
+      });
+    });
+
+    updateManager.onUpdateFailed(() => {
+      wx.showModal({
+        title: '更新提示',
+        content: '新版本下载失败，请删除当前小程序后重新搜索打开',
+        showCancel: false,
+        confirmText: '知道了'
+      });
     });
   },
 
