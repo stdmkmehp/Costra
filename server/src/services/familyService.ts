@@ -183,7 +183,7 @@ export async function listFamilies(userId: string): Promise<FamilyResponse[]> {
 /**
  * 创建 shared family + owner member + 默认 ledger（事务一致）
  * 上限校验：
- *   - 产品配置上限：maxSharedFamilies（当前 3）→ 422 BUSINESS_RULE_VIOLATION
+ *   - 产品配置上限：maxSharedFamilies（当前 5）→ 422 BUSINESS_RULE_VIOLATION
  *   - 程序硬上限：maxSharedFamiliesHardLimit（20）→ 422 BUSINESS_RULE_VIOLATION
  * 两层都在事务外提前校验，避免无意义的 INSERT 尝试。
  */
