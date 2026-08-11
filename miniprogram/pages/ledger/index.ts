@@ -1581,8 +1581,8 @@ Page({
 
   /** 筛选面板：关闭 */
   onFilterPanelClose() {
-    // panel 不可见时直接 bail：scroll-view 的 catchtap 会在 panel 不可见时也命中此方法，
-    // 若不 bail 会把成员误"自动全选"、误触发 _buildDisplay 列表重渲。
+    // panel 不可见时直接 bail：入口调用方（filter-panel close 事件 / onListBlankTap 二次转发）
+    // 都可能在 panel 已收起时再次触发，若不 bail 会把成员误"自动全选"、误触发 _buildDisplay。
     if (!this.data.filterPanelVisible) return;
     // 关闭时若无成员选中 → 自动全选
     const hasSelected = this.data.filterMembers.some((m: FilterMemberItem) => m.selected);
@@ -1597,6 +1597,21 @@ Page({
     this.setData({ filterPanelVisible: false });
     this._updateFilterState();
     this._buildDisplay();
+  },
+
+  /**
+   * scroll-view 空白区域兜底 tap（COSTRA-明细页备注编辑修复）
+   * 背景：`<scroll-view>` 用 catchtap 阻断冒泡，会把外层 `.ledger bindtap="onTapPage"` 的
+   *   所有兜底职责（备注 inline 编辑清态 / swipe reset / 其他弹层关闭）一并拦截；
+   *   iOS 系统级"点 input 外收键盘"照跑，但 app 层清不掉编辑态，导致行高亮残留、
+   *   下次点其他备注被 `_consumeNoteEditingIfActive` 吞掉一次表现为"没响应"。
+   * 因此此 handler 必须把 onTapPage 里与列表空白区可能重叠的兜底职责补齐：
+   *   1) 备注编辑中 → 保存并收键盘（与 onTapPage 语义对齐）
+   *   2) 筛选面板展开 → 关闭面板（scroll-view catchtap 的原有职责）
+   */
+  onListBlankTap() {
+    if (this._consumeNoteEditingIfActive()) return;
+    if (this.data.filterPanelVisible) this.onFilterPanelClose();
   },
 
   // ─── 交互：搜索 ──────────────────────────────────────────────────────────────
