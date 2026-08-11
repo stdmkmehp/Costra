@@ -46,15 +46,15 @@
     </view>
   </view>
 
-  <!-- 12 月简表 · 莫兰迪三色线条版（2026-08-05 改版） -->
+  <!-- 12 月简表 · 莫兰迪双色线条版 -->
   <!--
     左：月份标签（可点击进月度页）
     右：双行条形图
-       · barLayout='income-top'（balance>=0）：上排 [支出][结余] 拼接长度 = 下排 [收入]
-       · barLayout='expense-top'（balance<0） ：上排 [收入][|结余|] 拼接长度 = 下排 [支出]
-       · 每条线宽度 = item.{expense|income|balance}Ratio * 100%
-       · 全年统一基线（globalMax = max(month.expense, month.income, |month.balance|)），
+       · 上排 [支出]，下排 [收入]
+       · 每条线宽度 = item.{expense|income}Ratio * 100%
+       · 全年统一基线（globalMax = max(month.expense, month.income)），
          让 12 个月能直接对比长短
+       · 结余 = income - expense，由数字行"余"列展示精确值
   -->
   <view class="month-list" wx:if="{{yearlyByMember[member.key].months.length > 0}}">
     <view class="month-list__title">月度流水</view>
@@ -69,10 +69,6 @@
         <view class="month-list__legend-dot month-list__legend-dot--income"></view>
         <text>收入</text>
       </view>
-      <view class="month-list__legend-item">
-        <view class="month-list__legend-dot month-list__legend-dot--balance"></view>
-        <text>结余</text>
-      </view>
     </view>
 
     <view
@@ -86,28 +82,17 @@
 
       <view class="month-list__bars" wx:if="{{!item.isEmpty}}">
         <!--
-          第一排：上排 = 较小者（按 barLayout 切到支/收 + 1段 |结余|）
-          balance>=0 时：第一排 [支出+结余] = 第二排 [收入]
-          balance<0  时：第一排 [收入+|结余|] = 第二排 [支出]
+          双行条形图：上排 [支出]，下排 [收入]
+          · 每条线宽度 = item.{expense|income}Ratio * 100%
+          · 全年统一基线（globalMax = max(month.expense, month.income)），
+            让 12 个月能直接对比长短
+          · 结余 = income - expense，由数字行"余"列展示精确值
         -->
         <view class="month-list__bar-row">
-          <block wx:if="{{item.barLayout === 'income-top'}}">
-            <view class="month-list__bar-track month-list__bar-track--expense" style="width: {{item.expenseRatio * 100}}%;"></view>
-            <view class="month-list__bar-track month-list__bar-track--balance" style="width: {{item.balanceRatio * 100}}%;"></view>
-          </block>
-          <block wx:else>
-            <view class="month-list__bar-track month-list__bar-track--income" style="width: {{item.incomeRatio * 100}}%;"></view>
-            <view class="month-list__bar-track month-list__bar-track--balance" style="width: {{item.balanceRatio * 100}}%;"></view>
-          </block>
+          <view class="month-list__bar-track month-list__bar-track--expense" style="width: {{item.expenseRatio * 100}}%;"></view>
         </view>
-        <!-- 第二排：上排的两条拼接长度 = 此排单线长度（视觉自洽） -->
         <view class="month-list__bar-row">
-          <block wx:if="{{item.barLayout === 'income-top'}}">
-            <view class="month-list__bar-track month-list__bar-track--income" style="width: {{item.incomeRatio * 100}}%;"></view>
-          </block>
-          <block wx:else>
-            <view class="month-list__bar-track month-list__bar-track--expense" style="width: {{item.expenseRatio * 100}}%;"></view>
-          </block>
+          <view class="month-list__bar-track month-list__bar-track--income" style="width: {{item.incomeRatio * 100}}%;"></view>
         </view>
 
         <!-- 数字行：保留原 支/收/余 文本，避免完全去掉数字让用户失去精确信息 -->

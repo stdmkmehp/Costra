@@ -310,7 +310,7 @@ page {
   margin-bottom: 16rpx;
 }
 
-/* 图例：支出 / 收入 / 结余 · 颜色与下方线条一致 */
+/* 图例：支出 / 收入 · 颜色与下方线条一致 */
 .month-list__legend {
   display: flex;
   align-items: center;
@@ -333,9 +333,8 @@ page {
   flex: none;
 }
 
-.month-list__legend-dot--expense { background: #CC7566; } /* 莫兰迪赤陶 */
-.month-list__legend-dot--income{ background: #6B9B78; } /* 莫兰迪苔藓绿 */
-.month-list__legend-dot--balance { background: #C4A855; } /* 莫兰迪暗金 */
+.month-list__legend-dot--expense { background: #AC7B6C; } /* 莫兰迪赤陶粉 */
+.month-list__legend-dot--income  { background: #8FAA83; } /* 莫兰迪鼠尾草绿 */
 
 .month-list__row {
   display: flex;
@@ -378,9 +377,8 @@ page {
   transition: width 0.25s ease;
 }
 
-.month-list__bar-track--expense { background: #CC7566; } /* 莫兰迪赤陶 */
-.month-list__bar-track--income  { background: #6B9B78; } /* 莫兰迪苔藓绿 */
-.month-list__bar-track--balance { background: #C4A855; } /* 莫兰迪暗金 */
+.month-list__bar-track--expense { background: #AC7B6C; } /* 莫兰迪赤陶粉 · 支出 */
+.month-list__bar-track--income  { background: #8FAA83; } /* 莫兰迪鼠尾草绿 · 收入 */
 
 /* 数字行：三列等宽对齐，保证纵向"支/收/余"字对齐 */
 .month-list__bar-numbers {

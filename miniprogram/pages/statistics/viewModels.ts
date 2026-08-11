@@ -167,22 +167,18 @@ export function buildL1Display(c: StatCategoryRankItem, prevList: L1Display[]): 
 }
 
 /**
- * 2026-08-05：年度页"月度流水"线条可视化构建器
+ * 年度页"月度流水"双行条形图构建器
  *
- * 设计意图：用 3 条莫兰迪色线条展示 12 个月的收入/支出/结余，让用户一眼看出
- *   "收入 - 支出 = 结余"（按钱数，不按线长）的关系，并能在月与月之间直接对比。
+ * 设计意图：用 2 条莫兰迪色线条展示 12 个月的收入/支出，让用户一眼看出
+ *   两线长短对比（收入线长于支出线 = 盈利），并能在月与月之间直接对比。
  *
  * 长度算法：
- *   - 全局基线 globalMax = max(month.expense, month.income, |month.balance|)
+ *   - 全局基线 globalMax = max(month.expense, month.income)
  *     保证任一线条长度 <= 100% 且跨月可比。
  *   - 每行 ratio = value / globalMax（0~1）；globalMax=0 时 ratio=0
  *     （空数据月按 0 渲染，模板不显示线条，仅显示占位"无记录"提示）。
  *
- * 布局策略（按结余正负决定谁在上排）：
- *   - balance >= 0：'income-top' → 第一行 [支出 + 结余] 拼起来 = 收入，第二行 [收入]
- *   - balance <  0：'expense-top' → 第一行 [收入 + |结余|] 拼起来 = 支出，第二行 [支出]
- *   两种情况下，第一行两条线段"首尾相接"的可视化总和 = 第二行单线长度
- *   （基于同一基线归一化），契合 income - expense = balance 的算式语义。
+ * 结余不在图上画线，由数字行"余"列展示精确值。
  *
  * @param monthlyTrend 后端返回的 12 月数据；不存在的月补 0（保证渲染 12 行）
  */
@@ -200,7 +196,7 @@ export function buildMonthRows(monthlyTrend: MonthlyTrendItem[]): MonthRow[] {
   let globalMax = 0;
   for (let m = 1; m <= 12; m++) {
     const it = bucket[m];
-    const monthPeak = Math.max(it.expense, it.income, Math.abs(it.balance));
+    const monthPeak = Math.max(it.expense, it.income);
     if (monthPeak > globalMax) globalMax = monthPeak;
   }
 
@@ -209,9 +205,6 @@ export function buildMonthRows(monthlyTrend: MonthlyTrendItem[]): MonthRow[] {
   for (let m = 1; m <= 12; m++) {
     const it = bucket[m];
     const ratio = (v: number): number => (globalMax > 0 ? v / globalMax : 0);
-    const expenseRatio = ratio(it.expense);
-    const incomeRatio = ratio(it.income);
-    const balanceRatio = ratio(Math.abs(it.balance));
     const isEmpty = it.expense === 0 && it.income === 0;
     rows.push({
       month: m,
@@ -222,11 +215,8 @@ export function buildMonthRows(monthlyTrend: MonthlyTrendItem[]): MonthRow[] {
       isEmpty,
       expenseCents: it.expense,
       incomeCents: it.income,
-      balanceCents: it.balance,
-      expenseRatio,
-      incomeRatio,
-      balanceRatio,
-      barLayout: it.balance >= 0 ? 'income-top' : 'expense-top',
+      expenseRatio: ratio(it.expense),
+      incomeRatio: ratio(it.income),
     });
   }
   return rows;

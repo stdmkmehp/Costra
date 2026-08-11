@@ -578,8 +578,7 @@ Page({
         : '—' },
     ];
 
-    // 2026-08-05：buildMonthRows 把 12 个月按"全年统一基线"归一化，
-    // 并按 balance 正负决定 barLayout，让"income - expense = balance"在视觉上自洽。
+    // buildMonthRows 把 12 个月按"全年统一基线"归一化，生成双行条形图数据。
     const months: MonthRow[] = buildMonthRows(monthly_trend);
 
     const prevList = this.data.yearlyByMember[memberKey]?.l1 ?? [];
