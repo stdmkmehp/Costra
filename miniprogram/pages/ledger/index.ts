@@ -466,7 +466,7 @@ Page({
       statusBarHeight,
       navBarHeight,
       navBarTotalHeight,
-      entryListBottomPadding: Math.round(rpxToPx(120, windowWidth) + visualSafeAreaBottom),
+      entryListBottomPadding: Math.round(rpxToPx(90, windowWidth) + visualSafeAreaBottom),
     });
   },
 
