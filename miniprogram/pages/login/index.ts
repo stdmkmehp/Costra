@@ -18,7 +18,7 @@ import { scheduleHomeDataPrefetchAfterLedgerReady } from '../../services/prefetc
 
 interface AppWithBootstrap {
   bootstrapPromise: Promise<void>;
-  globalData: { pendingInviteToken?: string | null };
+  globalData: { pendingInviteToken?: string | null; userLoggedOut?: boolean };
 }
 
 Page({
@@ -27,6 +27,8 @@ Page({
     loading: true,
     // 自动登录失败 → 显示「重试登录」按钮
     failed: false,
+    // 用户主动登出 → 显示「登录」按钮（与 failed 区分文案）
+    loggedOut: false,
     errMsg: '' as string,
     slogan: '' as string,
   },
@@ -41,6 +43,13 @@ Page({
       // 已有有效会话（bootstrap 已恢复/静默登录成功）→ 直接跳转，通常不会停留在本页
       if (hasValidSession()) {
         this._redirectAfterLogin();
+        return;
+      }
+      // 用户主动登出：消费标志 → 停留本页显示「登录」按钮，不自动静默登录
+      // （仅 mine 页 onTapLogout → logout() 会置位；401 续签失败 / bootstrap 失败不置位，走下方自动登录）
+      if (app.globalData.userLoggedOut) {
+        app.globalData.userLoggedOut = false;
+        this.setData({ loading: false, failed: true, loggedOut: true, errMsg: '已退出登录' });
         return;
       }
       // 方案 X：未登录时自动静默登录，无需用户点按钮（覆盖 bootstrap 静默登录失败 / 401 过期兜底路径）
@@ -79,7 +88,7 @@ Page({
    *  失败：不 reLaunch，停留本页显示「重试登录」按钮
    */
   async _runLogin() {
-    this.setData({ loading: true, failed: false, errMsg: '' });
+    this.setData({ loading: true, failed: false, loggedOut: false, errMsg: '' });
 
     try {
       await loginFlow();

@@ -245,6 +245,8 @@ export async function logout(): Promise<void> {
   const app = getApp();
   if (app?.globalData) {
     app.globalData.activeLedgerId = undefined;
+    // 主动登出标志：login 页 onLoad 读到即清零，跳过自动静默登录（避免登出后被立刻拉回）
+    app.globalData.userLoggedOut = true;
   }
 
   // 清理当前用户 recurring 本地数据（缓存 + mutation queue），避免下一位登录用户串数据。

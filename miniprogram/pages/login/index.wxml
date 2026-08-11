@@ -15,7 +15,7 @@
     <view wx:if="{{loading}}" class="login__status">登录中…</view>
     <!-- 自动登录失败 → 显示重试按钮 -->
     <block wx:if="{{failed}}">
-      <button class="login__btn" bindtap="onTapRetry">重试登录</button>
+      <button class="login__btn" bindtap="onTapRetry">{{loggedOut ? '登录' : '重试登录'}}</button>
       <view wx:if="{{errMsg}}" class="login__err">{{errMsg}}</view>
     </block>
   </view>

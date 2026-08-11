@@ -57,6 +57,14 @@ interface AppGlobalData {
    * - undefined：尚未决策（首次启动 · 等待 wx.onNeedPrivacyAuthorization 触发）。
    */
   privacyAuthorized?: 'granted' | 'denied';
+
+  /**
+   * 用户主动登出标志。
+   * - logout() 置 true → login 页 onLoad 读到即清零，跳过自动静默登录、显示「登录」按钮。
+   * - App 实例销毁（杀进程/冷启动）天然重置为 undefined，免登录墙正常工作。
+   * - 401 续签失败 / bootstrap 静默登录失败 跳 login 时不置位，保持自动登录。
+   */
+  userLoggedOut?: boolean;
 }
 
 /**
