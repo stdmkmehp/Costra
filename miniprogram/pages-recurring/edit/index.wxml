@@ -146,7 +146,7 @@
     <!-- 卡片3：预览 -->
     <view class="recedit__card recedit__card--preview">
       <view class="recedit__preview-main">
-        <text class="recedit__preview-icon">⟳</text>
+        <view wx:if="{{previewDesc}}" class="recedit__preview-pill">预览</view>
         <text class="recedit__preview-desc">{{previewDesc || '—'}}</text>
       </view>
       <view class="recedit__preview-next">
