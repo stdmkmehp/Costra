@@ -119,8 +119,8 @@
 
 /* 预览卡片 */
 .recedit__card--preview { padding: 28rpx 32rpx; }
-.recedit__preview-main { display: flex; align-items: flex-start; margin-bottom: 24rpx; }
-.recedit__preview-icon { font-size: 36rpx; color: #A0A69C; margin-right: 12rpx; }
+.recedit__preview-main { display: flex; align-items: center; margin-bottom: 24rpx; }
+.recedit__preview-icon { font-size: 32rpx; color: #A0A69C; margin-right: 12rpx; line-height: 44rpx; }
 .recedit__preview-desc { font-size: 30rpx; font-weight: 500; color: #1c1b1a; line-height: 44rpx; flex: 1; }
 .recedit__preview-next { }
 .recedit__preview-label { display: block; font-size: 24rpx; color: rgba(28,27,26,0.48); margin-bottom: 8rpx; }
