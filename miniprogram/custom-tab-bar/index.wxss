@@ -91,18 +91,23 @@
 }
 
 .tab-center-btn {
-  /* 对齐 tokens accent.wxGreen + design_spec §3 */
-  width: 96rpx;
-  height: 96rpx;
+  /* 2026-08-11：微信绿莫兰迪化，与年度页莫兰迪色系统一
+   * · #54A67F HSL 149°, 32%, 48% — 莫兰迪化降饱和绿
+   * · 色相 149° 与原 #07C160（149°, 93%, 39%）完全一致，认知延续
+   * · 饱和度 32%（v4=35% / v5=29% 折中），莫兰迪与原生之间过渡值
+   * · 明度 48% 接近原 39% 又在莫兰迪区间（55-59%）内
+   * 2026-08-11：按钮尺寸 96→112rpx，凸起高度同步抬升 6rpx */
+  width: 112rpx;
+  height: 112rpx;
   border-radius: 50%;
-  background: #07C160;
+  background: #54A67F;
   display: flex;
   align-items: center;
   justify-content: center;
-  /* 向上凸起于 tabBar 之上 */
-  margin-top: -48rpx;
-  /* 克制的阴影 */
-  box-shadow: 0 4rpx 16rpx rgba(7, 193, 96, 0.35);
+  /* 向上凸起于 tabBar 之上 · 半径 56rpx + 额外抬高 6rpx = -62rpx */
+  margin-top: -62rpx;
+  /* 克制的阴影 · 同步绿色调 */
+  box-shadow: 0 4rpx 16rpx rgba(84, 166, 127, 0.35);
   transition: transform var(--animation-fast, 150ms) var(--easing-default, cubic-bezier(0.25, 0.1, 0.25, 1));
 }
 
@@ -113,7 +118,7 @@
 .tab-center-btn__plus {
   /* 对齐 tokens role.text.onGreen */
   color: #ffffff;
-  font-size: 48rpx;
+  font-size: 56rpx;
   font-weight: 300;
   line-height: 1;
   margin-top: -4rpx;
