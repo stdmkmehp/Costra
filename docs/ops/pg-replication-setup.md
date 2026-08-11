@@ -67,7 +67,7 @@ PG_STANDBY_LAN_IP=10.0.y.y        # 机器②（从）的 VPC 内网 IP（供 pg
 
 ### B-2 · 应用 compose 改动（这是主库唯一的一次重启）
 ```bash
-cd /root/release/Costra/infra
+cd /root/Costra/infra
 docker compose -f docker-compose.prod.yml --env-file /data/conf/server.env up -d postgres
 # compose 检测到 ports/command 变化 → recreate costra-postgres 容器（PG 重启一次）
 docker inspect --format '{{.State.Health.Status}}' costra-postgres   # 等 healthy
@@ -191,7 +191,7 @@ services:
 
 ### C-3 · 启动从库
 ```bash
-cd /root/release/Costra/infra
+cd /root/Costra/infra
 docker compose -f docker-compose.standby.yml --env-file /data/conf/server.env up -d
 docker logs costra-postgres --tail 30      # 应看到 "started streaming WAL from primary"
 ```

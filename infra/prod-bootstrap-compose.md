@@ -24,7 +24,7 @@
 
 ```
 宿主机 49.235.216.20 (tlinux3.3 · 仅 Docker Engine)
-└─ docker compose stack (cd /root/release/Costra/infra)
+└─ docker compose stack (cd /root/Costra/infra)
     ├─ costra-postgres   (postgres:15-alpine · port 127.0.0.1:5432)
     ├─ costra-redis      (redis:7-alpine     · port 127.0.0.1:6379)
     ├─ costra-server     (自构建 · expose 8080 · 容器内部网络)
@@ -89,7 +89,7 @@ PGPASSWORD='[PG_COSTRA_PW]' psql -h 127.0.0.1 -U costra -d costra
 
 ```bash
 ssh root@<prod-ip>
-cd /root/release/Costra/infra/scripts
+cd /root/Costra/infra/scripts
 chmod +x *.sh lib/*.sh
 
 ./deploy-all.sh \
@@ -109,7 +109,7 @@ scp /tmp/{letsencrypt.tar.gz,costra-server.tar.gz} root@<新机器>:/tmp/
 scp /data/conf/server.env root@<新机器>:/data/conf/
 
 # 新机器一键：
-cd /root/release/Costra/infra/scripts
+cd /root/Costra/infra/scripts
 ./deploy-all.sh \
     --reuse-secrets \
     --import-cert /tmp/letsencrypt.tar.gz \
@@ -172,9 +172,9 @@ ss -tlnp | grep -E ':(5432|6379|8080|80|443)\b' || echo "端口全空闲 · OK"
 # Plan C 不需要在容器内拉代码 · 代码挂载到 server 容器 build context
 cd /root/release
 ls -la
-# 期望：costra/ 目录已存在（你之前 docker run -v /root/release/Costra:... 已挂）
+# 期望：costra/ 目录已存在（你之前 docker run -v /root/Costra:... 已挂）
 
-cd /root/release/Costra
+cd /root/Costra
 git status -s    # 期望：工作树干净
 git log --oneline -3
 # 期望：HEAD 是 a2a3959 或更新（含 v1.5 commit）
@@ -194,7 +194,7 @@ ls -la infra/postgres/initdb.d/01-extensions.sql
 ⚠️ **CVE 修复确认**（commit 8ed63ab · fast-jwt 6.2.4 + fast-uri 3.1.2）：
 
 ```bash
-cd /root/release/Costra/server
+cd /root/Costra/server
 grep -E '"fast-jwt"|"fast-uri"' package-lock.json | head -5
 # 期望：fast-jwt": "6.2.4 (或更高) · fast-uri": "3.1.2 (或更高)
 # 如果还是 6.2.2 / 3.1.0 → 跑 npm install 拉新 lockfile
@@ -356,7 +356,7 @@ grep '\[' /data/conf/server.env || echo "✅ 所有占位符已替换"
 
 ```bash
 # === build 机器（同架构高性能机器 · 比如另一台 tlinux 3.3 · 4核8G+）===
-cd /root/release/Costra/infra
+cd /root/Costra/infra
 docker compose -f docker-compose.prod.yml build server
 
 # 验证镜像
@@ -368,15 +368,15 @@ docker save costra-server:latest | gzip > /tmp/costra-server.tar.gz
 ls -lh /tmp/costra-server.tar.gz
 
 # scp 到 prod 机器
-scp /tmp/costra-server.tar.gz root@49.235.216.20:/root/release/
+scp /tmp/costra-server.tar.gz root@49.235.216.20:/tmp/
 
 # === prod 机器 ===
-cd /root/release
+cd /tmp
 gunzip -c costra-server.tar.gz | docker load
 # 期望：Loaded image: costra-server:latest
 
 docker images | grep costra-server   # 验证
-rm /root/release/costra-server.tar.gz # 清理
+rm /tmp/costra-server.tar.gz # 清理
 ```
 
 #### §4.1-B 推到 Docker Hub（标准做法 · 后续 CI/CD 用）
@@ -409,7 +409,7 @@ docker login   # 推荐单独建 Read-only token 给 prod 用 · 更安全
 # 改为：
 #   image: <your-dockerhub-username>/costra-server:latest
 
-cd /root/release/Costra/infra
+cd /root/Costra/infra
 docker compose -f docker-compose.prod.yml pull server
 ```
 
@@ -418,7 +418,7 @@ docker compose -f docker-compose.prod.yml pull server
 #### §4.1-C 直接在 prod build（机器规格 ≥4 核 4G 才考虑）
 
 ```bash
-cd /root/release/Costra/infra
+cd /root/Costra/infra
 # build server image（首次 ~5-10 min · 后续增量 ~30s · ⚠️ 2核2G 机器实测 4000s+ 不会完成）
 docker compose -f docker-compose.prod.yml build server
 
@@ -442,7 +442,7 @@ docker compose -f docker-compose.prod.yml pull postgres redis nginx
 > **正确顺序**：先起 postgres/redis/server 三个 → 跑 §5 migrations → §6 签证书 + 改 conf → 最后才 up nginx。
 
 ```bash
-cd /root/release/Costra/infra
+cd /root/Costra/infra
 
 # ⚠️ 显式只起 3 服务 · 不起 nginx（避免无证书 restart 循环）
 docker compose -f docker-compose.prod.yml --env-file /data/conf/server.env up -d \
@@ -515,10 +515,10 @@ ls -lh /data/backups/
 
 ```bash
 # 把 server 容器内代码拷一份 · 跑 migrate.sh
-# server 容器已挂载 /root/release/Costra/server 到 /app · 但默认 build 时 COPY · 不是挂载
+# server 容器已挂载 /root/Costra/server 到 /app · 但默认 build 时 COPY · 不是挂载
 # 用 docker compose run 临时跑（一次性容器 · 跑完自动删）
 
-cd /root/release/Costra/infra
+cd /root/Costra/infra
 
 # 方式 1（推荐）: 用 server image 跑 migrate · 用 compose 网络连 postgres
 docker compose -f docker-compose.prod.yml --env-file /data/conf/server.env run --rm \
@@ -531,7 +531,7 @@ docker compose -f docker-compose.prod.yml --env-file /data/conf/server.env run -
 # 方式 2（备选 · 更可靠）: postgres 容器 + 挂载 migrations
 docker run --rm \
   --network costra_default \
-  -v /root/release/Costra/server/db/migrations:/migrations:ro \
+  -v /root/Costra/server/db/migrations:/migrations:ro \
   -e PGPASSWORD='[PG_COSTRA_PW]' \
   postgres:15-alpine \
   bash -c 'for f in /migrations/*.sql; do echo "=== $(basename $f) ==="; psql -h postgres -U costra -d costra -f "$f"; done'
@@ -594,7 +594,7 @@ nginx（临时 or compose）收到 LE 访问 → location /.well-known/acme-chal
 ### §6.1 首次签 cert（webroot 模式 · 临时 nginx 容器）
 
 ```bash
-cd /root/release/Costra/infra
+cd /root/Costra/infra
 
 # 0. 防御性确认 80 端口空闲（compose nginx 没在跑）
 docker ps -a --filter name=costra-nginx --format '{{.Names}} {{.Status}}'
@@ -656,7 +656,7 @@ ss -tlnp | grep :80 || echo "80 端口已释放 ✓"
 > nginx conf 第 49-57 行 9 个 SSL 指令原本注释 · 签完证书后必须取消注释 · 否则启动报 `no "ssl_certificate" is defined for the "listen ... ssl" directive` 反复 restart。
 
 ```bash
-cd /root/release/Costra/infra
+cd /root/Costra/infra
 
 # 用 sed 一把梭取消注释（精确匹配 9 行 SSL 配置）
 # ⚠️ 操作对象是 live 配置（/data/conf/nginx）· 不是 repo 模板
@@ -719,7 +719,7 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # certbot 自己判断是否到期（默认到期前 30 天才真续）· 没到期会静默跳过
 # --deploy-hook 只在真续到新证书后才 reload nginx · 避免每天空 reload
 # -T 关闭 TTY 分配（cron 没 TTY · 不加报错）
-17 3 * * * root certbot renew --quiet --deploy-hook "docker compose -f /root/release/Costra/infra/docker-compose.prod.yml exec -T nginx nginx -s reload" >> /var/log/certbot-renew.log 2>&1
+17 3 * * * root certbot renew --quiet --deploy-hook "docker compose -f /root/Costra/infra/docker-compose.prod.yml exec -T nginx nginx -s reload" >> /var/log/certbot-renew.log 2>&1
 EOF
 
 # 让 crond 重载
@@ -735,7 +735,7 @@ certbot renew --dry-run
 # ✅ v1.6 天然 webroot · 不会报 "Could not bind to IPv4" 错误
 
 # 验证 deploy-hook 命令本身能跑（手动模拟）
-docker compose -f /root/release/Costra/infra/docker-compose.prod.yml exec -T nginx nginx -s reload
+docker compose -f /root/Costra/infra/docker-compose.prod.yml exec -T nginx nginx -s reload
 # 期望：无输出（success）
 docker logs costra-nginx --tail 5
 # 期望：... signal process started 或 reloading configuration
@@ -759,15 +759,15 @@ curl -fsS -o /dev/null -w "%{http_code}\n" https://costra.cloud/v1/users/me
 # 期望：401
 
 # 闸门 4 · 4 容器 healthy
-docker compose -f /root/release/Costra/infra/docker-compose.prod.yml ps --format json | jq -r '.[] | "\(.Name) \(.Health)"'
+docker compose -f /root/Costra/infra/docker-compose.prod.yml ps --format json | jq -r '.[] | "\(.Name) \(.Health)"'
 # 期望：4 行 "... healthy"
 
 # 闸门 5 · D-026 §2.3 C2 mock 红线 grep
-docker compose -f /root/release/Costra/infra/docker-compose.prod.yml logs server | grep -i 'mockLogin.*true\|WX_MOCK_LOGIN enabled\|"mock"' | head -5
+docker compose -f /root/Costra/infra/docker-compose.prod.yml logs server | grep -i 'mockLogin.*true\|WX_MOCK_LOGIN enabled\|"mock"' | head -5
 # 期望：无任何输出（grep exit 1）
 
 # 反向验证（应该 wxMockLogin=false）
-docker compose -f /root/release/Costra/infra/docker-compose.prod.yml logs server | grep -i 'wxMockLogin.*false' | head -3
+docker compose -f /root/Costra/infra/docker-compose.prod.yml logs server | grep -i 'wxMockLogin.*false' | head -3
 # 期望：至少 1 行
 ```
 
@@ -784,7 +784,7 @@ docker compose -f /root/release/Costra/infra/docker-compose.prod.yml logs server
 数据/配置/镜像都在宿主机，直接 `up -d` 即可：
 
 ```bash
-cd /root/release/Costra/infra
+cd /root/Costra/infra
 docker compose -f docker-compose.prod.yml --env-file /data/conf/server.env up -d
 # 等 ~30s 全部 healthy
 docker compose -f docker-compose.prod.yml ps
@@ -795,7 +795,7 @@ docker compose -f docker-compose.prod.yml ps
 ### 场景 B：`git pull` 更新代码后重启服务
 
 ```bash
-cd /root/release/Costra
+cd /root/Costra
 git pull origin dev
 
 # 如果只改了 server 代码（需重新 build 镜像）：
@@ -815,7 +815,7 @@ docker exec costra-nginx nginx -t && docker exec costra-nginx nginx -s reload
 ### 场景 C：只重启某个容器
 
 ```bash
-cd /root/release/Costra/infra
+cd /root/Costra/infra
 # 例如重启 server：
 docker compose -f docker-compose.prod.yml --env-file /data/conf/server.env restart server
 # 例如重启 nginx：
@@ -937,7 +937,7 @@ docker compose -f docker-compose.prod.yml --env-file /data/conf/server.env confi
 **修复（v1.5.1 已落地）**：§4.3 改为只起 3 服务（postgres/redis/server）· §6 完整路径：①签证书 → ②sed 取消注释 → ③`nginx -t` 测语法 → ④`up -d nginx`。
 **踩坑后救火**：
 ```bash
-cd /root/release/Costra/infra
+cd /root/Costra/infra
 
 # 1. 干掉反复 restart 的 nginx
 docker compose -f docker-compose.prod.yml rm -sf nginx
@@ -973,12 +973,12 @@ docker compose -f docker-compose.prod.yml ps
 **修复（v1.5.1 已落地 §6.4）**：加 `-T`（关闭 TTY 分配）：
 ```bash
 # ❌ 旧版（cron 跑会失败）
-0 3 * * * root certbot renew --quiet --deploy-hook "docker compose -f /root/release/Costra/infra/docker-compose.prod.yml exec nginx nginx -s reload"
+0 3 * * * root certbot renew --quiet --deploy-hook "docker compose -f /root/Costra/infra/docker-compose.prod.yml exec nginx nginx -s reload"
 
 # ✅ v1.5.1 新版（加 -T + PATH + 日志 + 错峰 17 分）
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-17 3 * * * root certbot renew --quiet --deploy-hook "docker compose -f /root/release/Costra/infra/docker-compose.prod.yml exec -T nginx nginx -s reload" >> /var/log/certbot-renew.log 2>&1
+17 3 * * * root certbot renew --quiet --deploy-hook "docker compose -f /root/Costra/infra/docker-compose.prod.yml exec -T nginx nginx -s reload" >> /var/log/certbot-renew.log 2>&1
 ```
 
 **配套修复**：v1.5 旧版 §6.1 用 `--standalone` · 续期时会撞 nginx 的 80 端口 → **v1.6 §6.1 已统一用 webroot 模式**（临时 nginx 容器 + certbot --webroot）· renewal.conf 天然 webroot · 续期不需停 nginx（业务零中断）· 详见 §6.0 模式说明。
@@ -990,7 +990,7 @@ certbot renew --dry-run
 # 期望末尾：Congratulations, all simulated renewals succeeded.
 
 # 手动测 deploy-hook 命令本身
-docker compose -f /root/release/Costra/infra/docker-compose.prod.yml exec -T nginx nginx -s reload
+docker compose -f /root/Costra/infra/docker-compose.prod.yml exec -T nginx nginx -s reload
 # 期望：无输出 + nginx logs 显示 reloading configuration
 ```
 

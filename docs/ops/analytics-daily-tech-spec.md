@@ -20,8 +20,8 @@
 
 ### 0.1 独立的工程根
 
-- 本项目目录（`${ANALYZE_HOME}`）**独立于 prod 部署路径** `/root/release/Costra`
-- 建议路径：`/opt/costra-analyze`（明确与 prod 的 `/root/release/Costra` 完全无交叉），**不要**放到 prod 目录任何子目录中
+- 本项目目录（`${ANALYZE_HOME}`）**独立于 prod 部署路径** `/root/Costra`
+- 建议路径：`/opt/costra-analyze`（明确与 prod 的 `/root/Costra` 完全无交叉），**不要**放到 prod 目录任何子目录中
 - 不 `git clone` Costra 主仓库，仅从主仓库**复制 schema 定义参考**（本 tech-spec 已内嵌）
 
 ### 0.2 独立的 Docker 资源
@@ -52,7 +52,7 @@
 
 ```bash
 # 1. 目录不重叠
-[[ "${ANALYZE_HOME}" != /root/release/Costra* ]] || die "路径与 prod 重叠"
+[[ "${ANALYZE_HOME}" != /root/Costra* ]] || die "路径与 prod 重叠"
 
 # 2. 容器名不冲突
 docker ps -a --format '{{.Names}}' | grep -qE '^costra-analyze-pg$'   # 存在

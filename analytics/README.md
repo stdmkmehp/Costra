@@ -275,7 +275,7 @@ Subject 中的 `dump@` 时间戳是**隐性活性指标**——连续两天时�
 
 ```bash
 # 1. 目录不重叠（在部署根执行）
-[[ "$(pwd -P)" != /root/release/Costra* ]] && echo "OK: 路径隔离"
+[[ "$(pwd -P)" != /root/Costra* ]] && echo "OK: 路径隔离"
 
 # 2. 容器名正确
 docker ps --format '{{.Names}}' | grep -q 'costra-analyze-pg' && echo "OK: 容器名"

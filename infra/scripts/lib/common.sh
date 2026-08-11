@@ -37,7 +37,7 @@ fi
 
 # --- 路径基线（从本文件位置自动派生 · 不硬编码 · 仍可被环境变量覆盖）---
 # common.sh 固定位于 <项目根>/infra/scripts/lib/common.sh · 向上三级即项目根。
-# 这样无论部署在 /root/release/Costra 还是开发机 / 任意目录，COSTRA_ROOT 都自解释、
+# 这样无论部署在 /root/Costra 还是开发机 / 任意目录，COSTRA_ROOT 都自解释、
 # 永远等于仓库实际所在路径，杜绝硬编码路径与真实部署路径漂移。
 # 若需覆盖（如非标准挂载），仍可通过环境变量 COSTRA_ROOT=... 传入（:= 会短路命令替换）。
 _COMMON_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

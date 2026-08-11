@@ -444,7 +444,7 @@ openssl rand -base64 32 | tr -d '/+='
 >         ├─ --restart always（容器级自启 · 替代 systemd enable）
 >         ├─ -v /data/logs:/data/logs（日志卷）
 >         ├─ -v /data/conf:/data/conf（配置卷）
->         ├─ -v /root/release/Costra:/root/Costra（代码卷）
+>         ├─ -v /root/Costra:/root/Costra（代码卷）
 >         └─ /bin/bash -c "tail -f /dev/null"（PID 1 长驻 · 不是 systemd）
 > ```
 >
@@ -470,7 +470,7 @@ docker run -d \
   --log-opt max-file=5 \
   -v /data/logs:/data/logs \
   -v /data/conf:/data/conf \
-  -v /root/release/Costra:/root/Costra \
+  -v /root/Costra:/root/Costra \
   -v /etc/localtime:/etc/localtime:ro \
   -e TZ=Asia/Shanghai \
   tencentos/tencentos3:3.3-v20260326 \
@@ -908,7 +908,7 @@ pm2 --version
 
 ```bash
 # 容器内 root 跑
-cd /root/Costra/server   # 你 docker run -v /root/release/Costra:/root/Costra 挂载的路径
+cd /root/Costra/server   # 你 docker run -v /root/Costra:/root/Costra 挂载的路径
 
 # pm2 启动命令（用 --interpreter node + --interpreter-args + 脚本路径）
 # 关键：server 用 tsx loader · 必须 --import tsx/esm 才能跑 TS
