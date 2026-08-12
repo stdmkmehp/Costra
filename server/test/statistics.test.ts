@@ -697,3 +697,251 @@ describe('COSTRA-260: Statistics API · user_id dimension', () => {
     expect(l3Body.category_amount).toBe(3000);
   });
 });
+
+// === 收入分类排行 · 2026-08 ===
+//
+// 覆盖：
+//   TI1  monthly · income_category_ranks 按 parent_id 折叠（多个二级 → 同一一级）
+//   TI2  monthly · income 允许 shared_type IS NULL（与 expense 严格 shared_type IS NOT NULL 相区分）
+//   TI3  monthly · 支出与收入 rank 互不污染（同一家庭同时存在 expense/income）
+//   TI4  yearly  · income_category_ranks 跨月聚合正确
+//   TI5  monthly · income_category_ranks + user_id 维度过滤
+//   TI6  drill-down · entry_type=income 走收入口径（L2/L3）
+//   TI7  drill-down · entry_type 缺省视为 expense（兼容老客户端）
+
+describe('Statistics API · income category ranks', () => {
+  // TI1: monthly income 按 parent_id 折叠
+  it('TI1: monthly income_category_ranks folds L2 to L1', async () => {
+    const { token, userId } = await registerUser('s-ti1-user');
+    const families = await listFamilies(token);
+    const family = families.find((f) => f.kind === 'personal')!;
+    const ledgerId = await getLedgerId(family.id);
+
+    const parent1 = await insertCategory({ name: '工资', type: 'income', icon: '💰' });
+    const sub1a = await insertCategory({ name: '基本工资', type: 'income', icon: '💵', parentId: parent1 });
+    const sub1b = await insertCategory({ name: '奖金', type: 'income', icon: '🎁', parentId: parent1 });
+
+    const parent2 = await insertCategory({ name: '副业', type: 'income', icon: '🛠️' });
+    const sub2 = await insertCategory({ name: '稿费', type: 'income', icon: '✍️', parentId: parent2 });
+
+    await insertEntry({ ledgerId, amount: 8000, type: 'income', createdBy: userId, occurredAt: '2026-06-05T05:00:00.000Z', categoryId: sub1a, sharedType: null });
+    await insertEntry({ ledgerId, amount: 2000, type: 'income', createdBy: userId, occurredAt: '2026-06-06T05:00:00.000Z', categoryId: sub1b, sharedType: null });
+    await insertEntry({ ledgerId, amount: 500,  type: 'income', createdBy: userId, occurredAt: '2026-06-07T05:00:00.000Z', categoryId: sub2, sharedType: null });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/v1/families/${family.id}/statistics/monthly?month=2026-06`,
+      headers: authHeaders(token),
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    // 收入 rank
+    const incomeRanks = body.income_category_ranks;
+    expect(incomeRanks).toHaveLength(2);
+    expect(incomeRanks[0].category_id).toBe(parent1);
+    expect(incomeRanks[0].category_name).toBe('工资');
+    expect(incomeRanks[0].amount).toBe(10000);
+    expect(incomeRanks[0].entry_count).toBe(2);
+    expect(incomeRanks[1].category_id).toBe(parent2);
+    expect(incomeRanks[1].amount).toBe(500);
+    // ratio_bps 以收入总额 10500 为分母
+    expect(incomeRanks[0].ratio_bps).toBe(Math.round((10000 / 10500) * 10000));
+    // 支出侧应为空
+    expect(body.category_ranks).toEqual([]);
+  });
+
+  // TI2: income 允许 shared_type IS NULL（回归验证收入不受 shared 过滤约束）
+  it('TI2: monthly income counts entries with shared_type IS NULL', async () => {
+    const { token, userId } = await registerUser('s-ti2-user');
+    const families = await listFamilies(token);
+    const family = families.find((f) => f.kind === 'personal')!;
+    const ledgerId = await getLedgerId(family.id);
+
+    const parent = await insertCategory({ name: '工资', type: 'income', icon: '💰' });
+    const sub = await insertCategory({ name: '基本工资', type: 'income', icon: '💵', parentId: parent });
+
+    // 收入 · shared_type=null → 应计入
+    await insertEntry({ ledgerId, amount: 5000, type: 'income', createdBy: userId, occurredAt: '2026-06-05T05:00:00.000Z', categoryId: sub, sharedType: null });
+    // 收入 · shared_type=personal → 也计入
+    await insertEntry({ ledgerId, amount: 3000, type: 'income', createdBy: userId, occurredAt: '2026-06-06T05:00:00.000Z', categoryId: sub, sharedType: 'personal' });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/v1/families/${family.id}/statistics/monthly?month=2026-06`,
+      headers: authHeaders(token),
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.income_category_ranks).toHaveLength(1);
+    expect(body.income_category_ranks[0].amount).toBe(8000);
+    expect(body.income_category_ranks[0].entry_count).toBe(2);
+  });
+
+  // TI3: 支出/收入 rank 互不污染
+  it('TI3: monthly expense and income ranks do not leak into each other', async () => {
+    const { token, userId } = await registerUser('s-ti3-user');
+    const families = await listFamilies(token);
+    const family = families.find((f) => f.kind === 'personal')!;
+    const ledgerId = await getLedgerId(family.id);
+
+    const expParent = await insertCategory({ name: '餐饮', type: 'expense', icon: '🍚' });
+    const expSub = await insertCategory({ name: '外卖', type: 'expense', icon: '🥡', parentId: expParent });
+    const incParent = await insertCategory({ name: '工资', type: 'income', icon: '💰' });
+    const incSub = await insertCategory({ name: '基本工资', type: 'income', icon: '💵', parentId: incParent });
+
+    await insertEntry({ ledgerId, amount: 3000, type: 'expense', createdBy: userId, occurredAt: '2026-06-05T05:00:00.000Z', categoryId: expSub, sharedType: 'personal' });
+    await insertEntry({ ledgerId, amount: 9000, type: 'income',  createdBy: userId, occurredAt: '2026-06-06T05:00:00.000Z', categoryId: incSub, sharedType: null });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/v1/families/${family.id}/statistics/monthly?month=2026-06`,
+      headers: authHeaders(token),
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.category_ranks).toHaveLength(1);
+    expect(body.category_ranks[0].category_id).toBe(expParent);
+    expect(body.category_ranks[0].amount).toBe(3000);
+    expect(body.income_category_ranks).toHaveLength(1);
+    expect(body.income_category_ranks[0].category_id).toBe(incParent);
+    expect(body.income_category_ranks[0].amount).toBe(9000);
+  });
+
+  // TI4: yearly income 跨月聚合
+  it('TI4: yearly income_category_ranks aggregates across months', async () => {
+    const { token, userId } = await registerUser('s-ti4-user');
+    const families = await listFamilies(token);
+    const family = families.find((f) => f.kind === 'personal')!;
+    const ledgerId = await getLedgerId(family.id);
+
+    const parent = await insertCategory({ name: '工资', type: 'income', icon: '💰' });
+    const sub = await insertCategory({ name: '基本工资', type: 'income', icon: '💵', parentId: parent });
+
+    await insertEntry({ ledgerId, amount: 10000, type: 'income', createdBy: userId, occurredAt: '2026-03-05T05:00:00.000Z', categoryId: sub, sharedType: null });
+    await insertEntry({ ledgerId, amount: 12000, type: 'income', createdBy: userId, occurredAt: '2026-06-05T05:00:00.000Z', categoryId: sub, sharedType: null });
+    await insertEntry({ ledgerId, amount: 15000, type: 'income', createdBy: userId, occurredAt: '2026-08-05T05:00:00.000Z', categoryId: sub, sharedType: null });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/v1/families/${family.id}/statistics/yearly?year=2026`,
+      headers: authHeaders(token),
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.income_category_ranks).toHaveLength(1);
+    expect(body.income_category_ranks[0].amount).toBe(37000);
+    expect(body.income_category_ranks[0].entry_count).toBe(3);
+    // 支出侧的 extremes（top_category）仍为支出语义，不应被 income 抢占
+    expect(body.extremes.top_category_name).toBeNull();
+    expect(body.extremes.top_category_amount).toBe(0);
+  });
+
+  // TI5: income rank + user_id 维度过滤
+  it('TI5: monthly income_category_ranks + user_id filters correctly', async () => {
+    const { token: ownerToken, userId: ownerId } = await registerUser('s-ti5-owner');
+    const { token: memberToken, userId: memberId } = await registerUser('s-ti5-member');
+    const familyId = await createSharedFamilyWithMembers(ownerToken, [memberToken]);
+    const ledgerId = await getLedgerId(familyId);
+
+    const parent = await insertCategory({ name: '工资', type: 'income', icon: '💰' });
+    const sub = await insertCategory({ name: '基本工资', type: 'income', icon: '💵', parentId: parent });
+
+    await insertEntry({ ledgerId, amount: 20000, type: 'income', createdBy: ownerId,  occurredAt: '2026-06-05T05:00:00.000Z', categoryId: sub, sharedType: null });
+    await insertEntry({ ledgerId, amount: 8000,  type: 'income', createdBy: memberId, occurredAt: '2026-06-10T05:00:00.000Z', categoryId: sub, sharedType: null });
+
+    // 全部
+    const resAll = await app.inject({
+      method: 'GET',
+      url: `/v1/families/${familyId}/statistics/monthly?month=2026-06`,
+      headers: authHeaders(ownerToken),
+    });
+    expect(resAll.statusCode).toBe(200);
+    expect(resAll.json().income_category_ranks[0].amount).toBe(28000);
+
+    // 仅 member
+    const resMember = await app.inject({
+      method: 'GET',
+      url: `/v1/families/${familyId}/statistics/monthly?month=2026-06&user_id=${memberId}`,
+      headers: authHeaders(ownerToken),
+    });
+    expect(resMember.statusCode).toBe(200);
+    const memberBody = resMember.json();
+    expect(memberBody.income_category_ranks[0].amount).toBe(8000);
+    expect(memberBody.filtered_user_id).toBe(memberId);
+  });
+
+  // TI6: drill-down entry_type=income
+  it('TI6: drill-down entry_type=income returns income-side L2 and L3', async () => {
+    const { token, userId } = await registerUser('s-ti6-user');
+    const families = await listFamilies(token);
+    const family = families.find((f) => f.kind === 'personal')!;
+    const ledgerId = await getLedgerId(family.id);
+
+    const parent = await insertCategory({ name: '工资', type: 'income', icon: '💰' });
+    const sub1 = await insertCategory({ name: '基本工资', type: 'income', icon: '💵', parentId: parent });
+    const sub2 = await insertCategory({ name: '奖金',     type: 'income', icon: '🎁', parentId: parent });
+
+    await insertEntry({ ledgerId, amount: 10000, type: 'income', createdBy: userId, occurredAt: '2026-06-05T05:00:00.000Z', categoryId: sub1, sharedType: null, note: '6月工资' });
+    await insertEntry({ ledgerId, amount: 3000,  type: 'income', createdBy: userId, occurredAt: '2026-06-06T05:00:00.000Z', categoryId: sub2, sharedType: null });
+
+    // 顺便造一条支出，验证 income 口径不会把它拉进来
+    const expParent = await insertCategory({ name: '餐饮', type: 'expense', icon: '🍚' });
+    const expSub = await insertCategory({ name: '外卖', type: 'expense', icon: '🥡', parentId: expParent });
+    await insertEntry({ ledgerId, amount: 2000, type: 'expense', createdBy: userId, occurredAt: '2026-06-07T05:00:00.000Z', categoryId: expSub, sharedType: 'personal' });
+
+    // L2 · income
+    const resL2 = await app.inject({
+      method: 'GET',
+      url: `/v1/families/${family.id}/statistics/drill-down?month=2026-06&level=2&parent_category_id=${parent}&entry_type=income`,
+      headers: authHeaders(token),
+    });
+    expect(resL2.statusCode).toBe(200);
+    const l2 = resL2.json();
+    expect(l2.parent_amount).toBe(13000);
+    expect(l2.items).toHaveLength(2);
+    expect(l2.items[0].category_id).toBe(sub1);
+    expect(l2.items[0].amount).toBe(10000);
+    expect(l2.items[1].category_id).toBe(sub2);
+
+    // L3 · income
+    const resL3 = await app.inject({
+      method: 'GET',
+      url: `/v1/families/${family.id}/statistics/drill-down?month=2026-06&level=3&category_id=${sub1}&entry_type=income`,
+      headers: authHeaders(token),
+    });
+    expect(resL3.statusCode).toBe(200);
+    const l3 = resL3.json();
+    expect(l3.items).toHaveLength(1);
+    expect(l3.items[0].amount).toBe(10000);
+    expect(l3.items[0].note).toBe('6月工资');
+    expect(l3.category_amount).toBe(10000);
+  });
+
+  // TI7: drill-down 省略 entry_type → 走支出（兼容老客户端）
+  it('TI7: drill-down without entry_type defaults to expense', async () => {
+    const { token, userId } = await registerUser('s-ti7-user');
+    const families = await listFamilies(token);
+    const family = families.find((f) => f.kind === 'personal')!;
+    const ledgerId = await getLedgerId(family.id);
+
+    const expParent = await insertCategory({ name: '餐饮', type: 'expense', icon: '🍚' });
+    const expSub = await insertCategory({ name: '外卖', type: 'expense', icon: '🥡', parentId: expParent });
+    const incParent = await insertCategory({ name: '工资', type: 'income', icon: '💰' });
+    const incSub = await insertCategory({ name: '基本工资', type: 'income', icon: '💵', parentId: incParent });
+
+    await insertEntry({ ledgerId, amount: 4000, type: 'expense', createdBy: userId, occurredAt: '2026-06-05T05:00:00.000Z', categoryId: expSub, sharedType: 'personal' });
+    await insertEntry({ ledgerId, amount: 9000, type: 'income',  createdBy: userId, occurredAt: '2026-06-06T05:00:00.000Z', categoryId: incSub, sharedType: null });
+
+    // 省略 entry_type → 支出口径
+    const res = await app.inject({
+      method: 'GET',
+      url: `/v1/families/${family.id}/statistics/drill-down?month=2026-06&level=2&parent_category_id=${expParent}`,
+      headers: authHeaders(token),
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.parent_amount).toBe(4000);
+    expect(body.items).toHaveLength(1);
+    expect(body.items[0].amount).toBe(4000);
+  });
+});

@@ -70,6 +70,8 @@ const drillDownQuerySchema = {
     limit: { type: 'integer', minimum: 1, maximum: 50 },
     offset: { type: 'integer', minimum: 0 },
     user_id: { type: 'string', format: 'uuid' },
+    // 收入分类排行迭代：'expense'（默认，兼容老客户端）/ 'income'
+    entry_type: { type: 'string', enum: ['expense', 'income'] },
   },
 };
 
@@ -124,6 +126,7 @@ export async function registerStatisticsRoutes(app: FastifyInstance): Promise<vo
       limit?: number;
       offset?: number;
       user_id?: string;
+      entry_type?: 'expense' | 'income';
     };
   }>(
     '/families/:family_id/statistics/drill-down',
@@ -140,6 +143,7 @@ export async function registerStatisticsRoutes(app: FastifyInstance): Promise<vo
         limit: req.query.limit,
         offset: req.query.offset,
         userId: req.query.user_id,
+        entryType: req.query.entry_type,
       });
       reply.code(200).send(result);
     },

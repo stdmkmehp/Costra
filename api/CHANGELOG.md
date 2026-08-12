@@ -6,6 +6,27 @@
 
 ---
 
+## [0.13.0] - 2026-08-12 · 收入分类排行
+
+### Added
+
+- **GET /families/{family_id}/statistics/monthly** 响应新增 `income_category_ranks: StatCategoryRankItem[]`
+  - 与 `category_ranks`（支出）并列，语义为"L1 收入分类排行"，一级折叠，金额降序
+  - 收入不受 shared_type 约束（允许 NULL）
+- **GET /families/{family_id}/statistics/yearly** 响应同上新增 `income_category_ranks`
+- **GET /families/{family_id}/statistics/drill-down** 新增 query 参数 `entry_type: 'expense' | 'income'`（可选，默认 `expense`）
+  - 'expense'：保持原口径（AND type='expense' AND shared_type IS NOT NULL）
+  - 'income'：AND type='income'（无 shared_type 过滤）
+  - 老客户端省略视为 `expense`，向后兼容
+
+### Unchanged (显式说明避免误读)
+
+- `YearlyExtremes.top_category_name/amount` 保持支出侧语义不变
+- `MonthlyExtremes.max_single_*` 保持支出侧语义不变
+- `category_ranks` 字段语义不变（仍为支出侧排行）
+
+---
+
 ## [0.12.0] - 2026-07-06 · COSTRA-230 后续
 
 ### Changed

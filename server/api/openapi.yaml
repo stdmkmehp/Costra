@@ -587,6 +587,14 @@ paths:
           required: false
           schema: { type: string, format: uuid }
           description: '成员维度筛选 · 仅返回 entries.created_by = user_id 的数据 · 不传 = 全部'
+        - name: entry_type
+          in: query
+          required: false
+          schema: { type: string, enum: [expense, income], default: expense }
+          description: |
+            收入分类排行迭代：下钻分类语义。
+              - 'expense'（默认，兼容老客户端）：支出侧二级/L3
+              - 'income'：收入侧二级/L3（收入不受 shared_type 约束）
       responses:
         '200':
           description: OK
@@ -1822,7 +1830,7 @@ components:
 
     MonthlyStatistics:
       type: object
-      required: [family_id, family_name, family_kind, ledger_id, ledger_name, month, timezone, range_start, range_end, currency, totals, daily_trend, extremes, category_ranks, filtered_user_id]
+      required: [family_id, family_name, family_kind, ledger_id, ledger_name, month, timezone, range_start, range_end, currency, totals, daily_trend, extremes, category_ranks, income_category_ranks, filtered_user_id]
       description: 'COSTRA-224/260: 月度统计响应'
       properties:
         family_id: { type: string, format: uuid }
@@ -1848,7 +1856,11 @@ components:
         extremes: { $ref: '#/components/schemas/MonthlyExtremes' }
         category_ranks:
           type: array
-          description: 'L1 一级分类排行 · 金额降序'
+          description: 'L1 支出分类排行 · 金额降序'
+          items: { $ref: '#/components/schemas/StatCategoryRankItem' }
+        income_category_ranks:
+          type: array
+          description: '收入分类排行迭代：L1 收入分类排行 · 金额降序'
           items: { $ref: '#/components/schemas/StatCategoryRankItem' }
 
     MonthlyTrendItem:
@@ -1876,7 +1888,7 @@ components:
 
     YearlyStatistics:
       type: object
-      required: [family_id, family_name, family_kind, ledger_id, ledger_name, year, timezone, range_start, range_end, currency, totals, monthly_trend, extremes, category_ranks, filtered_user_id]
+      required: [family_id, family_name, family_kind, ledger_id, ledger_name, year, timezone, range_start, range_end, currency, totals, monthly_trend, extremes, category_ranks, income_category_ranks, filtered_user_id]
       description: 'COSTRA-224/260: 年度统计响应'
       properties:
         family_id: { type: string, format: uuid }
@@ -1902,6 +1914,11 @@ components:
         extremes: { $ref: '#/components/schemas/YearlyExtremes' }
         category_ranks:
           type: array
+          description: 'L1 支出分类排行 · 金额降序'
+          items: { $ref: '#/components/schemas/StatCategoryRankItem' }
+        income_category_ranks:
+          type: array
+          description: '收入分类排行迭代：L1 收入分类排行 · 金额降序'
           items: { $ref: '#/components/schemas/StatCategoryRankItem' }
 
     DrillDownLevel2Response:

@@ -80,7 +80,10 @@ export interface MonthlyStatistics {
   totals: StatTotals;
   daily_trend: DailyTrendItem[];
   extremes: MonthlyExtremes;
+  /** 支出分类排行（一级折叠） */
   category_ranks: StatCategoryRankItem[];
+  /** 收入分类排行（一级折叠） · 收入分类排行迭代新增 */
+  income_category_ranks: StatCategoryRankItem[];
 }
 
 export interface MonthlyTrendItem {
@@ -117,7 +120,10 @@ export interface YearlyStatistics {
   totals: StatTotals;
   monthly_trend: MonthlyTrendItem[];
   extremes: YearlyExtremes;
+  /** 支出分类排行（一级折叠） */
   category_ranks: StatCategoryRankItem[];
+  /** 收入分类排行（一级折叠） · 收入分类排行迭代新增 */
+  income_category_ranks: StatCategoryRankItem[];
 }
 
 export interface DrillDownLevel2Response {
@@ -366,6 +372,13 @@ function buildL1RankItems(
     .slice(0, topN);
 }
 
+// === 排行构建高层 · 收入分类排行迭代 ===
+//
+// monthly / yearly 都是"支出+收入并列输出 category_ranks"。
+// 抽取模式：拉两次 L2 聚合（expense/income）→ 合并去重后一次批量查 category meta →
+// 分别 foldL2ToL1 → 合并 parent id 一次批量查 parent meta → 分别 buildL1RankItems。
+// 见 getMonthlyStatistics / getYearlyStatistics 内联实现。
+
 // === API 1: 月度统计 ===
 
 export async function getMonthlyStatistics(
@@ -399,10 +412,11 @@ export async function getMonthlyStatistics(
   const createdBy = input.userId;
 
   // 1) 拉取所有 entries（在 service 层做日分桶 + extremes 计算）
-  // 2) 拉取分类聚合（用于 L1 排行）
-  const [entries, l2Aggs] = await Promise.all([
+  // 2) 并行拉取支出 / 收入的二级分类聚合（用于 L1 排行）
+  const [entries, expenseL2Aggs, incomeL2Aggs] = await Promise.all([
     statsRepo.listEntriesInRange(ledger.id, rangeStartUtc, rangeEndUtc, { createdBy }),
-    statsRepo.getCategoryAggregates(ledger.id, rangeStartUtc, rangeEndUtc, { createdBy }),
+    statsRepo.getCategoryAggregates(ledger.id, rangeStartUtc, rangeEndUtc, { createdBy, entryType: 'expense' }),
+    statsRepo.getCategoryAggregates(ledger.id, rangeStartUtc, rangeEndUtc, { createdBy, entryType: 'income' }),
   ]);
 
   // === totals + daily_trend + extremes（在 JS 中分桶） ===
@@ -454,23 +468,30 @@ export async function getMonthlyStatistics(
   const elapsedDays = elapsedDaysInMonth(year, monthNum, daysInMonth);
   const avgDaily = elapsedDays > 0 ? Math.round(totalExpense / elapsedDays) : 0;
 
-  // === L1 排行 ===
-  const l2Ids = l2Aggs.map((a) => a.category_id);
-  const l2Metas = await statsRepo.getCategoriesByIds(l2Ids);
+  // === L1 排行（支出 + 收入并列）===
+  // 一次批量查询覆盖支出+收入的所有二级 category（合并去重），避免多次 SQL。
+  const l2IdSet = new Set<string>();
+  for (const a of expenseL2Aggs) l2IdSet.add(a.category_id);
+  for (const a of incomeL2Aggs) l2IdSet.add(a.category_id);
+  const l2Metas = await statsRepo.getCategoriesByIds(Array.from(l2IdSet));
   const l2MetaMap = new Map(l2Metas.map((m) => [m.id, m]));
 
-  // 最大单笔的二级分类名（从 l2MetaMap 查，无需额外查询）
+  // 最大单笔的二级分类名（仅支出语义 · extremes 面向支出侧）
   const maxSingleCategoryName = maxSingleCategoryId
     ? (l2MetaMap.get(maxSingleCategoryId)?.name ?? null)
     : null;
 
-  const l1 = foldL2ToL1(l2Aggs, l2MetaMap);
-
-  const parentIds = Array.from(l1.byParentId.keys());
-  const parentMetas = await statsRepo.getCategoriesByIds(parentIds);
+  // 折叠成一级 → 收集所有 parent_id → 一次批量拿 parent meta
+  const expenseL1 = foldL2ToL1(expenseL2Aggs, l2MetaMap);
+  const incomeL1 = foldL2ToL1(incomeL2Aggs, l2MetaMap);
+  const parentIdSet = new Set<string>();
+  for (const id of expenseL1.byParentId.keys()) parentIdSet.add(id);
+  for (const id of incomeL1.byParentId.keys()) parentIdSet.add(id);
+  const parentMetas = await statsRepo.getCategoriesByIds(Array.from(parentIdSet));
   const parentMetaMap = new Map(parentMetas.map((m) => [m.id, m]));
 
-  const categoryRanks = buildL1RankItems(l1, parentMetaMap, topN);
+  const categoryRanks = buildL1RankItems(expenseL1, parentMetaMap, topN);
+  const incomeCategoryRanks = buildL1RankItems(incomeL1, parentMetaMap, topN);
 
   return {
     family_id: family.id,
@@ -499,6 +520,7 @@ export async function getMonthlyStatistics(
       max_day_expense: maxDayExpense,
     },
     category_ranks: categoryRanks,
+    income_category_ranks: incomeCategoryRanks,
   };
 }
 
@@ -534,9 +556,10 @@ export async function getYearlyStatistics(
   const { rangeStartUtc, rangeEndUtc } = parseYearRange(input.year);
   const createdBy = input.userId;
 
-  const [entries, l2Aggs] = await Promise.all([
+  const [entries, expenseL2Aggs, incomeL2Aggs] = await Promise.all([
     statsRepo.listEntriesInRange(ledger.id, rangeStartUtc, rangeEndUtc, { createdBy }),
-    statsRepo.getCategoryAggregates(ledger.id, rangeStartUtc, rangeEndUtc, { createdBy }),
+    statsRepo.getCategoryAggregates(ledger.id, rangeStartUtc, rangeEndUtc, { createdBy, entryType: 'expense' }),
+    statsRepo.getCategoryAggregates(ledger.id, rangeStartUtc, rangeEndUtc, { createdBy, entryType: 'income' }),
   ]);
 
   // === totals + monthly_trend + extremes ===
@@ -591,25 +614,30 @@ export async function getYearlyStatistics(
   const monthsCount = elapsedMonthsInYear(Number(input.year));
   const avgMonthly = monthsCount > 0 ? Math.round(totalExpense / monthsCount) : 0;
 
-  // === L1 排行（全年）===
-  const l2Ids = l2Aggs.map((a) => a.category_id);
-  const l2Metas = await statsRepo.getCategoriesByIds(l2Ids);
+  // === L1 排行（全年 · 支出 + 收入并列）===
+  const l2IdSet = new Set<string>();
+  for (const a of expenseL2Aggs) l2IdSet.add(a.category_id);
+  for (const a of incomeL2Aggs) l2IdSet.add(a.category_id);
+  const l2Metas = await statsRepo.getCategoriesByIds(Array.from(l2IdSet));
   const l2MetaMap = new Map(l2Metas.map((m) => [m.id, m]));
 
-  // 最大单笔的二级分类名（从 l2MetaMap 查，无需额外查询）
+  // 最大单笔的二级分类名（仅支出语义 · extremes 面向支出侧）
   const maxSingleCategoryName = maxSingleCategoryId
     ? (l2MetaMap.get(maxSingleCategoryId)?.name ?? null)
     : null;
 
-  const l1 = foldL2ToL1(l2Aggs, l2MetaMap);
-
-  const parentIds = Array.from(l1.byParentId.keys());
-  const parentMetas = await statsRepo.getCategoriesByIds(parentIds);
+  const expenseL1 = foldL2ToL1(expenseL2Aggs, l2MetaMap);
+  const incomeL1 = foldL2ToL1(incomeL2Aggs, l2MetaMap);
+  const parentIdSet = new Set<string>();
+  for (const id of expenseL1.byParentId.keys()) parentIdSet.add(id);
+  for (const id of incomeL1.byParentId.keys()) parentIdSet.add(id);
+  const parentMetas = await statsRepo.getCategoriesByIds(Array.from(parentIdSet));
   const parentMetaMap = new Map(parentMetas.map((m) => [m.id, m]));
 
-  const categoryRanks = buildL1RankItems(l1, parentMetaMap, topN);
+  const categoryRanks = buildL1RankItems(expenseL1, parentMetaMap, topN);
+  const incomeCategoryRanks = buildL1RankItems(incomeL1, parentMetaMap, topN);
 
-  // top_category：全年最贵的一级分类（取 categoryRanks[0]）
+  // top_category：全年最贵的一级支出分类（保留原语义 · 收入不入 extremes）
   const top = categoryRanks[0];
 
   return {
@@ -642,6 +670,7 @@ export async function getYearlyStatistics(
       top_category_amount: top ? top.amount : 0,
     },
     category_ranks: categoryRanks,
+    income_category_ranks: incomeCategoryRanks,
   };
 }
 
@@ -659,6 +688,13 @@ export interface DrillDownInput {
   offset?: number;
   /** COSTRA-260: 成员维度过滤 */
   userId?: string;
+  /**
+   * 收入分类排行迭代：下钻的分类语义。
+   *   - 'expense'（默认）：支出侧二级 / L3 明细
+   *   - 'income'：收入侧二级 / L3 明细
+   * 未传时缺省 'expense'，保 API 向后兼容。新客户端应显式传。
+   */
+  entryType?: 'expense' | 'income';
 }
 
 export async function getDrillDown(
@@ -727,6 +763,7 @@ export async function getDrillDown(
     : parseYearRange(input.year!);
 
   const createdBy = input.userId;
+  const entryType = input.entryType ?? 'expense';
 
   if (input.level === 2) {
     return await drillDownL2(
@@ -737,6 +774,7 @@ export async function getDrillDown(
       limit,
       offset,
       createdBy,
+      entryType,
     );
   }
   return await drillDownL3(
@@ -747,6 +785,7 @@ export async function getDrillDown(
     limit,
     offset,
     createdBy,
+    entryType,
   );
 }
 
@@ -757,7 +796,8 @@ async function drillDownL2(
   parentCategoryId: string,
   limit: number,
   offset: number,
-  createdBy?: string,
+  createdBy: string | undefined,
+  entryType: 'expense' | 'income',
 ): Promise<DrillDownLevel2Response> {
   // 拿 parent 元信息
   const parentMetas = await statsRepo.getCategoriesByIds([parentCategoryId]);
@@ -765,7 +805,7 @@ async function drillDownL2(
 
   // 拿子分类聚合
   const aggs = await statsRepo.getSubCategoryAggregates(
-    ledgerId, rangeStartUtc, rangeEndUtc, parentCategoryId, { createdBy },
+    ledgerId, rangeStartUtc, rangeEndUtc, parentCategoryId, { createdBy, entryType },
   );
   const subIds = aggs.map((a) => a.category_id);
   const subMetas = await statsRepo.getCategoriesByIds(subIds);
@@ -815,7 +855,8 @@ async function drillDownL3(
   categoryId: string,
   limit: number,
   offset: number,
-  createdBy?: string,
+  createdBy: string | undefined,
+  entryType: 'expense' | 'income',
 ): Promise<DrillDownLevel3Response> {
   const categoryMetas = await statsRepo.getCategoriesByIds([categoryId]);
   const categoryMeta = categoryMetas[0];
@@ -824,11 +865,11 @@ async function drillDownL3(
   const parentMeta = parentMetas[0] ?? null;
 
   const { items, total } = await statsRepo.listEntriesByCategory(
-    ledgerId, rangeStartUtc, rangeEndUtc, categoryId, limit, offset, { createdBy },
+    ledgerId, rangeStartUtc, rangeEndUtc, categoryId, limit, offset, { createdBy, entryType },
   );
 
   // 分类总额：先单独查（不复用 items 的 SUM，因为 items 已分页）
-  const aggRow = await statsRepo.getCategoryAggregates(ledgerId, rangeStartUtc, rangeEndUtc, { createdBy });
+  const aggRow = await statsRepo.getCategoryAggregates(ledgerId, rangeStartUtc, rangeEndUtc, { createdBy, entryType });
   const thisCat = aggRow.find((a) => a.category_id === categoryId);
   const categoryAmount = thisCat?.amount ?? 0;
 

@@ -65,10 +65,32 @@ function exec(): Runner {
   return getPool() as unknown as Runner;
 }
 
-/** COSTRA-260: 统一 opts 类型 */
+/** COSTRA-260: 统一 opts 类型
+ *
+ * 收入分类排行迭代：新增 entryType 参数用于筛选 entries.type。
+ *   - entryType='expense'（默认）：保留原口径（AND type='expense' AND shared_type IS NOT NULL）
+ *   - entryType='income'：AND type='income'（income 没有 shared 语义，不加 shared_type 过滤）
+ */
+export type EntryTypeFilter = 'expense' | 'income';
+
 export interface StatQueryOpts {
   createdBy?: string;
+  entryType?: EntryTypeFilter;
   client?: Runner;
+}
+
+/**
+ * 生成 entryType 相关的 SQL 片段。
+ *   - expense：AND e.type = 'expense' AND e.shared_type IS NOT NULL
+ *   - income： AND e.type = 'income'
+ * 注意：调用方需自行确定占位符编号（返回的 SQL 不含占位符，type 直接内联字面量以避免多分支拼接复杂度；
+ * 字面量固定枚举无注入风险）。
+ */
+function buildEntryTypeClause(entryType: EntryTypeFilter): string {
+  if (entryType === 'income') {
+    return `AND e.type = 'income'`;
+  }
+  return `AND e.type = 'expense' AND e.shared_type IS NOT NULL`;
 }
 
 /**
@@ -136,7 +158,8 @@ export async function listEntriesInRange(
  * 返回的是按 category_id（即二级 id）分组的聚合，
  * service 层负责"二级 → 一级"的折叠。
  *
- * 仅 expense + shared_type IS NOT NULL（与 family summary 一致）。
+ * 支出口径：type='expense' AND shared_type IS NOT NULL（与 family summary 一致）
+ * 收入口径：type='income'（income 不受 shared_type 约束，允许 NULL）
  *
  * COSTRA-260: opts.createdBy 存在时拼 AND created_by = $N。
  */
@@ -147,6 +170,7 @@ export async function getCategoryAggregates(
   opts?: StatQueryOpts,
 ): Promise<CategoryRankAggRow[]> {
   const runner = opts?.client ?? exec();
+  const entryType: EntryTypeFilter = opts?.entryType ?? 'expense';
   const params: unknown[] = [ledgerId, rangeStartUtc, rangeEndUtc];
   let createdByClause = '';
   if (opts?.createdBy) {
@@ -163,8 +187,7 @@ export async function getCategoryAggregates(
        AND e.deleted_at IS NULL
        AND e.occurred_at >= $2
        AND e.occurred_at < $3
-       AND e.type = 'expense'
-       AND e.shared_type IS NOT NULL
+       ${buildEntryTypeClause(entryType)}
        AND e.category_id IS NOT NULL
        ${createdByClause}
      GROUP BY e.category_id`,
@@ -193,6 +216,7 @@ export async function getSubCategoryAggregates(
   opts?: StatQueryOpts,
 ): Promise<CategoryRankAggRow[]> {
   const runner = opts?.client ?? exec();
+  const entryType: EntryTypeFilter = opts?.entryType ?? 'expense';
   const params: unknown[] = [ledgerId, rangeStartUtc, rangeEndUtc, parentCategoryId];
   let createdByClause = '';
   if (opts?.createdBy) {
@@ -211,8 +235,7 @@ export async function getSubCategoryAggregates(
        AND e.deleted_at IS NULL
        AND e.occurred_at >= $2
        AND e.occurred_at < $3
-       AND e.type = 'expense'
-       AND e.shared_type IS NOT NULL
+       ${buildEntryTypeClause(entryType)}
        AND c.parent_id = $4
        AND c.deleted_at IS NULL
        ${createdByClause}
@@ -263,9 +286,10 @@ export async function getCategoriesByIds(
   }));
 }
 
-/** COSTRA-260: listEntriesByCategory opts 类型（含分页参数外的 createdBy + client） */
+/** COSTRA-260: listEntriesByCategory opts 类型（含分页参数外的 createdBy + client + entryType） */
 export interface ListEntriesByCategoryOpts {
   createdBy?: string;
+  entryType?: EntryTypeFilter;
   client?: Runner;
 }
 
@@ -275,6 +299,7 @@ export interface ListEntriesByCategoryOpts {
  * JOIN users 一次性拿 nickname + avatar_url。
  *
  * COSTRA-260: opts.createdBy 存在时拼 AND created_by = $N。
+ * 收入分类排行迭代：opts.entryType 决定 type/shared_type 过滤口径。
  */
 export async function listEntriesByCategory(
   ledgerId: string,
@@ -286,6 +311,7 @@ export async function listEntriesByCategory(
   opts?: ListEntriesByCategoryOpts,
 ): Promise<{ items: EntryDetailRow[]; total: number }> {
   const runner = opts?.client ?? exec();
+  const entryType: EntryTypeFilter = opts?.entryType ?? 'expense';
 
   const baseParams: unknown[] = [ledgerId, rangeStartUtc, rangeEndUtc, categoryId];
   let createdByClause = '';
@@ -293,6 +319,7 @@ export async function listEntriesByCategory(
     baseParams.push(opts.createdBy);
     createdByClause = `AND e.created_by = $${baseParams.length}`;
   }
+  const typeClause = buildEntryTypeClause(entryType);
 
   // 总数（用于 has_more 判定）
   const countRes = await runner.query(
@@ -302,8 +329,7 @@ export async function listEntriesByCategory(
        AND e.deleted_at IS NULL
        AND e.occurred_at >= $2
        AND e.occurred_at < $3
-       AND e.type = 'expense'
-       AND e.shared_type IS NOT NULL
+       ${typeClause}
        AND e.category_id = $4
        ${createdByClause}`,
     baseParams,
@@ -331,8 +357,7 @@ export async function listEntriesByCategory(
        AND e.deleted_at IS NULL
        AND e.occurred_at >= $2
        AND e.occurred_at < $3
-       AND e.type = 'expense'
-       AND e.shared_type IS NOT NULL
+       ${typeClause}
        AND e.category_id = $4
        ${createdByClause}
      ORDER BY e.amount DESC, e.occurred_at DESC
