@@ -62,8 +62,8 @@ const needsRecompute =
 3. **修改规则**分三种情形：
    - **情形 1（改了非周期字段，如备注/金额/分类）**：保持原触发时机，`next_run_at` **完全不动**。
    - **情形 2（改了触发时段 `execute_bucket`）**：统一下一个时段（与新增语义一致，即从 `now` 起算 + 跑 `applyBucketWindowSkip`）。
-   - **情形 3（改了周期间隔/匹配日但没改时段 `execute_bucket`）**：保持原触发时机——保留原 `execute_hour/minute`，`next_run_at` 按新周期重算，但**不跑** `applyBucketWindowSkip`（今天的触发机会由 `execute_hour:minute` 与 `now` 的关系决定，而非 bucket 窗口起点）。
-4. **边界选项 A**：`next_run_at` 已过期时不跑 `applyBucketWindowSkip`（情形 3）。
+   - **情形 3（改了周期间隔/匹配日但没改时段 `execute_bucket`）**：保留原 `execute_hour/minute`，`next_run_at` 按新周期从 `now` 严格 > 重算，但**不跑** `applyBucketWindowSkip`（今天的触发机会由 `execute_hour:minute` 与 `now` 的关系决定，而非 bucket 窗口起点）。
+4. **边界收敛**：情形 3 不再区分 `next_run_at` 是否过期，统一从 `now` 起算。
 5. **pause / resume 行为**：pause 不动 `next_run_at`；resume 从 `now` 重算且不补跑历史（语义与上述一致）。
 
 ---
@@ -101,12 +101,10 @@ if (bucketChanged || startDateChanged || fromStartIsFuture) {
   }
 } else {
   // 情形 3（改周期字段但没改时段）：
-  //   保留原 execute_hour/minute，next_run_at 按新周期重算，不跑 applyBucketWindowSkip。
-  //   from 取 existing.next_run_at（未过期）或 now（已过期，如服务长时间未运行）。
-  const existingNextMs = existing.nextRunAt.getTime();
-  const from =
-    existingNextMs > nowMs ? new Date(existingNextMs - 60_000) : now;
-  nextRunAt = computeNextRunAt(forCompute, from);
+  //   保留原 execute_hour/minute，next_run_at 按新周期从 now 严格 > 重算，
+  //   不跑 applyBucketWindowSkip。
+  //   不能从 existing.next_run_at 起算：扩展匹配集合时可能漏掉更早的新匹配日。
+  nextRunAt = computeNextRunAt(forCompute, now);
 }
 ```
 
@@ -116,7 +114,7 @@ if (bucketChanged || startDateChanged || fromStartIsFuture) {
 |------|----------|---------------|-------------------------------|
 | 情形 2 | `bucketChanged` | `now` | **是**（仅此分支且 `fromStartIsFuture` 为 false） |
 | start_date 改/在未来 | `startDateChanged \|\| fromStartIsFuture` | `now` 或 `start_date - 1min` | 否（`bucketChanged` 为 false） |
-| 情形 3 | 改了周期字段但 `bucketChanged`/`startDateChanged`/`fromStartIsFuture` 均 false | `existing.next_run_at - 1min`（未过期）或 `now`（已过期） | **否** |
+| 情形 3 | 改了周期字段但 `bucketChanged`/`startDateChanged`/`fromStartIsFuture` 均 false | `now` | **否** |
 | 情形 1 | `needsRecompute === false`（payload 无周期字段） | — | —（`nextRunAt` 保持 `undefined`，不写入） |
 
 > **关键不变式**：`needsRecompute === false` 时 `nextRunAt` 保持 `undefined`，最终 `if (nextRunAt !== undefined) input.nextRunAt = nextRunAt;` 不覆盖，服务端 `next_run_at` 字段原样保留（情形 1 的"完全不动"由此保证）。
@@ -176,9 +174,9 @@ if (this.data.mode === 'edit' && !this._periodFieldsDirty && this._serverNextRun
 
 | 文件 | 改动 |
 |------|------|
-| `server/src/services/recurringService.ts` | `update` 重算分流：新增 `bucketChanged` / `startDateChanged` / `fromStartIsFuture` 三条件，按分支决定起算点与是否跑 `applyBucketWindowSkip`（L684–L745）。 |
+| `server/src/services/recurringService.ts` | `update` 重算分流：新增 `bucketChanged` / `startDateChanged` / `fromStartIsFuture` 三条件；情形 3 统一从 `now` 重算，避免扩展匹配集合时漏掉更早的新匹配日。 |
 | `miniprogram/pages-recurring/edit/index.ts` | `_buildSavePayload` 改为 diff（edit 模式基于 `_originalRule`）；新增 `_serverNextRunAt` / `_periodFieldsDirty`；`_fillForm` 缓存；`_updatePreview` 分支；所有周期 handler 置 dirty；`import formatServerNextRunAt`；调用方加 `as` 断言。 |
-| `miniprogram/pages-recurring/edit/model.ts` | 新增导出 `formatServerNextRunAt(iso, timezone)`。 |
+| `miniprogram/pages-recurring/edit/model.ts` | 新增导出 `formatServerNextRunAt(iso, timezone)`；编辑模式保留服务端 `execute_hour/minute` 时，本地预览从 `now` 重算，避免 start_date 在过去时显示历史日期。 |
 | `server/test/recurring-entries.test.ts` | 新增 `describe('recurring-entries · update next_run_at recompute split')`（5 个用例）；旧"窗口期内修改匹配日"用例改为改 `execute_bucket` 以匹配新语义（L1930、L1978）。 |
 
 ---
@@ -192,7 +190,8 @@ if (this.data.mode === 'edit' && !this._periodFieldsDirty && this._serverNextRun
 | `情形1 · PATCH only note` | 只改备注 | `next_run_at` 完全不变 |
 | `情形1 · PATCH only amount` | 只改金额 | `next_run_at` 完全不变 |
 | `情形2 · PATCH execute_bucket=morning→afternoon` | 改时段 | 落在 `08-11` 且在 `12:00–18:00`（跳过今天） |
-| `情形3 · PATCH days_of_week 改周一→周二` | 改周期字段不改进段 | 落在 `08-18` 周二，`hour/minute` 不变（不跳过） |
+| `情形3 · monthly [5]→[4,5]` | 扩大匹配集合 | 落在新加入且更早的 `09-04`，`hour/minute` 不变 |
+| `情形3 · monthly [4,5]→[5]` | 缩小匹配集合 | 推进到 `09-05`，`hour/minute` 不变 |
 | `情形3 · next_run_at 已过期` | 边界：existing 已过期 | 从 `now` 重算，`next_run_at > now`（不强制推到明天） |
 
 > **踩坑记录（review 需留意）**：`beforeEach` 中 `vi.setSystemTime` 必须**先于** `login`（签发 token）调用。否则 token 签发在真实时间、验证在 fake 时间，时间差超 TTL(7200s) 导致 401。这是测试时序约束，非实现缺陷。
@@ -202,17 +201,21 @@ if (this.data.mode === 'edit' && !this._periodFieldsDirty && this._serverNextRun
 ## 7. 边界与开放问题（供 review 讨论）
 
 1. **`start_date` 变化归入"从新 start_date 起算"**：用户改了 `start_date` 但不改 `execute_bucket` 时，走 `fromStartIsFuture ? start-1min : now` 分支且**不跑** `applyBucketWindowSkip`。设计意图是"用户想重新从新 start_date 起算"，与"改了时段才跑跳过"相区分。若 review 认为 `start_date` 变化也应受 bucket 窗口保护，需调整。
-2. **情形 3 的 `from = existing.next_run_at - 1min`**：依赖 `existing.next_run_at` 未被并发 tick 改写。若编辑并发于调度 tick，存在极小的竞态窗口（与既有 `version` 乐观锁保护分开）。当前实现认为可接受。
+2. **情形 3 的起算点已改为 `now`**：不再依赖 `existing.next_run_at`，因此不会因并发 tick 改写旧 next_run_at 影响重算，也不会在扩展匹配集合时漏掉位于旧 next_run_at 之前的新匹配日。
 3. **`_periodFieldsDirty` 是"是否改过"而非"与原始值是否不同"**：用户改了周期字段又改回原值，`_periodFieldsDirty` 仍为 `true`，此时预览回退到本地计算（可能短暂与 `_serverNextRunAt` 不一致）。保存时因 diff payload 无变化，`next_run_at` 不会变，最终一致。仅预览在"改回原值"瞬间可能闪动，是否需在预览层也做 diff 比对，待讨论。
 4. **Bug A 的显示修复依赖 `_serverNextRunAt` 在 `_fillForm` 时被正确缓存**：edit 模式之外（create/copy）为 `null`，符合预期。
+
+### 7.1 变更历史：情形 3 起算点修正
+
+2026-08-12 复测发现 monthly 扩大匹配集合（如 `[5] → [4,5]`）时，旧实现从 `existing.next_run_at - 1min` 起算会漏掉更早的新匹配日，导致 `next_run_at` 仍停在 5 号。修正为：情形 3 统一从 `now` 严格 > 重算，并同步客户端编辑预览。
 
 ---
 
 ## 8. 验证结果
 
-- 服务端测试：`494 / 494` 通过（含本方案新增的 5 例 + 修改的 2 例）。
-- 编辑页 model 测试：`41 / 41` 通过。
-- 两端逻辑已端到端闭合：Bug A（显示）+ Bug B（保存推迟）均修复。
+- 服务端定向测试：`server/test/recurring-entries.test.ts` `61 / 61` 通过（含情形 3 扩集合/缩集合用例）。
+- 编辑页 model 定向测试：`miniprogram/pages-recurring/edit/model.spec.ts` `43 / 43` 通过。
+- 两端逻辑已端到端闭合：Bug A（显示）、Bug B（保存推迟）与情形 3 扩集合漏更新均修复。
 
 ---
 
