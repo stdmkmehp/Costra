@@ -731,16 +731,14 @@ export function createRecurringService(deps: RecurringServiceDeps): RecurringSer
         }
       } else {
         // 情形 3（改了周期字段但没改触发时段）：
-        //   保留原 execute_hour/minute，next_run_at 按新周期重算，
+        //   保留原 execute_hour/minute，next_run_at 按新周期从 now 严格 > 重算，
         //   但不跑 applyBucketWindowSkip——用户没改时段，今天的触发
         //   机会应由 execute_hour:minute 与 now 的关系决定，而非 bucket 窗口起点。
-        //   from 取 existing.next_run_at（未过期）或 now（已过期，如服务长时间未运行）。
-        const existingNextMs = existing.nextRunAt.getTime();
-        const from =
-          existingNextMs > nowMs
-            ? new Date(existingNextMs - 60_000)
-            : now;
-        nextRunAt = computeNextRunAt(forCompute, from);
+        //
+        //   不能从 existing.next_run_at 起算：它只是旧规则下“当前找到的下一次执行”，
+        //   不是周期节拍轴心。若用户扩大匹配集合（如每月 [5] → [4,5]），
+        //   新加入的匹配日可能早于 existing.next_run_at 但仍晚于 now；从旧值起算会漏掉。
+        nextRunAt = computeNextRunAt(forCompute, now);
       }
     }
 
