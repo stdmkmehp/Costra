@@ -137,29 +137,32 @@ export function computePreviewNextRun(
   };
 
   try {
-    // 与后端 create 逻辑同步：起始日=今天时，判断当前时刻是否已进入 bucket 窗口
-    // (1) 当前时刻 < 窗口起点 → 今天会触发（从 start_date 00:00 起算）
-    // (2) 当前时刻 >= 窗口起点 → 跳过今天（从 now 起算）
     const nowZ = DateTime.fromJSDate(now, { zone: timezone });
     const startDateZ = DateTime.fromISO(startDate, { zone: timezone }).startOf('day');
-    const isToday = nowZ.hasSame(startDateZ, 'day');
-    const computeFrom = isToday
-      ? (() => {
-          const window = BUCKET_WINDOWS[bucket];
-          const windowStartToday = nowZ.set({ hour: window.startHour, minute: 0, second: 0, millisecond: 0 });
-          if (nowZ >= windowStartToday) {
-            // 当前时刻已进入或超过 bucket 窗口起点 → 跳过今天。
-            // from 设为今天窗口结束时刻，与后端 recurringService.ts create 逻辑同步。
-            // hash 落点严格在窗口内缩区间 [startHour*60+30, endHour*60-30)，
-            // 必然 < endHour:00 → computeNextRunAt cursor 推进到今天 hash 落点时
-            // cursor <= from → 推进到下一天，保证今天不触发。
-            const windowEndToday = nowZ.set({ hour: window.endHour, minute: 0, second: 0, millisecond: 0 });
-            return windowEndToday.toJSDate();
-          }
-          // 窗口还没开始 → 从 start_date 00:00 起算（今天触发）
-          return startDateZ.minus({ minutes: 1 }).toJSDate();
-        })()
-      : startDateZ.minus({ minutes: 1 }).toJSDate();
+    const todayStartZ = nowZ.startOf('day');
+    const hasServerExecuteTime = input.executeHour !== undefined && input.executeMinute !== undefined;
+
+    // 预览分两种语义：
+    // - 编辑已有规则且保留服务端 execute_hour/minute：对齐服务端 update 情形 3，
+    //   start_date 非未来时从 now 严格 > 重算，不回到历史 start_date。
+    // - 新建规则 / 编辑时切换 bucket：对齐 create / bucketChanged 语义，仍使用 bucket 窗口保护。
+    let computeFrom: Date;
+    if (startDateZ > todayStartZ) {
+      computeFrom = startDateZ.minus({ minutes: 1 }).toJSDate();
+    } else if (hasServerExecuteTime) {
+      computeFrom = now;
+    } else {
+      const window = BUCKET_WINDOWS[bucket];
+      const windowStartToday = nowZ.set({ hour: window.startHour, minute: 0, second: 0, millisecond: 0 });
+      if (nowZ >= windowStartToday) {
+        const windowEndToday = nowZ.set({ hour: window.endHour, minute: 0, second: 0, millisecond: 0 });
+        computeFrom = windowEndToday.toJSDate();
+      } else if (nowZ.hasSame(startDateZ, 'day')) {
+        computeFrom = startDateZ.minus({ minutes: 1 }).toJSDate();
+      } else {
+        computeFrom = now;
+      }
+    }
 
     const next = computeNextRunAt(rule, computeFrom);
     // 按 rule timezone 格式化日期（不用宿主本地时区）

@@ -252,4 +252,42 @@ describe('edit/model', () => {
       expect(result!.dateStr).toBe('2026-08-15');
     });
   });
+
+  describe('computePreviewNextRun · edit with server execute time', () => {
+    it('start_date 在过去 + monthly 扩大匹配集合 → 从 now 预览新加入且更早的下次日期', () => {
+      const now = new Date('2026-08-10T14:00:00+08:00');
+      const result = computePreviewNextRun({
+        period: 'monthly',
+        periodInterval: 1,
+        bucket: 'morning',
+        startDate: '2026-08-01',
+        daysOfWeek: [],
+        daysOfMonth: [4, 5],
+        yearMonthDays: [],
+        timezone: 'Asia/Shanghai',
+        executeHour: 9,
+        executeMinute: 30,
+      }, now);
+      expect(result).not.toBeNull();
+      expect(result!.dateStr).toBe('2026-09-04');
+    });
+
+    it('start_date=今天 + 已进入 bucket 但 execute 时刻未到 → 不按窗口起点跳过今天', () => {
+      const now = new Date('2026-08-10T07:00:00+08:00');
+      const result = computePreviewNextRun({
+        period: 'weekly',
+        periodInterval: 1,
+        bucket: 'morning',
+        startDate: '2026-08-10',
+        daysOfWeek: [1],
+        daysOfMonth: [],
+        yearMonthDays: [],
+        timezone: 'Asia/Shanghai',
+        executeHour: 11,
+        executeMinute: 0,
+      }, now);
+      expect(result).not.toBeNull();
+      expect(result!.dateStr).toBe('2026-08-10');
+    });
+  });
 });
