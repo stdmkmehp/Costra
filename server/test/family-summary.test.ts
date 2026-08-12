@@ -11,6 +11,7 @@ import {
   authHeaders,
   createSharedFamilyWithMembers,
   getLedgerId,
+  insertCategory,
   insertEntry,
   registerUser,
   setFamilySummaryTestApp,
@@ -409,5 +410,188 @@ describe('COSTRA-222: Family Summary API · core', () => {
     expect(body.totals.entry_count).toBe(4);
     // transfer 不进入任何聚合
     expect(body.totals.skipped_unclassified_expense_count).toBe(0);
+  });
+});
+
+// ─── 收入维度测试（与支出侧对称） ───────────────────────────────────────────
+
+describe('Income dimension: Family Summary income_segments + income_by_member', () => {
+
+  // T-INC-1: 空月份 → income_by_member 为空数组（无收入成员不进 income_by_member）
+  // income_segments 仍含所有成员段（amount=0，与支出 segments 一致）
+  it('T-INC-1: empty month returns empty income_by_member and zero-amount income_segments', async () => {
+    const { token: ownerToken } = await registerUser('inc-t1-owner');
+    const { token: memberToken } = await registerUser('inc-t1-member');
+    const familyId = await createSharedFamilyWithMembers(ownerToken, [memberToken]);
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/v1/families/${familyId}/summary?month=2026-01`,
+      headers: authHeaders(ownerToken),
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    // income_by_member 只含 amount > 0 的成员 → 空月为 []
+    expect(body.income_by_member).toEqual([]);
+    // income_segments 含所有成员段（amount=0，与支出 segments 含所有成员一致）
+    expect(body.income_segments.length).toBeGreaterThanOrEqual(2);
+    expect(body.income_segments.every((s: { amount: number }) => s.amount === 0)).toBe(true);
+  });
+
+  // T-INC-2: 单成员收入 → income_segments 含 1 段 + income_by_member 含 1 块
+  it('T-INC-2: single member income appears in income_segments and income_by_member', async () => {
+    const { token: ownerToken, userId: ownerId } = await registerUser('inc-t2-owner');
+    const familyId = await createSharedFamilyWithMembers(ownerToken, []);
+    const ledgerId = await getLedgerId(familyId);
+
+    await insertEntry({
+      ledgerId, amount: 8000, type: 'income', createdBy: ownerId,
+      occurredAt: '2026-06-01T00:00:00Z', sharedType: null,
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/v1/families/${familyId}/summary?month=2026-06`,
+      headers: authHeaders(ownerToken),
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.totals.income).toBe(8000);
+    // income_segments: 1 段（owner）
+    expect(body.income_segments).toHaveLength(1);
+    expect(body.income_segments[0].user_id).toBe(ownerId);
+    expect(body.income_segments[0].amount).toBe(8000);
+    expect(body.income_segments[0].ratio_bps).toBe(10000); // 100%
+    // income_by_member: 1 块
+    expect(body.income_by_member).toHaveLength(1);
+    expect(body.income_by_member[0].user_id).toBe(ownerId);
+    expect(body.income_by_member[0].amount).toBe(8000);
+  });
+
+  // T-INC-3: 多成员收入 → 按成员聚合 + ratio_bps 正确
+  it('T-INC-3: multi-member income aggregated by created_by with correct ratio', async () => {
+    const { token: ownerToken, userId: ownerId } = await registerUser('inc-t3-owner');
+    const { token: memberToken, userId: memberId } = await registerUser('inc-t3-member');
+    const familyId = await createSharedFamilyWithMembers(ownerToken, [memberToken]);
+    const ledgerId = await getLedgerId(familyId);
+
+    // owner 收入 6000
+    await insertEntry({
+      ledgerId, amount: 6000, type: 'income', createdBy: ownerId,
+      occurredAt: '2026-06-01T00:00:00Z', sharedType: null,
+    });
+    // member 收入 4000
+    await insertEntry({
+      ledgerId, amount: 4000, type: 'income', createdBy: memberId,
+      occurredAt: '2026-06-02T00:00:00Z', sharedType: null,
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/v1/families/${familyId}/summary?month=2026-06`,
+      headers: authHeaders(ownerToken),
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.totals.income).toBe(10000);
+    // income_segments: 2 段
+    expect(body.income_segments).toHaveLength(2);
+    const ownerSeg = body.income_segments.find((s: { user_id: string }) => s.user_id === ownerId);
+    const memberSeg = body.income_segments.find((s: { user_id: string }) => s.user_id === memberId);
+    expect(ownerSeg.amount).toBe(6000);
+    expect(ownerSeg.ratio_bps).toBe(6000); // 60%
+    expect(memberSeg.amount).toBe(4000);
+    expect(memberSeg.ratio_bps).toBe(4000); // 40%
+    // income_by_member: 2 块
+    expect(body.income_by_member).toHaveLength(2);
+  });
+
+  // T-INC-4: 无收入的成员不出现在 income_by_member
+  it('T-INC-4: member with no income excluded from income_by_member', async () => {
+    const { token: ownerToken, userId: ownerId } = await registerUser('inc-t4-owner');
+    const { token: memberToken, userId: memberId } = await registerUser('inc-t4-member');
+    const familyId = await createSharedFamilyWithMembers(ownerToken, [memberToken]);
+    const ledgerId = await getLedgerId(familyId);
+
+    // 只有 owner 有收入
+    await insertEntry({
+      ledgerId, amount: 5000, type: 'income', createdBy: ownerId,
+      occurredAt: '2026-06-01T00:00:00Z', sharedType: null,
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/v1/families/${familyId}/summary?month=2026-06`,
+      headers: authHeaders(ownerToken),
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    // income_by_member 只有 owner
+    expect(body.income_by_member).toHaveLength(1);
+    expect(body.income_by_member[0].user_id).toBe(ownerId);
+    // member 不在 income_by_member 中
+    const memberInList = body.income_by_member.some((m: { user_id: string }) => m.user_id === memberId);
+    expect(memberInList).toBe(false);
+  });
+
+  // T-INC-5: 收入分类 L1 折叠
+  it('T-INC-5: income categories folded to L1', async () => {
+    const { token: ownerToken, userId: ownerId } = await registerUser('inc-t5-owner');
+    const familyId = await createSharedFamilyWithMembers(ownerToken, []);
+    const ledgerId = await getLedgerId(familyId);
+
+    // 创建 L1 "工资" + L2 "基本工资" + L2 "奖金"
+    const l1Id = await insertCategory({ name: '工资', type: 'income', icon: 'salary' });
+    const leafA = await insertCategory({ name: '基本工资', type: 'income', icon: 'base-salary', parentId: l1Id });
+    const leafB = await insertCategory({ name: '奖金', type: 'income', icon: 'bonus', parentId: l1Id });
+
+    await insertEntry({
+      ledgerId, amount: 7000, type: 'income', createdBy: ownerId,
+      occurredAt: '2026-06-01T00:00:00Z', sharedType: null, categoryId: leafA,
+    });
+    await insertEntry({
+      ledgerId, amount: 3000, type: 'income', createdBy: ownerId,
+      occurredAt: '2026-06-02T00:00:00Z', sharedType: null, categoryId: leafB,
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/v1/families/${familyId}/summary?month=2026-06`,
+      headers: authHeaders(ownerToken),
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.income_by_member).toHaveLength(1);
+    const block = body.income_by_member[0];
+    expect(block.amount).toBe(10000);
+    // L1 折叠后只有 1 个一级分类
+    expect(block.categories).toHaveLength(1);
+    expect(block.categories[0].category_id).toBe(l1Id);
+    expect(block.categories[0].category_name).toBe('工资');
+    expect(block.categories[0].amount).toBe(10000);
+    expect(block.categories[0].entry_count).toBe(2);
+  });
+
+  // T-INC-6: 年度视图收入维度
+  it('T-INC-6: yearly income dimension works', async () => {
+    const { token: ownerToken, userId: ownerId } = await registerUser('inc-t6-owner');
+    const familyId = await createSharedFamilyWithMembers(ownerToken, []);
+    const ledgerId = await getLedgerId(familyId);
+
+    await insertEntry({
+      ledgerId, amount: 5000, type: 'income', createdBy: ownerId,
+      occurredAt: '2026-03-15T00:00:00Z', sharedType: null,
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/v1/families/${familyId}/summary?year=2026`,
+      headers: authHeaders(ownerToken),
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.totals.income).toBe(5000);
+    expect(body.income_segments).toHaveLength(1);
+    expect(body.income_by_member).toHaveLength(1);
   });
 });

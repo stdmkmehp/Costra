@@ -456,3 +456,201 @@ describe('COSTRA-302: Summary Drill-Down API', () => {
     expect(itemsSum).toBe(drill.l1_amount);
   });
 });
+
+// ─── 收入维度下钻测试（entry_type=income） ──────────────────────────────────
+
+describe('Income Drill-Down: entry_type=income', () => {
+
+  // T-INC-DD-1: 收入下钻缺 user_id → 400
+  it('T-INC-DD-1: entry_type=income without user_id returns 400', async () => {
+    const { token } = await registerUser('inc-dd-t1-user');
+    const families = await listFamilies(token);
+    const familyId = families[0].id;
+
+    const res = await app.inject({
+      method: 'GET',
+      url: drillDownUrl(familyId, {
+        month: '2026-06',
+        l1_category_id: crypto.randomUUID(),
+        entry_type: 'income',
+      }),
+      headers: authHeaders(token),
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().code).toBe('INVALID_ARGUMENT');
+    expect(res.json().message).toContain('user_id');
+  });
+
+  // T-INC-DD-2: 收入下钻基本流程
+  it('T-INC-DD-2: income drill-down returns correct entries', async () => {
+    const { token: ownerToken, userId: ownerId } = await registerUser('inc-dd-t2-owner');
+    const familyId = await createSharedFamilyWithMembers(ownerToken, []);
+    const ledgerId = await getLedgerId(familyId);
+
+    const l1Id = await insertCategory({ name: '工资', type: 'income', icon: 'salary' });
+    const l2Id = await insertCategory({ name: '基本工资', type: 'income', icon: 'base-salary', parentId: l1Id });
+
+    await insertEntry({
+      ledgerId, amount: 7000, type: 'income', createdBy: ownerId,
+      occurredAt: '2026-06-01T00:00:00Z', categoryId: l2Id, sharedType: null,
+    });
+    await insertEntry({
+      ledgerId, amount: 3000, type: 'income', createdBy: ownerId,
+      occurredAt: '2026-06-02T00:00:00Z', categoryId: l1Id, sharedType: null,
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: drillDownUrl(familyId, {
+        month: '2026-06',
+        l1_category_id: l1Id,
+        entry_type: 'income',
+        user_id: ownerId,
+      }),
+      headers: authHeaders(ownerToken),
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.l1_category_id).toBe(l1Id);
+    expect(body.l1_category_name).toBe('工资');
+    expect(body.l1_amount).toBe(10000);
+    expect(body.total_count).toBe(2);
+    expect(body.items).toHaveLength(2);
+    // 排序 amount DESC
+    expect(body.items[0].amount).toBe(7000);
+    expect(body.items[1].amount).toBe(3000);
+  });
+
+  // T-INC-DD-3: 收入下钻不包含其他成员的收入
+  it('T-INC-DD-3: income drill-down filters by user_id', async () => {
+    const { token: ownerToken, userId: ownerId } = await registerUser('inc-dd-t3-owner');
+    const { token: memberToken, userId: memberId } = await registerUser('inc-dd-t3-member');
+    const familyId = await createSharedFamilyWithMembers(ownerToken, [memberToken]);
+    const ledgerId = await getLedgerId(familyId);
+
+    const l1Id = await insertCategory({ name: '工资', type: 'income', icon: 'salary' });
+
+    await insertEntry({
+      ledgerId, amount: 5000, type: 'income', createdBy: ownerId,
+      occurredAt: '2026-06-01T00:00:00Z', categoryId: l1Id, sharedType: null,
+    });
+    await insertEntry({
+      ledgerId, amount: 8000, type: 'income', createdBy: memberId,
+      occurredAt: '2026-06-02T00:00:00Z', categoryId: l1Id, sharedType: null,
+    });
+
+    // 下钻 owner 的收入 → 只有 5000
+    const res = await app.inject({
+      method: 'GET',
+      url: drillDownUrl(familyId, {
+        month: '2026-06',
+        l1_category_id: l1Id,
+        entry_type: 'income',
+        user_id: ownerId,
+      }),
+      headers: authHeaders(ownerToken),
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.l1_amount).toBe(5000);
+    expect(body.total_count).toBe(1);
+    expect(body.items[0].amount).toBe(5000);
+  });
+
+  // T-INC-DD-4: 收入下钻不包含支出流水
+  it('T-INC-DD-4: income drill-down excludes expense entries', async () => {
+    const { token: ownerToken, userId: ownerId } = await registerUser('inc-dd-t4-owner');
+    const familyId = await createSharedFamilyWithMembers(ownerToken, []);
+    const ledgerId = await getLedgerId(familyId);
+
+    const l1Id = await insertCategory({ name: '混合', type: 'expense', icon: 'mix' });
+
+    // 一条支出 + 一条收入，同一分类
+    await insertEntry({
+      ledgerId, amount: 3000, type: 'expense', createdBy: ownerId,
+      occurredAt: '2026-06-01T00:00:00Z', categoryId: l1Id, sharedType: 'personal',
+    });
+    await insertEntry({
+      ledgerId, amount: 5000, type: 'income', createdBy: ownerId,
+      occurredAt: '2026-06-02T00:00:00Z', categoryId: l1Id, sharedType: null,
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: drillDownUrl(familyId, {
+        month: '2026-06',
+        l1_category_id: l1Id,
+        entry_type: 'income',
+        user_id: ownerId,
+      }),
+      headers: authHeaders(ownerToken),
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.l1_amount).toBe(5000);
+    expect(body.total_count).toBe(1);
+    expect(body.items[0].amount).toBe(5000);
+  });
+
+  // T-INC-DD-5: 年度收入下钻
+  it('T-INC-DD-5: yearly income drill-down works', async () => {
+    const { token: ownerToken, userId: ownerId } = await registerUser('inc-dd-t5-owner');
+    const familyId = await createSharedFamilyWithMembers(ownerToken, []);
+    const ledgerId = await getLedgerId(familyId);
+
+    const l1Id = await insertCategory({ name: '工资', type: 'income', icon: 'salary' });
+
+    await insertEntry({
+      ledgerId, amount: 5000, type: 'income', createdBy: ownerId,
+      occurredAt: '2026-03-15T00:00:00Z', categoryId: l1Id, sharedType: null,
+    });
+    await insertEntry({
+      ledgerId, amount: 8000, type: 'income', createdBy: ownerId,
+      occurredAt: '2026-09-15T00:00:00Z', categoryId: l1Id, sharedType: null,
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: drillDownUrl(familyId, {
+        year: '2026',
+        l1_category_id: l1Id,
+        entry_type: 'income',
+        user_id: ownerId,
+      }),
+      headers: authHeaders(ownerToken),
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.l1_amount).toBe(13000);
+    expect(body.total_count).toBe(2);
+  });
+
+  // T-INC-DD-6: entry_type=expense（默认）仍正常工作（向后兼容）
+  it('T-INC-DD-6: default entry_type=expense still works (backward compat)', async () => {
+    const { token: ownerToken, userId: ownerId } = await registerUser('inc-dd-t6-owner');
+    const familyId = await createSharedFamilyWithMembers(ownerToken, []);
+    const ledgerId = await getLedgerId(familyId);
+
+    const l1Id = await insertCategory({ name: '餐饮', type: 'expense', icon: 'food' });
+
+    await insertEntry({
+      ledgerId, amount: 5000, type: 'expense', createdBy: ownerId,
+      occurredAt: '2026-06-01T00:00:00Z', categoryId: l1Id, sharedType: 'shared',
+    });
+
+    // 不传 entry_type → 默认 expense
+    const res = await app.inject({
+      method: 'GET',
+      url: drillDownUrl(familyId, {
+        month: '2026-06',
+        l1_category_id: l1Id,
+        shared_type: 'shared',
+      }),
+      headers: authHeaders(ownerToken),
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.l1_amount).toBe(5000);
+    expect(body.total_count).toBe(1);
+  });
+});

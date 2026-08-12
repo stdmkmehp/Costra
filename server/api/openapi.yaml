@@ -422,7 +422,8 @@ paths:
           - l1_category_id 匹配「该一级分类本身 + 其所有子分类」的流水（因 foldToL1 折叠了二级到一级）。
           - 统计页 drill-down 是精确匹配单个 category_id 且 shared_type IS NOT NULL（不区分公共/个人），不可复用。
 
-        month 与 year 互斥，恰传一个；shared_type 必填；shared_type='personal' 时 user_id 必填。
+        month 与 year 互斥，恰传一个；shared_type 在 entry_type=expense 时必填，entry_type=income 时忽略；
+        entry_type=income 时 user_id 必填（收入必按成员归属）。
       parameters:
         - name: month
           in: query
@@ -440,18 +441,23 @@ paths:
           description: '一级分类 ID（来自 summary 排行的 category_id）'
         - name: shared_type
           in: query
-          required: true
+          required: false
           schema: { type: string, enum: [shared, personal] }
-          description: '公共 or 个人口径'
+          description: 'entry_type=expense 时必填；entry_type=income 时忽略'
         - name: user_id
           in: query
           required: false
           schema: { type: string, format: uuid }
-          description: 'shared_type=personal 时必填；shared 时忽略'
+          description: 'shared_type=personal 或 entry_type=income 时必填'
         - name: limit
           in: query
           required: false
           schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+        - name: entry_type
+          in: query
+          required: false
+          schema: { type: string, enum: [expense, income], default: expense }
+          description: '下钻条目类型：expense（默认，支出维度）或 income（收入维度）'
       responses:
         '200':
           description: OK
@@ -1622,9 +1628,10 @@ components:
 
     FamilySummary:
       type: object
-      required: [family_id, family_name, family_kind, ledger_id, ledger_name, timezone, range_start, range_end, currency, totals, members, segments, shared, personal_by_member]
+      required: [family_id, family_name, family_kind, ledger_id, ledger_name, timezone, range_start, range_end, currency, totals, members, segments, shared, personal_by_member, income_segments, income_by_member]
       description: |
         COSTRA-222 / COSTRA-300: 家庭财务聚合（月度或年度）。口径详见 GET /families/{family_id}/summary description。
+        收入维度（income_segments + income_by_member）与支出维度对称，但仅按 created_by 归属成员（无公共/个人区分）。
       properties:
         family_id: { type: string, format: uuid }
         family_name: { type: string }
@@ -1670,6 +1677,14 @@ components:
         personal_by_member:
           type: array
           items: { $ref: '#/components/schemas/FamilyPersonalExpenseBlock' }
+        income_segments:
+          type: array
+          description: '收入维度的成员段（无 shared 段，ratio 分母 = totals.income）'
+          items: { $ref: '#/components/schemas/FamilySummarySegment' }
+        income_by_member:
+          type: array
+          description: '成员收入块（仅 amount > 0 的成员；L1 折叠后的收入分类排行）'
+          items: { $ref: '#/components/schemas/FamilyIncomeBlock' }
 
     FamilySummaryMember:
       type: object
@@ -1731,6 +1746,22 @@ components:
         avatar_url: { type: string, format: uri, nullable: true }
         status: { type: string, enum: [active, left] }
         amount: { type: integer, format: int64, description: '个人支出总额（cents）' }
+        categories:
+          type: array
+          items: { $ref: '#/components/schemas/FamilyCategoryRankItem' }
+
+    FamilyIncomeBlock:
+      type: object
+      required: [user_id, nickname, avatar_url, status, amount, categories]
+      description: |
+        成员收入块（与 FamilyPersonalExpenseBlock 对称）。
+        仅包含 amount > 0 的成员；收入按 created_by 归属，无 shared_type 区分。
+      properties:
+        user_id: { type: string, format: uuid }
+        nickname: { type: string }
+        avatar_url: { type: string, format: uri, nullable: true }
+        status: { type: string, enum: [active, left] }
+        amount: { type: integer, format: int64, description: '收入总额（cents）' }
         categories:
           type: array
           items: { $ref: '#/components/schemas/FamilyCategoryRankItem' }

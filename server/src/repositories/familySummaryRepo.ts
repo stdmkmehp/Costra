@@ -745,3 +745,256 @@ export async function listEntriesByL1Category(
 
   return { items, totalCount, l1Amount };
 }
+
+// --- 收入维度（与支出侧对称 · 无 shared_type 区分，仅按 created_by 归属）---
+
+/**
+ * 成员维度收入聚合
+ *
+ * 口径：
+ *   - SUM(amount) WHERE type='income' AND created_by=该成员
+ *   - 收入没有 shared_type，不区分公共/个人
+ *   - 收入所有流水均应有分类（category_id IS NOT NULL），不存在 skipped 概念
+ */
+export async function getIncomeByMember(
+  ledgerId: string,
+  rangeStartUtc: string,
+  rangeEndUtc: string,
+  client?: Runner,
+): Promise<{ user_id: string; amount: number }[]> {
+  const runner = client ?? exec();
+  const res = await runner.query(
+    `SELECT
+       e.created_by AS user_id,
+       COALESCE(SUM(e.amount), 0) AS amount
+     FROM entries e
+     WHERE e.ledger_id = $1
+       AND e.deleted_at IS NULL
+       AND e.occurred_at >= $2
+       AND e.occurred_at < $3
+       AND e.type = 'income'
+     GROUP BY e.created_by`,
+    [ledgerId, rangeStartUtc, rangeEndUtc],
+  );
+  return res.rows.map((r) => ({
+    user_id: String(r.user_id),
+    amount: Number(r.amount ?? 0),
+  }));
+}
+
+/**
+ * 批量获取所有成员的收入分类排行（不截断版本）。
+ *
+ * 与 getPersonalCategoryRanksByMemberUntrimmed 对称，但口径改为 type='income'
+ * 且不按 shared_type 过滤（收入无此字段语义）。
+ * 最多 3 次查询：聚合 + category 批量 + parent 批量。
+ */
+export async function getIncomeCategoryRanksByMemberUntrimmed(
+  ledgerId: string,
+  rangeStartUtc: string,
+  rangeEndUtc: string,
+  client?: Runner,
+): Promise<MemberCategoryRankRow[]> {
+  const runner = client ?? exec();
+  const aggRes = await runner.query(
+    `SELECT
+       e.created_by AS user_id,
+       e.category_id AS category_id,
+       SUM(e.amount) AS amount,
+       COUNT(*) AS entry_count
+     FROM entries e
+     WHERE e.ledger_id = $1
+       AND e.deleted_at IS NULL
+       AND e.occurred_at >= $2
+       AND e.occurred_at < $3
+       AND e.type = 'income'
+     GROUP BY e.created_by, e.category_id`,
+    [ledgerId, rangeStartUtc, rangeEndUtc],
+  );
+
+  type CategoryMeta = { id: string; name: string; parent_id: string | null };
+  const categoryIds = Array.from(new Set(
+    aggRes.rows
+      .map((r) => (r.category_id ? String(r.category_id) : null))
+      .filter((id): id is string => id !== null),
+  ));
+
+  const categoryMap = new Map<string, CategoryMeta>();
+  if (categoryIds.length > 0) {
+    const placeholders = categoryIds.map((_, i) => `$${i + 1}`).join(', ');
+    const catRes = await runner.query(
+      `SELECT id, name, parent_id FROM categories WHERE id IN (${placeholders})`,
+      categoryIds,
+    );
+    for (const row of catRes.rows) {
+      const id = String(row.id);
+      categoryMap.set(id, {
+        id,
+        name: String(row.name),
+        parent_id: row.parent_id ? String(row.parent_id) : null,
+      });
+    }
+  }
+
+  const parentIds = Array.from(new Set(
+    Array.from(categoryMap.values())
+      .map((c) => c.parent_id)
+      .filter((id): id is string => id !== null),
+  ));
+  const parentMap = new Map<string, CategoryMeta>();
+  if (parentIds.length > 0) {
+    const placeholders = parentIds.map((_, i) => `$${i + 1}`).join(', ');
+    const parentRes = await runner.query(
+      `SELECT id, name, parent_id FROM categories WHERE id IN (${placeholders})`,
+      parentIds,
+    );
+    for (const row of parentRes.rows) {
+      const id = String(row.id);
+      parentMap.set(id, {
+        id,
+        name: String(row.name),
+        parent_id: row.parent_id ? String(row.parent_id) : null,
+      });
+    }
+  }
+
+  const result: MemberCategoryRankRow[] = [];
+  for (const r of aggRes.rows) {
+    const userId = String(r.user_id);
+    const categoryId = r.category_id ? String(r.category_id) : null;
+    const category = categoryId ? categoryMap.get(categoryId) : undefined;
+    const parent = category?.parent_id ? parentMap.get(category.parent_id) : undefined;
+    const item: MemberCategoryRankRow = {
+      user_id: userId,
+      category_id: categoryId,
+      category_name: category?.name ?? '未分类',
+      parent_category_id: category?.parent_id ?? null,
+      parent_category_name: parent?.name ?? null,
+      amount: Number(r.amount ?? 0),
+      entry_count: Number(r.entry_count ?? 0),
+    };
+    if (item.amount <= 0) continue;
+    result.push(item);
+  }
+
+  // 按成员内排序（amount DESC, name ASC）但不截断
+  const grouped = new Map<string, MemberCategoryRankRow[]>();
+  for (const item of result) {
+    const list = grouped.get(item.user_id) ?? [];
+    list.push(item);
+    grouped.set(item.user_id, list);
+  }
+
+  const sorted: MemberCategoryRankRow[] = [];
+  for (const list of grouped.values()) {
+    sorted.push(
+      ...list.sort((a, b) => (b.amount - a.amount) || a.category_name.localeCompare(b.category_name, 'zh-Hans-CN')),
+    );
+  }
+  return sorted;
+}
+
+/**
+ * 按一级分类下钻收入流水明细。
+ *
+ * 与 listEntriesByL1Category 对称，但口径改为 type='income' + created_by=userId，
+ * 不按 shared_type 过滤（收入无此字段语义）。
+ *
+ * 采用与支出侧相同的两段式查询风格（规避 pg-mem 兼容问题）。
+ */
+export async function listIncomeEntriesByL1Category(
+  ledgerId: string,
+  rangeStartUtc: string,
+  rangeEndUtc: string,
+  l1CategoryId: string,
+  createdByUserId: string,
+  limit: number,
+  client?: Runner,
+): Promise<SummaryDrillDownResult> {
+  const runner = client ?? exec();
+
+  // --- 第一段：取目标 category_id 集合 ---
+  const catRes = await runner.query(
+    `SELECT id FROM categories
+     WHERE (id = $1 OR parent_id = $1)`,
+    [l1CategoryId],
+  );
+  const categoryIds: string[] = catRes.rows.map((r) => String(r.id));
+
+  if (categoryIds.length === 0) {
+    return { items: [], totalCount: 0, l1Amount: 0 };
+  }
+
+  // --- 构建公共 WHERE 条件 ---
+  const baseConditions: string[] = [
+    'e.ledger_id = $1',
+    'e.deleted_at IS NULL',
+    'e.occurred_at >= $2',
+    'e.occurred_at < $3',
+    "e.type = 'income'",
+    `e.created_by = $4`,
+  ];
+  const baseParams: unknown[] = [ledgerId, rangeStartUtc, rangeEndUtc, createdByUserId];
+
+  // IN 占位符
+  const inPlaceholders = categoryIds.map((_, i) => `$${i + 5}`).join(', ');
+  baseConditions.push(`e.category_id IN (${inPlaceholders})`);
+  const allParams = [...baseParams, ...categoryIds];
+
+  const whereClause = baseConditions.join(' AND ');
+
+  // --- 第二段 A：count + sum ---
+  const countRes = await runner.query(
+    `SELECT COUNT(*) AS total, COALESCE(SUM(e.amount), 0) AS l1_amount
+     FROM entries e
+     WHERE ${whereClause}`,
+    allParams,
+  );
+  const totalCount = Number(countRes.rows[0]?.total ?? 0);
+  const l1Amount = Number(countRes.rows[0]?.l1_amount ?? 0);
+
+  if (totalCount === 0) {
+    return { items: [], totalCount: 0, l1Amount: 0 };
+  }
+
+  // --- 第二段 B：分页数据（JOIN users） ---
+  const limitIdx = allParams.length + 1;
+  const dataParams = [...allParams, limit];
+  const dataRes = await runner.query(
+    `SELECT
+       e.id AS entry_id,
+       e.amount AS amount,
+       e.note AS note,
+       e.occurred_at AS occurred_at,
+       e.shared_type AS shared_type,
+       e.source_recurring_id AS source_recurring_id,
+       e.created_by AS created_by,
+       u.nickname AS nickname,
+       u.avatar_url AS avatar_url,
+       c.name AS category_name
+     FROM entries e
+     JOIN users u ON u.id = e.created_by
+     LEFT JOIN categories c ON c.id = e.category_id
+     WHERE ${whereClause}
+     ORDER BY e.amount DESC, e.occurred_at DESC
+     LIMIT $${limitIdx}`,
+    dataParams,
+  );
+
+  const items: SummaryEntryDetailRow[] = dataRes.rows.map((r) => ({
+    entry_id: String(r.entry_id),
+    amount: Number(r.amount ?? 0),
+    note: r.note != null ? String(r.note) : null,
+    occurred_at: typeof r.occurred_at === 'string'
+      ? r.occurred_at
+      : (r.occurred_at as Date).toISOString(),
+    shared_type: (r.shared_type as 'shared' | 'personal' | null) ?? null,
+    source_recurring_id: r.source_recurring_id != null ? String(r.source_recurring_id) : null,
+    created_by: String(r.created_by),
+    nickname: String(r.nickname ?? ''),
+    avatar_url: r.avatar_url != null ? String(r.avatar_url) : null,
+    category_name: r.category_name != null ? String(r.category_name) : '未分类',
+  }));
+
+  return { items, totalCount, l1Amount };
+}

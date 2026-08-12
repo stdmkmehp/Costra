@@ -96,6 +96,16 @@ export interface FamilyPersonalExpenseBlock {
   categories: FamilyCategoryRankItem[];
 }
 
+/** 成员收入块（与 FamilyPersonalExpenseBlock 对称 · 无 shared 维度） */
+export interface FamilyIncomeBlock {
+  user_id: string;
+  nickname: string;
+  avatar_url: string | null;
+  status: 'active' | 'left';
+  amount: number;
+  categories: FamilyCategoryRankItem[];
+}
+
 export interface FamilySummaryResponse {
   family_id: string;
   family_name: string;
@@ -117,6 +127,10 @@ export interface FamilySummaryResponse {
     categories: FamilyCategoryRankItem[];
   };
   personal_by_member: FamilyPersonalExpenseBlock[];
+  /** 收入维度的成员段（无 shared 段，ratio 分母 = totals.income） */
+  income_segments: FamilySummarySegment[];
+  /** 成员收入块（L1 折叠后的收入分类排行） */
+  income_by_member: FamilyIncomeBlock[];
 }
 
 // --- 辅助函数 ---
@@ -325,18 +339,26 @@ export async function getFamilySummary(
   const range = hasMonth ? parseMonthRange(input.month!) : parseYearRange(input.year!);
   const { rangeStartUtc, rangeEndUtc } = range;
 
-  // 5. 获取聚合数据
-  const [totals, memberAggs, members, sharedCategoryRanksUntrimmed] = await Promise.all([
+  // 5. 获取聚合数据（支出 + 收入并行拉取）
+  const [totals, memberAggs, members, sharedCategoryRanksUntrimmed, incomeByMemberAggs, allIncomeCategoryRanksUntrimmed] = await Promise.all([
     summaryRepo.getTotals(ledger.id, rangeStartUtc, rangeEndUtc),
     summaryRepo.getMemberAggregates(ledger.id, rangeStartUtc, rangeEndUtc),
     familyMemberRepo.listMembersWithUsers(input.familyId),
     summaryRepo.getCategoryRanksUntrimmed(ledger.id, rangeStartUtc, rangeEndUtc, 'shared', null),
+    summaryRepo.getIncomeByMember(ledger.id, rangeStartUtc, rangeEndUtc),
+    summaryRepo.getIncomeCategoryRanksByMemberUntrimmed(ledger.id, rangeStartUtc, rangeEndUtc),
   ]);
 
   // 成员维度聚合 Map
   const memberAggMap = new Map<string, summaryRepo.MemberAggRow>();
   for (const ma of memberAggs) {
     memberAggMap.set(ma.user_id, ma);
+  }
+
+  // 收入成员聚合 Map
+  const incomeAggMap = new Map<string, number>();
+  for (const ia of incomeByMemberAggs) {
+    incomeAggMap.set(ia.user_id, ia.amount);
   }
 
   // 6. 组装 response
@@ -446,6 +468,46 @@ export async function getFamilySummary(
     };
   });
 
+  // 6f. income_segments — 仅成员段（无 shared 段，ratio 分母 = totals.income）
+  const incomeSegments: FamilySummarySegment[] = [];
+  for (const m of members) {
+    const incomeAmount = incomeAggMap.get(m.userId) ?? 0;
+    const status = m.leftAt ? 'left' : 'active';
+    incomeSegments.push({
+      key: `member:${m.userId}`,
+      type: 'personal',
+      label: m.nickname,
+      user_id: m.userId,
+      amount: incomeAmount,
+      ratio_bps: calcBps(incomeAmount, totals.income),
+      member_status: status,
+    });
+  }
+
+  // 6g. income_by_member — L1 折叠（仅 amount > 0 的成员）
+  const incomeCategoryRankMap = new Map<string, summaryRepo.MemberCategoryRankRow[]>();
+  for (const cr of allIncomeCategoryRanksUntrimmed) {
+    const list = incomeCategoryRankMap.get(cr.user_id) ?? [];
+    list.push(cr);
+    incomeCategoryRankMap.set(cr.user_id, list);
+  }
+
+  const incomeByMember: FamilyIncomeBlock[] = [];
+  for (const m of members) {
+    const incomeAmount = incomeAggMap.get(m.userId) ?? 0;
+    if (incomeAmount <= 0) continue;
+    const incomeCategoryRanks = incomeCategoryRankMap.get(m.userId) ?? [];
+    const incomeCategoryItems = foldToL1(incomeCategoryRanks, incomeAmount, topN);
+    incomeByMember.push({
+      user_id: m.userId,
+      nickname: m.nickname,
+      avatar_url: m.avatarUrl,
+      status: m.leftAt ? 'left' : 'active',
+      amount: incomeAmount,
+      categories: incomeCategoryItems,
+    });
+  }
+
   // 组装最终响应
   return {
     family_id: family.id,
@@ -468,6 +530,8 @@ export async function getFamilySummary(
       categories: sharedCategoryItems,
     },
     personal_by_member: personalByMember,
+    income_segments: incomeSegments,
+    income_by_member: incomeByMember,
   };
 }
 
@@ -499,7 +563,8 @@ export interface SummaryDrillDownResponse {
  * 卡号：COSTRA-302
  *
  * 从 family summary 的 L1 一级分类排行下钻到流水明细。
- * 口径严格对齐 familySummaryRepo（公共 = shared_type='shared'；个人 = shared_type='personal' AND created_by=userId）。
+ * - entry_type=expense（默认）：口径严格对齐 familySummaryRepo（公共 = shared_type='shared'；个人 = shared_type='personal' AND created_by=userId）。
+ * - entry_type=income：type='income' + created_by=userId，不看 shared_type（收入无此语义）。
  */
 export async function getSummaryDrillDown(
   userId: string,
@@ -511,8 +576,12 @@ export async function getSummaryDrillDown(
     sharedType: 'shared' | 'personal';
     userId?: string;
     limit?: number;
+    /** 下钻条目类型：expense（默认）或 income */
+    entryType?: 'expense' | 'income';
   },
 ): Promise<SummaryDrillDownResponse> {
+  const entryType = input.entryType ?? 'expense';
+
   // 1. 参数校验：month/year xor
   const hasMonth = !!input.month;
   const hasYear = !!input.year;
@@ -533,12 +602,23 @@ export async function getSummaryDrillDown(
     });
   }
 
-  // shared_type=personal 时 user_id 必填
-  if (input.sharedType === 'personal' && !input.userId) {
-    throw new AppError(ErrorCode.INVALID_ARGUMENT, {
-      message: 'user_id is required when shared_type=personal',
-      details: { field: 'user_id', shared_type: input.sharedType },
-    });
+  // entry_type=expense 时 shared_type 必填（向后兼容默认值）
+  if (entryType === 'expense') {
+    // shared_type=personal 时 user_id 必填
+    if (input.sharedType === 'personal' && !input.userId) {
+      throw new AppError(ErrorCode.INVALID_ARGUMENT, {
+        message: 'user_id is required when shared_type=personal',
+        details: { field: 'user_id', shared_type: input.sharedType },
+      });
+    }
+  } else {
+    // entry_type=income 时 user_id 必填（收入必按成员）
+    if (!input.userId) {
+      throw new AppError(ErrorCode.INVALID_ARGUMENT, {
+        message: 'user_id is required when entry_type=income',
+        details: { field: 'user_id', entry_type: entryType },
+      });
+    }
   }
 
   // limit 校验
@@ -577,20 +657,32 @@ export async function getSummaryDrillDown(
   const range = hasMonth ? parseMonthRange(input.month!) : parseYearRange(input.year!);
   const { rangeStartUtc, rangeEndUtc } = range;
 
-  // 5. 确定 createdByUserId（口径对齐 familySummaryRepo）
-  // 公共口径不按人过滤；个人口径必须按 user_id 过滤
-  const createdByUserId = input.sharedType === 'personal' ? (input.userId ?? null) : null;
+  // 5. 按 entry_type 分派 repo 函数
+  let result: { items: summaryRepo.SummaryEntryDetailRow[]; totalCount: number; l1Amount: number };
 
-  // 6. 调用 repo
-  const result = await summaryRepo.listEntriesByL1Category(
-    ledger.id,
-    rangeStartUtc,
-    rangeEndUtc,
-    input.l1CategoryId,
-    input.sharedType,
-    createdByUserId,
-    limit,
-  );
+  if (entryType === 'income') {
+    result = await summaryRepo.listIncomeEntriesByL1Category(
+      ledger.id,
+      rangeStartUtc,
+      rangeEndUtc,
+      input.l1CategoryId,
+      input.userId!,
+      limit,
+    );
+  } else {
+    // expense（默认）— 口径对齐 familySummaryRepo
+    // 公共口径不按人过滤；个人口径必须按 user_id 过滤
+    const createdByUserId = input.sharedType === 'personal' ? (input.userId ?? null) : null;
+    result = await summaryRepo.listEntriesByL1Category(
+      ledger.id,
+      rangeStartUtc,
+      rangeEndUtc,
+      input.l1CategoryId,
+      input.sharedType,
+      createdByUserId,
+      limit,
+    );
+  }
 
   // 7. 取一级分类名
   const catMetas = await statsRepo.getCategoriesByIds([input.l1CategoryId]);
