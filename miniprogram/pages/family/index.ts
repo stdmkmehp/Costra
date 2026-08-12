@@ -45,7 +45,6 @@ import {
   type FamilySummary,
   type CategoryRankItem,
   type FamilyEntryDetailItem,
-  type IncomeByMember,
 } from '../../services/familyApi';
 import type { ApiError } from '../../services/request';
 import { mapError } from '../../utils/error-mapper';
@@ -344,6 +343,7 @@ Page({
     // ─── Segmented Bar ───
     segments: [] as SegmentDisplay[],
     totalExpenseCents: 0,
+    totalExpenseDisplay: '',
 
     // ─── 下钻列表（COSTRA-302 重构 · spec §4.3） ───
     drilldownRows: [] as DrilldownRow[],
@@ -351,6 +351,7 @@ Page({
     // ─── 收入维度（与支出侧对称 · 上下并列渲染） ───
     incomeSegments: [] as SegmentDisplay[],
     totalIncomeCents: 0,
+    totalIncomeDisplay: '',
     incomeDrilldownRows: [] as DrilldownRow[],
 
     // ─── 空态 ───
@@ -997,9 +998,11 @@ Page({
       members: memberDisplays,
       segments: segmentDisplays,
       totalExpenseCents: totalExpense,
+      totalExpenseDisplay: formatCentsDisplay(totalExpense),
       drilldownRows,
       incomeSegments: incomeSegmentDisplays,
       totalIncomeCents: totals.income,
+      totalIncomeDisplay: formatCentsDisplay(totals.income),
       incomeDrilldownRows,
       isEmpty,
       emptyTitle: buildEmptyTitle(dim, value),
@@ -1023,7 +1026,6 @@ Page({
     choiceByUserId: Map<string, number | null>,
   ): SegmentDisplay[] {
     const displays: SegmentDisplay[] = [];
-    const totalIncome = summary.totals.income;
 
     for (const seg of summary.income_segments) {
       if (seg.amount === 0) continue;
