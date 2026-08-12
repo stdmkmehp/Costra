@@ -49,8 +49,10 @@ export interface FamilySummaryMember {
   avatar_url: string | null;
   role: 'owner' | 'member' | 'viewer';
   status: 'active' | 'left';
-  /** 成员持久化配色槽位 0~7（migration 0012）· null = 已 left 的成员，slot 已释放 */
-  color_slot: number | null;
+  /** 座位号 0~7（migration 0017 · 原 color_slot 改名）· null = 已 left 的成员，seat 已释放 */
+  seat_order: number | null;
+  /** 用户自选偏好色 0~7（migration 0017）· 允许撞色 · null = 已 left 的成员 */
+  color_choice: number | null;
   joined_at: string;
   left_at: string | null;
   personal_expense: number;
@@ -383,7 +385,8 @@ export async function getFamilySummary(
       avatar_url: m.avatarUrl,
       role: m.role,
       status: m.leftAt ? 'left' : 'active',
-      color_slot: m.colorSlot,
+      seat_order: m.seatOrder,
+      color_choice: m.colorChoice,
       joined_at: m.joinedAt.toISOString(),
       left_at: m.leftAt ? m.leftAt.toISOString() : null,
       personal_expense: agg?.personal_expense ?? 0,

@@ -2,7 +2,7 @@
 // 卡号: COSTRA-264 · P0 拆分 index.ts 低于 1000 行
 // Refs: COSTRA-264
 
-import { getMemberColorBySlot } from '../../utils/memberColor';
+import { getMemberColorByChoice } from '../../utils/memberColor';
 import { getToken } from '../../services/auth';
 import type { FamilyMember } from '../../services/familyApi';
 import type { MemberTabItem } from './types';
@@ -17,7 +17,9 @@ export function makeAllTab(): MemberTabItem {
 
 /**
  * 按 D5 排序规则构造 memberTabs：
- * [全部] → 自己（优先） → active 成员（color_slot 升序） → left 成员（left_at 升序）
+ * [全部] → 自己（优先） → active 成员（seat_order 升序） → left 成员（left_at 升序）
+ *
+ * 排序用 seat_order（座位号，唯一、稳定）；取色用 color_choice（用户自选偏好，允许撞色）。
  */
 export function buildMemberTabs(members: FamilyMember[]): MemberTabItem[] {
   const currentUserId = getToken()?.raw?.user?.id || '';
@@ -27,7 +29,7 @@ export function buildMemberTabs(members: FamilyMember[]): MemberTabItem[] {
   active.sort((a, b) => {
     if (a.user_id === currentUserId) return -1;
     if (b.user_id === currentUserId) return 1;
-    return (a.color_slot ?? 99) - (b.color_slot ?? 99);
+    return (a.seat_order ?? 99) - (b.seat_order ?? 99);
   });
 
   left.sort((a, b) => {
@@ -44,7 +46,7 @@ export function buildMemberTabs(members: FamilyMember[]): MemberTabItem[] {
       label: m.nickname || '未知',
       avatarUrl: m.avatar_url || '',
       initial: (m.nickname || '?')[0],
-      color: getMemberColorBySlot(m.color_slot),
+      color: getMemberColorByChoice(m.color_choice),
       status: m.status,
     });
   }

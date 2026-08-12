@@ -91,10 +91,11 @@ export async function createPersonalFamily(
   const family = rowToEntity(res.rows[0]);
 
   // ② INSERT family_members(owner) · 同事务
-  // color_slot=0：owner 是 family 第一个成员 · 必占 slot 0（migration 0012）
+  // seat_order=0：owner 是 family 第一个成员 · 必占 seat 0（migration 0017）
+  // color_choice 初始 = seat_order = 0（默认体验与旧版一致，owner 可后续自改）
   await runner.query(
-    `INSERT INTO family_members (family_id, user_id, role, color_slot)
-          VALUES ($1, $2, 'owner', 0)`,
+    `INSERT INTO family_members (family_id, user_id, role, seat_order, color_choice)
+          VALUES ($1, $2, 'owner', 0, 0)`,
     [family.id, input.ownerId],
   );
 
@@ -306,10 +307,11 @@ export async function createSharedFamily(
   const family = rowToEntity(res.rows[0]);
 
   // ② INSERT family_members(owner) · 同事务
-  // color_slot=0：owner 是 family 第一个成员 · 必占 slot 0（migration 0012）
+  // seat_order=0：owner 是 family 第一个成员 · 必占 seat 0（migration 0017）
+  // color_choice 初始 = seat_order = 0（默认体验与旧版一致，owner 可后续自改）
   await runner.query(
-    `INSERT INTO family_members (family_id, user_id, role, color_slot)
-          VALUES ($1, $2, 'owner', 0)`,
+    `INSERT INTO family_members (family_id, user_id, role, seat_order, color_choice)
+          VALUES ($1, $2, 'owner', 0, 0)`,
     [family.id, input.ownerId],
   );
 

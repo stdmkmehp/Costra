@@ -125,7 +125,7 @@ export interface MemberTabItem {
   label: string;           // '全部' / nickname
   avatarUrl: string;
   initial: string;         // 头像兜底首字
-  color: string;           // 来自 getMemberColorBySlot
+  color: string;           // 来自 getMemberColorByChoice
   status: 'active' | 'left';
 }
 

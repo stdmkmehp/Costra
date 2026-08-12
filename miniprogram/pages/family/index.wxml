@@ -559,6 +559,14 @@
               <view class="can"></view>
             </view>
           </block>
+          <!-- 换颜色：调色板三色小圆盘 -->
+          <block wx:elif="{{item.key === 'colorChoice'}}">
+            <view class="mm-palette">
+              <view class="mm-palette__dot mm-palette__dot--1"></view>
+              <view class="mm-palette__dot mm-palette__dot--2"></view>
+              <view class="mm-palette__dot mm-palette__dot--3"></view>
+            </view>
+          </block>
           <!-- 移出：人形 + 减号（把成员移出） -->
           <block wx:elif="{{item.key === 'remove'}}">
             <view class="mm-person__head"></view>
@@ -567,6 +575,45 @@
           </block>
         </view>
         <text class="member-menu__text">{{item.label}}</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 换颜色弹层（migration 0017 · 底部 sheet · 8 色预设 + 撞色头像暗示） -->
+  <view wx:if="{{colorPickerVisible}}" class="color-picker-overlay" catchtouchmove="noop" catchtap="onColorPickerClose">
+    <view class="color-picker-sheet" catchtap="noop">
+      <view class="color-picker__header">
+        <text class="color-picker__title">选择我的代表色</text>
+        <text class="color-picker__hint">同一账本内允许重复选择</text>
+      </view>
+      <view class="color-picker__grid">
+        <view
+          wx:for="{{colorPickerOptions}}"
+          wx:key="index"
+          class="color-picker__item {{item.selected ? 'is-selected' : ''}} {{colorPickerLoading ? 'is-disabled' : ''}}"
+          data-choice="{{item.index}}"
+          catchtap="onSelectColor"
+        >
+          <view class="color-picker__swatch" style="background:{{item.hex}};"></view>
+          <!-- 撞色暗示：色块右下角其他成员头像 -->
+          <view wx:if="{{item.usedByOthers.length > 0 || item.extraCount > 0}}" class="color-picker__used">
+            <view
+              wx:for="{{item.usedByOthers}}"
+              wx:for-item="u"
+              wx:key="userId"
+              class="color-picker__avatar"
+            >
+              <image wx:if="{{u.avatarUrl}}" class="color-picker__avatar-img" src="{{u.avatarUrl}}" mode="aspectFill" lazy-load />
+              <view wx:else class="color-picker__avatar-placeholder">{{u.nickname[0] || '?'}}</view>
+            </view>
+            <view wx:if="{{item.extraCount > 0}}" class="color-picker__extra">+{{item.extraCount}}</view>
+          </view>
+          <!-- 当前选中：中心对勾 -->
+          <view wx:if="{{item.selected}}" class="color-picker__check"></view>
+        </view>
+      </view>
+      <view class="color-picker__footer">
+        <button class="color-picker__close-btn" bindtap="onColorPickerClose">关闭</button>
       </view>
     </view>
   </view>

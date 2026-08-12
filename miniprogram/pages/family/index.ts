@@ -11,7 +11,7 @@ import { scheduleDeferredLoading, type DeferredLoadingHandle } from '../../utils
 import { resolveEntryDisplayNote } from '../../utils/entryDisplay';
 import { computeBadges } from '../../utils/entryBadges';
 import { getCategoryIconById } from '../../services/categoryService';
-import { getMemberColorBySlot } from '../../utils/memberColor';
+import { getMemberColorByChoice, MEMBER_COLOR_SLOTS } from '../../utils/memberColor';
 import { buildMemberMenuItems, type MemberMenuItem } from './memberMenu';
 import { maxSharedFamilies, maxFamilyMembers } from '../../config/defaults';
 import { pickRandomSlogan } from '../../config/slogans';
@@ -38,6 +38,7 @@ import {
   leaveFamily,
   dissolveFamily,
   renameFamily,
+  updateMyColorChoice,
   invalidateFamilyCache,
   drillDownFamilyL1Entries,
   type FamilyItem,
@@ -102,6 +103,17 @@ interface MemberDisplay {
   role: string;
   status: 'active' | 'left';
   isOwner: boolean;
+}
+
+/** 换色弹层选项项 */
+interface ColorPickerOption {
+  index: number;
+  hex: string;
+  selected: boolean;
+  /** 该颜色被其他 active 成员使用时的头像信息（撞色暗示） */
+  usedByOthers: Array<{ userId: string; avatarUrl: string; nickname: string }>;
+  /** 折叠数：usedByOthers.length > 2 时展示 "+N" */
+  extraCount: number;
 }
 
 /** Segmented Bar 展示段 */
@@ -224,7 +236,7 @@ function fmtRatio(bps: number): string {
   return pct === Math.floor(pct) ? `${pct}%` : `${pct.toFixed(1)}%`;
 }
 
-// MEMBER_COLOR_SLOTS + getMemberColorBySlot 已迁移到 utils/memberColor.ts（唯一事实源 · COSTRA-261）
+// MEMBER_COLOR_SLOTS + getMemberColorByChoice 已迁移到 utils/memberColor.ts（唯一事实源 · COSTRA-261）
 
 /**
  * L1 不限项（与统计页对齐 · 用户期望所有一级分类全部展示）。
@@ -375,6 +387,13 @@ Page({
     memberMenuItems: [] as MemberMenuItem[],
     /** 当前高亮的头像 userId（暖光环 · 复用明细页 ctxActiveRefId 语义） */
     activeMemberUserId: '',
+
+    // ─── 换颜色弹层（migration 0017 · 底部 sheet · 8 色预设 + 撞色头像暗示） ───
+    colorPickerVisible: false,
+    /** 8 色选项列表：{ index, hex, selected, usedByOthers: [{userId, avatarUrl, nickname}] } */
+    colorPickerOptions: [] as ColorPickerOption[],
+    /** 换色请求进行中（防重复提交） */
+    colorPickerLoading: false,
   },
 
   // 内部状态
@@ -799,7 +818,8 @@ Page({
         avatar_url: m.avatar_url,
         role: m.role,
         status: m.status,
-        color_slot: m.color_slot,
+        seat_order: m.seat_order,
+        color_choice: m.color_choice,
       })),
       segments: summary.segments,
       shared: summary.shared,
@@ -931,8 +951,8 @@ Page({
       : this.data.isOwner;
 
     // 2. 构建 Segmented Bar
-    const slotByUserId = new Map<string, number | null>(
-      members.map(m => [m.user_id, m.color_slot]),
+    const choiceByUserId = new Map<string, number | null>(
+      members.map(m => [m.user_id, m.color_choice]),
     );
 
     const segmentDisplays: SegmentDisplay[] = [];
@@ -943,7 +963,7 @@ Page({
 
       const color = seg.type === 'shared'
         ? SHARED_SEGMENT_COLOR
-        : getMemberColorBySlot(seg.user_id ? slotByUserId.get(seg.user_id) : null);
+        : getMemberColorByChoice(seg.user_id ? choiceByUserId.get(seg.user_id) : null);
       segmentDisplays.push({
         key: seg.key,
         type: seg.type,
@@ -958,11 +978,11 @@ Page({
     }
 
     // 3. 构建下钻列表（COSTRA-302）
-    const drilldownRows = this._buildDrilldownRows(summary, slotByUserId);
+    const drilldownRows = this._buildDrilldownRows(summary, choiceByUserId);
 
     // 3b. 构建收入维度的 segments + 下钻列表
-    const incomeSegmentDisplays = this._buildIncomeSegments(summary, slotByUserId);
-    const incomeDrilldownRows = this._buildIncomeDrilldownRows(summary, slotByUserId);
+    const incomeSegmentDisplays = this._buildIncomeSegments(summary, choiceByUserId);
+    const incomeDrilldownRows = this._buildIncomeDrilldownRows(summary, choiceByUserId);
 
     const isEmpty = totalExpense === 0 && totals.income === 0;
     const dim = this.data.dimension;
@@ -1000,14 +1020,14 @@ Page({
   /** 构建收入 Segmented Bar 展示段（仅成员段 · 无 shared 段 · ratio 分母 = totals.income） */
   _buildIncomeSegments(
     summary: FamilySummary,
-    slotByUserId: Map<string, number | null>,
+    choiceByUserId: Map<string, number | null>,
   ): SegmentDisplay[] {
     const displays: SegmentDisplay[] = [];
     const totalIncome = summary.totals.income;
 
     for (const seg of summary.income_segments) {
       if (seg.amount === 0) continue;
-      const color = getMemberColorBySlot(seg.user_id ? slotByUserId.get(seg.user_id) : null);
+      const color = getMemberColorByChoice(seg.user_id ? choiceByUserId.get(seg.user_id) : null);
       displays.push({
         key: seg.key,
         type: seg.type,
@@ -1026,7 +1046,7 @@ Page({
   /** 构建收入下钻行列表（仅 amount > 0 的成员 · 无 shared 行 · L1 折叠同支出侧） */
   _buildIncomeDrilldownRows(
     summary: FamilySummary,
-    slotByUserId: Map<string, number | null>,
+    choiceByUserId: Map<string, number | null>,
   ): DrilldownRow[] {
     const { income_by_member, members } = summary;
 
@@ -1050,8 +1070,8 @@ Page({
       // 收入 segments 的 ratio_bps 已经以 totals.income 为分母
       const incomeSeg = summary.income_segments.find(s => s.key === key);
       const ratioBps = incomeSeg ? incomeSeg.ratio_bps : 0;
-      const colorSlot = slotByUserId.get(im.user_id) ?? null;
-      const color = getMemberColorBySlot(colorSlot);
+      const colorChoice = choiceByUserId.get(im.user_id) ?? null;
+      const color = getMemberColorByChoice(colorChoice);
 
       const statusSuffix = im.status === 'left' ? '（已退出）' : '';
       const label = `${im.nickname}的收入${statusSuffix}`;
@@ -1096,7 +1116,7 @@ Page({
   /** 构建下钻行列表（spec §4.3 / §4.4 · COSTRA-302 / COSTRA-305 三级下钻保留） */
   _buildDrilldownRows(
     summary: FamilySummary,
-    slotByUserId: Map<string, number | null>,
+    choiceByUserId: Map<string, number | null>,
   ): DrilldownRow[] {
     const { segments, shared, personal_by_member, members } = summary;
 
@@ -1169,8 +1189,8 @@ Page({
       const memberInfo = members.find(m => m.user_id === pm.user_id);
       const memberSeg = segments.find(s => s.key === key);
       const ratioBps = memberSeg ? memberSeg.ratio_bps : 0;
-      const colorSlot = slotByUserId.get(pm.user_id) ?? null;
-      const color = getMemberColorBySlot(colorSlot);
+      const colorChoice = choiceByUserId.get(pm.user_id) ?? null;
+      const color = getMemberColorByChoice(colorChoice);
 
       // 已退出成员 label 加后缀
       const statusSuffix = pm.status === 'left' ? '（已退出）' : '';
@@ -1754,7 +1774,12 @@ Page({
   /** 按角色 / 点击对象构建气泡菜单选项（矩阵逻辑抽至 ./memberMenu 纯函数 · 见 memberMenu.spec.ts） */
   _buildMemberMenuItems(isSelf: boolean): MemberMenuItem[] {
     const activeMemberCount = this.data.members.filter(m => m.status === 'active').length;
-    return buildMemberMenuItems({ isSelf, isOwner: this.data.isOwner, activeMemberCount });
+    return buildMemberMenuItems({
+      isSelf,
+      isOwner: this.data.isOwner,
+      activeMemberCount,
+      familyKind: this.data.familyKind,
+    });
   },
 
   /**
@@ -1820,6 +1845,8 @@ Page({
 
     if (key === 'rename') {
       this.onTapRenameLedger();
+    } else if (key === 'colorChoice') {
+      this._openColorPicker();
     } else if (key === 'leave') {
       this._confirmLeaveSelf();
     } else if (key === 'dissolve') {
@@ -1850,6 +1877,109 @@ Page({
         }
       },
     });
+  },
+
+  // ─── 换颜色弹层（migration 0017 · 8 色预设 + 撞色头像暗示） ───────────────────
+
+  /**
+   * 打开换色弹层：构造 8 色选项列表，标记当前选中色 + 其他成员使用情况
+   *
+   * usedByOthers 逻辑：
+   *   - 排除当前用户自己（自己当前色若被别人也选了，只展示他人头像）
+   *   - 仅统计 active 成员
+   *   - 同一色被 ≥3 人用时，展示前 2 个头像 + extraCount = N-2
+   *
+   * 数据源：this.data.summary.members（FamilyMember[]，含 color_choice 字段）
+   */
+  _openColorPicker() {
+    const myUserId = this._currentUserId || this._syncCurrentUserIdFromToken();
+    const summaryMembers = this.data.summary?.members ?? [];
+
+    const myMember = summaryMembers.find(m => m.user_id === myUserId);
+    const myColorChoice = myMember?.color_choice ?? null;
+
+    // 按 color_choice 分组其他 active 成员
+    const othersByChoice = new Map<number, Array<{ userId: string; avatarUrl: string; nickname: string }>>();
+    for (const m of summaryMembers) {
+      if (m.status !== 'active' || m.user_id === myUserId) continue;
+      const choice = m.color_choice;
+      if (choice == null) continue;
+      const list = othersByChoice.get(choice) ?? [];
+      list.push({ userId: m.user_id, avatarUrl: m.avatar_url || '', nickname: m.nickname });
+      othersByChoice.set(choice, list);
+    }
+
+    const options: ColorPickerOption[] = MEMBER_COLOR_SLOTS.slice(0, 8).map((hex, index) => {
+      const others = othersByChoice.get(index) ?? [];
+      // 折叠：>2 时只展示前 2 个头像 + extraCount
+      const visibleOthers = others.slice(0, 2);
+      const extraCount = others.length > 2 ? others.length - 2 : 0;
+      return {
+        index,
+        hex,
+        selected: index === myColorChoice,
+        usedByOthers: visibleOthers,
+        extraCount,
+      };
+    });
+
+    this.setData({ colorPickerOptions: options, colorPickerVisible: true });
+  },
+
+  /** 关闭换色弹层 */
+  onColorPickerClose() {
+    if (!this.data.colorPickerVisible) return;
+    this.setData({ colorPickerVisible: false, colorPickerLoading: false });
+  },
+
+  /**
+   * 选中某个颜色：调 API + 就地 patch summary + 关闭弹层（不重拉 summary）
+   *
+   * 换色只改一列语义色，成员构成/金额/顺序完全不动。因此本地：
+   *   1. familyApi.updateMyColorChoice 内部会 patch 已缓存的 summary/members
+   *   2. 页级 data.summary.members 就地 patch 后重跑 _buildMultiDisplay 即可即时更新 UI
+   *   3. 不清任何缓存、不发起额外网络请求
+   */
+  async onSelectColor(e: WechatMiniprogram.TouchEvent) {
+    const choice = Number((e.currentTarget.dataset as Record<string, string>).choice);
+    if (isNaN(choice) || choice < 0 || choice > 7) return;
+
+    // 防重复提交
+    if (this.data.colorPickerLoading) return;
+
+    // 无变化短路
+    const myUserId = this._currentUserId || this._syncCurrentUserIdFromToken();
+    const summary = this.data.summary;
+    const myMember = summary?.members.find(m => m.user_id === myUserId);
+    const myColorChoice = myMember?.color_choice ?? null;
+    if (choice === myColorChoice) {
+      this.onColorPickerClose();
+      return;
+    }
+
+    const familyId = this._familyId;
+    if (!familyId || !myUserId || !summary) return;
+
+    this.setData({ colorPickerLoading: true });
+
+    try {
+      await updateMyColorChoice(familyId, myUserId, choice);
+      wx.vibrateShort({ type: 'light' });
+      // 就地 patch data.summary.members 中当前用户的 color_choice
+      const patchedMembers = summary.members.map(m =>
+        m.user_id === myUserId ? { ...m, color_choice: choice } : m,
+      );
+      const patchedSummary: FamilySummary = { ...summary, members: patchedMembers };
+      this.setData({ summary: patchedSummary, colorPickerVisible: false, colorPickerLoading: false });
+      // 用新 summary 重跑 multi 展示，segments/L1 rows 颜色即时刷新
+      this._buildMultiDisplay(patchedSummary);
+      wx.showToast({ title: '颜色已更新', icon: 'success' });
+    } catch (err) {
+      logger.error('family', 'updateMyColorChoice failed', err);
+      this.setData({ colorPickerLoading: false });
+      const mapped = mapError(err as ApiError);
+      wx.showToast({ title: mapped.desc || '换色失败，请稍后重试', icon: 'none' });
+    }
   },
 
   /**

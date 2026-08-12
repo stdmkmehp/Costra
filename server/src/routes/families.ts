@@ -198,6 +198,15 @@ const summaryDrillDownQuerySchema = {
   },
 } as const;
 
+const updateMyColorBodySchema = {
+  type: 'object',
+  required: ['color_choice'],
+  additionalProperties: false,
+  properties: {
+    color_choice: { type: 'integer', minimum: 0, maximum: 7 },
+  },
+} as const;
+
 // --- 注册 ---
 
 export async function registerFamiliesRoutes(app: FastifyInstance): Promise<void> {
@@ -441,6 +450,39 @@ export async function registerFamiliesRoutes(app: FastifyInstance): Promise<void
       await familyService.leaveFamily(userId, req.params.family_id);
       await saveIdempotency(req, 'POST /families/{family_id}/members/me/leave', userId, 204, null);
       reply.code(204).send();
+    },
+  );
+
+  // PATCH /families/{family_id}/members/me/color
+  // migration 0017: 当前用户自选代表色（color_choice 0~7，允许撞色）
+  // 仅 shared family active 成员可调用（personal family 后端守门 403）
+  const handlePatchMyColor = async (req: FastifyRequest<{ Params: { family_id: string }; Body: { color_choice: number } }>, reply: FastifyReply) => {
+    const userId = await parseUserId(req);
+    const result = await familyService.updateMyColorChoice(userId, req.params.family_id, req.body.color_choice);
+    reply.code(200).send(result);
+  };
+
+  app.patch<{ Params: { family_id: string }; Body: { color_choice: number } }>(
+    '/families/:family_id/members/me/color',
+    { schema: { params: familyIdParamSchema, body: updateMyColorBodySchema } },
+    handlePatchMyColor,
+  );
+
+  // POST /families/{family_id}/members/me/color（K3 method-override · wx.request 不支持 PATCH）
+  app.post<{ Params: { family_id: string }; Body: { color_choice: number } }>(
+    '/families/:family_id/members/me/color',
+    { schema: { params: familyIdParamSchema, body: updateMyColorBodySchema } },
+    async (req, reply) => {
+      const override = req.headers['x-http-method-override'];
+      if (typeof override === 'string' && override.toUpperCase() === 'PATCH') {
+        return handlePatchMyColor(req, reply);
+      }
+      reply.code(405).send({
+        error: {
+          code: 'METHOD_NOT_ALLOWED',
+          message: 'POST /families/{id}/members/me/color requires X-HTTP-Method-Override: PATCH',
+        },
+      });
     },
   );
 }

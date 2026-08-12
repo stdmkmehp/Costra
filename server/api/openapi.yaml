@@ -653,6 +653,45 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /families/{family_id}/members/me/color:
+    parameters:
+      - $ref: '#/components/parameters/FamilyId'
+    patch:
+      tags: [families]
+      summary: 更新当前用户的自选代表色
+      description: |
+        migration 0017: 用户从 8 色预设中自选代表色（color_choice 0~7）。
+        - 仅 shared family active 成员可调用
+        - personal family 后端守门 403（个人账本无头像入口，防 API 直调）
+        - 允许撞色（不做 unique 约束）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [color_choice]
+              additionalProperties: false
+              properties:
+                color_choice: { type: integer, minimum: 0, maximum: 7 }
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user_id, color_choice]
+                properties:
+                  user_id: { type: string, format: uuid }
+                  color_choice: { type: integer, minimum: 0, maximum: 7 }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: 非 active 成员 / personal family 拒绝
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   # ============ accounts ============
   # COSTRA-020 Round-2 新增（P0-1）：覆盖 DB schema §3.4 accounts 表的 API 入口
   /accounts:
@@ -1594,22 +1633,31 @@ components:
 
     FamilyMember:
       type: object
-      required: [user_id, nickname, role, status, color_slot, joined_at]
+      required: [user_id, nickname, role, status, seat_order, color_choice, joined_at]
       properties:
         user_id: { type: string, format: uuid }
         nickname: { type: string, description: 'COSTRA-221: JOIN users 当前昵称' }
         avatar_url: { type: string, format: uri, nullable: true, description: 'COSTRA-221: JOIN users 当前头像' }
         role: { type: string, enum: [owner, member, viewer] }
         status: { type: string, enum: [active, left], description: 'COSTRA-221: left_at IS NULL → active; left_at IS NOT NULL → left' }
-        color_slot:
+        seat_order:
           type: integer
           minimum: 0
           maximum: 7
           nullable: true
           description: |
-            成员持久化配色槽位（migration 0012_family_members_color_slot）。
-            **应用层强保证**：status=active → 必非 null；status=left → 必为 null（slot 已释放可被新人复用）。
-            前端按此索引到 8 色莫兰迪色板，保证同 family 内 active 成员之间不撞色。
+            座位号（migration 0017 · 原 color_slot 改名）。
+            唯一、单调递增、用于稳定排序。
+            **应用层强保证**：status=active → 必非 null；status=left → 必为 null（seat 已释放可被新人复用）。
+        color_choice:
+          type: integer
+          minimum: 0
+          maximum: 7
+          nullable: true
+          description: |
+            用户自选偏好色（migration 0017）。允许撞色。
+            status=active → 必非 null；status=left → 必为 null。
+            前端按此索引到 8 色莫兰迪色板（MEMBER_COLOR_SLOTS[0..7]）取成员代表色。
         joined_at: { type: string, format: date-time }
         left_at: { type: string, format: date-time, nullable: true, description: 'COSTRA-221: 退出时间; NULL = active' }
 
@@ -1688,7 +1736,7 @@ components:
 
     FamilySummaryMember:
       type: object
-      required: [user_id, nickname, avatar_url, role, status, color_slot, joined_at, personal_expense, paid_contribution, expense_count]
+      required: [user_id, nickname, avatar_url, role, status, seat_order, color_choice, joined_at, personal_expense, paid_contribution, expense_count]
       description: |
         COSTRA-222: 家庭成员在月度聚合中的数据。
         expense_count 口径：该成员本月 expense entry 数（不含 income/transfer）。
@@ -1698,12 +1746,18 @@ components:
         avatar_url: { type: string, format: uri, nullable: true }
         role: { type: string, enum: [owner, member, viewer] }
         status: { type: string, enum: [active, left] }
-        color_slot:
+        seat_order:
           type: integer
           minimum: 0
           maximum: 7
           nullable: true
-          description: '同 FamilyMember.color_slot · status=active 必非 null，status=left 必为 null'
+          description: '同 FamilyMember.seat_order · status=active 必非 null，status=left 必为 null'
+        color_choice:
+          type: integer
+          minimum: 0
+          maximum: 7
+          nullable: true
+          description: '同 FamilyMember.color_choice · status=active 必非 null，status=left 必为 null'
         joined_at: { type: string, format: date-time }
         left_at: { type: string, format: date-time, nullable: true }
         personal_expense: { type: integer, format: int64, description: '个人支出（cents，shared_type=personal 且 created_by=该成员）' }

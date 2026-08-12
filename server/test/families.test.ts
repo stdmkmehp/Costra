@@ -988,13 +988,14 @@ describe('COSTRA-221: Family Management API', () => {
     // 直接查 DB 验证成员 left_at（family 已软删，GET 路径会被 assertActiveMember 拒绝）
     const pool = getPool();
     const membersDb = await pool.query(
-      `SELECT user_id, left_at, color_slot FROM family_members WHERE family_id = $1`,
+      `SELECT user_id, left_at, seat_order, color_choice FROM family_members WHERE family_id = $1`,
       [familyId],
     );
     expect(membersDb.rows.length).toBe(2);
     for (const row of membersDb.rows) {
       expect(row.left_at).toBeTruthy();
-      expect(row.color_slot).toBeNull();
+      expect(row.seat_order).toBeNull();
+      expect(row.color_choice).toBeNull();
     }
     const ownerRow = membersDb.rows.find((r: { user_id: string }) => r.user_id === ownerUserId);
     const memberRow = membersDb.rows.find((r: { user_id: string }) => r.user_id === memberUserId);

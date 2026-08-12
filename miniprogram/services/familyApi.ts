@@ -39,12 +39,16 @@ export interface FamilyMember {
   role: 'owner' | 'member' | 'viewer';
   status: 'active' | 'left';
   /**
-   * 持久化配色槽位 0~7（migration 0012_family_members_color_slot）。
-   * active 成员必非 null；status=left 时为 null（slot 已释放可被新人复用）。
-   * 前端按此索引到 8 色莫兰迪色板，保证同 family 内成员之间不撞色。
-   * 兼容旧服务端：若字段缺失视为 null，前端兜底落 slot 0。
+   * 座位号 0~7（migration 0017 · 原 color_slot 改名）。
+   * 唯一、单调递增、用于稳定排序。active 成员必非 null；status=left 时为 null（seat 已释放可被新人复用）。
    */
-  color_slot: number | null;
+  seat_order: number | null;
+  /**
+   * 用户自选偏好色 0~7（migration 0017）。允许撞色。
+   * active 成员必非 null；status=left 时为 null。
+   * 前端按此索引到 8 色莫兰迪色板取成员代表色。
+   */
+  color_choice: number | null;
   joined_at: string;
   left_at: string | null;
   personal_expense: number;
@@ -497,6 +501,58 @@ export async function renameFamily(
   });
   invalidateFamilyStructureCache(familyId);
   return family;
+}
+
+/**
+ * 就地 patch 已缓存 summary/members 中某成员的 color_choice。
+ *
+ * 换色只改一列语义信息，不涉及成员构成 / 金额 / segments 顺序，
+ * 因此不必用 invalidateFamilyStructureCache 全清缓存后重新走一整套聚合 SQL。
+ * O(∑ scope × members) 内存更新即可保持缓存一致，避免不必要的网络往返与列表闪烁。
+ */
+export function patchCachedMemberColorChoice(
+  familyId: string,
+  userId: string,
+  colorChoice: number,
+): void {
+  // summary 缓存：遍历该 family 下所有 scope（month/year），就地 patch members[]
+  for (const [key, entry] of _summaryCache) {
+    if (!key.startsWith(`${familyId}:`)) continue;
+    const idx = entry.data.members.findIndex((m) => m.user_id === userId);
+    if (idx < 0) continue;
+    entry.data.members[idx] = { ...entry.data.members[idx], color_choice: colorChoice };
+  }
+  // members 独立缓存
+  const membersEntry = _membersCache.get(familyId);
+  if (membersEntry) {
+    const idx = membersEntry.data.findIndex((m) => m.user_id === userId);
+    if (idx >= 0) {
+      membersEntry.data = [...membersEntry.data];
+      membersEntry.data[idx] = { ...membersEntry.data[idx], color_choice: colorChoice };
+    }
+  }
+}
+
+/**
+ * 更新当前用户的自选代表色（color_choice）
+ * PATCH /v1/families/{familyId}/members/me/color
+ *
+ * migration 0017: 允许撞色。仅 shared family active 成员可调用（后端守门）。
+ * 成功后就地 patch 已缓存 summary/members 中当前用户的 color_choice（O(N) 内存更新），
+ * 不做 invalidate——换色不影响成员构成/金额/顺序，无需全量重拉。
+ */
+export async function updateMyColorChoice(
+  familyId: string,
+  userId: string,
+  colorChoice: number,
+): Promise<{ user_id: string; color_choice: number }> {
+  const result = await request<{ user_id: string; color_choice: number }>({
+    method: 'PATCH',
+    path: `/families/${familyId}/members/me/color`,
+    body: { color_choice: colorChoice },
+  });
+  patchCachedMemberColorChoice(familyId, userId, result.color_choice);
+  return result;
 }
 
 // ─── Family drill-down (L1→流水明细) ─────────────────────────────────────────────

@@ -60,8 +60,10 @@ export interface FamilyMemberResponse {
   avatar_url: string | null;
   role: FamilyRole;
   status: 'active' | 'left';
-  /** 成员持久化配色槽位 0~7（migration 0012）· null = 已 left 的成员，slot 已释放 */
-  color_slot: number | null;
+  /** 座位号 0~7（migration 0017 · 原 color_slot 改名）· null = 已 left 的成员，seat 已释放 */
+  seat_order: number | null;
+  /** 用户自选偏好色 0~7（migration 0017）· 允许撞色 · null = 已 left 的成员 */
+  color_choice: number | null;
   joined_at: string;
   left_at: string | null;
 }
@@ -150,7 +152,8 @@ function toMemberResponse(m: {
   nickname: string;
   avatarUrl: string | null;
   role: FamilyRole;
-  colorSlot: number | null;
+  seatOrder: number | null;
+  colorChoice: number | null;
   joinedAt: Date;
   leftAt: Date | null;
 }): FamilyMemberResponse {
@@ -160,7 +163,8 @@ function toMemberResponse(m: {
     avatar_url: m.avatarUrl,
     role: m.role,
     status: m.leftAt ? 'left' : 'active',
-    color_slot: m.colorSlot,
+    seat_order: m.seatOrder,
+    color_choice: m.colorChoice,
     joined_at: m.joinedAt.toISOString(),
     left_at: m.leftAt ? m.leftAt.toISOString() : null,
   };
@@ -334,7 +338,7 @@ export async function deleteFamily(
   await assertActiveMember(userId, familyId);
   await assertOwner(userId, familyId);
 
-  // 单事务：先批量写 left_at + 释放 color_slot，再软删 family
+  // 单事务：先批量写 left_at + 释放 seat_order/color_choice，再软删 family
   // familyRepo.softDelete 内部有 kind='personal' 守门 + 乐观锁 + ownerId 守门
   await withTx(async (client) => {
     await familyMemberRepo.setAllActiveLeftAt(familyId, client);
@@ -652,4 +656,49 @@ export async function removeMember(
     await familyMemberRepo.setLeftAt(familyId, targetUserId, client);
     await userRepo.clearPreferenceForFamily(targetUserId, familyId, client);
   });
+}
+
+/**
+ * 更新当前用户的自选代表色（color_choice）
+ *
+ * migration 0017：color_choice 允许撞色，不做 unique 约束。
+ * 守门：
+ *   1. assertActiveMember —— 必须 active 成员
+ *   2. personal family 拒绝 —— 个人账本无头像入口，后端守门防 API 直调
+ *   3. color_choice 范围 0~7 —— 路由层 schema 校验 + service 层兜底
+ *
+ * 返回 { user_id, color_choice } 供路由层组装响应。
+ */
+export async function updateMyColorChoice(
+  userId: string,
+  familyId: string,
+  colorChoice: number,
+): Promise<{ user_id: string; color_choice: number }> {
+  // 1. active 成员守门
+  await assertActiveMember(userId, familyId);
+
+  // 2. personal family 拒绝（个人账本不开放换色）
+  const family = await familyRepo.findById(familyId);
+  if (!family) {
+    throw new AppError(ErrorCode.NOT_FOUND, { message: 'family not found' });
+  }
+  if (family.kind === 'personal') {
+    throw new AppError(ErrorCode.BUSINESS_RULE_VIOLATION, {
+      message: 'personal family does not support color choice',
+      details: { rule: 'personal_family_color_not_supported' },
+    });
+  }
+
+  // 3. 范围兜底（路由层 schema 已校验，此处防御性）
+  if (colorChoice < 0 || colorChoice > 7) {
+    throw new AppError(ErrorCode.INVALID_ARGUMENT, {
+      message: 'color_choice must be between 0 and 7',
+      details: { field: 'color_choice', value: colorChoice, constraint: '0-7' },
+    });
+  }
+
+  // 4. 写入
+  await familyMemberRepo.updateColorChoice(familyId, userId, colorChoice);
+
+  return { user_id: userId, color_choice: colorChoice };
 }

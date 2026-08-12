@@ -124,14 +124,16 @@ function applyMigrations(db: IMemoryDb): void {
       role            family_role NOT NULL,
       joined_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
       left_at         TIMESTAMPTZ,
-      -- migration 0012_family_members_color_slot.sql
+      -- migration 0017: seat_order（原 color_slot 改名）= 座位号，唯一、单调递增、用于稳定排序
       -- pg-mem 不支持 CHECK 含 BETWEEN OR NULL 复合表达式 · 改为应用层校验（familyMemberRepo selectAvailableSlot）
-      color_slot      SMALLINT,
+      seat_order      SMALLINT,
+      -- migration 0017: color_choice = 用户自选偏好色 0~7，允许撞色；left 成员为 NULL
+      color_choice    SMALLINT,
       PRIMARY KEY (family_id, user_id)
     );
-    -- migration 0012: 同 family active 成员 slot 唯一 · left 成员 slot 为 NULL 不参与
-    CREATE UNIQUE INDEX uq_family_members_color_slot_active
-      ON family_members (family_id, color_slot) WHERE left_at IS NULL;
+    -- migration 0017: 同 family active 成员 seat_order 唯一 · left 成员 seat_order 为 NULL 不参与
+    CREATE UNIQUE INDEX uq_family_members_seat_active
+      ON family_members (family_id, seat_order) WHERE left_at IS NULL;
     CREATE TABLE entries (
       id              UUID PRIMARY KEY,
       ledger_id       UUID NOT NULL,
