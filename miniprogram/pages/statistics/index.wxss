@@ -422,6 +422,11 @@ page {
   box-sizing: border-box;
 }
 
+/* 收入分类排行迭代：支出/收入两段并列时，第二段与第一段之间加分隔间距 */
+.rank + .rank {
+  padding-top: 32rpx;
+}
+
 .rank__title {
   font-size: 28rpx;
   font-weight: 600;

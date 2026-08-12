@@ -47,6 +47,7 @@ import type {
   L2Display,
   L3Display,
   MonthRow,
+  EntryType,
 } from './types';
 import {
   fmtYuan,
@@ -427,6 +428,12 @@ Page({
         amountCents: item.amountCents,
         ratio_bps: item.ratio_bps,
       })),
+      // 收入分类排行迭代：incomeL1 也参与签名，否则收入侧金额变化不会触发重渲染。
+      incomeL1: view.incomeL1.map((item) => ({
+        category_id: item.category_id,
+        amountCents: item.amountCents,
+        ratio_bps: item.ratio_bps,
+      })),
       isEmpty: view.isEmpty,
     });
   },
@@ -529,9 +536,11 @@ Page({
   _buildMonthlyDisplay(s: MonthlyStatistics, memberKey: MemberKey) {
     const prevView = this.data.monthlyByMember[memberKey];
     const prevList = prevView?.l1 ?? [];
+    const prevIncomeList = prevView?.incomeL1 ?? [];
     const viewData = buildMonthlyView(
       s,
       prevList,
+      prevIncomeList,
       this.data.currentMonth,
       pickRandomSlogan(),
     );
@@ -565,7 +574,7 @@ Page({
   // ─── 年度展示构建 ──────────────────────────────────────────────────────────
 
   _buildYearlyDisplay(s: YearlyStatistics, memberKey: MemberKey) {
-    const { totals, monthly_trend, extremes, category_ranks } = s;
+    const { totals, monthly_trend, extremes, category_ranks, income_category_ranks } = s;
 
     const summary: SummaryGridItem[] = [
       { label: '月均支出', value: fmtYuan(extremes.avg_monthly_expense) },
@@ -581,10 +590,15 @@ Page({
     // buildMonthRows 把 12 个月按"全年统一基线"归一化，生成双行条形图数据。
     const months: MonthRow[] = buildMonthRows(monthly_trend);
 
-    const prevList = this.data.yearlyByMember[memberKey]?.l1 ?? [];
+    const prevView = this.data.yearlyByMember[memberKey];
+    const prevList = prevView?.l1 ?? [];
+    const prevIncomeList = prevView?.incomeL1 ?? [];
     const l1: L1Display[] = category_ranks
       .slice(0, L1_VISIBLE)
-      .map((c) => buildL1Display(c, prevList));
+      .map((c) => buildL1Display(c, prevList, 'expense'));
+    const incomeL1: L1Display[] = (income_category_ranks ?? [])
+      .slice(0, L1_VISIBLE)
+      .map((c) => buildL1Display(c, prevIncomeList, 'income'));
 
     const isEmpty = totals.expense === 0 && totals.income === 0;
     const viewData: YearlyView = {
@@ -596,6 +610,7 @@ Page({
       summary,
       months,
       l1,
+      incomeL1,
       isEmpty,
       loading: false,
       loaded: true,
@@ -684,12 +699,14 @@ Page({
         if (!view) continue;
         update[`${byMemberKey}.${mk}.loaded`] = false;
         // 标记 L1 子树及嵌套 L2 子树为 stale（保留 expanded · 仅清数据）
-        const stalifiedL1 = view.l1.map<L1Display>((l1) => ({
+        // 收入分类排行迭代：同一份 stalify 逻辑对 l1 与 incomeL1 各走一遍。
+        const stalify = (list: L1Display[]): L1Display[] => list.map<L1Display>((l1) => ({
           ...l1,
           subtreeStale: true,
           l2Items: l1.l2Items.map<L2Display>((l2) => ({ ...l2, subtreeStale: true })),
         }));
-        update[`${byMemberKey}.${mk}.l1`] = stalifiedL1;
+        update[`${byMemberKey}.${mk}.l1`] = stalify(view.l1);
+        update[`${byMemberKey}.${mk}.incomeL1`] = stalify(view.incomeL1);
       }
     }
     if (Object.keys(update).length > 0) {
@@ -864,26 +881,33 @@ Page({
     const dataset = e.currentTarget.dataset as Record<string, string>;
     const id = dataset.id;
     const memberKey = dataset.memberkey || this._getCurrentMemberKey();
+    // 收入分类排行迭代：从 dataset 拿 entryType，缺省 'expense' 兼容既有调用点
+    const entryType: EntryType = dataset.entrytype === 'income' ? 'income' : 'expense';
     if (!id) return;
-    await this._handleL1Tap(memberKey, id);
+    await this._handleL1Tap(memberKey, id, entryType);
   },
 
   /**
    * L1 展开/收起核心逻辑（程序可调）。
+   * @param entryType 收入分类排行迭代：决定操作的是 l1（支出）还是 incomeL1（收入）字段路径
    * @param silent 为 true 时 catch 块不弹 toast（程序触发场景避免无意义提示）
    */
-  async _handleL1Tap(memberKey: string, l1Id: string, silent: boolean = false) {
+  async _handleL1Tap(memberKey: string, l1Id: string, entryType: EntryType, silent: boolean = false) {
     if (!l1Id || !memberKey) return;
 
     const dimKey = this.data.dimension === 'monthly' ? 'monthlyByMember' : 'yearlyByMember';
+    // 收入分类排行迭代：l1 / incomeL1 字段路径分派
+    const listKey: 'l1' | 'incomeL1' = entryType === 'income' ? 'incomeL1' : 'l1';
     const view = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
     if (!view) return;
-    const idx = view.l1.findIndex((l) => l.category_id === l1Id);
+    const list = view[listKey];
+    const idx = list.findIndex((l) => l.category_id === l1Id);
     if (idx < 0) return;
-    const item = view.l1[idx];
+    const item = list[idx];
     // A1：仅写最小数据路径，避免整列 read-modify-write 引发并发覆盖 / 整表重渲染吞点击
-    const base = `${dimKey}.${memberKey}.l1[${idx}]`;
-    const deferredKey = `${memberKey}::${l1Id}`;
+    const base = `${dimKey}.${memberKey}.${listKey}[${idx}]`;
+    // deferredKey 拼入 entryType 避免"支出 X"和"收入 X"共享同一 handle 相互 cancel
+    const deferredKey = `${memberKey}::${entryType}::${l1Id}`;
 
     if (item.expanded) {
       // 收起：cancel 任何 in-flight deferred handle（INV-2），同时清 loadingL2 兜底既有显示
@@ -919,34 +943,37 @@ Page({
       // INV-3 自校验：fire 时检查节点仍存在 + expanded 仍为 true（用户没收起）+ 仍未拿到数据
       const latestView = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
       if (!latestView) return;
-      const idxLatest = latestView.l1.findIndex((l) => l.category_id === l1Id);
+      const latestList = latestView[listKey];
+      const idxLatest = latestList.findIndex((l) => l.category_id === l1Id);
       if (idxLatest < 0) return;
-      const l1Latest = latestView.l1[idxLatest];
+      const l1Latest = latestList[idxLatest];
       if (!l1Latest.expanded) return;          // 用户已收起
       if (l1Latest.l2Items.length > 0 && !l1Latest.subtreeStale) return; // 数据已到达
-      this.setData({ [`${dimKey}.${memberKey}.l1[${idxLatest}].loadingL2`]: true });
+      this.setData({ [`${dimKey}.${memberKey}.${listKey}[${idxLatest}].loadingL2`]: true });
     });
 
     // B：ensureExpanded=true · 数据到达时幂等兜底展开
-    await this._loadL2Data(memberKey, l1Id, silent, true);
+    await this._loadL2Data(memberKey, l1Id, entryType, silent, true);
   },
 
   /**
    * 拉取并写入 L2 子分类数据（不切换 expanded）。
+   * @param entryType 收入分类排行迭代：决定 API entry_type + view 字段路径（l1 / incomeL1）
    * 复用方：
    *   - _handleL1Tap 展开分支
    *   - _refreshExpandedSubtreesIfNeeded 数据变更后重拉 expanded 子树
    */
-  async _loadL2Data(memberKey: string, l1Id: string, silent: boolean = false, ensureExpanded: boolean = false): Promise<void> {
+  async _loadL2Data(memberKey: string, l1Id: string, entryType: EntryType, silent: boolean = false, ensureExpanded: boolean = false): Promise<void> {
     const dimKey = this.data.dimension === 'monthly' ? 'monthlyByMember' : 'yearlyByMember';
-    const deferredKey = `${memberKey}::${l1Id}`;
+    const listKey: 'l1' | 'incomeL1' = entryType === 'income' ? 'incomeL1' : 'l1';
+    const deferredKey = `${memberKey}::${entryType}::${l1Id}`;
     try {
       const scope = this.data.dimension === 'monthly'
         ? { month: this.data.currentMonth }
         : { year: this.data.currentYear };
       const userId = memberKey === 'all' ? undefined : memberKey;
       const res: DrillDownLevel2Response = await drillDownLevel2(
-        this._familyId, scope, l1Id, { limit: L2_VISIBLE + 1, userId },
+        this._familyId, scope, l1Id, { limit: L2_VISIBLE + 1, userId, entryType },
       );
       // 前端切片成最多 L2_VISIBLE 项 + has_more 探测：limit 多查 1 条用于判断溢出。
       const overflow = res.items.length > L2_VISIBLE;
@@ -963,18 +990,20 @@ Page({
         loadingL3: false,
         l3Items: [],
         l3HasMore: false,
+        entryType,
       }));
       const latestView = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
       if (!latestView) {
         this._consumeDeferredLoading(deferredKey);
         return;
       }
-      const idxLatest = latestView.l1.findIndex((l) => l.category_id === l1Id);
+      const latestList = latestView[listKey];
+      const idxLatest = latestList.findIndex((l) => l.category_id === l1Id);
       if (idxLatest < 0) {
         this._consumeDeferredLoading(deferredKey);
         return;
       }
-      const l1Latest = latestView.l1[idxLatest];
+      const l1Latest = latestList[idxLatest];
       // 保留旧 L2 节点的 expanded + l3 数据（按 category_id 合并）：
       // 数据变更场景下用户已展开的 L2 不应被收起，l3Items 借助 subtreeStale 走 onTapL2 重拉。
       const prevL2Map = new Map<string, L2Display>();
@@ -996,7 +1025,7 @@ Page({
       // COSTRA-304：cancel deferred handle，按 fired 决定是否需要写 loadingL2:false
       const loadingWasShown = this._consumeDeferredLoading(deferredKey);
       // A1：仅写本 L1 节点的子树字段，不触碰兄弟节点（杜绝并发整列覆盖）
-      const base = `${dimKey}.${memberKey}.l1[${idxLatest}]`;
+      const base = `${dimKey}.${memberKey}.${listKey}[${idxLatest}]`;
       const update: Record<string, unknown> = {
         [`${base}.l2Items`]: mergedL2,
         [`${base}.l2HasMore`]: overflow,
@@ -1014,7 +1043,7 @@ Page({
       // L3 链路：对 expanded 且 stale（或空）的 L2 节点级联重拉
       for (const l2 of mergedL2) {
         if (l2.expanded && l2.category_id && (l2.subtreeStale || l2.l3Items.length === 0)) {
-          void this._loadL3Data(memberKey, l1Id, l2.category_id, true);
+          void this._loadL3Data(memberKey, l1Id, l2.category_id, entryType, true);
         }
       }
     } catch (err) {
@@ -1023,11 +1052,12 @@ Page({
       const loadingWasShown = this._consumeDeferredLoading(deferredKey);
       const latestView = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
       if (latestView) {
-        const idxLatest = latestView.l1.findIndex((l) => l.category_id === l1Id);
+        const latestList = latestView[listKey];
+        const idxLatest = latestList.findIndex((l) => l.category_id === l1Id);
         if (idxLatest >= 0) {
           // 仅当 loading 实际显示过或字段已被外部翻起时才写 false（省一次无效 setData）
-          if (loadingWasShown || latestView.l1[idxLatest].loadingL2) {
-            this.setData({ [`${dimKey}.${memberKey}.l1[${idxLatest}].loadingL2`]: false }, () => {
+          if (loadingWasShown || latestList[idxLatest].loadingL2) {
+            this.setData({ [`${dimKey}.${memberKey}.${listKey}[${idxLatest}].loadingL2`]: false }, () => {
               this._scheduleMeasureCurrentPane('l1-l2-error');
             });
           }
@@ -1046,19 +1076,23 @@ Page({
     const l1Id = dataset.l1id;
     const l2Id = dataset.id;
     const memberKey = dataset.memberkey || this._getCurrentMemberKey();
+    // 收入分类排行迭代：从 dataset 拿 entryType（模板下发）
+    const entryType: EntryType = dataset.entrytype === 'income' ? 'income' : 'expense';
     if (!l1Id || !l2Id) return;
 
     const dimKey = this.data.dimension === 'monthly' ? 'monthlyByMember' : 'yearlyByMember';
+    const listKey: 'l1' | 'incomeL1' = entryType === 'income' ? 'incomeL1' : 'l1';
     const view = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
     if (!view) return;
-    const l1Idx = view.l1.findIndex((l) => l.category_id === l1Id);
+    const list = view[listKey];
+    const l1Idx = list.findIndex((l) => l.category_id === l1Id);
     if (l1Idx < 0) return;
-    const l2Idx = view.l1[l1Idx].l2Items.findIndex((l) => l.category_id === l2Id);
+    const l2Idx = list[l1Idx].l2Items.findIndex((l) => l.category_id === l2Id);
     if (l2Idx < 0) return;
-    const l2 = view.l1[l1Idx].l2Items[l2Idx];
+    const l2 = list[l1Idx].l2Items[l2Idx];
     // A1：仅写最小数据路径
-    const base = `${dimKey}.${memberKey}.l1[${l1Idx}].l2Items[${l2Idx}]`;
-    const deferredKey = `${memberKey}::${l1Id}::${l2Id}`;
+    const base = `${dimKey}.${memberKey}.${listKey}[${l1Idx}].l2Items[${l2Idx}]`;
+    const deferredKey = `${memberKey}::${entryType}::${l1Id}::${l2Id}`;
 
     if (l2.expanded) {
       // 收起：cancel deferred handle（INV-2），同时清 loadingL3 兜底既有显示
@@ -1090,37 +1124,40 @@ Page({
       // INV-3 自校验：节点仍存在 + expanded 仍为 true + 数据仍未到达
       const latestView = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
       if (!latestView) return;
-      const l1IdxLatest = latestView.l1.findIndex((l) => l.category_id === l1Id);
+      const latestList = latestView[listKey];
+      const l1IdxLatest = latestList.findIndex((l) => l.category_id === l1Id);
       if (l1IdxLatest < 0) return;
-      const l2IdxLatest = latestView.l1[l1IdxLatest].l2Items.findIndex((l) => l.category_id === l2Id);
+      const l2IdxLatest = latestList[l1IdxLatest].l2Items.findIndex((l) => l.category_id === l2Id);
       if (l2IdxLatest < 0) return;
-      const l2Latest = latestView.l1[l1IdxLatest].l2Items[l2IdxLatest];
+      const l2Latest = latestList[l1IdxLatest].l2Items[l2IdxLatest];
       if (!l2Latest.expanded) return;
       if (l2Latest.l3Items.length > 0 && !l2Latest.subtreeStale) return;
-      this.setData({ [`${dimKey}.${memberKey}.l1[${l1IdxLatest}].l2Items[${l2IdxLatest}].loadingL3`]: true });
+      this.setData({ [`${dimKey}.${memberKey}.${listKey}[${l1IdxLatest}].l2Items[${l2IdxLatest}].loadingL3`]: true });
     });
 
     // B：ensureExpanded=true · 数据到达时幂等兜底展开
-    await this._loadL3Data(memberKey, l1Id, l2Id, false, true);
+    await this._loadL3Data(memberKey, l1Id, l2Id, entryType, false, true);
   },
 
   /**
    * 拉取并写入 L3 单笔明细数据（不切换 expanded）。
+   * @param entryType 收入分类排行迭代：决定 API entry_type + view 字段路径（l1 / incomeL1）
    * 复用方：
    *   - onTapL2 展开分支
    *   - _loadL2Data 中 L2 重拉后级联触发
    *   - _refreshExpandedSubtreesIfNeeded 数据变更后重拉 expanded L2 子树
    */
-  async _loadL3Data(memberKey: string, l1Id: string, l2Id: string, silent: boolean = false, ensureExpanded: boolean = false): Promise<void> {
+  async _loadL3Data(memberKey: string, l1Id: string, l2Id: string, entryType: EntryType, silent: boolean = false, ensureExpanded: boolean = false): Promise<void> {
     const dimKey = this.data.dimension === 'monthly' ? 'monthlyByMember' : 'yearlyByMember';
-    const deferredKey = `${memberKey}::${l1Id}::${l2Id}`;
+    const listKey: 'l1' | 'incomeL1' = entryType === 'income' ? 'incomeL1' : 'l1';
+    const deferredKey = `${memberKey}::${entryType}::${l1Id}::${l2Id}`;
     try {
       const scope = this.data.dimension === 'monthly'
         ? { month: this.data.currentMonth }
         : { year: this.data.currentYear };
       const userId = memberKey === 'all' ? undefined : memberKey;
       const res: DrillDownLevel3Response = await drillDownLevel3(
-        this._familyId, scope, l2Id, { limit: L3_VISIBLE + 1, userId },
+        this._familyId, scope, l2Id, { limit: L3_VISIBLE + 1, userId, entryType },
       );
       // 前端切片成最多 L3_VISIBLE 项 + has_more 探测：limit 多查 1 条用于判断溢出。
       const overflow = res.items.length > L3_VISIBLE;
@@ -1146,21 +1183,22 @@ Page({
         this._consumeDeferredLoading(deferredKey);
         return;
       }
-      const l1IdxLatest = latestView.l1.findIndex((l) => l.category_id === l1Id);
+      const latestList = latestView[listKey];
+      const l1IdxLatest = latestList.findIndex((l) => l.category_id === l1Id);
       if (l1IdxLatest < 0) {
         this._consumeDeferredLoading(deferredKey);
         return;
       }
-      const l2IdxLatest = latestView.l1[l1IdxLatest].l2Items.findIndex((l) => l.category_id === l2Id);
+      const l2IdxLatest = latestList[l1IdxLatest].l2Items.findIndex((l) => l.category_id === l2Id);
       if (l2IdxLatest < 0) {
         this._consumeDeferredLoading(deferredKey);
         return;
       }
-      const l2Latest = latestView.l1[l1IdxLatest].l2Items[l2IdxLatest];
+      const l2Latest = latestList[l1IdxLatest].l2Items[l2IdxLatest];
       // COSTRA-304：cancel deferred handle，按 fired 决定是否需要写 loadingL3:false
       const loadingWasShown = this._consumeDeferredLoading(deferredKey);
       // A1：仅写本 L2 节点字段
-      const base = `${dimKey}.${memberKey}.l1[${l1IdxLatest}].l2Items[${l2IdxLatest}]`;
+      const base = `${dimKey}.${memberKey}.${listKey}[${l1IdxLatest}].l2Items[${l2IdxLatest}]`;
       const update: Record<string, unknown> = {
         [`${base}.l3Items`]: l3Items,
         [`${base}.l3HasMore`]: overflow,
@@ -1178,12 +1216,13 @@ Page({
       const loadingWasShown = this._consumeDeferredLoading(deferredKey);
       const latestView = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
       if (latestView) {
-        const l1IdxLatest = latestView.l1.findIndex((l) => l.category_id === l1Id);
+        const latestList = latestView[listKey];
+        const l1IdxLatest = latestList.findIndex((l) => l.category_id === l1Id);
         if (l1IdxLatest >= 0) {
-          const l2IdxLatest = latestView.l1[l1IdxLatest].l2Items.findIndex((l) => l.category_id === l2Id);
+          const l2IdxLatest = latestList[l1IdxLatest].l2Items.findIndex((l) => l.category_id === l2Id);
           if (l2IdxLatest >= 0) {
-            if (loadingWasShown || latestView.l1[l1IdxLatest].l2Items[l2IdxLatest].loadingL3) {
-              this.setData({ [`${dimKey}.${memberKey}.l1[${l1IdxLatest}].l2Items[${l2IdxLatest}].loadingL3`]: false }, () => {
+            if (loadingWasShown || latestList[l1IdxLatest].l2Items[l2IdxLatest].loadingL3) {
+              this.setData({ [`${dimKey}.${memberKey}.${listKey}[${l1IdxLatest}].l2Items[${l2IdxLatest}].loadingL3`]: false }, () => {
                 this._scheduleMeasureCurrentPane('l2-l3-error');
               });
             }
@@ -1207,13 +1246,18 @@ Page({
     const dimKey = this.data.dimension === 'monthly' ? 'monthlyByMember' : 'yearlyByMember';
     const view = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
     if (!view) return;
-    for (const l1 of view.l1) {
-      if (!l1.expanded || !l1.category_id) continue;
-      const needsRefresh = l1.subtreeStale || l1.l2Items.length === 0;
-      if (needsRefresh) {
-        void this._loadL2Data(memberKey, l1.category_id, true);
+    // 收入分类排行迭代：l1（支出）与 incomeL1（收入）两侧各走一遍刷新
+    const refreshList = (list: L1Display[], entryType: EntryType) => {
+      for (const l1 of list) {
+        if (!l1.expanded || !l1.category_id) continue;
+        const needsRefresh = l1.subtreeStale || l1.l2Items.length === 0;
+        if (needsRefresh) {
+          void this._loadL2Data(memberKey, l1.category_id, entryType, true);
+        }
       }
-    }
+    };
+    refreshList(view.l1, 'expense');
+    refreshList(view.incomeL1, 'income');
   },
 
   // ─── P1：触摸预取（touchstart 即 fire-and-forget 预热 _drillCache）─────────
@@ -1227,15 +1271,17 @@ Page({
     const id = dataset.id;
     if (!id) return;
     const memberKey = dataset.memberkey || this._getCurrentMemberKey();
+    const entryType: EntryType = dataset.entrytype === 'income' ? 'income' : 'expense';
+    const listKey: 'l1' | 'incomeL1' = entryType === 'income' ? 'incomeL1' : 'l1';
     const dimKey = this.data.dimension === 'monthly' ? 'monthlyByMember' : 'yearlyByMember';
     const view = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
-    const item = view?.l1.find((l) => l.category_id === id);
+    const item = view?.[listKey].find((l) => l.category_id === id);
     if (item && item.l2Items.length > 0 && !item.subtreeStale) return; // 已有可用缓存
     const scope = this.data.dimension === 'monthly'
       ? { month: this.data.currentMonth }
       : { year: this.data.currentYear };
     const userId = memberKey === 'all' ? undefined : memberKey;
-    void drillDownLevel2(this._familyId, scope, id, { limit: L2_VISIBLE + 1, userId }).catch(() => { /* 预取失败静默，tap 时正常重试 */ });
+    void drillDownLevel2(this._familyId, scope, id, { limit: L2_VISIBLE + 1, userId, entryType }).catch(() => { /* 预取失败静默，tap 时正常重试 */ });
   },
 
   onTouchStartL2(e: WechatMiniprogram.TouchEvent) {
@@ -1245,16 +1291,18 @@ Page({
     const l2Id = dataset.id;
     if (!l2Id) return;
     const memberKey = dataset.memberkey || this._getCurrentMemberKey();
+    const entryType: EntryType = dataset.entrytype === 'income' ? 'income' : 'expense';
+    const listKey: 'l1' | 'incomeL1' = entryType === 'income' ? 'incomeL1' : 'l1';
     const dimKey = this.data.dimension === 'monthly' ? 'monthlyByMember' : 'yearlyByMember';
     const view = (this.data as unknown as Record<string, Record<string, MonthlyView | YearlyView>>)[dimKey][memberKey];
-    const l1 = l1Id ? view?.l1.find((l) => l.category_id === l1Id) : undefined;
+    const l1 = l1Id ? view?.[listKey].find((l) => l.category_id === l1Id) : undefined;
     const l2 = l1?.l2Items.find((l) => l.category_id === l2Id);
     if (l2 && l2.l3Items.length > 0 && !l2.subtreeStale) return; // 已有可用缓存
     const scope = this.data.dimension === 'monthly'
       ? { month: this.data.currentMonth }
       : { year: this.data.currentYear };
     const userId = memberKey === 'all' ? undefined : memberKey;
-    void drillDownLevel3(this._familyId, scope, l2Id, { limit: L3_VISIBLE + 1, userId }).catch(() => { /* 预取失败静默，tap 时正常重试 */ });
+    void drillDownLevel3(this._familyId, scope, l2Id, { limit: L3_VISIBLE + 1, userId, entryType }).catch(() => { /* 预取失败静默，tap 时正常重试 */ });
   },
 
   // ─── 固定数据视口高度（控制区固定，pane 内部滚动）───────────────────────
@@ -1334,9 +1382,11 @@ Page({
     await this._loadData();
 
     // 5. 自动展开 L1（数据已落 byMember 后再展）
+    // 收入分类排行迭代：协作页跳转来的 pendingAction 目前只涉及支出侧一级排行
+    // （family 页 L1 排行仅支出），故此处固定 'expense'。
     if (action.expandL1Id) {
       const finalMemberKey = this._getCurrentMemberKey();
-      await this._handleL1Tap(finalMemberKey, action.expandL1Id, true);
+      await this._handleL1Tap(finalMemberKey, action.expandL1Id, 'expense', true);
     }
   },
 

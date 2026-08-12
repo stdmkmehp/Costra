@@ -51,7 +51,10 @@ export interface MonthlyStatistics {
   totals: StatTotals;
   daily_trend: DailyTrendItem[];
   extremes: MonthlyExtremes;
+  /** 支出分类排行（一级折叠） */
   category_ranks: StatCategoryRankItem[];
+  /** 收入分类排行（一级折叠） · 2026-08 收入分类排行迭代新增 */
+  income_category_ranks: StatCategoryRankItem[];
   /** COSTRA-260: null 表示全部，string 表示按 user_id 过滤 */
   filtered_user_id?: string | null;
 }
@@ -89,7 +92,10 @@ export interface YearlyStatistics {
   totals: StatTotals;
   monthly_trend: MonthlyTrendItem[];
   extremes: YearlyExtremes;
+  /** 支出分类排行（一级折叠） */
   category_ranks: StatCategoryRankItem[];
+  /** 收入分类排行（一级折叠） · 2026-08 收入分类排行迭代新增 */
+  income_category_ranks: StatCategoryRankItem[];
   /** COSTRA-260: null 表示全部，string 表示按 user_id 过滤 */
   filtered_user_id?: string | null;
 }
@@ -241,16 +247,19 @@ export async function getYearlyStatistics(
 
 /**
  * 下钻：二级分类排行
- * GET /v1/families/{id}/statistics/drill-down?month|year=...&level=2&parent_category_id=...[&user_id=...]
+ * GET /v1/families/{id}/statistics/drill-down?month|year=...&level=2&parent_category_id=...[&user_id=...][&entry_type=expense|income]
+ *
+ * 收入分类排行迭代：entryType 可选，'expense'（默认）或 'income'。
  */
 export async function drillDownLevel2(
   familyId: string,
   scope: { month?: string; year?: string },
   parentCategoryId: string,
-  options?: { limit?: number; offset?: number; userId?: string },
+  options?: { limit?: number; offset?: number; userId?: string; entryType?: 'expense' | 'income' },
 ): Promise<DrillDownLevel2Response> {
   const userId = options?.userId;
-  const cacheKey = `${familyId}:${scope.month ?? scope.year}:L2:${parentCategoryId}:${userId ?? 'all'}:${options?.limit ?? 10}:${options?.offset ?? 0}`;
+  const entryType = options?.entryType ?? 'expense';
+  const cacheKey = `${familyId}:${scope.month ?? scope.year}:L2:${entryType}:${parentCategoryId}:${userId ?? 'all'}:${options?.limit ?? 10}:${options?.offset ?? 0}`;
   const cached = _drillCache.get(cacheKey);
   if (cached && cached.level === 2) return cached;
 
@@ -263,6 +272,8 @@ export async function drillDownLevel2(
   if (options?.limit != null) params.limit = options.limit;
   if (options?.offset != null) params.offset = options.offset;
   if (userId) params.user_id = userId;
+  // 缺省 expense 时不下发参数，兼容潜在中间层
+  if (entryType === 'income') params.entry_type = entryType;
 
   const data = await request<DrillDownLevel2Response>({
     method: 'GET',
@@ -275,16 +286,17 @@ export async function drillDownLevel2(
 
 /**
  * 下钻：单笔明细
- * GET /v1/families/{id}/statistics/drill-down?month|year=...&level=3&category_id=...[&user_id=...]
+ * GET /v1/families/{id}/statistics/drill-down?month|year=...&level=3&category_id=...[&user_id=...][&entry_type=expense|income]
  */
 export async function drillDownLevel3(
   familyId: string,
   scope: { month?: string; year?: string },
   categoryId: string,
-  options?: { limit?: number; offset?: number; userId?: string },
+  options?: { limit?: number; offset?: number; userId?: string; entryType?: 'expense' | 'income' },
 ): Promise<DrillDownLevel3Response> {
   const userId = options?.userId;
-  const cacheKey = `${familyId}:${scope.month ?? scope.year}:L3:${categoryId}:${userId ?? 'all'}:${options?.limit ?? 10}:${options?.offset ?? 0}`;
+  const entryType = options?.entryType ?? 'expense';
+  const cacheKey = `${familyId}:${scope.month ?? scope.year}:L3:${entryType}:${categoryId}:${userId ?? 'all'}:${options?.limit ?? 10}:${options?.offset ?? 0}`;
   const cached = _drillCache.get(cacheKey);
   if (cached && cached.level === 3) return cached;
 
@@ -297,6 +309,7 @@ export async function drillDownLevel3(
   if (options?.limit != null) params.limit = options.limit;
   if (options?.offset != null) params.offset = options.offset;
   if (userId) params.user_id = userId;
+  if (entryType === 'income') params.entry_type = entryType;
 
   const data = await request<DrillDownLevel3Response>({
     method: 'GET',

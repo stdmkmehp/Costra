@@ -2,7 +2,7 @@
 // 卡号: COSTRA-264 · P0 拆分 index.ts 低于 1000 行
 // Refs: COSTRA-264
 
-import type { MonthlyView, YearlyView, L1Display, SummaryGridItem, TrendChartMeta, MonthRow } from './types';
+import type { MonthlyView, YearlyView, L1Display, SummaryGridItem, TrendChartMeta, MonthRow, EntryType } from './types';
 import type { MonthlyStatistics, StatCategoryRankItem, DailyTrendItem, MonthlyTrendItem } from '../../services/statisticsApi';
 import { fmtYuan, fmtExpense, fmtRatio, buildEmptyTitleMonth, buildMaxSingleLabel } from './formatters';
 import { resolveIconGlyph } from '../../services/iconMap';
@@ -25,7 +25,7 @@ export function emptyTrendChartMeta(): TrendChartMeta {
 export function emptyMonthlyView(): MonthlyView {
   return {
     totalExpense: '¥0.00', totalIncome: '¥0.00', totalBalance: '¥0.00',
-    trend: [], chartMeta: emptyTrendChartMeta(), summary: [], l1: [],
+    trend: [], chartMeta: emptyTrendChartMeta(), summary: [], l1: [], incomeL1: [],
     isEmpty: false, loading: false, loaded: false,
     emptyTitle: '暂无记录', emptyHint: '',
   };
@@ -35,7 +35,7 @@ export function emptyMonthlyView(): MonthlyView {
 export function emptyYearlyView(): YearlyView {
   return {
     totalExpense: '¥0.00', totalIncome: '¥0.00', totalBalance: '¥0.00',
-    trend: [], chartMeta: emptyTrendChartMeta(), summary: [], months: [], l1: [],
+    trend: [], chartMeta: emptyTrendChartMeta(), summary: [], months: [], l1: [], incomeL1: [],
     isEmpty: false, loading: false, loaded: false,
     emptyTitle: '暂无记录', emptyHint: '',
   };
@@ -132,6 +132,11 @@ function findPeakIndex(values: number[]): number {
 /**
  * 构建 L1 展示项（保留旧展开态 + 子树）
  *
+ * 2026-08 收入分类排行迭代：
+ *   - 新增必填参数 entryType，标记该 L1 属于支出（'expense'）还是收入（'income'）排行；
+ *     支撑下钻时 setData 路径分派（l1 vs incomeL1）与 API 参数（drill-down 的 entry_type）。
+ *   - prevList 必须来自"同侧"的旧列表（支出 prev / 收入 prev），不得混用。
+ *
  * 2026-06-08 子树脏标记机制（B1 方案）：
  *   - 若 prev 节点 subtreeStale=true（_invalidateAllDimViews 打的）：
  *     · subtreeStale 透传给新节点（不清除）；
@@ -144,7 +149,7 @@ function findPeakIndex(values: number[]): number {
  *       （L1 已经是新值），过渡到正确值，用户感知极弱。
  *   - 其余情况（首次构建 / 切月切账本由调用方整体清 byMember）按"继承旧展开态"处理。
  */
-export function buildL1Display(c: StatCategoryRankItem, prevList: L1Display[]): L1Display {
+export function buildL1Display(c: StatCategoryRankItem, prevList: L1Display[], entryType: EntryType): L1Display {
   const id = c.category_id || '';
   const prev = prevList.find((p) => p.category_id === id);
   const stale = prev?.subtreeStale ?? false;
@@ -163,6 +168,7 @@ export function buildL1Display(c: StatCategoryRankItem, prevList: L1Display[]): 
     l2Items: prev?.l2Items ?? [],
     l2HasMore: prev?.l2HasMore ?? false,
     subtreeStale: stale,
+    entryType,
   };
 }
 
@@ -225,10 +231,11 @@ export function buildMonthRows(monthlyTrend: MonthlyTrendItem[]): MonthRow[] {
 export function buildMonthlyView(
   stats: MonthlyStatistics,
   prevList: L1Display[],
+  prevIncomeList: L1Display[],
   month: string,
   emptyHint: string,
 ): MonthlyView {
-  const { totals, daily_trend, extremes, category_ranks } = stats;
+  const { totals, daily_trend, extremes, category_ranks, income_category_ranks } = stats;
   const summary: SummaryGridItem[] = [
     { label: '日均支出', value: fmtYuan(extremes.avg_daily_expense) },
     { label: '最大单笔', value: buildMaxSingleLabel(extremes.max_single_expense, extremes.max_single_note, extremes.max_single_category_name) },
@@ -237,7 +244,10 @@ export function buildMonthlyView(
   ];
   const l1: L1Display[] = category_ranks
     .slice(0, L1_VISIBLE)
-    .map((c) => buildL1Display(c, prevList));
+    .map((c) => buildL1Display(c, prevList, 'expense'));
+  const incomeL1: L1Display[] = (income_category_ranks ?? [])
+    .slice(0, L1_VISIBLE)
+    .map((c) => buildL1Display(c, prevIncomeList, 'income'));
   const isEmpty = totals.expense === 0 && totals.income === 0;
   return {
     totalExpense: fmtExpense(totals.expense),
@@ -247,6 +257,7 @@ export function buildMonthlyView(
     chartMeta: buildMonthlyTrendChartMeta(month, daily_trend),
     summary,
     l1,
+    incomeL1,
     isEmpty,
     loading: false,
     loaded: true,

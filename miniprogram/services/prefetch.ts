@@ -132,7 +132,8 @@ export async function prefetchHomeData(): Promise<void> {
       prefetchedMonthlyView = {
         familyId,
         month,
-        view: buildMonthlyView(stats, [], month, ''),
+        // 收入分类排行迭代：buildMonthlyView 新增 prevIncomeList 参数（此处首次构建，空数组）
+        view: buildMonthlyView(stats, [], [], month, ''),
         generatedAt: Date.now(),
       };
       markPerf('prefetch.monthly-view.ready', { familyId, month });
