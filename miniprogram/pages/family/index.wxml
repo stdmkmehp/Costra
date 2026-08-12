@@ -105,7 +105,7 @@
       </view>
 
       <!-- P2-1 已移除：年度不再拦截 · COSTRA-302 年度可用化 -->
-      <!-- Segmented Bar -->
+      <!-- 支出 Segmented Bar -->
       <view class="segment-bar" wx:if="{{contentReady && !loading && segments.length > 0}}">
         <view class="segment-bar__track">
           <view
@@ -119,6 +119,29 @@
         <view class="segment-bar__legend">
           <view
             wx:for="{{segments}}"
+            wx:key="key"
+            class="segment-bar__legend-item"
+          >
+            <view class="segment-bar__legend-dot" style="background: {{item.color}};"></view>
+            <text class="segment-bar__legend-label">{{item.label}}</text>
+            <text class="segment-bar__legend-amount tnum">{{item.amount}}</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- 收入 Segmented Bar（与支出侧上下并列 · 仅 amount > 0 时渲染） -->
+      <view class="segment-bar segment-bar--income" wx:if="{{contentReady && !loading && incomeSegments.length > 0}}">
+        <view class="segment-bar__track">
+          <view
+            wx:for="{{incomeSegments}}"
+            wx:key="key"
+            class="segment-bar__segment"
+            style="flex: {{item.flexBps}}; background: {{item.color}};"
+          ></view>
+        </view>
+        <view class="segment-bar__legend">
+          <view
+            wx:for="{{incomeSegments}}"
             wx:key="key"
             class="segment-bar__legend-item"
           >
@@ -178,7 +201,7 @@
           <text class="empty-state__hint">{{emptyHint}}</text>
         </view>
 
-        <!-- ★ 下钻列表（COSTRA-302 · spec §4.7 · 统计页同款手风琴） -->
+        <!-- ★ 支出下钻列表（COSTRA-302 · spec §4.7 · 统计页同款手风琴） -->
         <view class="family-rank" wx:if="{{contentReady && drilldownRows.length > 0 && !loading}}">
           <view
             wx:for="{{drilldownRows}}"
@@ -189,6 +212,7 @@
             <view
               class="family-rank__head"
               data-key="{{item.key}}"
+              data-tab="expense"
               bind:tap="onTapDrilldownRow"
             >
               <view class="family-rank__head-main">
@@ -239,6 +263,7 @@
                   class="family-l1__row {{l1.expanded ? 'family-l1__row--open' : ''}}"
                   data-rowkey="{{item.key}}"
                   data-l1id="{{l1.category_id}}"
+                  data-tab="expense"
                   bind:tap="onTapL1"
                 >
                   <view class="family-l1__row-main">
@@ -282,6 +307,105 @@
                     </view>
                   </block>
                   <!-- 空态 -->
+                  <view class="family-l3__empty" wx:elif="{{l1.entriesLoaded}}">暂无明细</view>
+                </view>
+              </block>
+            </view>
+          </view>
+        </view>
+
+        <!-- ═══════ 收入维度（与支出侧上下并列 · 仅 amount > 0 时渲染） ═══════ -->
+
+        <!-- 分隔线（两块都有数据时才显示） -->
+        <view
+          class="family__section-divider"
+          wx:if="{{contentReady && !loading && drilldownRows.length > 0 && incomeDrilldownRows.length > 0}}"
+        ></view>
+
+        <!-- ★ 收入下钻列表（与支出侧结构完全一致 · 无 shared 行 · L3 无"公共"badge） -->
+        <view class="family-rank" wx:if="{{contentReady && incomeDrilldownRows.length > 0 && !loading}}">
+          <view
+            wx:for="{{incomeDrilldownRows}}"
+            wx:key="key"
+            class="family-rank__row {{item.expanded ? 'family-rank__row--open' : ''}}"
+          >
+            <!-- 行主体 -->
+            <view
+              class="family-rank__head"
+              data-key="{{item.key}}"
+              data-tab="income"
+              bind:tap="onTapDrilldownRow"
+            >
+              <view class="family-rank__head-main">
+                <image
+                  wx:if="{{item.avatarUrl}}"
+                  class="family-rank__avatar"
+                  src="{{item.avatarUrl}}"
+                  mode="aspectFill"
+                  lazy-load
+                />
+                <view wx:else class="family-rank__avatar family-rank__avatar--placeholder">
+                  <text>?</text>
+                </view>
+
+                <view class="family-rank__name">{{item.label}}</view>
+                <view class="family-rank__amount tnum">{{item.amount}}</view>
+                <view class="family-rank__ratio">{{item.ratioText}}</view>
+              </view>
+              <view class="family-rank__bar">
+                <view
+                  class="family-rank__bar-fill"
+                  style="width: {{item.ratio_bps / 100}}%; background: {{item.color}};"
+                ></view>
+              </view>
+            </view>
+
+            <!-- L1 列表（展开时） -->
+            <view class="family-l1" wx:if="{{item.expanded}}">
+              <block wx:for="{{item.l1Items}}" wx:for-item="l1" wx:key="category_id">
+                <view
+                  class="family-l1__row {{l1.expanded ? 'family-l1__row--open' : ''}}"
+                  data-rowkey="{{item.key}}"
+                  data-l1id="{{l1.category_id}}"
+                  data-tab="income"
+                  bind:tap="onTapL1"
+                >
+                  <view class="family-l1__row-main">
+                    <view class="family-l1__icon">{{l1.icon}}</view>
+                    <view class="family-l1__name">{{l1.category_name}}</view>
+                    <view class="family-l1__amount tnum">{{l1.amount}}</view>
+                    <view class="family-l1__ratio">{{l1.ratioText}}</view>
+                  </view>
+                  <view class="family-l1__bar">
+                    <view class="family-l1__bar-fill" style="width: {{l1.ratio_bps / 100}}%;"></view>
+                  </view>
+                </view>
+
+                <!-- L1 三级流水明细 -->
+                <view class="family-l3" wx:if="{{l1.expanded}}">
+                  <view class="family-l3__loading" wx:if="{{l1.loadingEntries}}">加载中...</view>
+                  <block wx:elif="{{l1.entries.length > 0}}">
+                    <view class="family-l3__row" wx:for="{{l1.entries}}" wx:key="entry_id" wx:for-item="e">
+                      <view class="family-l3__avatar">
+                        <image wx:if="{{e.avatarUrl}}" class="family-l3__avatar-img" src="{{e.avatarUrl}}" mode="aspectFill" lazy-load />
+                        <view wx:else class="family-l3__avatar-placeholder">{{e.initial}}</view>
+                      </view>
+                      <view class="family-l3__main">
+                        <view class="family-l3__top">
+                          <text class="family-l3__date">{{e.dateLabel}}</text>
+                          <text class="family-l3__note">{{e.note}}</text>
+                          <text class="family-l3__amount tnum">{{e.amount}}</text>
+                        </view>
+                        <view class="family-l3__bottom">
+                          <text class="family-l3__time">{{e.timeLabel}}</text>
+                          <text wx:if="{{e.isRecurring}}" class="family-l3__tag family-l3__tag--recurring">定时</text>
+                        </view>
+                      </view>
+                    </view>
+                    <view class="family-l3__more" wx:if="{{l1.entriesHasMore}}">
+                      还有部分较小收入未显示...
+                    </view>
+                  </block>
                   <view class="family-l3__empty" wx:elif="{{l1.entriesLoaded}}">暂无明细</view>
                 </view>
               </block>

@@ -44,6 +44,7 @@ import {
   type FamilySummary,
   type CategoryRankItem,
   type FamilyEntryDetailItem,
+  type IncomeByMember,
 } from '../../services/familyApi';
 import type { ApiError } from '../../services/request';
 import { mapError } from '../../utils/error-mapper';
@@ -334,6 +335,11 @@ Page({
 
     // ─── 下钻列表（COSTRA-302 重构 · spec §4.3） ───
     drilldownRows: [] as DrilldownRow[],
+
+    // ─── 收入维度（与支出侧对称 · 上下并列渲染） ───
+    incomeSegments: [] as SegmentDisplay[],
+    totalIncomeCents: 0,
+    incomeDrilldownRows: [] as DrilldownRow[],
 
     // ─── 空态 ───
     isEmpty: false,
@@ -798,6 +804,8 @@ Page({
       segments: summary.segments,
       shared: summary.shared,
       personal_by_member: summary.personal_by_member,
+      income_segments: summary.income_segments,
+      income_by_member: summary.income_by_member,
     });
   },
 
@@ -952,6 +960,10 @@ Page({
     // 3. 构建下钻列表（COSTRA-302）
     const drilldownRows = this._buildDrilldownRows(summary, slotByUserId);
 
+    // 3b. 构建收入维度的 segments + 下钻列表
+    const incomeSegmentDisplays = this._buildIncomeSegments(summary, slotByUserId);
+    const incomeDrilldownRows = this._buildIncomeDrilldownRows(summary, slotByUserId);
+
     const isEmpty = totalExpense === 0 && totals.income === 0;
     const dim = this.data.dimension;
     const value = dim === 'monthly' ? this.data.currentMonth : this.data.currentYear;
@@ -966,6 +978,9 @@ Page({
       segments: segmentDisplays,
       totalExpenseCents: totalExpense,
       drilldownRows,
+      incomeSegments: incomeSegmentDisplays,
+      totalIncomeCents: totals.income,
+      incomeDrilldownRows,
       isEmpty,
       emptyTitle: buildEmptyTitle(dim, value),
       emptyHint: isEmpty ? this._pickEmptyHint() : '',
@@ -978,6 +993,104 @@ Page({
     // COSTRA-305：数据变更后 summary 重建时，_buildDrilldownRows 保留了已展开 L1 的旧 entries
     // （视觉连续性）；此处对这些节点后台静默重拉，使三级明细同步到最新数据。
     this._refreshExpandedL1Entries(drilldownRows);
+    // 收入侧同样静默重拉已展开节点
+    this._refreshExpandedIncomeL1Entries(incomeDrilldownRows);
+  },
+
+  /** 构建收入 Segmented Bar 展示段（仅成员段 · 无 shared 段 · ratio 分母 = totals.income） */
+  _buildIncomeSegments(
+    summary: FamilySummary,
+    slotByUserId: Map<string, number | null>,
+  ): SegmentDisplay[] {
+    const displays: SegmentDisplay[] = [];
+    const totalIncome = summary.totals.income;
+
+    for (const seg of summary.income_segments) {
+      if (seg.amount === 0) continue;
+      const color = getMemberColorBySlot(seg.user_id ? slotByUserId.get(seg.user_id) : null);
+      displays.push({
+        key: seg.key,
+        type: seg.type,
+        label: seg.label,
+        amount: formatCentsDisplay(seg.amount),
+        amountCents: seg.amount,
+        flexBps: seg.ratio_bps,
+        color,
+        memberStatus: seg.member_status,
+        userId: seg.user_id,
+      });
+    }
+    return displays;
+  },
+
+  /** 构建收入下钻行列表（仅 amount > 0 的成员 · 无 shared 行 · L1 折叠同支出侧） */
+  _buildIncomeDrilldownRows(
+    summary: FamilySummary,
+    slotByUserId: Map<string, number | null>,
+  ): DrilldownRow[] {
+    const { income_by_member, members } = summary;
+
+    // 保留旧 expanded 状态（行级）
+    const oldExpandedMap = new Map<string, boolean>();
+    const oldL1Map = new Map<string, L1Display>();
+    for (const row of this.data.incomeDrilldownRows) {
+      oldExpandedMap.set(row.key, row.expanded);
+      for (const l1 of row.l1Items) {
+        oldL1Map.set(`${row.key}:${l1.category_id}`, l1);
+      }
+    }
+
+    const rows: DrilldownRow[] = [];
+
+    for (const im of income_by_member) {
+      if (im.amount <= 0) continue;
+
+      const key = `member:${im.user_id}`;
+      const memberInfo = members.find(m => m.user_id === im.user_id);
+      // 收入 segments 的 ratio_bps 已经以 totals.income 为分母
+      const incomeSeg = summary.income_segments.find(s => s.key === key);
+      const ratioBps = incomeSeg ? incomeSeg.ratio_bps : 0;
+      const colorSlot = slotByUserId.get(im.user_id) ?? null;
+      const color = getMemberColorBySlot(colorSlot);
+
+      const statusSuffix = im.status === 'left' ? '（已退出）' : '';
+      const label = `${im.nickname}的收入${statusSuffix}`;
+
+      // L1 列表
+      const allL1 = im.categories
+        .filter(c => c.amount > 0)
+        .map(c => {
+          const base = this._mapToL1Display(c);
+          const prev = oldL1Map.get(`${key}:${base.category_id}`);
+          if (prev) {
+            base.expanded = prev.expanded;
+            base.entries = prev.entries;
+            base.entriesLoaded = prev.entriesLoaded;
+            base.entriesHasMore = prev.entriesHasMore;
+          }
+          return base;
+        });
+      const l1Items = allL1.slice(0, L1_VISIBLE);
+
+      rows.push({
+        key,
+        type: 'personal',
+        label,
+        amount: formatCentsDisplay(im.amount),
+        amountCents: im.amount,
+        ratio_bps: ratioBps,
+        ratioText: fmtRatio(ratioBps),
+        color,
+        contributions: [],
+        avatarUrl: im.avatar_url || '',
+        userId: im.user_id,
+        memberStatus: memberInfo?.status ?? im.status,
+        expanded: oldExpandedMap.get(key) ?? false,
+        l1Items,
+      });
+    }
+
+    return rows;
   },
 
   /** 构建下钻行列表（spec §4.3 / §4.4 · COSTRA-302 / COSTRA-305 三级下钻保留） */
@@ -1244,14 +1357,18 @@ Page({
 
   // ─── 交互：下钻行 展开/收起（多行可同时展开 · 与设计 §4.5 对齐） ──────────
 
-  /** 仅切换被点击行的 expanded，不影响其他行（用户期望多个下钻列表可同时打开） */
+  /** 仅切换被点击行的 expanded，不影响其他行（用户期望多个下钻列表可同时打开）
+   *  通过 dataset.tab 区分支出侧（drilldownRows）与收入侧（incomeDrilldownRows） */
   onTapDrilldownRow(e: WechatMiniprogram.TouchEvent) {
     const key = e.currentTarget.dataset.key as string;
+    const tab = e.currentTarget.dataset.tab as string;
     if (!key) return;
-    const idx = this.data.drilldownRows.findIndex(r => r.key === key);
+    const rowsKey = tab === 'income' ? 'incomeDrilldownRows' : 'drilldownRows';
+    const rows = this.data[rowsKey] as DrilldownRow[];
+    const idx = rows.findIndex(r => r.key === key);
     if (idx < 0) return;
     // 仅写被点击行的 expanded 字段：避免整列 read-modify-write 触发整张排行重渲染（与统计页 A1 一致）
-    this.setData({ [`drilldownRows[${idx}].expanded`]: !this.data.drilldownRows[idx].expanded });
+    this.setData({ [`${rowsKey}[${idx}].expanded`]: !rows[idx].expanded });
   },
 
   /**
@@ -1260,19 +1377,22 @@ Page({
    * - 已展开 → 收起（expanded=false）
    * - 未展开 → 展开 + 若 entriesLoaded 直接显示缓存 · 否则请求 drill-down API
    * - 采用最小 setData 路径（只写被点 L1 项的字段 `drilldownRows[i].l1Items[j].xxx`）
+   * - 通过 dataset.tab 区分支出侧（drilldownRows）与收入侧（incomeDrilldownRows）
    */
   onTapL1(e: WechatMiniprogram.TouchEvent) {
-    const { rowkey, l1id } = e.currentTarget.dataset as Record<string, string>;
+    const { rowkey, l1id, tab } = e.currentTarget.dataset as Record<string, string>;
     if (!rowkey || !l1id) return;
 
-    const rowIdx = this.data.drilldownRows.findIndex(r => r.key === rowkey);
+    const rowsKey = tab === 'income' ? 'incomeDrilldownRows' : 'drilldownRows';
+    const rows = this.data[rowsKey] as DrilldownRow[];
+    const rowIdx = rows.findIndex(r => r.key === rowkey);
     if (rowIdx < 0) return;
-    const row = this.data.drilldownRows[rowIdx];
+    const row = rows[rowIdx];
     const l1Idx = row.l1Items.findIndex(l => l.category_id === l1id);
     if (l1Idx < 0) return;
     const l1 = row.l1Items[l1Idx];
 
-    const base = `drilldownRows[${rowIdx}].l1Items[${l1Idx}]`;
+    const base = `${rowsKey}[${rowIdx}].l1Items[${l1Idx}]`;
 
     // 已展开 → 收起
     if (l1.expanded) {
@@ -1299,10 +1419,11 @@ Page({
       ? { month: this.data.currentMonth }
       : { year: this.data.currentYear };
 
-    void this._loadL1Entries(rowIdx, l1Idx, scope, l1id, sharedType, userId);
+    const entryType = tab === 'income' ? 'income' as const : 'expense' as const;
+    void this._loadL1Entries(rowIdx, l1Idx, scope, l1id, sharedType, userId, false, entryType, rowsKey);
   },
 
-  /** 加载 L1 三级流水明细（COSTRA-305） */
+  /** 加载 L1 三级流水明细（COSTRA-305 · 支持支出/收入两侧） */
   async _loadL1Entries(
     rowIdx: number,
     l1Idx: number,
@@ -1311,8 +1432,10 @@ Page({
     sharedType: 'shared' | 'personal',
     userId?: string,
     silent: boolean = false,
+    entryType: 'expense' | 'income' = 'expense',
+    rowsKey: 'drilldownRows' | 'incomeDrilldownRows' = 'drilldownRows',
   ) {
-    const base = `drilldownRows[${rowIdx}].l1Items[${l1Idx}]`;
+    const base = `${rowsKey}[${rowIdx}].l1Items[${l1Idx}]`;
     // P1-2 竞态防护：快照发起时的 family + scope，返回后校验；切月/年/账本后旧请求不得写入新视图。
     const familyIdSnapshot = this._familyId;
     const scopeKey = scope.month ? `m:${scope.month}` : `y:${scope.year}`;
@@ -1328,13 +1451,14 @@ Page({
         familyIdSnapshot,
         scope,
         l1CategoryId,
-        { sharedType, userId, limit: L1_ENTRIES_VISIBLE + 1 },
+        { sharedType, userId, limit: L1_ENTRIES_VISIBLE + 1, entryType },
       );
 
       // 返回后 family/scope 已变 → 丢弃，避免旧 scope 明细写入新视图
       if (isStale()) return;
       // 读最新 data 确认 L1 节点还在（summary 可能已刷新）
-      const latestRow = this.data.drilldownRows[rowIdx];
+      const latestRows = this.data[rowsKey] as DrilldownRow[];
+      const latestRow = latestRows[rowIdx];
       if (!latestRow) return;
       const latestL1 = latestRow.l1Items[l1Idx];
       if (!latestL1 || latestL1.category_id !== l1CategoryId) return;
@@ -1368,7 +1492,8 @@ Page({
       // family/scope 已变 → 不再回写（节点已被 _collapseAllRows 清理）
       if (isStale()) return;
       // 读最新 data 确认 L1 节点还在
-      const latestRow = this.data.drilldownRows[rowIdx];
+      const latestRows = this.data[rowsKey] as DrilldownRow[];
+      const latestRow = latestRows[rowIdx];
       if (latestRow) {
         const latestL1 = latestRow.l1Items[l1Idx];
         if (latestL1 && latestL1.category_id === l1CategoryId) {
@@ -1390,6 +1515,20 @@ Page({
    * 仅刷新 expanded 节点，避免无谓请求。
    */
   _refreshExpandedL1Entries(rows: DrilldownRow[]) {
+    this._refreshExpandedRows(rows, 'drilldownRows', 'expense');
+  },
+
+  /** 收入侧静默重拉已展开节点（与 _refreshExpandedL1Entries 对称） */
+  _refreshExpandedIncomeL1Entries(rows: DrilldownRow[]) {
+    this._refreshExpandedRows(rows, 'incomeDrilldownRows', 'income');
+  },
+
+  /** 通用：对已展开且已加载的 L1 节点做静默重拉（支出/收入两侧复用） */
+  _refreshExpandedRows(
+    rows: DrilldownRow[],
+    rowsKey: 'drilldownRows' | 'incomeDrilldownRows',
+    entryType: 'expense' | 'income',
+  ) {
     const scope = this.data.dimension === 'monthly'
       ? { month: this.data.currentMonth }
       : { year: this.data.currentYear };
@@ -1398,31 +1537,36 @@ Page({
       const userId = row.type === 'shared' ? undefined : row.userId;
       row.l1Items.forEach((l1, l1Idx) => {
         if (l1.expanded && l1.entriesLoaded && l1.category_id) {
-          void this._loadL1Entries(rowIdx, l1Idx, scope, l1.category_id, sharedType, userId, true);
+          void this._loadL1Entries(rowIdx, l1Idx, scope, l1.category_id, sharedType, userId, true, entryType, rowsKey);
         }
       });
     });
   },
 
-  /** 折叠所有行 + 收起所有 L1 三级展开（时间切换 / 账本切换时使用 · COSTRA-305 扩展） */
+  /** 折叠所有行 + 收起所有 L1 三级展开（时间切换 / 账本切换时使用 · COSTRA-305 扩展）
+   *  同时折叠支出侧（drilldownRows）和收入侧（incomeDrilldownRows） */
   _collapseAllRows() {
     // 仅写当前处于展开态的项，避免整列重写；无展开项时直接跳过 setData
     const update: Record<string, unknown> = {};
-    this.data.drilldownRows.forEach((r, rowIdx) => {
-      if (r.expanded) update[`drilldownRows[${rowIdx}].expanded`] = false;
-      // COSTRA-305: scope 变了 → 旧三级明细失效，必须清空
-      r.l1Items.forEach((l1, l1Idx) => {
-        if (l1.expanded || l1.entriesLoaded) {
-          const base = `drilldownRows[${rowIdx}].l1Items[${l1Idx}]`;
-          if (l1.expanded) update[`${base}.expanded`] = false;
-          if (l1.entriesLoaded) {
-            update[`${base}.entries`] = [];
-            update[`${base}.entriesLoaded`] = false;
-            update[`${base}.entriesHasMore`] = false;
+    const collapseRows = (rows: DrilldownRow[], rowsKey: string) => {
+      rows.forEach((r, rowIdx) => {
+        if (r.expanded) update[`${rowsKey}[${rowIdx}].expanded`] = false;
+        // COSTRA-305: scope 变了 → 旧三级明细失效，必须清空
+        r.l1Items.forEach((l1, l1Idx) => {
+          if (l1.expanded || l1.entriesLoaded) {
+            const base = `${rowsKey}[${rowIdx}].l1Items[${l1Idx}]`;
+            if (l1.expanded) update[`${base}.expanded`] = false;
+            if (l1.entriesLoaded) {
+              update[`${base}.entries`] = [];
+              update[`${base}.entriesLoaded`] = false;
+              update[`${base}.entriesHasMore`] = false;
+            }
           }
-        }
+        });
       });
-    });
+    };
+    collapseRows(this.data.drilldownRows, 'drilldownRows');
+    collapseRows(this.data.incomeDrilldownRows, 'incomeDrilldownRows');
     if (Object.keys(update).length > 0) this.setData(update);
   },
 

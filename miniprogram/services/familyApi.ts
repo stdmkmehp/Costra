@@ -94,6 +94,16 @@ export interface PersonalByMember {
   categories: CategoryRankItem[];
 }
 
+/** 成员收入块（与 PersonalByMember 对称 · 无 shared 维度） */
+export interface IncomeByMember {
+  user_id: string;
+  nickname: string;
+  avatar_url: string | null;
+  status: 'active' | 'left';
+  amount: number;          // cents
+  categories: CategoryRankItem[];
+}
+
 /** GET /v1/families/{id}/summary 响应 */
 export interface FamilySummary {
   family_id: string;
@@ -124,6 +134,10 @@ export interface FamilySummary {
     categories: CategoryRankItem[];
   };
   personal_by_member: PersonalByMember[];
+  /** 收入维度的成员段（无 shared 段，ratio 分母 = totals.income） */
+  income_segments: SegmentItem[];
+  /** 成员收入块（仅 amount > 0 的成员） */
+  income_by_member: IncomeByMember[];
 }
 
 /** 邀请创建响应（对齐 OpenAPI FamilyInvite schema · COSTRA-223 R1.x.1 P0-1） */
@@ -521,9 +535,10 @@ function familyDrillCacheKey(
   sharedType: 'shared' | 'personal',
   userId?: string,
   limit?: number,
+  entryType?: 'expense' | 'income',
 ): string {
   const period = scope.month ?? scope.year!;
-  return `${familyId}:${period}:${l1CategoryId}:${sharedType}:${userId ?? 'all'}:${limit ?? 10}`;
+  return `${familyId}:${period}:${l1CategoryId}:${sharedType}:${userId ?? 'all'}:${limit ?? 10}:${entryType ?? 'expense'}`;
 }
 
 /**
@@ -533,15 +548,16 @@ function familyDrillCacheKey(
  * @param familyId 家庭 ID
  * @param scope month 或 year 二选一
  * @param l1CategoryId 一级分类 ID
- * @param opts sharedType + userId(personal 必填) + limit
+ * @param opts sharedType + userId(personal 必填) + limit + entryType(默认 expense)
  */
 export async function drillDownFamilyL1Entries(
   familyId: string,
   scope: { month?: string; year?: string },
   l1CategoryId: string,
-  opts: { sharedType: 'shared' | 'personal'; userId?: string; limit?: number },
+  opts: { sharedType: 'shared' | 'personal'; userId?: string; limit?: number; entryType?: 'expense' | 'income' },
 ): Promise<FamilySummaryDrillDownResponse> {
-  const cacheKey = familyDrillCacheKey(familyId, scope, l1CategoryId, opts.sharedType, opts.userId, opts.limit);
+  const entryType = opts.entryType ?? 'expense';
+  const cacheKey = familyDrillCacheKey(familyId, scope, l1CategoryId, opts.sharedType, opts.userId, opts.limit, entryType);
   const cached = _familyDrillCache.get(cacheKey);
   if (cached) {
     // LRU：命中即刷新最近使用顺序（delete + set 使其移到 Map 末尾，避免被优先淘汰）
@@ -552,11 +568,16 @@ export async function drillDownFamilyL1Entries(
 
   const params: Record<string, string | number> = {
     l1_category_id: l1CategoryId,
-    shared_type: opts.sharedType,
+    entry_type: entryType,
   };
+  // entry_type=income 时不传 shared_type（收入无此语义）
+  if (entryType === 'expense') {
+    params.shared_type = opts.sharedType;
+  }
   if (scope.month) params.month = scope.month;
   if (scope.year) params.year = scope.year;
-  if (opts.sharedType === 'personal' && opts.userId) params.user_id = opts.userId;
+  // income 时 user_id 必填；expense personal 时 user_id 必填
+  if (opts.userId) params.user_id = opts.userId;
   if (opts.limit != null) params.limit = opts.limit;
 
   const data = await request<FamilySummaryDrillDownResponse>({

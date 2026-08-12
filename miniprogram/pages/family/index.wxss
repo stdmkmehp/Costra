@@ -383,6 +383,18 @@
   color: var(--color-role-text-tertiary, rgba(28,27,26,0.28));
 }
 
+/* ─── 收入 Segmented Bar 与支出侧上下并列 · 顶部留 8rpx 间隔 ─── */
+.segment-bar--income {
+  margin-top: 8rpx;
+}
+
+/* ─── 支出/收入分块分隔线（两块都有数据时显示） ─── */
+.family__section-divider {
+  height: 1rpx;
+  background: rgba(28,27,26,0.06);
+  margin: 16rpx 0 8rpx;
+}
+
 /* ─── 重构后下钻列表（COSTRA-302 · spec §4.8 · 统计页同款手风琴）─── */
 .family-rank { padding: 24rpx 0 8rpx; box-sizing: border-box; }
 .family-rank__row {
