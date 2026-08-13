@@ -389,7 +389,7 @@ Page({
     /** 当前高亮的头像 userId（暖光环 · 复用明细页 ctxActiveRefId 语义） */
     activeMemberUserId: '',
 
-    // ─── 换颜色弹层（migration 0017 · 底部 sheet · 8 色预设 + 撞色头像暗示） ───
+    // ─── 选择代表色弹层（migration 0017 · 底部 sheet · 8 色预设 + 撞色头像暗示） ───
     colorPickerVisible: false,
     /** 8 色选项列表：{ index, hex, selected, usedByOthers: [{userId, avatarUrl, nickname}] } */
     colorPickerOptions: [] as ColorPickerOption[],
@@ -1881,7 +1881,7 @@ Page({
     });
   },
 
-  // ─── 换颜色弹层（migration 0017 · 8 色预设 + 撞色头像暗示） ───────────────────
+  // ─── 选择代表色弹层（migration 0017 · 8 色预设 + 撞色头像暗示） ───────────────────
 
   /**
    * 打开换色弹层：构造 8 色选项列表，标记当前选中色 + 其他成员使用情况

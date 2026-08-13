@@ -72,7 +72,7 @@ function detectEnv(): EnvName {
   try {
     const g: WxRuntime | undefined = typeof wx !== 'undefined' ? wx : undefined;
     const envVersion = g?.getAccountInfoSync?.()?.miniProgram?.envVersion;
-    const env: EnvName = envVersion === 'release' ? 'prod' : envVersion === 'trial' ? 'staging' : 'dev';
+    const env: EnvName = envVersion === 'release' ? 'prod' : envVersion === 'trial' ? 'staging' : 'staging' /* 临时将dev改为staging 'dev' */ ;
 
     if (g) {
       console.info('[env] detectEnv', { envVersion: envVersion ?? 'unknown', env });

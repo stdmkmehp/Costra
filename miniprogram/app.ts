@@ -102,7 +102,7 @@ App<AppOption>({
 
     // 版本更新检查：微信平台在冷启动时后台下载新版本，下载完成后引导用户重启应用。
     // 不阻断 bootstrap 与首屏渲染，纯异步 fire-and-forget。
-    this.checkForUpdate();
+    // this.checkForUpdate(); // 临时关闭主动更新检查
 
     // COSTRA-901: 隐私授权回调不在此处全局注册。
     // chooseAvatar/nickname 仅在 profile-setup 页面使用，弹窗由该页面的 privacy-popup 组件自行处理。

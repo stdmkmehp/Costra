@@ -576,7 +576,7 @@
               <view class="can"></view>
             </view>
           </block>
-          <!-- 换颜色：调色板三色小圆盘 -->
+          <!-- 选择代表色：调色板三色小圆盘 -->
           <block wx:elif="{{item.key === 'colorChoice'}}">
             <view class="mm-palette">
               <view class="mm-palette__dot mm-palette__dot--1"></view>
