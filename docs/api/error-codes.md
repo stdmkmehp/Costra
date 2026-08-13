@@ -204,8 +204,25 @@ throw new AppError(ErrorCode.INVALID_ARGUMENT, 'field "amount" must be > 0', {
 - 全局 `errorHandler` 捕获 `AppError` → 序列化为 `Error` schema
 - 未捕获异常 → 兜底为 `INTERNAL` + 必须有 `trace_id`
 - 5xx 同时写 `audit_logs`（`action='error'`）+ Grafana metric `costra_api_error_total{code=...}`
+- **所有失败出口都经同一个 `serialize()`**：日志与响应体在同一处落地，不存在"某分支忘记记日志"或"同一次失败被打两条日志"的可能
 
-### 5.3 日志脱敏
+### 5.3 日志分级（`ErrorLogLevels`）
+
+`AppError` 同时覆盖"预期内的业务分支"与"服务端真故障"两类语义完全不同的场景。若一刀切打 `warn`，warn 通道会被高频预期态淹没（典型：用户未设置预算 → `GET /budgets` 每次冷启动返 404，随 DAU 线性增长），真告警反而被埋掉。
+
+级别由 `server/src/errors/ErrorCode.ts` 的 `ErrorLogLevels` 静态表决定，`errorHandler` **只查表、不做任何按 code 的条件判断**。
+
+| level | 判据 | code |
+|---|---|---|
+| `info` | 预期内的业务分支：服务端与客户端都按契约正常运作，客户端有明确的降级 / 重试 / 提示路径，出现频率与用户规模正相关。仅为链路可观测性留痕 | `NOT_FOUND` · `VERSION_CONFLICT` · `DUPLICATE_RESOURCE` · `ALREADY_MEMBER` · `INVITE_EXPIRED` · `BUSINESS_RULE_VIOLATION` · `FAMILY_PERSONAL_NOT_DELETABLE` · `TOKEN_EXPIRED` · `REFRESH_TOKEN_INVALID` |
+| `warn` | 请求方行为异常而服务端正常：客户端 bug（参数 / 幂等键 / Content-Type）、疑似越权或探测（非过期类 401、403）、限流命中、占位端点被调用。需观测趋势，不需立即介入 | `INVALID_ARGUMENT` · `MALFORMED_JSON` · `IDEMPOTENCY_KEY_REQUIRED` · `IDEMPOTENCY_KEY_MISMATCH` · `UNSUPPORTED_MEDIA_TYPE` · `UNAUTHENTICATED` · `WX_CODE_INVALID` · `PERMISSION_DENIED` · `FAMILY_NOT_MEMBER` · `RATE_LIMITED` · `NOT_IMPLEMENTED` |
+| `error` | 服务端自身故障，需要人介入排查 | `INTERNAL` · `UNAVAILABLE` · `TIMEOUT` |
+
+**日志字段必带 `message`**：同一个 code 常有多个抛出点（如 `NOT_FOUND` 在 `budgetService` 内就有 3 处：ledger 不存在 / family 不存在 / 从未设过预算），只靠 `code` + `details` 无法定位抛出点。
+
+> 本表**不是契约**（不下发客户端、不影响响应体），可自由调整；但每次调整需同步本节。
+
+### 5.4 日志脱敏
 
 - `details` 中禁止出现 `note` / `nickname` / 手机号等用户明文
 - `trace_id` 格式：UUID v4，贯穿整条请求链路
@@ -244,6 +261,7 @@ throw new AppError(ErrorCode.INVALID_ARGUMENT, 'field "amount" must be > 0', {
 | 修改 `code` 对应 HTTP 状态码 | ✅ 破坏性 | 同上 |
 | 修改 `retryable` 语义 | ⚠️ 半破坏 | 客户端需同步升级 |
 | 修改 `user_action` 文案 | ❌ | 直接改 `error-mapper.ts` 即可 |
+| 修改 `ErrorLogLevels` 分级 | ❌ | 非契约（仅服务端日志）· 改 `ErrorCode.ts` + 同步本文 §5.3 |
 
 ---
 

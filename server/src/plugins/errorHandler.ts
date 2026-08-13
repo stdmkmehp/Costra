@@ -14,17 +14,26 @@
  * 分支优先级：
  *   1. AppError → 使用 code + httpStatus 序列化；保留 details + retryAfterSec
  *   2. Fastify 内置校验错误（`FST_ERR_VALIDATION` / error.validation）→ 映射为 INVALID_ARGUMENT
- *   3. Fastify 404 默认 → 映射为 NOT_FOUND（由 setNotFoundHandler 挂）
+ *   3. Fastify 内置 body parse 错误 → UNSUPPORTED_MEDIA_TYPE / MALFORMED_JSON
  *   4. 其他 Error → 转 INTERNAL，日志记录原 cause
+ *   5. 路由未命中（setNotFoundHandler）→ NOT_FOUND
+ *
+ * 日志约定（COSTRA-101 R2）：
+ *   - **所有出口都经 `serialize()`**，日志与响应在同一处落地，不存在"某个分支忘了记日志"
+ *     或"同一次失败被打两条"的可能。
+ *   - 级别由 `logLevelOf(code)` 查表决定（判据见 ErrorCode.ts:ErrorLogLevels），
+ *     **本文件不做任何按 code 的条件判断**。
+ *   - 日志必带 `message`：同一个 code 常有多个抛出点（如 NOT_FOUND 在 budgetService 里就有
+ *     3 处），只靠 code + details 无法定位，必须靠 message 区分。
  *
  * 注意：
- *   - 日志使用 Fastify 实例上挂的 pino logger，req.log.error 带 trace_id（req.id）。
+ *   - 日志使用 Fastify 实例上挂的 pino logger，req.log 带 trace_id（req.id）。
  *   - 生产环境严禁把 Error.message / stack 直接回给客户端；只返回契约 message。
  */
 
 import type { FastifyInstance, FastifyError, FastifyReply, FastifyRequest } from 'fastify';
 import { AppError, isAppError } from '../errors/AppError.js';
-import { ErrorCode, httpStatusOf } from '../errors/ErrorCode.js';
+import { ErrorCode, logLevelOf } from '../errors/ErrorCode.js';
 
 interface ErrorBody {
   code: ErrorCode;
@@ -49,7 +58,30 @@ function toAppErrorFromValidation(err: FastifyError): AppError {
   });
 }
 
-function serialize(err: AppError, req: FastifyRequest, reply: FastifyReply): void {
+/**
+ * 唯一出口：记日志 + 序列化响应。
+ *
+ * @param logExtra 额外日志字段（不进响应体）。用于把分支特有的上下文带进日志，
+ *                 如 validation 明细数组、未识别错误的原始 Error（含 stack）。
+ */
+function serialize(
+  err: AppError,
+  req: FastifyRequest,
+  reply: FastifyReply,
+  logExtra?: Record<string, unknown>,
+): void {
+  req.log[logLevelOf(err.code)](
+    {
+      code: err.code,
+      httpStatus: err.httpStatus,
+      message: err.message,
+      details: err.details,
+      cause: (err as { cause?: unknown }).cause,
+      ...logExtra,
+    },
+    'AppError thrown',
+  );
+
   const body: ErrorBody = {
     code: err.code,
     message: err.message,
@@ -69,24 +101,13 @@ export async function registerErrorHandler(app: FastifyInstance): Promise<void> 
   app.setErrorHandler((err: FastifyError, req, reply) => {
     // 分支 1：业务异常
     if (isAppError(err)) {
-      req.log.warn(
-        {
-          code: err.code,
-          httpStatus: err.httpStatus,
-          details: err.details,
-          cause: (err as { cause?: unknown }).cause,
-        },
-        'AppError thrown',
-      );
       serialize(err, req, reply);
       return;
     }
 
     // 分支 2：Fastify 校验错误
     if (err.validation) {
-      const mapped = toAppErrorFromValidation(err);
-      req.log.warn({ validation: err.validation }, 'request validation failed');
-      serialize(mapped, req, reply);
+      serialize(toAppErrorFromValidation(err), req, reply, { validation: err.validation });
       return;
     }
 
@@ -111,12 +132,12 @@ export async function registerErrorHandler(app: FastifyInstance): Promise<void> 
     }
 
     // 分支 4：其他未识别错误 → INTERNAL
-    req.log.error({ err }, 'unhandled error → INTERNAL');
+    //   响应体只回契约 message；原始 Error（含 stack）仅进日志。
     const fallback = new AppError(ErrorCode.INTERNAL, {
       message: 'internal server error',
       cause: err,
     });
-    serialize(fallback, req, reply);
+    serialize(fallback, req, reply, { err });
   });
 
   // 404 专用处理
@@ -127,6 +148,3 @@ export async function registerErrorHandler(app: FastifyInstance): Promise<void> 
     serialize(err, req, reply);
   });
 }
-
-// 仅为让 httpStatusOf 被引用（避免 tsc noUnusedLocals 误报），运行时无副作用
-void httpStatusOf;

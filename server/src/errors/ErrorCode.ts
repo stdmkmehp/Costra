@@ -7,8 +7,12 @@
  *
  * ⚠️ 约束：
  *   1. 本枚举的字符串值一旦发布不得改变（契约稳定）。
- *   2. 新增 code 必须同步 docs/api/error-codes.md + openapi.yaml + client error-mapper。
+ *   2. 新增 code 必须同步 docs/api/error-codes.md + openapi.yaml + client error-mapper，
+ *      并补齐本文件三张映射表（ErrorHttpStatus / ErrorRetryStrategy / ErrorLogLevels），
+ *      漏一张则模块加载期 assertErrorCodeCoverage 立即抛错。
  *   3. 客户端依 `code` 判分支，严禁依 HTTP status 判分支。
+ *   4. 三张表中前两张是契约（影响响应与客户端行为），ErrorLogLevels 仅服务端可观测性，
+ *      不下发客户端，可自由调整。
  */
 
 export enum ErrorCode {
@@ -138,6 +142,70 @@ export const ErrorRetryStrategy: Readonly<Record<ErrorCode, RetryStrategy>> = Ob
 });
 
 /**
+ * ErrorCode → 服务端日志级别
+ *
+ * 为什么需要这张表：
+ *   AppError 覆盖了"预期内的业务分支"与"服务端真故障"两类语义完全不同的场景，
+ *   若在 errorHandler 里一刀切打 `warn`，warn 通道会被高频预期态淹没（典型：用户
+ *   未设置预算 → `GET /budgets` 每次冷启动都返 404 NOT_FOUND），真正需要人介入的
+ *   告警反而被埋掉。分级判据必须是**数据驱动的静态映射**，而非 handler 里的 if-else。
+ *
+ * 分级判据（新增 code 时按此三选一，不要凭感觉）：
+ *   - 'info'  预期内的业务分支：服务端与客户端都按契约正常运作，客户端有明确的
+ *             降级/重试/提示路径，出现频率与用户规模正相关。仅为链路可观测性留痕。
+ *   - 'warn'  请求方行为异常而服务端正常：客户端 bug（参数 / 幂等键 / Content-Type）、
+ *             疑似越权或探测（非过期类 401、403）、限流命中。需要观测趋势，不需立即介入。
+ *   - 'error' 服务端自身故障，需要人介入排查（5xx）。
+ *
+ * 注意：本表**不是契约**（不下发客户端、不影响响应体），可自由调整，
+ * 但每次调整都应同步 docs/api/error-codes.md §5.2。
+ */
+export type ErrorLogLevel = 'info' | 'warn' | 'error';
+
+export const ErrorLogLevels: Readonly<Record<ErrorCode, ErrorLogLevel>> = Object.freeze({
+  // --- 客户端 bug：请求根本不该发出来 ---
+  [ErrorCode.INVALID_ARGUMENT]: 'warn',
+  [ErrorCode.MALFORMED_JSON]: 'warn',
+  [ErrorCode.IDEMPOTENCY_KEY_REQUIRED]: 'warn',
+  [ErrorCode.IDEMPOTENCY_KEY_MISMATCH]: 'warn',
+  [ErrorCode.UNSUPPORTED_MEDIA_TYPE]: 'warn',
+
+  // --- 401：过期类是正常生命周期（客户端自动刷新 / 跳登录），伪造类才可疑 ---
+  [ErrorCode.UNAUTHENTICATED]: 'warn',
+  [ErrorCode.TOKEN_EXPIRED]: 'info',
+  [ErrorCode.REFRESH_TOKEN_INVALID]: 'info',
+  [ErrorCode.WX_CODE_INVALID]: 'warn',
+
+  // --- 403：越权访问需要观测；个人 family 不可删是 UI 已知的业务态 ---
+  [ErrorCode.PERMISSION_DENIED]: 'warn',
+  [ErrorCode.FAMILY_NOT_MEMBER]: 'warn',
+  [ErrorCode.FAMILY_PERSONAL_NOT_DELETABLE]: 'info',
+
+  // --- 404：资源不存在 / 未设置是设计内的正常态（客户端据此渲染空态） ---
+  [ErrorCode.NOT_FOUND]: 'info',
+
+  // --- 409：乐观锁与唯一约束冲突，客户端有既定合并 / 提示策略 ---
+  [ErrorCode.VERSION_CONFLICT]: 'info',
+  [ErrorCode.DUPLICATE_RESOURCE]: 'info',
+  [ErrorCode.ALREADY_MEMBER]: 'info',
+
+  // --- 410：TTL 到期是设计内的 ---
+  [ErrorCode.INVITE_EXPIRED]: 'info',
+
+  // --- 422：业务规则拒绝，UI 有对应文案 ---
+  [ErrorCode.BUSINESS_RULE_VIOLATION]: 'info',
+
+  // --- 429：需要观测趋势（可能是攻击，也可能是阈值配得太紧） ---
+  [ErrorCode.RATE_LIMITED]: 'warn',
+
+  // --- 5xx：服务端故障 ---
+  [ErrorCode.INTERNAL]: 'error',
+  [ErrorCode.UNAVAILABLE]: 'error',
+  [ErrorCode.TIMEOUT]: 'error',
+  [ErrorCode.NOT_IMPLEMENTED]: 'warn', // 501 是"占位端点被调用"，属客户端不该调
+});
+
+/**
  * 守卫：字符串是否为合法 ErrorCode 值。
  * 用于中间件反序列化 / 客户端解析外来响应。
  */
@@ -154,11 +222,20 @@ export function httpStatusOf(code: ErrorCode): number {
 }
 
 /**
- * 模块加载期覆盖自检：保证 `ErrorHttpStatus` / `ErrorRetryStrategy` 对每个 `ErrorCode`
- * 枚举值都有明确映射。未覆盖时**立即抛错**，让应用在启动阶段就失败，避免 httpStatusOf 悄悄兜底 500。
+ * 快捷查询：某 code 对应的日志级别。
+ * 未定义时兜底 'error'（宁可吵，不可静默）。
+ */
+export function logLevelOf(code: ErrorCode): ErrorLogLevel {
+  return ErrorLogLevels[code] ?? 'error';
+}
+
+/**
+ * 模块加载期覆盖自检：保证 `ErrorHttpStatus` / `ErrorRetryStrategy` / `ErrorLogLevels`
+ * 对每个 `ErrorCode` 枚举值都有明确映射。未覆盖时**立即抛错**，让应用在启动阶段就失败，
+ * 避免 httpStatusOf / logLevelOf 悄悄兜底。
  *
  * 触发规则：
- *   - 新增一条 ErrorCode 后忘了同步 ErrorHttpStatus 或 ErrorRetryStrategy 任一映射
+ *   - 新增一条 ErrorCode 后忘了同步三张映射表任一
  *   - 单测 / server 启动时就会立刻失败
  *
  * COSTRA-100 Round-2 修复（Review-Tech Round-1 P1-4）。
@@ -169,6 +246,7 @@ export function httpStatusOf(code: ErrorCode): number {
     const gaps: string[] = [];
     if (ErrorHttpStatus[code as ErrorCode] == null) gaps.push('ErrorHttpStatus');
     if (ErrorRetryStrategy[code as ErrorCode] == null) gaps.push('ErrorRetryStrategy');
+    if (ErrorLogLevels[code as ErrorCode] == null) gaps.push('ErrorLogLevels');
     if (gaps.length > 0) missing.push({ code, missingIn: gaps });
   }
   if (missing.length > 0) {
@@ -177,7 +255,7 @@ export function httpStatusOf(code: ErrorCode): number {
       .join('\n');
     throw new Error(
       `[ErrorCode] coverage assertion failed. The following codes are missing mappings:\n${report}\n` +
-        `Fix: update ErrorHttpStatus / ErrorRetryStrategy in server/src/errors/ErrorCode.ts and docs/api/error-codes.md.`,
+        `Fix: update ErrorHttpStatus / ErrorRetryStrategy / ErrorLogLevels in server/src/errors/ErrorCode.ts and docs/api/error-codes.md.`,
     );
   }
 })();
