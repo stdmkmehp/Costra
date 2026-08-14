@@ -10,7 +10,7 @@
 #
 # 任务：
 #   backup [--retain-days N|--no-cleanup|--prefix P]  委托 backup-db.sh 全量（仅手动 · 不进 cron）
-#   backup-avatars                                    委托 backup-db.sh --avatars-only（cron）
+#   backup-avatars                                    委托 backup-db.sh --avatars-only + scp 异地副本到从库（cron）
 #   replication-check                                主库复制槽/WAL/异步状态检查
 #   purge-idempotency                                 清过期幂等键（每日）
 #   purge-sessions                                    清已过期 session（每日）
@@ -37,6 +37,10 @@ PG_DB="costra"
 # 所有定时任务日志统一目录（唯一定义处 · cron 任务与手动执行的输出都落在这里）
 LOG_DIR="/data/logs"
 
+# backup-avatars 异地副本的连接参数文件（0600 · 只在 prod 机器 · 绝不进仓库）
+# 需要四个键：SLAVE_HOST / SLAVE_USER / SLAVE_PASSWORD / SLAVE_BACKUP_DIR
+SLAVE_ENV_FILE="${COSTRA_CONF_DIR}/slave.env"
+
 # =============================================================================
 # ★ cron 调度表（统一管理执行时间 · 任务与时间解耦 · 改执行时间只改这里）
 # 格式：<任务名>|<cron 时间表达式>|<日志文件名（自动落在 ${LOG_DIR} 下）>
@@ -45,7 +49,8 @@ LOG_DIR="/data/logs"
 # =============================================================================
 # 注：DB 备份已迁往从库（/data/slave/backups · install-standby-cron.sh），
 # prod 不再跑全量 backup；backup-avatars 只打包 uploads/avatars（文件不经复制流，
-# 只有 prod 能备份）。
+# 只有 prod 能备份），成功后把最新归档 scp 到从库 /data/slave/backups
+# （连接参数读 /data/conf/slave.env · 见 do_push_avatars_offsite）。
 declare -a CRON_SCHEDULE=(
   "backup-avatars|27 3,7,11,15,19,23 * * *|maintenance-backup.log"
   "replication-check|47 * * * *|check-replication.log"
@@ -177,6 +182,10 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       log_warn "复制三件套存在但运行态无 costra_standby 物理槽 · cron 仍保留 replication-check 以持续告警"
     fi
   fi
+  # backup-avatars 的异地副本依赖 slave.env · 缺失时预警（不阻断安装 · 本地备份仍有效）
+  if [[ ! -f "${SLAVE_ENV_FILE}" ]]; then
+    log_warn "${SLAVE_ENV_FILE} 不存在 · backup-avatars 推送异地副本将失败 · 请创建（SLAVE_HOST/SLAVE_USER/SLAVE_PASSWORD/SLAVE_BACKUP_DIR）"
+  fi
   for entry in "${CRON_SCHEDULE[@]}"; do
     IFS='|' read -r task sched logf <<< "${entry}"
     if [[ "${task}" == "replication-check" ]] && [[ "${replication_enabled}" != "1" ]]; then
@@ -215,6 +224,71 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
   else
     log_warn "crond 未运行 · 请手动 systemctl enable --now crond"
   fi
+}
+
+# =============================================================================
+# backup-avatars 异地副本：备份成功后把最新 avatars 归档 scp 到从库机器
+# （SLAVE_BACKUP_DIR=/data/slave/backups = analytics DUMP_INBOX · 与从库 DB 备份
+# 同目录，scheduled-*.avatars.tar.gz 与 standby-*.sql.gz 前缀不同互不干扰）。
+# =============================================================================
+# _load_slave_env：从 ${SLAVE_ENV_FILE} 读取 scp 连接四件套（缺失/空值即失败）
+_load_slave_env() {
+  require_file "${SLAVE_ENV_FILE}"
+  local key val
+  for key in SLAVE_HOST SLAVE_USER SLAVE_PASSWORD SLAVE_BACKUP_DIR; do
+    val=$(grep "^${key}=" "${SLAVE_ENV_FILE}" 2>/dev/null | tail -1 | cut -d= -f2- || true)
+    [[ -n "${val}" ]] || die "未能从 ${SLAVE_ENV_FILE} 读取 ${key}（或值为空）"
+    printf -v "${key}" '%s' "${val}"
+  done
+  [[ "${SLAVE_BACKUP_DIR}" == /* ]] || die "SLAVE_BACKUP_DIR 必须是绝对路径：${SLAVE_BACKUP_DIR}"
+}
+
+do_push_avatars_offsite() {
+  # 与 backup-db.sh 默认落盘位置/前缀对齐；透传的 --backup-dir/--prefix 同样生效
+  local backup_dir="${COSTRA_DATA}/backups" prefix="scheduled" i
+  for (( i=0; i<${#PASSTHRU[@]}; i++ )); do
+    case "${PASSTHRU[i]}" in
+      --backup-dir) backup_dir=${PASSTHRU[i+1]:-} ;;
+      --prefix)     prefix=${PASSTHRU[i+1]:-} ;;
+    esac
+  done
+
+  require_cmd scp
+  require_cmd expect "yum install -y expect / apt install -y expect"
+  _load_slave_env
+
+  local latest
+  latest=$(ls -t "${backup_dir}/${prefix}"-*.avatars.tar.gz 2>/dev/null | head -1 || true)
+  if [[ -z "${latest}" ]]; then
+    if [[ "${DRY_RUN}" == "1" ]]; then
+      log_dry "正式执行时将把新生成的 ${prefix}-*.avatars.tar.gz 推送至 ${SLAVE_USER}@${SLAVE_HOST}:${SLAVE_BACKUP_DIR}/"
+      return 0
+    fi
+    die "未找到 avatars 归档（${backup_dir}/${prefix}-*.avatars.tar.gz）· 无法推送异地副本"
+  fi
+
+  # expect 驱动 scp 交互应答密码（写法同 server/scripts/dev/scp-latest-backup.sh）：
+  # 参数经环境变量传入、expect 脚本内用 $env() 读取，避免密码/路径特殊字符注入 expect 语法；
+  # accept-new 仅在首次连接时自动记录 host key，cron 下无交互；
+  # expect 默认恒返回 0，末尾 catch wait + exit 把 scp 真实退出码带出，失败才能被 || die 捕获。
+  if [[ "${DRY_RUN}" == "1" ]]; then
+    log_dry "expect: spawn scp -p ${latest} ${SLAVE_USER}@${SLAVE_HOST}:${SLAVE_BACKUP_DIR}/（password 提示由 expect 应答）"
+    return 0
+  fi
+  SCP_SRC="${latest}" \
+  SCP_DEST="${SLAVE_USER}@${SLAVE_HOST}:${SLAVE_BACKUP_DIR}/" \
+  SCP_PASS="${SLAVE_PASSWORD}" \
+  timeout 600 expect -c '
+    set timeout -1
+    spawn scp -p -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new $env(SCP_SRC) $env(SCP_DEST)
+    expect {
+      -re {[Pp]assword:} { send -- "$env(SCP_PASS)\r"; exp_continue }
+      eof
+    }
+    catch wait result
+    exit [lindex $result 3]
+  ' || die "avatars 异地副本 scp 失败（本地备份完好：${latest}）"
+  log_success "异地副本已推送 → ${SLAVE_USER}@${SLAVE_HOST}:${SLAVE_BACKUP_DIR}/$(basename "${latest}")"
 }
 
 # =============================================================================
@@ -258,10 +332,11 @@ case "${TASK}" in
     "${SCRIPT_DIR}/backup-db.sh" ${PASSTHRU[@]+"${PASSTHRU[@]}"}
     ;;
   backup-avatars)
-    # prod cron 唯一备份任务：只打包 avatars（DB 备份已迁从库）
+    # prod cron 唯一备份任务：只打包 avatars（DB 备份已迁从库）· 成功后推送异地副本
     export DRY_RUN ASSUME_YES
     log_info "委托 → backup-db.sh --avatars-only ${PASSTHRU[*]:-}"
     "${SCRIPT_DIR}/backup-db.sh" --avatars-only ${PASSTHRU[@]+"${PASSTHRU[@]}"}
+    do_push_avatars_offsite
     ;;
   replication-check)
     export DRY_RUN ASSUME_YES
