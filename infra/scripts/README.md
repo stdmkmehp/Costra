@@ -173,6 +173,9 @@ COSTRA_ENV_FILE=/data/conf/standby.env ./backup-db.sh --db-only \
 > → **bbr 必须额外 `docker compose up -d nginx` recreate 一次**（nginx 已配 `sysctls:`）。
 > bbr 还依赖宿主机 `modprobe tcp_bbr`，缺模块时 sysctl 值仍在但实际跑 cubic。详见基线文档 §3.5/§3.5.1。
 >
+> ⚠️ 机器缺 `tc` 时（精简镜像可能未装，安装 `iproute`/`iproute2`），status 的运行层 qdisc
+> 检查与 apply 第 5 步会**降级跳过并提示**而非失败，qdisc 于重启后由 sysctl 值生效。
+>
 > ⚠️ `tcp_keepalive_time` / `somaxconn` 那类 per-netns 参数**永不继承宿主机**（用内核编译期
 > 默认值），recreate 也没用，必须显式写 `sysctls:`；且需同步改 nginx `listen backlog=`。
 > 当前网络栈空载故不做，触发条件见基线文档 §5.3。

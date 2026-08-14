@@ -192,12 +192,16 @@ do_status() {
   nic=$(_primary_nic)
   want_qdisc=$(_managed_pairs | awk -F'|' '$1=="net.core.default_qdisc"{print $2}')
   if [[ -n "${nic}" && -n "${want_qdisc}" ]]; then
-    cur_qdisc=$(tc qdisc show dev "${nic}" 2>/dev/null | awk 'NR==1{print $2}')
-    if [[ "${cur_qdisc}" == "${want_qdisc}" ]]; then
-      log_success "网卡 ${nic} 实际 qdisc = ${cur_qdisc}"
+    if ! command -v tc >/dev/null 2>&1; then
+      log_warn "缺少 tc 命令 · 无法检查 ${nic} 实际挂载的 qdisc（安装：yum install -y iproute / apt install -y iproute2）"
     else
-      log_warn "网卡 ${nic} 实际 qdisc = ${cur_qdisc:-未知}（期望 ${want_qdisc}）· sysctl 值对不代表已挂载"
-      drift=$((drift + 1))
+      cur_qdisc=$(tc qdisc show dev "${nic}" 2>/dev/null | awk 'NR==1{print $2}' || true)
+      if [[ "${cur_qdisc}" == "${want_qdisc}" ]]; then
+        log_success "网卡 ${nic} 实际 qdisc = ${cur_qdisc}"
+      else
+        log_warn "网卡 ${nic} 实际 qdisc = ${cur_qdisc:-未知}（期望 ${want_qdisc}）· sysctl 值对不代表已挂载"
+        drift=$((drift + 1))
+      fi
     fi
   fi
 
@@ -297,8 +301,11 @@ _preflight_bbr() {
 }
 
 # 主网卡名（默认路由所在设备 · 不假定叫 eth0）
+# ip 缺失或查询失败时输出空串（pipefail 下管道非零不能让命令替换炸掉脚本），
+# 调用方按空值走各自的降级分支
 _primary_nic() {
-  ip route show default 2>/dev/null | awk '/^default/ {for (i=1;i<=NF;i++) if ($i=="dev") {print $(i+1); exit}}'
+  { ip route show default 2>/dev/null \
+    | awk '/^default/ {for (i=1;i<=NF;i++) if ($i=="dev") {print $(i+1); exit}}'; } || true
 }
 
 # net.core.default_qdisc 只在**设备注册时**用作默认 qdisc，已 up 的网卡不会改变。
@@ -314,7 +321,15 @@ _apply_qdisc_now() {
     return 0
   fi
 
-  cur=$(tc qdisc show dev "${nic}" 2>/dev/null | awk 'NR==1{print $2}')
+  # 精简镜像可能没装 tc：降级跳过而非阻塞后续步骤，sysctl 值重启后对新建设备生效
+  if ! command -v tc >/dev/null 2>&1; then
+    log_warn "缺少 tc 命令 · 跳过 qdisc 即时替换（安装：yum install -y iproute / apt install -y iproute2）"
+    log_warn "${nic} 的 qdisc 将于重启后由 net.core.default_qdisc=${want} 生效"
+    return 0
+  fi
+
+  # 读取失败（设备状态异常等）按"未知"处理，走后面的 replace 尝试而非炸脚本
+  cur=$(tc qdisc show dev "${nic}" 2>/dev/null | awk 'NR==1{print $2}' || true)
   if [[ "${cur}" == "${want}" ]]; then
     log_success "${nic} 的 qdisc 已是 ${want}"
     return 0

@@ -367,3 +367,4 @@ THP 已经是 never**——否则 Redis 可能在 THP 仍为 always 的窗口内
 | 日期 | 变更 |
 |---|---|
 | 2026-08-14 | 初版。**关键修正 1**：初评建议的 `vm.overcommit_memory=1`、`fs.file-max=1048576`、宿主机 `tcp_max_tw_buckets=65536` 三项经复核**全部撤销**（分别因 PG 官方反对 / 无收益且方向错 / per-netns 无效）；补入初评遗漏的 `fq + bbr`。**关键修正 2**：原以为 `fq + bbr` 在宿主机设置即对容器流量生效，复核后确认 `tcp_congestion_control` 是 per-netns（已存在容器不更新）且 `default_qdisc` 只影响新建设备 → 补 nginx `sysctls:` + 脚本 `tc qdisc replace` + 三层验证。最终收录 5 项 sysctl + THP + nginx 单服务 `sysctls`。 |
+| 2026-08-14 | 修正：`apply-host-tuning.sh` 对 `tc`/`ip` 缺失从 pipefail 硬失败改为**降级跳过**（status 跳过运行层 qdisc 检查、apply 跳过第 5 步，均提示安装 `iproute`/`iproute2`；qdisc 重启后由 sysctl 值生效）。在从库机（costra-prod-slave）精简镜像上首次暴露。 |
