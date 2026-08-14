@@ -22,3 +22,30 @@
 - Tags: wechat-miniprogram, text, alignment, ui
 
 ---
+
+## [LRN-20260814-001] knowledge_gap
+
+**Logged**: 2026-08-14T10:11:57+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: infra
+
+### Summary
+`pg_basebackup -R` 会把 libpq 的非默认 `passfile` 路径写入 `primary_conninfo`；临时 `.pgpass` 不能在 basebackup 后直接删除。
+
+### Details
+为避免通过 Docker Env 暴露复制密码，初版改为临时 `PGPASSFILE=/run/costra/pgpass`。PG15 的 `-R` 会使用 `PQconninfo` 生成恢复配置，非默认 `passfile` 会进入 `postgresql.auto.conf`。若容器退出后删除临时文件，walreceiver 后续启动/重连会找不到密码文件。
+
+### Suggested Action
+basebackup 完成后，把临时文件以 `0600`、postgres 属主固化到 PGDATA（例如 `.replication.pgpass`），并将 `primary_conninfo` 中的临时容器路径替换为容器内持久 PGDATA 路径；启动前同时校验路径、权限和属主。
+
+### Metadata
+- Source: error
+- Related Files: infra/scripts/setup-replication-standby.sh
+- Tags: postgresql, pg-basebackup, passfile, replication, docker
+
+### Resolution
+- **Resolved**: 2026-08-14T10:11:57+08:00
+- **Notes**: standby 初始化脚本已固化复制 passfile，并增加启动前硬校验。
+
+---

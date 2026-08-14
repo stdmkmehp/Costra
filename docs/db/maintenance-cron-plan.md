@@ -1,8 +1,8 @@
 # maintenance.sh · 运维定时任务统一入口方案（待评估）
 
-> **日期**：2026-07-08
-> **背景**：`docs/db/data-bloat-audit-report.md` 采纳方案 B（系统 cron 脚本）。本方案进一步规范——**所有定时任务（备份 + 各表清理）统一走一个 `maintenance.sh` 入口，crontab 只调它，用子命令区分任务**。
-> **决策边界**：audit_logs 暂缓；本轮任务集 = `backup` + `purge-idempotency` + `purge-sessions`。
+> **日期**：2026-07-08；2026-08-14 同步 PostgreSQL standby 监控落地
+> **背景**：`docs/db/data-bloat-audit-report.md` 采纳方案 B。主库定时任务统一走 `maintenance.sh`；从库因与 staging 共机，保持独立 `/etc/cron.d/costra-standby`。
+> **当前任务集**：`backup` + `replication-check`（仅复制已配置的主库生成 cron）+ purge-* + `renew-cert`。
 
 ---
 
@@ -33,6 +33,7 @@ infra/scripts/maintenance.sh   ← 唯一入口 · 子命令分发器
 | 子命令 | 作用 | 频率建议 | 透传参数 |
 |---|---|---|---|
 | `backup` | 委托 `backup-db.sh` | 每 4h 错峰 | `--retain-days N` / `--no-cleanup` / `--prefix` |
+| `replication-check` | 主库复制槽/WAL/纯异步检查 | 每 5 分钟；仅 `server.env` 有完整复制三件套时生成 | 透传给 `check-replication.sh` |
 | `purge-idempotency` | 清过期幂等键（过期 +30 天审计保留） | 每日 | — |
 | `purge-sessions` | 清已过期 session（过期 +30 天审计保留） | 每日 | — |
 | `purge-invites` | 清过期邀请（过期 +30 天审计保留） | 每日 | — |
@@ -60,7 +61,8 @@ infra/scripts/maintenance.sh   ← 唯一入口 · 子命令分发器
 #
 # 任务：
 #   backup [--retain-days N|--no-cleanup|--prefix P]  委托 backup-db.sh
-#   purge-idempotency                                 清过期幂等键（每小时）
+#   replication-check                                主库复制槽/WAL/异步状态检查
+#   purge-idempotency                                 清过期幂等键（每日）
 #   purge-sessions                                    清已过期 session（每日）
 #   purge-all                                         顺序跑全部 purge-*
 #   list                                              列出可用任务
@@ -87,7 +89,7 @@ TASK=""
 declare -a PASSTHRU=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    backup|purge-idempotency|purge-sessions|purge-all|install-cron|list)
+    backup|replication-check|purge-idempotency|purge-sessions|purge-all|install-cron|list)
       [[ -z "${TASK}" ]] || die "只能指定一个任务（已有：${TASK}）"
       TASK=$1; shift ;;
     --dry-run|-y|--yes) shift ;;       # common 已处理 · noop
@@ -189,7 +191,7 @@ case "${TASK}" in
     do_purge_sessions
     ;;
   list)
-    log_info "可用任务：backup · purge-idempotency · purge-sessions · purge-all · install-cron · list"
+    log_info "可用任务：backup · replication-check · purge-idempotency · purge-sessions · purge-all · install-cron · list"
     ;;
   # install-cron) 见 §4（生成 /etc/cron.d/costra-maintenance）
 esac
@@ -214,14 +216,16 @@ SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # ── Costra 运维定时任务 · 全部走 maintenance.sh 统一入口（由 install-cron 生成）──
-# 备份：每 4h 错峰（偏移 17 分）
-17 1,5,9,13,17,21 * * * root /root/Costra/infra/scripts/maintenance.sh backup           >> /data/logs/maintenance-backup.log 2>&1
-# 幂等键：每小时（偏移 7 分 · 错开备份整点）
-7  *              * * * root /root/Costra/infra/scripts/maintenance.sh purge-idempotency >> /data/logs/maintenance-purge.log  2>&1
-# session：每日 03:30
-30 3              * * * root /root/Costra/infra/scripts/maintenance.sh purge-sessions    >> /data/logs/maintenance-purge.log  2>&1
-# 证书续期：每天 03:17（certbot 自判到期 · 续到才 reload nginx · 原 08 的 certbot cron 已并入）
-17 3 * * *              root /root/Costra/infra/scripts/maintenance.sh renew-cert        >> /data/logs/maintenance-cert.log   2>&1
+# 备份：每 4h 错峰（偏移 27 分）
+27 3,7,11,15,19,23 * * * root /root/Costra/infra/scripts/maintenance.sh backup           >> /data/logs/maintenance-backup.log 2>&1
+# 主库复制检查：仅 server.env 配置了 REPLICATOR_PW + 主从 IP 时生成
+*/5 * * * * root /root/Costra/infra/scripts/maintenance.sh replication-check >> /data/logs/check-replication.log 2>&1
+# 幂等键 / session / invite：每日 04 点错峰
+7 4 * * * root /root/Costra/infra/scripts/maintenance.sh purge-idempotency >> /data/logs/maintenance-purge.log 2>&1
+17 4 * * * root /root/Costra/infra/scripts/maintenance.sh purge-sessions >> /data/logs/maintenance-purge.log 2>&1
+27 4 * * * root /root/Costra/infra/scripts/maintenance.sh purge-invites >> /data/logs/maintenance-purge.log 2>&1
+# 证书续期：每天 03:17
+17 3 * * * root /root/Costra/infra/scripts/maintenance.sh renew-cert >> /data/logs/maintenance-cert.log 2>&1
 ```
 
 `install-cron` 子命令的生成逻辑（用非引号 heredoc 展开 `${COSTRA_ROOT}` · 与 `08-finalize-nginx.sh` certbot cron 同款做法）：
@@ -232,10 +236,12 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-17 1,5,9,13,17,21 * * * root ${COSTRA_ROOT}/infra/scripts/maintenance.sh backup           >> /data/logs/maintenance-backup.log 2>&1
-7  *              * * * root ${COSTRA_ROOT}/infra/scripts/maintenance.sh purge-idempotency >> /data/logs/maintenance-purge.log  2>&1
-30 3              * * * root ${COSTRA_ROOT}/infra/scripts/maintenance.sh purge-sessions    >> /data/logs/maintenance-purge.log  2>&1
-17 3 * * *              root ${COSTRA_ROOT}/infra/scripts/maintenance.sh renew-cert        >> /data/logs/maintenance-cert.log   2>&1
+27 3,7,11,15,19,23 * * * root ${COSTRA_ROOT}/infra/scripts/maintenance.sh backup >> /data/logs/maintenance-backup.log 2>&1
+*/5 * * * * root ${COSTRA_ROOT}/infra/scripts/maintenance.sh replication-check >> /data/logs/check-replication.log 2>&1
+7 4 * * * root ${COSTRA_ROOT}/infra/scripts/maintenance.sh purge-idempotency >> /data/logs/maintenance-purge.log 2>&1
+17 4 * * * root ${COSTRA_ROOT}/infra/scripts/maintenance.sh purge-sessions >> /data/logs/maintenance-purge.log 2>&1
+27 4 * * * root ${COSTRA_ROOT}/infra/scripts/maintenance.sh purge-invites >> /data/logs/maintenance-purge.log 2>&1
+17 3 * * * root ${COSTRA_ROOT}/infra/scripts/maintenance.sh renew-cert >> /data/logs/maintenance-cert.log 2>&1
 EOF
 )
     if [[ "${DRY_RUN}" == "1" ]]; then
@@ -250,7 +256,7 @@ EOF
     ;;
 ```
 
-**日志分流**：备份写 `maintenance-backup.log`，清理合并写 `maintenance-purge.log`（量小、便于对照）。均在 `/data/logs/`，与现有日志同源，可纳入后续 logrotate。
+**日志分流**：备份写 `maintenance-backup.log`，复制检查写 `check-replication.log`，清理合并写 `maintenance-purge.log`。`install-cron` 同时安装 `infra/logrotate/costra-ops`，按每日轮转、超过 20M 提前轮转、保留 14 轮并压缩；主从 PG 固定写 `postgresql.log`，server/redis/nginx 固定写 `/data/logs/{server/server.log,redis/redis.log,nginx/*.log}`，同样由该配置统一轮转（copytruncate），应用自身不做轮转，避免双事实源。
 
 ---
 
@@ -258,7 +264,8 @@ EOF
 
 1. **路径事实源已修正**：本轮已改 `lib/common.sh`，让 `COSTRA_ROOT` 从 `common.sh` 自身位置（`<根>/infra/scripts/lib/`）向上三级**自动派生**，不再硬编码。现在无论部署在 `/root/Costra` 还是开发机，`COSTRA_ROOT` 都自解释、永远正确；仍支持环境变量覆盖。`install-cron` 生成 cron 时用它展开，杜绝手写死路径。
 2. **旧 backup cron**：若此前已按 `backup-db.sh` 旧注释单独配过 backup 的 cron，落地本方案时必须**移除旧行**，避免与 `maintenance.sh backup` 重复备份（如何检查/删除见对话说明）。
-3. **`backup-db.sh` 保留独立可用**：委托模式下它仍可被手动直接调用（`./backup-db.sh --dry-run`），不影响。
+3. **`backup-db.sh` 保留独立可用**：它自身持有按容器+目录区分的 `flock`，因此经 maintenance、从库 cron 或人工直调都不会重入；归档以 partial 校验后原子发布。
+4. **复制任务条件生成**：只有 `REPLICATOR_PW`、`PG_PRIMARY_LAN_IP`、`PG_STANDBY_LAN_IP` 三项均非空才写入 `replication-check` cron；配置变化后必须重跑 `maintenance.sh install-cron`。
 
 ---
 
@@ -291,10 +298,6 @@ COMMIT;
 
 ---
 
-## §8 待你确认的点
+## §8 当前状态
 
-1. 子命令风格用 `maintenance.sh <task>`（git 风格 · 本方案）还是你原提的 `--task <name>`？
-2. 清理频率：幂等键每小时 / session 每日 —— 是否 OK？
-3. `purge-sessions` 已简化为纯 `expires_at < now()`（删除所有已过期行 · 已吊销未过期行随自身过期被删 · 不设人为缓冲期）——确认无异议？
-4. 日志分 `backup` / `purge` 两文件，还是全并一个 `maintenance.log`？
-5. 确认后是否直接实装（脚本 + migration + test 双写 + README）？
+方案已实装；事实源是 `infra/scripts/maintenance.sh` 顶部 `CRON_SCHEDULE`。本文保留设计背景，具体命令和时间以脚本生成的 `/etc/cron.d/costra-maintenance` 为准。

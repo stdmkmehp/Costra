@@ -34,7 +34,6 @@
     "luxon": "^3.5.0",
     "pg": "^8.13.1",
     "pino": "^9.5.0",
-    "pino-roll": "^4.0.0",
     "uuidv7": "^1.0.2"
   },
   "devDependencies": {

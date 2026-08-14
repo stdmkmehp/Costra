@@ -43,8 +43,11 @@ services:
     restart: unless-stopped
 
     # 仅 127.0.0.1 暴露 · 不进公网（D-009 §2.4 安全基线）
+    # 追加内网网卡映射：供从库机器流复制连接（PG_PRIMARY_LAN_IP 在 server.env 定义）
+    # 未定义时默认绑 127.0.0.2（环回 · 不对外 · 不影响 staging 等不启从库的环境）
     ports:
       - "127.0.0.1:5432:5432"
+      - "${PG_PRIMARY_LAN_IP:-127.0.0.2}:5432:5432"
 
     environment:
       # POSTGRES_PASSWORD 从宿主机 /data/conf/server.env 注入（避免硬编码）
@@ -73,12 +76,29 @@ services:
       start_period: 30s
 
     # PG 调优（小型 prod 推荐起步值 · FU-PROD-PG-TUNE 后续优化）
+    # 复制相关参数（wal_level/max_wal_senders/max_replication_slots/hot_standby）走 PG15 默认
+    # max_slot_wal_keep_size 是唯一必须显式设的护栏：防从库久挂 → 复制槽让主库 WAL
+    # 无限堆积撑爆磁盘。超出上限后槽自动失效，从库恢复时重做 pg_basebackup 即可。
+    #
+    # 日志落盘：logging_collector=on 把 stderr 日志收集进 log_directory 文件
+    # （宿主机 /data/logs/postgres），PG 运行日志不再进 docker logs。log_directory
+    # 必须显式指向 /var/log/postgresql，否则会落到 $PGDATA/log（数据卷内）。
+    # 固定文件名且关闭 PG 自身切分，由宿主机 logrotate 作为唯一轮转事实源；
+    # 避免“日期文件 + wildcard copytruncate”留下永不淘汰的历史文件。
     command:
       - "postgres"
       - "-c"
       - "log_destination=stderr"
       - "-c"
-      - "logging_collector=off"
+      - "logging_collector=on"
+      - "-c"
+      - "log_directory=/var/log/postgresql"
+      - "-c"
+      - "log_filename=postgresql.log"
+      - "-c"
+      - "log_rotation_age=0"
+      - "-c"
+      - "log_rotation_size=0"
       - "-c"
       - "max_connections=100"
       - "-c"
@@ -89,6 +109,8 @@ services:
       - "work_mem=4MB"
       - "-c"
       - "password_encryption=scram-sha-256"
+      - "-c"
+      - "max_slot_wal_keep_size=10GB"
 
     # 资源限制（compose 单机部署）
     deploy:
@@ -97,7 +119,8 @@ services:
           memory: 1G
           cpus: '1.0'
 
-    # 日志轮转（postgres 日志走 stderr → docker · 补 max-size 上限防膨胀 · 与 server/nginx 一致）
+    # docker json-file 仅保留：collector 启动前极早期 stderr 与 entrypoint 输出
+    # （PG 运行日志本体已落到 /data/logs/postgres 文件）
     logging:
       driver: json-file
       options:
@@ -139,7 +162,10 @@ services:
       - "0.0.0.0"
       - "--protected-mode"
       - "yes"
-      # 不再写 --logfile（文件无 logrotate 会无限膨胀）· 默认输出 stdout 交 docker json-file 轮转
+      # 日志落盘固定文件（→ 宿主机 /data/logs/redis/redis.log）· redis 自身不做轮转，
+      # 由宿主机 logrotate（costra-ops · copytruncate）作为唯一轮转事实源
+      - "--logfile"
+      - "/var/log/redis/redis.log"
 
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PW}", "--no-auth-warning", "ping"]
@@ -154,7 +180,8 @@ services:
           memory: 768M
           cpus: '0.5'
 
-    # 日志轮转（redis 日志改走 stdout → docker · 与 server/nginx 一致）
+    # docker json-file 仅保留：redis 读取 --logfile 参数前的极早期 stdout
+    # （运行日志本体已落到 /data/logs/redis/redis.log，由宿主机 logrotate 轮转）
     logging:
       driver: json-file
       options:
@@ -190,9 +217,9 @@ services:
       WX_MOCK_LOGIN: "0"
 
     volumes:
-      # 日志落盘目录：production 下 pino-roll 写 /var/log/costra/server.1.log（当前）
-      # · 轮转后改名 server.YYYY-MM-DD.log · 按天 + 100MB 双触发 · 保留 5 份
-      # → 宿主机 /data/logs/server（docker logs 仍走 stdout，二者并存）
+      # 日志落盘目录：production 下 pino 写固定文件 /var/log/costra/server.log
+      # → 宿主机 /data/logs/server · server 自身不做轮转，
+      # 由宿主机 logrotate（costra-ops · copytruncate）作为唯一轮转事实源
       - /data/logs/server:/var/log/costra
       # 用户上传文件（头像等）· server 写入 · nginx 只读服务
       - /data/uploads:/var/costra/uploads
@@ -219,7 +246,8 @@ services:
           memory: 1G
           cpus: '1.0'
 
-    # 日志轮转（防止 docker logs 撑爆磁盘）
+    # docker json-file 仅保留：进程级未捕获异常等直接 stderr
+    # （运行日志本体已落到 /data/logs/server/server.log，由宿主机 logrotate 轮转）
     logging:
       driver: json-file
       options:
@@ -237,6 +265,21 @@ services:
     ports:
       - "80:80"
       - "443:443"
+
+    # 内核参数（容器 netns 内 · 见 docs/ops/host-kernel-tuning.md §6）
+    # 为什么必须在这里声明而不是只靠宿主机 /etc/sysctl.d/99-costra.conf：
+    #   tcp_congestion_control 是 per-netns 的。新 netns 创建时会继承 init_net
+    #   当时的值，但 nginx 容器的 netns 早已创建 → 宿主机后来改成 bbr 对它无效。
+    #   而面向微信小程序用户的 TCP 服务端 socket 就在本容器的 netns 内，
+    #   拥塞控制算法由此处决定，不由数据包路径上的设备决定。
+    #   四服务中只有 nginx 直面公网移动弱网，故只有它需要声明。
+    #
+    # 前置依赖：宿主机已加载 tcp_bbr 模块（内核模块全局共享，容器无法自行加载）。
+    # 由 infra/scripts/apply-host-tuning.sh 负责 modprobe + modules-load.d 持久化。
+    # 若宿主机未加载，此处会导致容器启动失败 —— 这是**期望行为**（fail fast，
+    # 而不是静默回退 cubic 让人误以为已生效）。
+    sysctls:
+      - net.ipv4.tcp_congestion_control=bbr
 
     volumes:
       # 配置文件 · 使用 live 路径（/data/conf/nginx）而非 repo 模板（./nginx/conf.d）
@@ -271,6 +314,8 @@ services:
           memory: 256M
           cpus: '0.5'
 
+    # docker json-file 仅保留：nginx master/worker 进程级直接 stderr
+    # （access/error 日志本体已落到 /data/logs/nginx/*.log，由宿主机 logrotate 轮转）
     logging:
       driver: json-file
       options:

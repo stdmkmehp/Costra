@@ -53,7 +53,7 @@ export interface AppEnv {
   /** COSTRA-164: 应用层校验上限 · MVP 限制用户可见 family 数量 · 可调 · 校验逻辑推 COSTRA-201 */
   userVisibleFamilyLimit: number;
 
-  /** 生产日志落盘文件基名（pino-roll 写入 · 默认 /var/log/costra/server） */
+  /** 生产日志落盘固定文件（pino 写入 · 默认 /var/log/costra/server.log · 轮转由宿主机 logrotate 负责） */
   logFile: string;
 }
 
@@ -142,7 +142,7 @@ export function loadEnv(env: NodeJS.ProcessEnv = process.env): Readonly<AppEnv> 
     maxFamiliesPerUser: parseIntOrDefault(env['MAX_FAMILIES_PER_USER'], 20),
     userVisibleFamilyLimit: parseIntOrDefault(env['USER_VISIBLE_FAMILY_LIMIT'], 3),
 
-    logFile: optional(env, 'COSTRA_LOG_FILE', '/var/log/costra/server'),
+    logFile: optional(env, 'COSTRA_LOG_FILE', '/var/log/costra/server.log'),
   };
   if (cfg.wxMockLogin && cfg.nodeEnv !== 'development') {
     throw new Error('[env] WX_MOCK_LOGIN can only be enabled in NODE_ENV=development');

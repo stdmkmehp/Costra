@@ -28,8 +28,17 @@ infra/scripts/
 ├── backup-db.sh               # DB 定时备份（pg_dump + gzip · 被 maintenance.sh backup 委托）
 ├── import-holidays.sh         # 节假日 JSON → workday_calendars 表（--target prod|verify · 幂等 upsert）
 ├── migrate-ledger-asset.sh    # 停服迁移 · 账本资产回填（--target prod|verify · --verify 仅校验 · 幂等）
-└── maintenance.sh             # ⭐ 运维定时任务统一入口（backup / purge-* / install-cron）
+├── maintenance.sh             # ⭐ 主库定时任务入口（backup / replication-check / purge-*）
+│
+├── setup-replication-primary.sh  # PG 主库流复制配置（机器① · 幂等 · 见 pg-standby-backup 方案）
+├── setup-replication-standby.sh  # PG 从库搭建（机器② · pg_basebackup + hot standby）
+├── recover-primary-from-standby.sh # 双阶段反向恢复主库（prepare / activate / status）
+├── check-replication.sh          # PG 主从复制健康检查（cron · 异常 exit 1 + 企业微信告警）
+└── apply-host-tuning.sh          # 宿主机内核参数（sysctl + THP · status/apply/revert · 幂等）
 ```
+
+> 宿主机侧配置源文件统一放 `infra/host/`（`sysctl-99-costra.conf` / `disable-thp.service`），
+> 与 `infra/logrotate/costra-ops` 同一模式：仓库是事实源，由脚本 `install` 到系统路径，机器上不手改。
 
 ---
 
@@ -42,7 +51,8 @@ infra/scripts/
 ./maintenance.sh install-cron          # 先 --dry-run 预览
 
 # 手动执行（cron 亦调这些）：
-./maintenance.sh backup                # 委托 backup-db.sh（pg_dump + gzip）
+./maintenance.sh backup                # 委托 backup-db.sh（原子发布 + flock）
+./maintenance.sh replication-check     # 配置复制后检查槽/WAL/纯异步状态
 ./maintenance.sh purge-idempotency     # 清过期幂等键（每日 · 过期 +30 天审计保留）
 ./maintenance.sh purge-sessions        # 清已过期 session（每日 · 过期 +30 天审计保留）
 ./maintenance.sh purge-invites         # 清过期邀请（每日 · 过期 +30 天审计保留）
@@ -84,6 +94,88 @@ node scripts/fetch-holidays.mjs 2027
 | `--dry-run` | 只打印不执行 |
 | `-y` / `--yes` | 跳过 confirm（prod 慎用） |
 | 位置参数 `2027` | 指定年份（可多个 · 默认全部） |
+
+---
+
+## PG 从库（异步流复制 · 备份 · 只读）
+
+> 方案文档：[`docs/ops/pg-standby-backup.md`](../../docs/ops/pg-standby-backup.md)。机器①由 `maintenance.sh install-cron` 安装主库槽/WAL检查；机器②独立安装从库新鲜度门禁与备份 cron。
+
+```bash
+# 机器①（主库）：低峰窗口执行 · 唯一一次 PG recreate
+./setup-replication-primary.sh --apply-compose
+
+# 机器②（从库）：一次性搭建（basebackup + 启动 hot standby）
+./setup-replication-standby.sh
+
+# 日常：健康检查（主库/从库机器均可跑 · cron 每 5 分钟）
+./check-replication.sh
+```
+
+| 脚本 | 机器 | 次数 | 说明 |
+|---|---|---|---|
+| `setup-replication-primary.sh` | ① | 一次性/恢复 | replicator（重跑不旋密）+ slot + managed HBA + 异步断言；lost 槽和密码轮换均需显式 flag |
+| `setup-replication-standby.sh` | ②（staging） | 首次/修复 | 空目录 basebackup；repair 复验 manifest 并重建身份；凭据预置模式只原子换 passfile、不重启 |
+| `recover-primary-from-standby.sh` | ① | 灾难恢复 | `prepare/activate/status` 双阶段持久状态；候选验证、来源停机门禁、PGDATA 可续作切换 |
+| `check-replication.sh` | ①/② | cron | 主库查 slot/WAL/async；从库查 latest-end→receive→replay；webhook 同时验 HTTP 与 `errcode` |
+
+> 机器② = staging 机器 + 分析机（三栈并存）：从库与 staging 栈、分析栈资源全面错开（project `costra-standby` / 容器 `costra-standby-pg` / 数据 `/data/pgsql-standby` / 端口 `15433`，注意分析栈占 `15432` 仅差 1 / env `standby.env`），详见方案 §2.1。**严禁**用 prod 的 `server.env` 覆盖 staging 的 `server.env`。
+
+从库备份（落分析栈的 `DUMP_INBOX`，analytics 链路即时打通）：
+
+```bash
+COSTRA_ENV_FILE=/data/conf/standby.env ./backup-db.sh --db-only \
+  --container costra-standby-pg --prefix standby --backup-dir /data/slave/backups
+```
+
+机器②不保存 `PG_COSTRA_PW`；备份与检查均走容器内 Unix socket。`backup-db.sh` 以 `flock` 防重入，先写隐藏 partial，校验后原子发布 `0600` 最终文件。cron 必须用 `check-replication.sh && backup-db.sh` 串联，见方案 §5.2。
+
+---
+
+## 宿主机内核参数（apply-host-tuning.sh · 一次性 + 按需体检）
+
+> 基线文档：[`docs/ops/host-kernel-tuning.md`](../../docs/ops/host-kernel-tuning.md)。
+> 判据是**"在宿主机设了是否有效"**：绝大多数网络栈 sysctl 是 per-netns 的，compose 默认
+> bridge 下宿主机调它们对业务链路无效。最终只落 5 项 + 关 THP（`swappiness` /
+> `dirty_ratio` / `dirty_background_ratio` / `default_qdisc=fq` / `tcp_congestion_control=bbr`）。
+> 全程不 recreate 容器，无服务中断窗口。
+
+```bash
+# 只读体检（默认任务）· 逐项对比期望值/生效值 + 覆盖冲突 + THP + bbr 可用性
+./apply-host-tuning.sh status
+
+# 预览将做什么（含会从哪个文件删掉哪些冲突 key）
+./apply-host-tuning.sh apply --dry-run
+
+# 执行（bbr 前置检查 → 安装 conf → 清冲突 → sysctl --system → THP unit → 校验）
+./apply-host-tuning.sh apply
+
+# 回滚（移除 Costra 管理的配置 · 冲突文件备份需人工挑选回填）
+./apply-host-tuning.sh revert
+```
+
+| 任务 | 作用 |
+|---|---|
+| `status` | 只读；退出码 `0`=全符合期望 / `1`=有偏差。含**三层验证**：配置层 + 运行层（`tc qdisc`、`lsmod`、`nsenter` 查 nginx 容器 netns 算法）+ 持久层 |
+| `apply` | 7 步幂等：bbr preflight → 安装 → 清覆盖冲突 → `sysctl --system` → `tc qdisc replace` → THP unit → 校验 |
+| `revert` | 移除 `99-costra.conf`、`disable-thp.service`、`modules-load.d/costra-bbr.conf` |
+
+**期望值、冲突 key、bbr 前置检查都从 `infra/host/sysctl-99-costra.conf` 自动解析**，
+不维护第二份清单：往 conf 加参数后校验与清理自动跟随，无需改脚本。清理只删**同名** key，
+机器上其他既有设置（`tcp_max_tw_buckets` / `tcp_slow_start_after_idle` / `gc_thresh3` /
+`sysrq` / `printk` / IPv6 开关）原样保留。
+
+> ⚠️ `sysctl --system` 按字典序加载，`/etc/sysctl.d/99-sysctl.conf` 与 `/etc/sysctl.conf`
+> 排在 `99-costra.conf` **之后**，同名 key 会把我们的值覆盖回去——这就是 `apply` 第 3 步存在的原因。
+>
+> ⚠️ **读回 sysctl 值 ≠ 功能生效**。`default_qdisc` 只影响新建设备（已 up 网卡需
+> `tc qdisc replace`）；`tcp_congestion_control` 是 per-netns 且已存在的容器 netns 不更新
+> → **bbr 必须额外 `docker compose up -d nginx` recreate 一次**（nginx 已配 `sysctls:`）。
+> bbr 还依赖宿主机 `modprobe tcp_bbr`，缺模块时 sysctl 值仍在但实际跑 cubic。详见基线文档 §3.5/§3.5.1。
+>
+> ⚠️ `tcp_keepalive_time` / `somaxconn` 那类 per-netns 参数**永不继承宿主机**（用内核编译期
+> 默认值），recreate 也没用，必须显式写 `sysctls:`；且需同步改 nginx `listen backlog=`。
+> 当前网络栈空载故不做，触发条件见基线文档 §5.3。
 
 ---
 

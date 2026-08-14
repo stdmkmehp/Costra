@@ -1,0 +1,133 @@
+# =============================================================================
+# Costra · PG 从库 docker compose 编排（v1.1 · 2026-08-13）
+# =============================================================================
+# 用途：在从库机器（机器② = staging 机器）以 hot standby 模式运行 PG 15 只读副本。
+#   数据目录由 setup-replication-standby.sh 的 pg_basebackup 从主库物理复制，
+#   本文件只负责"以 standby 身份把数据目录跑起来"。
+#
+# ⚠️ 与同机其它两套栈的隔离约定（机器② = staging 机器 + 分析机 · 三栈并存）：
+#   - project name: costra-standby（≠ staging 栈 costra · ≠ 分析栈 costra-analyze）
+#   - 容器名: costra-standby-pg（≠ costra-postgres · ≠ costra-analyze-pg）
+#   - 数据目录: /data/pgsql-standby（≠ staging 的 /data/pgsql · 分析栈用 named volume）
+#   - 日志目录: /data/logs/standby（≠ staging 的 /data/logs/postgres）
+#   - 宿主机端口: 127.0.0.1:15433 / 内网 15433
+#       ⚠️ 邻位占用：staging PG = 5432 · 分析栈 costra-analyze-pg = 127.0.0.1:15432
+#       15432 与 15433 仅差 1，改动本行前务必复查 ss -tlnp
+#   - env 文件: /data/conf/standby.env（≠ staging 的 /data/conf/server.env）
+#
+# 与主库（docker-compose.prod.yml）的差异：
+#   - 不设 POSTGRES_USER/PASSWORD/DB —— 数据目录已存在，不触发 initdb
+#   - 不挂 ./postgres/initdb.d —— 从库绝不自己跑扩展安装 / migration
+#   - 追加 hot_standby=on —— 允许只读查询（备份 / 分析读取）
+#   - 追加 max_standby_streaming_delay=300s —— 降低 pg_dump 被 recovery 冲突取消概率
+#   - 显式 hot_standby_feedback=off —— 从库绝不反压主库 vacuum
+#   - 其余调优参数与主库逐项对齐（见下方 command 注释中的不变量）
+#
+# 方案文档：docs/ops/pg-standby-backup.md
+# 启动：cd /root/Costra/infra && docker compose -f docker-compose.standby.yml \
+#         --env-file /data/conf/standby.env up -d
+# =============================================================================
+
+name: costra-standby
+
+services:
+  # ===========================================================================
+  # PostgreSQL 15 · hot standby · 数据 bind mount 到 /data/pgsql-standby
+  # ===========================================================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: costra-standby-pg
+    restart: unless-stopped
+
+    # 本机 15433：本机只读查询 / pg_dump 备份（避开 staging 栈的 127.0.0.1:5432）
+    # 内网 15433：供主库故障恢复时反向 pg_basebackup 拉数据
+    # 未定义时默认绑 127.0.0.2（环回 · 不对外）
+    ports:
+      - "127.0.0.1:15433:5432"
+      - "${PG_STANDBY_LAN_IP:-127.0.0.2}:15433:5432"
+
+    environment:
+      # 不设 POSTGRES_USER/PASSWORD/DB（数据目录已由 pg_basebackup 填充）
+      TZ: Asia/Shanghai
+
+    volumes:
+      # 数据目录由 pg_basebackup 填充；脚本验 manifest 后生成 standby 身份配置。
+      - /data/pgsql-standby:/var/lib/postgresql/data
+      # 日志目录（独立于 staging 栈的 /data/logs/postgres）
+      - /data/logs/standby:/var/log/postgresql
+
+    # 健康检查（standby 模式同样接受连接 · pg_isready 正常返回）
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U costra -d costra"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
+
+    # ── 参数不变量（改动前务必读完）──────────────────────────────────────────
+    # ① max_connections 必须 >= 主库（PG 硬约束）：小于主库时 recovery 会直接
+    #    FATAL 停摆（"hot standby is not possible because max_connections..."）。
+    #    主库当前 100 → 此处必须 >= 100。
+    # ② 其余调优参数与主库 docker-compose.prod.yml 逐项对齐（256MB/1GB/4MB）：
+    #    从库与 staging 栈 + 按需启停且有 limits 的分析栈共享整机，绝不能比
+    #    prod 主库配得更激进；三栈同时运行时仍需以 docker stats 实测峰值。
+    # ③ max_standby_streaming_delay=300s 是从库专属、纯本地的取舍：
+    #    它允许 WAL 回放为冲突查询累计等待更久，降低每 4h pg_dump 被取消概率；
+    #    但不是单次查询 300s 的存活保证，冲突仍可能让 pg_dump 失败。backup-db.sh
+    #    会捕获失败且不发布归档，下一轮再重试。代价只落在从库自身的回放延迟。
+    #    hot_standby_feedback 必须显式保持 off；开启它会反压主库 vacuum，违反
+    #    "从库绝不反向影响主库"红线。
+    # setup-replication-standby.sh 在 manifest 校验后生成 primary_conninfo / standby.signal；
+    # basebackup 故意不带 -R，Compose 不重复写 recovery 身份。
+    command:
+      - "postgres"
+      - "-c"
+      - "hot_standby=on"
+      - "-c"
+      - "max_standby_streaming_delay=300s"
+      - "-c"
+      - "hot_standby_feedback=off"
+      - "-c"
+      - "log_destination=stderr"
+      - "-c"
+      - "logging_collector=on"
+      - "-c"
+      - "log_directory=/var/log/postgresql"
+      - "-c"
+      - "log_filename=postgresql.log"
+      - "-c"
+      - "log_rotation_age=0"
+      - "-c"
+      - "log_rotation_size=0"
+      - "-c"
+      - "max_connections=100"
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "effective_cache_size=1GB"
+      - "-c"
+      - "work_mem=4MB"
+      - "-c"
+      - "password_encryption=scram-sha-256"
+      - "-c"
+      - "max_slot_wal_keep_size=10GB"
+
+    # 资源限制（三栈并存 · 见方案文档 §2.1）
+    # 768M 而非主库的 1G：同机 staging 栈 3.0G + 分析栈（PG 512M + node 256M，
+    # 2026-08-14 起加 limits 并改为按需启停，见 analytics/docker-compose.yml）
+    # 叠加，从库主动留出余量，避免三栈峰值撑爆整机内存。
+    # 调整时须与 shared_buffers 联动（shared_buffers 不应超过 limit 的 1/3）。
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+          cpus: '1.0'
+
+    # docker json-file 仅保留 collector 启动前极早期 stderr 与 entrypoint 输出；
+    # PG 运行日志本体固定落到 /data/logs/standby/postgresql.log，并由宿主机
+    # logrotate 统一切分和保留（与主库一致）。
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "5"

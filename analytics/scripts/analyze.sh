@@ -2,6 +2,8 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # scripts/analyze.sh · 宿主机薄 wrapper
 # 宿主机只负责启动独立 compose 并进入 analyzer 容器执行真正分析。
+# 按需启停：分析跑完（无论成败）立即 docker compose stop，释放资源给
+# 同机 staging 栈与 standby 从库；下次运行由本脚本重新 up。
 #
 # 用法:
 #   ./analyze.sh [选项]
@@ -79,5 +81,17 @@ compose() {
 }
 
 cd "${ANALYZE_ROOT}"
+
+# 按需启停：分析完成后立即 stop 两个容器，释放 CPU/内存给同机 staging 栈与
+# standby 从库（三栈并存 · 见 docs/ops/pg-standby-backup.md §2.1）。
+# 无论成功失败（含 Ctrl+C / SIGTERM）都执行；容器未创建时 stop 幂等失败，忽略。
+shutdown_stack() {
+  compose stop postgres analyzer >/dev/null 2>&1 || true
+}
+trap 'shutdown_stack' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+log_step "启动分析容器（按需启停 · 跑完即停）"
 compose up -d --build postgres analyzer
 compose exec -T analyzer bash /app/scripts/analyze-in-container.sh "$@"

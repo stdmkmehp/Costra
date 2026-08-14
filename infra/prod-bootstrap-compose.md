@@ -31,12 +31,12 @@
     └─ costra-nginx      (nginx:1.27-alpine  · port 80/443 公网)
 
 数据持久化 → 宿主机 /data/  (⚠️ owner 必须 §3.3 预先 chown · 否则 redis 启动 fatal · 见 §8 Q8)
-├─ pgsql/        (PG 数据 · 999:999 · PG 镜像会自己 chown · 可不动)
+├─ pgsql/        (PG 数据 · 70:70 · postgres:15-alpine 容器内 uid · PG 镜像会自己 chown · 可不动)
 ├─ redis/        (Redis AOF/RDB · 必须 chown 999:999)
 ├─ conf/         (server.env · 0700 · root)
 │  └─ nginx/     (nginx live 运行时配置 · 首次由 05 脚本从模板复制 · git pull 不影响)
 ├─ logs/         (各服务日志)
-│  ├─ postgres/  (必须 chown 999:999)
+│  ├─ postgres/  (必须 chown 70:70 · postgres:15-alpine)
 │  ├─ redis/     (必须 chown 999:999 · ⚠️ 漏 chown 这里 redis 启动会 fatal)
 │  ├─ server/    (必须 chown 1000:1000 · server node 用户)
 │  └─ nginx/     (root · 不用 chown)
@@ -250,14 +250,15 @@ chmod 0700 /data/conf /data/backups
 |---|---|---|---|
 | `/data/redis` | 999:999 | redis 用户（uid=999） | ❌ **必做** · 跳过 redis 启动 fatal |
 | `/data/logs/redis` | 999:999 | redis 写日志 | ❌ **必做** · 跳过 redis 启动 fatal（v1.5.1 真踩坑点） |
-| `/data/logs/postgres` | 999:999 | postgres 用户（uid=999） | ⚠️ 建议做 · PG 自己不会 chown 日志目录 |
+| `/data/logs/postgres` | 70:70 | postgres 用户（uid=70 · postgres:15-alpine） | ⚠️ 建议做 · PG 自己不会 chown 日志目录 |
 | `/data/logs/server` | 1000:1000 | node 用户（uid=1000 · Dockerfile §43） | ⚠️ 建议做 · server 写 audit log |
 | `/data/pgsql` | (任意) | PG entrypoint 自动 chown | ✅ 可不动 |
 | `/data/logs/nginx` | (任意) | nginx 容器跑 root | ✅ 可不动 |
 
 ```bash
 # 一键 chown（精确对应上表 · 不要省略）
-chown -R 999:999  /data/redis /data/logs/redis /data/logs/postgres
+chown -R 999:999  /data/redis /data/logs/redis
+chown -R 70:70   /data/logs/postgres
 chown -R 1000:1000 /data/logs/server
 ```
 
@@ -268,7 +269,7 @@ ls -ld /data/redis /data/logs/{redis,postgres,server}
 # 期望 owner 全部对齐（前两个是 redis 必坑点）：
 #   drwxr-xr-x ... 999  999  /data/redis
 #   drwxr-xr-x ... 999  999  /data/logs/redis
-#   drwxr-xr-x ... 999  999  /data/logs/postgres
+#   drwxr-xr-x ... 70   70   /data/logs/postgres
 #   drwxr-xr-x ... 1000 1000 /data/logs/server
 ```
 
@@ -835,8 +836,8 @@ docker compose -f docker-compose.prod.yml restart nginx
 
 ### Q1 docker compose up 报错 "permission denied" 访问 /data/pgsql
 
-**根因**：bind mount 卷 owner 不匹配 postgres 容器内 uid（默认 999）。
-**修复**：`chown -R 999:999 /data/pgsql` 或首次启动让 PG 容器自己 chown（默认会做）。
+**根因**：bind mount 卷 owner 不匹配 postgres 容器内 uid（postgres:15-alpine 是 70 · debian 变体才是 999）。
+**修复**：`chown -R 70:70 /data/pgsql` 或首次启动让 PG 容器自己 chown（默认会做）。
 
 ### Q2 server 容器 unhealthy · logs 看 "Connection refused" to postgres
 
@@ -874,10 +875,11 @@ openssl rand -base64 64 | tr -d '/+=\n'
 ### Q8 redis 容器 unhealthy · logs 报 `Can't open the log file: Permission denied`（v1.5.1 实测）
 
 **根因**：宿主机 `/data/logs/redis` owner 是 root · 但 redis 容器内进程是 `redis` 用户（uid=999）· 写不进日志 → 进程 fatal exit · `restart: unless-stopped` 反复重启。
-**修复**：§3.3 已加 `chown -R 999:999 /data/redis /data/logs/redis /data/logs/postgres` 和 `chown -R 1000:1000 /data/logs/server`。如果已踩坑：
+**修复**：§3.3 已加 `chown -R 999:999 /data/redis /data/logs/redis`、`chown -R 70:70 /data/logs/postgres` 和 `chown -R 1000:1000 /data/logs/server`。如果已踩坑：
 ```bash
 docker compose -f docker-compose.prod.yml down
-chown -R 999:999  /data/redis /data/logs/redis /data/logs/postgres
+chown -R 999:999  /data/redis /data/logs/redis
+chown -R 70:70   /data/logs/postgres
 chown -R 1000:1000 /data/logs/server
 docker compose -f docker-compose.prod.yml --env-file /data/conf/server.env up -d
 ```
@@ -1003,14 +1005,14 @@ docker compose -f /root/Costra/infra/docker-compose.prod.yml exec -T nginx nginx
 | FU-PROD-CI-DEPLOY | GitHub Actions / 工蜂 CI 自动 build + compose pull + up · 含蓝绿 / 回滚 | P1 | 3pt |
 | FU-PROD-PG-BACKUP | cron + pg_dump 每日 → 腾讯云 COS / 7 日保留 / 异地 | P1 | 2pt |
 | FU-PROD-MONITORING | postgres_exporter + redis_exporter + node_exporter + Prometheus + AlertManager | P2 | 3pt |
-| FU-PROD-LOG-ROTATE | docker logging driver 已配 max-size · 但 PG/Redis log 还需 logrotate | P2 | 1pt |
 | FU-PROD-PG-TUNE | postgresql.conf 调优（已含基础 · 后续 work_mem / WAL 等） | P2 | 1pt |
 | FU-PROD-SECURITY-HEADERS | nginx 加 HSTS / CSP / Permissions-Policy 完整集 | P2 | 1pt |
 | FU-PROD-CI-MOCK-GUARD | scripts/devops/whitelist-check.mjs 加规则 E（CI 静态扫描 WX_MOCK_LOGIN=1 红灯） | P0 | 1pt |
 | FU-PROD-FW-AUDIT | D-009 §2.4 防火墙 + fail2ban + SSH 改非 22 + 登录失败告警 | P0 | 2pt |
 | FU-PROD-NON-ROOT-USER | server 容器内已用 node uid 1000 · 但宿主机 docker 仍 root 跑 · 需 rootless docker | P1 | 2pt |
 
-> 上述 9 条 FU 累计 16 pt · 不进 Sprint-3 · 候选 Sprint-4 头部专项加固 sprint。
+> 上述 8 条 FU 累计 15 pt · 不进 Sprint-3 · 候选 Sprint-4 头部专项加固 sprint。
+> （FU-PROD-LOG-ROTATE 已于 2026-08-14 完成：server/redis/nginx 日志全部落盘 /data/logs 固定文件，宿主机 logrotate costra-ops 统一轮转。）
 
 ---
 
@@ -1042,7 +1044,7 @@ docker compose -f /root/Costra/infra/docker-compose.prod.yml exec -T nginx nginx
 |---|---|---|---|
 | 1 | `openssl rand -base64 64 \| tr -d '/+='` 输出有两行 | §8 Q7 | tr -d 加 `\n` |
 | 2 | 2核2G prod 机器 `docker compose build` 4000s+ 不完成 | §4.1（重写）+ §8 Q9 提示 | 跨机构建（§4.1-A scp）/ Docker Hub（§4.1-B）/ 直接 prod build 仅限 ≥4 核 4G（§4.1-C） |
-| 3 | redis 容器 unhealthy · `Can't open the log file: Permission denied` | §0 总览（owner 标注）+ **§3.3 拆出独立章节 3 步式 + chown 表** + §4.4 预警 + §8 Q8 救火 | §3.3 Step 2 强制 chown：`chown 999:999 /data/redis /data/logs/redis /data/logs/postgres` 和 `chown 1000:1000 /data/logs/server` |
+| 3 | redis 容器 unhealthy · `Can't open the log file: Permission denied` | §0 总览（owner 标注）+ **§3.3 拆出独立章节 3 步式 + chown 表** + §4.4 预警 + §8 Q8 救火 | §3.3 Step 2 强制 chown：`chown 999:999 /data/redis /data/logs/redis`、`chown 70:70 /data/logs/postgres` 和 `chown 1000:1000 /data/logs/server` |
 | 4 | server 容器启动 `Cannot find module './app.js'` | §8 Q9 | `server/Dockerfile` CMD 从 `node --import tsx/esm` 改为 `node_modules/.bin/tsx`（已落地） |
 | 5 | server / nginx healthcheck `Connection refused` 但手动 curl 通 | §8 Q10 | `infra/docker-compose.prod.yml` healthcheck 把 `localhost` 全部换成 `127.0.0.1`，server `start_period` 从 30s 提到 60s（已落地） |
 | 6 | nginx 反复 restart 17 次 · `no "ssl_certificate" is defined for the "listen ... ssl"` | §4.3 改造 + §6 重写 + §8 Q13 | §4.3 改为只起 3 服务（postgres/redis/server）· §6 加 sed 取消 9 行 SSL 注释 + `nginx -t` 测语法 + 最后才 up nginx |

@@ -25,7 +25,7 @@ costra-analyze-node:/app/scripts/analyze-in-container.sh
 ```
 
 **与 prod 完全隔离**（见 spec §0）：
-- 独立 docker-compose（两个常驻容器：`costra-analyze-pg` + `costra-analyze-node`，端口 `127.0.0.1:15432`）
+- 独立 docker-compose（两个按需启停容器：`costra-analyze-pg` + `costra-analyze-node`，端口 `127.0.0.1:15432`）
 - 独立 DB/用户（`analyze/analyze`，vs prod 的 `costra/costra`）
 - 分析工作库固定为 `costra_report_work`，每次分析开头 `DROP + CREATE`，结束再次 `DROP`
 - 独立日志目录（`/data/logs/analyze/`）
@@ -60,13 +60,13 @@ mkdir -p /data/analyze/report
 mkdir -p /data/logs/analyze
 chmod 755 /data/logs/analyze
 
-# 构建并启动 PG + node 两个容器
+# 预热构建镜像（可选但推荐：避免首次 analyze.sh 时 build 太久）
 docker compose build
-docker compose up -d
-
-# 等待容器健康
-docker compose ps
 ```
+
+> **容器按需启停**：`analyze.sh` 每次运行会自行 `up -d`，跑完后立即 `stop`
+> 释放 CPU/内存给同机其它服务。因此**不需要手动 `docker compose up -d`**；
+> 平时 `docker compose ps` 显示 `Exited` 是正常状态，不是故障。
 
 ### 3. 验收（stdout 模式）
 
@@ -277,10 +277,11 @@ Subject 中的 `dump@` 时间戳是**隐性活性指标**——连续两天时�
 # 1. 目录不重叠（在部署根执行）
 [[ "$(pwd -P)" != /root/Costra* ]] && echo "OK: 路径隔离"
 
-# 2. 容器名正确
-docker ps --format '{{.Names}}' | grep -q 'costra-analyze-pg' && echo "OK: 容器名"
+# 2. 容器名正确（按需启停模式下容器平时 Exited · 用 ps -a）
+docker ps -a --format '{{.Names}}' | grep -q 'costra-analyze-pg' && echo "OK: 容器名"
 
-# 3. 端口正确（15432，不是 5432）
+# 3. 端口正确（15432，不是 5432）· 按需启停模式下端口仅在分析运行期间监听
+#    检查时先 ./scripts/analyze.sh --stdout 跑起来，或改用 ps -a 确认容器存在
 ss -ltnp | grep -q '127.0.0.1:15432' && echo "OK: 端口隔离"  # Linux
 # macOS: netstat -an | grep 15432
 
@@ -305,12 +306,21 @@ ls -la /var/lib/costra-analyze/inbox/
 ./scripts/analyze.sh --stdout
 ```
 
-### 容器未启动
+### 容器未启动 / 状态为 Exited
+
+容器采用**按需启停**：`analyze.sh` 运行期间自动启动，跑完自动停止。
+`docker compose ps` 显示 `Exited` 是正常状态，无需干预。
+
+排查实际故障时：
 
 ```bash
-docker compose ps
-docker compose up -d
+# 查看容器状态与最近日志
+docker compose ps -a
 docker compose logs postgres
+docker compose logs analyzer
+
+# 手动触发一次完整运行（会自行 up / 跑完 stop）
+./scripts/analyze.sh --stdout
 ```
 
 ### SMTP 失败
@@ -337,6 +347,14 @@ docker compose exec postgres psql -U analyze -d analyze \
 ---
 
 ## 技术说明
+
+### 资源策略：按需启停 + limits（v0.2.4）
+
+分析栈与 staging 栈、PG standby 从库共机，且每天仅 cron 触发两次（日报 23:59 / 周报周日 23:50）、单次运行几分钟，常驻不划算：
+
+- **按需启停**：compose 里 `restart: "no"`；`analyze.sh` 启动容器、跑完（无论成败，含 Ctrl+C）`docker compose stop` 释放 CPU/内存。宿主机重启后容器不自动拉起，下次 cron 触发时自行恢复。
+- **资源封顶**：PG `memory: 512M / cpus: 0.5`，analyzer `memory: 256M / cpus: 0.5`，防止分析窗口内恢复 dump 的峰值与 staging（3.0G）、standby（768M）叠加撑爆整机内存。
+- 整机资源配额与错峰约定见 `docs/ops/pg-standby-backup.md` §2.1。
 
 ### 一次性数据库恢复（spec §5.3）
 

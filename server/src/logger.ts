@@ -2,11 +2,11 @@
  * Costra · Server · 统一日志器配置工厂
  *
  * 设计：
- *   - production ：日志同时落盘 + 输出 stdout
- *       · 落盘：pino-roll 写入 /var/log/costra/server（当前活动文件 server.1.log ·
- *         轮转后改名 server.YYYY-MM-DD.log · 按天 + 100MB 双触发 · 保留 5 份）
- *         → 宿主机对应 /data/logs/server（已 bind mount，且 02-prepare-dirs.sh 已 chown 给 node 用户）
- *       · stdout：保留给 docker json-file 驱动，让 `docker logs` 继续可用
+ *   - production ：单目标落盘固定文件（默认 /var/log/costra/server.log
+ *         → 宿主机 /data/logs/server，已 bind mount，且 02-prepare-dirs.sh 已 chown 给 node 用户）
+ *       · 应用自身不做轮转，宿主机 logrotate（/etc/logrotate.d/costra-ops）是唯一轮转事实源；
+ *         pino/file 底层 sonic-boom 以 O_APPEND 打开，copytruncate 截断后续写安全
+ *       · 不再双写 stdout：docker json-file 只残留进程级未捕获异常等直接 stderr
  *   - development：pino-pretty 人类可读输出到 stdout（本地调试更友好）
  *   - test（及其它）：纯 JSON 输出到 stdout，保持与历史行为一致，不产生文件
  *
@@ -25,7 +25,7 @@ export type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal';
 export interface CreateLoggerOptions {
   /** 测试注入：彻底关闭日志器（Fastify 接收 false） */
   disable?: boolean;
-  /** 生产落盘文件基名（由 env.logFile 传入） */
+  /** 生产落盘固定文件路径（由 env.logFile 传入） */
   logFile?: string;
 }
 
@@ -45,30 +45,17 @@ export function createLogger(
     timestamp: stdTimeFunctions.isoTime,
   };
 
-  // 生产：落盘（带轮转）+ stdout，二者并存
+  // 生产：单目标落盘固定文件 · 轮转由宿主机 logrotate 统一负责（copytruncate）
+  // pino/file 以 append 模式打开（sonic-boom 默认），logrotate 截断后写入不产生空洞
   if (nodeEnv === 'production') {
     return {
       ...base,
       transport: {
-        targets: [
-          {
-            // 落盘文件 · 按天 + 大小双触发轮转 · 保留最近 5 份
-            target: 'pino-roll',
-            options: {
-              file: opts.logFile,
-              frequency: 'daily',
-              size: '100m',
-              // pino-roll v4：limit 必须是对象 { count }，不再是数字
-              limit: { count: 5 },
-              mkdir: true,
-            },
-          },
-          {
-            // stdout · 交给 docker json-file 继续做 docker logs
-            target: 'pino/file',
-            options: { destination: 1 },
-          },
-        ],
+        target: 'pino/file',
+        options: {
+          destination: opts.logFile,
+          mkdir: true,
+        },
       },
     };
   }

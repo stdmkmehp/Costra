@@ -189,7 +189,8 @@ if [[ -d "${REPLAY_DIR}" ]]; then
 fi
 
 run_cmd mkdir -p "${REPLAY_DATA_DIR}"
-run_cmd chown -R 999:999 "${REPLAY_DIR}"
+# REPLAY_IMAGE 是 postgres:15-alpine · 容器内 postgres 用户 uid=70（debian 变体才是 999）
+run_cmd chown -R "${UID_POSTGRES_ALPINE}:${UID_POSTGRES_ALPINE}" "${REPLAY_DIR}"
 log_success "隔离目录已准备好"
 
 # --- Step 2: 启动隔离 PostgreSQL 容器 ---

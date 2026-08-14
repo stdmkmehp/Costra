@@ -224,3 +224,68 @@ render 输出路径变成 daily 86400000.md，随后 grep 找不到 daily.md
 - Related Files: `analytics/scripts/render.mjs`
 
 ---
+
+## [ERR-20260814-001] pg_hba_managed_block_portability
+
+**Logged**: 2026-08-14T10:21:41+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: infra
+
+### Summary
+HBA 单元测试暴露 GNU `stat` 参数和通过 `awk -v` 传多行字符串的跨平台问题。
+
+### Error
+```text
+stat: illegal option -- c
+awk: newline in string # BEGIN COSTRA MANAG...
+```
+
+### Context
+- 在 macOS 开发机用临时 `pg_hba.conf` 验证 `replace_pg_hba_managed_block`。
+- 生产是 Linux，但本地无法测试会让关键 HBA 逻辑失去快速回归能力。
+
+### Suggested Fix
+文件元数据读取同时支持 GNU/BSD `stat`；多行 block 写临时文件，再让 awk 逐行读取，不通过 `-v` 直接传递。
+
+### Metadata
+- Reproducible: yes
+- Related Files: `infra/scripts/lib/common.sh`
+
+### Resolution
+- **Resolved**: 2026-08-14T10:21:41+08:00
+- **Notes**: 已实现双平台 stat fallback、block 临时文件及 POSIX awk 条件；幂等、hostssl 顺序与不完整 marker 拒绝测试通过。
+
+---
+
+## [ERR-20260814-002] rg_unavailable_in_validation_command
+
+**Logged**: 2026-08-14T11:28:55+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+最终验证命令直接调用 `rg`，但当前 shell 环境未安装该二进制。
+
+### Error
+```text
+(eval):1: command not found: rg
+```
+
+### Context
+- 仅用于确认新恢复脚本的 untracked 路径和执行权限。
+- 项目工具层有内容搜索能力，但 shell 命令不能假设 `rg` 存在。
+
+### Suggested Fix
+命令行验证优先使用 POSIX `grep`/`find`，或先 `command -v rg` 再分支。
+
+### Metadata
+- Reproducible: yes
+- Related Files: `infra/scripts/recover-primary-from-standby.sh`
+
+### Resolution
+- **Resolved**: 2026-08-14T11:28:55+08:00
+- **Notes**: 后续验证改用 `grep`/文件搜索，不依赖 `rg`。
+
+---

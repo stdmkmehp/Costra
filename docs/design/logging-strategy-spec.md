@@ -1,6 +1,6 @@
 # Costra 日志策略规范（Logging Strategy Spec）
 
-> 状态：已实施 · 日期：2026-06-30 · 关联：客户端 `miniprogram/utils/logger.ts`、服务器 Fastify/pino、`infra/docker-compose.prod.yml`
+> 状态：已实施 · 日期：2026-06-30（2026-08-14 §5 修订：服务器日志统一落盘固定文件 + 宿主机 logrotate）· 关联：客户端 `miniprogram/utils/logger.ts`、服务器 Fastify/pino、`infra/docker-compose.prod.yml`、`infra/logrotate/costra-ops`
 
 本规范统一约束 Costra 客户端（微信小程序）与服务器（Fastify + pino）的日志行为，目标是：日志可读、信息全面、周期噪音可控、用户写操作可审计、长期运行不膨胀。
 
@@ -26,6 +26,7 @@
 | D | 服务器请求日志策略 | **保留 Fastify 默认 access log + per-route 降级** |
 | E | 客户端 console 迁移范围 | **全量替换**为统一 `logger` |
 | — | 写操作日志脱敏 | **不脱敏**，要求字段详细（含金额/分类/日期/备注） |
+| F | 服务器日志轮转路线 | **落盘固定文件 + 宿主机 logrotate 唯一轮转源**（2026-08-14 起 · 取代"stdout → docker json-file"） |
 
 ---
 
@@ -88,18 +89,20 @@
 
 ## 5. 日志轮转（防膨胀）
 
+> 2026-08-14 决策变更：放弃"全 stdout → docker json-file"路线，统一改为**落盘固定文件 + 宿主机 logrotate 唯一轮转事实源**。所有写入方都以 append 模式打开文件（sonic-boom / redis / nginx / PG collector），logrotate `copytruncate` 就地截断后续写安全；应用自身一律不做轮转，杜绝双事实源。
+
 | 服务 | 输出 | 轮转 |
 |------|------|------|
-| server (pino) | stdout → docker json-file | `max-size 100m × max-file 5`（已有） |
-| nginx | **改为** `/dev/stdout`、`/dev/stderr` → docker json-file | 100m × 5 |
-| postgres | stderr → docker | **新增** logging 100m × 5 |
-| redis | **去掉** `--logfile`，改 stdout → docker | **新增** logging 100m × 5 |
+| server (pino) | 固定文件 `/var/log/costra/server.log`（→ 宿主 `/data/logs/server`）· `pino/file` O_APPEND | 宿主机 logrotate |
+| nginx | 固定文件 `/var/log/nginx/{access,error}.log`（→ 宿主 `/data/logs/nginx`） | 宿主机 logrotate |
+| postgres | collector 固定文件 `postgresql.log`（自身切分已关 `log_rotation_*=0`） | 宿主机 logrotate |
+| redis | 固定文件 `/var/log/redis/redis.log`（`--logfile`） | 宿主机 logrotate |
 
-> server 端 pino 日志本身长期运行不膨胀（500MB 上限滚动覆盖）；本轮修复的是 nginx 文件日志、redis.log、postgres docker logs 三处旁路膨胀点。
+logrotate 模板：`infra/logrotate/costra-ops`（daily + maxsize 20M · 保留 14 份压缩 · copytruncate），由 `maintenance.sh install-cron` 安装到 `/etc/logrotate.d/`，同一份配置同时覆盖运维脚本日志与主从 PG 日志。docker json-file（100m × 5）仅兜底各进程 entrypoint 阶段的极早期 stdout/stderr 残留。
 
 ### 运维注意
-- nginx 运行时配置位于宿主 `/data/conf/nginx`（由 `infra/scripts/05-start-stack.sh` 从 repo 模板复制）。改完模板需**同步 live 配置**并 `docker compose -f docker-compose.prod.yml restart nginx` 才生效。
-- redis/nginx 改 stdout 后，`/data/logs/redis`、`/data/logs/nginx` 卷不再写入（保留挂载无害，可后续清理）。
+- nginx 运行时配置位于宿主 `/data/conf/nginx`（由 `infra/scripts/05-start-stack.sh` 从 repo 模板复制）。改完模板需**同步 live 配置**并 recreate nginx 才生效。
+- 升级落地顺序：`git pull` → `maintenance.sh install-cron`（刷新 logrotate）→ 同步 nginx live 配置 → `docker compose -f docker-compose.prod.yml up -d --build server redis nginx`。
 
 ---
 

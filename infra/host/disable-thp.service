@@ -1,0 +1,32 @@
+# =============================================================================
+# Costra · 关闭 Transparent Huge Pages（安装为 /etc/systemd/system/disable-thp.service）
+# =============================================================================
+# 落地基线：docs/ops/host-kernel-tuning.md §4
+# 安装方式：infra/scripts/apply-host-tuning.sh apply（幂等 · 支持 --dry-run）
+#
+# 【为什么必须关】THP 下 fork 的 COW 以 2MB 为粒度而非 4KB，Redis 每次
+# AOF rewrite / bgsave 都要 fork，直接产生百 ms 级 stall；PG 亦受影响。
+# Redis 官方明确建议 never。这是 prod 机上唯一"现役"的性能地雷
+# （实测 /sys/kernel/mm/transparent_hugepage/enabled = [always]）。
+#
+# 【为什么用 systemd unit 而非 rc.local】TencentOS 不保证 rc.local 存在且
+# 已启用；/sys 写入重启即失效，需要开机自动重放。unit 排在 basic.target 前，
+# 确保 docker 与容器起来之前 THP 已是 never。
+# =============================================================================
+
+[Unit]
+Description=Costra - Disable Transparent Huge Pages (THP)
+Documentation=file:///root/Costra/docs/ops/host-kernel-tuning.md
+DefaultDependencies=no
+After=sysinit.target local-fs.target
+Before=basic.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# 部分内核无 defrag 节点，故用 `|| true` 单独兜底，避免整个 unit 失败
+ExecStart=/bin/sh -c "echo never > /sys/kernel/mm/transparent_hugepage/enabled"
+ExecStart=/bin/sh -c "echo never > /sys/kernel/mm/transparent_hugepage/defrag || true"
+
+[Install]
+WantedBy=basic.target

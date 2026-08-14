@@ -1,0 +1,29 @@
+# =============================================================================
+# Costra · 宿主机日志轮转（唯一轮转事实源）
+# =============================================================================
+# 仓库是事实源：由 maintenance.sh install-cron（主库机）或手工 install
+# （standby 机 · 见 docs/ops/pg-standby-backup.md §5.2）装到
+# /etc/logrotate.d/costra-ops，机器上不手改。
+#
+# 覆盖三类：
+#   1. 运维脚本日志（cron >> 追加 · maintenance-*.log / check-replication / standby-backup）
+#   2. PG collector 固定日志（主库 + standby · PG 自身切分已关 log_rotation_*=0）
+#   3. 容器应用落盘日志（server / redis / nginx · 固定文件名 · 应用自身不轮转）
+#
+# 统一 copytruncate：所有写入方都以 append 模式打开文件（sonic-boom / redis /
+# nginx / PG collector 皆然），就地截断后续写安全；missingok 兼容 standby 机
+# 不存在 server/redis/nginx 目录的场景。
+# =============================================================================
+/data/logs/maintenance-*.log /data/logs/check-replication.log /data/logs/standby-backup.log
+/data/logs/postgres/postgresql.log /data/logs/standby/postgresql.log
+/data/logs/server/server.log /data/logs/redis/redis.log
+/data/logs/nginx/access.log /data/logs/nginx/error.log {
+    daily
+    maxsize 20M
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+}

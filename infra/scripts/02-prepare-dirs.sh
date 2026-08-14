@@ -73,10 +73,15 @@ run_cmd chmod 0700 "${COSTRA_DATA}/conf" "${COSTRA_DATA}/backups"
 # --- Step 2: chown（v1.5.1 关键 · 修坑 3） ---
 log_step "[2/3] 设置 owner（容器内进程 uid 与宿主机不一致）"
 
-# uid=999 → redis / postgres 容器内进程
+# uid=999 → redis 容器内进程（redis:7-alpine）
 RUN_AS_999=(
   "${COSTRA_DATA}/redis"
   "${COSTRA_DATA}/logs/redis"
+)
+
+# uid=70 → postgres 容器内进程（postgres:15-alpine · debian 变体是 999 · 见 common.sh）。
+# logging_collector 会把 PG 日志写入该目录，owner 必须与容器进程一致。
+RUN_AS_70=(
   "${COSTRA_DATA}/logs/postgres"
 )
 
@@ -89,6 +94,9 @@ RUN_AS_1000=(
 log_info "chown ${UID_REDIS}:${UID_REDIS} → ${RUN_AS_999[*]}"
 run_cmd chown -R "${UID_REDIS}:${UID_REDIS}" "${RUN_AS_999[@]}"
 
+log_info "chown ${UID_POSTGRES_ALPINE}:${UID_POSTGRES_ALPINE} → ${RUN_AS_70[*]}"
+run_cmd chown -R "${UID_POSTGRES_ALPINE}:${UID_POSTGRES_ALPINE}" "${RUN_AS_70[@]}"
+
 log_info "chown ${UID_NODE}:${UID_NODE} → ${RUN_AS_1000[*]}"
 run_cmd chown -R "${UID_NODE}:${UID_NODE}" "${RUN_AS_1000[@]}"
 
@@ -97,28 +105,29 @@ log_info "/data/pgsql 不动（PG entrypoint 自动 chown）· /data/logs/nginx 
 # --- Step 3: 验证 owner ---
 log_step "[3/3] 验证 owner（如有 root:root 立即报错）"
 
+# _verify_owner <uid> <dir...>: 校验目录 owner 是否等于给定 uid，失败计入全局 VERIFY_FAIL
+_verify_owner() {
+  local uid=$1
+  shift
+  local dir owner
+  for dir in "$@"; do
+    owner=$(stat -c '%u:%g' "${dir}" 2>/dev/null || echo "missing")
+    if [[ "${owner}" == "${uid}:${uid}" ]]; then
+      log_success "  ${dir} owner=${owner} ✓"
+    else
+      log_error "  ${dir} owner=${owner}（期望 ${uid}:${uid}）"
+      VERIFY_FAIL=$((VERIFY_FAIL + 1))
+    fi
+  done
+}
+
 if [[ "${DRY_RUN}" == "1" ]]; then
   log_dry "（dry-run 模式跳过验证）"
 else
   VERIFY_FAIL=0
-  for dir in "${RUN_AS_999[@]}"; do
-    OWNER=$(stat -c '%u:%g' "${dir}" 2>/dev/null || echo "missing")
-    if [[ "${OWNER}" == "999:999" ]]; then
-      log_success "  ${dir} owner=${OWNER} ✓"
-    else
-      log_error "  ${dir} owner=${OWNER}（期望 999:999）"
-      VERIFY_FAIL=$((VERIFY_FAIL + 1))
-    fi
-  done
-  for dir in "${RUN_AS_1000[@]}"; do
-    OWNER=$(stat -c '%u:%g' "${dir}" 2>/dev/null || echo "missing")
-    if [[ "${OWNER}" == "1000:1000" ]]; then
-      log_success "  ${dir} owner=${OWNER} ✓"
-    else
-      log_error "  ${dir} owner=${OWNER}（期望 1000:1000）"
-      VERIFY_FAIL=$((VERIFY_FAIL + 1))
-    fi
-  done
+  _verify_owner "${UID_REDIS}" "${RUN_AS_999[@]}"
+  _verify_owner "${UID_POSTGRES_ALPINE}" "${RUN_AS_70[@]}"
+  _verify_owner "${UID_NODE}" "${RUN_AS_1000[@]}"
 
   if [[ "${VERIFY_FAIL}" -gt 0 ]]; then
     log_error "${VERIFY_FAIL} 个目录 owner 不正确 · 请检查权限或重跑"

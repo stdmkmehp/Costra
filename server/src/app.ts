@@ -62,7 +62,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   const env = appEnv();
 
   const fastifyOpts: FastifyServerOptions = {
-    // pino logger（production 落盘 + stdout；test 环境可关）
+    // pino logger（production 单目标落盘固定文件 · logrotate 轮转；test 环境可关）
     logger: createLogger(env.nodeEnv, env.logLevel, {
       disable: opts.disableLogger,
       logFile: env.logFile,

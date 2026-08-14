@@ -1,7 +1,7 @@
-# Costra 用户行为日报分析 · 技术方案 v0.2.3
+# Costra 用户行为日报分析 · 技术方案 v0.2.4
 
 - 作者：Ops
-- 日期：2026-07-21（修订：2026-08-04）
+- 日期：2026-07-21（修订：2026-08-14）
 - 版本历史：
   - **v0.1（2026-07-21）**：首版 · 三轮方案讨论定稿 · 位置无关 · CLI 三参数正交 · 三 template（daily/range/weekly）· QQ SMTP · 失败邮件兜底 · 无 healthchecks 探针
   - **v0.1.1（2026-07-21）**：显式化 prod 隔离约束（新增 §0）· `run-queries.sh` 从遍历 glob 改为显式清单
@@ -9,6 +9,7 @@
   - **v0.2.1（2026-07-21）**：删除 scp 备份文件自动清理能力 · inbox 改为永久只读数据源 · 生命周期由外部备份策略负责
   - **v0.2.2（2026-07-24）**：将 node 运行环境移入独立 Docker 容器 · 宿主机不再需要 Node.js · 新增 `costra-analyze-node` 常驻容器（node:18-alpine + 预装 npm 依赖）
   - **v0.2.3（2026-08-04）**：宿主机入口降级为 thin wrapper · 完整分析编排迁入 analyzer 容器 · 宿主机不再需要 Node/gzip/psql · 固定工作库 `costra_report_work` 每次开头强制重建、结束清理
+  - **v0.2.4（2026-08-14）**：容器改按需启停（`restart: "no"` · `analyze.sh` 跑完自动 `docker compose stop`）+ 加 `deploy.resources.limits`（PG 512M/0.5CPU · node 256M/0.5CPU），释放资源给同机 staging 栈与 standby 从库
 
 > 本文只描述"落地实现"，覆盖目标 / 输入约定 / CLI 抽象 / 目录布局 / 主流程 / SQL 全文 / 渲染 template / 邮件通道 / 失败告警 / cron 配置 / 工作量。
 
@@ -33,6 +34,7 @@
 - 独立的 named volume `costra-analyze_analyze-pg-data`（compose project 前缀自动隔离）
 - 独立的 DB 名/用户 `analyze/analyze`（prod 用 `costra/costra`）
 - 只**复用 postgres:15 官方镜像**（来自 Docker Hub 公共仓库，非 prod 私有构建）
+- 独立 compose 内**按需启停**：`restart: "no"` 不常驻，`analyze.sh` 跑完自动 `docker compose stop`；并设 `deploy.resources.limits` 封顶分析窗口峰值（与 staging 栈、standby 从库共机的配额见 `docs/ops/pg-standby-backup.md` §2.1）
 
 ### 0.3 独立的脚本
 
@@ -59,6 +61,7 @@ docker ps -a --format '{{.Names}}' | grep -qE '^costra-analyze-pg$'   # 存在
 docker ps -a --format '{{.Names}}' | grep -qvE '^costra-postgres$'    # 或 prod 就没跑（在独立 host 上应该 grep -qv 直接 true）
 
 # 3. 端口不冲突（本机监听 15432，不监听 5432）
+#    ⚠️ 按需启停模式下端口仅在分析运行期间监听，此项请在运行 analyze.sh 时检查
 ss -ltnp | grep -q '127.0.0.1:15432'
 
 # 4. 日志目录独立
@@ -263,8 +266,9 @@ THRESHOLD_ACTIVE=
 
 **宿主机 `scripts/analyze.sh` 仅做 thin wrapper**：
 1. 加载 `.env`，创建 `DUMP_INBOX / REPORTS_DIR / LOG_DIR`；
-2. `docker compose up -d --build postgres analyzer` 确保两个常驻容器存在；
-3. `docker compose exec -T analyzer bash /app/scripts/analyze-in-container.sh "$@"` 进入容器执行真实分析。
+2. `docker compose up -d --build postgres analyzer` 按需启动两个容器（`restart: "no"`，不常驻）；
+3. `docker compose exec -T analyzer bash /app/scripts/analyze-in-container.sh "$@"` 进入容器执行真实分析；
+4. 无论成败（含 Ctrl+C / SIGTERM）`docker compose stop postgres analyzer` 释放 CPU/内存——由 trap `EXIT/INT/TERM` 保证执行。
 
 **容器内 `scripts/analyze-in-container.sh` 负责完整编排**：
 1. 读取 `/app/.env`，创建 `/tmp/costra-analyze/<run>` 和日志文件；
@@ -772,7 +776,7 @@ services:
   postgres:
     image: postgres:15
     container_name: costra-analyze-pg
-    restart: always
+    restart: "no"                # 按需启停 · 宿主机重启不自动拉起
     ports:
       - "127.0.0.1:15432:5432"
     environment:
@@ -781,13 +785,18 @@ services:
       POSTGRES_PASSWORD: ${PG_PASSWORD:-change_me}
     volumes:
       - analyze-pg-data:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
 
   analyzer:
     build:
       context: .
       dockerfile: Dockerfile.analyzer
     container_name: costra-analyze-node
-    restart: always
+    restart: "no"                # 按需启停 · 宿主机重启不自动拉起
     working_dir: /app
     volumes:
       - .:/app
@@ -797,6 +806,11 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
 
 volumes:
   analyze-pg-data:
@@ -806,6 +820,7 @@ volumes:
 - `analyzer` 承载完整分析编排，宿主机只负责 `docker compose exec`。
 - `${DUMP_INBOX}` 只读挂载；`${REPORTS_DIR}` 和 `${LOG_DIR}` 读写挂载。
 - named volume 只保存分析 PG 基础实例；工作库 `costra_report_work` 每次分析都会重建并清理。
+- **按需启停 + 资源封顶（v0.2.4）**：`restart: "no"` 不常驻，`analyze.sh` 跑完 `docker compose stop` 释放资源；`deploy.resources.limits` 限制分析窗口峰值，避免与同机 staging 栈（3.0G）、standby 从库（768M）叠加超限。
 
 ---
 

@@ -116,7 +116,7 @@ server {
         return 404;
     }
 
-    # ============== 日志（走容器 stdout/stderr · 由 docker json-file 轮转）==============
-    access_log /dev/stdout;
-    error_log /dev/stderr warn;
+    # ============== 日志（落盘固定文件 · 由宿主机 logrotate 统一轮转 · 与 prod 一致）==============
+    access_log /var/log/nginx/access.log;
+    error_log /var/log/nginx/error.log warn;
 }

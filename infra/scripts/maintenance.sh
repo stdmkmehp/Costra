@@ -2,13 +2,14 @@
 # =============================================================================
 # Costra · 运维定时任务统一入口（cron 唯一入口 · 子命令分发）
 # =============================================================================
-# 所有定时任务（备份 + 各表清理）统一走本脚本 · crontab 只调它 · 用子命令区分。
+# 主库定时任务（备份 + 复制检查 + 各表清理）统一走本脚本；standby 仍用独立 cron。
 #
 # 用法：
 #   ./maintenance.sh <task> [options]
 #
 # 任务：
 #   backup [--retain-days N|--no-cleanup|--prefix P]  委托 backup-db.sh
+#   replication-check                                主库复制槽/WAL/异步状态检查
 #   purge-idempotency                                 清过期幂等键（每日）
 #   purge-sessions                                    清已过期 session（每日）
 #   purge-invites                                     清过期邀请（每日）
@@ -41,6 +42,7 @@ LOG_DIR="/data/logs"
 # =============================================================================
 declare -a CRON_SCHEDULE=(
   "backup|27 3,7,11,15,19,23 * * *|maintenance-backup.log"
+  "replication-check|*/5 * * * *|check-replication.log"
   "purge-idempotency|7 4 * * *|maintenance-purge.log"
   "purge-sessions|17 4 * * *|maintenance-purge.log"
   "purge-invites|27 4 * * *|maintenance-purge.log"
@@ -54,7 +56,7 @@ TASK=""
 declare -a PASSTHRU=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    backup|purge-idempotency|purge-sessions|purge-invites|purge-all|renew-cert|install-cron|list)
+    backup|replication-check|purge-idempotency|purge-sessions|purge-invites|purge-all|renew-cert|install-cron|list)
       [[ -z "${TASK}" ]] || die "只能指定一个任务（已有：${TASK}）"
       TASK=$1; shift ;;
     --dry-run|-y|--yes) shift ;;       # common 已处理 · noop
@@ -147,7 +149,7 @@ do_renew_cert() {
 # =============================================================================
 do_install_cron() {
   local cron_file="/etc/cron.d/costra-maintenance"
-  local content entry task sched logf
+  local content entry task sched logf replication_enabled logrotate_source
   # 头部（SHELL/PATH + 说明）· 任务行由顶部 CRON_SCHEDULE 遍历生成。
   # 时间与任务解耦：改执行时间只改 CRON_SCHEDULE；日志一律落在 ${LOG_DIR}（统一路径）。
   content="SHELL=/bin/bash
@@ -155,14 +157,32 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # ── Costra 运维定时任务 · 全部走 maintenance.sh 统一入口（由 install-cron 生成）──
 # 执行时间集中定义在 maintenance.sh 顶部 CRON_SCHEDULE · 日志统一落在 ${LOG_DIR}"
+  # 用完整配置三件套作为显式启用标志，避免单个 secret 键漂移时误启用/误关闭。
+  replication_enabled=1
+  for _key in REPLICATOR_PW PG_PRIMARY_LAN_IP PG_STANDBY_LAN_IP; do
+    grep -qE "^${_key}=.+" "${COSTRA_ENV_FILE}" 2>/dev/null || replication_enabled=0
+  done
+  if [[ "${replication_enabled}" == "1" ]] && command -v docker >/dev/null 2>&1 \
+    && docker inspect costra-postgres >/dev/null 2>&1; then
+    if ! docker exec costra-postgres psql -U costra -d costra -tAc \
+      "SELECT 1 FROM pg_replication_slots WHERE slot_name='costra_standby' AND slot_type='physical'" \
+      2>/dev/null | grep -qx '1'; then
+      log_warn "复制三件套存在但运行态无 costra_standby 物理槽 · cron 仍保留 replication-check 以持续告警"
+    fi
+  fi
   for entry in "${CRON_SCHEDULE[@]}"; do
     IFS='|' read -r task sched logf <<< "${entry}"
+    if [[ "${task}" == "replication-check" ]] && [[ "${replication_enabled}" != "1" ]]; then
+      log_info "${COSTRA_ENV_FILE} 未配置完整复制三件套 · cron 跳过 replication-check"
+      continue
+    fi
     content+=$(printf '\n%-24s root %s/maintenance.sh %-17s >> %s/%s 2>&1' \
       "${sched}" "${SCRIPT_DIR}" "${task}" "${LOG_DIR}" "${logf}")
   done
   if [[ "${DRY_RUN}" == "1" ]]; then
     log_dry "将写入 ${cron_file}："
     printf '%s\n' "${content}"
+    log_dry "将安装 ${COSTRA_INFRA}/logrotate/costra-ops → /etc/logrotate.d/costra-ops"
     return 0
   fi
   require_root
@@ -170,7 +190,18 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
   printf '%s\n' "${content}" > "${cron_file}"
   chmod 0644 "${cron_file}"
   log_success "已写入 ${cron_file}"
+
+  logrotate_source="${COSTRA_INFRA}/logrotate/costra-ops"
+  require_file "${logrotate_source}"
+  install -m 0644 "${logrotate_source}" /etc/logrotate.d/costra-ops
+  log_success "已安装 /etc/logrotate.d/costra-ops"
+
   mkdir -p "${LOG_DIR}"
+  local log_name
+  for log_name in maintenance-backup.log check-replication.log maintenance-purge.log maintenance-cert.log; do
+    touch "${LOG_DIR}/${log_name}"
+    chmod 0600 "${LOG_DIR}/${log_name}"
+  done
   if systemctl is-active --quiet crond 2>/dev/null; then
     systemctl restart crond
     log_success "crond 已 restart · cron 配置生效"
@@ -183,7 +214,7 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # 分发（flock 防重入 · cron 重叠保护）
 # flock 仅 Linux（util-linux）有 · prod 为 Linux 一定存在；开发机（如 macOS）无则跳过锁。
 # 所有 purge 类任务共享一把 purge 锁：避免手动 purge-all 与 cron 单项 purge 并发。
-# backup / install-cron / list 各用独立锁名。
+# backup / replication-check / install-cron / list 各用独立锁名。
 # =============================================================================
 case "${TASK}" in
   purge-idempotency|purge-sessions|purge-invites|purge-all) LOCK_NAME="purge" ;;
@@ -219,6 +250,11 @@ case "${TASK}" in
     log_info "委托 → backup-db.sh ${PASSTHRU[*]}"
     "${SCRIPT_DIR}/backup-db.sh" "${PASSTHRU[@]}"
     ;;
+  replication-check)
+    export DRY_RUN ASSUME_YES
+    log_info "委托 → check-replication.sh ${PASSTHRU[*]}"
+    "${SCRIPT_DIR}/check-replication.sh" "${PASSTHRU[@]}"
+    ;;
   purge-idempotency)
     require_cmd docker; _assert_pg_healthy; _load_pg_pw
     do_purge_idempotency
@@ -245,7 +281,7 @@ case "${TASK}" in
     do_renew_cert
     ;;
   list)
-    log_info "可用任务：backup · purge-idempotency · purge-sessions · purge-invites · purge-all · renew-cert · install-cron · list"
+    log_info "可用任务：backup · replication-check · purge-idempotency · purge-sessions · purge-invites · purge-all · renew-cert · install-cron · list"
     ;;
 esac
 

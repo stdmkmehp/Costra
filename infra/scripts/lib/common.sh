@@ -61,8 +61,14 @@ fi
 : "${VERIFY_PG_PW:=costra-verify}"
 
 # --- 容器内进程 uid（修 redis 权限坑用）---
+# ⚠️ postgres 的 uid 取决于镜像变体，不是单一值，务必按镜像选：
+#   - postgres:15-alpine  → uid 70   （prod 主库 costra-postgres / 从库 costra-standby-pg）
+#   - postgres:15（debian）→ uid 999  （分析栈 costra-analyze-pg）
+# 历史上这里只有一个 UID_POSTGRES=999，对 alpine 是错的（且无人引用）。
+# 需要 chown PG 数据目录时（如 pg_basebackup 前置）必须用 UID_POSTGRES_ALPINE。
 readonly UID_REDIS=999
-readonly UID_POSTGRES=999
+readonly UID_POSTGRES_ALPINE=70
+readonly UID_POSTGRES_DEBIAN=999
 readonly UID_NODE=1000
 
 # =============================================================================
@@ -166,6 +172,19 @@ require_file() {
   [[ -f "${path}" ]] || die "文件不存在：${path}"
 }
 
+# is_valid_ipv4 <value>: 严格验证四段 IPv4（不仅检查字符串形状）。
+is_valid_ipv4() {
+  local value=$1
+  awk -F. '
+    NF != 4 { exit 1 }
+    {
+      for (i = 1; i <= 4; i++) {
+        if ($i !~ /^[0-9]+$/ || $i < 0 || $i > 255) exit 1
+      }
+    }
+  ' <<< "${value}"
+}
+
 # =============================================================================
 # 密码生成（v1.5.1 · 修坑 1：tr -d 必须含 \n 否则输出两行）
 # =============================================================================
@@ -178,13 +197,96 @@ gen_password() {
 # =============================================================================
 # 文件操作
 # =============================================================================
-# backup_file <path>: 加时间戳后缀备份
+# backup_file <path> [backup-dir]: 加时间戳备份；可把历史副本放到数据目录外。
 backup_file() {
-  local src=$1
+  local src=$1 backup_dir=${2:-} dst base stamp
   if [[ -f "${src}" ]]; then
-    local dst="${src}.bak.$(date +%Y%m%d-%H%M%S)"
-    run_cmd cp "${src}" "${dst}"
+    stamp=$(date +%Y%m%d-%H%M%S)
+    if [[ -n "${backup_dir}" ]]; then
+      base=$(basename "${src}")
+      run_cmd mkdir -p "${backup_dir}"
+      run_cmd chmod 0700 "${backup_dir}"
+      dst="${backup_dir}/${base}.bak.${stamp}"
+    else
+      dst="${src}.bak.${stamp}"
+    fi
+    run_cmd cp -p "${src}" "${dst}"
     log_info "已备份: ${src} → ${dst}"
+  fi
+}
+
+# replace_pg_hba_managed_block <path> <block> [legacy_exact_line]
+# 原子替换 Costra 管理的 HBA 区块，并把区块放在首条 host 规则之前，确保精确规则
+# 不会被官方镜像已有的宽泛 host 规则抢先匹配。local 规则保持原样，容器内 Unix
+# socket 运维不受影响。可选 legacy_exact_line 用于清理旧版脚本曾裸追加的单行规则。
+replace_pg_hba_managed_block() {
+  local path=$1 block=$2 legacy_line=${3:-}
+  local begin_marker="# BEGIN COSTRA MANAGED REPLICATION"
+  local end_marker="# END COSTRA MANAGED REPLICATION"
+  local dir base tmp block_tmp owner group mode begin_count end_count existing_begin existing_end
+
+  require_file "${path}"
+  existing_begin=$(grep -cF "${begin_marker}" "${path}" || true)
+  existing_end=$(grep -cF "${end_marker}" "${path}" || true)
+  if [[ "${existing_begin}" != "${existing_end}" ]] || [[ "${existing_begin}" -gt 1 ]] \
+    || ! awk -v begin_marker="${begin_marker}" -v end_marker="${end_marker}" '
+      $0 == begin_marker { if (inside || seen_begin) bad = 1; inside = 1; seen_begin = 1 }
+      $0 == end_marker { if (!inside || seen_end) bad = 1; inside = 0; seen_end = 1 }
+      END { exit (bad || inside || seen_begin != seen_end) ? 1 : 0 }
+    ' "${path}"; then
+    die "pg_hba 原 managed marker 不完整、重复或顺序错误（begin=${existing_begin} · end=${existing_end}）· 拒绝自动改写，请人工修复"
+  fi
+
+  dir=$(dirname "${path}")
+  base=$(basename "${path}")
+  tmp=$(mktemp "${dir}/.${base}.costra.XXXXXX")
+  block_tmp=$(mktemp "${dir}/.${base}.costra-block.XXXXXX")
+  printf '%s\n' "${block}" > "${block_tmp}"
+  owner=$(stat -c '%u' "${path}" 2>/dev/null || stat -f '%u' "${path}")
+  group=$(stat -c '%g' "${path}" 2>/dev/null || stat -f '%g' "${path}")
+  mode=$(stat -c '%a' "${path}" 2>/dev/null || stat -f '%Lp' "${path}")
+
+  if ! awk \
+    -v begin_marker="${begin_marker}" \
+    -v end_marker="${end_marker}" \
+    -v block_file="${block_tmp}" \
+    -v legacy_line="${legacy_line}" '
+      function emit_block(line) {
+        while ((getline line < block_file) > 0) print line
+        close(block_file)
+      }
+      BEGIN { in_managed = 0; inserted = 0 }
+      $0 == begin_marker { in_managed = 1; next }
+      $0 == end_marker { in_managed = 0; next }
+      in_managed { next }
+      legacy_line != "" && $0 == legacy_line { next }
+      !inserted && ($1 == "host" || $1 == "hostssl" || $1 == "hostnossl" || $1 == "hostgssenc" || $1 == "hostnogssenc") {
+        emit_block()
+        inserted = 1
+      }
+      { print }
+      END {
+        if (!inserted) emit_block()
+      }
+    ' "${path}" > "${tmp}"; then
+    rm -f "${tmp}" "${block_tmp}"
+    die "生成 pg_hba 临时文件失败：${path}"
+  fi
+  rm -f "${block_tmp}"
+
+  begin_count=$(grep -cF "${begin_marker}" "${tmp}" || true)
+  end_count=$(grep -cF "${end_marker}" "${tmp}" || true)
+  if [[ "${begin_count}" != "1" || "${end_count}" != "1" ]]; then
+    rm -f "${tmp}"
+    die "候选 pg_hba managed block 数量异常（begin=${begin_count} · end=${end_count}）· 原文件未改"
+  fi
+  if ! chown "${owner}:${group}" "${tmp}" || ! chmod "${mode}" "${tmp}"; then
+    rm -f "${tmp}"
+    die "设置 pg_hba 候选文件权限失败 · 原文件未改"
+  fi
+  if ! mv -f "${tmp}" "${path}"; then
+    rm -f "${tmp}"
+    die "原子替换 pg_hba 失败 · 原文件未改"
   fi
 }
 

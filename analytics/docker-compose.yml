@@ -7,13 +7,20 @@ name: costra-analyze
 #   - 容器名: costra-analyze-pg / costra-analyze-node
 #   - 端口:   127.0.0.1:15432
 #   - DB/用户: analyze/analyze
+#
+# 按需启停模式（v0.2.4 · 2026-08-14 · 与 standby 从库、staging 栈共机）：
+#   - restart: "no"：宿主机重启后不自动拉起，仅由 analyze.sh / cron 触发
+#   - analyze.sh 每次运行后 docker compose stop，释放 CPU/内存给同机其它栈
+#   - deploy.resources.limits 封顶分析窗口峰值（PG 512M + node 256M）
+#   - 调整 limits 时注意整机还叠加 staging 栈（3.0G）与 standby 从库（768M）
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
   postgres:
     image: postgres:15
     container_name: costra-analyze-pg
-    restart: always
+    # 按需启停：仅分析窗口内运行 · 宿主机重启不自动拉起（见文件头注释）
+    restart: "no"
     ports:
       - "127.0.0.1:15432:5432"
     environment:
@@ -27,6 +34,13 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    # 资源封顶：数据量 MB 级 · 默认 shared_buffers=128M 足够 · 无需调优
+    # 峰值预算见 docs/ops/pg-standby-backup.md §2.1（三栈并存资源配额）
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
 
   analyzer:
     build:
@@ -34,7 +48,8 @@ services:
       dockerfile: Dockerfile.analyzer
     image: costra-analyze-node:local
     container_name: costra-analyze-node
-    restart: always
+    # 按需启停：仅分析窗口内运行 · 宿主机重启不自动拉起（见文件头注释）
+    restart: "no"
     working_dir: /app
     volumes:
       - .:/app
@@ -44,6 +59,12 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # 资源封顶：node render + nodemailer + gunzip + psql 客户端 · 内存需求低
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
 
 volumes:
   analyze-pg-data:

@@ -126,9 +126,9 @@ server {
         return 404;
     }
 
-    # ============== 日志（走容器 stdout/stderr · 由 docker json-file轮转）==============
-    # 改前写文件 /var/log/nginx/*.log（挂载卷）· docker logging 的 max-size 管不到 → 无限膨胀。
-    # 现改为 /dev/stdout、/dev/stderr，统一交docker json-file（max-size 100m × max-file 5）轮转。
-    access_log /dev/stdout;
-    error_log /dev/stderr warn;
+    # ============== 日志（落盘固定文件 · 由宿主机 logrotate 统一轮转）==============
+    # 写 /var/log/nginx/*.log（bind mount → 宿主机 /data/logs/nginx）· nginx 自身不做轮转，
+    # 由 /etc/logrotate.d/costra-ops 作为唯一轮转事实源（daily + maxsize 20M · copytruncate · 14 份）。
+    access_log /var/log/nginx/access.log;
+    error_log /var/log/nginx/error.log warn;
 }
