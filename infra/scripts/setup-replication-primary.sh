@@ -85,6 +85,15 @@ _pg_scalar() {
     psql -U costra -d costra -tA -v ON_ERROR_STOP=1 -c "$1"
 }
 
+# _pg_stdin <sql> [psql args...] : 经 stdin 送入 SQL。
+# psql 的 -c 不做变量插值（:'var' 会被原样发给服务端，报 syntax error at or near ":"），
+# 凡是带 :'var' 的语句必须走 stdin 才能展开，docker exec 需加 -i 接管 stdin。
+_pg_stdin() {
+  local sql=$1; shift
+  printf '%s\n' "${sql}" | docker exec -i "${PG_CONTAINER}" \
+    psql -U costra -d costra -tA -v ON_ERROR_STOP=1 "$@"
+}
+
 _assert_pg_healthy() {
   local health
   health=$(docker inspect --format '{{.State.Health.Status}}' "${PG_CONTAINER}" 2>/dev/null || echo "missing")
@@ -204,9 +213,7 @@ else
   ROLE_EXISTS=$(_pg_scalar "SELECT 1 FROM pg_roles WHERE rolname='replicator'")
   if [[ -z "${ROLE_EXISTS}" ]]; then
     ROLE_SQL="CREATE ROLE replicator WITH REPLICATION LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS PASSWORD :'pw'"
-    docker exec "${PG_CONTAINER}" \
-      psql -U costra -d costra -tA -v ON_ERROR_STOP=1 -v pw="${REPLICATOR_PW}" \
-      -c "${ROLE_SQL}" >/dev/null
+    _pg_stdin "${ROLE_SQL}" -v pw="${REPLICATOR_PW}" >/dev/null
     log_info "replicator 不存在 · 已按最小权限创建"
   else
     ROLE_MEMBERSHIPS=$(_pg_scalar "SELECT count(*) FROM pg_auth_members m JOIN pg_roles r ON r.oid=m.member WHERE r.rolname='replicator'")
@@ -301,9 +308,7 @@ if [[ "${DRY_RUN}" == "1" ]]; then
 elif [[ "${ROTATE_PASSWORD_PENDING}" == "1" ]]; then
   confirm "确认机器② standby.env 与 PGDATA/.replication.pgpass 已写入同一个新值，并现在提交主库密码轮换？" \
     || die "用户取消密码轮换"
-  docker exec "${PG_CONTAINER}" \
-    psql -U costra -d costra -tA -v ON_ERROR_STOP=1 -v pw="${REPLICATOR_PW}" \
-    -c "ALTER ROLE replicator WITH PASSWORD :'pw'" >/dev/null
+  _pg_stdin "ALTER ROLE replicator WITH PASSWORD :'pw'" -v pw="${REPLICATOR_PW}" >/dev/null
   PASSWORD_ROTATED=1
   log_warn "replicator 密码已轮换 · 不可自动回滚；下一步必须重启 standby 验证新凭据"
 fi
