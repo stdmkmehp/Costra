@@ -7,6 +7,8 @@ name: costra-analyze
 #   - 容器名: costra-analyze-pg / costra-analyze-node
 #   - 端口:   127.0.0.1:15432
 #   - DB/用户: analyze/analyze
+#   - env 文件: /data/conf/analytics.env（ANALYTICS_ENV_FILE 可覆盖）· 经单文件
+#     只读挂载映射为 analyzer 容器内 /app/.env，容器内脚本与 .mjs 统一读该路径
 #
 # 按需启停模式（v0.2.4 · 2026-08-14 · 与 standby 从库、staging 栈共机）：
 #   - restart: "no"：宿主机重启后不自动拉起，仅由 analyze.sh / cron 触发
@@ -53,6 +55,9 @@ services:
     working_dir: /app
     volumes:
       - .:/app
+      # env 单文件挂载（须排在 .:/app 之后做嵌套覆盖）：缺省 ./.env 供本机开发；
+      # analyze.sh 会 export ANALYTICS_ENV_FILE（默认 /data/conf/analytics.env）
+      - ${ANALYTICS_ENV_FILE:-./.env}:/app/.env:ro
       - ${DUMP_INBOX:-/tmp/costra-analyze-inbox}:${DUMP_INBOX:-/tmp/costra-analyze-inbox}:ro
       - ${REPORTS_DIR:-/tmp/costra-analyze-report}:${REPORTS_DIR:-/tmp/costra-analyze-report}
       - ${LOG_DIR:-/tmp/costra-analyze-logs}:${LOG_DIR:-/tmp/costra-analyze-logs}

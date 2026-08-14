@@ -19,7 +19,7 @@
 > | PG 数据 | `/data/pgsql` | named volume `analyze-pg-data` | `/data/pgsql-standby` |
 > | PG 日志 | `/data/logs/postgres` | （容器内） | `/data/logs/standby` |
 > | PG 宿主机端口 | `127.0.0.1:5432` | `127.0.0.1:15432` | `127.0.0.1:15433` + 内网 `15433` |
-> | env 文件 | `/data/conf/server.env` | `analytics/.env` | `/data/conf/standby.env`（独立） |
+> | env 文件 | `/data/conf/server.env` | `/data/conf/analytics.env` | `/data/conf/standby.env`（独立） |
 >
 > **红线：严禁用 prod 的 `server.env` 覆盖 staging 机器的 `server.env`**——从库所需配置放独立的 `standby.env`（§2.4）。
 >
@@ -91,7 +91,7 @@
 | 数据目录 | `/data/pgsql` | named volume | `/data/pgsql-standby` | compose volumes |
 | 日志目录 | `/data/logs/postgres` | （容器内） | `/data/logs/standby` | compose volumes |
 | 宿主机端口 | `127.0.0.1:5432` | `127.0.0.1:15432` | `127.0.0.1:15433` / 内网 `15433` | compose ports |
-| env 文件 | `/data/conf/server.env` | `analytics/.env` | `/data/conf/standby.env` | 独立文件（§2.4） |
+| env 文件 | `/data/conf/server.env` | `/data/conf/analytics.env` | `/data/conf/standby.env` | 独立文件（§2.4） |
 | docker 网段 | `172.19.0.0/16` | `172.20.0.0/16` | compose 自动分配 | docker 自动避让 VPC 段 |
 
 - **前提**：staging 栈已按既有流程部署（docker / clone 仓库 / `02-prepare-dirs.sh` 均已就绪），本方案**复用**这些，不重建。
@@ -322,7 +322,7 @@ docker exec costra-standby-pg psql -U costra -d costra -c \
 | `backup-db.sh --db-only --container costra-standby-pg --prefix standby --backup-dir /data/slave/backups` | 机器② 从库 | pg_dump（无 avatars） | **`/data/slave/backups`** | 每 4h（cron 27 分 · 与 prod backup-avatars 同刻） | **DB 备份主责**（2026-08-14 起由 prod 迁入） |
 
 - 从库备份复用现有 `backup-db.sh`：`--container` 指定从库容器，`--prefix standby` 区分文件名，`--backup-dir` 直接落到分析栈的 `DUMP_INBOX`。三个参数默认值均保持原样，**主库既有调用零影响**。
-- **直接落 `/data/slave/backups` = analytics 链路即时打通**（团队决策）：`analytics/.env` 的 `DUMP_INBOX=/data/slave/backups`，而 `analytics/scripts/pick-dump.sh` 是按 `*.sql.gz` + mtime 取最新、**不锁前缀**，因此 `standby-*.sql.gz` 天然被识别；compose 里该目录是 `:ro` 挂载，分析侧不会删改这些文件（符合"`analytics/` 只读 `.sql.gz`"的既有约定）。
+- **直接落 `/data/slave/backups` = analytics 链路即时打通**（团队决策）：`/data/conf/analytics.env` 的 `DUMP_INBOX=/data/slave/backups`，而 `analytics/scripts/pick-dump.sh` 是按 `*.sql.gz` + mtime 取最新、**不锁前缀**，因此 `standby-*.sql.gz` 天然被识别；compose 里该目录是 `:ro` 挂载，分析侧不会删改这些文件（符合"`analytics/` 只读 `.sql.gz`"的既有约定）。
   - 由此**数据分析链路完全脱离主库**：不再需要从机器① scp dump 过来。
   - `backup-db.sh` 的清理逻辑按 `${BACKUP_PREFIX}-*` 精确匹配，只会清 `standby-*`，**不会碰**历史 scp 过来的 `scheduled-*` 文件。
 - 从库 `pg_dump` 不停 replay，对主库零影响。`max_standby_streaming_delay=300s` 只降低 recovery conflict 取消概率，并不保证成功；脚本会捕获失败且不发布 `*.sql.gz`，下一轮重试。

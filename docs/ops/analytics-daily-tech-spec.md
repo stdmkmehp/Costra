@@ -1,4 +1,4 @@
-# Costra 用户行为日报分析 · 技术方案 v0.2.5
+# Costra 用户行为日报分析 · 技术方案 v0.2.6
 
 - 作者：Ops
 - 日期：2026-07-21（修订：2026-08-14）
@@ -11,6 +11,7 @@
   - **v0.2.3（2026-08-04）**：宿主机入口降级为 thin wrapper · 完整分析编排迁入 analyzer 容器 · 宿主机不再需要 Node/gzip/psql · 固定工作库 `costra_report_work` 每次开头强制重建、结束清理
   - **v0.2.4（2026-08-14）**：容器改按需启停（`restart: "no"` · `analyze.sh` 跑完自动 `docker compose stop`）+ 加 `deploy.resources.limits`（PG 512M/0.5CPU · node 256M/0.5CPU），释放资源给同机 staging 栈与 standby 从库
   - **v0.2.5（2026-08-14）**：dump 输入切换为 standby 从库本机直落（`pg-standby-backup.md` §5.1 · `standby-` 前缀 · cron 27 分每 4h，与 prod backup-avatars 同刻），§2.1 移除已下线的"prod 生成 + scp"描述
+  - **v0.2.6（2026-08-14）**：env 配置文件外迁 `/data/conf/analytics.env`（与机器② `server.env`/`standby.env` 同目录约定 · `ANALYTICS_ENV_FILE` 可覆盖）· compose 单文件只读挂载为容器内 `/app/.env` · 仓库不再存放实际配置
 
 > 本文只描述"落地实现"，覆盖目标 / 输入约定 / CLI 抽象 / 目录布局 / 主流程 / SQL 全文 / 渲染 template / 邮件通道 / 失败告警 / cron 配置 / 工作量。
 
@@ -86,7 +87,7 @@ ss -ltnp | grep -q '127.0.0.1:15432'
 - 所有可读输出禁止出现 UUID，只出昵称/账本名/分类名；账本带 `[家庭]/[个人]` 徽标；分类带父子路径。
 - **少则全展、多则截断 + 统计**：阈值内条目全列，超阈值列前 N + 分维度统计。
 - 失败不静默：脚本失败或未取到 dump，均发告警邮件；主邮件 subject 内嵌 dump 时间戳。
-- **位置无关**：所有路径进 `.env`，脚本可在任意 Linux/Mac 机器部署。
+- **位置无关**：所有路径进 env 文件（默认 `/data/conf/analytics.env`），脚本可在任意 Linux/Mac 机器部署。
 
 ### 1.2 非目标
 
@@ -183,14 +184,13 @@ ss -ltnp | grep -q '127.0.0.1:15432'
 
 ## 4. 目录布局
 
-**位置无关**——所有路径通过 `.env` 配置。下面是**建议布局**（可整体挪到任意目录）：
+**位置无关**——所有路径通过 env 文件（默认 `/data/conf/analytics.env`）配置。下面是**建议布局**（可整体挪到任意目录）：
 
 ```
 ${ANALYZE_HOME}/                       # 建议 /opt/costra-analyze · 不放 prod 目录任何子目录（见 §0.1）
 ├── docker-compose.yml                 # 独立 PG + analyzer 双容器 · 不复用 prod compose（§0.2）
 ├── Dockerfile.analyzer                # node + bash + gzip + postgresql-client
-├── .env                               # 全部配置（chmod 600 · gitignore）
-├── .env.example                       # checked-in
+├── .env.example                       # checked-in · 实际配置安装到 /data/conf/analytics.env（0600 · 不进仓库）
 ├── package.json                       # node 依赖：nodemailer + marked
 ├── scripts/
 │   ├── analyze.sh                     # 宿主机 thin wrapper：compose up + exec analyzer
@@ -257,7 +257,7 @@ THRESHOLD_INVITES=
 THRESHOLD_ACTIVE=
 ```
 
-`.env.example` 是 checked-in 版本，`.env` 由用户 `cp && vim` 生成，`chmod 600`，`.gitignore` 排除。
+`.env.example` 是 checked-in 版本；实际配置文件为 `/data/conf/analytics.env`（0600 · 不进仓库 · 与机器② `server.env`/`standby.env` 同目录约定），由 `install -m 0600 .env.example /data/conf/analytics.env` 生成。`analyze.sh` 默认读取该路径，可用 `ANALYTICS_ENV_FILE` 覆盖；compose 将其单文件只读挂载为容器内 `/app/.env`，容器内脚本与 `.mjs` 统一读 `/app/.env`。
 
 ---
 
@@ -266,13 +266,13 @@ THRESHOLD_ACTIVE=
 ### 5.1 主流程
 
 **宿主机 `scripts/analyze.sh` 仅做 thin wrapper**：
-1. 加载 `.env`，创建 `DUMP_INBOX / REPORTS_DIR / LOG_DIR`；
+1. 加载 `/data/conf/analytics.env`（`ANALYTICS_ENV_FILE` 可覆盖），创建 `DUMP_INBOX / REPORTS_DIR / LOG_DIR`；
 2. `docker compose up -d --build postgres analyzer` 按需启动两个容器（`restart: "no"`，不常驻）；
 3. `docker compose exec -T analyzer bash /app/scripts/analyze-in-container.sh "$@"` 进入容器执行真实分析；
 4. 无论成败（含 Ctrl+C / SIGTERM）`docker compose stop postgres analyzer` 释放 CPU/内存——由 trap `EXIT/INT/TERM` 保证执行。
 
 **容器内 `scripts/analyze-in-container.sh` 负责完整编排**：
-1. 读取 `/app/.env`，创建 `/tmp/costra-analyze/<run>` 和日志文件；
+1. 读取 `/app/.env`（宿主机 env 文件经 compose 单文件只读挂载而来），创建 `/tmp/costra-analyze/<run>` 和日志文件；
 2. `pick_dump` 从 `${DUMP_INBOX}` 选择快照；
 3. 固定工作库 `costra_report_work`：开头 `DROP DATABASE IF EXISTS ... WITH (FORCE)` + `CREATE DATABASE`；
 4. `gunzip -c dump | psql -h postgres -d costra_report_work` 原样恢复；
@@ -686,7 +686,7 @@ function sparkline(counts) {
 
 ### 8.2 `send-mail.mjs` 结构（约 80 行）
 
-- 读 `.env`（用 `dotenv` 或手写 6 行解析器）
+- 读 `/app/.env`（用 `dotenv` 或手写 6 行解析器）
 - 读 report md
 - 从 md 首行标题 + summary 行提取 **subject 字段**（正则或干脆在 render.mjs 里额外输出一份 `${TMP_DIR}/subject.txt`，更稳）
 - `marked(md)` 得 html

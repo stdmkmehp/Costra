@@ -49,12 +49,11 @@ sudo mkdir -p /opt/costra-analyze
 sudo cp -r . /opt/costra-analyze/
 cd /opt/costra-analyze
 
-# 配置
-cp .env.example .env
-vim .env          # 填入真实值（PG_PASSWORD、SMTP 配置）
-chmod 600 .env
+# 配置（env 事实源在 /data/conf，不进部署目录）
+sudo install -m 0600 .env.example /data/conf/analytics.env
+sudo vim /data/conf/analytics.env   # 填入真实值（PG_PASSWORD、SMTP 配置）
 
-# 创建必要目录（按 .env 配置）
+# 创建必要目录（按 analytics.env 配置）
 mkdir -p /data/slave/backups
 mkdir -p /data/analyze/report
 mkdir -p /data/logs/analyze
@@ -87,7 +86,7 @@ cd /opt/costra-analyze
 
 ```bash
 # 填入真实收件人
-vim .env
+sudo vim /data/conf/analytics.env
 # 修改: MAIL_TO=your@email.com
 # 修改: SMTP_USER=yourqq@qq.com
 # 修改: SMTP_PASS=your_16char_authcode
@@ -166,8 +165,7 @@ cat /etc/cron.d/costra-analyze
 analytics/
 ├── docker-compose.yml          # 独立 PG + analyzer 双容器
 ├── Dockerfile.analyzer         # node + bash + gzip + postgresql-client
-├── .env.example                # 配置示例（checked-in）
-├── .env                        # 实际配置（gitignored · chmod 600）
+├── .env.example                # 配置示例（checked-in · 实际配置安装到 /data/conf/analytics.env）
 ├── package.json                # 依赖: nodemailer + marked
 ├── config.mjs                  # 阈值配置（users=5/ledgers=5/entries=20/invites=5/active=8）
 ├── scripts/
@@ -202,7 +200,7 @@ analytics/
 └── reports/                    # 本地调试输出目录（正式输出看 REPORTS_DIR）
 ```
 
-正式报告按 `.env` 写入：
+正式报告按 `/data/conf/analytics.env`（`REPORTS_DIR`）写入：
 
 ```
 /data/analyze/report/daily/YYYY-MM-DD.md
@@ -214,7 +212,9 @@ analytics/
 
 ---
 
-## 配置说明（.env）
+## 配置说明（/data/conf/analytics.env）
+
+配置文件事实源为 `/data/conf/analytics.env`（0600，独立于部署目录，与机器② 的 `server.env`/`standby.env` 同目录约定）；可用环境变量 `ANALYTICS_ENV_FILE` 覆盖（本机开发：`ANALYTICS_ENV_FILE=./.env ./scripts/analyze.sh`）。`analyze.sh` 在宿主机加载后经 compose 单文件只读挂载映射为容器内 `/app/.env`，容器内脚本与 `.mjs` 统一读该路径。
 
 | 变量 | 说明 | 默认/示例 |
 |---|---|---|
@@ -377,7 +377,7 @@ docker compose exec postgres psql -U analyze -d analyze \
 ### 阈值规则
 
 超过阈值时，报告中该节显示前 N 条明细 + 分维度统计，不会丢失汇总数据。
-阈值可在 `.env` 中覆盖（`THRESHOLD_USERS` 等），留空则使用 `config.mjs` 默认值。
+阈值可在 `/data/conf/analytics.env` 中覆盖（`THRESHOLD_USERS` 等），留空则使用 `config.mjs` 默认值。
 
 ---
 

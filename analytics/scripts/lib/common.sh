@@ -25,7 +25,7 @@ die() {
 
 require_env_file() {
   local env_file="$1"
-  [[ -f "${env_file}" ]] || die ".env 文件不存在: ${env_file}  请先 cp .env.example .env 并填写配置"
+  [[ -f "${env_file}" ]] || die "env 文件不存在: ${env_file} · 请参照 .env.example 创建并填写配置（0600）"
 }
 
 load_env() {

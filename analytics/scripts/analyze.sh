@@ -47,7 +47,7 @@
 #   # stdout 模式（不发邮件，直接输出报告）
 #   ./analyze.sh --stdout --window 7d
 #
-#环境变量（需在 analytics/.env 中配置）:
+#环境变量（默认读 /data/conf/analytics.env，可用 ANALYTICS_ENV_FILE 覆盖）:
 #   DUMP_INBOX   dump 文件存放目录
 #   REPORTS_DIR  生成报告的输出目录
 #   LOG_DIR      日志目录（可选，默认: analytics/logs）
@@ -60,9 +60,13 @@ ANALYZE_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
 
-ENV_FILE="${ANALYZE_ROOT}/.env"
+# env 事实源：/data/conf/analytics.env（与机器② 的 server.env / standby.env 同目录约定）；
+# 本机开发无 /data/conf 时显式回退：ANALYTICS_ENV_FILE="${ANALYZE_ROOT}/.env"
+ENV_FILE="${ANALYTICS_ENV_FILE:-/data/conf/analytics.env}"
 require_env_file "${ENV_FILE}"
 load_env "${ENV_FILE}"
+# 供 compose 插值：env 单文件只读挂载为容器内 /app/.env（见 docker-compose.yml）
+export ANALYTICS_ENV_FILE="${ENV_FILE}"
 
 : "${DUMP_INBOX:?需要设置 DUMP_INBOX}"
 : "${REPORTS_DIR:?需要设置 REPORTS_DIR}"

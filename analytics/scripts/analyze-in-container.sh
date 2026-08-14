@@ -12,6 +12,7 @@ source "${SCRIPT_DIR}/lib/parse-args.sh"
 
 parse_args "$@"
 
+# /app/.env 由宿主机 env 文件（默认 /data/conf/analytics.env）经 compose 单文件只读挂载而来
 ENV_FILE="${ANALYZE_ROOT}/.env"
 require_env_file "${ENV_FILE}"
 load_env "${ENV_FILE}"
