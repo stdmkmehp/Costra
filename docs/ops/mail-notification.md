@@ -81,7 +81,7 @@ error-report 计划跑在机器①（prod 主库机）。部署前把 §3.3 的�
 
 ### 3.1 配置键与读取
 
-env 文件（如 `server.env`，0600）约定键：
+env 文件（`/data/conf/report.env`，0600 · 独立于 `server.env`，授权码不混进应用配置）约定键：
 
 ```dotenv
 SMTP_HOST=smtp.qq.com
@@ -93,8 +93,9 @@ MAIL_TO=<收件邮箱>           # 多收件人用逗号分隔
 ```
 
 读取模式对齐 `check-replication.sh` 的 `WECOM_WEBHOOK_URL`：**环境变量优先**，为空时再
-`grep '^KEY=' "${COSTRA_ENV_FILE}" | tail -1 | cut -d= -f2-`。`SMTP_PASS` 为空 → 邮件通道
-整体禁用（只写日志），与 webhook 未配置时的语义一致。
+`grep '^KEY=' "${REPORT_ENV_FILE}" | tail -1 | cut -d= -f2-`（`REPORT_ENV_FILE` 默认
+`/data/conf/report.env`，可用 `COSTRA_ERROR_REPORT_ENV_FILE` 覆盖）。`SMTP_PASS` 为空 →
+邮件通道整体禁用（只写日志），与 webhook 未配置时的语义一致。
 
 ### 3.2 邮件文件构造（CRLF 是硬要求）
 
@@ -216,8 +217,9 @@ QUIT
 - 增量扫描用 **inode 追踪**（状态 `path|dev:ino|offset` + stat 比对）而非 size 倒挂猜测，
   copytruncate/rename/手工 truncate 三类轮转场景均有无遗漏或诚实告警（fixture 已验证）；
 - `--test-send` 子命令即 §2.4 的 465 出站验证手段（机器① 部署时先跑它）；
-- 部署步骤：机器① `server.env` 追加 `SMTP_*`/`MAIL_*` 六键（授权码重新生成，旧码已暴露）
-  → `./maintenance.sh error-report --test-send` 冒烟 → `./maintenance.sh install-cron` 重装 cron
+- 部署步骤：机器① 新建 `/data/conf/report.env`（0600）写入 `SMTP_*`/`MAIL_*` 六键
+  （授权码重新生成，旧码已暴露）→ `./maintenance.sh error-report --test-send` 冒烟
+  → `./maintenance.sh install-cron` 重装 cron
   → 确认 `timedatectl` 时区为 Asia/Shanghai（cron 09:00 按系统时区）。
 
 未验证项（目前告警量级下无影响，先不证）：QQ 免费邮箱的日发送频率/额度上限。

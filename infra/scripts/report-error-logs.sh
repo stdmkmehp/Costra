@@ -35,7 +35,8 @@
 #
 # 推送语义（对齐 check-replication.sh 的 webhook 约定）：
 #   - env 键：SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS / MAIL_FROM / MAIL_TO
-#     （环境变量优先，其次 ${COSTRA_ENV_FILE}；MAIL_TO 多收件人逗号分隔）；
+#     （环境变量优先，其次 ${REPORT_ENV_FILE}（默认 /data/conf/report.env ·
+#     与 server.env 解耦，授权码不混进应用配置）；MAIL_TO 多收件人逗号分隔）；
 #   - SMTP_USER/SMTP_PASS/MAIL_TO 任一为空 → 通道禁用，只写日志，退出码仍 0；
 #   - 零命中也推送"平安邮件"（心跳语义：连收不到平安邮件本身就说明任务/通道挂了 · 2026-08-14 变更）；
 #   - 发送失败 log_error（进自身日志被次日扫到）但不以非零退出，不阻断主任务。
@@ -54,6 +55,7 @@
 # 测试接缝（本地 fixture 验证用 · 生产不设）：
 #   COSTRA_ERROR_REPORT_LOG_DIR    覆盖 /data/logs
 #   COSTRA_ERROR_REPORT_STATE_DIR  覆盖 /var/lib/costra/error-report
+#   COSTRA_ERROR_REPORT_ENV_FILE   覆盖 /data/conf/report.env
 #
 # 退出码：0 = 扫描完成（含通道禁用/发送失败的降级路径）· 1 = 脚本自身故障
 # =============================================================================
@@ -65,6 +67,8 @@ source "${SCRIPT_DIR}/lib/common.sh"
 LOG_DIR="${COSTRA_ERROR_REPORT_LOG_DIR:-/data/logs}"
 STATE_DIR="${COSTRA_ERROR_REPORT_STATE_DIR:-/var/lib/costra/error-report}"
 STATE_FILE="${STATE_DIR}/offsets"
+# 邮件凭据独立配置文件（与 server.env 解耦 · 授权码不混进应用配置）
+REPORT_ENV_FILE="${COSTRA_ERROR_REPORT_ENV_FILE:-${COSTRA_CONF_DIR}/report.env}"
 
 BODY_LIMIT=16384        # 邮件正文全局字节上限（远低于 QQ SIZE 73400320 · 双保险）
 CATEGORY_BODY_CAP=${COSTRA_ERROR_REPORT_CATEGORY_CAP:-4096}   # 每日志类别正文字节配额（防单类刷屏）
@@ -369,8 +373,8 @@ _scan_one() {
 _load_mail_config() {
   local key val
   for key in SMTP_HOST SMTP_PORT SMTP_USER SMTP_PASS MAIL_FROM MAIL_TO; do
-    if [[ -z "${!key:-}" ]] && [[ -f "${COSTRA_ENV_FILE}" ]]; then
-      val=$(grep "^${key}=" "${COSTRA_ENV_FILE}" 2>/dev/null | tail -1 | cut -d= -f2- || true)
+    if [[ -z "${!key:-}" ]] && [[ -f "${REPORT_ENV_FILE}" ]]; then
+      val=$(grep "^${key}=" "${REPORT_ENV_FILE}" 2>/dev/null | tail -1 | cut -d= -f2- || true)
       [[ -n "${val}" ]] && printf -v "${key}" '%s' "${val}"
     fi
   done
@@ -444,7 +448,7 @@ _deliver() {
 
   _load_mail_config
   if ! _channel_ready; then
-    log_warn "SMTP_USER/SMTP_PASS/MAIL_TO 未配齐（${COSTRA_ENV_FILE}）· 邮件通道禁用 · 报告仅留日志"
+    log_warn "SMTP_USER/SMTP_PASS/MAIL_TO 未配齐（${REPORT_ENV_FILE}）· 邮件通道禁用 · 报告仅留日志"
     cat "${body}"
     return 0
   fi
@@ -464,7 +468,7 @@ _deliver() {
 if [[ "${TEST_SEND}" == "1" ]]; then
   _load_mail_config
   if ! _channel_ready; then
-    die "--test-send 需要 SMTP_USER/SMTP_PASS/MAIL_TO 配齐（环境变量或 ${COSTRA_ENV_FILE}）"
+    die "--test-send 需要 SMTP_USER/SMTP_PASS/MAIL_TO 配齐（环境变量或 ${REPORT_ENV_FILE}）"
   fi
   TEST_BODY="${TMPD}/test-body.txt"
   {

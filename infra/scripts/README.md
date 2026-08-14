@@ -60,7 +60,7 @@ infra/scripts/
 ./maintenance.sh purge-sessions        # 清已过期 session（每日 · 过期 +30 天审计保留）
 ./maintenance.sh purge-invites         # 清过期邀请（每日 · 过期 +30 天审计保留）
 ./maintenance.sh purge-all             # 顺序跑全部 purge
-./maintenance.sh error-report          # 扫 /data/logs ≥error 级日志并邮件推送（每日 09:00 · 零命中发平安邮件作心跳 · 需 server.env 配 SMTP_*）
+./maintenance.sh error-report          # 扫 /data/logs ≥error 级日志并邮件推送（每日 09:00 · 零命中发平安邮件作心跳 · 需 /data/conf/report.env 配 SMTP_*）
 ./maintenance.sh error-report --test-send   # 通道冒烟：跳过扫描发一封测试邮件（465 出站验证）
 ./maintenance.sh list                  # 列出可用任务
 
