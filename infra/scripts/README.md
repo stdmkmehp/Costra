@@ -25,15 +25,17 @@ infra/scripts/
 ├── 09-verify-gates.sh         # 闸门 5 条验证
 │
 ├── redeploy.sh                # ⭐ 安全重部署（备份镜像 + 构建 + migration +回滚）
-├── backup-db.sh               # DB 定时备份（pg_dump + gzip · 被 maintenance.sh backup 委托）
+├── backup-db.sh               # DB/avatars 备份（pg_dump + gzip · 支持主/从库目标 · 原子发布 + flock）
 ├── import-holidays.sh         # 节假日 JSON → workday_calendars 表（--target prod|verify · 幂等 upsert）
 ├── migrate-ledger-asset.sh    # 停服迁移 · 账本资产回填（--target prod|verify · --verify 仅校验 · 幂等）
-├── maintenance.sh             # ⭐ 主库定时任务入口（backup / replication-check / purge-*）
+├── maintenance.sh             # ⭐ 主库定时任务入口（backup-avatars / replication-check / purge-* / error-report）
 │
 ├── setup-replication-primary.sh  # PG 主库流复制配置（机器① · 幂等 · 见 pg-standby-backup 方案）
 ├── setup-replication-standby.sh  # PG 从库搭建（机器② · pg_basebackup + hot standby）
+├── install-standby-cron.sh       # 从库 cron 安装（机器② · check + backup 组合 · 幂等）
 ├── recover-primary-from-standby.sh # 双阶段反向恢复主库（prepare / activate / status）
 ├── check-replication.sh          # PG 主从复制健康检查（cron · 异常 exit 1 + 企业微信告警）
+├── report-error-logs.sh          # /data/logs ≥error 级日志每日扫描 + 邮件推送（offset 增量 · 见 mail-notification.md）
 └── apply-host-tuning.sh          # 宿主机内核参数（sysctl + THP · status/apply/revert · 幂等）
 ```
 
@@ -51,12 +53,15 @@ infra/scripts/
 ./maintenance.sh install-cron          # 先 --dry-run 预览
 
 # 手动执行（cron 亦调这些）：
-./maintenance.sh backup                # 委托 backup-db.sh（原子发布 + flock）
+./maintenance.sh backup                # 全量 DB+avatars（仅手动 · DB 备份职责已迁从库）
+./maintenance.sh backup-avatars        # 仅打包 avatars（prod cron 唯一备份任务）
 ./maintenance.sh replication-check     # 配置复制后检查槽/WAL/纯异步状态
 ./maintenance.sh purge-idempotency     # 清过期幂等键（每日 · 过期 +30 天审计保留）
 ./maintenance.sh purge-sessions        # 清已过期 session（每日 · 过期 +30 天审计保留）
 ./maintenance.sh purge-invites         # 清过期邀请（每日 · 过期 +30 天审计保留）
 ./maintenance.sh purge-all             # 顺序跑全部 purge
+./maintenance.sh error-report          # 扫 /data/logs ≥error 级日志并邮件推送（每日 09:00 · 零命中发平安邮件作心跳 · 需 server.env 配 SMTP_*）
+./maintenance.sh error-report --test-send   # 通道冒烟：跳过扫描发一封测试邮件（465 出站验证）
 ./maintenance.sh list                  # 列出可用任务
 
 # 预览不改（purge 跑 SELECT count 预览将删行数）：
@@ -99,7 +104,7 @@ node scripts/fetch-holidays.mjs 2027
 
 ## PG 从库（异步流复制 · 备份 · 只读）
 
-> 方案文档：[`docs/ops/pg-standby-backup.md`](../../docs/ops/pg-standby-backup.md)。机器①由 `maintenance.sh install-cron` 安装主库槽/WAL检查；机器②独立安装从库新鲜度门禁与备份 cron。
+> 方案文档：[`docs/ops/pg-standby-backup.md`](../../docs/ops/pg-standby-backup.md)。机器①由 `maintenance.sh install-cron` 安装主库槽/WAL检查；机器②由 `install-standby-cron.sh` 安装从库新鲜度门禁与备份 cron。
 
 ```bash
 # 机器①（主库）：低峰窗口执行 · 唯一一次 PG recreate
@@ -108,7 +113,7 @@ node scripts/fetch-holidays.mjs 2027
 # 机器②（从库）：一次性搭建（basebackup + 启动 hot standby）
 ./setup-replication-standby.sh
 
-# 日常：健康检查（主库/从库机器均可跑 · cron 每 5 分钟）
+# 日常：健康检查（主库/从库机器均可跑 · cron 每小时）
 ./check-replication.sh
 ```
 
@@ -116,6 +121,7 @@ node scripts/fetch-holidays.mjs 2027
 |---|---|---|---|
 | `setup-replication-primary.sh` | ① | 一次性/恢复 | replicator（重跑不旋密）+ slot + managed HBA + 异步断言；lost 槽和密码轮换均需显式 flag |
 | `setup-replication-standby.sh` | ②（staging） | 首次/修复 | 空目录 basebackup；repair 复验 manifest 并重建身份；凭据预置模式只原子换 passfile、不重启 |
+| `install-standby-cron.sh` | ②（staging） | 一次性/变更 | 幂等写 `/etc/cron.d/costra-standby`（check && backup 组合 · 落 `/data/slave/backups`）+ logrotate；防呆校验容器与 standby.env |
 | `recover-primary-from-standby.sh` | ① | 灾难恢复 | `prepare/activate/status` 双阶段持久状态；候选验证、来源停机门禁、PGDATA 可续作切换 |
 | `check-replication.sh` | ①/② | cron | 主库查 slot/WAL/async；从库查 latest-end→receive→replay；webhook 同时验 HTTP 与 `errcode` |
 

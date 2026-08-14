@@ -2,7 +2,7 @@
 
 > **日期**：2026-07-08；2026-08-14 同步 PostgreSQL standby 监控落地
 > **背景**：`docs/db/data-bloat-audit-report.md` 采纳方案 B。主库定时任务统一走 `maintenance.sh`；从库因与 staging 共机，保持独立 `/etc/cron.d/costra-standby`。
-> **当前任务集**：`backup` + `replication-check`（仅复制已配置的主库生成 cron）+ purge-* + `renew-cert`。
+> **当前任务集**：`backup` + `replication-check`（仅复制已配置的主库生成 cron）+ purge-* + `renew-cert` + `error-report`（2026-08-14 起 · 扫 /data/logs ≥error 级日志并邮件推送）。
 
 ---
 
@@ -33,12 +33,13 @@ infra/scripts/maintenance.sh   ← 唯一入口 · 子命令分发器
 | 子命令 | 作用 | 频率建议 | 透传参数 |
 |---|---|---|---|
 | `backup` | 委托 `backup-db.sh` | 每 4h 错峰 | `--retain-days N` / `--no-cleanup` / `--prefix` |
-| `replication-check` | 主库复制槽/WAL/纯异步检查 | 每 5 分钟；仅 `server.env` 有完整复制三件套时生成 | 透传给 `check-replication.sh` |
+| `replication-check` | 主库复制槽/WAL/纯异步检查 | 每小时；仅 `server.env` 有完整复制三件套时生成 | 透传给 `check-replication.sh` |
 | `purge-idempotency` | 清过期幂等键（过期 +30 天审计保留） | 每日 | — |
 | `purge-sessions` | 清已过期 session（过期 +30 天审计保留） | 每日 | — |
 | `purge-invites` | 清过期邀请（过期 +30 天审计保留） | 每日 | — |
 | `purge-all` | 顺序跑全部 purge | 手动/兜底 | — |
 | `renew-cert` | certbot 证书续期（到期才续 · 续到才 reload nginx）| 每日 | — |
+| `error-report` | 委托 `report-error-logs.sh`：扫 /data/logs ≥error 级日志（inode 追踪增量 · 按类别分节 + 每类配额封顶）· 零命中发平安邮件作心跳 | 每日 09:00 | `--test-send` |
 | `install-cron` | 用 `${COSTRA_ROOT}` 展开生成 `/etc/cron.d/costra-maintenance` | 一次性 | — |
 | `list` | 列出所有任务 | 手动 | — |
 
@@ -216,16 +217,18 @@ SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # ── Costra 运维定时任务 · 全部走 maintenance.sh 统一入口（由 install-cron 生成）──
-# 备份：每 4h 错峰（偏移 27 分）
-27 3,7,11,15,19,23 * * * root /root/Costra/infra/scripts/maintenance.sh backup           >> /data/logs/maintenance-backup.log 2>&1
+# avatars 备份：每 4h 错峰（偏移 27 分 · 2026-08-14 起 DB 备份迁从库，prod 仅打 avatars）
+27 3,7,11,15,19,23 * * * root /root/Costra/infra/scripts/maintenance.sh backup-avatars   >> /data/logs/maintenance-backup.log 2>&1
 # 主库复制检查：仅 server.env 配置了 REPLICATOR_PW + 主从 IP 时生成
-*/5 * * * * root /root/Costra/infra/scripts/maintenance.sh replication-check >> /data/logs/check-replication.log 2>&1
+47 * * * * root /root/Costra/infra/scripts/maintenance.sh replication-check >> /data/logs/check-replication.log 2>&1
 # 幂等键 / session / invite：每日 04 点错峰
 7 4 * * * root /root/Costra/infra/scripts/maintenance.sh purge-idempotency >> /data/logs/maintenance-purge.log 2>&1
 17 4 * * * root /root/Costra/infra/scripts/maintenance.sh purge-sessions >> /data/logs/maintenance-purge.log 2>&1
 27 4 * * * root /root/Costra/infra/scripts/maintenance.sh purge-invites >> /data/logs/maintenance-purge.log 2>&1
 # 证书续期：每天 03:17
 17 3 * * * root /root/Costra/infra/scripts/maintenance.sh renew-cert >> /data/logs/maintenance-cert.log 2>&1
+# error 级日志扫描推送：每天 09:00（邮件通道见 docs/ops/mail-notification.md）
+0 9 * * * root /root/Costra/infra/scripts/maintenance.sh error-report >> /data/logs/maintenance-error-report.log 2>&1
 ```
 
 `install-cron` 子命令的生成逻辑（用非引号 heredoc 展开 `${COSTRA_ROOT}` · 与 `08-finalize-nginx.sh` certbot cron 同款做法）：
@@ -236,8 +239,8 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-27 3,7,11,15,19,23 * * * root ${COSTRA_ROOT}/infra/scripts/maintenance.sh backup >> /data/logs/maintenance-backup.log 2>&1
-*/5 * * * * root ${COSTRA_ROOT}/infra/scripts/maintenance.sh replication-check >> /data/logs/check-replication.log 2>&1
+27 3,7,11,15,19,23 * * * root ${COSTRA_ROOT}/infra/scripts/maintenance.sh backup-avatars >> /data/logs/maintenance-backup.log 2>&1
+47 * * * * root ${COSTRA_ROOT}/infra/scripts/maintenance.sh replication-check >> /data/logs/check-replication.log 2>&1
 7 4 * * * root ${COSTRA_ROOT}/infra/scripts/maintenance.sh purge-idempotency >> /data/logs/maintenance-purge.log 2>&1
 17 4 * * * root ${COSTRA_ROOT}/infra/scripts/maintenance.sh purge-sessions >> /data/logs/maintenance-purge.log 2>&1
 27 4 * * * root ${COSTRA_ROOT}/infra/scripts/maintenance.sh purge-invites >> /data/logs/maintenance-purge.log 2>&1
@@ -266,6 +269,7 @@ EOF
 2. **旧 backup cron**：若此前已按 `backup-db.sh` 旧注释单独配过 backup 的 cron，落地本方案时必须**移除旧行**，避免与 `maintenance.sh backup` 重复备份（如何检查/删除见对话说明）。
 3. **`backup-db.sh` 保留独立可用**：它自身持有按容器+目录区分的 `flock`，因此经 maintenance、从库 cron 或人工直调都不会重入；归档以 partial 校验后原子发布。
 4. **复制任务条件生成**：只有 `REPLICATOR_PW`、`PG_PRIMARY_LAN_IP`、`PG_STANDBY_LAN_IP` 三项均非空才写入 `replication-check` cron；配置变化后必须重跑 `maintenance.sh install-cron`。
+5. **DB 备份迁从库（2026-08-14）**：从库上线后，prod cron 的 `backup` 改为 `backup-avatars`（`backup-db.sh --avatars-only`，仅打包 uploads/avatars——文件不经复制流，只有 prod 能备份）；DB 备份由机器② 的 `install-standby-cron.sh` 安装（check && backup 组合，落 `/data/slave/backups`）。`maintenance.sh backup` 全量入口保留为手动应急。落地时需在两机各重跑一次对应 install 脚本。
 
 ---
 

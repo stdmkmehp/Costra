@@ -1,4 +1,4 @@
-# Costra 用户行为日报分析 · 技术方案 v0.2.4
+# Costra 用户行为日报分析 · 技术方案 v0.2.5
 
 - 作者：Ops
 - 日期：2026-07-21（修订：2026-08-14）
@@ -10,6 +10,7 @@
   - **v0.2.2（2026-07-24）**：将 node 运行环境移入独立 Docker 容器 · 宿主机不再需要 Node.js · 新增 `costra-analyze-node` 常驻容器（node:18-alpine + 预装 npm 依赖）
   - **v0.2.3（2026-08-04）**：宿主机入口降级为 thin wrapper · 完整分析编排迁入 analyzer 容器 · 宿主机不再需要 Node/gzip/psql · 固定工作库 `costra_report_work` 每次开头强制重建、结束清理
   - **v0.2.4（2026-08-14）**：容器改按需启停（`restart: "no"` · `analyze.sh` 跑完自动 `docker compose stop`）+ 加 `deploy.resources.limits`（PG 512M/0.5CPU · node 256M/0.5CPU），释放资源给同机 staging 栈与 standby 从库
+  - **v0.2.5（2026-08-14）**：dump 输入切换为 standby 从库本机直落（`pg-standby-backup.md` §5.1 · `standby-` 前缀 · cron 27 分每 4h，与 prod backup-avatars 同刻），§2.1 移除已下线的"prod 生成 + scp"描述
 
 > 本文只描述"落地实现"，覆盖目标 / 输入约定 / CLI 抽象 / 目录布局 / 主流程 / SQL 全文 / 渲染 template / 邮件通道 / 失败告警 / cron 配置 / 工作量。
 
@@ -99,10 +100,10 @@ ss -ltnp | grep -q '127.0.0.1:15432'
 
 ## 2. 输入约定与假设
 
-### 2.1 Prod 侧（不改动）
+### 2.1 Dump 来源侧（不改动）
 
-- `backup-db.sh` cron `17 1,5,9,13,17,21 * * *` 每 4 小时生成 `/data/backups/scheduled-YYYYMMDD-HHMMSS.sql.gz`
-- 生成后 `scp` 到 analyze host 目录（下称 `${DUMP_INBOX}`），保留 14 天
+- 机器②（standby 从库 = analyze host）由 `install-standby-cron.sh` 安装 cron：`27 3,7,11,15,19,23 * * *` 每 4 小时在复制健康门禁通过后直接生成 `${DUMP_INBOX}/standby-YYYYMMDD-HHMMSS.sql.gz`（`${DUMP_INBOX}=/data/slave/backups` · 本机直落，无 scp）
+- 备份生命周期由 `backup-db.sh` 按 `standby-` 前缀保留 14 天
 - Dump 是 `pg_dump -U costra -d costra --no-owner --no-acl` 的 gzip 输出（明文 SQL）
 
 ### 2.2 Analyze host 侧的假设

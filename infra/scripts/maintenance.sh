@@ -2,19 +2,22 @@
 # =============================================================================
 # Costra · 运维定时任务统一入口（cron 唯一入口 · 子命令分发）
 # =============================================================================
-# 主库定时任务（备份 + 复制检查 + 各表清理）统一走本脚本；standby 仍用独立 cron。
+# 主库定时任务（avatars 备份 + 复制检查 + 各表清理）统一走本脚本；standby 用独立
+# cron（install-standby-cron.sh · DB 备份职责已迁从库，见 pg-standby-backup.md §5）。
 #
 # 用法：
 #   ./maintenance.sh <task> [options]
 #
 # 任务：
-#   backup [--retain-days N|--no-cleanup|--prefix P]  委托 backup-db.sh
+#   backup [--retain-days N|--no-cleanup|--prefix P]  委托 backup-db.sh 全量（仅手动 · 不进 cron）
+#   backup-avatars                                    委托 backup-db.sh --avatars-only（cron）
 #   replication-check                                主库复制槽/WAL/异步状态检查
 #   purge-idempotency                                 清过期幂等键（每日）
 #   purge-sessions                                    清已过期 session（每日）
 #   purge-invites                                     清过期邀请（每日）
 #   purge-all                                         顺序跑全部 purge-*
 #   renew-cert                                        certbot renew（到期才续 · 续到新证书才 reload nginx）
+#   error-report                                      扫 /data/logs ≥error 级日志并邮件推送（每日 09:00 · 委托 report-error-logs.sh）
 #   install-cron                                      用 ${COSTRA_ROOT} 展开生成 /etc/cron.d/costra-maintenance
 #   list                                              列出可用任务
 #
@@ -40,13 +43,17 @@ LOG_DIR="/data/logs"
 # 任务名必须是本脚本支持的子命令；install-cron 遍历本表生成 /etc/cron.d/costra-maintenance。
 # 调整时间 / 增删定时任务：只改本数组即可，无需改 install-cron 或任务逻辑。
 # =============================================================================
+# 注：DB 备份已迁往从库（/data/slave/backups · install-standby-cron.sh），
+# prod 不再跑全量 backup；backup-avatars 只打包 uploads/avatars（文件不经复制流，
+# 只有 prod 能备份）。
 declare -a CRON_SCHEDULE=(
-  "backup|27 3,7,11,15,19,23 * * *|maintenance-backup.log"
-  "replication-check|*/5 * * * *|check-replication.log"
+  "backup-avatars|27 3,7,11,15,19,23 * * *|maintenance-backup.log"
+  "replication-check|47 * * * *|check-replication.log"
   "purge-idempotency|7 4 * * *|maintenance-purge.log"
   "purge-sessions|17 4 * * *|maintenance-purge.log"
   "purge-invites|27 4 * * *|maintenance-purge.log"
   "renew-cert|17 3 * * *|maintenance-cert.log"
+  "error-report|0 9 * * *|maintenance-error-report.log"
 )
 
 # --- 解析：先让 common 扫出 --dry-run/-y，再抽任务名 + 透传参数 ---
@@ -56,12 +63,12 @@ TASK=""
 declare -a PASSTHRU=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    backup|replication-check|purge-idempotency|purge-sessions|purge-invites|purge-all|renew-cert|install-cron|list)
+    backup|backup-avatars|replication-check|purge-idempotency|purge-sessions|purge-invites|purge-all|renew-cert|error-report|install-cron|list)
       [[ -z "${TASK}" ]] || die "只能指定一个任务（已有：${TASK}）"
       TASK=$1; shift ;;
     --dry-run|-y|--yes) shift ;;       # common 已处理 · noop
     -h|--help)
-      grep '^#' "$0" | sed 's/^# \{0,1\}//' | head -24
+      grep '^#' "$0" | sed 's/^# \{0,1\}//' | head -26
       exit 0 ;;
     *) PASSTHRU+=("$1"); shift ;;       # 透传给委托脚本（如 backup 的 --retain-days）
   esac
@@ -198,7 +205,7 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
   mkdir -p "${LOG_DIR}"
   local log_name
-  for log_name in maintenance-backup.log check-replication.log maintenance-purge.log maintenance-cert.log; do
+  for log_name in maintenance-backup.log check-replication.log maintenance-purge.log maintenance-cert.log maintenance-error-report.log; do
     touch "${LOG_DIR}/${log_name}"
     chmod 0600 "${LOG_DIR}/${log_name}"
   done
@@ -247,13 +254,24 @@ case "${TASK}" in
   backup)
     # 委托 backup-db.sh · export 让子脚本继承 DRY_RUN/ASSUME_YES（common.sh 用 := 不覆盖已存在值）
     export DRY_RUN ASSUME_YES
-    log_info "委托 → backup-db.sh ${PASSTHRU[*]}"
-    "${SCRIPT_DIR}/backup-db.sh" "${PASSTHRU[@]}"
+    log_info "委托 → backup-db.sh ${PASSTHRU[*]:-}"
+    "${SCRIPT_DIR}/backup-db.sh" ${PASSTHRU[@]+"${PASSTHRU[@]}"}
+    ;;
+  backup-avatars)
+    # prod cron 唯一备份任务：只打包 avatars（DB 备份已迁从库）
+    export DRY_RUN ASSUME_YES
+    log_info "委托 → backup-db.sh --avatars-only ${PASSTHRU[*]:-}"
+    "${SCRIPT_DIR}/backup-db.sh" --avatars-only ${PASSTHRU[@]+"${PASSTHRU[@]}"}
     ;;
   replication-check)
     export DRY_RUN ASSUME_YES
-    log_info "委托 → check-replication.sh ${PASSTHRU[*]}"
-    "${SCRIPT_DIR}/check-replication.sh" "${PASSTHRU[@]}"
+    log_info "委托 → check-replication.sh ${PASSTHRU[*]:-}"
+    "${SCRIPT_DIR}/check-replication.sh" ${PASSTHRU[@]+"${PASSTHRU[@]}"}
+    ;;
+  error-report)
+    export DRY_RUN ASSUME_YES
+    log_info "委托 → report-error-logs.sh ${PASSTHRU[*]:-}"
+    "${SCRIPT_DIR}/report-error-logs.sh" ${PASSTHRU[@]+"${PASSTHRU[@]}"}
     ;;
   purge-idempotency)
     require_cmd docker; _assert_pg_healthy; _load_pg_pw
@@ -281,7 +299,7 @@ case "${TASK}" in
     do_renew_cert
     ;;
   list)
-    log_info "可用任务：backup · replication-check · purge-idempotency · purge-sessions · purge-invites · purge-all · renew-cert · install-cron · list"
+    log_info "可用任务：backup · backup-avatars · replication-check · purge-idempotency · purge-sessions · purge-invites · purge-all · renew-cert · error-report · install-cron · list"
     ;;
 esac
 
