@@ -104,7 +104,7 @@ DUMP_INBOX: ${inbox || DUMP_INBOX || '(未知)'}
 ${inboxList || '(空)'}
 
 请检查:
-1. 机器② 的 /etc/cron.d/costra-standby 备份 cron 是否正常运行（/data/logs/standby-backup.log）
+1. 机器② 的 /etc/cron.d/costra-standby 备份 cron 是否正常运行（/data/logs/maintenance/standby-backup.log）
 2. check-replication.sh 复制健康门禁是否通过（复制不健康会阻断备份产出）
 3. analyze host 磁盘空间是否充足
 

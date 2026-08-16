@@ -345,7 +345,7 @@ cd /root/Costra/infra/scripts
 1. `COSTRA_ENV_FILE` 前缀只为读取 `standby.env` 的可选 webhook；SQL 走容器内 Unix socket，不读取 `PG_COSTRA_PW`。
 2. **备份前串联健康检查**：从库若失联或仍在追历史 WAL，`pg_dump` 依然可能产出格式正常但陈旧的文件；门禁用 latest-end/receive/replay 三段进度 fail closed。
 3. **与分析栈错峰**：备份固定在 27 分（2026-08-14 起与 prod backup-avatars 同刻——两机各自执行，不存在跨机错峰问题）；必须避开分析窗口——分析栈恢复 dump 时是全机内存峰值。
-4. `backup-db.sh` 自带 `flock`，cron 外层无需再加锁；整条组合用 `{ check && backup; } >>log 2>&1`，确保检查和备份输出进入同一日志（`/data/logs/standby-backup.log`）。
+4. `backup-db.sh` 自带 `flock`，cron 外层无需再加锁；整条组合用 `{ check && backup; } >>log 2>&1`，确保检查和备份输出进入同一日志（`/data/logs/maintenance/standby-backup.log`）。
 
 > 防呆：脚本要求本机存在 `costra-standby-pg` 容器与 `/data/conf/standby.env`，在机器① 或未搭建从库时直接拒绝。logrotate 模板与主库共用（`infra/logrotate/costra-ops`）由脚本一并安装。从库机器**不要**运行 `maintenance.sh install-cron`：其 purge-* 会误操作 staging 栈并在只读副本失败。
 

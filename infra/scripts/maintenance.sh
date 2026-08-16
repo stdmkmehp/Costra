@@ -37,7 +37,9 @@ PG_USER="costra"
 PG_DB="costra"
 
 # 所有定时任务日志统一目录（唯一定义处 · cron 任务与手动执行的输出都落在这里）
-LOG_DIR="/data/logs"
+# 独立子目录与 server/redis/nginx/postgres 等服务日志平级；perf-metrics.log 时序
+# 数据同属本目录（monitor-perf.sh 直写）；logrotate 与 report-error-logs.sh 同步适配
+LOG_DIR="/data/logs/maintenance"
 
 # backup-avatars 异地副本的连接参数文件（0600 · 只在 prod 机器 · 绝不进仓库）
 # 需要四个键：SLAVE_HOST / SLAVE_USER / SLAVE_PASSWORD / SLAVE_BACKUP_DIR

@@ -5,12 +5,18 @@
 # （standby 机 · 见 docs/ops/pg-standby-backup.md §5.2）装到
 # /etc/logrotate.d/costra-ops，机器上不手改。
 #
-# 覆盖四类：
-#   1. 运维脚本日志（cron >> 追加 · maintenance-*.log / check-replication / standby-backup）
+# 覆盖四类（全部按目录 glob 声明 · 同目录所有 .log 同策略）：
+#   1. 运维脚本日志 + 宿主机性能时序（统一落 /data/logs/maintenance/ 子目录：
+#      maintenance-*.log / check-replication.log / standby-backup.log /
+#      perf-metrics.log——monitor-perf.sh report 读取 当前+.1+.N.gz 并集 · 轮转不丢样本）
 #   2. PG collector 固定日志（主库 + standby · PG 自身切分已关 log_rotation_*=0）
 #   3. 容器应用落盘日志（server / redis / nginx · 固定文件名 · 应用自身不轮转）
-#   4. 宿主机性能时序数据（monitor-perf.sh collect 每小时追加一行 TSV ·
-#      monitor-perf.sh report 读取 当前+.1+.N.gz 并集 · 轮转不丢样本）
+#
+# 目录 glob 安全性：轮转归档名为 <file>.1 / <file>.N.gz，不以 .log 结尾，不会被
+# glob 二次命中（无重复轮转）；各 glob 目录互不重叠（无 duplicate log entry）；
+# 新增日志文件落进已声明目录即自动纳入轮转，nginx vhost 拆分日志
+# （如 costra.error.log）无需回来改本文件。不写 /data/logs/*/*.log 超宽 glob：
+# 覆盖范围保持显式，未来新目录若写入方不满足 append 语义不会被静默卷入。
 #
 # 统一 copytruncate：所有写入方都以 append 模式打开文件（sonic-boom / redis /
 # nginx / PG collector 皆然），就地截断后续写安全；missingok 兼容 standby 机
@@ -31,11 +37,12 @@
 # （除 delaycompress 最新两份外均 gzip）。不写 notifempty：纯大小制下空文件
 # 本就不达阈值，声明冗余。
 # =============================================================================
-/data/logs/maintenance-*.log /data/logs/check-replication.log /data/logs/standby-backup.log
-/data/logs/perf-metrics.log
-/data/logs/postgres/postgresql.log /data/logs/standby/postgresql.log
-/data/logs/server/server.log /data/logs/redis/redis.log
-/data/logs/nginx/access.log /data/logs/nginx/error.log {
+/data/logs/maintenance/*.log
+/data/logs/postgres/*.log
+/data/logs/standby/*.log
+/data/logs/server/*.log
+/data/logs/redis/*.log
+/data/logs/nginx/*.log {
     size 20M
     rotate 14
     compress

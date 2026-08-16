@@ -201,6 +201,6 @@ CREATE INDEX IF NOT EXISTS idx_user_sessions_expires ON user_sessions (expires_a
 | 镜像/重启 | 换镜像+重启 PG | 无 |
 | 二次膨胀 | 有（job_run_details）| 无 |
 | 与现有体系契合 | 新增机制 | 复用现成脚本 |
-| 可观测 | `cron.job_run_details` | `/data/logs/maintenance.log` |
+| 可观测 | `cron.job_run_details` | `/data/logs/maintenance/` |
 
 **建议**：方案 B 更贴合当前 alpine 栈 + 成熟 scripts 体系；索引修正无论选哪个都必做。

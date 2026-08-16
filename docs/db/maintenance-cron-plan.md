@@ -40,7 +40,7 @@ infra/scripts/maintenance.sh   ← 唯一入口 · 子命令分发器
 | `purge-all` | 顺序跑全部 purge | 手动/兜底 | — |
 | `renew-cert` | certbot 证书续期（到期才续 · 续到才 reload nginx）| 每日 | — |
 | `error-report` | 委托 `report-error-logs.sh`：扫 /data/logs ≥error 级日志（inode 追踪增量 · 按类别分节 + 每类配额封顶）· 零命中发平安邮件作心跳 | 每日 09:00 | `--test-send` |
-| `perf-collect` | 委托 `monitor-perf.sh collect`：/proc + df 采一行 TSV 落 `/data/logs/perf-metrics.log` | 每小时 03 分 | — |
+| `perf-collect` | 委托 `monitor-perf.sh collect`：/proc + df 采一行 TSV 落 `/data/logs/maintenance/perf-metrics.log` | 每小时 03 分 | — |
 | `perf-report` | 委托 `monitor-perf.sh report`：按行内 epoch 过滤 24h/7d 窗口（并集读 .1/.N.gz · 轮转兼容）· 24h 逐时+峰值、7d 日均、平均变化差值，复用 report.env 发邮件 | 每日 07:13 | `--test-send` |
 | `install-cron` | 用 `${COSTRA_ROOT}` 展开生成 `/etc/cron.d/costra-maintenance` | 一次性 | — |
 | `list` | 列出所有任务 | 手动 | — |
@@ -220,20 +220,20 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # ── Costra 运维定时任务 · 全部走 maintenance.sh 统一入口（由 install-cron 生成）──
 # avatars 备份：每 4h 错峰（偏移 27 分 · 2026-08-14 起 DB 备份迁从库，prod 仅打 avatars）
-27 3,7,11,15,19,23 * * * root /root/Costra/infra/scripts/maintenance.sh backup-avatars   >> /data/logs/maintenance-backup.log 2>&1
+27 3,7,11,15,19,23 * * * root /root/Costra/infra/scripts/maintenance.sh backup-avatars   >> /data/logs/maintenance/maintenance-backup.log 2>&1
 # 主库复制检查：仅 server.env 配置了 REPLICATOR_PW + 主从 IP 时生成
-47 * * * * root /root/Costra/infra/scripts/maintenance.sh replication-check >> /data/logs/check-replication.log 2>&1
+47 * * * * root /root/Costra/infra/scripts/maintenance.sh replication-check >> /data/logs/maintenance/check-replication.log 2>&1
 # 幂等键 / session / invite：每日 04 点错峰
-7 4 * * * root /root/Costra/infra/scripts/maintenance.sh purge-idempotency >> /data/logs/maintenance-purge.log 2>&1
-17 4 * * * root /root/Costra/infra/scripts/maintenance.sh purge-sessions >> /data/logs/maintenance-purge.log 2>&1
-27 4 * * * root /root/Costra/infra/scripts/maintenance.sh purge-invites >> /data/logs/maintenance-purge.log 2>&1
+7 4 * * * root /root/Costra/infra/scripts/maintenance.sh purge-idempotency >> /data/logs/maintenance/maintenance-purge.log 2>&1
+17 4 * * * root /root/Costra/infra/scripts/maintenance.sh purge-sessions >> /data/logs/maintenance/maintenance-purge.log 2>&1
+27 4 * * * root /root/Costra/infra/scripts/maintenance.sh purge-invites >> /data/logs/maintenance/maintenance-purge.log 2>&1
 # 证书续期：每天 03:17
-17 3 * * * root /root/Costra/infra/scripts/maintenance.sh renew-cert >> /data/logs/maintenance-cert.log 2>&1
+17 3 * * * root /root/Costra/infra/scripts/maintenance.sh renew-cert >> /data/logs/maintenance/maintenance-cert.log 2>&1
 # error 级日志扫描推送：每天 09:00（邮件通道见 docs/ops/mail-notification.md）
-0 9 * * * root /root/Costra/infra/scripts/maintenance.sh error-report >> /data/logs/maintenance-error-report.log 2>&1
+0 9 * * * root /root/Costra/infra/scripts/maintenance.sh error-report >> /data/logs/maintenance/maintenance-error-report.log 2>&1
 # 宿主机性能采集：每小时 03 分；汇总推送：每天 07:13（复用 /data/conf/report.env）
-3 * * * * root /root/Costra/infra/scripts/maintenance.sh perf-collect >> /data/logs/maintenance-perf.log 2>&1
-13 7 * * * root /root/Costra/infra/scripts/maintenance.sh perf-report >> /data/logs/maintenance-perf.log 2>&1
+3 * * * * root /root/Costra/infra/scripts/maintenance.sh perf-collect >> /data/logs/maintenance/maintenance-perf.log 2>&1
+13 7 * * * root /root/Costra/infra/scripts/maintenance.sh perf-report >> /data/logs/maintenance/maintenance-perf.log 2>&1
 ```
 
 `install-cron` 子命令的生成逻辑（用非引号 heredoc 展开 `${COSTRA_ROOT}` · 与 `08-finalize-nginx.sh` certbot cron 同款做法）：
@@ -244,12 +244,12 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-27 3,7,11,15,19,23 * * * root ${COSTRA_ROOT}/infra/scripts/maintenance.sh backup-avatars >> /data/logs/maintenance-backup.log 2>&1
-47 * * * * root ${COSTRA_ROOT}/infra/scripts/maintenance.sh replication-check >> /data/logs/check-replication.log 2>&1
-7 4 * * * root ${COSTRA_ROOT}/infra/scripts/maintenance.sh purge-idempotency >> /data/logs/maintenance-purge.log 2>&1
-17 4 * * * root ${COSTRA_ROOT}/infra/scripts/maintenance.sh purge-sessions >> /data/logs/maintenance-purge.log 2>&1
-27 4 * * * root ${COSTRA_ROOT}/infra/scripts/maintenance.sh purge-invites >> /data/logs/maintenance-purge.log 2>&1
-17 3 * * * root ${COSTRA_ROOT}/infra/scripts/maintenance.sh renew-cert >> /data/logs/maintenance-cert.log 2>&1
+27 3,7,11,15,19,23 * * * root ${COSTRA_ROOT}/infra/scripts/maintenance.sh backup-avatars >> /data/logs/maintenance/maintenance-backup.log 2>&1
+47 * * * * root ${COSTRA_ROOT}/infra/scripts/maintenance.sh replication-check >> /data/logs/maintenance/check-replication.log 2>&1
+7 4 * * * root ${COSTRA_ROOT}/infra/scripts/maintenance.sh purge-idempotency >> /data/logs/maintenance/maintenance-purge.log 2>&1
+17 4 * * * root ${COSTRA_ROOT}/infra/scripts/maintenance.sh purge-sessions >> /data/logs/maintenance/maintenance-purge.log 2>&1
+27 4 * * * root ${COSTRA_ROOT}/infra/scripts/maintenance.sh purge-invites >> /data/logs/maintenance/maintenance-purge.log 2>&1
+17 3 * * * root ${COSTRA_ROOT}/infra/scripts/maintenance.sh renew-cert >> /data/logs/maintenance/maintenance-cert.log 2>&1
 EOF
 )
     if [[ "${DRY_RUN}" == "1" ]]; then
@@ -302,7 +302,7 @@ COMMIT;
 3. [ ] prod 跑 `06-migrate.sh`（顺序执行含 0009）
 4. [ ] `./maintenance.sh purge-idempotency --dry-run` / `purge-sessions --dry-run` 验证预览行数合理
 5. [ ] 写 `/etc/cron.d/costra-maintenance`（§4 · 用实际部署路径）+ 移除旧 backup cron
-6. [ ] `systemctl restart crond`，观察 `/data/logs/maintenance-*.log`
+6. [ ] `systemctl restart crond`，观察 `/data/logs/maintenance/maintenance-*.log`
 7. [ ] 更新 `infra/scripts/README.md` 脚本清单 + `data-bloat-audit-report.md` 收口
 
 ---

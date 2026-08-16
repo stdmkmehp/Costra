@@ -14,7 +14,7 @@
 #   redis/redis.log            redis 级别字符 → 行首锚定 `pid:role ... #`
 #                              （redis 无 error 级，`#`=warning 已是最高非正常级；`.`/`-`/`*` 不报）
 #   postgres|standby/postgresql.log  PG → \b(ERROR|FATAL|PANIC):（排除 NOTICE/WARNING/LOG 等正常噪音）
-#   maintenance-*.log / check-replication.log / standby-backup.log
+#   maintenance/maintenance-*.log / maintenance/check-replication.log / maintenance/standby-backup.log
 #                              运维脚本（common.sh log_error）→ [ERROR]
 #                              （ANSI 色码只包裹标记外围，[ERROR] 字节连续，纯文本匹配即可）
 #   明确排除：nginx access.log（无 level 字段，5xx 判定属另一维度）与 .gz 历史轮转文件。
@@ -109,9 +109,9 @@ _scan_targets() {
            "${LOG_DIR}/redis/redis.log" \
            "${LOG_DIR}/postgres/postgresql.log" \
            "${LOG_DIR}/standby/postgresql.log" \
-           "${LOG_DIR}/maintenance-"*.log \
-           "${LOG_DIR}/check-replication.log" \
-           "${LOG_DIR}/standby-backup.log"; do
+           "${LOG_DIR}/maintenance/maintenance-"*.log \
+           "${LOG_DIR}/maintenance/check-replication.log" \
+           "${LOG_DIR}/maintenance/standby-backup.log"; do
     # 字面路径（无通配符）不受 nullglob 过滤 · 存在性判断统一在这里（missingok 语义）
     [[ -f "${g}" ]] && printf '%s\n' "${g}"
   done

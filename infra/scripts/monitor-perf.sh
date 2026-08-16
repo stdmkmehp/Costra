@@ -4,7 +4,7 @@
 # =============================================================================
 # 采集（collect · cron 每小时 03 分）：
 #   读 /proc/{stat,meminfo,loadavg} + df，向 ${METRICS_FILE}（默认
-#   /data/logs/perf-metrics.log）追加一行 TSV。CPU% 为 /proc/stat 两次采样（间隔 1s）
+#   /data/logs/maintenance/perf-metrics.log）追加一行 TSV。CPU% 为 /proc/stat 两次采样（间隔 1s）
 #   的区间使用率；磁盘同时记录 / 与 /data 两目标（/data 非独立挂载时与 / 同值）。
 #
 # 数据行格式（TSV · 13 列 · 无表头）：
@@ -46,7 +46,7 @@
 #   ./monitor-perf.sh --test-send       # 跳过采集/汇总，发通道测试邮件（465 出站冒烟）
 #
 # 测试接缝（本地 fixture 验证用 · 生产不设）：
-#   COSTRA_PERF_METRICS_FILE  覆盖 /data/logs/perf-metrics.log
+#   COSTRA_PERF_METRICS_FILE  覆盖 /data/logs/maintenance/perf-metrics.log
 #   COSTRA_PERF_PROC_ROOT     覆盖 /proc（fixture 目录 · 需含 stat/meminfo/loadavg）
 #   COSTRA_PERF_ENV_FILE      覆盖 /data/conf/report.env
 #
@@ -59,7 +59,7 @@ source "${SCRIPT_DIR}/lib/common.sh"
 # shellcheck source=lib/mail.sh
 source "${SCRIPT_DIR}/lib/mail.sh"
 
-METRICS_FILE="${COSTRA_PERF_METRICS_FILE:-/data/logs/perf-metrics.log}"
+METRICS_FILE="${COSTRA_PERF_METRICS_FILE:-/data/logs/maintenance/perf-metrics.log}"
 PROC_ROOT="${COSTRA_PERF_PROC_ROOT:-/proc}"
 REPORT_ENV_FILE="${COSTRA_PERF_ENV_FILE:-${COSTRA_CONF_DIR}/report.env}"
 

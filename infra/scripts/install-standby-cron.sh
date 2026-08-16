@@ -9,7 +9,7 @@
 #      - 每 6h（0 分 ）check && backup
 #        组合：复制健康才产出，防"格式正常但陈旧"的备份；
 #        落 /data/slave/backups（= analytics DUMP_INBOX）
-#   2. /data/logs 下 touch check-replication.log / standby-backup.log（0600）
+#   2. /data/logs/maintenance 下 touch check-replication.log / standby-backup.log（0600）
 #   3. 安装共用 logrotate 模板 /etc/logrotate.d/costra-ops
 #
 # 红线：
@@ -31,7 +31,8 @@ source "${SCRIPT_DIR}/lib/common.sh"
 CRON_FILE="/etc/cron.d/costra-standby"
 STANDBY_ENV="${COSTRA_CONF_DIR}/standby.env"
 BACKUP_DIR="/data/slave/backups"
-LOG_DIR="/data/logs"
+# 与主库 maintenance.sh 对齐：运维脚本日志统一落子目录，/data/logs 根目录只留服务日志
+LOG_DIR="/data/logs/maintenance"
 
 parse_common_args "$@"
 while [[ $# -gt 0 ]]; do

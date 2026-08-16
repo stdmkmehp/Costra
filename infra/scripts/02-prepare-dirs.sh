@@ -53,6 +53,7 @@ DIRS_TO_CREATE=(
   "${COSTRA_DATA}/logs/redis"
   "${COSTRA_DATA}/logs/server"
   "${COSTRA_DATA}/logs/nginx"
+  "${COSTRA_DATA}/logs/maintenance"
   "${COSTRA_DATA}/certbot/www"
   "${COSTRA_DATA}/backups"
   "${COSTRA_DATA}/uploads/avatars"
