@@ -1,6 +1,6 @@
 # Costra · 告警邮件发送技术规范（curl SMTPS → QQ 邮箱中继）
 
-> **状态**：✅ 链路已实测走通（2026-08-14 · 机器② 端到端投递成功）· 已固化为 `infra/scripts/report-error-logs.sh`（2026-08-14）
+> **状态**：✅ 链路已实测走通（2026-08-14 · 机器② 端到端投递成功）· 已固化为 `infra/scripts/lib/mail.sh`（2026-08-16 从 `report-error-logs.sh` 抽取为公共库 · 供全部邮件消费方复用）
 > **日期**：2026-08-14
 > **适用机器**：机器②（costra-prod-slave）已实测；机器①（prod）465 出站**待复验**（§2.4）
 > **消费方**：后续 `report-error-logs.sh`（每日错误日志扫描推送）及任何需要邮件告警的运维脚本
@@ -223,3 +223,17 @@ QUIT
   → 确认 `timedatectl` 时区为 Asia/Shanghai（cron 09:00 按系统时区）。
 
 未验证项（目前告警量级下无影响，先不证）：QQ 免费邮箱的日发送频率/额度上限。
+
+---
+
+## §8 消费方与公共库（2026-08-16 起）
+
+发送实现已从 `report-error-logs.sh` 抽取为公共库 **`infra/scripts/lib/mail.sh`**
+（本文 §3 的代码化：`mail_load_config` / `mail_channel_ready` / `mail_build_eml` /
+`mail_send_eml` / `mail_deliver`）。后续脚本接邮件通道一律 source 该库，不再各自
+复制发送逻辑；发送行为要改，先改本文再改库。当前消费方：
+
+| 消费方 | 用途 | 调度 |
+|---|---|---|
+| `report-error-logs.sh` | /data/logs ≥error 级日志扫描推送（§7） | 每日 09:00（`maintenance.sh error-report`） |
+| `monitor-perf.sh` | 宿主机性能时序采集 + 24h/7d 汇总推送 | 每小时 03 分 collect · 每日 07:13 report（`maintenance.sh perf-collect`/`perf-report`） |

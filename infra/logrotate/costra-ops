@@ -5,25 +5,42 @@
 # （standby 机 · 见 docs/ops/pg-standby-backup.md §5.2）装到
 # /etc/logrotate.d/costra-ops，机器上不手改。
 #
-# 覆盖三类：
+# 覆盖四类：
 #   1. 运维脚本日志（cron >> 追加 · maintenance-*.log / check-replication / standby-backup）
 #   2. PG collector 固定日志（主库 + standby · PG 自身切分已关 log_rotation_*=0）
 #   3. 容器应用落盘日志（server / redis / nginx · 固定文件名 · 应用自身不轮转）
+#   4. 宿主机性能时序数据（monitor-perf.sh collect 每小时追加一行 TSV ·
+#      monitor-perf.sh report 读取 当前+.1+.N.gz 并集 · 轮转不丢样本）
 #
 # 统一 copytruncate：所有写入方都以 append 模式打开文件（sonic-boom / redis /
 # nginx / PG collector 皆然），就地截断后续写安全；missingok 兼容 standby 机
 # 不存在 server/redis/nginx 目录的场景。
+#
+# nodateext 显式钉死 .1 命名（不得移除）：logrotate.d 片段未声明的选项会穿透
+# 继承 /etc/logrotate.conf 全局段，RHEL 系默认全局段带 dateext（Debian 系默认
+# 无），不显式否决则归档名变 -YYYYMMDD；report-error-logs.sh 的 copytruncate
+# 增量判定靠识别 <file>.1 cp 副本，命名漂移会让轮转前窗口的字节被永久跳过
+# （2026-08-16 prod 实锤）。同理：预检必须走 `logrotate -d /etc/logrotate.conf`
+# 叠加全局段，单独 -d 本片段验证不出继承行为。
+#
+# 纯大小轮转（size 20M · 2026-08-16 起取代 daily+maxsize）：不设时间间隔，
+# 稀疏日志（maintenance-* 等）不到阈值永不切分、历史不被按日切碎；密集日志
+# 到量即转。检查频率=logrotate 例行调用频率（anacron 每日窗口），即 20M 是
+# 按日粒度兜底，单日暴涨可超阈值至下一次检查才被切——容量视角可接受
+# （docker json-file 兜底单文件即 100M）。rotate 14 → 单族最坏 14×20M
+# （除 delaycompress 最新两份外均 gzip）。不写 notifempty：纯大小制下空文件
+# 本就不达阈值，声明冗余。
 # =============================================================================
 /data/logs/maintenance-*.log /data/logs/check-replication.log /data/logs/standby-backup.log
+/data/logs/perf-metrics.log
 /data/logs/postgres/postgresql.log /data/logs/standby/postgresql.log
 /data/logs/server/server.log /data/logs/redis/redis.log
 /data/logs/nginx/access.log /data/logs/nginx/error.log {
-    daily
-    maxsize 20M
+    size 20M
     rotate 14
     compress
     delaycompress
     missingok
-    notifempty
     copytruncate
+    nodateext
 }

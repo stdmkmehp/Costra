@@ -1,4 +1,4 @@
-# Costra 用户行为日报分析 · 技术方案 v0.2.6
+# Costra 用户行为日报分析 · 技术方案 v0.2.7
 
 - 作者：Ops
 - 日期：2026-07-21（修订：2026-08-14）
@@ -12,6 +12,7 @@
   - **v0.2.4（2026-08-14）**：容器改按需启停（`restart: "no"` · `analyze.sh` 跑完自动 `docker compose stop`）+ 加 `deploy.resources.limits`（PG 512M/0.5CPU · node 256M/0.5CPU），释放资源给同机 staging 栈与 standby 从库
   - **v0.2.5（2026-08-14）**：dump 输入切换为 standby 从库本机直落（`pg-standby-backup.md` §5.1 · `standby-` 前缀 · cron 27 分每 4h，与 prod backup-avatars 同刻），§2.1 移除已下线的"prod 生成 + scp"描述
   - **v0.2.6（2026-08-14）**：env 配置文件外迁 `/data/conf/analytics.env`（与机器② `server.env`/`standby.env` 同目录约定 · `ANALYTICS_ENV_FILE` 可覆盖）· compose 单文件只读挂载为容器内 `/app/.env` · 仓库不再存放实际配置
+  - **v0.2.7（2026-08-14）**：清除 v0.2.5 遗留的 scp 时代措辞漂移（§0.4 标题与正文/§1.1 目标/§3.2 与使用示例段/§4.1 env 注释/§8.3 活性指标/风险表 R3·R6），`README.md`/`.env.example`/`send-failure-mail.mjs` 告警文案同步；纯文档修订零行为变更
 
 > 本文只描述"落地实现"，覆盖目标 / 输入约定 / CLI 抽象 / 目录布局 / 主流程 / SQL 全文 / 渲染 template / 邮件通道 / 失败告警 / cron 配置 / 工作量。
 
@@ -44,9 +45,9 @@
 - 独立的日志目录 `/var/log/costra-analyze/`（不写入 prod 的 `/data/logs/`）
 - 独立的 cron 文件 `/etc/cron.d/costra-analyze`（不修改 prod 的 `/etc/cron.d/costra` 或 `costra-*`）
 
-### 0.4 对 prod 的唯一依赖
+### 0.4 唯一外部依赖：standby 备份快照
 
-- **只依赖 prod scp 过来的 `.sql.gz` dump 文件**，其他一切自持
+- **只依赖 standby 从库本机直落的 `.sql.gz` dump 文件**（`install-standby-cron.sh` 每 4h 产出，见 §2.1），其他一切自持
 - Dump 文件到达 `${DUMP_INBOX}` 后，本项目**只读**这些文件，不修改、不重命名、不移动、**不删除**
 - 备份文件的保留和清理由外部备份策略负责，不属于行为分析工具职责
 
@@ -73,7 +74,7 @@ ss -ltnp | grep -q '127.0.0.1:15432'
 [[ -f /etc/cron.d/costra-analyze ]]
 ```
 
-**若 analyze host 与 prod 是不同机器**（推荐 · 也是 scp 场景的天然假设），§0.5 的容器名/端口冲突检查天然通过。若两者同机（不推荐，仅 dev/测试场景），上述所有隔离约束仍然生效，因命名/端口全不同，可共存。
+**analyze host 与 prod 本就是不同机器**（analyze host = 机器②，与 standby 从库/staging 共机），§0.5 的容器名/端口冲突检查天然通过。若两者同机（不推荐，仅 dev/测试场景），上述所有隔离约束仍然生效，因命名/端口全不同，可共存。
 
 ---
 
@@ -81,7 +82,7 @@ ss -ltnp | grep -q '127.0.0.1:15432'
 
 ### 1.1 目标
 
-- 在**独立于生产**的一台机器（下称 `analyze host`）上，基于 prod 每 4 小时 scp 过来的 `pg_dump` 快照，生成 Costra 用户行为日报/周报/任意区间报告，并邮件送达。
+- 在**独立于生产**的一台机器（下称 `analyze host`）上，基于 standby 从库每 4 小时本机直落的 `pg_dump` 快照，生成 Costra 用户行为日报/周报/任意区间报告，并邮件送达。
 - 支持 CLI 手动触发任意时间窗回看（`--window 24h/7d/30d`、`--anchor <ISO datetime>`）。
 - cron 默认每天日报 + 每周周报，脚本本体对"当前时刻"无感知，触发方式与分析窗口彻底解耦。
 - 所有可读输出禁止出现 UUID，只出昵称/账本名/分类名；账本带 `[家庭]/[个人]` 徽标；分类带父子路径。
@@ -163,7 +164,7 @@ ss -ltnp | grep -q '127.0.0.1:15432'
 ./analyze.sh --window 24h --anchor 2026-07-15T23:59:00+08:00
 
 # 完整指定
-./analyze.sh --dump /var/lib/costra-analyze/inbox/scheduled-20260721-2117.sql.gz \
+./analyze.sh --dump /data/slave/backups/standby-20260721-2117.sql.gz \
              --window 24h \
              --anchor 2026-07-21T21:17:23+08:00
 
@@ -228,7 +229,7 @@ ${ANALYZE_HOME}/                       # 建议 /opt/costra-analyze · 不放 pr
 
 ```ini
 # ─── 路径 ─────────────────────────────
-DUMP_INBOX=/data/slave/backups           # prod scp 落点 · 只读挂载进 analyzer
+DUMP_INBOX=/data/slave/backups           # standby 备份直落目录 · 只读挂载进 analyzer
 REPORTS_DIR=/data/analyze/report         # 报告输出目录
 LOG_DIR=/data/logs/analyze               # 运行日志目录
 
@@ -710,7 +711,7 @@ function sparkline(counts) {
 - weekly：`Costra 周报 · YYYY-Www · YYYY-MM-DD→YYYY-MM-DD · +U +L +E +I`
 - range：`Costra 报告 · Xd · YYYY-MM-DD→YYYY-MM-DD · +U +L +E +I`
 
-**关键**：subject 里塞 dump 时间戳（`dump@07-21 21:17`），让用户扫一眼就知道数据快照多新——这是替代 healthchecks 的"隐性活性指标"，连续两天 dump 时间戳不推进就能察觉 prod scp 挂了。
+**关键**：subject 里塞 dump 时间戳（`dump@07-21 21:17`），让用户扫一眼就知道数据快照多新——这是替代 healthchecks 的"隐性活性指标"，连续两天 dump 时间戳不推进就能察觉 standby 备份链路挂了。
 
 ### 8.4 失败邮件（`send-failure-mail.mjs`）
 
@@ -752,8 +753,8 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # 看这个月（30d 会走 range template）
 ./analyze.sh --window 30d
 
-# 用某份特定 dump（比如 prod scp 挂了几天补齐后想按当天点跑）
-./analyze.sh --dump /var/lib/costra-analyze/inbox/scheduled-20260715-2117.sql.gz --window 24h
+# 用某份特定 dump（比如备份链路挂了几天补齐后想按当天点跑）
+./analyze.sh --dump /data/slave/backups/standby-20260715-2117.sql.gz --window 24h
 
 # 只出到 stdout 不发邮件（调试）
 ./analyze.sh --stdout
@@ -860,10 +861,10 @@ volumes:
 |---|---|---|---|---|
 | R1 | 临时数据库因机器断电残留 | 低 | 中 | ERR/INT/TERM 清理；断电后可按 `costra_report_%` 手动清理 |
 | R2 | QQ 邮箱 SMTP 授权码过期/被封 | 低 | 高 | subject dump 时间戳作为隐性活性指标；授权码更新后无需改代码 |
-| R3 | prod scp 中断但 inbox 仍有旧文件 | 中 | 高 | 自动模式拦截超过 48 小时的最新 dump，告警且不出陈旧报告 |
+| R3 | standby 备份中断但 inbox 仍有旧文件 | 中 | 高 | 自动模式拦截超过 48 小时的最新 dump，告警且不出陈旧报告 |
 | R4 | dump 内含 partition table (`audit_logs_y2026m*`) restore 时可能因分区 attach 顺序报错 | 低 | 中 | pg_dump 默认输出会带 `CREATE TABLE ... PARTITION OF` 语句，PG 15 支持；首次跑失败则改用 `--exclude-table='audit_logs*'` 过滤（audit_logs 不参与分析） |
 | R5 | 单个 SQL 报错整体崩溃 | 低 | 低 | trap 触发失败邮件 · 便于用户调试；每个 SQL 独立文件便于定位 |
-| R6 | scp 备份持续累积占满磁盘 | 中 | 高 | 分析工具不删除备份；由外部备份策略负责容量监控和生命周期管理 |
+| R6 | 备份持续累积占满磁盘 | 中 | 高 | 分析工具不删除备份；由外部备份策略负责容量监控和生命周期管理 |
 | R7 | v0.1 无留存指标 | - | - | v0.2 加（需要跨 dump 对比历史用户 vs 现活跃）|
 
 ---

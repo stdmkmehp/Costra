@@ -2,7 +2,7 @@
 
 > **日期**：2026-07-08；2026-08-14 同步 PostgreSQL standby 监控落地
 > **背景**：`docs/db/data-bloat-audit-report.md` 采纳方案 B。主库定时任务统一走 `maintenance.sh`；从库因与 staging 共机，保持独立 `/etc/cron.d/costra-standby`。
-> **当前任务集**：`backup` + `replication-check`（仅复制已配置的主库生成 cron）+ purge-* + `renew-cert` + `error-report`（2026-08-14 起 · 扫 /data/logs ≥error 级日志并邮件推送）。
+> **当前任务集**：`backup` + `replication-check`（仅复制已配置的主库生成 cron）+ purge-* + `renew-cert` + `error-report`（2026-08-14 起 · 扫 /data/logs ≥error 级日志并邮件推送）+ `perf-collect`/`perf-report`（2026-08-16 起 · 宿主机性能时序采集 + 24h/7d 汇总邮件）。
 
 ---
 
@@ -40,6 +40,8 @@ infra/scripts/maintenance.sh   ← 唯一入口 · 子命令分发器
 | `purge-all` | 顺序跑全部 purge | 手动/兜底 | — |
 | `renew-cert` | certbot 证书续期（到期才续 · 续到才 reload nginx）| 每日 | — |
 | `error-report` | 委托 `report-error-logs.sh`：扫 /data/logs ≥error 级日志（inode 追踪增量 · 按类别分节 + 每类配额封顶）· 零命中发平安邮件作心跳 | 每日 09:00 | `--test-send` |
+| `perf-collect` | 委托 `monitor-perf.sh collect`：/proc + df 采一行 TSV 落 `/data/logs/perf-metrics.log` | 每小时 03 分 | — |
+| `perf-report` | 委托 `monitor-perf.sh report`：按行内 epoch 过滤 24h/7d 窗口（并集读 .1/.N.gz · 轮转兼容）· 24h 逐时+峰值、7d 日均、平均变化差值，复用 report.env 发邮件 | 每日 07:13 | `--test-send` |
 | `install-cron` | 用 `${COSTRA_ROOT}` 展开生成 `/etc/cron.d/costra-maintenance` | 一次性 | — |
 | `list` | 列出所有任务 | 手动 | — |
 
@@ -229,6 +231,9 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 17 3 * * * root /root/Costra/infra/scripts/maintenance.sh renew-cert >> /data/logs/maintenance-cert.log 2>&1
 # error 级日志扫描推送：每天 09:00（邮件通道见 docs/ops/mail-notification.md）
 0 9 * * * root /root/Costra/infra/scripts/maintenance.sh error-report >> /data/logs/maintenance-error-report.log 2>&1
+# 宿主机性能采集：每小时 03 分；汇总推送：每天 07:13（复用 /data/conf/report.env）
+3 * * * * root /root/Costra/infra/scripts/maintenance.sh perf-collect >> /data/logs/maintenance-perf.log 2>&1
+13 7 * * * root /root/Costra/infra/scripts/maintenance.sh perf-report >> /data/logs/maintenance-perf.log 2>&1
 ```
 
 `install-cron` 子命令的生成逻辑（用非引号 heredoc 展开 `${COSTRA_ROOT}` · 与 `08-finalize-nginx.sh` certbot cron 同款做法）：
@@ -259,7 +264,7 @@ EOF
     ;;
 ```
 
-**日志分流**：备份写 `maintenance-backup.log`，复制检查写 `check-replication.log`，清理合并写 `maintenance-purge.log`。`install-cron` 同时安装 `infra/logrotate/costra-ops`，按每日轮转、超过 20M 提前轮转、保留 14 轮并压缩；主从 PG 固定写 `postgresql.log`，server/redis/nginx 固定写 `/data/logs/{server/server.log,redis/redis.log,nginx/*.log}`，同样由该配置统一轮转（copytruncate），应用自身不做轮转，避免双事实源。
+**日志分流**：备份写 `maintenance-backup.log`，复制检查写 `check-replication.log`，清理合并写 `maintenance-purge.log`。`install-cron` 同时安装 `infra/logrotate/costra-ops`，纯大小轮转（`size 20M` · 2026-08-16 起，稀疏日志不再按日切碎）、保留 14 轮并压缩；主从 PG 固定写 `postgresql.log`，server/redis/nginx 固定写 `/data/logs/{server/server.log,redis/redis.log,nginx/*.log}`，同样由该配置统一轮转（copytruncate），应用自身不做轮转，避免双事实源。
 
 ---
 

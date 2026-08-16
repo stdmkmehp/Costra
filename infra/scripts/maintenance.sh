@@ -18,6 +18,8 @@
 #   purge-all                                         顺序跑全部 purge-*
 #   renew-cert                                        certbot renew（到期才续 · 续到新证书才 reload nginx）
 #   error-report                                      扫 /data/logs ≥error 级日志并邮件推送（每日 09:00 · 委托 report-error-logs.sh）
+#   perf-collect                                      采集宿主机性能一行（每小时 03 分 · 委托 monitor-perf.sh collect）
+#   perf-report                                       汇总最近 24h/7d 性能并邮件推送（每日 07:13 · 委托 monitor-perf.sh report）
 #   install-cron                                      用 ${COSTRA_ROOT} 展开生成 /etc/cron.d/costra-maintenance
 #   list                                              列出可用任务
 #
@@ -52,13 +54,15 @@ SLAVE_ENV_FILE="${COSTRA_CONF_DIR}/slave.env"
 # 只有 prod 能备份），成功后把最新归档 scp 到从库 /data/slave/backups
 # （连接参数读 /data/conf/slave.env · 见 do_push_avatars_offsite）。
 declare -a CRON_SCHEDULE=(
-  "backup-avatars|27 3,7,11,15,19,23 * * *|maintenance-backup.log"
+  "backup-avatars|0 0,6,12,18 * * *|maintenance-backup.log"
   "replication-check|47 * * * *|check-replication.log"
   "purge-idempotency|7 4 * * *|maintenance-purge.log"
   "purge-sessions|17 4 * * *|maintenance-purge.log"
   "purge-invites|27 4 * * *|maintenance-purge.log"
   "renew-cert|17 3 * * *|maintenance-cert.log"
-  "error-report|0 9 * * *|maintenance-error-report.log"
+  "error-report|17 5 * * *|maintenance-error-report.log"
+  "perf-collect|3 * * * *|maintenance-perf.log"
+  "perf-report|13 5 * * *|maintenance-perf.log"
 )
 
 # --- 解析：先让 common 扫出 --dry-run/-y，再抽任务名 + 透传参数 ---
@@ -68,7 +72,7 @@ TASK=""
 declare -a PASSTHRU=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    backup|backup-avatars|replication-check|purge-idempotency|purge-sessions|purge-invites|purge-all|renew-cert|error-report|install-cron|list)
+    backup|backup-avatars|replication-check|purge-idempotency|purge-sessions|purge-invites|purge-all|renew-cert|error-report|perf-collect|perf-report|install-cron|list)
       [[ -z "${TASK}" ]] || die "只能指定一个任务（已有：${TASK}）"
       TASK=$1; shift ;;
     --dry-run|-y|--yes) shift ;;       # common 已处理 · noop
@@ -214,7 +218,7 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
   mkdir -p "${LOG_DIR}"
   local log_name
-  for log_name in maintenance-backup.log check-replication.log maintenance-purge.log maintenance-cert.log maintenance-error-report.log; do
+  for log_name in maintenance-backup.log check-replication.log maintenance-purge.log maintenance-cert.log maintenance-error-report.log maintenance-perf.log; do
     touch "${LOG_DIR}/${log_name}"
     chmod 0600 "${LOG_DIR}/${log_name}"
   done
@@ -348,6 +352,16 @@ case "${TASK}" in
     log_info "委托 → report-error-logs.sh ${PASSTHRU[*]:-}"
     "${SCRIPT_DIR}/report-error-logs.sh" ${PASSTHRU[@]+"${PASSTHRU[@]}"}
     ;;
+  perf-collect)
+    export DRY_RUN ASSUME_YES
+    log_info "委托 → monitor-perf.sh collect ${PASSTHRU[*]:-}"
+    "${SCRIPT_DIR}/monitor-perf.sh" collect ${PASSTHRU[@]+"${PASSTHRU[@]}"}
+    ;;
+  perf-report)
+    export DRY_RUN ASSUME_YES
+    log_info "委托 → monitor-perf.sh report ${PASSTHRU[*]:-}"
+    "${SCRIPT_DIR}/monitor-perf.sh" report ${PASSTHRU[@]+"${PASSTHRU[@]}"}
+    ;;
   purge-idempotency)
     require_cmd docker; _assert_pg_healthy; _load_pg_pw
     do_purge_idempotency
@@ -374,7 +388,7 @@ case "${TASK}" in
     do_renew_cert
     ;;
   list)
-    log_info "可用任务：backup · backup-avatars · replication-check · purge-idempotency · purge-sessions · purge-invites · purge-all · renew-cert · error-report · install-cron · list"
+    log_info "可用任务：backup · backup-avatars · replication-check · purge-idempotency · purge-sessions · purge-invites · purge-all · renew-cert · error-report · perf-collect · perf-report · install-cron · list"
     ;;
 esac
 

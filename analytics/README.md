@@ -1,6 +1,6 @@
 # Costra Analyze · 用户行为日报分析工具
 
-基于 prod pg_dump 快照，生成 Costra 用户行为日报/周报/任意区间报告，并通过 QQ 邮箱发送。
+基于 standby 从库导出的 pg_dump 快照（prod 数据副本），生成 Costra 用户行为日报/周报/任意区间报告，并通过 QQ 邮箱发送。
 
 **版本**: v0.1 · 技术方案: `docs/ops/analytics-daily-tech-spec.md`
 
@@ -30,7 +30,7 @@ costra-analyze-node:/app/scripts/analyze-in-container.sh
 - 分析工作库固定为 `costra_report_work`，每次分析开头 `DROP + CREATE`，结束再次 `DROP`
 - 独立日志目录（`/data/logs/analyze/`）
 - 独立 cron 文件（`/etc/cron.d/costra-analyze`）
-- 唯一依赖：prod scp 过来的 `.sql.gz` dump 文件
+- 唯一依赖：standby 备份 cron 直落同机 `${DUMP_INBOX}` 的 `.sql.gz` dump 文件
 
 ---
 
@@ -72,8 +72,8 @@ docker compose build
 ```bash
 # 先保持 MAIL_TO=PLACEHOLDER@example.com
 
-# 需要一份 dump 文件（从 prod 复制或手动放入）
-cp /path/to/scheduled-YYYYMMDD-HHMMSS.sql.gz /data/slave/backups/
+# 需要一份 dump 文件（正常由 standby 备份 cron 自动产出；也可手动放入）
+cp /path/to/standby-YYYYMMDD-HHMMSS.sql.gz /data/slave/backups/
 
 # 运行（stdout 模式，不发邮件）
 cd /opt/costra-analyze
@@ -151,7 +151,7 @@ cat /etc/cron.d/costra-analyze
 ./scripts/analyze.sh --window 30d
 
 # 指定特定 dump 文件
-./scripts/analyze.sh --dump /var/lib/costra-analyze/inbox/scheduled-20260715-2117.sql.gz
+./scripts/analyze.sh --dump /data/slave/backups/standby-20260715-2117.sql.gz
 
 # 调试（stdout + 不发邮件）
 ./scripts/analyze.sh --stdout
@@ -208,7 +208,7 @@ analytics/
 /data/analyze/report/range/START_END.md
 ```
 
-> `${DUMP_INBOX}` 中由 scp 传入的备份文件始终按只读数据源处理；分析工具不会删除、移动或重命名这些文件。
+> `${DUMP_INBOX}` 中由 standby 备份 cron 产出的备份文件始终按只读数据源处理；分析工具不会删除、移动或重命名这些文件。
 
 ---
 
@@ -218,7 +218,7 @@ analytics/
 
 | 变量 | 说明 | 默认/示例 |
 |---|---|---|
-| `DUMP_INBOX` | prod dump 落点 | `/data/slave/backups` |
+| `DUMP_INBOX` | standby 备份直落目录 | `/data/slave/backups` |
 | `REPORTS_DIR` | 报告输出目录 | `/data/analyze/report` |
 | `LOG_DIR` | 每次运行的独立日志目录 | `/data/logs/analyze` |
 | `PG_CONTAINER` | 容器名 | `costra-analyze-pg` |
@@ -267,7 +267,7 @@ analytics/
 - 周报：`Costra 周报 · YYYY-Www · START→END · +U +L +E +I`
 - 区间：`Costra 报告 · Xd · START→END · +U +L +E +I`
 
-Subject 中的 `dump@` 时间戳是**隐性活性指标**——连续两天时间戳不推进说明 prod scp 可能挂了。
+Subject 中的 `dump@` 时间戳是**隐性活性指标**——连续两天时间戳不推进说明 standby 备份链路可能挂了。
 
 ---
 
@@ -300,7 +300,7 @@ ss -ltnp | grep -q '127.0.0.1:15432' && echo "OK: 端口隔离"  # Linux
 
 ```bash
 # 检查 inbox 目录
-ls -la /var/lib/costra-analyze/inbox/
+ls -la /data/slave/backups/
 
 # 手动触发（会发送无 dump 告警邮件或打印告警）
 ./scripts/analyze.sh --stdout

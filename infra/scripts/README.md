@@ -13,7 +13,8 @@ infra/scripts/
 ├── README.md                  # 本文件
 ├── deploy-all.sh              # ⭐ 主入口（编排 9 步）
 ├── lib/
-│   └── common.sh              # 公共库（日志 / 交互 / 密码生成 / 校验）
+│   ├── common.sh              # 公共库（日志 / 交互 / 密码生成 / 校验）
+│   └── mail.sh                # 邮件公共库（curl SMTPS → QQ · 见 docs/ops/mail-notification.md §3）
 ├── 01-preflight.sh            # 前置检查（OS / Docker / 端口 / DNS）
 ├── 02-prepare-dirs.sh         # 建目录 + chown（修 redis 权限坑）
 ├── 03-generate-env.sh         # 生成密码 + 写 server.env
@@ -28,7 +29,7 @@ infra/scripts/
 ├── backup-db.sh               # DB/avatars 备份（pg_dump + gzip · 支持主/从库目标 · 原子发布 + flock）
 ├── import-holidays.sh         # 节假日 JSON → workday_calendars 表（--target prod|verify · 幂等 upsert）
 ├── migrate-ledger-asset.sh    # 停服迁移 · 账本资产回填（--target prod|verify · --verify 仅校验 · 幂等）
-├── maintenance.sh             # ⭐ 主库定时任务入口（backup-avatars / replication-check / purge-* / error-report）
+├── maintenance.sh             # ⭐ 主库定时任务入口（backup-avatars / replication-check / purge-* / error-report / perf-*）
 │
 ├── setup-replication-primary.sh  # PG 主库流复制配置（机器① · 幂等 · 见 pg-standby-backup 方案）
 ├── setup-replication-standby.sh  # PG 从库搭建（机器② · pg_basebackup + hot standby）
@@ -36,6 +37,7 @@ infra/scripts/
 ├── recover-primary-from-standby.sh # 双阶段反向恢复主库（prepare / activate / status）
 ├── check-replication.sh          # PG 主从复制健康检查（cron · 异常 exit 1 + 企业微信告警）
 ├── report-error-logs.sh          # /data/logs ≥error 级日志每日扫描 + 邮件推送（offset 增量 · 见 mail-notification.md）
+├── monitor-perf.sh               # 宿主机性能采集（每小时 TSV）+ 24h/7d 汇总邮件（每日 · 复用 report.env）
 └── apply-host-tuning.sh          # 宿主机内核参数（sysctl + THP · status/apply/revert · 幂等）
 ```
 
@@ -62,6 +64,8 @@ infra/scripts/
 ./maintenance.sh purge-all             # 顺序跑全部 purge
 ./maintenance.sh error-report          # 扫 /data/logs ≥error 级日志并邮件推送（每日 09:00 · 零命中发平安邮件作心跳 · 需 /data/conf/report.env 配 SMTP_*）
 ./maintenance.sh error-report --test-send   # 通道冒烟：跳过扫描发一封测试邮件（465 出站验证）
+./maintenance.sh perf-collect          # 采集一行宿主机性能（每小时 03 分 · 落 /data/logs/perf-metrics.log）
+./maintenance.sh perf-report           # 汇总最近 24h 逐时/峰值 + 7 天日均与平均变化并邮件推送（每日 07:13 · 复用 report.env）
 ./maintenance.sh list                  # 列出可用任务
 
 # 预览不改（purge 跑 SELECT count 预览将删行数）：

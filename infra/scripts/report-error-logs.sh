@@ -4,7 +4,7 @@
 # =============================================================================
 # 事实源：
 #   - 邮件发送实现（curl SMTPS 465 + --login-options 'AUTH=LOGIN' + CRLF + RFC 2047 主题）：
-#     docs/ops/mail-notification.md §3 —— 不要在本文件重新探索，改动先改该文档。
+#     docs/ops/mail-notification.md §3 —— 代码化为 lib/mail.sh（2026-08-16 抽取），本脚本不持有发送逻辑。
 #   - grep 判定表 / offset 增量 / 聚合降噪：本文件（2026-08-14 方案 v2）。
 #
 # 扫描对象与"≥error 级"判定（五种日志格式各异 · 逐格式显式级别判定，不用文本模糊匹配）：
@@ -63,6 +63,8 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
+# shellcheck source=lib/mail.sh
+source "${SCRIPT_DIR}/lib/mail.sh"
 
 LOG_DIR="${COSTRA_ERROR_REPORT_LOG_DIR:-/data/logs}"
 STATE_DIR="${COSTRA_ERROR_REPORT_STATE_DIR:-/var/lib/costra/error-report}"
@@ -368,106 +370,16 @@ _scan_one() {
 }
 
 # =============================================================================
-# 邮件（实现照 docs/ops/mail-notification.md §3 · 不要在此重新探索）
+# 邮件：发送逻辑在 lib/mail.sh（docs/ops/mail-notification.md §3 的代码化 · 2026-08-16 抽取）
+# 本脚本只传入 ${REPORT_ENV_FILE} 与主题/正文，降级语义（dry-run / 通道禁用 / 发送失败）由库统一实现。
 # =============================================================================
-_load_mail_config() {
-  local key val
-  for key in SMTP_HOST SMTP_PORT SMTP_USER SMTP_PASS MAIL_FROM MAIL_TO; do
-    if [[ -z "${!key:-}" ]] && [[ -f "${REPORT_ENV_FILE}" ]]; then
-      val=$(grep "^${key}=" "${REPORT_ENV_FILE}" 2>/dev/null | tail -1 | cut -d= -f2- || true)
-      [[ -n "${val}" ]] && printf -v "${key}" '%s' "${val}"
-    fi
-  done
-  SMTP_HOST="${SMTP_HOST:-smtp.qq.com}"
-  SMTP_PORT="${SMTP_PORT:-465}"
-  MAIL_FROM="${MAIL_FROM:-${SMTP_USER:-}}"
-}
-
-_channel_ready() {
-  [[ -n "${SMTP_USER:-}" && -n "${SMTP_PASS:-}" && -n "${MAIL_TO:-}" ]]
-}
-
-# _build_eml <subject_raw> <body_file> <eml_out>
-_build_eml() {
-  local subject=$1 body=$2 out=$3 encoded_subject
-  # 非 ASCII → RFC 2047 base64 编码（QQ 对超长 encoded-word 宽容 · 单段即可）
-  # 判定用 grep 而非 glob `*[! -~]*`：bash 3.2 的 case 解析器不接受方括号内空格开头的 range
-  if LC_ALL=C grep -q '[^ -~]' <<< "${subject}"; then
-    encoded_subject="=?UTF-8?B?$(printf '%s' "${subject}" | base64 | tr -d '\n')?="
-  else
-    encoded_subject=${subject}
-  fi
-  {
-    printf '%s\r\n' "From: ${MAIL_FROM}"
-    printf '%s\r\n' "To: ${MAIL_TO}"
-    printf '%s\r\n' "Subject: ${encoded_subject}"
-    printf '%s\r\n' "Date: $(date -R)"
-    printf '%s\r\n' 'Content-Type: text/plain; charset=utf-8'
-    printf '%s\r\n' ''
-    sed 's/$/\r/' "${body}"
-  } > "${out}"
-}
-
-# _send_eml <eml_file> : 成功 0 · 失败 1（调用方决定降级语义）
-_send_eml() {
-  local eml=$1
-  local -a rcpt_args=()
-  local rcpt old_ifs=${IFS}
-  IFS=','   # for 循环的分词在求值时一次性完成 · 循环体内无需保持
-  for rcpt in ${MAIL_TO}; do
-    IFS=${old_ifs}
-    rcpt=$(printf '%s' "${rcpt}" | tr -d '[:space:]')
-    [[ -n "${rcpt}" ]] && rcpt_args+=("--mail-rcpt" "${rcpt}")
-    IFS=','
-  done
-  IFS=${old_ifs}
-  [[ ${#rcpt_args[@]} -gt 0 ]] || { log_error "MAIL_TO 解析后无有效收件人"; return 1; }
-
-  curl --ssl-reqd --silent --show-error --max-time 15 \
-    --url "smtps://${SMTP_HOST}:${SMTP_PORT}" \
-    --login-options 'AUTH=LOGIN' \
-    --user "${SMTP_USER}:${SMTP_PASS}" \
-    --mail-from "${MAIL_FROM}" \
-    ${rcpt_args[@]+"${rcpt_args[@]}"} \
-    --upload-file "${eml}"
-}
-
-# _deliver <subject> <body_file> : 统一出口（dry-run 预览 / 通道禁用降级 / 发送失败降级）
-_deliver() {
-  local subject=$1 body=$2
-  local eml="${TMPD}/report.eml"
-
-  if [[ "${DRY_RUN}" == "1" ]]; then
-    _load_mail_config
-    MAIL_FROM="${MAIL_FROM:-<未配置>}" MAIL_TO="${MAIL_TO:-<未配置>}" _build_eml "${subject}" "${body}" "${eml}"
-    log_dry "将发送邮件（主题：${subject}）· eml 预览（前 40 行）："
-    head -40 "${eml}"
-    log_dry "不写 offset · 不发送"
-    return 0
-  fi
-
-  _load_mail_config
-  if ! _channel_ready; then
-    log_warn "SMTP_USER/SMTP_PASS/MAIL_TO 未配齐（${REPORT_ENV_FILE}）· 邮件通道禁用 · 报告仅留日志"
-    cat "${body}"
-    return 0
-  fi
-
-  _build_eml "${subject}" "${body}" "${eml}"
-  if _send_eml "${eml}"; then
-    log_success "邮件已投递至 ${SMTP_HOST}:${SMTP_PORT}（收件人：${MAIL_TO}）"
-  else
-    # [ERROR] 进自身 cron 日志 · 次日被本任务扫到（自愈回路）· 但退出码保持 0 不阻断
-    log_error "邮件发送失败（${SMTP_HOST}:${SMTP_PORT}）· 主题：${subject}"
-  fi
-}
 
 # =============================================================================
 # --test-send：跳过扫描，直接验证 465 出站 + 认证 + 投递
 # =============================================================================
 if [[ "${TEST_SEND}" == "1" ]]; then
-  _load_mail_config
-  if ! _channel_ready; then
+  mail_load_config "${REPORT_ENV_FILE}"
+  if ! mail_channel_ready; then
     die "--test-send 需要 SMTP_USER/SMTP_PASS/MAIL_TO 配齐（环境变量或 ${REPORT_ENV_FILE}）"
   fi
   TEST_BODY="${TMPD}/test-body.txt"
@@ -477,7 +389,7 @@ if [[ "${TEST_SEND}" == "1" ]]; then
     printf '时间：%s\n' "$(date '+%F %T %z')"
     printf '若收到本邮件，说明 curl SMTPS(%s)→%s 链路已走通。\n' "${SMTP_PORT}" "${SMTP_HOST}"
   } > "${TEST_BODY}"
-  _deliver "[Costra] error-report 通道测试 · $(hostname) · $(date '+%F %T')" "${TEST_BODY}"
+  mail_deliver "${REPORT_ENV_FILE}" "[Costra] error-report 通道测试 · $(hostname) · $(date '+%F %T')" "${TEST_BODY}"
   exit 0
 fi
 
@@ -546,5 +458,5 @@ if [[ "${TOTAL_HITS}" == "0" ]]; then
   # 平安心跳：连续收不到它本身即是"任务/通道挂了"的信号
   log_success "无新增 ≥error 级日志 · 推送平安邮件"
 fi
-_deliver "[Costra] error-report · $(hostname) · $(date '+%F') · 命中 ${TOTAL_HITS} 条" "${BODY_FILE}"
+mail_deliver "${REPORT_ENV_FILE}" "[Costra] error-report · $(hostname) · $(date '+%F') · 命中 ${TOTAL_HITS} 条" "${BODY_FILE}"
 exit 0

@@ -98,7 +98,7 @@
 | postgres | collector 固定文件 `postgresql.log`（自身切分已关 `log_rotation_*=0`） | 宿主机 logrotate |
 | redis | 固定文件 `/var/log/redis/redis.log`（`--logfile`） | 宿主机 logrotate |
 
-logrotate 模板：`infra/logrotate/costra-ops`（daily + maxsize 20M · 保留 14 份压缩 · copytruncate），由 `maintenance.sh install-cron` 安装到 `/etc/logrotate.d/`，同一份配置同时覆盖运维脚本日志与主从 PG 日志。docker json-file（100m × 5）仅兜底各进程 entrypoint 阶段的极早期 stdout/stderr 残留。
+logrotate 模板：`infra/logrotate/costra-ops`（纯大小轮转 `size 20M` · 保留 14 份压缩 · copytruncate · **nodateext 固定 `.1` 命名**；2026-08-16 起取代 daily+maxsize：时间间隔会把稀疏日志按日切碎且因检查节奏=日而从未提前触发），由 `maintenance.sh install-cron` 安装到 `/etc/logrotate.d/`，同一份配置同时覆盖运维脚本日志与主从 PG 日志。`.1` 命名是硬契约：`report-error-logs.sh` 的 copytruncate 增量判定靠识别 `<file>.1` cp 副本；logrotate.d 片段未声明的选项会穿透继承 `/etc/logrotate.conf` 全局段（RHEL 系默认全局段带 `dateext`），故模板必须显式 `nodateext` 否决，不得依赖发行版默认值。docker json-file（100m × 5）仅兜底各进程 entrypoint 阶段的极早期 stdout/stderr 残留。
 
 ### 运维注意
 - nginx 运行时配置位于宿主 `/data/conf/nginx`（由 `infra/scripts/05-start-stack.sh` 从 repo 模板复制）。改完模板需**同步 live 配置**并 recreate nginx 才生效。

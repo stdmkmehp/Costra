@@ -92,11 +92,11 @@ let subject, bodyText;
 const now = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
 
 if (reason === 'no-dump') {
-  // 无 dump 告警（不是错误，是 scp 可能挂了）
+  // 无 dump 告警（不是错误，是 standby 备份链路可能挂了）
   subject = `⚠️ Costra 日报未生成 · 无可用 dump（${now}）`;
   bodyText = `Costra 分析任务在 ${now} 运行时，未找到可用的 dump 文件。
 
-这通常意味着 prod → analyze host 的 scp 传输可能中断。
+这通常意味着 standby 从库的备份链路（复制健康门禁 / 备份 cron）可能中断。
 
 DUMP_INBOX: ${inbox || DUMP_INBOX || '(未知)'}
 
@@ -104,8 +104,8 @@ DUMP_INBOX: ${inbox || DUMP_INBOX || '(未知)'}
 ${inboxList || '(空)'}
 
 请检查:
-1. prod 服务器的 backup-db.sh cron 是否正常运行
-2. scp 传输脚本是否正常
+1. 机器② 的 /etc/cron.d/costra-standby 备份 cron 是否正常运行（/data/logs/standby-backup.log）
+2. check-replication.sh 复制健康门禁是否通过（复制不健康会阻断备份产出）
 3. analyze host 磁盘空间是否充足
 
 此告警不影响其他服务，下次有 dump 时将自动恢复。`;

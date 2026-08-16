@@ -6,7 +6,7 @@
 # 安装内容（对应 docs/ops/pg-standby-backup.md §5.2）：
 #   1. /etc/cron.d/costra-standby
 #      - 每小时 check-replication.sh（latest-end/receive/replay 三段新鲜度门禁）
-#      - 每 4h（27 分 · 与 prod backup-avatars 同刻 · 异机无需错峰）check && backup
+#      - 每 6h（0 分 ）check && backup
 #        组合：复制健康才产出，防"格式正常但陈旧"的备份；
 #        落 /data/slave/backups（= analytics DUMP_INBOX）
 #   2. /data/logs 下 touch check-replication.log / standby-backup.log（0600）
@@ -73,9 +73,9 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # 复制健康检查（每小时 · 47 分）
 47 * * * * root ${CHECK_CMD} >> ${LOG_DIR}/check-replication.log 2>&1
 
-# 从库 DB 备份（每 4h · 27 分 · 与 prod backup-avatars 同刻 · 异机无需错峰）
+# 从库 DB 备份（每 6h · 0 分 · 异机无需错峰）
 # 复制健康才产出（防陈旧备份）· 直接落 ${BACKUP_DIR} = analytics 的 DUMP_INBOX
-27 3,7,11,15,19,23 * * * root { ${CHECK_CMD} && ${BACKUP_CMD}; } >> ${LOG_DIR}/standby-backup.log 2>&1"
+0 0,6,12,18 * * * root { ${CHECK_CMD} && ${BACKUP_CMD}; } >> ${LOG_DIR}/standby-backup.log 2>&1"
 
 if [[ "${DRY_RUN}" == "1" ]]; then
   log_dry "将写入 ${CRON_FILE}："
