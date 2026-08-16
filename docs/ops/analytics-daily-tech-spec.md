@@ -47,7 +47,7 @@
 
 ### 0.4 唯一外部依赖：standby 备份快照
 
-- **只依赖 standby 从库本机直落的 `.sql.gz` dump 文件**（`install-standby-cron.sh` 每 4h 产出，见 §2.1），其他一切自持
+- **只依赖 standby 从库本机直落的 `.sql.gz` dump 文件**（`install-standby-cron.sh` 每 6h 产出，见 §2.1），其他一切自持
 - Dump 文件到达 `${DUMP_INBOX}` 后，本项目**只读**这些文件，不修改、不重命名、不移动、**不删除**
 - 备份文件的保留和清理由外部备份策略负责，不属于行为分析工具职责
 
@@ -82,7 +82,7 @@ ss -ltnp | grep -q '127.0.0.1:15432'
 
 ### 1.1 目标
 
-- 在**独立于生产**的一台机器（下称 `analyze host`）上，基于 standby 从库每 4 小时本机直落的 `pg_dump` 快照，生成 Costra 用户行为日报/周报/任意区间报告，并邮件送达。
+- 在**独立于生产**的一台机器（下称 `analyze host`）上，基于 standby 从库每 6 小时本机直落的 `pg_dump` 快照，生成 Costra 用户行为日报/周报/任意区间报告，并邮件送达。
 - 支持 CLI 手动触发任意时间窗回看（`--window 24h/7d/30d`、`--anchor <ISO datetime>`）。
 - cron 默认每天日报 + 每周周报，脚本本体对"当前时刻"无感知，触发方式与分析窗口彻底解耦。
 - 所有可读输出禁止出现 UUID，只出昵称/账本名/分类名；账本带 `[家庭]/[个人]` 徽标；分类带父子路径。
@@ -104,7 +104,7 @@ ss -ltnp | grep -q '127.0.0.1:15432'
 
 ### 2.1 Dump 来源侧（不改动）
 
-- 机器②（standby 从库 = analyze host）由 `install-standby-cron.sh` 安装 cron：`27 3,7,11,15,19,23 * * *` 每 4 小时在复制健康门禁通过后直接生成 `${DUMP_INBOX}/standby-YYYYMMDD-HHMMSS.sql.gz`（`${DUMP_INBOX}=/data/slave/backups` · 本机直落，无 scp）
+- 机器②（standby 从库 = analyze host）由 `install-standby-cron.sh` 安装 cron：`0 0,6,12,18 * * *` 每 6 小时在复制健康门禁通过后直接生成 `${DUMP_INBOX}/standby-YYYYMMDD-HHMMSS.sql.gz`（`${DUMP_INBOX}=/data/slave/backups` · 本机直落，无 scp）
 - 备份生命周期由 `backup-db.sh` 按 `standby-` 前缀保留 14 天
 - Dump 是 `pg_dump -U costra -d costra --no-owner --no-acl` 的 gzip 输出（明文 SQL）
 

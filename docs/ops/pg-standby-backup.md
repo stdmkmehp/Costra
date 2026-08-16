@@ -40,7 +40,7 @@
    - 这两处是 docker 层改动，**落地时主库容器 recreate 一次**（PG 重启秒级~十几秒），建议低峰执行。
 3. **主库其余复制配置全部在线完成**（不重启）：建 `replicator` 复制账号、建物理复制槽、pg_hba 放行、reload——由 `setup-replication-primary.sh` 一键完成且幂等。
 4. **从库不 initdb、不跑 migration**：数据目录由 `pg_basebackup` 从主库物理复制；manifest 通过后，脚本确定性写入 `standby.signal`、`primary_conninfo` 和持久 passfile。之后 schema/数据全经复制流自动同步。
-5. **备份迁移（2026-08-14 定案）**：DB 备份职责整体迁到从库——机器② 复用 `backup-db.sh --db-only` 跑每 4h 的 `pg_dump` cron，落 `/data/slave/backups`；主库不再跑全量 DB 备份，仅保留 `backup-avatars`（avatars 是文件、不经复制流，只有 prod 能备份）。
+5. **备份迁移（2026-08-14 定案）**：DB 备份职责整体迁到从库——机器② 复用 `backup-db.sh --db-only` 跑每 6h 的 `pg_dump` cron，落 `/data/slave/backups`；主库不再跑全量 DB 备份，仅保留 `backup-avatars`（avatars 是文件、不经复制流，只有 prod 能备份）。
 6. **不引入任何切换/降级机制**：主库宕机后原样恢复当主库（见 §8 恢复手册）；从库挂了主库毫无感知，从库回来自动追平。
 
 ---
@@ -66,7 +66,7 @@
 │  │  costra-standby-pg (hot standby · 只读)  ◀──────────────┘ │
 │  │  数据 /data/pgsql-standby · 端口 15433 · standby.env      │
 │  └─────────────────────────────────────────────────────────┘ │
-│      ▲ 本机容器内只读查询   ▲ 每 4h pg_dump（backup-db.sh）     │
+│      ▲ 本机容器内只读查询   ▲ 每 6h pg_dump（backup-db.sh）     │
 │      │（Unix socket）        │ 每 1h check-replication.sh       │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -318,8 +318,8 @@ docker exec costra-standby-pg psql -U costra -d costra -c \
 
 | 备份 | 位置 | 内容 | 输出目录 | 频率 | 状态 |
 |---|---|---|---|---|---|
-| `maintenance.sh backup-avatars` | 机器① 主库 | 仅 avatars 打包（`--avatars-only`） | `/data/backups` | 每 4h（cron 27 分） | **保留**（avatars 是文件、不经复制流，只有 prod 能备份；`maintenance.sh backup` 全量入口仍可手动执行） |
-| `backup-db.sh --db-only --container costra-standby-pg --prefix standby --backup-dir /data/slave/backups` | 机器② 从库 | pg_dump（无 avatars） | **`/data/slave/backups`** | 每 4h（cron 27 分 · 与 prod backup-avatars 同刻） | **DB 备份主责**（2026-08-14 起由 prod 迁入） |
+| `maintenance.sh backup-avatars` | 机器① 主库 | 仅 avatars 打包（`--avatars-only`） | `/data/backups` | 每 6h（cron 0 分） | **保留**（avatars 是文件、不经复制流，只有 prod 能备份；`maintenance.sh backup` 全量入口仍可手动执行） |
+| `backup-db.sh --db-only --container costra-standby-pg --prefix standby --backup-dir /data/slave/backups` | 机器② 从库 | pg_dump（无 avatars） | **`/data/slave/backups`** | 每 6h（cron 0 分 · 与 prod backup-avatars 同刻） | **DB 备份主责**（2026-08-14 起由 prod 迁入） |
 
 - 从库备份复用现有 `backup-db.sh`：`--container` 指定从库容器，`--prefix standby` 区分文件名，`--backup-dir` 直接落到分析栈的 `DUMP_INBOX`。三个参数默认值均保持原样，**主库既有调用零影响**。
 - **直接落 `/data/slave/backups` = analytics 链路即时打通**（团队决策）：`/data/conf/analytics.env` 的 `DUMP_INBOX=/data/slave/backups`，而 `analytics/scripts/pick-dump.sh` 是按 `*.sql.gz` + mtime 取最新、**不锁前缀**，因此 `standby-*.sql.gz` 天然被识别；compose 里该目录是 `:ro` 挂载，分析侧不会删改这些文件（符合"`analytics/` 只读 `.sql.gz`"的既有约定）。

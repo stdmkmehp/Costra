@@ -162,7 +162,7 @@ CREATE INDEX idx_user_sessions_expires ON user_sessions (expires_at);
 
 ### 7.1 前置事实（部署实际）
 - 生产 PG = `postgres:15-alpine`（官方镜像 · **不含 pg_cron**）；compose 有 `command:` 可加启动参数、`initdb.d` 装扩展约定。
-- 已有成熟 cron 体系：`backup-db.sh`（cron 每 4h）、`psql-exec.sh`（封装容器内执行 SQL）。
+- 已有成熟 cron 体系：`backup-db.sh`（cron 每 6h）、`psql-exec.sh`（封装容器内执行 SQL）。
 
 ### 7.2 清理 SQL（核心 · 两方案通用）
 
