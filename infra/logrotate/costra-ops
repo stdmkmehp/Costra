@@ -5,12 +5,15 @@
 # （standby 机 · 见 docs/ops/pg-standby-backup.md §5.2）装到
 # /etc/logrotate.d/costra-ops，机器上不手改。
 #
-# 覆盖四类（全部按目录 glob 声明 · 同目录所有 .log 同策略）：
+# 覆盖五类（全部按目录 glob 声明 · 同目录所有 .log 同策略）：
 #   1. 运维脚本日志 + 宿主机性能时序（统一落 /data/logs/maintenance/ 子目录：
 #      maintenance-*.log / check-replication.log / standby-backup.log /
 #      perf-metrics.log——monitor-perf.sh report 读取 当前+.1+.N.gz 并集 · 轮转不丢样本）
 #   2. PG collector 固定日志（主库 + standby · PG 自身切分已关 log_rotation_*=0）
 #   3. 容器应用落盘日志（server / redis / nginx · 固定文件名 · 应用自身不轮转）
+#   4. Analyze 批处理运行日志（/data/logs/analyze/run-*.log · 每次运行唯一文件名、
+#      写后即死、无活跃写入者——copytruncate+size 对 KB 级一次性文件永不触发，
+#      独立 stanza 用 daily+rotate 14 时间制保留，daily 是此处的唯一有意例外）
 #
 # 目录 glob 安全性：轮转归档名为 <file>.1 / <file>.N.gz，不以 .log 结尾，不会被
 # glob 二次命中（无重复轮转）；各 glob 目录互不重叠（无 duplicate log entry）；
@@ -50,4 +53,26 @@
     missingok
     copytruncate
     nodateext
+}
+
+# ── 第 5 类：Costra Analyze 批处理运行日志（机器② · /data/logs/analyze/）─────
+# run-YYYYMMDD-HHMMSS-PID.log 每次运行唯一文件名、写后即关、KB 级：
+#   - 不用主块的 copytruncate+size 20M：无活跃写入者无需截断续写，且单文件
+#     永不达 size 阈值（稀疏批处理日志按大小轮转=永不轮转）；
+#   - daily+rotate 14：logrotate 按文件独立维护状态，无状态记录的新文件以
+#     mtime 为基准，满 1 天起逐日升代、14 代后删除 → 每份日志保留 ≈14 天；
+#   - nocreate：轮转后不重建同名空文件（无写入者，create 只会留空壳噪音）；
+#   - 不声明 notifempty：空文件（脚本在建文件后、写内容前死掉的极端情况）也
+#     须正常轮转老化，否则永不删除；
+#   - missingok：主库机同装本文件但没有 analyze 目录；
+#   - 该目录不经 report-error-logs.sh 扫描（其目标为显式六族清单），analyze
+#     失败走自身 send-failure-mail.mjs 附件告警，与 .1 命名硬契约无交互。
+/data/logs/analyze/*.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    nodateext
+    nocreate
 }

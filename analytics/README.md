@@ -28,7 +28,7 @@ costra-analyze-node:/app/scripts/analyze-in-container.sh
 - 独立 docker-compose（两个按需启停容器：`costra-analyze-pg` + `costra-analyze-node`，端口 `127.0.0.1:15432`）
 - 独立 DB/用户（`analyze/analyze`，vs prod 的 `costra/costra`）
 - 分析工作库固定为 `costra_report_work`，每次分析开头 `DROP + CREATE`，结束再次 `DROP`
-- 独立日志目录（`/data/logs/analyze/`）
+- 独立日志目录（`/data/logs/analyze/` · `run-*.log` 由宿主机 logrotate `infra/logrotate/costra-ops` 独立 stanza 按 `daily`+`rotate 14` 管理 ≈14 天，勿在脚本内自行清理）
 - 独立 cron 文件（`/etc/cron.d/costra-analyze`）
 - 唯一依赖：standby 备份 cron 直落同机 `${DUMP_INBOX}` 的 `.sql.gz` dump 文件
 
@@ -286,7 +286,7 @@ ss -ltnp | grep -q '127.0.0.1:15432' && echo "OK: 端口隔离"  # Linux
 # macOS: netstat -an | grep 15432
 
 # 4. 日志目录独立
-[[ -d /var/log/costra-analyze ]] && echo "OK: 日志目录"
+[[ -d /data/logs/analyze ]] && echo "OK: 日志目录"
 
 # 5. cron 文件独立
 [[ -f /etc/cron.d/costra-analyze ]] && echo "OK: cron 文件"

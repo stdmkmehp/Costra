@@ -42,7 +42,7 @@
 ### 0.3 独立的脚本
 
 - 独立的 `scripts/lib/common.sh`，**不 source** `infra/scripts/lib/common.sh`
-- 独立的日志目录 `/var/log/costra-analyze/`（不写入 prod 的 `/data/logs/`）
+- 独立的日志目录 `/data/logs/analyze/`（2026-08-16 更正：实现自 v0.1 即落 `/data/logs/` 下独立子目录，原文 `/var/log/costra-analyze/` 已废弃；`run-*.log` 由宿主机 logrotate `costra-ops` 独立 stanza `daily`+`rotate 14` 管理，勿写入 prod 服务日志目录）
 - 独立的 cron 文件 `/etc/cron.d/costra-analyze`（不修改 prod 的 `/etc/cron.d/costra` 或 `costra-*`）
 
 ### 0.4 唯一外部依赖：standby 备份快照
