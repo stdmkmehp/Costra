@@ -91,7 +91,9 @@ fi
 # 正式安装（幂等）
 # =============================================================================
 require_root
-backup_file "${CRON_FILE}"
+# 备份必须移出 /etc/cron.d：RHEL 系 cronie 只忽略点开头的文件，
+# 同目录的 .bak.* 副本会被当作合法 crontab 片段重复调度执行
+backup_file "${CRON_FILE}" "${COSTRA_CONF_DIR}/backups"
 printf '%s\n' "${content}" > "${CRON_FILE}"
 chmod 0644 "${CRON_FILE}"
 log_success "已写入 ${CRON_FILE}"

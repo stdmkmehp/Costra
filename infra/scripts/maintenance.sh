@@ -208,7 +208,9 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     return 0
   fi
   require_root
-  backup_file "${cron_file}"
+  # 备份必须移出 /etc/cron.d：RHEL 系 cronie 只忽略点开头的文件，
+  # 同目录的 .bak.* 副本会被当作合法 crontab 片段重复调度执行
+  backup_file "${cron_file}" "${COSTRA_CONF_DIR}/backups"
   printf '%s\n' "${content}" > "${cron_file}"
   chmod 0644 "${cron_file}"
   log_success "已写入 ${cron_file}"
