@@ -20,7 +20,7 @@
 #   12 disk_data_avail_gb  /data 可用 GB（df -Pk · 路径不存在记 -）
 #   13 inode_data_pct  /data inode 使用率 %（df -Pi · 路径不存在记 -）
 #
-# 报告（report · cron 每日 07:13）：
+# 报告（report · cron 每日 05:13）：
 #   按行内 epoch 过滤窗口（不走 offset 增量——每行自带时间戳，天然幂等）：
 #   - 最近 24h：逐时样本表 + 各核心指标 均值/峰值/峰值时刻；
 #   - 最近 7 天：逐日日均表 + "24h 均值 vs 7 天日均"差值（平均变化）；
@@ -41,7 +41,7 @@
 # 用法：
 #   ./monitor-perf.sh collect           # 采集一行（cron 每小时 03 分）
 #   ./monitor-perf.sh collect --dry-run # 打印将追加的行，不写文件
-#   ./monitor-perf.sh report            # 汇总 24h + 7d 并推送（cron 每日 07:13）
+#   ./monitor-perf.sh report            # 汇总 24h + 7d 并推送（cron 每日 05:13）
 #   ./monitor-perf.sh report --dry-run  # 打印完整报告与 eml 预览，不发送
 #   ./monitor-perf.sh --test-send       # 跳过采集/汇总，发通道测试邮件（465 出站冒烟）
 #

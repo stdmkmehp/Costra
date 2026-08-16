@@ -6,7 +6,7 @@
 # 安装内容（对应 docs/ops/pg-standby-backup.md §5.2）：
 #   1. /etc/cron.d/costra-standby
 #      - 每小时 check-replication.sh（latest-end/receive/replay 三段新鲜度门禁）
-#      - 每 6h（0 分 ）check && backup
+#      - 每 6h（0 分）check && backup
 #        组合：复制健康才产出，防"格式正常但陈旧"的备份；
 #        落 /data/slave/backups（= analytics DUMP_INBOX）
 #   2. /data/logs/maintenance 下 touch check-replication.log / standby-backup.log（0600）

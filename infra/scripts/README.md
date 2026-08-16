@@ -62,10 +62,10 @@ infra/scripts/
 ./maintenance.sh purge-sessions        # 清已过期 session（每日 · 过期 +30 天审计保留）
 ./maintenance.sh purge-invites         # 清过期邀请（每日 · 过期 +30 天审计保留）
 ./maintenance.sh purge-all             # 顺序跑全部 purge
-./maintenance.sh error-report          # 扫 /data/logs ≥error 级日志并邮件推送（每日 09:00 · 零命中发平安邮件作心跳 · 需 /data/conf/report.env 配 SMTP_*）
+./maintenance.sh error-report          # 扫 /data/logs ≥error 级日志并邮件推送（每日 05:17 · 零命中发平安邮件作心跳 · 需 /data/conf/report.env 配 SMTP_*）
 ./maintenance.sh error-report --test-send   # 通道冒烟：跳过扫描发一封测试邮件（465 出站验证）
 ./maintenance.sh perf-collect          # 采集一行宿主机性能（每小时 03 分 · 落 /data/logs/maintenance/perf-metrics.log）
-./maintenance.sh perf-report           # 汇总最近 24h 逐时/峰值 + 7 天日均与平均变化并邮件推送（每日 07:13 · 复用 report.env）
+./maintenance.sh perf-report           # 汇总最近 24h 逐时/峰值 + 7 天日均与平均变化并邮件推送（每日 05:13 · 复用 report.env）
 ./maintenance.sh list                  # 列出可用任务
 
 # 预览不改（purge 跑 SELECT count 预览将删行数）：

@@ -72,7 +72,7 @@ services:
     #    从库与 staging 栈 + 按需启停且有 limits 的分析栈共享整机，绝不能比
     #    prod 主库配得更激进；三栈同时运行时仍需以 docker stats 实测峰值。
     # ③ max_standby_streaming_delay=300s 是从库专属、纯本地的取舍：
-    #    它允许 WAL 回放为冲突查询累计等待更久，降低每 4h pg_dump 被取消概率；
+    #    它允许 WAL 回放为冲突查询累计等待更久，降低每 6h pg_dump 被取消概率；
     #    但不是单次查询 300s 的存活保证，冲突仍可能让 pg_dump 失败。backup-db.sh
     #    会捕获失败且不发布归档，下一轮再重试。代价只落在从库自身的回放延迟。
     #    hot_standby_feedback 必须显式保持 off；开启它会反压主库 vacuum，违反

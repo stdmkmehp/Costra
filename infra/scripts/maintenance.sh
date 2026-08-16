@@ -17,9 +17,9 @@
 #   purge-invites                                     清过期邀请（每日）
 #   purge-all                                         顺序跑全部 purge-*
 #   renew-cert                                        certbot renew（到期才续 · 续到新证书才 reload nginx）
-#   error-report                                      扫 /data/logs ≥error 级日志并邮件推送（每日 09:00 · 委托 report-error-logs.sh）
+#   error-report                                      扫 /data/logs ≥error 级日志并邮件推送（每日 05:17 · 委托 report-error-logs.sh）
 #   perf-collect                                      采集宿主机性能一行（每小时 03 分 · 委托 monitor-perf.sh collect）
-#   perf-report                                       汇总最近 24h/7d 性能并邮件推送（每日 07:13 · 委托 monitor-perf.sh report）
+#   perf-report                                       汇总最近 24h/7d 性能并邮件推送（每日 05:13 · 委托 monitor-perf.sh report）
 #   install-cron                                      用 ${COSTRA_ROOT} 展开生成 /etc/cron.d/costra-maintenance
 #   list                                              列出可用任务
 #
