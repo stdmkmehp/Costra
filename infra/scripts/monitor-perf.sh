@@ -20,6 +20,42 @@
 #   12 disk_data_avail_gb  /data 可用 GB（df -Pk · 路径不存在记 -）
 #   13 inode_data_pct  /data inode 使用率 %（df -Pi · 路径不存在记 -）
 #
+# 容器资源（collect 同步采集 · 独立文件 · 不动宿主 13 列契约）：
+#   数据源 `timeout 15 docker stats --no-stream`（单帧快照 · 一次调用全容器）。
+#   四项指标全部来自同一次 stats 调用的内核计数器（cgroup cpu/memory/io + 容器 netns
+#   的 /proc/net/dev），只读不干预业务；docker 屏蔽 cgroup v1/v2 差异。
+#   2026-08-17 prod 实测定论：dockerd 流式 stats 推送系统性挂死（多容器流式 15s 连
+#   首帧都推不出；单容器流式第 2 帧也不到达），one-shot 快照路径健康（1.5s 秒出）——
+#   故用单帧采集，无流式、无延迟等待机制：
+#   - CPU% 依赖 dockerd 缓存的前次采样（precpu）：首次调用（daemon 或容器重启后）
+#     显示 0.00%，其后每次=距上次调用的区间平均（每小时一采即"上一小时平均 CPU"，
+#     0.00% 下次采集自愈）；
+#   - MemUsage=working set 口径（usage 扣 inactive_file，与宿主机 MemAvailable 语义一致）；
+#   - NetIO/BlockIO=容器启动以来累计收发（report 侧相邻样本差分；负增量=容器重启
+#     计数器归零，该点按重启后新值计）；
+#   - 单位统一折算 MiB：MemUsage 源为 1024 进制（MiB/GiB），NetIO/BlockIO 源为
+#     SI 1000 进制（kB/MB/GB），解析时按后缀分别换算。
+#   无 docker CLI / daemon 无响应 / 超时 → 整体跳过容器采集（宿主行不受影响，次日报告
+#   经样本对账暴露）；采集范围=compose 固定 4 容器（EXPECTED_CONTAINERS），stats 输出
+#   中缺席的容器记 "-" 行（宕机/未起 与 未采集 可区分）。
+#   开销：一次 one-shot 快照 ≈2s，每小时一次，对线上服务无感知；
+#   timeout 15 仅为 daemon 挂死的护栏，正常路径从不触发。
+#
+# 容器数据行（${CONTAINERS_FILE} 默认 /data/logs/maintenance/perf-containers.log
+#   · 11 列 TSV · 无表头 · 与宿主行同一次 date 取值 · 数值列缺席一律记 -）：
+#   1  ts         ISO8601 带时区
+#   2  epoch      秒级时间戳（窗口过滤唯一依据）
+#   3  name       容器名（costra-postgres / costra-redis / costra-server / costra-nginx）
+#   4  mem_mb     内存使用 MiB（working set）
+#   5  limit_mb   compose deploy.limits 上限 MiB
+#   6  mem_pct    相对 limit 的使用率 %
+#   7  cpu_pct    CPU 使用率 %（占宿主机总核 · 流式第 2 帧）
+#   8  net_rx_mb  网络累计接收 MiB        9  net_tx_mb  网络累计发送 MiB
+#   10 blk_r_mb   块设备累计读 MiB        11 blk_w_mb   块设备累计写 MiB
+#
+# 轮转：costra-ops 按 /data/logs/maintenance/*.log 目录 glob 自动覆盖本文件，
+#   无需改 logrotate；report 与宿主行同款并集读（当前 + .1 + .N.gz 去重排序）。
+#
 # 报告（report · cron 每日 05:13）：
 #   按行内 epoch 过滤窗口（不走 offset 增量——每行自带时间戳，天然幂等）：
 #   - 最近 24h：逐时样本表 + 各核心指标 均值/峰值/峰值时刻；
@@ -46,9 +82,13 @@
 #   ./monitor-perf.sh --test-send       # 跳过采集/汇总，发通道测试邮件（465 出站冒烟）
 #
 # 测试接缝（本地 fixture 验证用 · 生产不设）：
-#   COSTRA_PERF_METRICS_FILE  覆盖 /data/logs/maintenance/perf-metrics.log
-#   COSTRA_PERF_PROC_ROOT     覆盖 /proc（fixture 目录 · 需含 stat/meminfo/loadavg）
-#   COSTRA_PERF_ENV_FILE      覆盖 /data/conf/report.env
+#   COSTRA_PERF_METRICS_FILE      覆盖 /data/logs/maintenance/perf-metrics.log
+#   COSTRA_PERF_CONTAINERS_FILE   覆盖 /data/logs/maintenance/perf-containers.log
+#   COSTRA_PERF_PROC_ROOT         覆盖 /proc（fixture 目录 · 需含 stat/meminfo/loadavg）
+#   COSTRA_PERF_DOCKER_STATS_FILE 覆盖 docker stats 数据源（fixture=one-shot 输出原文 ·
+#                                 每容器一行，与真实路径同一解析 awk）；
+#                                 设置后不调用 docker CLI，macOS 本地验证走此路径·无 timeout 依赖）
+#   COSTRA_PERF_ENV_FILE          覆盖 /data/conf/report.env
 #
 # 退出码：0 = 完成（含通道禁用/发送失败的降级路径）· 1 = 脚本自身故障
 # =============================================================================
@@ -60,8 +100,14 @@ source "${SCRIPT_DIR}/lib/common.sh"
 source "${SCRIPT_DIR}/lib/mail.sh"
 
 METRICS_FILE="${COSTRA_PERF_METRICS_FILE:-/data/logs/maintenance/perf-metrics.log}"
+CONTAINERS_FILE="${COSTRA_PERF_CONTAINERS_FILE:-/data/logs/maintenance/perf-containers.log}"
 PROC_ROOT="${COSTRA_PERF_PROC_ROOT:-/proc}"
+DOCKER_STATS_FILE="${COSTRA_PERF_DOCKER_STATS_FILE:-}"
 REPORT_ENV_FILE="${COSTRA_PERF_ENV_FILE:-${COSTRA_CONF_DIR}/report.env}"
+
+# 采集范围=compose 编排的固定 4 容器（container_name 恒定 · 与 docker-compose.prod.yml 一一对应）
+# 缺席 stats 输出的容器记 "-" 行；非本清单容器不纳入（保持 costra 栈 scoped）
+EXPECTED_CONTAINERS="costra-postgres costra-redis costra-server costra-nginx"
 
 ACTION=""
 TEST_SEND=0
@@ -133,6 +179,79 @@ _df_field() {
   printf '%s' "${out:--}"
 }
 
+# _container_rows : 输出规范化容器资源行（9 列 TSV · 无表头）：
+#   name mem_mb limit_mb mem_pct cpu_pct net_rx_mb net_tx_mb blk_r_mb blk_w_mb
+# 源优先级：COSTRA_PERF_DOCKER_STATS_FILE fixture > `docker stats --no-stream`（单帧快照）。
+#
+# 为什么用 one-shot 单帧而不是流式（2026-08-17 prod 实测定论）：
+#   dockerd 的流式 stats 推送在这台机器上系统性挂死——多容器流式 timeout 15s 连首帧
+#   都推不出（被 Terminated）；单容器流式第 2 帧 8s 内也不到达。而 one-shot 快照路径
+#   健康（单容器 1.5s 秒出、数据完整）。单帧即满足采集目的，无需任何延迟/等待机制：
+#   - mem/limit/mem%/net/io 单帧天然准确（瞬时值与累计值，不依赖前一帧）；
+#   - CPU% 依赖 dockerd 缓存的前次采样（precpu）：首次调用（daemon 或容器重启后）
+#     显示 0.00%，其后每次调用=距上次调用的区间平均——每小时一采的语义恰好是
+#     "上一小时平均 CPU"，比 2 秒瞬时窗口更贴合趋势监控，且 0.00% 下次采集自愈。
+# 缺席容器（未运行 → 不在 stats 输出中）由 _format_container_rows 兜底记 "-"。
+# 失败（无 docker CLI / daemon 无响应 / 超时 / 无输出）→ log_warn + 返回 1，
+# 调用方整体跳过容器采集（宿主行照常 · 不 die）。
+_container_rows() {
+  local rawf
+  if [[ -n "${DOCKER_STATS_FILE}" ]]; then
+    [[ -r "${DOCKER_STATS_FILE}" ]] || { log_warn "docker stats fixture 不可读 ${DOCKER_STATS_FILE}"; return 1; }
+    rawf="${DOCKER_STATS_FILE}"
+  else
+    command -v docker >/dev/null 2>&1 || { log_warn "docker CLI 不在 PATH · 跳过容器资源采集"; return 1; }
+    rawf="${TMPD}/docker-stats.raw"
+    # timeout 15 纯挂死护栏（one-shot 正常 ~2s 返回 · 不是延迟/等待机制）：
+    # 极端情况下 daemon 无响应时防 CLI 无限阻塞拖垮整个 collect。
+    # （timeout 属 coreutils · prod RHEL 系自带；macOS 本地验证走 fixture 路径不触此）
+    local raw
+    raw=$(timeout 15 docker stats --no-stream \
+            --format $'{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}\t{{.NetIO}}\t{{.BlockIO}}' 2>/dev/null) \
+      || { log_warn "docker stats 失败或超时（15s）· 跳过容器资源采集"; return 1; }
+    [[ -n "${raw}" ]] || { log_warn "docker stats 无输出（无运行中容器？）· 跳过容器资源采集"; return 1; }
+    printf '%s\n' "${raw}" > "${rawf}"
+  fi
+  # 单帧解析 · 仅 EXPECTED 清单（与 _format_container_rows 的 scoping 一致 · 清单外容器
+  # 不纳入）；"180.5MiB / 1GiB" / "1.2MB / 3.4MB" → MiB（MemUsage 系 1024 进制 ·
+  # NetIO/BlockIO 系 SI 1000 进制）；"x.y%" 去 %
+  awk -F'\t' -v expect="${EXPECTED_CONTAINERS}" '
+    BEGIN { nw = split(expect, e, " "); for (i = 1; i <= nw; i++) isexp[e[i]] = 1 }
+    NF >= 6 && ($1 in isexp) {
+      cpu = $2; gsub(/%/, "", cpu)
+      split($3, m, " / "); memp = $4; gsub(/%/, "", memp)
+      split($5, n, " / "); split($6, b, " / ")
+      printf "%s\t%.1f\t%.1f\t%s\t%s\t%.1f\t%.1f\t%.1f\t%.1f\n", \
+        $1, _mb(m[1]), _mb(m[2]), memp, cpu, _mb(n[1]), _mb(n[2]), _mb(b[1]), _mb(b[2])
+    }
+    function _mb(s,   v, u) {
+      v = s + 0
+      u = s; sub(/^[0-9.]+/, "", u)
+      if (u == "KiB") return v / 1024
+      if (u == "GiB") return v * 1024
+      if (u == "TiB") return v * 1048576
+      if (u == "kB")  return v * 1000 / 1048576
+      if (u == "MB")  return v * 1000000 / 1048576
+      if (u == "GB")  return v * 1000000000 / 1048576
+      if (u == "TB")  return v * 1000000000000 / 1048576
+      if (u == "B")   return v / 1048576
+      return v
+    }' "${rawf}"
+}
+
+# _format_container_rows <ts> <epoch> <stats_tsv> : 输出 11 列容器 TSV 行（缺席容器全记 -）
+_format_container_rows() {
+  local ts=$1 epoch=$2 stats=$3 name row
+  for name in ${EXPECTED_CONTAINERS}; do
+    row=$(awk -F'\t' -v n="${name}" '$1 == n { print; exit }' "${stats}")
+    if [[ -n "${row}" ]]; then
+      printf '%s\t%s\t%s\n' "${ts}" "${epoch}" "${row}"
+    else
+      printf '%s\t%s\t%s\t-\t-\t-\t-\t-\t-\t-\t-\n' "${ts}" "${epoch}" "${name}"
+    fi
+  done
+}
+
 do_collect() {
   local stat_f="${PROC_ROOT}/stat" meminfo_f="${PROC_ROOT}/meminfo" loadavg_f="${PROC_ROOT}/loadavg"
   [[ -r "${stat_f}" && -r "${meminfo_f}" && -r "${loadavg_f}" ]] \
@@ -155,28 +274,46 @@ do_collect() {
     "${ts}" "${epoch}" "${l1}" "${l5}" "${l15}" "${cpu}" \
     "${mem_mb}" "${mem_pct}" "${swap_pct}" "${root_pct}" "${data_pct}" "${data_avail}" "${data_ipct}")
 
+  # 容器资源（独立文件 · 失败整体跳过不影响宿主行）
+  local cstats="${TMPD}/container-stats.tsv" crows="" crow_note="跳过"
+  if _container_rows > "${cstats}"; then
+    crows=$(_format_container_rows "${ts}" "${epoch}" "${cstats}")
+    crow_note=$(grep -c '' "${cstats}" || true)
+  fi
+
   if [[ "${DRY_RUN}" == "1" ]]; then
     log_dry "将追加一行到 ${METRICS_FILE}："
     printf '%s\n' "${line}"
+    if [[ -n "${crows}" ]]; then
+      log_dry "将追加容器行到 ${CONTAINERS_FILE}："
+      printf '%s\n' "${crows}"
+    else
+      log_dry "容器采集跳过（docker 不可用 · 见上 warn）"
+    fi
     return 0
   fi
 
   mkdir -p "$(dirname "${METRICS_FILE}")"
   [[ -f "${METRICS_FILE}" ]] || install -m 0600 /dev/null "${METRICS_FILE}"
   printf '%s\n' "${line}" >> "${METRICS_FILE}"
-  log_success "已采集 → ${METRICS_FILE}（load1=${l1} cpu=${cpu}% mem=${mem_pct}% disk_data=${data_pct}% avail=${data_avail}G）"
+  if [[ -n "${crows}" ]]; then
+    mkdir -p "$(dirname "${CONTAINERS_FILE}")"
+    [[ -f "${CONTAINERS_FILE}" ]] || install -m 0600 /dev/null "${CONTAINERS_FILE}"
+    printf '%s\n' "${crows}" >> "${CONTAINERS_FILE}"
+  fi
+  log_success "已采集 → ${METRICS_FILE}（load1=${l1} cpu=${cpu}% mem=${mem_pct}% disk_data=${data_pct}% avail=${data_avail}G）· 容器样本=${crow_note}"
 }
 
 # =============================================================================
 # 报告：轮转兼容并集读取 → 窗口过滤 → 分节汇总
 # =============================================================================
 
-# _read_merged : 当前 + .1 + .N.gz 并集 · 校验行格式 · 去重 · 按 epoch 排序
+# _read_merged <file> <min_nf> : 当前 + .1 + .N.gz 并集 · 校验行格式 · 去重 · 按 epoch 排序
 _read_merged() {
-  local f
+  local target=$1 min_nf=${2:-13} f
   {
     shopt -s nullglob
-    for f in "${METRICS_FILE}" "${METRICS_FILE}.1" "${METRICS_FILE}".*.gz; do
+    for f in "${target}" "${target}.1" "${target}".*.gz; do
       [[ -f "${f}" ]] || continue
       case "${f}" in
         *.gz)
@@ -190,7 +327,8 @@ _read_merged() {
       esac
     done
     shopt -u nullglob
-  } | awk '$1 ~ /^[0-9]{4}-[0-9]{2}-[0-9]{2}T/ && $2 ~ /^[0-9]+$/ && NF >= 13' \
+  } | awk -v min_nf="${min_nf}" \
+    '$1 ~ /^[0-9]{4}-[0-9]{2}-[0-9]{2}T/ && $2 ~ /^[0-9]+$/ && NF >= min_nf' \
     | sort -u | sort -k2,2n
 }
 
@@ -280,28 +418,104 @@ _awk_delta() {
     }' "$1" "$2"
 }
 
+# _awk_container_stats <file> : 容器 24h vitals（mem avg/peak/peak_at/peak_% + cpu avg/peak）
+_awk_container_stats() {
+  awk -F'\t' '
+    $4 != "-" {
+      n = $3
+      sum[n] += $4; cnt[n]++
+      if ($5 != "-") lim[n] = $5
+      if (cnt[n] == 1 || $4 + 0 > peak[n] + 0) { peak[n] = $4; pat[n] = substr($1, 6, 5) " " substr($1, 12, 5) }
+    }
+    $7 != "-" {
+      csum[$3] += $7; ccnt[$3]++
+      if (ccnt[$3] == 1 || $7 + 0 > cpeak[$3] + 0) cpeak[$3] = $7
+    }
+    END {
+      for (n in cnt)
+        printf "%-16s %8.1f %9.1f %11s %7.1f %8s %9s\n", \
+          n, sum[n] / cnt[n], peak[n], pat[n], (lim[n] > 0 ? 100 * peak[n] / lim[n] : 0), \
+          (ccnt[n] > 0 ? sprintf("%.1f", csum[n] / ccnt[n]) : "-"), \
+          (ccnt[n] > 0 ? sprintf("%.1f", cpeak[n]) : "-")
+    }' "$1" | sort
+}
+
+# _awk_container_io <file> : 容器 24h IO 窗口累计（相邻样本差分求和 · 负增量=重启按新值计）
+_awk_container_io() {
+  awk -F'\t' '
+    $4 != "-" {
+      n = $3; cnt[n]++
+      for (i = 8; i <= 11; i++) {
+        if ($i == "-") continue
+        v = $i + 0
+        if (seen[n, i]) { d = v - prev[n, i]; sum[n, i] += (d >= 0 ? d : v) }
+        prev[n, i] = v; seen[n, i] = 1
+      }
+    }
+    END {
+      for (n in cnt)
+        printf "%-16s %9.1f %9.1f %9.1f %9.1f\n", n, sum[n, 8], sum[n, 9], sum[n, 10], sum[n, 11]
+    }' "$1" | sort
+}
+
+# _awk_container_daily <file> : 容器 7d 逐日（mem/cpu 日均 + IO 当日累计 · 跨零点差分计入后一日）
+_awk_container_daily() {
+  awk -F'\t' '
+    $4 != "-" {
+      n = $3; d = substr($1, 1, 10); k = d SUBSEP n
+      msum[k] += $4; mcnt[k]++
+      if ($7 != "-") { csum[k] += $7; ccnt[k]++ }
+      for (i = 8; i <= 11; i++) {
+        if ($i == "-") continue
+        v = $i + 0
+        if (seen[n, i]) { dd = v - prev[n, i]; iosum[k, i] += (dd >= 0 ? dd : v) }
+        prev[n, i] = v; seen[n, i] = 1
+      }
+    }
+    END {
+      for (k in mcnt) {
+        split(k, a, SUBSEP)
+        printf "%s %-16s %8.1f %8s %9.1f %9.1f %9.1f %9.1f\n", \
+          a[1], a[2], msum[k] / mcnt[k], \
+          (ccnt[k] > 0 ? sprintf("%.1f", csum[k] / ccnt[k]) : "-"), \
+          iosum[k, 8], iosum[k, 9], iosum[k, 10], iosum[k, 11]
+      }
+    }' "$1"
+}
+
 do_report() {
   require_cmd curl
   local now_epoch from24 from7 merged f24 f7 n24 n7
+  local cmerged fc24 fc7 nc24 nc7
   now_epoch=$(date +%s)
   from24=$((now_epoch - 86400))
   from7=$((now_epoch - 7 * 86400))
 
   merged="${TMPD}/merged.tsv"
-  _read_merged > "${merged}"
+  _read_merged "${METRICS_FILE}" 13 > "${merged}"
   f24="${TMPD}/last24h.tsv"
   f7="${TMPD}/last7d.tsv"
   awk -v from="${from24}" '$2 + 0 >= from' "${merged}" > "${f24}"
   awk -v from="${from7}"  '$2 + 0 >= from' "${merged}" > "${f7}"
   n24=$(grep -c '' "${f24}" || true)
   n7=$(grep -c '' "${f7}" || true)
-  log_info "样本对账：24h=${n24} 条 · 7d=${n7} 条（数据源 ${METRICS_FILE}）"
+
+  # 容器内存（独立文件 · 与宿主窗口同一 from 基准）
+  cmerged="${TMPD}/containers-merged.tsv"
+  _read_merged "${CONTAINERS_FILE}" 11 > "${cmerged}"
+  fc24="${TMPD}/containers-24h.tsv"
+  fc7="${TMPD}/containers-7d.tsv"
+  awk -v from="${from24}" '$2 + 0 >= from' "${cmerged}" > "${fc24}"
+  awk -v from="${from7}"  '$2 + 0 >= from' "${cmerged}" > "${fc7}"
+  nc24=$(grep -c '' "${fc24}" || true)
+  nc7=$(grep -c '' "${fc7}" || true)
+  log_info "样本对账：宿主 24h=${n24} 条 · 7d=${n7} 条 · 容器 24h=${nc24} 条 · 7d=${nc7} 条（${METRICS_FILE} + ${CONTAINERS_FILE}）"
 
   local body="${TMPD}/body.txt"
   {
     printf '[Costra] perf-report · %s · %s\n' "$(hostname)" "$(date '+%F %T %z')"
-    printf '数据源：%s · 采集节奏：每小时 03 分 · 窗口样本：24h=%s 条 · 7d=%s 条\n\n' \
-      "${METRICS_FILE}" "${n24}" "${n7}"
+    printf '数据源：%s + %s · 采集节奏：每小时 03 分 · 窗口样本：宿主 24h=%s/7d=%s 条 · 容器 24h=%s/7d=%s 条\n\n' \
+      "${METRICS_FILE}" "${CONTAINERS_FILE}" "${n24}" "${n7}" "${nc24}" "${nc7}"
 
     if [[ "${n7}" == "0" ]]; then
       printf '最近 7 天无任何性能样本：metrics 文件不存在/为空，或 collect cron 未运行。\n'
@@ -332,6 +546,29 @@ do_report() {
       if [[ "${n24}" -lt 24 ]]; then
         printf '\n提示：24h 窗口预期约 24 条样本，实际 %s 条（collect cron 停机或样本缺失）。\n' "${n24}"
       fi
+    fi
+
+    # ── 容器资源（独立于宿主分支 · 宿主无样本时容器数据照常展示）──
+    printf '\n== 容器 · 最近 24 小时（MiB · cpu%% 占宿主机总核）==\n'
+    if [[ "${nc24}" -gt 0 ]]; then
+      printf '%-16s %8s %9s %11s %7s %8s %9s\n' 'container' 'mem_avg' 'mem_peak' 'peak_at' 'peak_%' 'cpu_avg' 'cpu_peak'
+      _awk_container_stats "${fc24}"
+      printf '\n== 容器 IO · 最近 24 小时（窗口累计 MiB · 容器重启后计数器归零重计）==\n'
+      printf '%-16s %9s %9s %9s %9s\n' 'container' 'net_rx' 'net_tx' 'blk_r' 'blk_w'
+      _awk_container_io "${fc24}"
+    else
+      printf '无容器样本（docker 采集持续跳过，或该主机未升级含容器采集的 monitor-perf.sh）。\n'
+    fi
+    printf '\n== 容器 · 最近 7 天 · 逐日（MiB · IO 为当日累计）==\n'
+    if [[ "${nc7}" -gt 0 ]]; then
+      printf '%-10s %-16s %8s %8s %9s %9s %9s %9s\n' 'date' 'container' 'mem_avg' 'cpu_avg' 'net_rx' 'net_tx' 'blk_r' 'blk_w'
+      _awk_container_daily "${fc7}" | sort
+      if [[ "${n24}" -gt 0 && "${nc24}" -lt $((n24 * 4)) ]]; then
+        printf '\n提示：容器 24h 样本 %s 条，低于预期 ≈%s 条（24h 宿主样本 × 4 容器）：docker 采集跳过或容器缺席（缺席行不计数值）。\n' \
+          "${nc24}" "$((n24 * 4))"
+      fi
+    else
+      printf '无容器样本。\n'
     fi
   } > "${body}"
 
