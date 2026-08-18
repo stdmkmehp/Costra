@@ -60,6 +60,8 @@
 #   按行内 epoch 过滤窗口（不走 offset 增量——每行自带时间戳，天然幂等）：
 #   - 最近 24h：逐时样本表 + 各核心指标 均值/峰值/峰值时刻；
 #   - 最近 7 天：逐日日均表 + "24h 均值 vs 7 天日均"差值（平均变化）；
+#   - 容器资源按容器分组汇总（同容器内纵向对比才有意义：24h vitals + IO 窗口累计、
+#     7d 逐日趋势各居其小节，不同容器不混表）；
 #   - 样本数对账：24h 窗口预期约 24 条，不足时显式提示（collect 停机诚实暴露）。
 #
 # 轮转兼容（copytruncate · infra/logrotate/costra-ops）：
@@ -418,69 +420,57 @@ _awk_delta() {
     }' "$1" "$2"
 }
 
-# _awk_container_stats <file> : 容器 24h vitals（mem avg/peak/peak_at/peak_% + cpu avg/peak）
-_awk_container_stats() {
-  awk -F'\t' '
-    $4 != "-" {
-      n = $3
-      sum[n] += $4; cnt[n]++
-      if ($5 != "-") lim[n] = $5
-      if (cnt[n] == 1 || $4 + 0 > peak[n] + 0) { peak[n] = $4; pat[n] = substr($1, 6, 5) " " substr($1, 12, 5) }
-    }
-    $7 != "-" {
-      csum[$3] += $7; ccnt[$3]++
-      if (ccnt[$3] == 1 || $7 + 0 > cpeak[$3] + 0) cpeak[$3] = $7
-    }
-    END {
-      for (n in cnt)
-        printf "%-16s %8.1f %9.1f %11s %7.1f %8s %9s\n", \
-          n, sum[n] / cnt[n], peak[n], pat[n], (lim[n] > 0 ? 100 * peak[n] / lim[n] : 0), \
-          (ccnt[n] > 0 ? sprintf("%.1f", csum[n] / ccnt[n]) : "-"), \
-          (ccnt[n] > 0 ? sprintf("%.1f", cpeak[n]) : "-")
-    }' "$1" | sort
-}
-
-# _awk_container_io <file> : 容器 24h IO 窗口累计（相邻样本差分求和 · 负增量=重启按新值计）
-_awk_container_io() {
-  awk -F'\t' '
-    $4 != "-" {
-      n = $3; cnt[n]++
+# _awk_container_24h <name> <file> : 单容器 24h 汇总两行（报告按容器分组 · 同容器纵向对比）
+#   行1 vitals：mem avg/peak/peak_at/peak%（相对 limit）+ cpu avg/peak
+#   行2 IO 窗口累计（相邻样本差分求和 · 负增量=容器重启计数器归零按新值计）
+#   窗口内该容器无有效样本 → 单行说明（配合文末样本对账区分 缺席 与 采集跳过）
+_awk_container_24h() {
+  awk -F'\t' -v want="$1" '
+    $3 == want && $4 != "-" {
+      msum += $4; mcnt++
+      if ($5 != "-") lim = $5
+      if (mcnt == 1 || $4 + 0 > peak + 0) { peak = $4; pat = substr($1, 6, 5) " " substr($1, 12, 5) }
+      if ($7 != "-") { csum += $7; ccnt++; if (ccnt == 1 || $7 + 0 > cpeak + 0) cpeak = $7 }
       for (i = 8; i <= 11; i++) {
         if ($i == "-") continue
         v = $i + 0
-        if (seen[n, i]) { d = v - prev[n, i]; sum[n, i] += (d >= 0 ? d : v) }
-        prev[n, i] = v; seen[n, i] = 1
+        if (seen[i]) { d = v - prev[i]; iosum[i] += (d >= 0 ? d : v) }
+        prev[i] = v; seen[i] = 1
       }
     }
     END {
-      for (n in cnt)
-        printf "%-16s %9.1f %9.1f %9.1f %9.1f\n", n, sum[n, 8], sum[n, 9], sum[n, 10], sum[n, 11]
-    }' "$1" | sort
+      if (mcnt == 0) { printf "  24h 无有效样本（容器缺席或 docker 采集跳过）\n"; exit }
+      printf "  24h  mem avg %.1f · peak %.1f @%s（占 limit %.0f 的 %.1f%%）· cpu avg %s%% · peak %s%%\n", \
+        msum / mcnt, peak, pat, lim, (lim > 0 ? 100 * peak / lim : 0), \
+        (ccnt > 0 ? sprintf("%.1f", csum / ccnt) : "-"), \
+        (ccnt > 0 ? sprintf("%.1f", cpeak) : "-")
+      printf "       IO 累计 MiB  net_rx %.1f · net_tx %.1f · blk_r %.1f · blk_w %.1f\n", \
+        iosum[8], iosum[9], iosum[10], iosum[11]
+    }' "$2"
 }
 
-# _awk_container_daily <file> : 容器 7d 逐日（mem/cpu 日均 + IO 当日累计 · 跨零点差分计入后一日）
-_awk_container_daily() {
-  awk -F'\t' '
-    $4 != "-" {
-      n = $3; d = substr($1, 1, 10); k = d SUBSEP n
-      msum[k] += $4; mcnt[k]++
-      if ($7 != "-") { csum[k] += $7; ccnt[k]++ }
+# _awk_container_daily_one <name> <file> : 单容器 7d 逐日（mem/cpu 日均 + IO 当日累计 ·
+#   跨零点差分计入后一日 · 负增量=重启按新值计）；输出无序，调用方 | sort
+_awk_container_daily_one() {
+  awk -F'\t' -v want="$1" '
+    $3 == want && $4 != "-" {
+      d = substr($1, 1, 10)
+      msum[d] += $4; mcnt[d]++
+      if ($7 != "-") { csum[d] += $7; ccnt[d]++ }
       for (i = 8; i <= 11; i++) {
         if ($i == "-") continue
         v = $i + 0
-        if (seen[n, i]) { dd = v - prev[n, i]; iosum[k, i] += (dd >= 0 ? dd : v) }
-        prev[n, i] = v; seen[n, i] = 1
+        if (seen[i]) { dd = v - prev[i]; iosum[d, i] += (dd >= 0 ? dd : v) }
+        prev[i] = v; seen[i] = 1
       }
     }
     END {
-      for (k in mcnt) {
-        split(k, a, SUBSEP)
-        printf "%s %-16s %8.1f %8s %9.1f %9.1f %9.1f %9.1f\n", \
-          a[1], a[2], msum[k] / mcnt[k], \
-          (ccnt[k] > 0 ? sprintf("%.1f", csum[k] / ccnt[k]) : "-"), \
-          iosum[k, 8], iosum[k, 9], iosum[k, 10], iosum[k, 11]
-      }
-    }' "$1"
+      for (d in mcnt)
+        printf "  %-10s %8.1f %8s %9.1f %9.1f %9.1f %9.1f\n", \
+          d, msum[d] / mcnt[d], \
+          (ccnt[d] > 0 ? sprintf("%.1f", csum[d] / ccnt[d]) : "-"), \
+          iosum[d, 8], iosum[d, 9], iosum[d, 10], iosum[d, 11]
+    }' "$2"
 }
 
 do_report() {
@@ -548,27 +538,34 @@ do_report() {
       fi
     fi
 
-    # ── 容器资源（独立于宿主分支 · 宿主无样本时容器数据照常展示）──
-    printf '\n== 容器 · 最近 24 小时（MiB · cpu%% 占宿主机总核）==\n'
-    if [[ "${nc24}" -gt 0 ]]; then
-      printf '%-16s %8s %9s %11s %7s %8s %9s\n' 'container' 'mem_avg' 'mem_peak' 'peak_at' 'peak_%' 'cpu_avg' 'cpu_peak'
-      _awk_container_stats "${fc24}"
-      printf '\n== 容器 IO · 最近 24 小时（窗口累计 MiB · 容器重启后计数器归零重计）==\n'
-      printf '%-16s %9s %9s %9s %9s\n' 'container' 'net_rx' 'net_tx' 'blk_r' 'blk_w'
-      _awk_container_io "${fc24}"
-    else
+    # ── 容器资源 · 按容器分组（同容器纵向对比才有意义 · 独立于宿主分支照常展示）──
+    printf '\n== 容器资源 · 按容器分组（MiB · cpu%% 占宿主机总核 · IO 为累计差分）==\n'
+    if [[ "${nc24}" -eq 0 && "${nc7}" -eq 0 ]]; then
       printf '无容器样本（docker 采集持续跳过，或该主机未升级含容器采集的 monitor-perf.sh）。\n'
-    fi
-    printf '\n== 容器 · 最近 7 天 · 逐日（MiB · IO 为当日累计）==\n'
-    if [[ "${nc7}" -gt 0 ]]; then
-      printf '%-10s %-16s %8s %8s %9s %9s %9s %9s\n' 'date' 'container' 'mem_avg' 'cpu_avg' 'net_rx' 'net_tx' 'blk_r' 'blk_w'
-      _awk_container_daily "${fc7}" | sort
+    else
+      [[ "${nc24}" -gt 0 ]] || printf '24h 窗口无容器样本。\n'
+      [[ "${nc7}" -gt 0 ]]  || printf '7d 窗口无容器样本。\n'
+      local cname cdaily
+      for cname in ${EXPECTED_CONTAINERS}; do
+        printf '\n── %s ──\n' "${cname}"
+        if [[ "${nc24}" -gt 0 ]]; then
+          _awk_container_24h "${cname}" "${fc24}"
+        fi
+        if [[ "${nc7}" -gt 0 ]]; then
+          cdaily=$(_awk_container_daily_one "${cname}" "${fc7}" | sort)
+          if [[ -n "${cdaily}" ]]; then
+            printf '  7d 逐日（mem/cpu 日均 · IO 当日累计）：\n'
+            printf '  %-10s %8s %8s %9s %9s %9s %9s\n' 'date' 'mem_avg' 'cpu_avg' 'net_rx' 'net_tx' 'blk_r' 'blk_w'
+            printf '%s\n' "${cdaily}"
+          else
+            printf '  7d 无有效样本（容器缺席或 docker 采集跳过）。\n'
+          fi
+        fi
+      done
       if [[ "${n24}" -gt 0 && "${nc24}" -lt $((n24 * 4)) ]]; then
         printf '\n提示：容器 24h 样本 %s 条，低于预期 ≈%s 条（24h 宿主样本 × 4 容器）：docker 采集跳过或容器缺席（缺席行不计数值）。\n' \
           "${nc24}" "$((n24 * 4))"
       fi
-    else
-      printf '无容器样本。\n'
     fi
   } > "${body}"
 
