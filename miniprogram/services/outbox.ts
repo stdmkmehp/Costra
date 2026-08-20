@@ -422,6 +422,15 @@ export async function deadLetterSize(): Promise<number> {
   return dl.length;
 }
 
+/**
+ * 未上行 op 计数（待 drain + 已 drain 未 ack + dead-letter）。
+ * 供 logout 前风险提示：只读三个索引数组长度，不加载 op 本体。
+ */
+export async function pendingCount(): Promise<number> {
+  const [idx, drained, dl] = await Promise.all([readIndex(), readDrained(), readDeadLetter()]);
+  return idx.length + drained.length + dl.length;
+}
+
 export async function __peek(): Promise<SyncOp[]> {
   const idx = await readIndex();
   const ops: SyncOp[] = [];

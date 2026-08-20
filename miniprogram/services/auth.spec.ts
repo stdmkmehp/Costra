@@ -208,17 +208,7 @@ describe('services/auth · updateLocalUserProfile（COSTRA-158 §2.4）', () => 
 // ─── COSTRA-165: T7~T11 family-context 接入测试 ──────────────────────────────
 
 describe('services/auth · COSTRA-165 family-context integration', () => {
-  // mock env.ts 让 mockLogin=true · doWxLogin 会跳过 getOrCreateDeviceFp，但仍走服务端请求
-  vi.mock('./env', () => ({
-    getEnv: vi.fn(() => ({
-      name: 'dev',
-      apiBaseUrl: 'http://localhost:8080/v1',
-      mockLogin: true,
-      flags: {},
-    })),
-  }));
-
-  // mock request.ts · 默认返回 mockRaw 以支持 T7~T10（mockLogin=true 现在也走 request）
+  // mock request.ts · 默认返回 mockRaw 以支持 T7~T10
   vi.mock('./request', () => ({
     request: vi.fn(async () => ({
       access_token: 'mock-jwt.access',
@@ -352,13 +342,6 @@ describe('services/auth · COSTRA-165 family-context integration', () => {
   });
 
   it('T12: loginFlow 并发调用只触发一次 wx.login + /auth/wx-login', async () => {
-    const { getEnv } = await import('./env');
-    vi.mocked(getEnv).mockReturnValueOnce({
-      name: 'staging',
-      apiBaseUrl: 'https://costra.cloud/v1',
-      mockLogin: false,
-      flags: {},
-    });
     const { request } = await import('./request');
     let resolveLogin!: (value: TokenRaw) => void;
     vi.mocked(request).mockImplementationOnce(() => new Promise<TokenRaw>((resolve) => { resolveLogin = resolve; }));
@@ -378,13 +361,6 @@ describe('services/auth · COSTRA-165 family-context integration', () => {
 
   it('T13: refreshToken 并发调用只触发一次 /auth/refresh', async () => {
     authTest.setCurrent(authTest.buildStored(mockRaw));
-    const { getEnv } = await import('./env');
-    vi.mocked(getEnv).mockReturnValueOnce({
-      name: 'staging',
-      apiBaseUrl: 'https://costra.cloud/v1',
-      mockLogin: false,
-      flags: {},
-    });
     const { request } = await import('./request');
     let resolveRefresh!: (value: TokenRaw) => void;
     vi.mocked(request).mockImplementationOnce(() => new Promise<TokenRaw>((resolve) => { resolveRefresh = resolve; }));
@@ -400,13 +376,6 @@ describe('services/auth · COSTRA-165 family-context integration', () => {
 
   it('T14: refresh 悬挂期间 clearToken 后，旧 refresh 响应不得恢复登录态', async () => {
     authTest.setCurrent(authTest.buildStored(mockRaw));
-    const { getEnv } = await import('./env');
-    vi.mocked(getEnv).mockReturnValueOnce({
-      name: 'staging',
-      apiBaseUrl: 'https://costra.cloud/v1',
-      mockLogin: false,
-      flags: {},
-    });
     const { request } = await import('./request');
     let resolveRefresh!: (value: TokenRaw) => void;
     vi.mocked(request).mockImplementationOnce(() => new Promise<TokenRaw>((resolve) => { resolveRefresh = resolve; }));
@@ -427,15 +396,7 @@ describe('services/auth · COSTRA-165 family-context integration', () => {
     const originalFamilyCtx = { ...familyState.ctx! };
     expect(originalFamilyCtx.family_id).toBeTruthy();
 
-    // 2. 让 refreshToken 走真链路 · 返回空字符串 default_family_id
-    const { getEnv } = await import('./env');
-    vi.mocked(getEnv).mockReturnValueOnce({
-      name: 'staging',
-      apiBaseUrl: 'https://costra.cloud/v1',
-      mockLogin: false,  // 强制走真链路
-      flags: {},
-    });
-
+    // 2. refreshToken 返回空字符串 default_family_id
     const { request } = await import('./request');
     vi.mocked(request).mockResolvedValueOnce({
       access_token: 'refreshed.access',

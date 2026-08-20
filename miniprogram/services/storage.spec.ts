@@ -5,7 +5,7 @@
 //   - error path：`data not found` 必须被吞为 null（首次读 key 不存在 = 正常语义）
 //   - node 环境下 wx 不存在 → 所有 API 静默 noop（不 throw）
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { getItem, setItem, removeItem, ensureVersion } from './storage';
+import { getItem, setItem, removeItem, ensureVersion, clearAllForReset } from './storage';
 
 describe('services/storage · 无 wx 全局环境（兼容单测/SSR）', () => {
   beforeEach(() => {
@@ -137,5 +137,41 @@ describe('services/storage · 模拟 wx 异步 API（Promise 形态）', () => {
     expect(mockStore.get('__costra_token_v1')).toBe(tokenEnv);
     expect(mockStore.get('__costra_device_fp')).toBe(deviceEnv);
     expect(mockStore.has('legacy-key')).toBe(false);
+  });
+
+  it('clearAllForReset 清空全部业务 key · 仅保留设备指纹 · 重写 VERSION_KEY', async () => {
+    const deviceEnv = { v: 1, t: Date.now(), d: 'df_keep_me' };
+    mockStore.set('__costra_storage_version', 1);
+    mockStore.set('__costra_device_fp', deviceEnv);
+    mockStore.set('__costra_token_v1', { v: 1, t: Date.now(), d: { raw: {} } });
+    mockStore.set('entry:__index', ['a', 'b']);
+    mockStore.set('outbox:__index', [1]);
+    mockStore.set('__costra_family_context_v1', { v: 1, t: Date.now(), d: { family_id: 'f1' } });
+
+    await clearAllForReset();
+
+    expect(mockStore.get('__costra_device_fp')).toBe(deviceEnv);
+    expect(mockStore.get('__costra_storage_version')).toBe(1);
+    expect(mockStore.has('__costra_token_v1')).toBe(false);
+    expect(mockStore.has('entry:__index')).toBe(false);
+    expect(mockStore.has('outbox:__index')).toBe(false);
+    expect(mockStore.has('__costra_family_context_v1')).toBe(false);
+  });
+
+  it('clearAllForReset 后模拟冷启动 ensureVersion · 不得二次清空新数据（版本不变式回归）', async () => {
+    mockStore.set('__costra_device_fp', { v: 1, t: Date.now(), d: 'df_keep_me' });
+    mockStore.set('entry:x', { some: 'thing' });
+    await clearAllForReset();
+
+    // 重置后重新登录：写入新 token + 全量 pull 重建的本地数据
+    mockStore.set('__costra_token_v1', { v: 1, t: Date.now(), d: { raw: { access_token: 'new' } } });
+    mockStore.set('entry:__index', ['ref-1']);
+
+    await ensureVersion();
+
+    // 若 clearAllForReset 未重写 VERSION_KEY，ensureVersion 会因「缺失 + 非空」误判迁移而再次全清
+    expect(mockStore.get('__costra_token_v1')).toBeDefined();
+    expect(mockStore.get('entry:__index')).toEqual(['ref-1']);
+    expect(mockStore.get('__costra_device_fp')).toEqual({ v: 1, t: expect.any(Number), d: 'df_keep_me' });
   });
 });

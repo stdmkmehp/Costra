@@ -7,11 +7,13 @@ import {
   ackResultsBySeq,
   ackBatchFailure,
   size,
+  pendingCount,
   __peek,
   __clear,
   PushResultItem,
   computeRetryBackoff,
 } from './outbox';
+import { setItem } from './storage';
 
 let mockStore: Map<string, unknown>;
 
@@ -81,6 +83,30 @@ describe('services/outbox', () => {
     const result2 = await drainBatch(200);
     expect(result2).not.toBeNull();
     expect(result2!.batch).toHaveLength(3);
+  });
+
+  it('pendingCount 覆盖 index + drained + dead-letter 三处（logout 风险提示数据源）', async () => {
+    expect(await pendingCount()).toBe(0);
+
+    await enqueue({ op: 'create', entity: 'entry', client_ref_id: 'p-1', base_version: null, payload: {} });
+    await enqueue({ op: 'create', entity: 'entry', client_ref_id: 'p-2', base_version: null, payload: {} });
+    expect(await pendingCount()).toBe(2);
+
+    // drain 一条 → index 1 + drained 1，未上行总数不变
+    const drained = await drainBatch(1);
+    expect(drained).not.toBeNull();
+    expect(await pendingCount()).toBe(2);
+
+    // ack 成功一条 → 剩 1
+    await ackResultsBySeq(drained!.batchKey, [{
+      seq: drained!.batch[0].seq,
+      result: { client_ref_id: drained!.batch[0].client_ref_id, status: 'ok', server_id: 'srv-x', server_version: 1 },
+    }]);
+    expect(await pendingCount()).toBe(1);
+
+    // dead-letter 中的条目同样计入（已确认有丢失风险，退出前必须提示）
+    await setItem('outbox:__dead_letter', [{ op: 'create' }]);
+    expect(await pendingCount()).toBe(2);
   });
 
   it('ackResultsBySeq ok → 物理删 op', async () => {

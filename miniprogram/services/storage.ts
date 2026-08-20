@@ -8,7 +8,7 @@
 //   3. 基于 wx.getStorage Promise 形态（基础库 2.21.0+ · 当前 dev 3.8.12 · NFR 最低 2.32.3）
 
 import { logger } from '../utils/logger';
-import { PRESERVED_KEYS } from './storageKeys';
+import { PRESERVED_KEYS, DEVICE_FP_KEY } from './storageKeys';
 
 const STORAGE_VERSION = 1;
 const VERSION_KEY = '__costra_storage_version';
@@ -87,6 +87,24 @@ async function clearStoragePreserving(keys: readonly string[]): Promise<void> {
     } catch (e) {
       logger.warn('storage', `preserve rewrite failed · key=${item.key}`, e);
     }
+  }
+}
+
+/**
+ * 本地重置专用：清空全部业务数据，仅保留设备指纹，并重写版本号。
+ * 由 localReset.ts 在 logout 流程调用。
+ *
+ * 版本不变式必须在本函数内原子成立（清 → 回写指纹 → 重写 VERSION_KEY）：
+ * 否则下次冷启动 ensureVersion() 会因「VERSION_KEY 缺失 + storage 非空（指纹+新数据）」
+ * 误判为老版本迁移，把重新登录后拉取的数据再次清空（含 outbox 未上行 op）。
+ */
+export async function clearAllForReset(): Promise<void> {
+  if (typeof wx === 'undefined') return;
+  await clearStoragePreserving([DEVICE_FP_KEY]);
+  try {
+    await wx.setStorage({ key: VERSION_KEY, data: STORAGE_VERSION });
+  } catch (e) {
+    logger.warn('storage', 'clearAllForReset rewrite version failed', e);
   }
 }
 

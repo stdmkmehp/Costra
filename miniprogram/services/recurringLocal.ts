@@ -131,21 +131,6 @@ export async function invalidateCache(): Promise<void> {
   await removeItem(cacheKey(userId));
 }
 
-/**
- * 清理当前用户的 recurring cache + mutation queue。
- * 登出前调用，避免下一位登录用户共享上一位的暂存 mutation。
- */
-export async function clearForCurrentUser(): Promise<void> {
-  const userId = scopedUserId();
-  if (!userId) return;
-  try {
-await removeItem(cacheKey(userId));
-    await removeItem(queueKey(userId));
-  } catch (err) {
-    logger.warn('recurringLocal', 'clearForCurrentUser failed', err);
-  }
-}
-
 // ─── Mutation Queue（recurring 专用 · 不入 entry outbox）────────────────────
 
 export type MutationOp =

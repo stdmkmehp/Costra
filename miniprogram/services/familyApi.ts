@@ -257,6 +257,14 @@ function invalidateFamilyStructureCache(familyId?: string): void {
   if (familyId) invalidateFamilyCache(familyId);
 }
 
+/** 清空全部家庭相关缓存（logout 本地重置时调用 · localReset.ts） */
+export function clearFamilyCaches(): void {
+  invalidateFamiliesCache();
+  invalidateFamilyMembersCache();
+  _summaryCache.clear();
+  _familyDrillCache.clear();
+}
+
 function isFresh(timestamp: number, ttl: number): boolean {
   return Date.now() - timestamp <= ttl;
 }

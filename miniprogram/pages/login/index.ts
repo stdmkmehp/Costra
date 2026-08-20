@@ -13,7 +13,7 @@ import { loginFlow, hasValidSession, getToken } from '../../services/auth';
 import { mapError } from '../../utils/error-mapper';
 import { pickRandomSlogan } from '../../config/slogans';
 import { eventBus, EventNames } from '../../services/eventBus';
-import { syncOnce } from '../../services/syncScheduler';
+import { startScheduler } from '../../services/syncScheduler';
 import { scheduleHomeDataPrefetchAfterLedgerReady } from '../../services/prefetch';
 
 interface AppWithBootstrap {
@@ -99,9 +99,10 @@ Page({
         eventBus.emit(EventNames.PROFILE_INCOMPLETE);
       }
 
-      // 登录成功后强制触发一次全量 sync（拉取服务端数据到本地）
-      // 场景：清数据后重新登录，本地 DB 为空，必须 sync 后才能显示明细
-      void syncOnce('launch');
+      // 登录成功后重启同步调度 + 立即触发一次全量 sync（拉取服务端数据到本地）
+      // 场景：logout 已 stopScheduler + 清空本地 DB，必须恢复调度（startScheduler 幂等，
+      //   重复调用仅补建 periodic timer）并 sync 后才能显示明细
+      startScheduler();
 
       // 2026-06-09: 登录成功路径同样等 ledger 首屏完成后再预热非首屏数据，避免抢首屏资源。
       scheduleHomeDataPrefetchAfterLedgerReady('login-success');

@@ -348,6 +348,34 @@ describe('services/syncScheduler', () => {
     vi.unstubAllGlobals();
   });
 
+  // T22: startScheduler 幂等 · 重复调用不重复注册常驻监听；stop 后重调可恢复 periodic
+  // （logout → stopScheduler → 重新登录 → startScheduler 路径的回归保障）
+  it('T22: startScheduler is idempotent · listeners registered once, periodic restarts after stop', async () => {
+    mockedIsLoggedIn.mockReturnValue(true);
+    mockedGetActiveFamilyId.mockResolvedValue('family-123');
+    mockedPushDelta.mockResolvedValue({ pushed: 0, conflicts: 0, rejected: 0, failed: 0 });
+    mockedSyncPull.mockResolvedValue({
+      watermark: 1,
+      changes: { entries: [], categories: [], budgets: [], ledgers: [] },
+    });
+
+    const onNetworkCb = vi.fn();
+    vi.stubGlobal('wx', { onNetworkStatusChange: onNetworkCb });
+
+    startScheduler();
+    startScheduler();
+    stopScheduler();
+    startScheduler();
+    expect(onNetworkCb).toHaveBeenCalledTimes(1);
+
+    // periodic 已恢复：推进一个周期 → 触发周期 sync
+    mockedPushDelta.mockClear();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(mockedPushDelta).toHaveBeenCalled();
+
+    vi.unstubAllGlobals();
+  });
+
   // T14: startScheduler 即使 ready promise reject 也兜底触发 launch sync
   it('T14: startScheduler still launches sync even if ready promise rejects', async () => {
     mockedIsLoggedIn.mockReturnValue(true);

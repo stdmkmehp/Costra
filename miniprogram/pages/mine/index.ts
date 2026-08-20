@@ -18,8 +18,8 @@ import { eventBus, EventNames, type SyncDonePayload, type ProfileUpdatedPayload 
 import {
   getUserOverview,
   getCachedUserOverview,
-  invalidateUserOverview,
 } from '../../services/userOverviewApi';
+import { pendingCount } from '../../services/outbox';
 import { hasUnreadAnnouncements } from '../../services/announcementApi';
 import { buildAppShareContent } from '../../utils/share';
 
@@ -261,17 +261,24 @@ Page({
 
   async onTapLogout() {
     const res = await wx.showModal({ title: '退出登录', content: '确定要退出吗？' });
-    if (res.confirm) {
-      // 退出前主动推送本地未同步数据 · 保证用户离开前数据尽量上行
-      // syncOnce 需要 familyId + 登录态，必须在 logout() 清除前调用
-      try { await syncOnce('hide'); } catch { /* 吞错 · logout 必须成功 */ }
-      stopScheduler();
-      // mine-overview: 退出登录时清缓存，避免下次冷启动登录后命中陈旧数据
-      invalidateUserOverview();
-      // COSTRA-102 D2.2：logout 已改为 async（含真调 POST /auth/logout 204）
-      // 内部已自带 wx.reLaunch，此处无需再跳
-      await logout();
+    if (!res.confirm) return;
+    // 退出前主动推送本地未同步数据 · 保证用户离开前数据尽量上行
+    // syncOnce 需要 familyId + 登录态，必须在 logout() 清除前调用
+    try { await syncOnce('hide'); } catch { /* 吞错 · logout 必须成功 */ }
+    // 仍有未上行数据 → 二次确认（文案模糊化，不暴露同步队列细节）
+    let pending = 0;
+    try { pending = await pendingCount(); } catch { /* 读取失败按无未上行处理，不阻塞退出 */ }
+    if (pending > 0) {
+      const confirmRes = await wx.showModal({
+        title: '退出登录',
+        content: '最新记录可能尚未同步，退出后可能丢失，是否确认退出？',
+      });
+      if (!confirmRes.confirm) return;
     }
+    // 全部确认通过后才停调度：取消分支零成本，调度器保持存活
+    stopScheduler();
+    // logout 内部经 localReset 全量清理本地数据（存储 + 各模块内存缓存）并自带 wx.reLaunch，此处无需再跳
+    await logout();
   },
 
   // ICP 备案号仅展示，不再提供点击复制/弹窗（工信部备案查询由用户自行访问 beian.miit.gov.cn）

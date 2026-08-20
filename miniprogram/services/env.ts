@@ -6,7 +6,6 @@ export type EnvName = 'dev' | 'staging' | 'prod';
 interface EnvConfig {
   name: EnvName;
   apiBaseUrl: string;
-  mockLogin: boolean;
   flags: Record<string, boolean>;
 }
 
@@ -14,7 +13,6 @@ const ENV_MAP: Record<EnvName, EnvConfig> = {
   dev: {
     name: 'dev',
     apiBaseUrl: 'http://localhost:8080/v1',
-    mockLogin: false,
     flags: {
       family_sharing: true,
       subscribe_msg: true,
@@ -26,7 +24,6 @@ const ENV_MAP: Record<EnvName, EnvConfig> = {
     // Sprint-4 启用 stg 子域独立后端（infra/wechat/domains.md §1.1）
     // 微信白名单已加 https://stg.costra.cloud · 备案沿用主体主备案（沪ICP备2026017253号-2）
     apiBaseUrl: 'https://stg.costra.cloud/v1',
-    mockLogin: false,
     flags: {
       family_sharing: true,
       subscribe_msg: true,
@@ -37,7 +34,6 @@ const ENV_MAP: Record<EnvName, EnvConfig> = {
     name: 'prod',
     // D-009 §2.1 锁定主域 costra.cloud；D-023 决策 prod 入口回归根域，子域 api.costra.cloud 搁置至 Phase-2
     apiBaseUrl: 'https://costra.cloud/v1',
-    mockLogin: false,
     flags: {
       family_sharing: true,
       subscribe_msg: true,
@@ -58,7 +54,6 @@ const ENV_MAP: Record<EnvName, EnvConfig> = {
  * 单元测试 / Node 环境（无 wx 全局）：回退 dev。
  *
  * ⚠️ 若需在开发者工具里"本地跑但打 staging"，可手动改常量为 'staging' · 但不要commit。
- *⚠️ D-026 §2.3 C2 红线：staging.mockLogin 与 prod.mockLogin 均为 false · 不可放松。
  */
 type WxRuntime = {
   getAccountInfoSync?: () => {
@@ -72,7 +67,7 @@ function detectEnv(): EnvName {
   try {
     const g: WxRuntime | undefined = typeof wx !== 'undefined' ? wx : undefined;
     const envVersion = g?.getAccountInfoSync?.()?.miniProgram?.envVersion;
-    const env: EnvName = envVersion === 'release' ? 'prod' : envVersion === 'trial' ? 'staging' : 'staging' /* 临时将dev改为staging 'dev' */ ;
+    const env: EnvName = envVersion === 'release' ? 'prod' : envVersion === 'trial' ? 'staging' : 'dev' ;
 
     if (g) {
       console.info('[env] detectEnv', { envVersion: envVersion ?? 'unknown', env });

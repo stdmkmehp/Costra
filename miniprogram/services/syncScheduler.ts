@@ -44,6 +44,8 @@ let lastShowTriggerAt = 0;
 let periodicTimer: ReturnType<typeof setInterval> | null = null;
 let conflictRetryTimer: ReturnType<typeof setTimeout> | null = null;
 let conflictRetryCount = 0;
+/** 常驻监听（网络恢复 / outbox 入队）只注册一次，与 timer 生命周期解耦 */
+let listenersRegistered = false;
 
 // ─── 核心：syncOnce ──────────────────────────────────────────────────────────
 
@@ -208,21 +210,27 @@ export function startScheduler(ready?: Promise<void>): void {
     launchSync();
   }
 
-  wx.onNetworkStatusChange((res: { isConnected: boolean }) => {
-    if (res.isConnected) {
-      logger.debug('sync', 'network recover · trigger sync');
-      syncOnce('network-recover');
-    }
-  });
+  // 幂等：常驻监听只注册一次。logout → stopScheduler 后重新登录会再次调用本函数，
+  // 若重复注册会导致一次网络恢复 / enqueue 触发多次 sync。
+  if (!listenersRegistered) {
+    listenersRegistered = true;
+
+    wx.onNetworkStatusChange((res: { isConnected: boolean }) => {
+      if (res.isConnected) {
+        logger.debug('sync', 'network recover · trigger sync');
+        syncOnce('network-recover');
+      }
+    });
+
+    // 订阅 outbox 入队事件 → 立即触发同步（mutex 保证不并发）
+    eventBus.on(EventNames.OUTBOX_ENQUEUED, () => {
+      triggerOnMutation();
+    });
+  }
 
   if (!periodicTimer) {
     periodicTimer = setInterval(() => syncOnce('periodic'), PERIODIC_INTERVAL_MS);
   }
-
-  // 订阅 outbox 入队事件 → 立即触发同步（mutex 保证不并发）
-  eventBus.on(EventNames.OUTBOX_ENQUEUED, () => {
-    triggerOnMutation();
-  });
 }
 
 export function stopScheduler(): void {
@@ -268,6 +276,7 @@ export const __test__ = {
     pendingRetrigger = false;
     lastShowTriggerAt = 0;
     conflictRetryCount = 0;
+    listenersRegistered = false;
     if (periodicTimer) {
       clearInterval(periodicTimer);
       periodicTimer = null;

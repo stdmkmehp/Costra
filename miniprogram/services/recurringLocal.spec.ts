@@ -236,14 +236,5 @@ expect(typeof k1).toBe('string');
       const result = await getCachedRules();
       expect(result).toBeNull();
     });
-
-    it('clearForCurrentUser removes both cache and queue for the active user', async () => {
-      const { clearForCurrentUser } = await import('./recurringLocal');
-      await clearForCurrentUser();
-      const { removeItem } = await import('./storage');
-   const keys = (removeItem as any).mock.calls.map((c: any[]) => c[0]);
-    expect(keys).toContain('recurring:list:user-test');
-    expect(keys).toContain('recurring:mutation_queue:user-test');
-    });
   });
 });

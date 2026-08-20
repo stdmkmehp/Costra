@@ -101,11 +101,11 @@ Sprint-0 骨架仅实现"最小可演示登录闭环"，主包与分包的**完�
 
 
 
-## 5. 登录闭环（Mock）
+## 5. 登录闭环
 
 启动 → `pages/login/index` → 点击 **一键微信登录**  
 → `wx.login` 取 `code`  
-→ `POST /v1/auth/wx-login`（`env.mockLogin=true` 时走本地 Mock）  
+→ `POST /v1/auth/wx-login`  
 → Token 存入 `wx.storage`（带版本号，`services/storage.ts`）  
 → `wx.switchTab` 跳首页
 

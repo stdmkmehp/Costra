@@ -1,11 +1,10 @@
-// services/auth.ts · 登录闭环（真实链路 + Mock 降级）
+// services/auth.ts · 登录闭环
 // 卡号: COSTRA-102（重写）· 原骨架: COSTRA-030
 // COSTRA-125: storage async 迁移 · R1 漏网点 auth.ts:70 `getItem(TOKEN_KEY)` 改 await · initAuth/doWxLogin/refreshToken/clearToken 全链 async 对齐
 // COSTRA-165: TokenRaw 协议对齐（expires_in required + user 子字段 + default_family_id/ledger_id）+ login/logout/initAuth/refresh 接入 family-context
 // 契约事实源: server/api/openapi.yaml #/components/schemas/AuthTokenPair
 // 上游派单: .team/dispatch/COSTRA-102-miniapp-login-e2e.md §D2.2 · .team/dispatch/COSTRA-125-miniapp-storage-async-migration.md §3 (b)
 // 承接 COSTRA-118 路径 A: E.P0-1（code 日志脱敏）/ E.P0-2（TokenRaw 字段对齐）/ E.P0-3（refresh body 字段名）
-import { getEnv } from './env';
 import { setItem, getItem, removeItem } from './storage';
 import { request } from './request';
 import { setActiveFamily, getActiveFamilyId, getActiveLedgerId, fetchAndRestorePreference, restoreActiveFamilyAfterLogin, flushPendingPreference } from './family';
@@ -219,6 +218,10 @@ export async function clearToken(): Promise<void> {
  * P0 行为：先尝试真调 POST /auth/logout（204），无论成功失败都清本地并跳登录页。
  * 故意不 throw：退出登录语义上必须成功。
  *
+ * 本地清理语义 = 「删除小程序重装」：resetLocalData() 全量清空 storage（仅保留设备指纹）
+ * + 各模块内存缓存，覆盖 db/outbox/watermark/recurring/family-context/业务缓存。
+ * 重新登录后走服务端 preference 恢复账本上下文，本地库经全量 pull 重建。
+ *
  * 注意：调用方（如 mine 页 onTapLogout）应在调用 logout 前先执行 syncOnce('hide') + stopScheduler()，
  * 保证用户离开前本地数据尽量上行。此处不直接引入 syncScheduler 以避免循环依赖。
  */
@@ -240,8 +243,6 @@ export async function logout(): Promise<void> {
     }
   }
 
-  // migration 0011：不清 family-context（偏好独立于登录态，重新登录后可恢复上次账本）
-  // clearActiveFamily() 已移除，globalData 仍需清空（页面层读 globalData.activeLedgerId）
   const app = getApp();
   if (app?.globalData) {
     app.globalData.activeLedgerId = undefined;
@@ -249,16 +250,16 @@ export async function logout(): Promise<void> {
     app.globalData.userLoggedOut = true;
   }
 
-  // 清理当前用户 recurring 本地数据（缓存 + mutation queue），避免下一位登录用户串数据。
-  // 必须在 clearToken 之前，因 recurringLocal 依赖 getCurrentUserId() 定位存储 key。
+  // 先清登录态内存（current=null + authEpoch 递增，阻断在途 refresh 反写），再全量重置本地数据。
+  // 动态引入 localReset 以避免循环依赖（localReset → *Api → request → auth）。
+  await clearToken();
   try {
-    const { clearForCurrentUser } = await import('./recurringLocal');
-    await clearForCurrentUser();
+    const { resetLocalData } = await import('./localReset');
+    await resetLocalData();
   } catch (err) {
-    logger.warn('auth', 'clear recurring local on logout failed', err);
+    logger.warn('auth', 'reset local data on logout failed', err);
   }
 
-  await clearToken();
   try {
     wx.reLaunch({ url: '/pages/login/index' });
   } catch {
@@ -271,15 +272,12 @@ export async function logout(): Promise<void> {
  * E.P0-1: 日志脱敏 · 不记录 code 任何片段（仅记长度）
  */
 export async function doWxLogin(): Promise<Token> {
-  const env = getEnv();
-
   const { code } = await wxLoginAsync();
   // P0-1 敏感值红线：不记录 code 任何片段（长度仅用于排障）
   logger.info('auth', 'wx.login ok', { codeLen: code.length });
 
   // 携带设备指纹：服务端据此在登录时回收同设备旧会话（允许多设备并存）
-  // mockLogin 时服务端 WX_MOCK_LOGIN 已 mock code2Session，code 可为任意非空值
-  const clientFp = env.mockLogin ? undefined : await getOrCreateDeviceFp();
+  const clientFp = await getOrCreateDeviceFp();
   const resp = await request<TokenRaw>({
     method: 'POST',
     path: '/auth/wx-login',

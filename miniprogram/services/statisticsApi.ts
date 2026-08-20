@@ -201,6 +201,13 @@ export function invalidateStatisticsCache(familyId: string): void {
   }
 }
 
+/** 清空全部统计缓存（logout 本地重置时调用 · localReset.ts） */
+export function clearStatisticsCache(): void {
+  _monthlyCache.clear();
+  _yearlyCache.clear();
+  _drillCache.clear();
+}
+
 // ─── API 函数 ────────────────────────────────────────────────────────────────────
 
 /**
