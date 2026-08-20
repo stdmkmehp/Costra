@@ -8,7 +8,7 @@
 # 闸门 2 · ICP 响应头
 # 闸门 3 · HTTP→HTTPS 重定向
 # 闸门 4 · 4 容器 healthy
-# 闸门 5 · D-026 §2.3 C2 mock 红线（log 不应有 mockLogin=true）
+# 闸门 5 · 运行模式（NODE_ENV 必须 = production）
 #
 # 用法：
 #   ./09-verify-gates.sh
@@ -133,30 +133,21 @@ else
   ((++FAIL_COUNT))
 fi
 
-# --- 闸门 5: D-026 §2.3 C2 mock 红线 ---
-# 策略：直接读容器环境变量 WX_MOCK_LOGIN + NODE_ENV · 确定性 100% · 不依赖日志
-log_step "[5/5] D-026 §2.3 C2 mock 红线（WX_MOCK_LOGIN 必须 =0 + NODE_ENV=production）"
+# --- 闸门 5: NODE_ENV=production ---
+# 策略：直接读容器环境变量 · 确定性 100% · 不依赖日志
+log_step "[5/5] 运行模式（NODE_ENV 必须 = production）"
 
-WX_MOCK_VAL=$(docker exec costra-server printenv WX_MOCK_LOGIN 2>/dev/null || echo "__UNSET__")
 NODE_ENV_VAL=$(docker exec costra-server printenv NODE_ENV 2>/dev/null || echo "__UNSET__")
 
-if [[ "${WX_MOCK_VAL}" == "__UNSET__" ]]; then
+if [[ "${NODE_ENV_VAL}" == "__UNSET__" ]]; then
   # 容器未运行或变量未设置
   log_error "  闸门 5 FAIL · 无法读取容器环境变量（容器未运行？）"
   ((++FAIL_COUNT))
-elif [[ "${WX_MOCK_VAL}" == "0" || "${WX_MOCK_VAL}" == "false" || "${WX_MOCK_VAL}" == "" ]]; then
-  # mock 关闭 · 再确认 NODE_ENV
-  if [[ "${NODE_ENV_VAL}" == "production" ]]; then
-    log_success "  闸门 5 PASS（WX_MOCK_LOGIN=${WX_MOCK_VAL} · NODE_ENV=production）"
-    ((++PASS_COUNT))
-  else
-    log_warn "  闸门 5 弱通过（WX_MOCK_LOGIN=${WX_MOCK_VAL} · 但 NODE_ENV=${NODE_ENV_VAL} 非 production）"
-    log_warn "  → env.ts 防线保证 mock 不会在非 development 环境启用 · 不阻断"
-    ((++PASS_COUNT))
-  fi
+elif [[ "${NODE_ENV_VAL}" == "production" ]]; then
+  log_success "  闸门 5 PASS（NODE_ENV=production）"
+  ((++PASS_COUNT))
 else
-  log_error "  闸门 5 FAIL · WX_MOCK_LOGIN=${WX_MOCK_VAL}（必须 =0）"
-  log_error "  → D-026 §2.3 C2 红线：prod 严禁 mock login"
+  log_error "  闸门 5 FAIL · NODE_ENV=${NODE_ENV_VAL}（必须 = production）"
   ((++FAIL_COUNT))
 fi
 

@@ -94,7 +94,7 @@ if [[ "${REUSE_SECRETS}" == "1" ]]; then
     PG_COSTRA_PW REDIS_PW
     DATABASE_URL REDIS_URL
     JWT_SECRET JWT_ISSUER JWT_AUDIENCE
-    WX_APP_ID WX_APP_SECRET WX_MOCK_LOGIN
+    WX_APP_ID WX_APP_SECRET
     ICP_FILING_NUMBER
   )
 
@@ -108,12 +108,6 @@ if [[ "${REUSE_SECRETS}" == "1" ]]; then
   if [[ ${#MISSING_KEYS[@]} -gt 0 ]]; then
     log_error "现有 server.env 缺少字段：${MISSING_KEYS[*]}"
     die "请删除/修复 ${COSTRA_ENV_FILE} 后重跑（不带 --reuse-secrets）"
-  fi
-
-  # 校验 WX_MOCK_LOGIN=0（D-026 §2.3 C2 红线）
-  WX_MOCK_VAL=$(grep '^WX_MOCK_LOGIN=' "${COSTRA_ENV_FILE}" | cut -d= -f2)
-  if [[ "${WX_MOCK_VAL}" != "0" ]]; then
-    die "WX_MOCK_LOGIN=${WX_MOCK_VAL} · prod 必须 =0（D-026 §2.3 C2 红线）"
   fi
 
   # 校验占位符全部已替换
@@ -220,9 +214,6 @@ JWT_AUDIENCE=costra-miniapp
 WX_APP_ID=${WX_APP_ID}
 WX_APP_SECRET=${WX_APP_SECRET}
 
-# === D-026 §2.3 C2 mock 防护红线（prod 必须 0）===
-WX_MOCK_LOGIN=0
-
 # === ICP ===
 ICP_FILING_NUMBER=${ICP_FILING_NUMBER}
 EOF
@@ -233,16 +224,10 @@ write_file_safe "${COSTRA_ENV_FILE}" 0600 "${ENV_CONTENT}"
 # --- 验证 ---
 if [[ "${DRY_RUN}" != "1" ]]; then
   FIELD_COUNT=$(grep -c '^[A-Z_]\+=' "${COSTRA_ENV_FILE}")
-  if [[ "${FIELD_COUNT}" -lt 13 ]]; then
-    die "字段数 ${FIELD_COUNT} < 13 · 写入异常"
+  if [[ "${FIELD_COUNT}" -lt 12 ]]; then
+    die "字段数 ${FIELD_COUNT} < 12 · 写入异常"
   fi
-  log_success "字段数: ${FIELD_COUNT}（≥13 ✓）"
-
-  if grep -q '^WX_MOCK_LOGIN=0$' "${COSTRA_ENV_FILE}"; then
-    log_success "WX_MOCK_LOGIN=0 ✓（D-026 §2.3 C2 红线）"
-  else
-    die "WX_MOCK_LOGIN 未设为 0"
-  fi
+  log_success "字段数: ${FIELD_COUNT}（≥12 ✓）"
 
   if grep -qE '\[' "${COSTRA_ENV_FILE}"; then
     die "仍含占位符 · 写入异常"
