@@ -163,9 +163,9 @@ docker ps --format '{{.Names}} {{.Status}}' | grep costra
 curl -s https://costra.cloud/healthz | jq .status
 # 历史记录期望："ok"
 
-# 确认 WX_MOCK_LOGIN=0
-docker exec costra-server printenv WX_MOCK_LOGIN
-# 历史记录期望：0
+# 确认 NODE_ENV=production
+docker exec costra-server printenv NODE_ENV
+# 历史记录期望：production
 
 # 确认 migration 已跑完（0009_entries_shared_type）
 docker exec costra-postgres psql -U costra -d costra \
