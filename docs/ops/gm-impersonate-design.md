@@ -1,6 +1,7 @@
 # GM 权限与指定账号登录（impersonate）· 完整实施方案
 
 > 状态：已实施（2026-08-20 · db / backend / miniapp 三卡落地）
+> 修订（2026-08-20）：伪造 openid 由手填改为**服务端自动分配**——`POST /gm/impersonate` 入参收窄为 `user_id` / `create_fake: true` 二选一，`fake_openid` 入参移除；D4 前缀隔离不变
 > 关联：继 WX_MOCK_LOGIN 移除后，免扫码/指定账号登录的正式实现
 
 ## 0. 背景与已定决策
@@ -13,7 +14,7 @@
 - D1：`is_gm` 经登录响应 + `GET /users/me` 双通道下发
 - D2：GM 校验**实时查库**，不用 JWT claim（授权/回收即时生效）
 - D3：用户列表**不返回 openid**，选人用 user_id；列表展示 = 头像+昵称+创建时间+id 短码
-- D4：伪造 openid **强制 `gm_fake_` 前缀**（与真实 openid 物理隔离、可批量清理）
+- D4：伪造 openid **强制 `gm_fake_` 前缀**（与真实 openid 物理隔离、可批量清理）；**服务端自动分配**（`gm_fake_` + 32 位 hex = randomUUID 去横线），客户端不接受手动指定
 - D5：审计 = warn 级日志（gm→target）；`sessions.impersonated_by` 列为 P1 可选增强，**本期不做**
 - D6：授权走运维 SQL，文档化；不做脚本
 - D7：GM 切换前调服务端 `POST /auth/logout` 吊销当前会话（抽无副作用的 `revokeSessionRemote()`，吞错不阻塞切换；须在 `clearToken` 前调用以携带 refresh_token）
@@ -77,12 +78,12 @@ async function requireGm(request: FastifyRequest): Promise<string> {
 - **不返回 openid**。
 
 **端点 2：`POST /gm/impersonate`**
-- body schema（`additionalProperties:false`）：`user_id` uuid、`fake_openid` string、`client_fp`（复用 auth.ts L31 的 pattern）
-- 校验：`user_id` 与 `fake_openid` **必须二选一**（都缺/都给 → `INVALID_ARGUMENT`）；`fake_openid` 必须匹配 `^gm_fake_[A-Za-z0-9_-]{4,64}$`（不符 → `INVALID_ARGUMENT`）
+- body schema（`additionalProperties:false`）：`user_id` uuid、`create_fake` boolean（`enum:[true]`）、`client_fp`（复用 auth.ts L31 的 pattern）
+- 校验：`user_id` 与 `create_fake` **必须二选一**（都缺/都给 → `INVALID_ARGUMENT`）；旧 `fake_openid` 入参已从契约移除（给了 → `INVALID_ARGUMENT`）
 - user_id 路径：`findById` 不存在 → `NOT_FOUND`；取该用户的 `wxOpenid`/`wxUnionid`
-- fake_openid 路径：`loginAsOpenid(fake_openid, null, clientFp)`（upsert 语义自动建号 + bootstrap 个人 family/ledger）
+- create_fake 路径：服务端生成 `gm_fake_` + 32 位 hex → `loginAsOpenid(fakeOpenid, null, clientFp)`（upsert 语义自动建号 + bootstrap 个人 family/ledger）；**每次调用新建独立账号**，复登已建伪造账号走 user_id 路径（伪造账号 created_at 最新，排在用户列表最前）
 - 成功 → 200 `AuthTokenPair`（与 wx-login 完全同形）
-- 审计：`app.log.warn({ gmUserId, mode: 'user_id'|'fake_openid', targetUserId?, fakeOpenid? }, 'gm impersonate login')`
+- 审计：`app.log.warn({ gmUserId, mode: 'user_id'|'fake_auto', targetUserId?, fakeOpenid? }, 'gm impersonate login')`
 - 不新增 ErrorCode（复用 UNAUTHENTICATED/PERMISSION_DENIED/NOT_FOUND/INVALID_ARGUMENT，不动错误契约文档）
 
 ### 2.5 注册与契约
@@ -96,7 +97,7 @@ async function requireGm(request: FastifyRequest): Promise<string> {
 - 抽取 `logout()` 内远端吊销段（request POST /auth/logout + 吞错 warn）为导出函数 `revokeSessionRemote()`：不带 `userLoggedOut`/`reLaunch` 副作用，`logout()` 与 GM 切换流程共用（D7）。
 - 抽取 `doWxLogin` 登录后管道（buildStored → replaceCurrent → setItem → restoreActiveFamilyAfterLogin → flushPendingPreference）为私有共用函数 `applyLoginResponse`，新增导出：
 ```ts
-gmLoginAs(target: { userId?: string; fakeOpenid?: string }, gmAccessToken: string): Promise<Token>
+gmLoginAs(target: { userId?: string; createFake?: boolean }, gmAccessToken: string): Promise<Token>
 ```
 （request POST /gm/impersonate 带 client_fp=await getOrCreateDeviceFp()，随后走同一管道。
 **`gmAccessToken` 必须显式传入**：切换流程先 `clearToken` 再调本函数，request 无法自动注入 Bearer，
@@ -113,7 +114,7 @@ gmLoginAs(target: { userId?: string; fakeOpenid?: string }, gmAccessToken: strin
 
 ### 3.4 新建分包页 `pages-gm/impersonate/index`
 - `app.json` 注册 subpackage `pages-gm`（不加入 preloadRule）。
-- UI：列表（头像+昵称+创建日期+id 短码）+ 上一页/下一页翻页 + 顶部「伪造身份登录」入口（输入框，提示 `gm_fake_` 前缀要求）→ 选中后确认弹窗（左确认右取消，项目惯例）。
+- UI：列表（头像+昵称+创建日期+id 短码）+ 上一页/下一页翻页 + 顶部「伪造身份登录」入口（单按钮「新建伪造账号登录」，伪造 openid 由服务端自动分配）→ 选中后确认弹窗（左确认右取消，项目惯例）。
 - **切换流程**（复用 logout 清理语义，复用现有导出，顺序与 mine 页 logout 对齐）：
   1. 确认弹窗 → `syncOnce('hide')`
   2. `outbox.pendingCount() > 0` → 二次弹窗（文案对齐 mine："最新记录可能尚未同步，切换后可能丢失"）
@@ -140,7 +141,7 @@ SELECT id, wx_openid, created_at FROM users WHERE wx_openid LIKE 'gm\_fake\_%' E
 **server**（在 `server/` 下跑）：
 - userRepo：`is_gm` 映射与默认值 false（findById/create/upsert）
 - authService：`loginAsOpenid` 与 wxLogin 同行为（fake openid 自动建号+bootstrap+签发）
-- 新建 `routes/gm.spec.ts`：未登录 401；非 GM 403（两端点）；list 分页/has_more/created_at DESC/无 openid 字段/不含软删用户；impersonate user_id 200 且 user.id=目标；目标不存在 404；fake_openid 合法→200 建号且 is_gm=false；非法前缀 400；user_id 与 fake_openid 同给/同缺 400
+- 新建 `routes/gm.spec.ts`：未登录 401；非 GM 403（两端点）；list 分页/has_more/created_at DESC/无 openid 字段/不含软删用户；impersonate user_id 200 且 user.id=目标；目标不存在 404；create_fake→200 服务端自动分配（openid 匹配 `gm_fake_[0-9a-f]{32}`、is_gm=false、每次调用新建独立账号）；旧 fake_openid 入参 400；user_id 与 create_fake 同给/同缺 400
 
 **miniapp**：
 - `auth.spec.ts`：mockRaw/T11 契约补 `is_gm`；`gmLoginAs` 管道用例

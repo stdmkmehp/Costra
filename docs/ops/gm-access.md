@@ -36,7 +36,8 @@ ORDER BY created_at DESC;
 
 ## 4. 识别/清理伪造账号
 
-GM 伪造登录使用强制前缀 `gm_fake_`，与真实微信 openid（以 `o` 开头）物理隔离，DB 内一眼可辨：
+GM 伪造登录的 openid 由服务端自动分配（`gm_fake_` + 32 位 hex，每次「新建伪造账号登录」生成一个独立账号），与真实微信 openid（以 `o` 开头）物理隔离，DB 内一眼可辨。
+复登某个已建伪造账号走用户列表的 `user_id` 路径（伪造账号注册时间最新，排在列表最前），客户端不支持也不接受手动指定 openid。
 
 ```sql
 -- 列出全部伪造账号
@@ -52,10 +53,10 @@ ORDER BY created_at DESC;
 
 ## 5. 审计 impersonate 行为
 
-每次 GM 登录（user_id 或 fake_openid 路径）服务端打 warn 级日志：
+每次 GM 登录（user_id 或 create_fake 路径）服务端打 warn 级日志：
 
 ```
-msg="gm impersonate login" gmUserId=<...> mode="user_id"|"fake_openid" targetUserId?<...> fakeOpenid?<...>
+msg="gm impersonate login" gmUserId=<...> mode="user_id"|"fake_auto" targetUserId?<...> fakeOpenid?<...>
 ```
 
 查询：
@@ -81,4 +82,4 @@ docker exec costra-server sh -c "cat /data/logs/server/*.log" \
 | `UPDATE users SET is_gm=TRUE` 不带 WHERE | 全员 GM | 立即 `SET is_gm=FALSE WHERE ...`，仅保留授权名单 |
 | 授权后客户端看不到入口 | 需重登或刷 /users/me | 正常，非 bug |
 | 回收后仍能 impersonate | 缓存/旧 token | 下一请求即 403，等待 token 自然滑窗或重登 |
-| 用真实 openid 伪造 | 违反前缀约定被 400 拒绝 | 改用 `gm_fake_` 前缀 |
+| 旧客户端手填 `fake_openid` 调 impersonate | 契约已收窄（仅 `user_id`/`create_fake` 二选一），400 | 升级客户端，伪造账号由系统自动分配 |
