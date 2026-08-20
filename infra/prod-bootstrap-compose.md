@@ -306,9 +306,6 @@ JWT_AUDIENCE=costra-miniapp
 WX_APP_ID=wxf8b0d3e3a83f9941
 WX_APP_SECRET=[WX_APP_SECRET]
 
-# === D-026 §2.3 C2 mock 防护红线 ===
-WX_MOCK_LOGIN=0
-
 # === ICP ===
 ICP_FILING_NUMBER=沪ICP备2026017253号-2
 EOF
@@ -327,12 +324,9 @@ chmod 0600 /data/conf/server.env
 ls -la /data/conf/server.env
 # 期望：-rw------- 1 root root ... server.env
 
-# 验证字段数 + WX_MOCK_LOGIN
+# 验证字段数
 grep -c '^[A-Z_]\+=' /data/conf/server.env
-# 期望：13
-
-grep '^WX_MOCK_LOGIN=' /data/conf/server.env
-# 期望：WX_MOCK_LOGIN=0（D-026 §2.3 C2 强制）
+# 期望：12
 
 # 验证占位符全部已替换（应该没有任何 [XXX] 残留）
 grep '\[' /data/conf/server.env || echo "✅ 所有占位符已替换"
@@ -749,7 +743,7 @@ docker logs costra-nginx --tail 5
 ```bash
 # 闸门 1 · /healthz 200
 curl -fsS https://costra.cloud/healthz | jq .
-# 期望：{"status":"ok","ts":"...","wxMockLogin":false,...}
+# 期望：{"status":"ok","build_sha":"...","now_utc":"...","icp":{...}}
 
 # 闸门 2 · ICP 响应头
 curl -sI https://costra.cloud/healthz | grep -i x-icp
@@ -763,13 +757,9 @@ curl -fsS -o /dev/null -w "%{http_code}\n" https://costra.cloud/v1/users/me
 docker compose -f /root/Costra/infra/docker-compose.prod.yml ps --format json | jq -r '.[] | "\(.Name) \(.Health)"'
 # 期望：4 行 "... healthy"
 
-# 闸门 5 · D-026 §2.3 C2 mock 红线 grep
-docker compose -f /root/Costra/infra/docker-compose.prod.yml logs server | grep -i 'mockLogin.*true\|WX_MOCK_LOGIN enabled\|"mock"' | head -5
-# 期望：无任何输出（grep exit 1）
-
-# 反向验证（应该 wxMockLogin=false）
-docker compose -f /root/Costra/infra/docker-compose.prod.yml logs server | grep -i 'wxMockLogin.*false' | head -3
-# 期望：至少 1 行
+# 闸门 5 · NODE_ENV=production
+docker exec costra-server printenv NODE_ENV
+# 期望：production
 ```
 
 **5 条全 PASS** → 反馈 PASS 表给 Orchestrator → Phase-3 由 Orchestrator 派 qa-planner 出 154+150 真 prod 测试手册。
@@ -1007,11 +997,11 @@ docker compose -f /root/Costra/infra/docker-compose.prod.yml exec -T nginx nginx
 | FU-PROD-MONITORING | postgres_exporter + redis_exporter + node_exporter + Prometheus + AlertManager | P2 | 3pt |
 | FU-PROD-PG-TUNE | postgresql.conf 调优（已含基础 · 后续 work_mem / WAL 等） | P2 | 1pt |
 | FU-PROD-SECURITY-HEADERS | nginx 加 HSTS / CSP / Permissions-Policy 完整集 | P2 | 1pt |
-| FU-PROD-CI-MOCK-GUARD | scripts/devops/whitelist-check.mjs 加规则 E（CI 静态扫描 WX_MOCK_LOGIN=1 红灯） | P0 | 1pt |
 | FU-PROD-FW-AUDIT | D-009 §2.4 防火墙 + fail2ban + SSH 改非 22 + 登录失败告警 | P0 | 2pt |
 | FU-PROD-NON-ROOT-USER | server 容器内已用 node uid 1000 · 但宿主机 docker 仍 root 跑 · 需 rootless docker | P1 | 2pt |
 
-> 上述 8 条 FU 累计 15 pt · 不进 Sprint-3 · 候选 Sprint-4 头部专项加固 sprint。
+> 上述 7 条 FU 累计 14 pt · 不进 Sprint-3 · 候选 Sprint-4 头部专项加固 sprint。
+> （FU-PROD-CI-MOCK-GUARD 已随 2026-08-20 mock login 功能整体移除而作废。）
 > （FU-PROD-LOG-ROTATE 已于 2026-08-14 完成：server/redis/nginx 日志全部落盘 /data/logs 固定文件，宿主机 logrotate costra-ops 统一轮转。）
 
 ---

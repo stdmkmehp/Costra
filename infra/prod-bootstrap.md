@@ -709,7 +709,6 @@ docker run -d --name costra-prod ... [同 §3.5.0 全部参数] \
 | `JWT_AUDIENCE` | `costra-miniapp` | 既有 |
 | `WX_APP_ID` | `wxf8b0d3e3a83f9941` | infra/wechat/domains.md §0 |
 | `WX_APP_SECRET` | `[WX_APP_SECRET]` | §4.4 浏览器取得 |
-| **`WX_MOCK_LOGIN`** | **`0`（必须显式写 0 · D-026 §2.3 C2 强制 · 不能省略 / 不能空）** | **R-008 红线** |
 | `ICP_FILING_NUMBER` | `沪ICP备2026017253号-2` | infra/wechat/domains.md §0 |
 
 ### §4.2 [Plan A] 落盘到 `/etc/costra/server.env`（systemd EnvironmentFile · Plan A 用）
@@ -736,7 +735,6 @@ JWT_ISSUER=https://costra.cloud
 JWT_AUDIENCE=costra-miniapp
 WX_APP_ID=wxf8b0d3e3a83f9941
 WX_APP_SECRET=[WX_APP_SECRET]
-WX_MOCK_LOGIN=0
 ICP_FILING_NUMBER=沪ICP备2026017253号-2
 EOF
 
@@ -750,12 +748,9 @@ vim /etc/costra/server.env
 # 在 vim 内：用 :%s/\[PG_COSTRA_PW\]/真实密码/g 替换（注意特殊字符转义）
 # 或者直接 i 进入插入模式手改 4 行
 
-# 5. 验证（不打印值 · 仅看 key 数量 + WX_MOCK_LOGIN=0）
+# 5. 验证（不打印值 · 仅看 key 数量）
 grep -c '^[A-Z_]\+=' /etc/costra/server.env
-# 期望：11
-
-grep '^WX_MOCK_LOGIN=' /etc/costra/server.env
-# 期望：WX_MOCK_LOGIN=0（D-026 §2.3 C2 强制）
+# 期望：10
 
 # 6. 防 history 泄漏（如果你 vim 编辑过程中复制了密码到 :registers）
 unset HISTFILE 2>/dev/null  # 当前 shell 不再写 history
@@ -788,7 +783,6 @@ JWT_ISSUER=https://costra.cloud
 JWT_AUDIENCE=costra-miniapp
 WX_APP_ID=wxf8b0d3e3a83f9941
 WX_APP_SECRET=[WX_APP_SECRET]
-WX_MOCK_LOGIN=0
 ICP_FILING_NUMBER=沪ICP备2026017253号-2
 EOF
 
@@ -802,10 +796,7 @@ ls -la /data/conf/server.env
 
 # 5. 验证（同 §4.2 步骤 5）
 grep -c '^[A-Z_]\+=' /data/conf/server.env
-# 期望：11
-
-grep '^WX_MOCK_LOGIN=' /data/conf/server.env
-# 期望：WX_MOCK_LOGIN=0
+# 期望：10
 ```
 
 ### §4.4 ⚠️ WX_APP_SECRET 取得操作步骤（Human 浏览器跑 · §4.0 之前做）

@@ -91,18 +91,16 @@ enabled
 
 ---
 
-## ✅ 闸门 5 · **D-026 §2.3 C2 红线**：mock 日志为空
+## ✅ 闸门 5 · 运行模式：NODE_ENV=production
 
 ```bash
-grep -i 'mockLogin\|WX_MOCK_LOGIN enabled\|"mock"' /var/log/costra/server.log
-echo "Exit: $?"
+docker exec costra-server printenv NODE_ENV
 ```
 
 **PASS 判据**：
-- grep 无任何输出（**最关键**）
-- `Exit: 1`（grep 找不到匹配 · 退出码 1）
+- 输出 `production`
 
-**FAIL 排查**：⚠️ **D-026 §2.3 C2 红线触发** · 立即按 prod-bootstrap §9 Q4 操作（停服 → 检查 EnvironmentFile → 修正后重启）
+**FAIL 排查**：检查 server.env / compose environment 的 NODE_ENV 注入，修正后 recreate server
 
 ---
 
