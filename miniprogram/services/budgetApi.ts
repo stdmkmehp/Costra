@@ -9,7 +9,7 @@
 // 客户端不做"已支出"聚合（服务端权威）；客户端只缓存 amount / version。
 // spent_cents 每次拉新值（其实明细页本地已有 monthExpense 可直接算 remain，节省一次 RTT）。
 
-import { request, type ApiError } from './request';
+import { request } from './request';
 import { getItem, setItem } from './storage';
 import { logger } from '../utils/logger';
 
@@ -55,26 +55,26 @@ export async function getCachedBudgetFromStorage(ledgerId: string, month: string
 /**
  * 拉取月度预算。
  *
+ * 契约：未设置预算返 200 + JSON null（不是 404 —— 404 只表示 ledger 不存在等真异常）。
+ *
  * 失败处理：
- *   - 404：未设置预算，返回 null（UI 据此显示"未设置"）
- *   - 其他错误：静默返回 null，UI 降级显示上次缓存或 '--'
+ *   - 未设置（resp 为 null）：清空缓存，返回 null（UI 据此显示"未设置"）
+ *   - 请求异常：静默返回 null，UI 降级显示上次缓存或 '--'
  */
 export async function fetchBudget(ledgerId: string, month: string): Promise<Budget | null> {
   try {
-    const resp = await request<Budget>({
+    const resp = await request<Budget | null>({
       method: 'GET',
       path: '/budgets',
       query: { ledger_id: ledgerId, month },
     });
-    await applyBudget(resp);
-    return resp;
-  } catch (err) {
-    const apiErr = err as ApiError;
-    if (apiErr?.status === 404) {
-      // 未设置预算：清空缓存
+    if (!resp) {
       MEMORY_CACHE.delete(memKey(ledgerId, month));
       return null;
     }
+    await applyBudget(resp);
+    return resp;
+  } catch (err) {
     logger.warn('budgetApi', 'fetchBudget failed', err);
     return null;
   }

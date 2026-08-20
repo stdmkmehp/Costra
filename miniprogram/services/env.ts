@@ -12,7 +12,7 @@ interface EnvConfig {
 const ENV_MAP: Record<EnvName, EnvConfig> = {
   dev: {
     name: 'dev',
-    apiBaseUrl: 'http://localhost:8080/v1',
+    apiBaseUrl: 'https://stg.costra.cloud/v1',
     flags: {
       family_sharing: true,
       subscribe_msg: true,

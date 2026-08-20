@@ -1156,7 +1156,8 @@ paths:
           - spent_cents：服务端聚合的当月 expense 总和
           - remain_cents：amount_cents - spent_cents（可为负）
 
-        未设置预算时返 404，客户端据此展示"预算 未设置"。
+        未设置预算时返 200 + JSON null（查询语义端点不用 404 表达高频预期空态），
+        客户端据此展示"预算 未设置"；404 仅用于 ledger 不存在等真寻址失败。
       parameters:
         - name: ledger_id
           in: query
@@ -1168,15 +1169,11 @@ paths:
           schema: { type: string, pattern: '^\d{4}-\d{2}$' }
       responses:
         '200':
-          description: OK
+          description: OK · 未设置预算时 body 为 JSON null
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Budget' }
-        '404':
-          description: 未设置预算
-          content:
-            application/json:
-              schema: { $ref: '#/components/responses/NotFound' }
+              schema: { nullable: true, allOf: [{ $ref: '#/components/schemas/Budget' }] }
+        '404': { $ref: '#/components/responses/NotFound' }
     put:
       tags: [budgets]
       summary: 创建或修改月度预算

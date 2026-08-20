@@ -208,7 +208,7 @@ throw new AppError(ErrorCode.INVALID_ARGUMENT, 'field "amount" must be > 0', {
 
 ### 5.3 日志分级（`ErrorLogLevels`）
 
-`AppError` 同时覆盖"预期内的业务分支"与"服务端真故障"两类语义完全不同的场景。若一刀切打 `warn`，warn 通道会被高频预期态淹没（典型：用户未设置预算 → `GET /budgets` 每次冷启动返 404，随 DAU 线性增长），真告警反而被埋掉。
+`AppError` 同时覆盖"预期内的业务分支"与"服务端真故障"两类语义完全不同的场景。若一刀切打 `warn`，warn 通道会被高频预期态淹没（历史典型：用户未设置预算 → `GET /budgets` 每次冷启动返 404，随 DAU 线性增长；该例已在契约层修正为 200 + JSON null，见 `openapi.yaml` /budgets），真告警反而被埋掉。
 
 级别由 `server/src/errors/ErrorCode.ts` 的 `ErrorLogLevels` 静态表决定，`errorHandler` **只查表、不做任何按 code 的条件判断**。
 
@@ -218,7 +218,7 @@ throw new AppError(ErrorCode.INVALID_ARGUMENT, 'field "amount" must be > 0', {
 | `warn` | 请求方行为异常而服务端正常：客户端 bug（参数 / 幂等键 / Content-Type）、疑似越权或探测（非过期类 401、403）、限流命中、占位端点被调用。需观测趋势，不需立即介入 | `INVALID_ARGUMENT` · `MALFORMED_JSON` · `IDEMPOTENCY_KEY_REQUIRED` · `IDEMPOTENCY_KEY_MISMATCH` · `UNSUPPORTED_MEDIA_TYPE` · `UNAUTHENTICATED` · `WX_CODE_INVALID` · `PERMISSION_DENIED` · `FAMILY_NOT_MEMBER` · `RATE_LIMITED` · `NOT_IMPLEMENTED` |
 | `error` | 服务端自身故障，需要人介入排查 | `INTERNAL` · `UNAVAILABLE` · `TIMEOUT` |
 
-**日志字段必带 `message`**：同一个 code 常有多个抛出点（如 `NOT_FOUND` 在 `budgetService` 内就有 3 处：ledger 不存在 / family 不存在 / 从未设过预算），只靠 `code` + `details` 无法定位抛出点。
+**日志字段必带 `message`**：同一个 code 常有多个抛出点（如 `NOT_FOUND` 在 `budgetService` 内就有 3 处：ledger 不存在 / family 不存在 / 删除未设置的预算），只靠 `code` + `details` 无法定位抛出点。
 
 > 本表**不是契约**（不下发客户端、不影响响应体），可自由调整；但每次调整需同步本节。
 

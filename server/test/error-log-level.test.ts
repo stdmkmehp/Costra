@@ -38,7 +38,9 @@ describe('ErrorLogLevels', () => {
 
   it('maps expected business branches to info (must not pollute the warn channel)', () => {
     // 这些 code 的出现频率与用户规模正相关，且客户端都有既定处理路径。
-    // 典型：NOT_FOUND —— budgetService「该账本从未设过预算」每次冷启动都会抛。
+    // 历史典型：budgetService「该账本从未设过预算」每次冷启动都会抛 NOT_FOUND ——
+    // 该场景已上收到契约层（GET /budgets 未设置返 200 + JSON null）；
+    // NOT_FOUND 仍为 info（客户端持过期缓存访问已删除资源等预期分支）。
     const expectedBusinessBranches = [
       ErrorCode.NOT_FOUND,
       ErrorCode.VERSION_CONFLICT,

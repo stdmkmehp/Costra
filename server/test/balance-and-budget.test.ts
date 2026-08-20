@@ -18,7 +18,7 @@
  *   B12 GET /ledgers/:id/balance 非成员越权 → 403
  *   B13 GET /ledgers/:id/balance 账本不存在 → 404
  *
- *   Bud1 GET /budgets 未设置 → 404
+ *   Bud1 GET /budgets 未设置 → 200 + JSON null（契约不用 404 表达预期空态）
  *   Bud2 PUT /budgets 首次 (version=null) → 200+ version=1
  *   Bud3 PUT /budgets 修改（version=1）→ 200 + version=2
  *   Bud4 PUT /budgets 修改（错version） → 409
@@ -423,13 +423,14 @@ describe('COSTRA-4xx · 账本资产累加', () => {
 });
 
 describe('COSTRA-4xx · 月度预算', () => {
-  it('Bud1 GET /budgets 未设置 → 404', async () => {
+  it('Bud1 GET /budgets 未设置 → 200 + JSON null（非 404）', async () => {
     const res = await app.inject({
       method: 'GET',
       url: `/v1/budgets?ledger_id=${LEDGER_ID}&month=2026-08`,
       headers: auth(),
     });
-    expect(res.statusCode).toBe(404);
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toBeNull();
   });
 
   it('Bud2 PUT /budgets 首次(version=null) → 200 + version=1', async () => {

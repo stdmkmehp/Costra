@@ -6,7 +6,8 @@
  * 契约约束：
  *   - GET  /budgets?ledger_id=X&month=YYYY-MM
  *       → 200 BudgetView（含 amount / spent / remain）
- *       → 404 未设置预算
+ *       → 200 + JSON null 未设置预算（查询语义端点不用 404 表达预期空态）
+ *       → 404 仅 ledger 不存在等真寻址失败
  *   - PUT  /budgets  body: { ledger_id, month, amount_cents, version? }
  *       → 200 BudgetView
  *       → 409 VERSION_CONFLICT（version 不匹配）
@@ -85,6 +86,15 @@ export async function registerBudgetsRoutes(app: FastifyInstance): Promise<void>
         ledgerId: ledger_id,
         month,
       });
+
+      if (!budget) {
+        // 未设预算 → 200 + 字面 JSON null。
+        // 必须是裸 null 而非 { budget: null } 包装：旧客户端按响应体 truthiness
+        // 消费（budgetApi.fetchBudget），包装对象会被误判为有效预算。
+        // Fastify send(null) 会走"空 body"分支，故显式发字面量 'null'。
+        reply.code(200).type('application/json').send('null');
+        return;
+      }
 
       reply.code(200).send(budgetToResponse(budget));
     },

@@ -118,14 +118,16 @@ export interface BudgetResult {
  *   1. 先查当月预算 (ledger_id, month) 精确匹配
  *   2. 当月未设置 → 回退取该账本 month <= 查询月 的最近一条预算，
  *      继承其 amount_cents 作为当前月预算上限
- *   3. 该账本从未设过任何预算 → 404（客户端据此展示"未设置"）
+ *   3. 该账本从未设过任何预算 → 返回 null（路由层发 200 + JSON null，
+ *      客户端据此展示"未设置"；查询语义端点不用 404 表达高频预期空态，
+ *      404 只留给 ledger not found 等真寻址失败）
  *
  * spent_cents 始终按查询月实际支出计算（不受回退影响）。
  */
 export async function getBudget(
   userId: string,
   input: { ledgerId: string; month: string },
-): Promise<BudgetResult> {
+): Promise<BudgetResult | null> {
   validateMonth(input.month);
   await assertLedgerMembership(userId, input.ledgerId);
 
@@ -137,12 +139,9 @@ export async function getBudget(
     budget = await budgetRepo.findNearestActive(input.ledgerId, input.month);
   }
 
-  // 3) 从未设过任何预算 → 404
+  // 3) 从未设过任何预算 → null（200 空值 · 非错误）
   if (!budget) {
-    throw new AppError(ErrorCode.NOT_FOUND, {
-      message: 'budget not set for this ledger',
-      details: { ledger_id: input.ledgerId, month: input.month },
-    });
+    return null;
   }
 
   const spent = await computeMonthSpent(input.ledgerId, input.month);
