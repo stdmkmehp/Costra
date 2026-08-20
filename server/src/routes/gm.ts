@@ -5,14 +5,15 @@
  *
  * 契约约束：
  *   - GET  /gm/users        → 200 { items, page, page_size, has_more }（GM-only · 不返回 openid · D3）
- *   - POST /gm/impersonate  body: { user_id } | { fake_openid }（必须二选一）→ 200 AuthTokenPair（与 wx-login 同形）
+ *   - POST /gm/impersonate  body: { user_id } | { create_fake: true }（必须二选一）→ 200 AuthTokenPair（与 wx-login 同形）
  *
  * 安全模型：
  *   - requireGm 实时查库（非 JWT claim）：授权/回收即时生效（D2）
- *   - 伪造 openid 强制 gm_fake_ 前缀（schema 层拦截），与真实 openid 物理隔离（D4）
+ *   - 伪造 openid 由服务端自动分配（gm_fake_ + 32 位 hex），与真实 openid 物理隔离（D4）
  *   - 审计 = warn 级日志（gm→target · D5）；不新增 ErrorCode
  */
 
+import { randomUUID } from 'node:crypto';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { AppError } from '../errors/AppError.js';
 import { ErrorCode } from '../errors/ErrorCode.js';
@@ -51,15 +52,13 @@ const listUsersQuerySchema = {
   },
 } as const;
 
-/** 伪造 openid 强制前缀（D4）：与真实微信 openid（以 o 开头）物理隔离、可批量清理 */
-const FAKE_OPENID_PATTERN = '^gm_fake_[A-Za-z0-9_-]{4,64}$';
-
 const impersonateBodySchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
     user_id: { type: 'string', format: 'uuid' },
-    fake_openid: { type: 'string', pattern: FAKE_OPENID_PATTERN },
+    // 新建伪造账号：伪造 openid 由服务端生成（D4 前缀隔离），不接受手动指定
+    create_fake: { type: 'boolean', enum: [true] },
     // 客户端设备指纹（与 auth.ts wxLoginBodySchema.client_fp 同一约定）
     client_fp: { type: 'string', minLength: 1, maxLength: 128, pattern: '^[-A-Za-z0-9._:]+$' },
   },
@@ -67,7 +66,7 @@ const impersonateBodySchema = {
 
 type ImpersonateBody = {
   user_id?: string;
-  fake_openid?: string;
+  create_fake?: boolean;
   client_fp?: string;
 };
 
@@ -97,7 +96,7 @@ export async function registerGmRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  // POST /gm/impersonate · GM 登录指定账号（user_id）或伪造账号（fake_openid）
+  // POST /gm/impersonate · GM 登录指定账号（user_id）或新建伪造账号（create_fake）
   app.post<{ Body: ImpersonateBody }>(
     '/gm/impersonate',
     { schema: { body: impersonateBodySchema } },
@@ -105,12 +104,12 @@ export async function registerGmRoutes(app: FastifyInstance): Promise<void> {
       const gmUserId = await requireGm(req);
       const body = req.body;
 
-      // user_id 与 fake_openid 必须二选一（都缺 / 都给均 400）
+      // user_id 与 create_fake 必须二选一（都缺 / 都给均 400）
       const hasUserId = body.user_id !== undefined;
-      const hasFakeOpenid = body.fake_openid !== undefined;
-      if (hasUserId === hasFakeOpenid) {
+      const hasCreateFake = body.create_fake !== undefined;
+      if (hasUserId === hasCreateFake) {
         throw new AppError(ErrorCode.INVALID_ARGUMENT, {
-          message: 'exactly one of user_id or fake_openid required',
+          message: 'exactly one of user_id or create_fake required',
         });
       }
 
@@ -125,9 +124,11 @@ export async function registerGmRoutes(app: FastifyInstance): Promise<void> {
         return;
       }
 
-      // fake_openid 路径：upsert 语义自动建号 + bootstrap 个人 family/ledger（前缀已由 schema 强制）
-      app.log.warn({ gmUserId, mode: 'fake_openid', fakeOpenid: body.fake_openid }, 'gm impersonate login');
-      const pair = await svc.loginAsOpenid(body.fake_openid!, null, body.client_fp ?? null);
+      // create_fake 路径：服务端生成伪造 openid（gm_fake_ + 32 位 hex · D4 前缀隔离），
+      // upsert 语义自动建号 + bootstrap 个人 family/ledger；每次调用新建独立账号，复登走 user_id 路径
+      const fakeOpenid = `gm_fake_${randomUUID().replace(/-/g, '')}`;
+      app.log.warn({ gmUserId, mode: 'fake_auto', fakeOpenid }, 'gm impersonate login');
+      const pair = await svc.loginAsOpenid(fakeOpenid, null, body.client_fp ?? null);
       reply.code(200).send(pair);
     },
   );

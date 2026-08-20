@@ -9,9 +9,9 @@
  *   T3  GM list：分页 / has_more / created_at DESC / 无 openid 字段 / 不含软删用户
  *   T4  impersonate user_id：200 且 user.id = 目标（is_gm=false）
  *   T5  impersonate 目标不存在 → 404 NOT_FOUND
- *   T6  impersonate fake_openid 合法 → 200 自动建号 + bootstrap（is_gm=false · 同 openid 复登复用）
- *   T7  impersonate fake_openid 非法前缀 → 400 INVALID_ARGUMENT（schema 拦截）
- *   T8  user_id 与 fake_openid 同给 / 同缺 → 400 INVALID_ARGUMENT
+ *   T6  impersonate create_fake → 200 服务端自动分配伪造账号（gm_fake_ 前缀 · 每次调用新建独立账号）
+ *   T7  手动指定 fake_openid 已被契约移除 → 400 INVALID_ARGUMENT（additionalProperties:false）
+ *   T8  user_id 与 create_fake 同给 / 同缺 → 400 INVALID_ARGUMENT
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -128,7 +128,7 @@ describe('POST /v1/gm/impersonate', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/v1/gm/impersonate',
-      payload: { fake_openid: 'gm_fake_x001' },
+      payload: { create_fake: true },
       headers: { 'content-type': 'application/json' },
     });
     expect(res.statusCode).toBe(401);
@@ -140,7 +140,7 @@ describe('POST /v1/gm/impersonate', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/v1/gm/impersonate',
-      payload: { fake_openid: 'gm_fake_x001' },
+      payload: { create_fake: true },
       headers: authHeader(user.token),
     });
     expect(res.statusCode).toBe(403);
@@ -187,14 +187,14 @@ describe('POST /v1/gm/impersonate', () => {
     expect((res.json() as { code: string }).code).toBe('NOT_FOUND');
   });
 
-  it('T6 fake_openid 合法：自动建号 + bootstrap；同 openid 复登复用同一账号', async () => {
+  it('T6 create_fake：服务端自动分配伪造账号 + bootstrap；每次调用新建独立账号', async () => {
     const gm = await login('openid-gm-imp-fake');
     await grantGm(gm.userId);
 
     const res = await app.inject({
       method: 'POST',
       url: '/v1/gm/impersonate',
-      payload: { fake_openid: 'gm_fake_test_001' },
+      payload: { create_fake: true },
       headers: authHeader(gm.token),
     });
     expect(res.statusCode).toBe(200);
@@ -206,33 +206,33 @@ describe('POST /v1/gm/impersonate', () => {
     expect(body.default_family_id).toBeTruthy();
 
     const rows = await getPool().query(`SELECT wx_openid FROM users WHERE id = $1`, [body.user.id]);
-    expect(rows.rows[0].wx_openid).toBe('gm_fake_test_001');
+    expect(rows.rows[0].wx_openid).toMatch(/^gm_fake_[0-9a-f]{32}$/);
 
-    // 同 fake_openid 再登：upsert 命中，复用同一 users 行
+    // 再次 create_fake：服务端生成新 openid → 新建独立账号（复登旧伪造账号走 user_id 路径）
     const again = await app.inject({
       method: 'POST',
       url: '/v1/gm/impersonate',
-      payload: { fake_openid: 'gm_fake_test_001' },
+      payload: { create_fake: true },
       headers: authHeader(gm.token),
     });
     expect(again.statusCode).toBe(200);
-    expect((again.json() as { user: { id: string } }).user.id).toBe(body.user.id);
+    expect((again.json() as { user: { id: string } }).user.id).not.toBe(body.user.id);
   });
 
-  it('T7 fake_openid 非法前缀 → 400 INVALID_ARGUMENT（schema 拦截）', async () => {
+  it('T7 手动指定 fake_openid 已被契约移除 → 400 INVALID_ARGUMENT（additionalProperties:false）', async () => {
     const gm = await login('openid-gm-imp-badprefix');
     await grantGm(gm.userId);
     const res = await app.inject({
       method: 'POST',
       url: '/v1/gm/impersonate',
-      payload: { fake_openid: 'orealopenid123' },
+      payload: { fake_openid: 'gm_fake_test_001' },
       headers: authHeader(gm.token),
     });
     expect(res.statusCode).toBe(400);
     expect((res.json() as { code: string }).code).toBe('INVALID_ARGUMENT');
   });
 
-  it('T8 user_id 与 fake_openid 同给 / 同缺 → 400 INVALID_ARGUMENT', async () => {
+  it('T8 user_id 与 create_fake 同给 / 同缺 → 400 INVALID_ARGUMENT', async () => {
     const gm = await login('openid-gm-imp-both');
     await grantGm(gm.userId);
 
@@ -248,7 +248,7 @@ describe('POST /v1/gm/impersonate', () => {
     const both = await app.inject({
       method: 'POST',
       url: '/v1/gm/impersonate',
-      payload: { user_id: gm.userId, fake_openid: 'gm_fake_x001' },
+      payload: { user_id: gm.userId, create_fake: true },
       headers: authHeader(gm.token),
     });
     expect(both.statusCode).toBe(400);
