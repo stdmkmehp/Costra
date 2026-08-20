@@ -81,12 +81,14 @@ describe('GET /v1/users/me', () => {
       avatar_url: string | null;
       timezone: string;
       has_completed_profile: boolean;
+      is_gm: boolean;
       created_at: string;
       updated_at: string;
     };
     expect(body.id).toMatch(/^[0-9a-f]{8}-/);
     expect(body.nickname).toBe('微信用户');
     expect(body.has_completed_profile).toBe(false);
+    expect(body.is_gm).toBe(false); // migration 0018: 默认非 GM
     expect(body.created_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 });

@@ -43,6 +43,7 @@ interface UserView {
   avatar_url: string | null;
   timezone: string;
   has_completed_profile: boolean;
+  is_gm: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -54,6 +55,7 @@ function toUserView(u: userRepo.UserEntity): UserView {
     avatar_url: u.avatarUrl,
     timezone: u.timezone,
     has_completed_profile: u.hasCompletedProfile,
+    is_gm: u.isGm,
     created_at: u.createdAt.toISOString(),
     updated_at: u.updatedAt.toISOString(),
   };

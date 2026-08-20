@@ -49,6 +49,7 @@ export interface AuthTokenPair {
     avatar_url: string | null;
     timezone: string;
     has_completed_profile: boolean; // COSTRA-158: 严格资料判定字段
+    is_gm: boolean; // migration 0018: GM 权限标记（GM 工具入口双通道之一 · D1）
     created_at: string;
     updated_at: string;
   };
@@ -67,6 +68,11 @@ export interface AuthServiceDeps {
 export interface AuthService {
   /** @param clientFp 客户端设备指纹（用于登录时按设备回收旧会话 · 允许 null） */
   wxLogin(code: string, clientFp?: string | null): Promise<AuthTokenPair>;
+  /**
+   * 以指定 openid 直接登录（GM impersonate 消费 · docs/ops/gm-impersonate-design.md）：
+   * 与 wxLogin 共用 code2Session 之后的整段管线（upsert + bootstrap + 签发 + 落 session）。
+   */
+  loginAsOpenid(openid: string, unionid: string | null, clientFp?: string | null): Promise<AuthTokenPair>;
   refresh(refreshToken: string): Promise<AuthTokenPair>;
   logout(refreshToken: string): Promise<void>;
 }
@@ -91,6 +97,7 @@ function toUserView(u: {
   avatarUrl: string | null;
   timezone: string;
   hasCompletedProfile: boolean; // COSTRA-158
+  isGm: boolean;
   createdAt: Date;
   updatedAt: Date;
 }): AuthTokenPair['user'] {
@@ -100,6 +107,7 @@ function toUserView(u: {
     avatar_url: u.avatarUrl,
     timezone: u.timezone,
     has_completed_profile: u.hasCompletedProfile, // COSTRA-158
+    is_gm: u.isGm,
     created_at: u.createdAt.toISOString(),
     updated_at: u.updatedAt.toISOString(),
   };
@@ -160,7 +168,14 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
 
   async function wxLogin(code: string, clientFp?: string | null): Promise<AuthTokenPair> {
     const { openid, unionid } = await wxCode2Session(code);
+    return loginAsOpenid(openid, unionid ?? null, clientFp);
+  }
 
+  async function loginAsOpenid(
+    openid: string,
+    unionid: string | null,
+    clientFp?: string | null,
+  ): Promise<AuthTokenPair> {
     // 单事务包住 user upsert + family/ledger bootstrap · 防数据漂移
     const { user, defaultFamilyId, defaultLedgerId } = await withTx(async (client) => {
       const user = await userRepo.upsertByOpenid(
@@ -320,5 +335,5 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
     }
   }
 
-  return { wxLogin, refresh, logout };
+  return { wxLogin, loginAsOpenid, refresh, logout };
 }

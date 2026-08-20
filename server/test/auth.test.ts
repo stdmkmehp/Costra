@@ -82,6 +82,7 @@ describe('POST /auth/wx-login', () => {
     expect(body.user.id).toMatch(/^[0-9a-f]{8}-/);
     expect(body.user.nickname).toBe('微信用户');
     expect((body.user as Record<string, unknown>).has_completed_profile).toBe(false); // COSTRA-158 G'
+    expect((body.user as Record<string, unknown>).is_gm).toBe(false); // migration 0018: 默认非 GM
   });
 
   it('T2 happy 老用户：同 openid 复用同一 users 行', async () => {

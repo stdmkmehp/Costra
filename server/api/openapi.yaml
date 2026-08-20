@@ -54,6 +54,8 @@ tags:
     description: 订阅消息触发
   - name: legal
     description: 法务披露（ICP 备案 / 主体信息 · 公开端点）
+  - name: gm
+    description: GM 工具（users.is_gm 实时查库鉴权 · 仅授权运维可见 · docs/ops/gm-impersonate-design.md）
 
 security:
   - BearerAuth: []
@@ -183,6 +185,86 @@ paths:
                   entry_count: { type: integer, minimum: 0, description: 未删除流水总数 }
                   ledger_days: { type: integer, minimum: 0, description: 有记账记录的天数（Asia/Shanghai） }
         '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ============ gm ============
+  /gm/users:
+    get:
+      tags: [gm]
+      summary: GM 用户列表（GM-only）
+      description: |
+        仅 `users.is_gm = true` 的用户可访问（服务端实时查库校验，授权/回收即时生效）。
+        按 created_at DESC, id DESC 稳定排序；**不返回 openid**（选人用 user_id · D3）。
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: page_size
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, page, page_size, has_more]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, id_short, nickname, avatar_url, created_at]
+                      properties:
+                        id: { type: string, format: uuid }
+                        id_short: { type: string, description: user id 前 8 位短码 }
+                        nickname: { type: string }
+                        avatar_url: { type: string, format: uri, nullable: true }
+                        created_at: { type: string, format: date-time }
+                  page: { type: integer }
+                  page_size: { type: integer }
+                  has_more: { type: boolean }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /gm/impersonate:
+    post:
+      tags: [gm]
+      summary: GM 登录指定账号或伪造账号（GM-only）
+      description: |
+        `user_id` 与 `fake_openid` 必须二选一：
+        - user_id：以该用户的 openid 走标准登录管线签发 token
+        - fake_openid：强制 `gm_fake_` 前缀（与真实 openid 物理隔离 · D4），upsert 语义自动建号 + bootstrap
+        每次调用打 warn 级审计日志（gm→target · D5）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                user_id: { type: string, format: uuid }
+                fake_openid:
+                  type: string
+                  pattern: '^gm_fake_[A-Za-z0-9_-]{4,64}$'
+                  description: 伪造 openid（强制 gm_fake_ 前缀）
+                client_fp:
+                  type: string
+                  minLength: 1
+                  maxLength: 128
+                  pattern: '^[-A-Za-z0-9._:]+$'
+                  description: 可选，客户端设备指纹（同 /auth/wx-login）
+      responses:
+        '200':
+          description: 登录成功（与 /auth/wx-login 完全同形）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokenPair'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   # ============ families ============
   /families:
@@ -1604,6 +1686,9 @@ components:
         has_completed_profile:
           type: boolean
           description: 'COSTRA-158: 用户是否完成资料补全（首登 false · PATCH /users/me 成功后 true）'
+        is_gm:
+          type: boolean
+          description: 'GM 权限标记（migration 0018 · 默认 false · 唯一写入路径 = 运维 SQL · GM 工具入口据此渲染）'
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
 

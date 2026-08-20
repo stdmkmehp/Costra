@@ -22,6 +22,8 @@ export interface UserEntity {
   avatarUrl: string | null;
   timezone: string;
   hasCompletedProfile: boolean; // COSTRA-158: 严格资料判定字段
+  /** migration 0018: GM 权限标记（唯一写入路径 = 运维 SQL） */
+  isGm: boolean;
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
@@ -44,6 +46,7 @@ interface UserRow {
   avatar_url: string | null;
   timezone: string;
   has_completed_profile: boolean; // COSTRA-158
+  is_gm: boolean;
   created_at: Date;
   updated_at: Date;
   deleted_at: Date | null;
@@ -63,6 +66,7 @@ function rowToEntity(r: UserRow): UserEntity {
     avatarUrl: r.avatar_url,
     timezone: r.timezone,
     hasCompletedProfile: r.has_completed_profile,
+    isGm: r.is_gm,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     deletedAt: r.deleted_at,
@@ -90,7 +94,7 @@ export async function findByOpenid(openid: string, client?: Runner): Promise<Use
   const runner = client ?? exec();
   const res = await runner.query(
     `SELECT id, wx_openid, wx_unionid, nickname, avatar_url, timezone,
-            has_completed_profile,
+            has_completed_profile, is_gm,
             created_at, updated_at, deleted_at, version,
             preferred_family_id, preferred_ledger_id, preferred_revision, preferred_updated_at
        FROM users
@@ -106,7 +110,7 @@ export async function findById(id: string, client?: Runner): Promise<UserEntity 
   const runner = client ?? exec();
   const res = await runner.query(
     `SELECT id, wx_openid, wx_unionid, nickname, avatar_url, timezone,
-            has_completed_profile,
+            has_completed_profile, is_gm,
             created_at, updated_at, deleted_at, version,
             preferred_family_id, preferred_ledger_id, preferred_revision, preferred_updated_at
        FROM users
@@ -115,6 +119,26 @@ export async function findById(id: string, client?: Runner): Promise<UserEntity 
     [id],
   );
   return res.rows[0] ? rowToEntity(res.rows[0]) : null;
+}
+
+/**
+ * GM 用户列表（GET /gm/users 消费）：created_at DESC, id DESC 稳定排序；排除软删。
+ * limit 由调用方按 page_size+1 传入判 has_more。
+ */
+export async function listRecentUsers(limit: number, offset: number, client?: Runner): Promise<UserEntity[]> {
+  const runner = client ?? exec();
+  const res = await runner.query(
+    `SELECT id, wx_openid, wx_unionid, nickname, avatar_url, timezone,
+            has_completed_profile, is_gm,
+            created_at, updated_at, deleted_at, version,
+            preferred_family_id, preferred_ledger_id, preferred_revision, preferred_updated_at
+       FROM users
+      WHERE deleted_at IS NULL
+      ORDER BY created_at DESC, id DESC
+      LIMIT $1 OFFSET $2`,
+    [limit, offset],
+  );
+  return res.rows.map(rowToEntity);
 }
 
 export interface CreateUserInput {
@@ -136,7 +160,7 @@ export async function create(input: CreateUserInput, client?: Runner): Promise<U
     `INSERT INTO users (id, wx_openid, wx_unionid, nickname, avatar_url, timezone)
           VALUES ($1, $2, $3, $4, $5, COALESCE($6, 'Asia/Shanghai'))
         RETURNING id, wx_openid, wx_unionid, nickname, avatar_url, timezone,
-                  has_completed_profile, created_at, updated_at, deleted_at, version,
+                  has_completed_profile, is_gm, created_at, updated_at, deleted_at, version,
                   preferred_family_id, preferred_ledger_id, preferred_revision, preferred_updated_at`,
     [
       id,
