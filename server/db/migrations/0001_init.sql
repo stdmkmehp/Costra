@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS users (
     preferred_ledger_id    UUID,   -- FK 延迟到 ledgers 建表后添加
     preferred_revision     BIGINT NOT NULL DEFAULT 0,
     preferred_updated_at   TIMESTAMPTZ,
+    is_gm                  BOOLEAN NOT NULL DEFAULT FALSE,  -- migration 0018
     created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
     deleted_at             TIMESTAMPTZ,
@@ -77,7 +78,8 @@ ALTER TABLE users
   ADD COLUMN IF NOT EXISTS preferred_family_id UUID,
   ADD COLUMN IF NOT EXISTS preferred_ledger_id UUID,
   ADD COLUMN IF NOT EXISTS preferred_revision BIGINT NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS preferred_updated_at TIMESTAMPTZ;
+  ADD COLUMN IF NOT EXISTS preferred_updated_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS is_gm BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE INDEX IF NOT EXISTS idx_users_updated_at ON users (updated_at);
 

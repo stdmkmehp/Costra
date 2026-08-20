@@ -77,7 +77,9 @@ function applyMigrations(db: IMemoryDb): void {
       preferred_ledger_id     UUID,
       -- migration 0003_user_preference_revision.sql
       preferred_revision      BIGINT NOT NULL DEFAULT 0,
-      preferred_updated_at    TIMESTAMPTZ
+      preferred_updated_at    TIMESTAMPTZ,
+      -- migration 0018_users_is_gm.sql
+      is_gm                   BOOLEAN NOT NULL DEFAULT FALSE
     );
     CREATE TABLE user_sessions (
       jti             UUID PRIMARY KEY,
