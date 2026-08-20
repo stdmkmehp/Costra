@@ -230,11 +230,12 @@ paths:
   /gm/impersonate:
     post:
       tags: [gm]
-      summary: GM 登录指定账号或伪造账号（GM-only）
+      summary: GM 登录指定账号或新建伪造账号（GM-only）
       description: |
-        `user_id` 与 `fake_openid` 必须二选一：
+        `user_id` 与 `create_fake` 必须二选一：
         - user_id：以该用户的 openid 走标准登录管线签发 token
-        - fake_openid：强制 `gm_fake_` 前缀（与真实 openid 物理隔离 · D4），upsert 语义自动建号 + bootstrap
+        - create_fake: true：服务端自动分配 `gm_fake_` 前缀的伪造 openid（与真实 openid 物理隔离 · D4），
+          upsert 语义自动建号 + bootstrap；每次调用新建独立账号，复登伪造账号请走 user_id 路径
         每次调用打 warn 级审计日志（gm→target · D5）。
       requestBody:
         required: true
@@ -244,10 +245,10 @@ paths:
               type: object
               properties:
                 user_id: { type: string, format: uuid }
-                fake_openid:
-                  type: string
-                  pattern: '^gm_fake_[A-Za-z0-9_-]{4,64}$'
-                  description: 伪造 openid（强制 gm_fake_ 前缀）
+                create_fake:
+                  type: boolean
+                  enum: [true]
+                  description: 传 true 由服务端自动分配伪造账号（gm_fake_ 前缀 · 与 user_id 二选一）
                 client_fp:
                   type: string
                   minLength: 1
