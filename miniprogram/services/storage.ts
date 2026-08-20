@@ -8,7 +8,7 @@
 //   3. 基于 wx.getStorage Promise 形态（基础库 2.21.0+ · 当前 dev 3.8.12 · NFR 最低 2.32.3）
 
 import { logger } from '../utils/logger';
-import { PRESERVED_KEYS, DEVICE_FP_KEY } from './storageKeys';
+import { PRESERVED_KEYS, DEVICE_FP_KEY, TOKEN_KEY } from './storageKeys';
 
 const STORAGE_VERSION = 1;
 const VERSION_KEY = '__costra_storage_version';
@@ -18,6 +18,39 @@ interface Envelope<T> {
   t: number; // 写入时间戳
   ttl?: number; // 毫秒
   d: T;
+}
+
+// ─── 写屏障（write barrier） ────────────────────────────────────────────────────
+//
+// 目的：logout 之后拦截"跨越 logout 边界的 in-flight response"落盘。
+//
+// 场景：用户登录后立即 logout，登录期间 ledger 页 / 各 *Api 发出的一批 GET 请求
+//   的 response 可能在 clearStorage 完成之后才回到 setItem，把上一用户的数据写进
+//   已清空的 storage → 停留登出页时 wx.getStorageInfoSync().keys 持续新增。
+//
+// 语义：barrier 打开后，setItem 对非白名单 key 直接短路返回；removeItem/getItem 不拦
+//   （幂等 / 只读）。login 成功进入 applyLoginResponse 时关闭 barrier，新会话业务写入放行。
+//
+// 白名单：
+//   - VERSION_KEY / DEVICE_FP_KEY：clearAllForReset 自身要写（版本不变式 + 指纹保留）
+//   - TOKEN_KEY：applyLoginResponse 在 unblockWrites 之前若被别的 in-flight 抢先写入
+//     不会发生（unblock 是入口首步），但白名单化更稳。
+let writesBlocked = false;
+const BARRIER_ALLOWLIST: ReadonlySet<string> = new Set([VERSION_KEY, DEVICE_FP_KEY, TOKEN_KEY]);
+
+/** logout 完成时调用（clearToken 后立即调）。打开屏障，拒收 in-flight 落盘。 */
+export function blockWrites(): void {
+  writesBlocked = true;
+}
+
+/** login 成功进入 applyLoginResponse 时调用（入口首步）。放行业务写入。 */
+export function unblockWrites(): void {
+  writesBlocked = false;
+}
+
+/** 供测试查询屏障状态。生产代码不应依赖。 */
+export function __isWriteBlocked(): boolean {
+  return writesBlocked;
 }
 
 /**
@@ -110,6 +143,12 @@ export async function clearAllForReset(): Promise<void> {
 
 export async function setItem<T>(key: string, data: T, ttlMs?: number): Promise<void> {
   if (typeof wx === 'undefined') return;
+  // 写屏障：logout 后拦截 in-flight response 落盘（见文件顶注释）。
+  // getItem/removeItem 不拦（只读 / 幂等无副作用）。
+  if (writesBlocked && !BARRIER_ALLOWLIST.has(key)) {
+    logger.info('storage', `write blocked · key=${key}`);
+    return;
+  }
   const envelope: Envelope<T> = { v: STORAGE_VERSION, t: Date.now(), ttl: ttlMs, d: data };
   try {
     await wx.setStorage({ key, data: envelope });

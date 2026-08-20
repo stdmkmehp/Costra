@@ -11,6 +11,7 @@ import { getToken, gmLoginAs, revokeSessionRemote, clearToken } from '../../serv
 import { listGmUsers, type GmUserItem } from '../../services/gmApi';
 import { syncOnce, stopScheduler, startScheduler } from '../../services/syncScheduler';
 import { pendingCount } from '../../services/outbox';
+import { resetLocalData } from '../../services/localReset';
 import { logger } from '../../utils/logger';
 
 interface GmUserView extends GmUserItem {
@@ -126,8 +127,9 @@ Page({
       await revokeSessionRemote();
       await clearToken();
       try {
-        // 动态引入 localReset 以避免循环依赖（localReset → *Api → request → auth）
-        const { resetLocalData } = await import('../../services/localReset');
+        // 注：localReset → *Api → request → auth 是 CommonJS 循环依赖但无害——顶层无同步调用，
+        // 运行时 exports 早已填齐；早期动态 import() 的写法在小程序运行时不受支持（Failed to fetch
+        // dynamically imported module），会导致本地数据清理静默失败 → GM 切换身份后串账。
         await resetLocalData();
       } catch (err) {
         logger.warn('gm', 'reset local data on impersonate failed', err);

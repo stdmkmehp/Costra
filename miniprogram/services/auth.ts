@@ -5,10 +5,11 @@
 // 契约事实源: server/api/openapi.yaml #/components/schemas/AuthTokenPair
 // 上游派单: .team/dispatch/COSTRA-102-miniapp-login-e2e.md §D2.2 · .team/dispatch/COSTRA-125-miniapp-storage-async-migration.md §3 (b)
 // 承接 COSTRA-118 路径 A: E.P0-1（code 日志脱敏）/ E.P0-2（TokenRaw 字段对齐）/ E.P0-3（refresh body 字段名）
-import { setItem, getItem, removeItem } from './storage';
+import { setItem, getItem, removeItem, blockWrites, unblockWrites } from './storage';
 import { request } from './request';
 import { setActiveFamily, getActiveFamilyId, getActiveLedgerId, fetchAndRestorePreference, restoreActiveFamilyAfterLogin, flushPendingPreference } from './family';
 import { TOKEN_KEY, DEVICE_FP_KEY } from './storageKeys';
+import { resetLocalData } from './localReset';
 import { logger } from '../utils/logger';
 
 const REFRESH_WINDOW_MS = 5 * 60 * 1000; // 距过期 < 5 分钟触发续签
@@ -258,10 +259,16 @@ export async function logout(): Promise<void> {
   }
 
   // 先清登录态内存（current=null + authEpoch 递增，阻断在途 refresh 反写），再全量重置本地数据。
-  // 动态引入 localReset 以避免循环依赖（localReset → *Api → request → auth）。
+  // 注：localReset → *Api → request → auth 是 CommonJS 循环依赖但无害——顶层无同步调用，
+  // 运行时 exports 早已填齐；早期动态 import() 的写法在小程序运行时不受支持（Failed to fetch
+  // dynamically imported module），会导致本地数据清理静默失败。
   await clearToken();
+  // 开启写屏障：拦截"跨越 logout 边界的 in-flight response 落盘"。
+  //   登录期发出的 GET(entries/budget/ledger-balance/categories/...) 若在 clearStorage 后
+  //   才回到 setItem，会写到已清空的 storage 里；barrier 打开后 setItem 对非白名单 key
+  //   直接短路。unblockWrites 由 applyLoginResponse 入口负责（新会话建立即放行）。
+  blockWrites();
   try {
-    const { resetLocalData } = await import('./localReset');
     await resetLocalData();
   } catch (err) {
     logger.warn('auth', 'reset local data on logout failed', err);
@@ -299,6 +306,10 @@ export async function doWxLogin(): Promise<Token> {
  * token 落盘 → 恢复账本上下文（本地 active 优先 / 服务端 preference / default personal 兜底）→ 冲刷 pending preference。
  */
 async function applyLoginResponse(resp: TokenRaw): Promise<Token> {
+  // 新会话建立：立即放行写屏障（logout 后 blockWrites 挡住的 setItem 到此解封）。
+  // 位置约束：必须在任何 setItem 之前（TOKEN_KEY 在白名单里，即便不放行也能写，
+  //   但 restoreActiveFamilyAfterLogin 会写 family-context 不在白名单，必须先解封）。
+  unblockWrites();
   const stored = buildStored(resp);
   const token = replaceCurrent(stored);
   await setItem(TOKEN_KEY, stored);  // COSTRA-125: async

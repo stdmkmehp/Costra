@@ -117,7 +117,7 @@ gmLoginAs(target: { userId?: string; fakeOpenid?: string }, gmAccessToken: strin
 - **切换流程**（复用 logout 清理语义，复用现有导出，顺序与 mine 页 logout 对齐）：
   1. 确认弹窗 → `syncOnce('hide')`
   2. `outbox.pendingCount() > 0` → 二次弹窗（文案对齐 mine："最新记录可能尚未同步，切换后可能丢失"）
-  3. 确认弹窗通过后、清理前捕获 `gmAccessToken = getToken()?.raw.access_token` → `stopScheduler()` → `revokeSessionRemote()`（吞错；必须在 `clearToken()` 前，body 需携带当前 refresh_token）→ `clearToken()` → 动态 import `localReset.resetLocalData()`（必须动态 import，防循环依赖）
+  3. 确认弹窗通过后、清理前捕获 `gmAccessToken = getToken()?.raw.access_token` → `stopScheduler()` → `revokeSessionRemote()`（吞错；必须在 `clearToken()` 前，body 需携带当前 refresh_token）→ `clearToken()` → `localReset.resetLocalData()`（顶层静态 import；早期"动态 import 防循环依赖"是过度设计，小程序运行时不支持 ESM `import()`，会静默失败→本地数据不清→GM 切换身份串账。CommonJS 循环无害）
   4. `gmLoginAs(target, gmAccessToken)` → `startScheduler()`（已幂等）→ `wx.reLaunch(/pages/ledger/index)`；`gmLoginAs` 失败时本地已全清 → 提示并 `reLaunch(/pages/login/index)` 走标准登录闭环
 - **不设置** `globalData.userLoggedOut`（这不是登出，impersonate 后已是登录态）。
 

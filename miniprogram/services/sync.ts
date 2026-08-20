@@ -4,6 +4,10 @@
 //   - Bug D: 409 走 ackBatchFailure 保守重试
 //   - Bug F: wireOps 只发协议字段（不含 retries 等内部字段）
 // migration 0004: 消费 sync pull 的 categories_revision 字段，触发分类强刷
+//
+// logout 竞态：跨越 logout 边界的 in-flight response 不再由本文件拦截。
+//   已由 storage.ts 的写屏障（blockWrites/unblockWrites）在 setItem 出口统一兜底，
+//   本文件不需要维护身份门。
 
 import { request, ApiError } from './request';
 import { logger } from '../utils/logger';

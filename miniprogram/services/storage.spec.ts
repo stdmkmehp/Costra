@@ -4,8 +4,9 @@
 //   - 最小覆盖 4 个导出 API（getItem / setItem / removeItem / ensureVersion）的 async 语义
 //   - error path：`data not found` 必须被吞为 null（首次读 key 不存在 = 正常语义）
 //   - node 环境下 wx 不存在 → 所有 API 静默 noop（不 throw）
+//   - barrier：blockWrites/unblockWrites 拦截跨越 logout 边界的 in-flight setItem
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { getItem, setItem, removeItem, ensureVersion, clearAllForReset } from './storage';
+import { getItem, setItem, removeItem, ensureVersion, clearAllForReset, blockWrites, unblockWrites } from './storage';
 
 describe('services/storage · 无 wx 全局环境（兼容单测/SSR）', () => {
   beforeEach(() => {
@@ -173,5 +174,63 @@ describe('services/storage · 模拟 wx 异步 API（Promise 形态）', () => {
     expect(mockStore.get('__costra_token_v1')).toBeDefined();
     expect(mockStore.get('entry:__index')).toEqual(['ref-1']);
     expect(mockStore.get('__costra_device_fp')).toEqual({ v: 1, t: expect.any(Number), d: 'df_keep_me' });
+  });
+
+  // ─── write barrier · logout 竞态修复 ─────────────────────────────────────────
+  //
+  // 场景：登录后立即 logout，登录期发出的 in-flight response 在 clearStorage 之后
+  //   才回到 setItem。barrier 打开时非白名单 key 直接短路，白名单 key 仍放行（供
+  //   clearAllForReset 自身写 VERSION_KEY/DEVICE_FP_KEY，及 login 恢复期写 TOKEN_KEY）。
+
+  it('blockWrites 后 setItem 非白名单 key 静默拦截（不写盘）', async () => {
+    blockWrites();
+    try {
+      await setItem('entry:e-1', { amount: 100 });
+      await setItem('budget:l-1:2026-05', { amount_cents: 1000 });
+      await setItem('ledger_balance:l-1', { balance_cents: 5000 });
+    } finally {
+      unblockWrites();  // 别污染后续用例
+    }
+    expect(mockStore.has('entry:e-1')).toBe(false);
+    expect(mockStore.has('budget:l-1:2026-05')).toBe(false);
+    expect(mockStore.has('ledger_balance:l-1')).toBe(false);
+  });
+
+  it('blockWrites 后 setItem 白名单 key（VERSION/DEVICE_FP/TOKEN）仍放行', async () => {
+    blockWrites();
+    try {
+      await setItem('__costra_storage_version', 1);
+      await setItem('__costra_device_fp', 'df_abc');
+      await setItem('__costra_token_v1', { raw: {} });
+    } finally {
+      unblockWrites();
+    }
+    // Envelope 包装后的 data 字段是入参本身
+    expect((mockStore.get('__costra_storage_version') as { d: unknown }).d).toBe(1);
+    expect((mockStore.get('__costra_device_fp') as { d: unknown }).d).toBe('df_abc');
+    expect((mockStore.get('__costra_token_v1') as { d: unknown }).d).toEqual({ raw: {} });
+  });
+
+  it('unblockWrites 后 setItem 恢复正常写盘（login 成功路径回归）', async () => {
+    blockWrites();
+    await setItem('entry:e-1', { amount: 100 });  // 被拦
+    unblockWrites();
+    await setItem('entry:e-2', { amount: 200 });  // 放行
+    expect(mockStore.has('entry:e-1')).toBe(false);
+    expect((mockStore.get('entry:e-2') as { d: unknown }).d).toEqual({ amount: 200 });
+  });
+
+  it('blockWrites 不影响 getItem / removeItem（只读 / 幂等无副作用）', async () => {
+    await setItem('entry:e-1', { amount: 100 });
+    blockWrites();
+    try {
+      // 读不受影响
+      expect(await getItem<{ amount: number }>('entry:e-1')).toEqual({ amount: 100 });
+      // 删不受影响（幂等）
+      await removeItem('entry:e-1');
+      expect(await getItem('entry:e-1')).toBeNull();
+    } finally {
+      unblockWrites();
+    }
   });
 });

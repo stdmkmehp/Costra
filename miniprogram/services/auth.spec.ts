@@ -23,6 +23,10 @@ vi.mock('./storage', () => ({
   removeItem: vi.fn(async (_key: string) => {
     storageMap.delete(_key);
   }),
+  // logout 竞态修复：write barrier · logout 后 blockWrites 拦 in-flight，login 首步 unblockWrites 放行。
+  //   单测无跨越 logout 场景，两个函数只需存在 · 语义 noop 即可。
+  blockWrites: vi.fn(() => { /* noop for tests */ }),
+  unblockWrites: vi.fn(() => { /* noop for tests */ }),
 }));
 
 // COSTRA-165: mock family.ts · 追踪 setActiveFamily/clearActiveFamily 调用
