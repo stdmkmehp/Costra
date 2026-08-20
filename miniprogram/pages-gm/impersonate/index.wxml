@@ -3,15 +3,9 @@
   <!-- 伪造身份登录 -->
   <view class="gm__section-title">伪造身份登录</view>
   <view class="gm__fake">
-    <input
-      class="gm__input"
-      placeholder="gm_fake_ 前缀的 openid"
-      value="{{fakeOpenid}}"
-      bindinput="onFakeInput"
-    />
-    <view class="gm__fake-btn {{fakeOpenid ? '' : 'gm__fake-btn--disabled'}}" bindtap="onTapFakeLogin">登录</view>
+    <view class="gm__fake-btn" bindtap="onTapCreateFake">新建伪造账号登录</view>
   </view>
-  <view class="gm__hint">伪造账号强制 gm_fake_ 前缀，与真实账号物理隔离，可批量清理</view>
+  <view class="gm__hint">伪造账号由系统自动分配（gm_fake_ 前缀），与真实账号物理隔离，可批量清理；复登同一伪造账号请从下方用户列表进入</view>
 
   <!-- 用户列表 -->
   <view class="gm__section-title">用户列表</view>

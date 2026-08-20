@@ -482,7 +482,7 @@ describe('services/auth · COSTRA-165 family-context integration', () => {
     expect(opts.extraHeader?.Authorization).toBe('Bearer gm-access-token-xyz');
     const body = opts.body as Record<string, unknown>;
     expect(body.user_id).toBe('target-u-9');
-    expect(body.fake_openid).toBeUndefined();
+    expect(body.create_fake).toBeUndefined();
     expect(typeof body.client_fp).toBe('string');
 
     // 与 doWxLogin 同一管道：token 替换 + 落盘 + family-context 恢复 + globalData 同步
@@ -494,17 +494,17 @@ describe('services/auth · COSTRA-165 family-context integration', () => {
     expect(sharedGlobalData.activeLedgerId).toBe('l-default-001');
   });
 
-  // T13: gmLoginAs fake_openid 路径 · body 二选一契约
-  it('T13: gmLoginAs(fakeOpenid) · body 带 fake_openid 不带 user_id', async () => {
+  // T13: gmLoginAs createFake 路径 · body 二选一契约（伪造 openid 由服务端自动分配）
+  it('T13: gmLoginAs(createFake) · body 带 create_fake:true 不带 user_id', async () => {
     const { request } = await import('./request');
     const mocked = vi.mocked(request);
     mocked.mockClear();
 
-    await gmLoginAs({ fakeOpenid: 'gm_fake_test_001' }, 'gm-access-token-xyz');
+    await gmLoginAs({ createFake: true }, 'gm-access-token-xyz');
 
     expect(mocked).toHaveBeenCalledTimes(1);
     const body = mocked.mock.calls[0][0].body as Record<string, unknown>;
-    expect(body.fake_openid).toBe('gm_fake_test_001');
+    expect(body.create_fake).toBe(true);
     expect(body.user_id).toBeUndefined();
   });
 });

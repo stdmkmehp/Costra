@@ -19,8 +19,6 @@ interface GmUserView extends GmUserItem {
   initial: string;
 }
 
-const FAKE_OPENID_PATTERN = /^gm_fake_[A-Za-z0-9_-]{4,64}$/;
-
 Page({
   data: {
     items: [] as GmUserView[],
@@ -28,7 +26,6 @@ Page({
     hasMore: false,
     loading: false,
     switching: false,
-    fakeOpenid: '',
   },
 
   onLoad() {
@@ -41,18 +38,9 @@ Page({
     void this._loadPage(1);
   },
 
-  onFakeInput(e: WechatMiniprogram.Input) {
-    this.setData({ fakeOpenid: (e.detail.value || '').trim() });
-  },
-
-  onTapFakeLogin() {
+  onTapCreateFake() {
     if (this.data.switching) return;
-    const fakeOpenid = this.data.fakeOpenid;
-    if (!FAKE_OPENID_PATTERN.test(fakeOpenid)) {
-      wx.showToast({ title: '须为 gm_fake_ 前缀（4~64 位）', icon: 'none' });
-      return;
-    }
-    void this._switchTo({ fakeOpenid }, fakeOpenid);
+    void this._switchTo({ createFake: true }, '新伪造账号');
   },
 
   onTapUser(e: WechatMiniprogram.TouchEvent) {
@@ -93,7 +81,7 @@ Page({
     }
   },
 
-  async _switchTo(target: { userId?: string; fakeOpenid?: string }, label: string) {
+  async _switchTo(target: { userId?: string; createFake?: boolean }, label: string) {
     const res = await wx.showModal({
       title: '切换登录身份',
       content: `确定切换到「${label}」吗？当前账号将退出。`,

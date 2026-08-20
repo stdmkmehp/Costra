@@ -334,14 +334,16 @@ async function applyLoginResponse(resp: TokenRaw): Promise<Token> {
 /**
  * GM 切换登录身份（docs/ops/gm-impersonate-design.md · 仅 users.is_gm 用户可用）。
  *
- * @param target userId 与 fakeOpenid 二选一（与服务端契约一致）
+ * @param target userId 与 createFake 二选一（与服务端契约一致）；
+ *        createFake 由服务端自动分配 gm_fake_ 前缀的伪造账号（每次调用新建独立账号，
+ *        复登同一伪造账号走 userId 路径——伪造账号注册时间最新，排在用户列表最前）
  * @param gmAccessToken 调用方在本地清理前捕获的 GM access_token
  *        —— 切换流程先 clearToken 再调用本函数，request 无法自动注入 Bearer，故显式传入。
  *
- * 与 doWxLogin 共用 applyLoginResponse 管道；服务端对同一 fake_openid 复登会复用账号（upsert）。
+ * 与 doWxLogin 共用 applyLoginResponse 管道。
  */
 export async function gmLoginAs(
-  target: { userId?: string; fakeOpenid?: string },
+  target: { userId?: string; createFake?: boolean },
   gmAccessToken: string,
 ): Promise<Token> {
   const clientFp = await getOrCreateDeviceFp();
@@ -351,7 +353,7 @@ export async function gmLoginAs(
     body: {
       ...(target.userId !== undefined
         ? { user_id: target.userId }
-        : { fake_openid: target.fakeOpenid }),
+        : { create_fake: true }),
       client_fp: clientFp,
     },
     auth: false,
