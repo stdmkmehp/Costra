@@ -30,6 +30,7 @@ export interface TokenRaw {
     nickname: string;
     avatar_url: string | null;
     has_completed_profile: boolean;   // COSTRA-158: 严格资料判定字段
+    is_gm: boolean;                   // migration 0018: GM 权限标记（GM 工具入口渲染依据）
     // P1-3 新增（v1.1 · 与 server toUserView() 返回 1:1 对齐 · COSTRA-118 P0-2 红线）：
     timezone: string;
     created_at: string;  // ISO-8601 UTC
@@ -225,23 +226,29 @@ export async function clearToken(): Promise<void> {
  * 注意：调用方（如 mine 页 onTapLogout）应在调用 logout 前先执行 syncOnce('hide') + stopScheduler()，
  * 保证用户离开前本地数据尽量上行。此处不直接引入 syncScheduler 以避免循环依赖。
  */
-export async function logout(): Promise<void> {
-  const had = !!current;
-
-  if (had) {
-    try {
-      await request<void>({
-        method: 'POST',
-        path: '/auth/logout',
-        body: { refresh_token: current!.raw.refresh_token },
-        auth: true,
-        timeout: 5_000
-      });
-    } catch (e) {
-      // 吞错：退出本地即可，服务端幂等由 /auth/logout 保证
-      logger.warn('auth', 'logout remote call failed, continue local clean', e);
-    }
+/**
+ * 远端吊销当前会话（POST /auth/logout · 服务端幂等 · 吞错不阻塞本地清理）。
+ * 无副作用（不设 userLoggedOut / 不 reLaunch）：logout() 与 GM 切换身份流程共用（D7）。
+ * 必须在 clearToken() 之前调用（body 需携带当前 refresh_token）。
+ */
+export async function revokeSessionRemote(): Promise<void> {
+  if (!current) return;
+  try {
+    await request<void>({
+      method: 'POST',
+      path: '/auth/logout',
+      body: { refresh_token: current.raw.refresh_token },
+      auth: true,
+      timeout: 5_000
+    });
+  } catch (e) {
+    // 吞错：本地清理必须继续；残留会话由 refresh TTL 自然过期
+    logger.warn('auth', 'revoke session remote failed, continue local clean', e);
   }
+}
+
+export async function logout(): Promise<void> {
+  await revokeSessionRemote();
 
   const app = getApp();
   if (app?.globalData) {
@@ -284,6 +291,14 @@ export async function doWxLogin(): Promise<Token> {
     body: { code, client_fp: clientFp },
     auth: false
   });
+  return applyLoginResponse(resp);
+}
+
+/**
+ * 登录后共用管道（doWxLogin / gmLoginAs 共用）：
+ * token 落盘 → 恢复账本上下文（本地 active 优先 / 服务端 preference / default personal 兜底）→ 冲刷 pending preference。
+ */
+async function applyLoginResponse(resp: TokenRaw): Promise<Token> {
   const stored = buildStored(resp);
   const token = replaceCurrent(stored);
   await setItem(TOKEN_KEY, stored);  // COSTRA-125: async
@@ -303,6 +318,35 @@ export async function doWxLogin(): Promise<Token> {
     activeLedgerId: restored.ledger_id,
   });
   return token;
+}
+
+/**
+ * GM 切换登录身份（docs/ops/gm-impersonate-design.md · 仅 users.is_gm 用户可用）。
+ *
+ * @param target userId 与 fakeOpenid 二选一（与服务端契约一致）
+ * @param gmAccessToken 调用方在本地清理前捕获的 GM access_token
+ *        —— 切换流程先 clearToken 再调用本函数，request 无法自动注入 Bearer，故显式传入。
+ *
+ * 与 doWxLogin 共用 applyLoginResponse 管道；服务端对同一 fake_openid 复登会复用账号（upsert）。
+ */
+export async function gmLoginAs(
+  target: { userId?: string; fakeOpenid?: string },
+  gmAccessToken: string,
+): Promise<Token> {
+  const clientFp = await getOrCreateDeviceFp();
+  const resp = await request<TokenRaw>({
+    method: 'POST',
+    path: '/gm/impersonate',
+    body: {
+      ...(target.userId !== undefined
+        ? { user_id: target.userId }
+        : { fake_openid: target.fakeOpenid }),
+      client_fp: clientFp,
+    },
+    auth: false,
+    extraHeader: { Authorization: `Bearer ${gmAccessToken}` },
+  });
+  return applyLoginResponse(resp);
 }
 
 /**

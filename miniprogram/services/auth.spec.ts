@@ -3,7 +3,7 @@
 // COSTRA-158 R1.x.1: updateLocalUserProfile 改 async + setItem · 测适配 + 重启回读单测
 // COSTRA-165: T7~T11 family-context 接入测试（双源一致性 / initAuth 升级 / refresh 边界 / TokenRaw 契约对齐）
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { __test__ as authTest, getToken, getSession, updateLocalUserProfile, initAuth, doWxLogin, loginFlow, refreshToken, clearToken } from './auth';
+import { __test__ as authTest, getToken, getSession, updateLocalUserProfile, initAuth, doWxLogin, loginFlow, refreshToken, clearToken, gmLoginAs } from './auth';
 import type { TokenRaw, TokenStored } from './auth';
 
 // R1.x.1: mock storage.ts · 让 setItem/getItem 操作共享 Map（模拟真实 envelope 行为）
@@ -75,6 +75,7 @@ const mockRaw: TokenRaw = {
     nickname: '测试昵称',
     avatar_url: 'https://x.png',
     has_completed_profile: false,
+    is_gm: false,
     timezone: 'Asia/Shanghai',
     created_at: '2026-01-01T00:00:00.000Z',
     updated_at: '2026-01-01T00:00:00.000Z',
@@ -221,6 +222,7 @@ describe('services/auth · COSTRA-165 family-context integration', () => {
         nickname: '测试用户',
         avatar_url: null,
         has_completed_profile: true,
+        is_gm: false,
         timezone: 'Asia/Shanghai',
         created_at: '2026-01-01T00:00:00.000Z',
         updated_at: '2026-01-01T00:00:00.000Z',
@@ -440,6 +442,7 @@ describe('services/auth · COSTRA-165 family-context integration', () => {
         nickname: '类型检查用户',
         avatar_url: null,
         has_completed_profile: true,
+        is_gm: false,
         timezone: 'Asia/Shanghai',
         created_at: '2026-05-27T00:00:00.000Z',
         updated_at: '2026-05-27T00:00:00.000Z',
@@ -451,9 +454,53 @@ describe('services/auth · COSTRA-165 family-context integration', () => {
     // buildStored 应能正常消费
     const stored = authTest.buildStored(fullRaw);
     expect(stored.raw.expires_in).toBe(3600);
+    expect(stored.raw.user.is_gm).toBe(false);
     expect(stored.raw.user.timezone).toBe('Asia/Shanghai');
     expect(stored.raw.user.created_at).toBe('2026-05-27T00:00:00.000Z');
     expect(stored.raw.default_family_id).toBe('f-typecheck');
     expect(stored.raw.default_ledger_id).toBe('l-typecheck');
+  });
+
+  // T12: gmLoginAs user_id 路径 · 请求形状 + 登录后管道与 doWxLogin 一致
+  it('T12: gmLoginAs(userId) · POST /gm/impersonate 显式 Bearer + body user_id/client_fp · 管道恢复 family-context', async () => {
+    const { request } = await import('./request');
+    const mocked = vi.mocked(request);
+    mocked.mockClear();
+
+    const token = await gmLoginAs({ userId: 'target-u-9' }, 'gm-access-token-xyz');
+
+    expect(mocked).toHaveBeenCalledTimes(1);
+    const opts = mocked.mock.calls[0][0];
+    expect(opts.method).toBe('POST');
+    expect(opts.path).toBe('/gm/impersonate');
+    // 调用方在 clearToken 后执行 · 无法自动注入 Authorization · 必须显式 extraHeader
+    expect(opts.auth).toBe(false);
+    expect(opts.extraHeader?.Authorization).toBe('Bearer gm-access-token-xyz');
+    const body = opts.body as Record<string, unknown>;
+    expect(body.user_id).toBe('target-u-9');
+    expect(body.fake_openid).toBeUndefined();
+    expect(typeof body.client_fp).toBe('string');
+
+    // 与 doWxLogin 同一管道：token 替换 + 落盘 + family-context 恢复 + globalData 同步
+    expect(token.raw.user.id).toBe('mock-u-1');
+    expect(getToken()?.raw.access_token).toBe('mock-jwt.access');
+    expect(storageMap.has('__costra_token_v1')).toBe(true);
+    expect(familyState.ctx?.family_id).toBe('f-default-001');
+    expect(familyState.ctx?.ledger_id).toBe('l-default-001');
+    expect(sharedGlobalData.activeLedgerId).toBe('l-default-001');
+  });
+
+  // T13: gmLoginAs fake_openid 路径 · body 二选一契约
+  it('T13: gmLoginAs(fakeOpenid) · body 带 fake_openid 不带 user_id', async () => {
+    const { request } = await import('./request');
+    const mocked = vi.mocked(request);
+    mocked.mockClear();
+
+    await gmLoginAs({ fakeOpenid: 'gm_fake_test_001' }, 'gm-access-token-xyz');
+
+    expect(mocked).toHaveBeenCalledTimes(1);
+    const body = mocked.mock.calls[0][0].body as Record<string, unknown>;
+    expect(body.fake_openid).toBe('gm_fake_test_001');
+    expect(body.user_id).toBeUndefined();
   });
 });

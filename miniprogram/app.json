@@ -37,6 +37,13 @@
         "list/index",
         "edit/index"
       ]
+    },
+    {
+      "root": "pages-gm/",
+      "name": "gm",
+      "pages": [
+        "impersonate/index"
+      ]
     }
   ],
   "preloadRule": {

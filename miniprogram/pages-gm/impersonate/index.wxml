@@ -1,0 +1,50 @@
+<!-- pages-gm/impersonate/index.wxml · GM 切换登录身份 -->
+<view class="gm">
+  <!-- 伪造身份登录 -->
+  <view class="gm__section-title">伪造身份登录</view>
+  <view class="gm__fake">
+    <input
+      class="gm__input"
+      placeholder="gm_fake_ 前缀的 openid"
+      value="{{fakeOpenid}}"
+      bindinput="onFakeInput"
+    />
+    <view class="gm__fake-btn {{fakeOpenid ? '' : 'gm__fake-btn--disabled'}}" bindtap="onTapFakeLogin">登录</view>
+  </view>
+  <view class="gm__hint">伪造账号强制 gm_fake_ 前缀，与真实账号物理隔离，可批量清理</view>
+
+  <!-- 用户列表 -->
+  <view class="gm__section-title">用户列表</view>
+  <view class="gm__list">
+    <view
+      wx:for="{{items}}"
+      wx:key="id"
+      class="gm__user"
+      data-item="{{item}}"
+      bindtap="onTapUser"
+      hover-class="gm__user--hover"
+      hover-stay-time="60"
+    >
+      <image wx:if="{{item.avatar_url}}" class="gm__avatar" src="{{item.avatar_url}}" mode="aspectFill" />
+      <view wx:else class="gm__avatar gm__avatar--placeholder">{{item.initial}}</view>
+      <view class="gm__user-main">
+        <view class="gm__user-name">{{item.nickname}}</view>
+        <view class="gm__user-meta">{{item.created_text}} · {{item.id_short}}</view>
+      </view>
+      <view class="gm__arrow">›</view>
+    </view>
+    <view wx:if="{{!loading && items.length === 0}}" class="gm__empty">暂无用户</view>
+  </view>
+
+  <!-- 翻页 -->
+  <view class="gm__pager">
+    <view class="gm__pager-btn {{page <= 1 ? 'gm__pager-btn--disabled' : ''}}" bindtap="onPrevPage">上一页</view>
+    <view class="gm__pager-info">第 {{page}} 页</view>
+    <view class="gm__pager-btn {{!hasMore ? 'gm__pager-btn--disabled' : ''}}" bindtap="onNextPage">下一页</view>
+  </view>
+
+  <!-- 切换中遮罩 -->
+  <view wx:if="{{switching}}" class="gm__mask" catchtouchmove="noop">
+    <view class="gm__mask-text">切换中…</view>
+  </view>
+</view>

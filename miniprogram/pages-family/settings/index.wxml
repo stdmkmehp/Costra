@@ -4,4 +4,13 @@
     <view class="settings__label">账本导入 / 导出</view>
     <view class="settings__arrow">›</view>
   </view>
+
+  <!-- GM 工具 · 仅 is_gm 用户可见 -->
+  <block wx:if="{{isGm}}">
+    <view class="settings__section-title">GM 工具</view>
+    <view class="settings__item" bindtap="onTapGmImpersonate" hover-class="settings__item--hover" hover-stay-time="60">
+      <view class="settings__label">切换登录身份</view>
+      <view class="settings__arrow">›</view>
+    </view>
+  </block>
 </view>
