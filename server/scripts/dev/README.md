@@ -30,21 +30,21 @@
 npm run db:reset-data
 npm run db:migrate    # 注：reset-data 已 TRUNCATE · 不需重跑 migrations · 此行仅在彻底重建 schema 时跑
 
-# 2. 启 server（dev WX mock）
-WX_MOCK_LOGIN=1 npm run dev
+# 2. 启 server
+npm run dev
 
-# 3. 拿 token + USER_ID（步骤 B）
-RESPONSE=$(curl -s -X POST http://127.0.0.1:8080/v1/auth/wx-login \
-  -H 'content-type: application/json' \
-  -d '{"code":"test"}')
-TOKEN=$(echo $RESPONSE | jq -r '.access_token')
-USER_ID=$(echo $RESPONSE | jq -r '.user.id')
+# 3. 拿 USER_ID：先在微信开发者工具完成一次真实登录，再从 DB 查
+psql "postgres://costra:costra_dev_pw@localhost:5432/costra" \
+  -c "SELECT id, nickname, created_at FROM users ORDER BY created_at DESC LIMIT 5;"
+USER_ID=<上一步选定的 user.id>
 
 # 4. 跑 seed
 USER_ID=$USER_ID npm run db:seed:curl-test
-
-# 5. 跑 curl 实测步骤 C/D/E（按手册 docs/qa/costra-104-curl-verify.md）
 ```
+
+> ⚠️ `WX_MOCK_LOGIN` 已随 mock login 功能整体移除（2026-08-20）：`curl /auth/wx-login`
+> 不再接受任意 code，必须真实 wx.login 换取。免扫码的指定账号登录将按新方案
+> （debug impersonate）另行实装，届时本工作流同步刷新。
 
 ## 安全保护
 

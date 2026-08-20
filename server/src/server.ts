@@ -15,24 +15,9 @@ import { buildApp } from './app.js';
 import { appEnv } from './config/env.js';
 import { closePool } from './db/pool.js';
 import { closeRedis } from './db/redis.js';
-import { setWxFetchForTests } from './wx/code2Session.js';
 
 async function main(): Promise<void> {
   const env = appEnv();
-  if (env.wxMockLogin) {
-    // 静态 import setWxFetchForTests（修 R1.x.1 动态 import 导致 tsx watch 模块缓存分裂 bug）
-    // 与 auth.ts/authService.ts 共用同一 code2Session 模块实例 · 确保 _fetch 单例被正确替换
-    setWxFetchForTests(
-      (async () =>
-        new Response(
-          JSON.stringify({
-            openid: 'mock-openid-' + Math.random().toString(36).slice(2, 10),
-            session_key: 'mock-session-key',
-          }),
-          { status: 200, headers: { 'content-type': 'application/json' } },
-        )) as unknown as typeof fetch,
-    );
-  }
   const app = await buildApp();
 
   const shutdown = async (signal: string): Promise<void> => {
@@ -69,12 +54,6 @@ async function main(): Promise<void> {
   try {
     await app.listen({ port: env.port, host: '0.0.0.0' });
     app.log.info({ port: env.port, nodeEnv: env.nodeEnv }, 'costra-server listening');
-  if (env.wxMockLogin) {
-    app.log.warn(
-      { wxMockLogin: true },
-      '⚠️  WX_MOCK_LOGIN enabled · code2Session mocked · DO NOT enable in production',
-    );
-  }
   } catch (err) {
     app.log.fatal({ err }, 'failed to bind port');
     process.exit(1);
