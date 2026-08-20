@@ -20,6 +20,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app.js';
 import { setWxFetchForTests } from '../src/wx/code2Session.js';
+import { getPool } from '../src/db/pool.js';
 
 let app: FastifyInstance;
 let token: string;
@@ -173,6 +174,26 @@ describe('PATCH /v1/users/me', () => {
     expect(res.statusCode).toBe(400);
     const body = res.json() as { code: string };
     expect(body.code).toBe('INVALID_ARGUMENT');
+  });
+
+  // migration 0018: RETURNING 补 is_gm 后，GM 用户 PATCH 后响应仍携带 is_gm=true
+  // 回归防线：docs/ops/gm-impersonate-design.md §2.1 明确要求所有 SELECT/RETURNING 补 is_gm
+  it('T8b GM 用户 PATCH 后响应 is_gm 保持 true（RETURNING 覆盖回归）', async () => {
+    // 先读当前 user.id 并授予 GM
+    const me = await app.inject({ method: 'GET', url: '/v1/users/me', headers: authHeader() });
+    const userId = (me.json() as { id: string }).id;
+    await getPool().query(`UPDATE users SET is_gm = TRUE WHERE id = $1`, [userId]);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/v1/users/me',
+      payload: { nickname: 'GM张三' },
+      headers: authHeader(),
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { nickname: string; is_gm: boolean };
+    expect(body.nickname).toBe('GM张三');
+    expect(body.is_gm).toBe(true);
   });
 });
 

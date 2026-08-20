@@ -225,7 +225,7 @@ export async function updateProfile(
             version = version + 1
       WHERE id = $1 AND deleted_at IS NULL
       RETURNING id, wx_openid, wx_unionid, nickname, avatar_url, timezone,
-                has_completed_profile, created_at, updated_at, deleted_at, version,
+                has_completed_profile, is_gm, created_at, updated_at, deleted_at, version,
                 preferred_family_id, preferred_ledger_id, preferred_revision, preferred_updated_at`,
     [
       userId,
@@ -274,7 +274,7 @@ export async function updatePreference(
         AND deleted_at IS NULL
         AND ($4::BIGINT IS NULL OR preferred_revision <= $4::BIGINT)
       RETURNING id, wx_openid, wx_unionid, nickname, avatar_url, timezone,
-                has_completed_profile, created_at, updated_at, deleted_at, version,
+                has_completed_profile, is_gm, created_at, updated_at, deleted_at, version,
                 preferred_family_id, preferred_ledger_id, preferred_revision, preferred_updated_at`,
     [userId, input.preferredFamilyId, input.preferredLedgerId, clientRevision],
   );
@@ -297,7 +297,7 @@ export async function clearPreferenceForFamily(
             updated_at = now()
       WHERE id = $1 AND deleted_at IS NULL AND preferred_family_id = $2
       RETURNING id, wx_openid, wx_unionid, nickname, avatar_url, timezone,
-                has_completed_profile, created_at, updated_at, deleted_at, version,
+                has_completed_profile, is_gm, created_at, updated_at, deleted_at, version,
                 preferred_family_id, preferred_ledger_id, preferred_revision, preferred_updated_at`,
     [userId, familyId],
   );
