@@ -125,7 +125,7 @@ node scripts/fetch-holidays.mjs 2027
 |---|---|---|---|
 | `setup-replication-primary.sh` | ① | 一次性/恢复 | replicator（重跑不旋密）+ slot + managed HBA + 异步断言；lost 槽和密码轮换均需显式 flag |
 | `setup-replication-standby.sh` | ②（staging） | 首次/修复 | 空目录 basebackup；repair 复验 manifest 并重建身份；凭据预置模式只原子换 passfile、不重启 |
-| `install-standby-cron.sh` | ②（staging） | 一次性/变更 | 幂等写 `/etc/cron.d/costra-standby`（check && backup 组合 · 落 `/data/slave/backups`）+ logrotate；防呆校验容器与 standby.env |
+| `install-standby-cron.sh` | ②（staging） | 一次性/变更 | 幂等写 `/etc/cron.d/costra-standby`（check && backup 组合 · 落 `/data/slave/backups` + 每天 6:27 `restore-staging-from-prod.sh -y` 刷 staging）+ logrotate；防呆校验容器与 standby.env |
 | `recover-primary-from-standby.sh` | ① | 灾难恢复 | `prepare/activate/status` 双阶段持久状态；候选验证、来源停机门禁、PGDATA 可续作切换 |
 | `check-replication.sh` | ①/② | cron | 主库查 slot/WAL/async；从库查 latest-end→receive→replay；webhook 同时验 HTTP 与 `errcode` |
 
@@ -155,6 +155,7 @@ COSTRA_ENV_FILE=/data/conf/standby.env ./backup-db.sh --db-only \
 | `--dry-run` / `-y` | 通用；`-y` 全链路自动确认（透传 `restore-db.sh` · 无人值守可用） |
 
 > 只做"自动取最新"；要恢复指定的备份文件，直接用 `restore-db.sh`。
+> 已由 `install-standby-cron.sh` 挂入每日 6:27 cron（紧跟 6:00 备份窗口 · `-y` 无人值守 · 日志 `/data/logs/maintenance/staging-restore.log`）。
 
 ---
 

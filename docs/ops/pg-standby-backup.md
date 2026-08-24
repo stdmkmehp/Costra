@@ -346,6 +346,7 @@ cd /root/Costra/infra/scripts
 2. **备份前串联健康检查**：从库若失联或仍在追历史 WAL，`pg_dump` 依然可能产出格式正常但陈旧的文件；门禁用 latest-end/receive/replay 三段进度 fail closed。
 3. **与分析栈错峰**：备份固定在 27 分（2026-08-14 起与 prod backup-avatars 同刻——两机各自执行，不存在跨机错峰问题）；必须避开分析窗口——分析栈恢复 dump 时是全机内存峰值。
 4. `backup-db.sh` 自带 `flock`，cron 外层无需再加锁；整条组合用 `{ check && backup; } >>log 2>&1`，确保检查和备份输出进入同一日志（`/data/logs/maintenance/standby-backup.log`）。
+5. **staging 数据刷新（每天 6:27）**：`restore-staging-from-prod.sh -y` 紧跟 6:00 备份窗口之后，用 `/data/slave/backups` 最新 `standby-*.sql.gz` + `scheduled-*.avatars.tar.gz` 自动刷新本机 staging 栈（avatars 原子替换 → Redis FLUSHALL → 委托 restore-db.sh 单事务恢复），`-y` 全链路自动确认，无人值守；日志落 `/data/logs/maintenance/staging-restore.log`。恢复脚本自带机器②防呆（要求 `costra-standby-pg` 容器存在），不串联 check 门禁——备份 cron 已保证仅复制健康才产出新备份，即便当天未产出也只会用到更旧备份（对 staging 无害）。
 
 > 防呆：脚本要求本机存在 `costra-standby-pg` 容器与 `/data/conf/standby.env`，在机器① 或未搭建从库时直接拒绝。logrotate 模板与主库共用（`infra/logrotate/costra-ops`）由脚本一并安装。从库机器**不要**运行 `maintenance.sh install-cron`：其 purge-* 会误操作 staging 栈并在只读副本失败。
 
