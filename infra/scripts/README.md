@@ -140,6 +140,22 @@ COSTRA_ENV_FILE=/data/conf/standby.env ./backup-db.sh --db-only \
 
 机器②不保存 `PG_COSTRA_PW`；备份与检查均走容器内 Unix socket。`backup-db.sh` 以 `flock` 防重入，先写隐藏 partial，校验后原子发布 `0600` 最终文件。cron 必须用 `check-replication.sh && backup-db.sh` 串联，见方案 §5.2。
 
+### 用 prod 最新备份刷新 staging（restore-staging-from-prod.sh · 机器② · 按需）
+
+> 消费 `/data/slave/backups` 的备份产物，把本机 staging 栈（project `costra`）刷成 prod 数据：avatars 原子替换 + Redis FLUSHALL + 委托 `restore-db.sh` 恢复 DB。防呆校验本机存在 `costra-standby-pg` 容器（机器① 误跑直接拒绝）。
+
+```bash
+./restore-staging-from-prod.sh            # 自动取最新 standby-*.sql.gz + scheduled-*.avatars.tar.gz
+./restore-staging-from-prod.sh --dry-run  # 预览
+```
+
+| 参数 | 含义 |
+|---|---|
+| `--skip-db` / `--skip-avatars` | 只恢复其中一项（互斥不能同时跳过） |
+| `--dry-run` / `-y` | 通用；`-y` 全链路自动确认（透传 `restore-db.sh` · 无人值守可用） |
+
+> 只做"自动取最新"；要恢复指定的备份文件，直接用 `restore-db.sh`。
+
 ---
 
 ## 宿主机内核参数（apply-host-tuning.sh · 一次性 + 按需体检）
