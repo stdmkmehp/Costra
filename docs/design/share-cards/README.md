@@ -29,6 +29,7 @@
 | 2 | 年度报告 | 统计 → 年度 / 每年 01-15 推送 | `pages-stat/report-year` | [`annual-report.md`](./annual-report.md) |
 | 3 | 炫一笔 | 记完一笔后"分享给 TA" | `pages/entry-detail` | [`entry-flex.md`](./entry-flex.md) |
 | 4 | 预算守卫 | 月末结算 + 未超预算 | `pages-stat/budget-kept` | [`budget-kept.md`](./budget-kept.md) |
+| 5 | 记账小票 | 统计 → 生成小票（今天/本周/本月等） | `pages-stat/receipt` | [`receipt.md`](./receipt.md) |
 
 ---
 

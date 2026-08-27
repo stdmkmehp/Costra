@@ -1,8 +1,15 @@
 # 客户端账本数据导入 / 导出方案
 
-> 状态：**v0.3 · 方案冻结**
+> 状态：**v0.5 · 方案冻结**（v0.5 收敛 review 的 5 项 P0：阶段型模拟进度 / detect 产物落私有磁盘 / 导入原子幂等重试 / CSV Formula Injection 防护 / Costra CSV Profile v2 preamble）
 > 前置文档：`docs/design/data-export-format.md`（v1 脚本版 · 已被本文档取代部分口径）
 > 触发背景：v1 只支持运维在服务器上跑脚本；本方案把导入 / 导出下沉到小程序端用户自助能力。
+>
+> **v0.5 变更摘要**（详见 §15 修订记录）：
+> - 进度不再声称"真实百分比"；改为客户端基于 `stage + stage_started_at` 的**阶段型渐近模拟进度**，服务端删除 `progress_current/progress_total`。
+> - detect 解析结果**不再存 Redis**；改为 PG 表 `import_detect_sessions`（元数据）+ server-only 私有目录 `/data/import-staging` 的压缩 NDJSON 产物（规范化行）。
+> - 导入重试改为**可证明幂等**：detect 阶段预生成 `entry_id`(UUID v7) + `client_ref_id`；entries + 余额 + `job=succeeded` **同一事务提交**；run_token/lease 防旧 worker 覆盖；仅瞬态错误重试。
+> - 所有 CSV 导出（含错误报告）单元格走 **Formula Injection 防护**（`apostrophe-v1` 可逆编码 + quote-all）。
+> - `#` 头改为严格机读 **Costra CSV Profile v2 preamble**，格式描述从"严格 RFC 4180"改为"可选 Costra preamble + RFC 4180 body"。
 
 ---
 
@@ -22,6 +29,16 @@
 | 导入并发约束 | **同一账本同时只允许一个导入任务在执行** |
 | 导入两阶段 | **先检测 → 再确认导入**；检测阶段返回所有错误和 warning，由用户决定是否继续 |
 | 记账人匹配 | 按昵称匹配家庭成员；未匹配时归属当前导入操作者 + warning |
+| 任务持久化 | 任务落 PG 表 `data_jobs`（导入导出共用）；用户退出后可再回来查看进度与下载 |
+| 进度显示 | **不承诺真实百分比**；客户端按 `stage + stage_started_at` 做**阶段型渐近模拟进度**，成功才跳 100%（§7.2） |
+| worker | 复用 recurringScheduler 范式：进程内轮询 + advisory lock + `FOR UPDATE SKIP LOCKED`，不引入队列中间件 |
+| 上传源文件 | 检测流式解析完**即删原始 CSV**；规范化行数据落 **server-only 私有磁盘**（压缩 NDJSON），检测元数据落 PG `import_detect_sessions`（§7.4）；**Redis 不存任何 CSV 行内容** |
+| 导入幂等 | detect 阶段预生成 `entry_id`(v7) + `client_ref_id=import:<detect_id>:<row>`；entries + 余额 + `job=succeeded` **同一事务提交**；导入任务**仅瞬态错误可重试**（§7.5） |
+| 导出文件 | 存 `/data/exports/<yyyy-mm>/<job_id>.csv`；保留 24h；下载走应用层鉴权 |
+| CSV 安全 | 所有导出（含错误报告）单元格走 **Formula Injection 防护**（`apostrophe-v1` 可逆编码 + quote-all，§9.3） |
+| 文件格式 | **Costra CSV Profile v2**：可选严格机读 preamble（`#costra-csv;...`）+ RFC 4180 body（§2.1） |
+| 行数上限 | 单次导入 ≤ **20,000 行**且 ≤ 5MB（§9.1）；防超长事务 |
+| 过期清理 | 新增宿主机 cron `maintenance.sh purge-exports` + `purge-import-staging`（孤儿产物兜底）；任务元数据保留 30 天 |
 | 页面入口 | `我的 → 设置 → 账本导入 / 导出` |
 | v1 CLI 脚本 | 核心逻辑抽成 service 后**保留**，作为运维应急入口 |
 | 分享审核 | 不做额外审核；设计简洁的文件名、完成态文案与分享前视觉卡片 |
@@ -47,16 +64,43 @@
 
 ## 2. 载体文件格式
 
-### 2.1 文件规格
+### 2.1 文件规格：Costra CSV Profile v2
+
+载体格式为 **Costra CSV Profile v2 = 可选 Costra preamble（1 行）+ RFC 4180 CSV body**。
+
+> ⚠️ 不再宣称"严格 RFC 4180"。RFC 4180 本身**没有注释语法**（以 `#` 开头的行按 RFC 应被当作普通记录），故 Costra preamble 是本项目在 RFC 4180 之上的显式扩展，只由 Costra 自己的解析器识别。
 
 | 属性 | 值 |
 |---|---|
-| 格式 | CSV（RFC 4180） |
+| body 格式 | RFC 4180 |
 | 编码 | UTF-8 with BOM |
 | 行结尾 | CRLF |
 | 分隔符 | 逗号 `,` |
-| 转义 | 含逗号、换行或双引号的字段使用双引号包裹；内部双引号写成 `""` |
-| 文件头注释 | 首行前加 `# Costra 导出 · 账本=... · 日期=... · 导出时间=...`（导出文件必有，导入文件可选） |
+| 转义 | 含逗号、换行或双引号的字段用双引号包裹；内部双引号写成 `""`；**导出侧对每个字段统一 quote-all**（配合 §9.3 Formula Injection 防护） |
+| 多行字段 | body 必须按 RFC 4180 支持 **quoted multiline field**（备注含换行合法），解析器须维护引号状态，不能按物理行拆分 |
+| preamble | 见 §2.1.1，导出必写、导入可选 |
+
+#### 2.1.1 Costra preamble 规范
+
+导出文件在 BOM 之后的**第一行**写一条固定机读 preamble：
+
+```text
+#costra-csv;version=2;formula-guard=apostrophe-v1;timezone=Asia/Shanghai
+```
+
+解析规则（严格、机读、不做通用注释）：
+
+1. 仅识别 **BOM 之后第一行**、且**精确以 `#costra-csv;` 开头**的行为 preamble；最多 1 行。
+2. **不启用通用 `#` 注释语义**——body 数据区内出现 `#` 一律当普通字段内容。
+3. preamble 用 `;` 分隔 `key=value`，已定义键：
+   - `version`：Profile 主版本。**未知 major → 检测阶段 ERROR 拒绝整文件**，不猜测解析。
+   - `formula-guard`：导出所用的 Formula Injection 编码版本（§9.3）。**未知值 → 拒绝**（避免错误反解用户数据）。
+   - `timezone`：导出时的时区（当前恒为 `Asia/Shanghai`），仅供人类参考。
+4. preamble **不含账本名 / 昵称 / 日期范围等任何用户数据**（这些放文件名与任务元数据，避免用户数据混入协议头）。
+5. preamble 之后的**下一条逻辑记录必须是表头**。
+6. **外部 CSV 无 preamble** 时：第一条逻辑记录直接作为表头；`formula-guard` 视为 `none`，导入侧不做任何 Formula 反解（§9.3）。
+
+**为什么保留 preamble 而不删除**：它承担两个不可省的机读职责——声明格式版本、声明 Formula 防护编码（保证"导出→再导入"可逆，§9.3）。账本名等展示信息仍在文件名（§2.2）与任务元数据里。
 
 ### 2.2 文件命名
 
@@ -102,13 +146,15 @@ Costra_我的家庭_2026-01-01至2026-07-21_20260721T173900.csv
 
 ### 2.4 导出文件示例
 
+> 说明：为可读性，下例省略了每字段的 quote-all 包裹（实际导出每个单元格都用双引号包裹，见 §9.3）。首行为 §2.1.1 的机读 preamble。备注 `=1+1` 演示 Formula 防护后的 `'=1+1`。
+
 ```csv
-# Costra 导出 · 账本=我的家庭 · 日期=2026-01-01至2026-07-21 · 导出时间=2026-08-05T16:00:00+08:00
+#costra-csv;version=2;formula-guard=apostrophe-v1;timezone=Asia/Shanghai
 日期,时间,类型,金额,一级分类,二级分类,归属,记账人,备注
 2026-06-10,14:30,支出,35.50,餐饮,外卖,共同,小赵,公司楼下
 2026-06-10,09:00,收入,15000.00,职业收入,工资,,小赵,6月工资
 2026-06-09,20:15,转账,5000.00,转账,转账,,小赵,
-2026-06-09,12:00,支出,12.00,交通,地铁,个人,小李,通勤
+2026-06-09,12:00,支出,12.00,交通,地铁,个人,小李,'=1+1
 ```
 
 ### 2.5 导出数据范围
@@ -134,7 +180,7 @@ Costra_我的家庭_2026-01-01至2026-07-21_20260721T173900.csv
 | `类型` | `type`、`收/支`、`收支类型`、`交易类型` | ✅ | — |
 | `金额` | `amount`、`金额(元)`、`交易金额` | ✅ | — |
 | `一级分类` | `分类`、`category`、`大类` | ✅ | — |
-| `二级分类` | `子分类`、`subcategory`、`小类` | ❌ | 取一级下 `sort_order=1` 默认子分类 |
+| `二级分类` | `子分类`、`subcategory`、`小类` | ❌ | 取一级下**默认子分类**（判定见 §3.7）|
 | `归属` | `shared_type`、`公/私` | ❌ | 支出默认 `个人`；收入/转账忽略 |
 | `记账人` | `成员`、`操作人`、`member` | ❌ | 默认当前导入操作者 |
 | `备注` | `note`、`说明`、`摘要`、`商品`、`交易对方` | ❌ | 留空 |
@@ -174,7 +220,7 @@ Costra 导入 CSV 需要至少包含：日期、类型、金额、一级分类 �
 | `金额` | **该行 ERROR** | 跳过 |
 | `一级分类` | **该行 ERROR** | 跳过 |
 | `时间` | 默认 `12:00` | 正常入库 |
-| `二级分类` | 取一级下 `sort_order=1` 默认子分类 | 正常入库 |
+| `二级分类` | 取一级下默认子分类（§3.7） | 正常入库 |
 | `归属` | 支出默认 `个人`；收入/转账留 NULL | 正常入库 |
 | `记账人` | 归属当前导入操作者 | 正常入库 + WARNING |
 | `备注` | 留空 | 正常入库 |
@@ -244,8 +290,10 @@ Costra 导入 CSV 需要至少包含：日期、类型、金额、一级分类 �
 **不做自动创建分类**：用户可能把错别字或旧分类名传进来，自动建会产生垃圾分类。提示用户导入前先在小程序中确认分类体系与 CSV 中的名称对齐。
 
 二级分类匹配：
-- 非空时：在已匹配的一级分类下查找 `name` 精确匹配的子分类；未找到 → WARNING，降级到该一级下 `sort_order = 1` 的默认子分类
-- 为空时 → 直接取 `sort_order = 1` 的默认子分类
+- 非空时：在已匹配的一级分类下查找 `name` 精确匹配的子分类；未找到 → WARNING，降级到该一级下的**默认子分类**
+- 为空时 → 直接取该一级下的**默认子分类**
+
+> **默认子分类的判定**（P1 落差修正）：不使用"取 `sort_order = 1`"这一想当然口径——`categories.sort_order DEFAULT 0`，不保证存在 `sort_order = 1` 的行。改用库中权威标记 `is_direct_default`（0001_init.sql 有对应唯一索引）。落库口径：`WHERE parent_id = <一级> AND is_direct_default = true`；理论上兜底不到时再退回同一级 `ORDER BY sort_order, name LIMIT 1`，并与 `entryService.resolveCategoryId` 的同 type 兜底逻辑对齐（server/src/services/entryService.ts）。
 
 ### 3.8 「归属」列的解析
 
@@ -257,12 +305,19 @@ Costra 导入 CSV 需要至少包含：日期、类型、金额、一级分类 �
 | 空（收入/转账行）| NULL（忽略） |
 | 非支出类型填了归属 | WARNING：`非支出类型的归属列将被忽略` |
 
-### 3.9 去重策略
+### 3.9 去重策略与稳定幂等键
 
-- **不保留任何记录ID**：每次导入全部新生成 UUID v7，不做跨次去重
-- 重复导入同一份文件会产生重复记录，这是**已接受的代价**
-- 用户若需重新导入，应先在小程序中删除上次导入的记录
-- 服务端在导入成功后返回生成的 `import_job_id`，用户可从任务记录回溯
+- **不保留任何用户传入的记录ID**：`记录ID` / `id` / `entry_id` 列仍禁止传入（§3.1）。
+- **每次导入的 `entry_id` 全部由服务端在 detect 阶段生成 UUID v7**，不做跨次去重。
+- 重复导入同一份文件会产生重复记录，这是**已接受的代价**；用户若需重来应先在小程序删除上次导入的记录。
+
+**稳定幂等键（v0.5 新增 · 服务本次重试幂等，不做跨次去重）**：
+- detect 阶段为每条合法记录同时生成：
+  - `entry_id = UUID v7`（服务端生成，落 detect 产物 NDJSON，§7.4）
+  - `client_ref_id = import:<detect_id>:<logical_row_no>`
+- 这不违反"不允许传入记录ID"——ID 由服务端生成，用户不可控；用户重新检测同一文件会得到**新的** `detect_id`，因此仍可再次导入并产生重复记录，符合上面的已接受代价。
+- 作用：**同一个导入任务重试时复用同一组 `entry_id/client_ref_id`**，配合 §7.5 的原子提交与 entries 唯一约束 `uq_entries_ledger_client_ref`，保证"重试不产生重复"。
+- 服务端在导入成功后返回 `job_id`，用户可从任务记录回溯。
 
 ### 3.10 校验结果分级
 
@@ -329,7 +384,9 @@ paths:
           description: 该账本已有导入任务在执行
 ```
 
-#### DetectReport 结构
+#### DetectReport 结构（v0.5：汇总 + 预览 + 完整报告分离）
+
+检测仍"检查所有行"，但**不把全部错误塞进一个 HTTP 响应**（上万行错误会撑爆响应体、拖慢单核）。响应只返回精确汇总 + 各前 100 条预览 + 截断标志；完整问题报告另走下载端点。
 
 ```json
 {
@@ -339,25 +396,37 @@ paths:
   "file_name": "data.csv",
   "file_size": 12345,
   "file_sha256": "...",
+  "parser_version": 2,
+  "formula_guard": "apostrophe-v1",
   "total_rows": 1280,
   "importable_rows": 1268,
   "error_count": 5,
   "warning_count": 7,
-  "errors": [
-    { "row": 12, "reason": "日期为空", "raw": "..." },
-    { "row": 45, "reason": "类型无法识别: \"退款\"", "raw": "..." }
+  "errors_preview": [
+    { "row": 12, "field": "日期", "code": "EMPTY_REQUIRED", "value_preview": "" },
+    { "row": 45, "field": "类型", "code": "TYPE_UNRECOGNIZED", "value_preview": "退款" }
   ],
-  "warnings": [
-    { "row": 3, "message": "二级分类\"快餐\"不存在，已降级到默认子分类" },
-    { "row": 8, "message": "记账人\"老王\"未匹配到家庭成员，归属当前操作者" }
+  "warnings_preview": [
+    { "row": 3, "field": "二级分类", "code": "SUBCATEGORY_FALLBACK", "value_preview": "快餐" },
+    { "row": 8, "field": "记账人", "code": "MEMBER_UNMATCHED", "value_preview": "老王" }
   ],
+  "errors_truncated": false,
+  "warnings_truncated": false,
+  "report_download_url": "https://costra.cloud/v1/import-detect-sessions/019.../report",
   "created_at": "2026-08-05T16:00:00+08:00",
   "expires_at": "2026-08-05T16:15:00+08:00"
 }
 ```
 
-- `detect_id`：检测会话 ID，用于阶段 2 确认导入
-- `expires_at`：检测报告有效期 15 分钟；超时后需重新检测
+- `detect_id`：检测会话 ID（对应 PG `import_detect_sessions.id`，§7.3），用于阶段 2 确认导入与拉完整报告。
+- `parser_version` / `formula_guard`：来自文件 preamble（§2.1.1）；外部无 preamble 时分别为服务端默认解析版本与 `none`。
+- `errors_preview` / `warnings_preview`：各**最多前 100 条**；条目结构改为 `{ row, field, code, value_preview }`：
+  - **删除 v0.4 的 `raw: "整行原文"`**——整行原文可能含其它成员敏感数据、体积大、且日志留存有隐私风险。
+  - `value_preview`：仅该出错字段的值，**截断至 120 字符**。
+  - `code`：机读错误码，客户端据此本地化文案，不依赖服务端中文串。
+- `errors_truncated` / `warnings_truncated`：为 true 时表示还有更多，引导用户下载完整报告。
+- `report_download_url`：指向 §7.6 的完整问题报告 CSV（应用层鉴权 · 校验属主）；本身也是导出，走 §9.3 Formula 防护。
+- `expires_at`：`ready` 会话有效期 15 分钟；超时后 `commit` 返回 `410`，需重新检测。
 
 #### 客户端检测中交互
 
@@ -627,18 +696,381 @@ await wx.shareFileMessage({
 
 ---
 
-## 7. 统一任务模型
+## 7. 统一任务模型 · 持久化 · 进度 · 文件存储
 
-### 7.1 任务 API
+> 本节回答四个核心工程问题：任务能否退出后再回来看、进度百分比怎么算、任务是否落 PG 表、上传/下载文件存在哪里及过期策略。
+
+### 7.0 现状约束（决定架构选型）
+
+调研 `server/` 现状后的关键事实：
+
+| 事实 | 影响 |
+|---|---|
+| Redis 只做缓存 / 会话 / 限流，**没有队列**（无 BullMQ / Streams）| 不引入新队列基础设施；用 **PG 表当队列** |
+| 生产**单实例**（single container，无 replicas）| worker 直接进程内跑；但沿用 advisory lock 为未来多实例预留 |
+| 已有成熟范式：`recurringScheduler.ts` = `setInterval(60s) + pg_try_advisory_lock + FOR UPDATE SKIP LOCKED` | 导入/导出 worker **直接复用这套骨架** |
+| 文件落盘范式：`upload.ts` 写 `/data/uploads`，nginx `/uploads/` 只读静态服务 | 导出文件复用同一 bind mount 通道 |
+| 清理范式：宿主机 cron `maintenance.sh` 的 `purge-*` 子命令 + `docker exec psql DELETE` | 过期文件 / 任务清理**新增一个 purge 子命令**，不做进程内定时删除 |
+
+**结论**：整套异步任务不需要引入任何新中间件，完全复用项目已验证的"PG 表 + 进程内轮询 worker + 宿主机 cron 清理"三件套。
+
+---
+
+### 7.1 问题一：任务能否退出界面、下次回来查看与下载
+
+**能。这正是"任务落 PG 表 + 客户端无状态轮询"的设计目的。**
+
+任务的唯一事实源是数据库表 `data_jobs`（见 §7.3），不是客户端内存，也不是某个 WebSocket 长连接。因此：
+
+- 用户创建任务后拿到 `job_id`，服务端 worker 独立推进，**与客户端是否在线完全无关**。
+- 用户退出页面 / 切后台 / 杀小程序 / 关手机，服务端任务照常执行。
+- 用户下次任意时刻回到「设置 → 账本导入 / 导出」，页面 `onShow` 调 `GET /v1/data-jobs?limit=20` 拉取最近任务，按 `status` 恢复展示：
+  - 仍在跑 → 显示进度条
+  - 已完成的导出 → 显示 `发送到微信`（只要文件未过期）
+  - 已完成的导入 → 显示 `已导入 N 条 · M 条跳过`
+  - 已过期 → 显示 `重新生成` / `重新导入`
+- **下载不依赖创建任务时的那次会话**：`download_url` 指向 `GET /v1/data-jobs/{id}/download`，只要用户带合法 JWT 且是 job 属主、且文件未过期，任何时候都能下载并转发。
+
+客户端本地只缓存 `unseenCompletedJobIds`（用于设置入口的小绿点），**从不把本地状态当事实源**，一切以服务端返回为准。
+
+---
+
+### 7.2 问题二：进度如何显示（阶段型模拟进度）
+
+**不承诺"真实百分比"。** v0.4 曾设计"进度 = `progress_current / progress_total` 批级真实百分比"，但它与 §7.5"导入用单个大事务保证原子"存在内在矛盾：大事务内对 `progress_current` 的写入在 COMMIT 前对其它连接不可见，客户端轮询会一直看到初值、直到提交瞬间跳到 100%——反而是最糟的假进度。
+
+v0.5 决策：**保留导入单大事务（原子性优先）**，进度改为**客户端基于服务端 `stage` 的阶段型渐近模拟**。
+
+#### 服务端只维护阶段，不维护条数
+
+`data_jobs` **删除** `progress_current / progress_total`，改为：
+- `stage`：当前阶段（见下表）
+- `stage_started_at`：进入该阶段的时刻
+
+worker 在跨阶段边界时更新这两个字段（阶段切换是稀疏事件，不在大事务热路径上频繁写库）。
+
+#### 客户端渐近模拟
+
+客户端按 `stage` 映射一个进度区间 `[floor, cap]`，用进入阶段后的经过时间做渐近逼近，**永不自行到 100%**，只有服务端返回 `succeeded` 才跳 100%：
+
+```text
+elapsed = now - stage_started_at
+p = floor + (cap - floor) * (1 - e^(-elapsed / τ))   # τ 为阶段时间常数，如 8s
+```
+
+| `stage` | 进度区间 | 展示文案 |
+|---|---:|---|
+| `queued` | 0% | `等待处理` |
+| `validating` | 5% → 20% | `正在校验导入环境`（导入）|
+| `writing` | 20% → 90% | `正在导入流水`（导入）|
+| `querying` | 20% → 90% | `正在整理数据`（导出）|
+| `packaging` | 90% → 98% | `正在生成 CSV 文件…`（导出）|
+| `succeeded` | 100%（立即） | `已完成` |
+| `failed` | 不显示百分比 | `处理失败 · 查看原因` |
+
+#### 明确禁止的文案
+
+- ❌ `正在写入第 794 / 1,268 条`（会暴露不存在的真实条数进度）
+- ❌ "真实百分比" / "近似等于真实进度"
+
+客户端展示改为**进度条 + 阶段文案**：
+
+```text
+导入中
+[███████████░░░░░░░]
+正在导入流水…
+```
+
+**结论**：以牺牲"真实条数百分比"换取导入的事务原子性；阶段型模拟进度对用户是平滑、可解释的，且不会出现"进度走完但任务没完"的假象（因为只有服务端 `succeeded` 才 100%）。
+
+---
+
+### 7.3 问题三：任务是否对应一张 PostgreSQL 表
+
+**是。新增一张统一任务表 `data_jobs`（迁移编号接 `0019_data_jobs.sql`），导入和导出共用。**
+
+采用与 `recurring_rules` 一致的"状态字段自持久化"范式。
+
+```sql
+-- 0019_data_jobs.sql（草案 · v0.5）
+
+DO $$ BEGIN
+  CREATE TYPE data_job_type AS ENUM ('import', 'export');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE TYPE data_job_status AS ENUM ('queued', 'processing', 'succeeded', 'failed', 'expired');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+CREATE TABLE IF NOT EXISTS data_jobs (
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    type             data_job_type   NOT NULL,
+    status           data_job_status NOT NULL DEFAULT 'queued',
+
+    -- 归属
+    user_id          UUID NOT NULL REFERENCES users(id),      -- 创建者
+    ledger_id        UUID NOT NULL REFERENCES ledgers(id) ON DELETE CASCADE,
+
+    -- 阶段（v0.5：不存条数进度，只存阶段 + 阶段进入时刻，客户端据此做渐近模拟）
+    stage            TEXT,                                    -- queued/validating/writing/querying/packaging
+    stage_started_at TIMESTAMPTZ,
+
+    -- 导入入参（检测→确认两阶段）
+    detect_id        UUID REFERENCES import_detect_sessions(id), -- 关联检测会话（仅 import · 见下方表）
+    -- 导出入参
+    date_from        DATE,
+    date_to          DATE,
+
+    -- 结果摘要（JSONB：imported/skipped/error_count/warning_count/entry_count 等）
+    result_summary   JSONB,
+
+    -- 产物文件（仅 export succeeded / import 错误报告）
+    file_path        TEXT,                                    -- 服务器本地绝对路径
+    file_name        TEXT,                                    -- 下发给客户端的文件名
+    file_size        BIGINT,
+    file_sha256      TEXT,
+    file_expires_at  TIMESTAMPTZ,                             -- 文件失效时间（见 §7.4）
+
+    -- 失败信息
+    error_code       TEXT,
+    error_message    TEXT,
+    retryable        BOOLEAN NOT NULL DEFAULT false,          -- v0.5：仅瞬态错误可重试（§7.5）
+
+    -- worker 抢占与生命周期（v0.5：run_token/lease 防旧 worker 覆盖新结果）
+    attempts         INTEGER NOT NULL DEFAULT 0,
+    run_token        UUID,                                    -- 本次执行令牌 · 终态条件更新须匹配
+    lease_expires_at TIMESTAMPTZ,                             -- 租约到期 · 超时才允许被复位
+    next_attempt_at  TIMESTAMPTZ,                             -- 可重试任务的下次可抢占时刻（退避）
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    started_at       TIMESTAMPTZ,
+    finished_at      TIMESTAMPTZ,
+
+    version          INTEGER NOT NULL DEFAULT 1
+);
+
+-- worker 拉取待处理任务（配合 FOR UPDATE SKIP LOCKED）
+CREATE INDEX IF NOT EXISTS idx_data_jobs_pick
+  ON data_jobs (status, created_at)
+  WHERE status IN ('queued', 'processing');
+
+-- 用户查询最近任务
+CREATE INDEX IF NOT EXISTS idx_data_jobs_user_recent
+  ON data_jobs (user_id, created_at DESC);
+
+-- §4.4 并发约束：同一账本同时只允许一个 import 任务在执行
+CREATE UNIQUE INDEX IF NOT EXISTS uq_data_jobs_active_import_per_ledger
+  ON data_jobs (ledger_id)
+  WHERE type = 'import' AND status IN ('queued', 'processing');
+
+-- v0.5 P2 修正：导出并发也用 DB 约束兜底（原方案只在应用层 check，有竞态）
+-- 同一用户同时只允许一个 export 任务在执行
+CREATE UNIQUE INDEX IF NOT EXISTS uq_data_jobs_active_export_per_user
+  ON data_jobs (user_id)
+  WHERE type = 'export' AND status IN ('queued', 'processing');
+
+-- 检测会话表：元数据落 PG（行数据落私有磁盘，见 §7.4）
+DO $$ BEGIN
+  CREATE TYPE import_detect_status AS ENUM ('detecting', 'ready', 'consumed', 'failed', 'expired');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+CREATE TABLE IF NOT EXISTS import_detect_sessions (
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id          UUID NOT NULL REFERENCES users(id),
+    ledger_id        UUID NOT NULL REFERENCES ledgers(id) ON DELETE CASCADE,
+    status           import_detect_status NOT NULL DEFAULT 'detecting',
+
+    -- 上传摘要
+    file_name        TEXT,
+    file_size        BIGINT,
+    file_sha256      TEXT,
+    parser_version   INTEGER,
+    formula_guard    TEXT,                                    -- apostrophe-v1 / none
+
+    -- 规范化行产物（server-only 私有磁盘，见 §7.4）
+    artifact_path    TEXT,
+    artifact_sha256  TEXT,
+
+    -- 汇总 + 预览（完整问题报告另落磁盘，见 §4.2 / §7.4）
+    total_rows       INTEGER NOT NULL DEFAULT 0,
+    importable_rows  INTEGER NOT NULL DEFAULT 0,
+    error_count      INTEGER NOT NULL DEFAULT 0,
+    warning_count    INTEGER NOT NULL DEFAULT 0,
+    report_preview   JSONB,                                   -- errors/warnings 各前 100 条
+
+    -- 生命周期
+    job_id           UUID REFERENCES data_jobs(id),           -- 确认后关联的唯一导入任务
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at       TIMESTAMPTZ NOT NULL,                    -- ready 后 15 分钟
+    consumed_at      TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_detect_sessions_user
+  ON import_detect_sessions (user_id, created_at DESC);
+
+-- 过期清理走全表 DELETE，不加会拖慢的谓词索引（参照 idempotency_keys 的处理）
+```
+
+> **DB migration 双写约定**：`0019_data_jobs.sql` 落地时必须同步在 `server/test/setup.ts` 内嵌 DDL 里对齐两张表与索引；pg-mem 不支持的 partial unique index（`WHERE ... status IN (...)`）在测试环境跳过，约束由真实 PG 兜底。
+
+> **ID 生成一致性**（P3 修正）：业务 repo 统一走 `newId()`（UUID v7，见 `server/src/id/idGen.ts`）。`data_jobs` / `import_detect_sessions` 的 `DEFAULT gen_random_uuid()` 仅作 DB 兜底；应用层 INSERT 应显式传 v7 id，与 entries 一致，避免 v4/v7 混用。
+
+**检测会话为什么改建表 + 落盘（推翻 v0.4 的"存 Redis"）**：
+- 生产 Redis 512MB + `allkeys-lru` + AOF everysec。5MB CSV 展开成结构化 JSON 可达 10~20MB，放进单个 Redis key 会：挤掉缓存/会话、产生大 key 延迟、把完整账单写进 AOF、Redis 故障时让已完成的检测报告凭空消失。
+- 故 v0.5：**检测元数据落 PG `import_detect_sessions`，规范化行数据落 server-only 私有磁盘（压缩 NDJSON），Redis 不参与**（见 §7.4）。
+
+---
+
+### 7.4 问题四：上传/下载文件存哪里，过期策略
+
+分三类文件，存储位置和 TTL 各不相同：
+
+| 文件 | 存哪里 | 保留时长 | 清理方式 |
+|---|---|---|---|
+| **用户上传的原始 CSV（导入源）** | 流式解析完**即删**，不落盘长期保留 | 单次请求内，秒级 | 请求结束即释放 |
+| **导入检测元数据** | PG `import_detect_sessions` | ready 后 15 分钟；已 consumed 则跟随任务生命周期 | 定时清理 + cron 兜底 |
+| **导入规范化行产物** | **server-only** `/data/import-staging/<yyyy-mm>/<detect_id>.rows.ndjson.gz` | 同检测会话；任务终态后删 | 应用清理 + `purge-import-staging` cron |
+| **导出 CSV / 导入错误报告 CSV** | 服务器本地 `/data/exports/<yyyy-mm>/<job_id>.csv` | **24 小时** | `purge-exports` cron |
+
+> v0.5 推翻 v0.4"检测结果存 Redis"：生产 Redis 512MB + `allkeys-lru` + AOF everysec，5MB CSV 展开成 JSON 可达 10~20MB，放单 key 会挤掉缓存/会话、产生大 key 延迟、把完整账单写进 AOF、故障时让已完成检测报告消失。故检测行数据改落 **server-only 私有磁盘**，Redis 不参与。
+
+#### 检测阶段：流式解析 → 规范化行落私有磁盘
+
+1. 创建 `detecting` 会话（PG 插一行）。
+2. `wx.uploadFile` 输入流**直接进标准 CSV parser**（须支持 RFC 4180 quoted multiline，见 §2.1；不复用现有手写逐物理行 parser）。
+3. 预加载目标家庭活跃成员映射（nickname→user_id）与分类映射（§3.7），避免逐行查库。
+4. 流式解析、校验、规范化每一行；合法记录写入 `.tmp` 压缩 NDJSON 产物，字段含：`row_no / entry_id(v7,预生成) / client_ref_id / occurred_at / amount_cents / type / category_id / created_by / shared_type / note`。
+5. 完整问题（错误 + warning）写另一份报告文件；响应只回汇总 + 各前 100 条（§4.2）。
+6. 完成后算产物 SHA-256，**原子 rename** `.tmp → 正式名`，会话置 `ready`、写汇总与 `report_preview`。
+7. **删除上传的原始 CSV**。
+
+> **关键收益**：commit 直接读规范化产物入库，**不再重做昵称/分类/金额模糊匹配**——"用户看到的检测结果"与"实际写入内容"逐字段一致，杜绝 detect→commit 之间上下文漂移。
+
+#### 私有目录安全要求（不同于头像目录）
+
+```text
+/data/import-staging/            # 新增 bind mount · 仅挂给 server · 绝不挂 nginx
+  2026-08/
+    <detect_id>.rows.ndjson.gz
+    <detect_id>.report.csv
+```
+
+- server 读写挂载：`/data/import-staging:/var/costra/import-staging`（**nginx 无此挂载**）。
+- 目录 `0700`、文件 `0600`、owner UID 1000（node 用户）。
+- 文件名只用服务端生成的 `detect_id`，杜绝路径穿越/猜测。
+- **不进入备份**；日志**不得记录行内容**。
+
+#### 导出文件目录设计
+
+```text
+/data/exports/                          # 新增 bind mount（与 /data/uploads 平级 · 但不挂 nginx）
+  2026-08/
+    <job_id>.csv
+```
+
+- server 读写挂载：`/data/exports:/var/costra/exports`
+- **nginx 不静态服务导出/暂存目录**（含全量账本数据必须鉴权）。下载走应用层 `GET /v1/data-jobs/{id}/download`：
+  1. 校验 JWT + `job.user_id == 当前用户`
+  2. 校验 `file_expires_at > now()`，否则 `410 Gone`
+  3. 命中则 `X-Accel-Redirect` 交 nginx internal location 回源（或应用直接流式返回）
+
+#### commit 阶段：原子消费检测会话
+
+`POST /import-jobs/commit`（详见 §4.3）在一个事务内：
+1. `SELECT ... FOR UPDATE` 锁定 `import_detect_sessions` 行；
+2. 校验属主、账本权限、`status='ready'`、`expires_at > now()`；
+3. 若 `status='consumed'` 且已有 `job_id` → **幂等返回原 `job_id`**（防连点/超时重发建双任务）；
+4. 同事务 `INSERT data_jobs`（`detect_id` 唯一约束保证一对一）；
+5. 会话置 `consumed`、写 `job_id`；
+6. 提交。
+
+#### 生命周期与清理
+
+- `ready` 未确认：15 分钟过期 → commit 返回 `410`。
+- 已 `consumed`：即使超 15 分钟也**不清理**，直到关联任务终态。
+- 导入成功：提交完成后删除规范化行产物（隐私最小化）。
+- 可重试失败：保留行产物到重试结束；最终失败：删行产物，仅留任务结果摘要。
+- 应用侧每分钟清理过期 `ready` 会话及其孤儿产物；启动时补偿清理一次。
+- 宿主机 cron `maintenance.sh purge-import-staging` / `purge-exports` 作为孤儿兜底（参照 `purge-idempotency`，建议每日 04:37）。
+- **导出任务元数据保留 30 天**：文件过期后行仍在（`file_expires_at < now()`），客户端展示"文件已过期，可重新生成"。
+
+#### 过期后的用户体验
+
+- 导出文件过期：任务卡显示 `文件已过期` + `重新生成`，复用原 `ledger_id/date_from/date_to` 一键重建。
+- 检测报告过期（15 分钟）：commit 返回 `410`，提示 `检测已过期，请重新选择文件`。
+
+---
+
+### 7.5 worker 执行模型（复用 recurringScheduler 骨架 + v0.5 原子提交/幂等重试）
+
+```text
+setInterval(POLL_INTERVAL_MS) 或 事件触发
+  → pg_try_advisory_lock(DATA_JOB_LOCK_KEY)   # 多实例互斥（本期单实例仍加，为未来准备）
+  → SELECT ... FROM data_jobs
+     WHERE status = 'queued'
+       AND (next_attempt_at IS NULL OR next_attempt_at <= now())
+     ORDER BY created_at
+     FOR UPDATE SKIP LOCKED LIMIT 1
+  → run_token = gen v7；UPDATE status='processing', started_at=now(),
+       attempts=attempts+1, run_token=$tok, lease_expires_at=now()+lease
+  → 执行（导出/导入）
+  → 终态用【条件更新】写回（见下）
+  → releaseLock
+```
+
+#### 导入必须"数据 + 成功状态"同一事务提交（核心修正）
+
+导入任务的以下操作必须在**同一个 PostgreSQL 事务**内完成：
+
+1. 从规范化产物批量 `INSERT entries`（带预生成 `entry_id` + `client_ref_id`，走 `entries` 现有列语义）；
+2. 正确生成 `change_seq`（`nextval('entries_change_seq')`，与 entryRepo 同源）；
+3. 汇总 delta，更新 `ledgers.balance_cents / balance_version`（对齐 `ledgerRepo.applyBalanceDelta`，transfer 不产生 delta）；
+4. `UPDATE data_jobs SET status='succeeded', finished_at, result_summary`（**条件更新**，见下）。
+
+**成功状态不能在事务提交后再单独更新**，否则：
+
+```text
+entries 已 COMMIT → 进程崩溃 → job 仍是 processing → 恢复重跑 → 重复导入
+```
+
+同事务后只有两种结局：entries + 余额 + job=succeeded 一起成功，或一起回滚。回滚后行产物仍在，重试用同一组 `entry_id/client_ref_id`，靠 `uq_entries_ledger_client_ref` 保证不重复。
+
+#### 终态条件更新（run_token 防旧 worker 覆盖）
+
+```sql
+UPDATE data_jobs
+   SET status = $newStatus, finished_at = now(), result_summary = $summary, ...
+ WHERE id = $jobId
+   AND status = 'processing'
+   AND run_token = $myToken;   -- 旧/超时 worker 的 token 不匹配 → 0 行 → 放弃写回
+```
+
+#### 重试分类（导入不裸重试）
+
+| 可重试（瞬态）| 不可重试（直接 failed） |
+|---|---|
+| DB 连接瞬断 / deadlock | 检测产物缺失或 SHA 不匹配 |
+| 临时 IO 错误 | 用户已失去账本权限 |
+| 事务提交前进程退出 | detect 上下文失效（成员退出/分类删除） |
+| | 数据违反业务约束（CHECK/FK） |
+| | 文件或 parser_version 不支持 |
+
+- 可重试：`status='queued'`、`retryable=true`、`next_attempt_at=now()+退避`（`attempts < 3`）。
+- 不可重试：直接 `status='failed'`，删行产物。
+- 崩溃恢复：`processing` 且 `lease_expires_at < now()` 的僵死任务才允许复位；复位前按上表判定，导入类默认按"事务未提交=可安全重试"处理（因为成功与数据同事务，未提交即无副作用）。
+- **若某类导入无法保证"数据+成功状态同事务"，则该类导入必须关闭自动重试。**
+- `timerHandle.unref()` + `onClose` 里 `stop()`，与 recurringScheduler 一致，保证 SIGTERM 快速关停。
+
+---
+
+### 7.6 任务查询 API 与展示字段
 
 ```yaml
 paths:
   /data-jobs/{job_id}:
     get:
-      summary: 查询导入或导出任务状态
+      summary: 查询单个导入 / 导出任务状态
       responses:
-        '200':
-          description: 任务状态与结果
+        '200': { description: 任务状态与结果 }
 
   /data-jobs:
     get:
@@ -647,38 +1079,43 @@ paths:
         - in: query
           name: limit
           schema: { type: integer, default: 20, maximum: 50 }
+
+  /data-jobs/{job_id}/download:
+    get:
+      summary: 下载导出产物（应用层鉴权 · 校验属主 + 未过期）
+      responses:
+        '200': { description: 文件流 }
+        '410': { description: 文件已过期 }
+
+  /import-detect-sessions/{detect_id}/report:
+    get:
+      summary: 下载完整检测问题报告 CSV（应用层鉴权 · 校验属主）· 走 §9.3 Formula 防护
+      responses:
+        '200': { description: 文件流 }
+        '404': { description: 会话不存在或已清理 }
 ```
 
-### 7.2 任务状态
-
-```text
-queued → processing → succeeded | failed | expired
-```
-
-`DataJob` 至少包含：
+客户端消费的 `DataJob` 字段（v0.5：去掉 `progress_current/total`）：
 - `id / type(import|export) / ledger_id / ledger_name`
-- `status / progress_current / progress_total / stage`
+- `status / stage / stage_started_at`（客户端据此做阶段型渐近模拟，§7.2）
 - `created_at / started_at / finished_at`
-- `result_summary`（总数、成功、跳过、失败、warning）
-- `download_url / download_expires_at`（导出成功或错误报告存在时）
-- `error_code / error_message`（失败时）
+- `result_summary`（imported / skipped / error_count / warning_count / entry_count）
+- `file_name / file_size / file_expires_at`（导出成功时）
+- `error_code / error_message / retryable`（失败时）
 
-任务卡阶段文案：
+stage → 进度区间与展示文案（无真实条数）：
 
-| `stage` | 展示文案 |
-|---|---|
-| `queued` | `等待处理` |
-| `validating` | `正在校验文件` |
-| `parsing` | `正在读取第 860 / 1,280 条` |
-| `writing` | `正在写入账本` |
-| `exporting` | `正在整理 1,280 条记录` |
-| `packaging` | `正在生成 CSV 文件` |
-| `succeeded` | `已完成` |
-| `failed` | `处理失败 · 查看原因` |
+| `stage` | 进度区间 | 展示文案 |
+|---|---:|---|
+| `queued` | 0% | `等待处理` |
+| `validating` | 5% → 20% | `正在校验导入环境` |
+| `writing` | 20% → 90% | `正在导入流水` |
+| `querying` | 20% → 90% | `正在整理数据` |
+| `packaging` | 90% → 98% | `正在生成 CSV 文件…` |
+| `succeeded` | 100% | `已完成` |
+| `failed` | 不显示百分比 | `处理失败 · 查看原因` |
 
 ---
-
-## 8. 页面入口与按钮交互设计
 
 ### 8.1 入口层级
 
@@ -721,7 +1158,7 @@ queued → processing → succeeded | failed | expired
 └────────────────────────────────────┘
 
 最近任务
-● 我的家庭 · 正在导入              42%
+● 我的家庭 · 正在导入流水…
 ✓ 旅行账本 · 已完成          发送到微信 ›
 ! 我的账本 · 导入失败          查看原因 ›
 ```
@@ -778,12 +1215,14 @@ queued → processing → succeeded | failed | expired
 | 目标账本 | 用户在上传前选择；必须是其所属家庭的活跃账本 |
 | 记录ID | **不允许传入**；若 CSV 表头包含 `记录ID` / `id` / `entry_id`，检测阶段返回 ERROR |
 | 记账人字段 | 按昵称匹配家庭成员；未匹配时归属当前导入操作者 + warning |
-| 文件大小 | ≤ 5MB；`@fastify/multipart` 全局/路由限制必须同步调整 |
+| 文件大小 | ≤ 5MB；**`@fastify/multipart` 全局 `fileSize` 现为 2MB（`server/src/app.ts`），必须提升或按路由覆盖**，否则 5MB 在框架层即被拒 |
+| 行数上限 | 单次导入 ≤ **20,000 行**（仅限 5MB 不够——极短记录可产生数万行 + 超长事务）；超限检测阶段 ERROR |
 | 后缀白名单 | 仅 `.csv` |
-| 内容校验 | UTF-8（可带 BOM）+ RFC 4180 + 必填表头；拒绝 XLSX / JSON / 二进制 |
-| 并发约束 | **同一账本同时只允许一个导入任务在执行**；检测阶段不占并发槽 |
-| 频控 | 单用户 5 分钟最多创建 3 个导入任务 |
-| 审计 | 记录 user_id、目标账本、file_hash、任务 ID、结果统计 |
+| 内容校验 | UTF-8（可带 BOM）+ Costra CSV Profile v2 body（RFC 4180）+ 必填表头；拒绝 XLSX / JSON / 二进制 |
+| 并发约束 | **同一账本同时只允许一个导入任务在执行**（DB 唯一索引兜底）；检测阶段不占并发槽 |
+| 频控 | 单用户 5 分钟最多创建 3 个导入任务；**detect 端点单独频控**（如 5 分钟 5 次），防反复上传大文件解析放大单核 CPU/磁盘（无现成 rate-limit 组件，建议按 `data_jobs`/`import_detect_sessions` 计数实现，参照 `recurringRepo.countByUser`） |
+| 私有产物 | 规范化行产物落 server-only `/data/import-staging`（`0700`/`0600`/UID 1000，不挂 nginx，不进备份，日志不记行内容，§7.4） |
+| 审计 | 记录 user_id、目标账本、file_sha256、detect_id、任务 ID、结果统计（不记录行明文） |
 
 ### 9.2 导出侧
 
@@ -791,13 +1230,54 @@ queued → processing → succeeded | failed | expired
 |---|---|
 | 请求者身份 | JWT bearer 必需 |
 | 导出权限 | 请求者必须是该账本所属家庭的活跃成员；不做二次同意 |
-| 数据范围 | 账本日期范围内全部未删除流水，包含所有成员 |
-| 并发 | 同一用户同时最多 1 个运行中的导出任务 |
+| 数据范围 | 账本日期范围内全部未删除流水，包含所有成员；时区显式 `Asia/Shanghai`（不沿用现有脚本的进程本地 `Date`） |
+| 并发 | 同一用户同时最多 1 个运行中的导出任务（**DB 唯一索引 `uq_data_jobs_active_export_per_user` 兜底**，不只应用层 check） |
+| CSV 安全 | 所有单元格走 §9.3 Formula Injection 防护 + quote-all |
+| 文件名安全 | 文件名与 `Content-Disposition` 删除 CR/LF、C0 控制字符、路径符号，限长（防 header 注入/路径问题） |
 | 文件保留 | 生成后保留 24 小时；过期后可从原任务一键重新生成 |
 | 下载鉴权 | 下载端点再次校验 JWT 与 job.user_id，不使用裸公网静态链接 |
 | 文件摘要 | 返回 SHA-256，客户端转发前校验 |
 | 审计 | user_id、ledger_id、日期范围、entry_count、job_id、sha256 |
 | 清理 | 定时任务删除 24 小时前的实体文件，任务元数据保留 30 天 |
+
+### 9.3 CSV Formula Injection 防护（v0.5 新增）
+
+导出 CSV 会被用户在 Excel / WPS / Google Sheets 打开，以 `=`、`+`、`-`、`@` 等开头的单元格会被当作**公式执行**（OWASP CSV Injection）。当前 `csvEscape` 只做 RFC 4180 引号转义，**不能阻止公式执行**。
+
+**受用户控制的导出字段**：一级/二级分类名、记账人昵称、备注、错误报告里的原始值；账本名进入文件名/header 另行防护。
+
+#### 两层分开处理
+
+1. **公式防护**（防表格软件执行）；
+2. **RFC 4180 序列化**（处理逗号/引号/换行）。二者缺一不可，只做第 2 层无效。
+
+#### 防护编码 `apostrophe-v1`（可逆）
+
+当字段满足任一条件时，在最前面加一个 ASCII 单引号 `'`：
+- 首个**有效字符**是 `=`、`+`、`-`、`@`；
+- 首字符是 Tab(0x09)、CR(0x0D)、LF(0x0A)；
+- 上述字符的**全角变体**（`＝＋－＠`）；
+- 危险字符前只有空格 / Unicode 空白 / 控制字符（不能只看原始首字符，防边界注入）。
+
+为可逆，已带前导单引号的危险值再加一层：
+
+| 原始值 | 导出值 | Costra 重新导入还原 |
+|---|---|---|
+| `=SUM(A1:A2)` | `'=SUM(A1:A2)` | `=SUM(A1:A2)` |
+| `'=SUM(A1:A2)` | `''=SUM(A1:A2)` | `'=SUM(A1:A2)` |
+| `  =1+1` | `'  =1+1` | `  =1+1` |
+| `普通备注` | `普通备注`（不变） | 不变 |
+
+随后由 CSV 序列化器：双引号转义 + **每字段统一 quote-all** + CRLF 输出。
+
+#### 导入解码
+
+- 只有明确 Costra 格式且 preamble 声明 `formula-guard=apostrophe-v1` 的文件，导入时**移除一层** Costra 防护（`'x`→`x`、`''x`→`'x`）。
+- **外部 CSV（`formula-guard=none`）不做任何反解**，避免篡改用户原始数据里本就存在的前导单引号。
+
+#### 防护范围
+
+主账本导出、导入错误报告 CSV、以及后续任何 CSV 下载功能都必须应用。**数据库内仍存原始业务文本**，不在入库时永久加单引号——防护只发生在导出序列化那一刻。
 
 ---
 
@@ -839,8 +1319,12 @@ queued → processing → succeeded | failed | expired
 | 归属默认 | 支出默认 `共同` | 支出默认 `个人` |
 | 执行模型 | 同步 | 异步任务 |
 | 导入流程 | 一步到位 | **检测 → 确认导入** 两阶段 |
-| 并发约束 | 无 | 同一账本同时只允许一个导入任务 |
+| 并发约束 | 无 | 同账本单导入 + 同用户单导出（DB 唯一索引兜底）|
 | 文件名 | `{账本名}_{起始}_{结束}.csv` | `Costra_{账本名}_{起始}至{结束}_{时刻}.csv` |
+| 文件头 | 无 / 自由文本注释 | 严格机读 preamble `#costra-csv;version=2;...`（§2.1.1）|
+| CSV 解析 | 手写逐物理行（不支持 quoted multiline）| 标准 RFC 4180 parser（支持多行字段）|
+| 公式防护 | 无 | 导出 `apostrophe-v1` 可逆防护 + quote-all（§9.3）|
+| 重试幂等 | 保留 ID 去重 | 稳定 `client_ref_id` + 数据/成功状态同事务（§7.5）|
 
 ---
 
@@ -856,10 +1340,17 @@ queued → processing → succeeded | failed | expired
 | R6 | 完成文件链接泄露 | 低 | 中 | 下载 API 同时校验 JWT + job.user_id；24 小时清理 |
 | R7 | 用户要求聊天自定义封面 | 中 | 低 | shareFileMessage 只能控制文件名；自定义视觉放在小程序完成卡中 |
 | R8 | XLSX / JSON 被选中 | 中 | 低 | `extension:['csv']` + 服务端内容校验；提示另存为 CSV |
-| R9 | 并发任务重复写入 | 中 | 高 | 同一账本同时只允许一个导入任务 + job idempotency key + DB 事务 |
-| R10 | 重复导入同一份无 ID 文件产生重复 | 已接受 | 中 | 不保留记录ID 是已冻结决策；用户需先删除上次导入的记录 |
-| R11 | 检测报告过期 | 中 | 低 | 15 分钟有效期；过期提示重新检测 |
-| R12 | 用户在检测后修改了账本成员导致匹配失效 | 低 | 中 | 确认导入时服务端重新校验成员匹配 |
+| R9 | 并发任务重复写入 | 中 | 高 | 同账本单导入 + 同用户单导出（均 DB 唯一索引兜底）+ 稳定 `client_ref_id` + `uq_entries_ledger_client_ref` |
+| R10 | 重复导入同一份无 ID 文件产生重复 | 已接受 | 中 | 不跨次去重是已冻结决策；用户需先删除上次导入的记录（同一 job 重试不重复，§7.5）|
+| R11 | 检测报告过期 | 中 | 低 | ready 15 分钟有效期；过期 commit 返 410 提示重新检测 |
+| R12 | 检测后账本上下文变化（成员退出/分类删除/账本删除）导致匹配失效 | 低 | 中 | detect 已把匹配结果固化进规范化产物；commit 只读产物入库，遇 FK 失效则整批回滚并 failed（不可重试）|
+| R13 | 服务重启导致 `processing` 任务僵死 | 低 | 中 | `lease_expires_at` 超时才复位；导入"数据+成功状态同事务"保证未提交即无副作用，可安全重试（§7.5）|
+| R14 | 导出/暂存文件占满磁盘 | 低 | 中 | 24h TTL + 按月分桶 + `purge-exports`/`purge-import-staging` cron；单文件受 5MB/20000 行上限约束 |
+| R15 | 导出 CSV 被表格软件当公式执行 | 中 | 高 | §9.3 `apostrophe-v1` 可逆防护 + quote-all；文件名/header 控制字符防护 |
+| R16 | 检测产物损坏 / SHA 不匹配 | 低 | 中 | commit 前校验 `artifact_sha256`；不匹配直接 failed（不可重试），提示重新检测 |
+| R17 | 旧/超时 worker 覆盖新执行结果 | 低 | 中 | 终态用 `run_token` 条件更新，token 不匹配则 0 行放弃写回（§7.5）|
+| R18 | detect 端点被反复上传大文件放大 CPU/磁盘 | 中 | 中 | detect 单独频控 + 5MB/20000 行上限 + 流式解析（§9.1）|
+| R19 | 自产 CSV 再导入被 `#` preamble 干扰 | 中 | 中 | 严格机读 preamble（§2.1.1），仅解首行精确 magic，未知 version/guard 拒绝 |
 
 ---
 
@@ -867,13 +1358,13 @@ queued → processing → succeeded | failed | expired
 
 | 卡 | 内容 | 人天 |
 |---|---|---|
-| E1 | 后端 · 抽 import/export service，CLI 改为薄入口并保留，补单测 | 2 |
-| E2 | 后端 · `data_jobs` 模型、worker、状态查询、重试与过期清理 | 2 |
-| E3 | 后端 · import detect/commit API、export API、下载鉴权、审计、频控 | 2.5 |
+| E1 | 后端 · 抽 import/export service（引入真正的 RFC 4180 CSV parser/stringifier）+ §9.3 Formula 防护编解码 + CLI 改薄入口并保留 + 单测 | 3 |
+| E2 | 后端 · `0019` 迁移（`data_jobs` + `import_detect_sessions`）+ repo + worker（advisory lock + SKIP LOCKED + run_token/lease）+ 阶段更新 + 僵死恢复 + 原子成功提交 + `purge-exports`/`purge-import-staging` cron | 3 |
+| E3 | 后端 · detect（流式解析 + 私有产物落盘）/commit（FOR UPDATE 原子消费）API、export API、`/download` + `/report` 鉴权、multipart 提限、detect 频控、审计 | 3 |
 | E4 | 小程序 · 设置入口、数据管理页、导入/导出表单 | 2.5 |
-| E5 | 小程序 · 检测报告页、任务中心、轮询恢复、完成卡、shareFileMessage | 2.5 |
-| E6 | QA · iOS / Android / PC 微信、后台切换、断网、并发与权限矩阵 | 2 |
-| **合计** | | **13.5 人天** |
+| E5 | 小程序 · 检测报告页（汇总+预览+完整报告下载）、任务中心、阶段型模拟进度、轮询恢复、完成卡、shareFileMessage | 2.5 |
+| E6 | QA · iOS / Android / PC 微信、后台切换、断网、并发、过期、重试幂等、CSV 注入、自产自入闭环、权限矩阵 | 2.5 |
+| **合计** | | **16.5 人天** |
 
 ---
 
@@ -893,7 +1384,39 @@ queued → processing → succeeded | failed | expired
 
 ## 14. 下一步
 
-1. 输出正式技术方案 `data-import-export-tech-spec.md`，冻结任务表、worker、API 与事务模型
-2. 设计 `settings/data-management` 页面高保真交互状态
-3. 拆成 E1~E6 六张卡并排期
-4. 真机 spike 验证 `wx.chooseMessageFile` 选择 CSV 与 `wx.shareFileMessage` 转发 CSV 在 iOS / Android 的实际表现
+1. **优先**：真机 spike 验证 `wx.chooseMessageFile` 选择 CSV 与 `wx.shareFileMessage` 转发 CSV 在 iOS / Android 的实际表现（导出交付命门，历史上 .csv 分享存在端差异，须在动工前证伪风险）
+2. 输出正式技术方案 `data-import-export-tech-spec.md`，冻结两张表、worker、API、事务模型与 §9.3 编解码
+3. 设计 `settings/data-management` 页面高保真交互状态
+4. 拆成 E1~E6 六张卡并排期
+
+---
+
+## 15. 修订记录
+
+### v0.5（2026-08-27）· 收敛 review 的 5 项 P0
+
+基于代码级适配性评审（核对 `server/` 现状），本版修订以下五点，均已在正文对应章节落地：
+
+| # | 问题 | v0.4 | v0.5 决策 | 影响章节 |
+|---|---|---|---|---|
+| 1 | 进度模型与大事务矛盾 | 声称"真实百分比 = current/total"，但大事务内进度提交前不可见 | 进度非必须；改**阶段型渐近模拟**，服务端删 `progress_current/total`、加 `stage_started_at`；保留导入单大事务 | §0 §7.2 §7.3 §7.6 §8 |
+| 2 | detect 全量行存 Redis 不可行 | 解析结果存 Redis TTL 15min | 元数据落 PG `import_detect_sessions`，规范化行落 **server-only 私有磁盘**（压缩 NDJSON），Redis 不参与 | §7.3 §7.4 §4.2 §9.1 |
+| 3 | 导入任务不可裸重试 | attempts<3 复位重跑（会重复导入） | detect 预生成 `entry_id`+`client_ref_id`；entries+余额+`job=succeeded` **同事务提交**；`run_token`/lease 防覆盖；仅瞬态错误重试 | §3.9 §7.3 §7.5 |
+| 4 | CSV Formula Injection 缺失 | 仅 RFC 4180 引号转义 | 所有导出单元格走 **`apostrophe-v1` 可逆防护 + quote-all**；文件名/header 控制字符防护 | §2.1 §2.4 §9.2 §9.3 |
+| 5 | `#` 注释头解析未定义 | 自由文本 `# Costra 导出 · ...` | 严格机读 **Costra CSV Profile v2 preamble**（`#costra-csv;version=...`）；格式描述从"严格 RFC 4180"改为"preamble + RFC 4180 body" | §2.1 §2.1.1 §2.4 |
+
+**顺带修正的 P1/P2/P3 落差**（正文已改）：
+- multipart 全局 `fileSize=2MB` 会拦 5MB → §9.1 明列必须提限。
+- 默认子分类"取 `sort_order=1`"想当然 → 改用 `is_direct_default` 标记（§3.7）。
+- 导出并发只有应用层 check → 补 DB 唯一索引 `uq_data_jobs_active_export_per_user`（§7.3 §9.2）。
+- detect 端点无频控 → §9.1 补 detect 单独频控。
+- 导出时区用进程本地 `Date` → §9.2 明确显式 `Asia/Shanghai`。
+- 单次导入新增 **20,000 行**上限（§0 §9.1），防超长事务。
+- ID 生成 v4/v7 混用 → 统一走 `newId()`（v7），DB `gen_random_uuid()` 仅兜底（§7.3）。
+- 现有手写逐物理行 parser 不支持 quoted multiline → §2.1 要求引入标准 CSV parser（E1 工作量已含）。
+- 完整错误报告不再塞进 HTTP 响应 → 汇总 + 各前 100 条预览 + `/report` 下载端点（§4.2 §7.6）；`raw` 整行原文删除，改 `field/code/value_preview`（隐私）。
+
+工作量 14 → **16.5 人天**（E1 引入 CSV 库 + Formula 编解码；E2 加检测会话表/run_token/原子提交/新 cron；E3 加流式解析落盘 + FOR UPDATE 消费 + multipart 提限）。
+
+### v0.4
+补齐任务持久化 / 进度百分比 / 文件存储与过期策略。
