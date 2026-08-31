@@ -460,7 +460,16 @@ export async function findById(entryId: string, userIdOrClient?: string | Runner
  *
  *⚠️ 必须在事务内调用（传 PoolClient）；否则 FOR UPDATE 在自动提交模式下无意义。
  *
- *不 JOIN family_members（不做权限校验）· 权限守门由 caller 在事务外用 findById(userId, entryId) 完成。
+ *⚠️ 只锁 entries 行，不 JOIN 其它表做权限守门 —— 原因见下。
+ *
+ * 曾考虑把 active 成员守门并入这次查询（JOIN ledgers + family_members），省一次
+ * 事务外读。两条硬约束使其不可行：
+ *   1. pg-mem 不支持 `FOR UPDATE OF <alias>`，多表 JOIN 的裸 `FOR UPDATE` 会连带
+ *      锁住 ledgers 与 family_members 行；
+ *   2. 连带锁的加锁顺序由执行计划决定（大概率 entries → ledgers → family_members），
+ *      与 create 路径的顺序（family_members → entries → ledgers）相反 → 死锁面。
+ * 正确做法是在本查询**之前**单独锁一次成员行（familyMemberRepo.lockActiveMemberByLedger），
+ * 保持与 create 相同的加锁顺序。
  */
 export async function findByIdForUpdate(
   entryId: string,

@@ -178,6 +178,9 @@ export async function registerEntriesRoutes(app: FastifyInstance): Promise<void>
           details: { server_version: result.serverVersion },
         });
       }
+      if (result.error.code === ErrorCode.NOT_FOUND) {
+        throw new AppError(ErrorCode.NOT_FOUND, { message: result.error.message });
+      }
       throw new AppError(ErrorCode.INVALID_ARGUMENT, { message: result.error.message });
     },
   );

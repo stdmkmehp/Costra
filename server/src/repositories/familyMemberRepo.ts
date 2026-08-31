@@ -94,6 +94,52 @@ export async function isActiveMember(
 }
 
 /**
+ * 在写事务中锁定 active membership，避免授权检查后与 leave/remove 并发产生 TOCTOU。
+ * FOR UPDATE 会与 setLeftAt/setAllActiveLeftAt 的 UPDATE 冲突，锁持有至调用方事务结束。
+ */
+export async function lockActiveMember(
+  userId: string,
+  familyId: string,
+  client: Runner,
+): Promise<boolean> {
+  const res = await client.query(
+    `SELECT 1 FROM family_members
+      WHERE family_id = $1 AND user_id = $2 AND left_at IS NULL
+      FOR UPDATE`,
+    [familyId, userId],
+  );
+  return (res.rows as unknown[]).length > 0;
+}
+
+/**
+ * 在写事务中按 ledger 锁定 active membership（entry update / softDelete 路径）。
+ *
+ * 与 lockActiveMember 的区别：入参是 ledger_id 而非 family_id，省掉调用方
+ * 先查 ledger 拿 family_id 的一次往返。内部用常量标量子查询（非相关子查询），
+ * 只锁 family_members 行，不会连带锁 ledgers。
+ *
+ * 加锁顺序必须为「family_members → entries → ledgers」（与 entryService create
+ * 路径一致），否则与 create 并发时存在循环等待。调用方须在 `findByIdForUpdate`
+ * 之前调用本函数。
+ *
+ * @returns 是否 active 成员（ledger 不存在时亦为 false · 不泄露存在性）
+ */
+export async function lockActiveMemberByLedger(
+  userId: string,
+  ledgerId: string,
+  client: Runner,
+): Promise<boolean> {
+  const res = await client.query(
+    `SELECT 1 FROM family_members
+      WHERE family_id = (SELECT family_id FROM ledgers WHERE id = $1)
+        AND user_id = $2 AND left_at IS NULL
+      FOR UPDATE`,
+    [ledgerId, userId],
+  );
+  return (res.rows as unknown[]).length > 0;
+}
+
+/**
  * COSTRA-260: 校验 user 是否为 family 的成员（包含 active + left）
  *
  * 用途：统计接口的 user_id 维度越权防护 —— 允许查询已退出成员的历史数据，

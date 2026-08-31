@@ -392,12 +392,11 @@ describe('COSTRA-217: entries.shared_type', () => {
       expect(entry!.sharedType).toBe('shared');
     });
 
-    it('expense 未传 shared_type + 无法判定 family kind → rejected 且不写 DB', async () => {
+    it('expense 指向不存在账本 → NOT_FOUND 且不写 DB', async () => {
       const { createEntryService } = await import('../src/services/entryService.js');
-      // 注入 mock：ledger 查不到 → 无法判定
+      // 注入 mock：ledger 查不到 → 授权守门按 NOT_FOUND 拒绝且不泄露存在性
       const service = createEntryService({
-        findLedgerById: async () => null,
-        findFamilyById: async () => null,
+        findLedgerWithFamily: async () => null,
       });
 
       const result = await service.createWithIdempotency('fake-user-id', {
@@ -409,7 +408,53 @@ describe('COSTRA-217: entries.shared_type', () => {
       });
 
       expect(result.status).toBe('rejected');
-      expect((result as { error: { code: string; message: string } }).error.code).toBe('BUSINESS_RULE_VIOLATION');
+      expect((result as { error: { code: string; message: string } }).error.code).toBe('NOT_FOUND');
+    });
+
+    it('非 active 成员 → NOT_FOUND 且不写 DB（不泄露账本存在性）', async () => {
+      const { createEntryService } = await import('../src/services/entryService.js');
+      const service = createEntryService({
+        findLedgerWithFamily: async () => ({
+          id: '00000000-0000-0000-0000-000000000001',
+          familyId: '00000000-0000-0000-0000-000000000002',
+          kind: 'shared',
+        }),
+        isActiveFamilyMember: async () => false,
+      });
+
+      const result = await service.createWithIdempotency('fake-user-id', {
+        ledger_id: '00000000-0000-0000-0000-000000000001',
+        amount: 3000,
+        type: 'expense',
+        occurred_at: new Date().toISOString(),
+      });
+
+      expect(result.status).toBe('rejected');
+      expect((result as { error: { code: string } }).error.code).toBe('NOT_FOUND');
+    });
+
+    it('family kind 非 personal/shared → BUSINESS_RULE_VIOLATION 且不写 DB', async () => {
+      const { createEntryService } = await import('../src/services/entryService.js');
+      // family_kind 是 ENUM('personal','shared')，真实库不会出现第三值；
+      // 该分支是防御性守门（ENUM 未来扩展时不静默写入错误 shared_type），只能靠 mock 覆盖。
+      const service = createEntryService({
+        findLedgerWithFamily: async () => ({
+          id: '00000000-0000-0000-0000-000000000001',
+          familyId: '00000000-0000-0000-0000-000000000002',
+          kind: 'unknown-kind',
+        }),
+        isActiveFamilyMember: async () => true,
+      });
+
+      const result = await service.createWithIdempotency('fake-user-id', {
+        ledger_id: '00000000-0000-0000-0000-000000000001',
+        amount: 3000,
+        type: 'expense',
+        occurred_at: new Date().toISOString(),
+      });
+
+      expect(result.status).toBe('rejected');
+      expect((result as { error: { code: string } }).error.code).toBe('BUSINESS_RULE_VIOLATION');
     });
 
     it('expense 显式传 shared_type → 不走默认规则', async () => {

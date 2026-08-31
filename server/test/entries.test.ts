@@ -209,6 +209,68 @@ describe('CROSS-FAMILY guard', () => {
     expect(body.code).toBe('NOT_FOUND');
   });
 
+  it('T-CROSS-FAMILY-CREATE user B 不能通过直连或 sync 向 user A 账本写流水', async () => {
+    setWxFetchForTests(
+      (async () => new Response(
+        JSON.stringify({ openid: 'openid-user-b-cross-family-create', session_key: 'sk-b' }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )) as unknown as typeof fetch,
+    );
+    const loginB = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/wx-login',
+      payload: { code: 'user-b-create' },
+      headers: { 'content-type': 'application/json' },
+    });
+    const tokenB = (loginB.json() as { access_token: string }).access_token;
+    const ledgerId = '00000000-0000-0000-0000-000000000001';
+    const payload = {
+      ledger_id: ledgerId,
+      amount: 3000,
+      type: 'expense',
+      occurred_at: '2026-05-11T12:00:00.000Z',
+    };
+
+    const direct = await app.inject({
+      method: 'POST',
+      url: '/v1/entries',
+      headers: { authorization: `Bearer ${tokenB}`, 'content-type': 'application/json' },
+      payload,
+    });
+    expect(direct.statusCode).toBe(404);
+    expect((direct.json() as { code: string }).code).toBe('NOT_FOUND');
+
+    const sync = await app.inject({
+      method: 'POST',
+      url: '/v1/sync/push',
+      headers: {
+        authorization: `Bearer ${tokenB}`,
+        'content-type': 'application/json',
+        'idempotency-key': crypto.randomUUID(),
+      },
+      payload: {
+        ops: [{
+          op: 'create',
+          entity: 'entry',
+          client_ref_id: 'cross-family-create',
+          base_version: null,
+          payload,
+        }],
+      },
+    });
+    expect(sync.statusCode).toBe(200);
+    expect(sync.json().results[0]).toMatchObject({
+      status: 'rejected',
+      error: { code: 'NOT_FOUND' },
+    });
+
+    const pool = (await import('../src/db/pool.js')).getPool();
+    const rows = await pool.query('SELECT id FROM entries WHERE ledger_id = $1', [ledgerId]);
+    expect(rows.rowCount).toBe(0);
+    const balance = await pool.query('SELECT balance_cents FROM ledgers WHERE id = $1', [ledgerId]);
+    expect(Number(balance.rows[0]?.balance_cents)).toBe(0);
+  });
+
   it('T-CROSS-FAMILY-LIST user B 用 user A ledger_id 查列表 → 200 但不泄露数据', async () => {
     const createRes = await app.inject({
       method: 'POST',

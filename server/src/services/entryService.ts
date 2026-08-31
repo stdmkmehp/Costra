@@ -4,13 +4,20 @@
  * 卡号：COSTRA-104 / COSTRA-4xx · 事实源：server/api/openapi.yaml §entries-create/list + sync-protocol.md §2
  *
  * 职责：
- *   - createWithIdempotency：写 entries + 防重（ledger_id+client_ref_id UNIQUE 约束）
- *     + 同事务累加 ledgers.balance_cents（COSTRA-4xx 资产）
+ *   - createWithIdempotency：active 成员校验 + 防重（ledger_id+client_ref_id UNIQUE 约束）
+ *     + 写 entries + 同事务累加 ledgers.balance_cents（COSTRA-4xx 资产）
  *   - updateWithVersion：乐观锁 update（WHERE version = baseVersion）
  *     + 同事务回退旧贡献 + 叠加新贡献（资产重锚谓词双重判定）
  *   - softDelete：软删 + 乐观锁 + 资产旧贡献回退
  *   - list：游标分页（updated_at DESC, id DESC 复合 cursor）
  *   - findById：含 ledger/权限校验
+ *
+ * ⚠️ 加锁顺序不变量（三条写路径必须一致，否则并发 create 与 update/delete 会死锁）：
+ *     family_members 行 → entries 行 → ledgers 行
+ *   - create：lockActiveMember → insertEntry → applyBalanceDelta
+ *   - update / softDelete：lockActiveMemberByLedger → findByIdForUpdate → applyBalanceSwap / applyBalanceDelta
+ *   成员行锁不只是权限校验，它还把「授权」与「写入」放进同一事务，
+ *   堵住「校验通过 → 成员并发退出 → 仍然写入」的 TOCTOU。
  *
  * 资产累加规则（COSTRA-4xx · 见 asset-and-budget-spec.md §4）：
  *   - income→ balance += amount
@@ -28,16 +35,26 @@ import { withTx } from '../db/pool.js';
 import * as entryRepo from '../repositories/entryRepo.js';
 import type { EntryEntity } from '../repositories/entryRepo.js';
 import * as ledgerRepo from '../repositories/ledgerRepo.js';
-import * as familyRepo from '../repositories/familyRepo.js';
+import * as familyMemberRepo from '../repositories/familyMemberRepo.js';
 import * as categoryRepo from '../repositories/categoryRepo.js';
 
 /**
- * 依赖注入接口（COSTRA-217 R1.x：新增 ledgerRepo/familyRepo 查询能力）
+ * 依赖注入接口
  * 默认使用真实 repo · 单测可注入 mock
  */
 export interface EntryServiceDeps {
-  findLedgerById?: (ledgerId: string) => Promise<{ familyId: string } | null>;
-  findFamilyById?: (familyId: string) => Promise<{ kind: string } | null>;
+  /**
+   * 一次往返取回 canonical ledger id + 所属 family 的 kind。
+   * 返回 null = 账本不存在或所属家庭已解散（调用方统一按 NOT_FOUND 处理）。
+   */
+  findLedgerWithFamily?: (
+    ledgerId: string,
+    client?: import('pg').PoolClient,
+  ) => Promise<{ id: string; familyId: string; kind: string } | null>;
+  /**
+   * active 成员校验。client 存在时走 `FOR UPDATE`，把授权与写操作锁在同一事务内。
+   */
+  isActiveFamilyMember?: (userId: string, familyId: string, client?: import('pg').PoolClient) => Promise<boolean>;
 }
 
 export interface EntryService {
@@ -204,30 +221,14 @@ function computeBalanceDelta(type: 'income' | 'expense' | 'transfer', amount: nu
 // --- 工厂函数 ---
 
 export function createEntryService(deps: EntryServiceDeps = {}): EntryService {
-  const findLedgerById = deps.findLedgerById ?? (async (id: string) => ledgerRepo.findById(id));
-  const findFamilyById = deps.findFamilyById ?? (async (id: string) => familyRepo.findById(id));
-
-  /**
-   * COSTRA-217 R1.x: expense 未传 shared_type 时，按 ledger→family kind 判定默认值
-   *   - personal family → 'personal'
-   *   - shared family   → 'shared'
-   *   - 无法判定时返回 null（调用方必须抛标准错误且不写 DB）
-   *
-   * dispatch §2.B.3 硬约束：无法可靠判定 family kind 时，不得静默猜测
-   */
-  async function resolveDefaultSharedType(
-    ledgerId: string,
-  ): Promise<'personal' | 'shared' | null> {
-    const ledger = await findLedgerById(ledgerId);
-    if (!ledger) return null;
-
-    const family = await findFamilyById(ledger.familyId);
-    if (!family) return null;
-
-    if (family.kind === 'personal') return 'personal';
-    if (family.kind === 'shared') return 'shared';
-    return null; // 未知 kind · 不猜测
-  }
+  const findLedgerWithFamily = deps.findLedgerWithFamily
+    ?? (async (id: string, client?: import('pg').PoolClient) => ledgerRepo.findWithFamilyById(id, client));
+  const isActiveFamilyMember = deps.isActiveFamilyMember
+    ?? (async (userId: string, familyId: string, client?: import('pg').PoolClient) => (
+      client
+        ? familyMemberRepo.lockActiveMember(userId, familyId, client)
+        : familyMemberRepo.isActiveMember(userId, familyId)
+    ));
 
   /**
    * 解析 entry 写入时的 category_id（migration 0004 配套 · spec §5）
@@ -241,6 +242,9 @@ export function createEntryService(deps: EntryServiceDeps = {}): EntryService {
    *   3. 仍未命中（垃圾/未知 id）→ 同 entry type 的兜底默认子分类
    *
    * 入参 inputCategoryId 为 null/undefined 时直接返回 null（不强制分类）。
+   *
+   * 不接事务 client：categories 是引用数据，运行时只软删（历史上唯一一次硬删在
+   * migration 0004），不参与写事务的一致性要求。放在事务外可缩短持锁时长。
    */
   async function resolveCategoryId(
     inputCategoryId: string | null | undefined,
@@ -286,9 +290,9 @@ export function createEntryService(deps: EntryServiceDeps = {}): EntryService {
 
   /**
    * createWithIdempotency：
-   *   1) 防重 check（client_ref_id）
-   *   2) resolveSharedType + resolveCategory
-   *   3) 事务内：INSERT entries + UPDATE ledgers.balance_cents（delta + 幂等谓词）
+   *   1) 事务外：分类降级解析（引用数据，不参与写一致性）
+   *   2) 事务内：一次往返取 canonical ledger + family kind，再 FOR UPDATE 锁 active membership
+   *   3) 同事务：防重 check + INSERT entries + UPDATE ledgers.balance_cents
    *
    * 事务策略：
    *   - opts.client 存在 → 复用 caller 事务（recurring scheduler 路径）
@@ -302,60 +306,76 @@ export function createEntryService(deps: EntryServiceDeps = {}): EntryService {
   ): Promise<EntryResult> {
     validateCreatePayload(payload);
 
-    // 事务 client 由 caller（如定时调度器）注入；未传则走全局 pool（默认路径）。
-    // 关键：findByLedgerAndClientRefId 与 insertEntry 走同一 client，
-    // 保证 recurring tick 内 entry insert 与 rule 水位更新在同一事务下要么全成功要么全回滚。
-    const txClient = opts?.client;
-
-    // 防重：若 client_ref_id 存在，先查 ledger_id+client_ref_id 是否已有
-    if (clientRefId) {
-      const existing = await entryRepo.findByLedgerAndClientRefId(
-        payload.ledger_id,
-        clientRefId,
-        txClient as unknown as Parameters<typeof entryRepo.findByLedgerAndClientRefId>[2],
-      );
-      if (existing) {
-        return { status: 'conflict', serverVersion: existing.version };
-      }
-    }
-
-    // COSTRA-217 R1.x: expense 未传 shared_type 时按 family kind 判定默认值
-    let sharedType: 'personal' | 'shared' | null = payload.shared_type ?? null;
-    if (payload.type === 'expense' && sharedType === null) {
-      const resolved = await resolveDefaultSharedType(payload.ledger_id);
-      if (resolved === null) {
-        // 无法判定 family kind → 返回标准错误且不写 DB（dispatch §2.B.3）
-        return {
-          status: 'rejected',
-          error: {
-            code: 'BUSINESS_RULE_VIOLATION',
-            message: 'cannot determine default shared_type: family kind unknown',
-          },
-        };
-      }
-      sharedType = resolved;
-    }
-
-    // 解析 category_id（spec §5：硬删后悬空 id 通过 redirect 表静默降级，不报错）
+    // 分类降级解析放在事务外：categories 只软删，不参与本事务的写一致性，
+    // 移出后事务内最多少 3 次往返。
     const resolvedCategory = await resolveCategoryId(payload.category_id, payload.type);
     if ('error' in resolvedCategory) {
       return { status: 'rejected', error: resolvedCategory.error };
     }
 
-    // ─── 事务包装（COSTRA-4xx）────────────────────────────────────────
-    // 若 caller 注入 txClient，复用之；否则在本 service 内开新事务。
-    // 关键：INSERT entries + UPDATE ledgers.balance_cents 必须在同一事务，
-    //       保证"流水成功 ↔ 资产累加成功"原子性。
+    const txClient = opts?.client;
     const runInTx = async <T>(fn: (client: import('pg').PoolClient) => Promise<T>): Promise<T> => {
       if (txClient) return fn(txClient);
       return withTx(fn);
     };
 
+    type CreateOutcome =
+      | { kind: 'created'; entry: EntryEntity }
+      | { kind: 'result'; result: EntryResult };
+
+    // 账本不存在与非成员统一 NOT_FOUND：不通过写接口泄露其他家庭账本的存在性
+    const notFound = (): EntryResult => ({
+      status: 'rejected',
+      error: { code: ErrorCode.NOT_FOUND, message: 'ledger not found' },
+    });
+
     try {
-      const entry = await runInTx(async (client) => {
+      const outcome = await runInTx<CreateOutcome>(async (client) => {
+        const ledger = await findLedgerWithFamily(payload.ledger_id, client);
+        if (!ledger) return { kind: 'result', result: notFound() };
+
+        // 事务内 FOR UPDATE 锁住该成员的 membership 行：授权与后续写入处于同一事务，
+        // 堵住「校验通过 → 成员并发退出 → 仍然写入」的 TOCTOU。
+        // 只锁 (family_id, user_id) 这一行，不同成员之间不互斥。
+        if (!await isActiveFamilyMember(userId, ledger.familyId, client)) {
+          return { kind: 'result', result: notFound() };
+        }
+
+        // 所有后续查询和写入使用数据库返回的 canonical UUID。
+        const ledgerId = ledger.id;
+        if (clientRefId) {
+          const existing = await entryRepo.findByLedgerAndClientRefId(ledgerId, clientRefId, client);
+          if (existing) {
+            return {
+              kind: 'result',
+              result: { status: 'conflict', serverVersion: existing.version },
+            };
+          }
+        }
+
+        // family kind 与 entry shared_type 同二值（personal/shared）· kind 创建后不可变，
+        // 故直接取用；ENUM 若未来扩展，下面的守门会拦住而不是静默写入错误值。
+        let sharedType: 'personal' | 'shared' | null = payload.shared_type ?? null;
+        if (payload.type === 'expense' && sharedType === null) {
+          const familyKind = ledger.kind;
+          if (familyKind !== 'personal' && familyKind !== 'shared') {
+            return {
+              kind: 'result',
+              result: {
+                status: 'rejected',
+                error: {
+                  code: ErrorCode.BUSINESS_RULE_VIOLATION,
+                  message: 'cannot determine default shared_type: family kind unknown',
+                },
+              },
+            };
+          }
+          sharedType = familyKind;
+        }
+
         const inserted = await entryRepo.insertEntry(
           {
-            ledgerId: payload.ledger_id,
+            ledgerId,
             amount: payload.amount,
             currency: payload.currency,
             type: payload.type,
@@ -366,24 +386,23 @@ export function createEntryService(deps: EntryServiceDeps = {}): EntryService {
             occurredAt: payload.occurred_at,
             createdBy: userId,
             clientRefId: clientRefId ?? null,
-            sharedType, // COSTRA-217 B2 + R1.x 默认规则
-            sourceRecurringId: opts?.sourceRecurringId ?? null, // T2
+            sharedType,
+            sourceRecurringId: opts?.sourceRecurringId ?? null,
           },
-          client as unknown as Parameters<typeof entryRepo.insertEntry>[1],
+          client,
         );
 
-        // COSTRA-4xx：同事务累加 ledgers.balance_cents
-        // delta = income: +amount / expense: -amount / transfer: 0
-        // 幂等由同事务 + uq_entries_ledger_client_ref唯一约束保障
         const delta = computeBalanceDelta(payload.type, payload.amount);
         await ledgerRepo.applyBalanceDelta(
-          { ledgerId: payload.ledger_id, delta, newSeq: inserted.changeSeq },
-          client as unknown as Parameters<typeof ledgerRepo.applyBalanceDelta>[1],
+          { ledgerId, delta, newSeq: inserted.changeSeq },
+          client,
         );
 
-        return inserted;
+        return { kind: 'created', entry: inserted };
       });
-      return { status: 'ok', serverId: entry.id, serverVersion: entry.version };
+
+      if (outcome.kind === 'result') return outcome.result;
+      return { status: 'ok', serverId: outcome.entry.id, serverVersion: outcome.entry.version };
     } catch (err: unknown) {
       const msg = (err as { message?: string }).message ?? '';
       if (msg.includes('uq_entries_ledger_client_ref') || msg.includes('duplicate key')) {
@@ -437,6 +456,13 @@ export function createEntryService(deps: EntryServiceDeps = {}): EntryService {
     //      - 新贡献叠加：仅当 new_seq > baseline
     //      - 单次 UPDATE 保证 balance_version 只 +1（一次业务动作 = 一次版本推进）
     const updated = await withTx(async (client) => {
+      // 0) 先锁成员行，再锁 entry 行，最后更新 ledgers —— 与 create 路径的加锁顺序
+      //    （family_members → entries → ledgers）保持一致，否则并发 create/update 可能死锁。
+      //    事务外的 findById 守门与本事务开启之间仍有缝隙，成员可能在此期间退出。
+      if (!await familyMemberRepo.lockActiveMemberByLedger(userId, existing.ledgerId, client)) {
+        return null;
+      }
+
       // 1) 事务内 FOR UPDATE 读旧值（entries 行锁 · spec §4.2 明文要求）
       //    防御 sync-push 批处理 / 定时补偿等未来路径绕过 entries.version 乐观锁时读到脏 old 值
       const locked = await entryRepo.findByIdForUpdate(
@@ -490,9 +516,14 @@ export function createEntryService(deps: EntryServiceDeps = {}): EntryService {
     return { status: 'ok', serverId: entryId, serverVersion: updated.version };
   }
 
-  async function softDelete(userId: string, entryId: string, baseVersion: number): Promise<EntryResult> {
+  async function softDelete(
+    userId: string,
+    entryId: string,
+    baseVersion: number,
+  ): Promise<EntryResult> {
     // 先做权限校验（读entry + JOIN family_members · 只做守门，不读 old值）
-    await findById(userId, entryId);
+    // 同时带出 ledgerId，供事务内按账本锁成员行
+    const existing = await findById(userId, entryId);
 
     // ─── 事务包装（COSTRA-4xx · spec §4.2 softDelete 分支）───────────
     // 事务内：
@@ -501,6 +532,11 @@ export function createEntryService(deps: EntryServiceDeps = {}): EntryService {
     //   3) UPDATE ledgers.balance_cents：旧贡献回退
     //      - 仅当 old_seq > baseline 才回退（防止回退已重锚前的老流水）
     const deleted = await withTx(async (client) => {
+      // 0) 与 create 同加锁顺序先锁成员行（family_members → entries → ledgers）
+      if (!await familyMemberRepo.lockActiveMemberByLedger(userId, existing.ledgerId, client)) {
+        return null;
+      }
+
       // 1) 事务内 FOR UPDATE 读旧值（spec §4.2 明文要求）
       const locked = await entryRepo.findByIdForUpdate(
         entryId,

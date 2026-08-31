@@ -147,6 +147,38 @@ export async function findById(
 }
 
 /**
+ * 按 id 查 ledger，并一次性带出所属 family 的 kind（单次往返）。
+ *
+ * 专为 entryService 的 create 路径设计，它需要三样东西：
+ *   - id：DB 返回的 canonical UUID · 后续防重 / INSERT / 余额更新统一使用它，
+ *         避免"客户端传入值"与"DB 存储值"形式不一致
+ *   - familyId：membership 校验的入参
+ *   - kind：expense 未显式传 shared_type 时的默认值（family_kind 与 entry_shared_type 同二值）
+ *
+ * 之所以把 families 合并进来而不是分两次查：kind 是 ENUM 且创建后不可变，
+ * 二者是纯串行依赖（先有 family_id 才能查 family），合成一次可少一次事务内往返。
+ *
+ * family 被软删时返回 null —— 解散与 setAllActiveLeftAt 同事务，
+ * 调用方本就会在 membership 校验处拒绝，此处提前返回等价且更省事。
+ */
+export async function findWithFamilyById(
+  ledgerId: string,
+  client?: Runner,
+): Promise<{ id: string; familyId: string; kind: string } | null> {
+  const runner = client ?? exec();
+  const res = await runner.query(
+    `SELECT l.id AS ledger_id, l.family_id AS family_id, f.kind AS kind
+       FROM ledgers l
+       JOIN families f ON f.id = l.family_id AND f.deleted_at IS NULL
+      WHERE l.id = $1 AND l.deleted_at IS NULL
+      LIMIT 1`,
+    [ledgerId],
+  );
+  const row = res.rows[0] as unknown as { ledger_id: string; family_id: string; kind: string } | undefined;
+  return row ? { id: row.ledger_id, familyId: row.family_id, kind: row.kind } : null;
+}
+
+/**
  * 查 family 的第一个 active ledger（产品语义 1:1 · 取第一个即可）
  * 返回 null 表示该 family 无 ledger（数据异常 · service 层自愈补建）
  */
