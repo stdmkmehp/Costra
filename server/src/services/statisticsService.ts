@@ -322,27 +322,30 @@ interface L1AggMap {
 }
 
 /**
- * 从二级 category_id 聚合 + categories meta，折叠成"一级分类"聚合。
+ * 从 entry category_id 聚合 + categories meta，折叠成"一级分类"聚合。
  *
  * 逻辑：
- *   - 拿 entries 二级聚合 → 查 categories 拿 parent_id
- *   - 没有 parent_id（应不会发生）→ 跳过
- *   - 按 parent_id 累加 amount + entry_count
+ *   - 二级分类按 parent_id 归并到一级
+ *   - 一级分类直记（`POST /categories` 的 parent_id 可空，家庭可自建一级分类；
+ *     导入 / sync / 历史数据也可能写入一级 id）→ 以自身 id 参与排行，
+ *     否则这些金额会被静默丢弃，并连带缩小 ratio 分母
+ *   - meta 缺失（分类已软删，不可见）才跳过
  */
-function foldL2ToL1(
-  l2Aggs: statsRepo.CategoryRankAggRow[],
+function foldCategoriesToL1(
+  categoryAggs: statsRepo.CategoryRankAggRow[],
   categoryMetas: Map<string, statsRepo.CategoryMeta>,
 ): L1AggMap {
   const byParentId = new Map<string, { amount: number; entry_count: number }>();
   let totalExpense = 0;
 
-  for (const agg of l2Aggs) {
+  for (const agg of categoryAggs) {
     const meta = categoryMetas.get(agg.category_id);
-    if (!meta || !meta.parent_id) continue;  // 二级必有 parent_id（按 0008 约束）
-    const acc = byParentId.get(meta.parent_id) ?? { amount: 0, entry_count: 0 };
+    if (!meta) continue;
+    const parentId = meta.parent_id ?? meta.id;
+    const acc = byParentId.get(parentId) ?? { amount: 0, entry_count: 0 };
     acc.amount += agg.amount;
     acc.entry_count += agg.entry_count;
-    byParentId.set(meta.parent_id, acc);
+    byParentId.set(parentId, acc);
     totalExpense += agg.amount;
   }
   return { byParentId, totalExpense };
@@ -375,8 +378,8 @@ function buildL1RankItems(
 // === 排行构建高层 · 收入分类排行迭代 ===
 //
 // monthly / yearly 都是"支出+收入并列输出 category_ranks"。
-// 抽取模式：拉两次 L2 聚合（expense/income）→ 合并去重后一次批量查 category meta →
-// 分别 foldL2ToL1 → 合并 parent id 一次批量查 parent meta → 分别 buildL1RankItems。
+// 抽取模式：拉两次分类聚合（expense/income）→ 合并去重后一次批量查 category meta →
+// 分别 foldCategoriesToL1 → 合并一级 id 一次批量查 parent meta → 分别 buildL1RankItems。
 // 见 getMonthlyStatistics / getYearlyStatistics 内联实现。
 
 // === API 1: 月度统计 ===
@@ -481,9 +484,9 @@ export async function getMonthlyStatistics(
     ? (l2MetaMap.get(maxSingleCategoryId)?.name ?? null)
     : null;
 
-  // 折叠成一级 → 收集所有 parent_id → 一次批量拿 parent meta
-  const expenseL1 = foldL2ToL1(expenseL2Aggs, l2MetaMap);
-  const incomeL1 = foldL2ToL1(incomeL2Aggs, l2MetaMap);
+  // 折叠成一级（含一级直记）→ 收集所有一级 id → 一次批量拿 parent meta
+  const expenseL1 = foldCategoriesToL1(expenseL2Aggs, l2MetaMap);
+  const incomeL1 = foldCategoriesToL1(incomeL2Aggs, l2MetaMap);
   const parentIdSet = new Set<string>();
   for (const id of expenseL1.byParentId.keys()) parentIdSet.add(id);
   for (const id of incomeL1.byParentId.keys()) parentIdSet.add(id);
@@ -626,8 +629,8 @@ export async function getYearlyStatistics(
     ? (l2MetaMap.get(maxSingleCategoryId)?.name ?? null)
     : null;
 
-  const expenseL1 = foldL2ToL1(expenseL2Aggs, l2MetaMap);
-  const incomeL1 = foldL2ToL1(incomeL2Aggs, l2MetaMap);
+  const expenseL1 = foldCategoriesToL1(expenseL2Aggs, l2MetaMap);
+  const incomeL1 = foldCategoriesToL1(incomeL2Aggs, l2MetaMap);
   const parentIdSet = new Set<string>();
   for (const id of expenseL1.byParentId.keys()) parentIdSet.add(id);
   for (const id of incomeL1.byParentId.keys()) parentIdSet.add(id);
