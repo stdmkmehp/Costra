@@ -631,5 +631,5 @@ composeReceiptImage(data: ReceiptData): Promise<{ tempFilePath, width, height }>
 
 ---
 
-**Refs**: COSTRA-011（分享卡片体系）、[`README.md`](./README.md)、[`safe-zone.md`](./safe-zone.md)、`docs/design/redis-cache-tech-spec.md`（统计缓存口径）
+**Refs**: COSTRA-011（分享卡片体系）、[`README.md`](./README.md)、[`safe-zone.md`](./safe-zone.md)、`server/src/services/statisticsService.ts`（统计口径 · transfer 不计 / `shared_type IS NULL` expense 不计 / Asia/Shanghai 分桶）
 **Impacts**: 统计页入口、pages-stat 分包、新增 canvas 合成能力、（二期）后端 wxacode

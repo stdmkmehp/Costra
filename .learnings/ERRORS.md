@@ -289,3 +289,100 @@ awk: newline in string # BEGIN COSTRA MANAG...
 - **Notes**: 后续验证改用 `grep`/文件搜索，不依赖 `rg`。
 
 ---
+
+## [ERR-20260827-001] incorrect_transaction_helper_path
+
+**Logged**: 2026-08-27T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: backend
+
+### Summary
+读取事务辅助文件时误猜为 `server/src/db/transaction.ts`，实际 `withTx` 定义在 `server/src/db/pool.ts`。
+
+### Error
+```text
+Could not find file '/Users/weizhao/Desktop/Costra/server/src/db/transaction.ts'
+```
+
+### Context
+- 审查数据导入任务的事务和重试模型时定位 `withTx`。
+- 随后通过内容搜索找到正确文件。
+
+### Suggested Fix
+定位已有符号时先使用语义或内容搜索，不根据常见命名猜文件路径。
+
+### Metadata
+- Reproducible: yes
+- Related Files: `server/src/db/pool.ts`
+
+### Resolution
+- **Resolved**: 2026-08-27T00:00:00+08:00
+- **Notes**: 已读取正确文件并完成事务语义核查。
+
+---
+
+## [ERR-20260827-002] replace_in_file_stale_or_noop_match
+
+**Logged**: 2026-08-27T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: backend
+
+### Summary
+缓存修复期间两次精确替换参数无效：一次新旧字符串相同，一次使用了过时的函数上下文。
+
+### Error
+```text
+Search and replace strings are the same, no changes made.
+The string to replace was not found in the file.
+```
+
+### Context
+- 给 `recurringRepo.ts` 预留新查询时误提交了同值替换。
+- 修改 `routes/users.ts` 时未先读取实际抽取后的 `handlePatch` 结构。
+
+### Suggested Fix
+构造替换前确认 `old_str !== new_str`；文件结构可能已变化时先读取目标函数的当前内容，再用最小唯一上下文编辑。
+
+### Metadata
+- Reproducible: yes
+- Related Files: `server/src/repositories/recurringRepo.ts`, `server/src/routes/users.ts`
+
+### Resolution
+- **Resolved**: 2026-08-27T00:00:00+08:00
+- **Notes**: 已重新读取目标代码并用准确上下文完成后续修改。
+
+---
+
+## [ERR-20260827-003] guessed_domain_types_path
+
+**Logged**: 2026-08-27T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: backend
+
+### Summary
+复核类型定义时误猜 `server/src/domain/types.ts`，实际项目类型不在该路径。
+
+### Error
+```text
+ENOENT: no such file or directory, stat '/Users/weizhao/Desktop/Costra/server/src/domain/types.ts'
+```
+
+### Context
+- 为确认 `EntryEntity` 定义读取了未经文件搜索验证的猜测路径。
+- 该失败不影响实现，随后改用符号引用和实际 import 关系完成核对。
+
+### Suggested Fix
+定位类型文件时优先使用符号导航或文件搜索，不按目录惯例猜路径。
+
+### Metadata
+- Reproducible: yes
+- Related Files: `server/src/services/entryService.ts`
+
+### Resolution
+- **Resolved**: 2026-08-27T00:00:00+08:00
+- **Notes**: 已改用 LSP/内容搜索核对类型与调用点。
+
+---

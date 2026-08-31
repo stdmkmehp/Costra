@@ -1,13 +1,14 @@
 # 客户端账本数据导入 / 导出方案
 
-> 状态：**v0.6 · 方案冻结**（v0.6 收敛二轮代码级 review：规模上限全链路取交集 / 客户端衔接改为修 sync 根因 / 缓存失效 / commit 前复核 / detect 覆盖 DB 硬约束 / 删除 preamble）
+> 状态：**v0.6 · 方案冻结**（v0.6 收敛二轮代码级 review：规模上限全链路取交集 / 客户端衔接改为修 sync 根因 / commit 前复核 / detect 覆盖 DB 硬约束 / 删除 preamble）
+> 2026-08-28 后置修订：服务端 Redis 业务缓存已回滚移除，§7.5 的「导入缓存失效」要求随之作废（R21 消解）。
 > 前置文档：`docs/design/data-export-format.md`（v1 脚本版 · 已被本文档取代部分口径）
 > 触发背景：v1 只支持运维在服务器上跑脚本；本方案把导入 / 导出下沉到小程序端用户自助能力。
 >
 > **v0.6 变更摘要**（详见 §15 修订记录）：
 > - **规模上限从 5MB/20,000 行降到 1MB/5,000 行**：原数字只按"PG 事务能扛多久"单侧推导，实际同时受 nginx 默认体、multipart 全局配置、proxy 超时、客户端本地库容量、sync 通道吞吐五重夹逼（§9.1）。降级后无需改动任何全局基建。
 > - **客户端衔接不做导入专用旁路**：导入后的数据到达完全依赖既有 sync（周期 / 切页 / mutation）；但必须先修 `has_more` 无人消费这一**既有缺陷**（前置依赖，§5.1）。
-> - 导入写入路径**必须自行做缓存失效**（绕过 `entryService` 即绕过 `invalidateLedgerCache`，§7.5）。
+> - 导入写入路径**无需缓存失效**：服务端业务缓存已移除，统计/预算实时聚合（§7.5）。
 > - commit 事务内**显式复核成员 / 分类有效性**：软删模型下 FK 不会失效，原"靠 FK 兜底"不成立（§7.5、R12）。
 > - detect **必须覆盖 DB 侧硬约束**（尤其 `note ≤ 200`），否则"可导入 N 条"与实际写入不一致（§3.11）。
 > - **删除 Costra preamble**，回归纯 RFC 4180；格式识别改用 9 列表头指纹（§2.1）。
@@ -38,7 +39,7 @@
 | worker | 复用 recurringScheduler 范式：进程内轮询 + advisory lock + `FOR UPDATE SKIP LOCKED`，不引入队列中间件 |
 | 上传源文件 | 检测流式解析完**即删原始 CSV**；规范化行数据落 **server-only 私有磁盘**（压缩 NDJSON），检测元数据落 PG `import_detect_sessions`（§7.4）；**Redis 不存任何 CSV 行内容** |
 | 导入幂等 | detect 阶段预生成 `entry_id`(v7) + `client_ref_id=import:<detect_id>:<row>`；entries + 余额 + `job=succeeded` **同一事务提交**；导入任务**仅瞬态错误可重试**（§7.5） |
-| 导入缓存失效 | 导入不走 `entryService`，**必须在事务提交后自行 `invalidateLedgerCache`**（§7.5）|
+| 导入缓存失效 | 导入不走 `entryService`；但服务端业务缓存已移除，**无需任何失效调用**（§7.5）|
 | 客户端数据到达 | **不做导入专用推送/旁路**；依赖既有 sync（周期 / 切页 / mutation）。**前置依赖：先修 `has_more` 无人消费**（§5.1）|
 | 导出文件 | 存 `/data/exports/<yyyy-mm>/<job_id>.csv`；保留 24h；下载走应用层鉴权 + 应用流式返回（不走 nginx） |
 | CSV 安全 | 所有导出（含错误报告）单元格走 **Formula Injection 防护**（`apostrophe-v1` 可逆编码 + quote-all，§9.3） |
@@ -1242,27 +1243,11 @@ SELECT id, type FROM categories
 
 任一复核不通过 → 整批回滚、`status='failed'`、`retryable=false`，错误文案指向"账本或分类已变化，请重新检测"。**不做部分导入**（部分成功会让用户无法判断该删哪些、重导哪些）。
 
-#### 导入完成后必须做缓存失效（v0.6 新增 · P0）
+#### 导入后无需服务端缓存失效
 
-导入**不经过 `entryService`**（走批量 INSERT 路径），因此也绕过了它在事务提交后的失效调用：
+导入**不经过 `entryService`**（走批量 INSERT 路径）。服务端 **Redis 业务缓存（统计 / 预算 / members）已于 2026-08-28 回滚移除**（见 `docs/design/redis-cache-tech-spec.md` §14），统计与预算均为 PostgreSQL 实时聚合，因此导入 COMMIT 后**不存在"页面之间自相矛盾"的陈旧窗口**，无需任何失效调用。
 
-```text
-entryService.createWithIdempotency
-  → withTx(INSERT entries + applyBalanceDelta)
-  → invalidateCommittedLedger(ledger_id)   ← 导入路径没有这一步
-```
-
-后果：统计 monthly/yearly 与预算（含 spent）缓存 TTL 300s，用户导入完成后立刻看统计/预算，**最长 5 分钟仍是旧数字**，而流水明细已经变了 —— 典型的"页面之间自相矛盾"。
-
-要求：导入事务 **COMMIT 之后**（不可在事务内，否则可能缓存到未提交值）调用
-
-```ts
-await invalidateLedgerCache(ledgerId);   // server/src/services/cache.ts
-```
-
-- 只需账本域：导入不改成员/昵称/头像，family 域（members 视图）不受影响。
-- 与 `entryService` 同一口径、同一出口，不新增失效 API。
-- 失效失败不反转已提交事务（`cache.ts` 内部 fail-open），最坏退化为等 TTL。
+> 若未来重新引入服务端读缓存，本条需重新评估：届时导入路径绕过 `entryService`，必须自行在 COMMIT 后失效该账本域。
 
 #### 终态条件更新（run_token 防旧 worker 覆盖）
 
@@ -1635,7 +1620,7 @@ v0.6 决策：**不新建审计表，走结构化 pino 日志**。
 | 公式防护 | 无 | 导出 `apostrophe-v1` 可逆防护 + quote-all（§9.3）|
 | 重试幂等 | 保留 ID 去重 | 稳定 `client_ref_id` + 数据/成功状态同事务（§7.5）|
 | 时区 | 进程本地 `Date` | 显式 `Asia/Shanghai`（导入导出双侧，§3.6 / §9.2）|
-| 缓存失效 | 无缓存 | 导入 COMMIT 后 `invalidateLedgerCache`（§7.5）|
+| 缓存失效 | 无缓存 | 无（服务端业务缓存已移除，实时聚合；§7.5）|
 
 > **CLI 脚本的行为反转必须做成入参**：归属默认（`共同`→家庭语义）、金额超两位小数（ERROR→四舍五入 + WARNING）在 v2 中改变了语义。CLI 与 HTTP 共用同一 service，若直接改会**连带改掉运维脚本的历史行为**。要求 service 把这两项做成显式选项，CLI 保留 v1 默认值，HTTP 路由传 v2 值。
 
@@ -1665,7 +1650,7 @@ v0.6 决策：**不新建审计表，走结构化 pino 日志**。
 | R18 | detect 端点被反复上传放大 CPU/磁盘 | 中 | 中 | detect 单独频控（独立 Redis 计数器）+ **同用户单并发** + 1MB/5,000 行上限 + 流式解析 + sha256 幂等复用（§9.1）|
 | R19 | **导入后数据迟迟不出现在客户端** | **高** | **高** | 根因是 `sync/pull` 的 `has_more` 无人消费（既有缺陷），5,000 条需 25 轮 ≈ 25 分钟且期间月度合计静默错误。**必须先修 sync 循环消费作为前置依赖**（§5.1）；任务成功后客户端调 `triggerOnMutation()` 加速收敛 |
 | R20 | 导入 detect 通过但 commit 撞 DB 约束致整批失败 | 中 | 高 | detect 校验集必须是 `entries` 全部硬约束的超集（§3.11）；`note` 超长截断 + WARNING 而非丢行 |
-| R21 | 导入后统计/预算显示旧数字 | 中 | 中 | 导入绕过 `entryService` 故必须自行 `invalidateLedgerCache`（§7.5）；否则最长脏 300s |
+| R21 | ~~导入后统计/预算显示旧数字~~ | — | — | **已消解**：服务端业务缓存已于 2026-08-28 移除，统计/预算实时聚合，无陈旧窗口（§7.5）。重新引入读缓存时需重开此项 |
 | R22 | 导入大事务阻塞同账本记账 | 中 | 中 | 余额 UPDATE 放事务末尾缩短持锁窗口 + `lock_timeout` 兜底 + 5,000 行上限（§7.5）|
 | R23 | 大账本导出拖慢在线 API | 中 | 中 | 游标流式读 + 逐批落盘 + 批间 `setImmediate()` 让出 event loop（§7.5 / §9.2）|
 | R24 | 同名成员导致错归属 | 中 | 高 | `users.nickname` 无 UNIQUE，同名时**该行 ERROR** 而非静默取第一个（§3.3）|
@@ -1679,14 +1664,14 @@ v0.6 决策：**不新建审计表，走结构化 pino 日志**。
 |---|---|---|
 | **E0** | **前置 · 修 `sync/pull` 的 `has_more` 无人消费**。独立缺陷、独立卡，问题记录与设计约束见 `docs/follow-up/sync-p2-improvements.md` L13；**正式方案待设计**，本卡仅为导入功能的硬前置占位（§5.1）| 1（估算待方案确定后校准）|
 | E1 | 后端 · 抽 import/export service（引入真正的 RFC 4180 CSV parser/stringifier）+ §9.3 Formula 防护编解码 + 9 列表头指纹判定 + CLI 改薄入口并保留（行为反转做成入参）+ 单测 | 3 |
-| E2 | 后端 · `0019` 迁移（`import_detect_sessions` + `data_jobs` + 三处 partial unique）+ repo + worker（advisory lock + SKIP LOCKED + run_token/lease）+ 阶段更新 + 僵死恢复 + 原子成功提交 + commit 前复核 + 缓存失效 + `purge-*` cron | 3.5 |
+| E2 | 后端 · `0019` 迁移（`import_detect_sessions` + `data_jobs` + 三处 partial unique）+ repo + worker（advisory lock + SKIP LOCKED + run_token/lease）+ 阶段更新 + 僵死恢复 + 原子成功提交 + commit 前复核 + `purge-*` cron | 3.5 |
 | E3 | 后端 · detect（流式解析 + 私有产物落盘 + sha256 幂等 + DB 硬约束校验）/commit（FOR UPDATE 原子消费）API、export **流式**生成、`/download` 应用流式 + `/report` 鉴权、nginx `client_max_body_size`、detect 频控（Redis 计数器）、审计日志 | 3.5 |
 | E4 | 小程序 · 设置入口、数据管理页、导入/导出表单 | 2.5 |
 | E5 | 小程序 · 检测报告页（汇总+预览+完整报告下载）、任务中心、阶段型模拟进度（`server_now` 基准）、轮询恢复、完成卡、shareFileMessage、成功后 `triggerOnMutation()` | 2.5 |
 | E6 | QA · iOS / Android / PC 微信、后台切换、断网、并发、过期、重试幂等、CSV 注入、自产自入闭环、权限矩阵、**大批量导入后的 sync 收敛验证** | 3 |
 | **合计** | | **19 人天** |
 
-> 相比 v0.5 的 16.5 人天：新增 E0（1）、E2 +0.5（复核 + 缓存失效 + 多一处唯一索引）、E3 +0.5（导出流式 + DB 约束校验 + 审计）、E6 +0.5（sync 收敛验证）。**同时省掉了**"抬高 multipart 全局上限""detect 改 202 轮询""客户端本地库改造"三项 —— 这是把规模上限降到 1MB/5,000 行换来的。
+> 相比 v0.5 的 16.5 人天：新增 E0（1）、E2 +0.5（复核 + 多一处唯一索引）、E3 +0.5（导出流式 + DB 约束校验 + 审计）、E6 +0.5（sync 收敛验证）。**同时省掉了**"抬高 multipart 全局上限""detect 改 202 轮询""客户端本地库改造"三项 —— 这是把规模上限降到 1MB/5,000 行换来的。
 
 ---
 
@@ -1727,7 +1712,7 @@ v0.6 决策：**不新建审计表，走结构化 pino 日志**。
 |---|---|---|---|---|
 | 1 | **规模上限只按单侧推导** | `5MB / 20,000 行`（仅考虑 PG 事务时长）| 降为 **`1MB / 5,000 行`**，按 nginx 默认体 / multipart 全局配置 / proxy 超时 / 客户端本地库 / sync 吞吐**五重交集**取值 | §0 §9.1 |
 | 2 | **导入后客户端何时看到数据未定义** | 只说"再次进入页面即可看到统计" | 明确**不做导入专用旁路**，依赖既有 sync；但必须先修 `has_more` 无人消费这一既有缺陷（新增 E0 前置卡）| §0 §5 §5.1 §12 |
-| 3 | **导入绕过 entryService 导致漏缓存失效** | 未提及 | 导入事务 COMMIT 后必须 `invalidateLedgerCache(ledgerId)` | §0 §7.5 R21 |
+| 3 | **导入绕过 entryService 导致漏缓存失效** | 未提及 | v0.6 曾要求导入 COMMIT 后自行 `invalidateLedgerCache`；**2026-08-28 服务端业务缓存整体移除后本条自动失效**（§7.5 R21），仅在未来重新引入读缓存时重开 | §0 §7.5 R21 |
 | 4 | **R12「靠 FK 兜底」不成立** | "遇 FK 失效则整批回滚" | 软删模型下 FK 不会失效（成员退出只写 `left_at`、分类软删）→ commit 事务内**显式复核** active 成员 + 分类未软删 + type 匹配 | §7.5 R12 |
 | 5 | **detect 未覆盖 DB 硬约束** | 未定义 | 新增 §3.11：detect 校验集必须是 `entries` 全部 CHECK/引用约束的超集；`note` 超 200 截断 + WARNING | §3.11 R20 |
 | 6 | **§7.3 DDL 不可执行** | `data_jobs` 引用了 76 行后才创建的表，且 `detect_id` 漏 UNIQUE | 调整建表顺序（sessions 先）+ 去掉 sessions→jobs 的反向 FK + 补 `detect_id UNIQUE` | §7.3 |
