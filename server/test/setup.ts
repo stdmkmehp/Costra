@@ -443,9 +443,9 @@ beforeAll(() => {
   setupRedisMock();
 });
 
-beforeEach(() => {
+beforeEach(async () => {
   resetPgMem();
-  void resetRedisMock();
+  await resetRedisMock();
   setupDefaultWxFetch();
 });
 
