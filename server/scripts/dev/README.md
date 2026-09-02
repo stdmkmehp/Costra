@@ -43,8 +43,10 @@ USER_ID=$USER_ID npm run db:seed:curl-test
 ```
 
 > ⚠️ `WX_MOCK_LOGIN` 已随 mock login 功能整体移除（2026-08-20）：`curl /auth/wx-login`
-> 不再接受任意 code，必须真实 wx.login 换取。免扫码的指定账号登录将按新方案
-> （debug impersonate）另行实装，届时本工作流同步刷新。
+> 不再接受任意 code，必须真实 wx.login 换取。免扫码的指定账号登录已由 GM impersonate
+> 实装（`docs/ops/gm-impersonate-design.md`）：运维 SQL 授权 `users.is_gm` 后（授权/回收 SQL 见
+> `docs/ops/gm-access.md`），小程序内「设置 → GM 工具 · 切换登录身份」即可登录任意账号
+> 或新建伪造账号（`gm_fake_` 前缀 · 与真实账号物理隔离）。
 
 ## 安全保护
 
