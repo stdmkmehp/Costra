@@ -1,6 +1,6 @@
 # sync/pull 分页收敛改造方案（L13）
 
-> 状态：**v0.8 · 已施工**
+> 状态：**v0.9 · 已施工**（v0.9 仅状态注记：`server/scripts/import-entries.mts` 已于 2026-09-02 删除，R9 / 决策 27 以"移除"方式关闭；此后代码库无任何批量写入路径，`sync_epoch` 在导入功能上线前恒 0）
 > 日期：2026-08-28（v0.1）→ 2026-08-31（v0.2）→ 2026-08-31（v0.3：E1 epoch 替换 S1/S2）→ 2026-08-31（v0.4：代码核查轮合入——**C2 升级为废除 `entry:__index`**（容量专题 P2 提前合并，O(n²) 结构性消除）；R5 补 `rebuildEntryMonthIndex` 入队与实现纪律；`applyServerChanges` 删除；批量判定收紧为严格 `serverVer > localVer`；epoch 比对补 key 集合语义；§5 函数名修正）→ 2026-09-01（**v0.5：二轮代码复核，修 3 个正确性缺口 + 3 个成本/灰度问题**——① 决策 14 立论被推翻，判定改 `>` + pending 闸门（§4.4 ③）；② epoch 写序不变量：先清 watermark 后写 epoch（§4.2）；③ 批末月索引任务补 null 裸重建分支（§4.5）；④ `has_more` 轮跳过 `categories_revision` 计算（§4.3）；⑤ epoch 归一化 `?? 0` 防服务端上线风暴（§4.2）；⑥ rebuild 键枚举显式排除 `entry:__index`（§4.4 ①）；另修 §5 清单 7 处与 §6 口径 5）→ 2026-09-01（**v0.6：三轮代码复核合入**——① epoch 清零改 strict 写并读回确认，消除 `setItem` 吞失败造成的「epoch 新 + watermark 旧」残留（§3.7/§4.2）；② 相等档补内容等价比较，统一“canonical 字段自愈”与“老行 skipped”口径（§3.8/§4.4 ③）；③ 现存 `import-entries.mts` 直写 entries 纳入批量写入审计/改造范围（§3.9/§5）；④ 补 `pull-continue` timer 清理与 watermark 无进展保护）→ 2026-09-02（**v0.7：施工轮代码复核合入**——① 纪律 5 同类故障的第三个入口收口：mutation/hydrate 的月索引 upsert 读到 null 跳过写入、保持 key 缺失（§4.5 纪律 6）；② epoch 重置轮计入 pages 预算 + 截断 + 轮间让出，防持续批量写入期间紧密循环（§4.3）；③ 批末 null 分支复用"只计算"helper，消同 key 冗余双写（§4.5）；④ `pendingRefs` 明确为调用方注入（循环依赖约束）+ 缺省 warn 兜底（§4.4 ③））→ 2026-09-02（**v0.8：第四轮（施工后）代码复核合入，修 1 个性能反例 + 3 个一致性缺口 + 1 项显式取舍**——① **批末 null 重建改 per-batch 共享懒扫描**，消除"每月各扫一次"造成的 O(月数×实体数)（§3.10 / §4.4 ④）；② remove-only delta 遇 key 缺失直接跳过，不写空索引也不付扫描（§4.4 ④）；③ **`changes.ledgers` 为空时不比对不写 epoch**——"本轮没下发" ≠ "账本消失"（§3.11 / §4.2）；④ **资产写前移到 epoch 判定之前**，兑现"含 epoch 轮"的资产不断供口径（§4.3）；⑤ watermark 合法性校验前移至 epoch 环节之前；⑥ dead-letter **有意不计入** pending 闸门 + 配套 follow-up L14（§3.12 / 决策 29）；另：`flushIndexQueue` 超限抛错、纪律 6 的读路径代价入账（§4.5）、冒烟用例落地 `qa/cases/sync-pagination-smoke.md`）
 > 上游：`docs/follow-up/sync-p2-improvements.md` **L13**、`docs/design/data-import-export-client-analysis.md` §5.1（E0 硬前置卡）
 > 事实源：`docs/api/sync-protocol.md` §3.2 / §3.3 / §6.3 / §8
@@ -21,7 +21,7 @@
 | C8 | **`categories_revision` 是每轮 pull 的固定服务端成本**（全表扫系统分类 + JS 排序 + 拼串），分页循环会把它 ×10~40 | `syncPullService.ts:98-138,165` |
 | C9 | **epoch 重置的两次本地写不是原子操作，且 `setItem` 会吞写失败**；只做顺序约束仍会留下「epoch 新 + watermark 旧高值」的真丢数据状态，清零必须 strict 写/读回确认 | `storage.ts:144-157`、`db.ts:422-427`、§3.7 |
 | C10 | 「相等且无 pending → 应用」与「全量重拉老行 skipped」在 v0.5 文案中冲突；相等档需再做**内容等价比较**，只在 canonical 字段漂移时写入 | §3.6、§3.8、§4.4 ③ |
-| C11 | 代码库已存在绕 `entryService` 的 `server/scripts/import-entries.mts` 单事务直写 entries；若保留可用，必须纳入 `sync_epoch`、资产余额与 `client_ref_id` 审计，否则应标记废弃 | `server/scripts/import-entries.mts:589-643`、§3.9 |
+| C11 | ~~代码库已存在绕 `entryService` 的 `server/scripts/import-entries.mts` 单事务直写 entries~~ **该脚本已于 2026-09-02 删除**（v0.9 注记）；删除前已实装同事务 `sync_epoch + 1` | §3.9 |
 
 定稿方案 = **E1（epoch 版本戳）+ C1（分页循环）+ C2（批量落盘 · 废除 `entry:__index`）+ R5（月索引写串行队列）**。
 核心取舍：对 R1 不做"预防"（锁/协议字段/退避），改做"**必然发现 + 幂等重拉**"，失败模式集合里不存在"丢数据"这一项；对 R2 不做"摊销"（批末一次写全局索引），改做"**废除无消费者的单 key 数组**"，O(n²) 结构性消失。
@@ -152,6 +152,8 @@ v0.5 的相等档语义要求「无 pending 时应用，以拉回 canonical `cat
 内容等价比较只看会改变本地实体语义/展示/筛选的字段（`id`、`ledger_id`、`amount`、`currency`、`type`、`category_id`、`note`、`occurred_at`、`created_by`、`shared_type`、`source_recurring_id`、`deleted_at`，`null/undefined` 归一化）；排除 `created_at` / `updated_at` 这类展示级或易抖动字段，否则全量重拉会退化为全量覆写。
 
 ### 3.9 R9（上线边界 · v0.6 新增）：现存 CLI 导入脚本已是绕过 `entryService` 的批量写路径
+
+> **v0.9 注记 · 已关闭**：`server/scripts/import-entries.mts` 已于 2026-09-02 删除（连同 `export-entries.mts`），本风险以"移除"方式关闭。删除前该脚本已按本节要求实装同事务 `sync_epoch + 1` 并带头注释。此后代码库无任何批量写入路径，`sync_epoch` 在导入功能上线前恒 0。以下为原始分析留档。
 
 `server/scripts/import-entries.mts:589-643` 在单事务中直接 `INSERT` / `UPDATE entries`，并显式 `nextval('entries_change_seq')`。虽然它不是生产 HTTP 产品入口，但只要仍可用于 staging/prod 运维导入，就属于 E1 约定的批量写入路径：
 
@@ -520,7 +522,7 @@ function enqueueIndexWrite<T>(key: string, task: () => Promise<T>): Promise<T>;
 | `server/api/openapi.yaml` | `Ledger` schema 新增 `sync_epoch`（optional integer）；`SyncPullResponse.categories_revision` 标注"`has_more=true` 时可能缺省" |
 | `docs/api/sync-protocol.md` | §3.2/§3.3 补 `sync_epoch` 语义与客户端重置义务（含 key 集合语义 + `?? 0` 归一化）；补 `categories_revision` 仅收敛轮返回；§3.4 注明 MVP 下实体顺序约束无适用对象 |
 | `docs/design/data-import-export-client-analysis.md` | §7.5 加**批量写入第二条铁律**：任何绕过 `entryService` 的批量写入路径，同事务 `UPDATE ledgers SET sync_epoch = sync_epoch + 1`；并写明"导入上线前置 = 客户端 epoch 消费版本已达目标覆盖率"（§8 决策 16） |
-| `server/scripts/import-entries.mts` | 二选一：① 保留可用 → 入库事务按受影响 ledger 同事务 `sync_epoch + 1`，并补齐/审计 `ledgers.balance_cents` 与 `client_ref_id`；② 不再使用 → 显式标记废弃或移除，避免成为绕过 E1 的运维入口（§3.9） |
+| ~~`server/scripts/import-entries.mts`~~ | **已按②执行（2026-09-02 删除）**：原选项为 ① 保留可用 → 入库事务同事务 `sync_epoch + 1` 并补齐/审计 `ledgers.balance_cents` 与 `client_ref_id`；② 不再使用 → 显式移除，避免成为绕过 E1 的运维入口（§3.9） |
 
 ### 小程序
 
@@ -613,11 +615,11 @@ function enqueueIndexWrite<T>(key: string, task: () => Promise<T>): Promise<T>;
 20. **`has_more=true` 的轮次跳过 `computeSystemCategoriesRevision()`**：分页循环把这项既有 per-request 成本 ×10~40。`changes.ledgers` 保持每轮下发（单行查询 + 供 epoch 与资产不断供）。原 §6 口径 5"服务端每轮无额外查询"只算了 epoch，漏算循环乘数，已修正。
 21. **rebuild 键枚举显式排除 `entry:__index`**：原过滤规则（`entry:` 前缀 + 余段无 `:`）排不掉它（`__index` 不含 `:`），不能把正确性押在"升级清理必然已执行"上。同时明确键枚举会多读软删实体（量级 = R3 孤儿 key）。
 22. **`localReset` 只登记 R5 队列的内存状态**：epoch 存 storage，logout 走 `clearAllForReset` 全量清空，无需逐 key 登记（原清单会写出多余代码）。
-23. **E1 的上线依赖需写进导入方案**：当前代码库尚无生产产品级批量写入入口，但已存在可直连 DB 的 `server/scripts/import-entries.mts`（见 27）⇒ 本次落地后若无人使用该脚本，`sync_epoch` 恒为 0、客户端 epoch 逻辑零生产覆盖。预埋是必要且正确的（客户端消费能力必须先于服务端行为），但**导入功能上线的前置条件 = 客户端 epoch 消费版本已达目标覆盖率**，否则导入上线时旧版本客户端仍会踩 R1 洞。
+23. **E1 的上线依赖需写进导入方案**：当前代码库无任何批量写入路径（`import-entries.mts` 已于 2026-09-02 删除，见 27）⇒ 本次落地后 `sync_epoch` 恒为 0、客户端 epoch 逻辑零生产覆盖。预埋是必要且正确的（客户端消费能力必须先于服务端行为），但**导入功能上线的前置条件 = 客户端 epoch 消费版本已达目标覆盖率**，否则导入上线时旧版本客户端仍会踩 R1 洞。
 24. **`setWatermarkStrict` 只在 epoch reset 使用**：strict 写 = 写失败抛错 + 读回确认；其负面影响是低频路径多一次 storage IO、失败时本轮中止/下轮重试/偶发重复全量重拉。该代价用来消除"永久漏拉"，收益大于成本；不扩散到普通分页推进。
 25. **`sameEntryContent` 是 C2 性能口径成立的前提**：相等且无 pending 时不能一律应用；必须比较业务字段并排除 `created_at` / `updated_at`，只在内容漂移时写入，才能同时满足 canonical 自愈与老行 skipped。
 26. **分页循环必须有 watermark 进度保护**：`watermark < since` 或 `has_more=true` 且 `watermark === since` 都中止本轮；`pull-continue` timer 纳入 `stopScheduler()` / `__test__.reset()` 清理，防 logout/测试残留。
-27. **`server/scripts/import-entries.mts` 不得成为 E1 旁路**：保留则改造为批量写入约定路径（同事务 `sync_epoch + 1`，并审计资产余额与 `client_ref_id`）；不使用则显式废弃/移除。
+27. ~~**`server/scripts/import-entries.mts` 不得成为 E1 旁路**~~ **已关闭（2026-09-02）**：脚本已删除（连同 `export-entries.mts`）；删除前已实装同事务 `sync_epoch + 1` 并审计过资产余额与 `client_ref_id`。
 28. **纪律 5 扩展至 mutation/hydrate 入口 + epoch 重置轮计入 pages 预算**（v0.7 施工轮复核）：`reindexEntry` upsert 读到 null 跳过写入、保持 key 缺失（对称 remove 分支，读路径 rebuild 兜底；不在写路径做 O(n) 重建）；epoch diff 轮 `pages++` 并受 `MAX_PULL_PAGES` 截断 + 轮间让出（防持续批量写入期间紧密循环）；`pendingRefs` 采用调用方注入（db→outbox 循环依赖约束）+ 缺省 warn 兜底；推导重建 helper 拆"计算/写回"两层，批末 null 分支用只计算层消同 key 双写。
    - **v0.8 补记取舍**：纪律 6 同时覆盖了"真正的新月份"（该月本无任何本地实体，写单条本就正确），代价是每个新月的首笔记账不建索引 ⇒ 明细页首次读该月付一次 O(全部本地实体) 键枚举。**这是把成本从写路径转移到读路径首屏，不是纯收益**，需按 §4.5 纪律 6 的打点建议观测 `rebuilt-month-index` 命中率。
 

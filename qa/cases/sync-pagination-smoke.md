@@ -63,22 +63,54 @@
 
 ---
 
-## SP-003 导入触发 epoch 变化 → 全量重拉（R1 洞验收）
+## SP-003 批量写入触发 epoch 变化 → 全量重拉（R1 洞验收）
 
 - **Category**：并发 / 集成层契约对齐
 - **Severity**：P0
 - **前置条件**：
   - 客户端已收敛（`sync:epoch:{familyId}` 已有记录，值记为 `E0`）；
-  - 服务端可执行 `server/scripts/import-entries.mts`（staging），导入 **≥ 500 行**，且导入目标账本即当前账本；
+  - 可对 staging 库执行 SQL（`infra/scripts/psql-exec.sh`，或等价 `docker exec ... psql`）；
   - 当前月**本地已有手工流水**（确保 `_hydrateRemoteMonthEntries` 不会兜底，暴露真实链路）。
 - **步骤**：
   1. 客户端保持前台，持续触发 pull（可反复切 tab）；
-  2. 服务端执行导入（不加 `--dry-run`）；
+  2. 服务端执行下方 SQL 文件（模拟导入功能的批量写入事务：≥ 500 行 + 余额 + `sync_epoch + 1` 原子提交；占位符替换为当前账本/用户/任一有效 expense 分类）：
+
+     ```sql
+     BEGIN;
+     INSERT INTO entries (
+       id, ledger_id, type, amount, currency, category_id, note,
+       occurred_at, created_by, shared_type, source, client_ref_id, change_seq
+     )
+     SELECT
+       gen_random_uuid(),
+       '<ledger_id>'::uuid,
+       'expense',
+       100,
+       'CNY',
+       '<category_id>'::uuid,
+       'qa-bulk',
+       now() - ((g % 20) || ' days')::interval - ((g % 60) || ' minutes')::interval,
+       '<user_id>'::uuid,
+       'personal',
+       'manual',
+       'qa-bulk:' || g,
+       nextval('entries_change_seq')
+     FROM generate_series(1, 600) AS g;
+
+     UPDATE ledgers
+        SET balance_cents = balance_cents - 600 * 100,
+            balance_version = balance_version + 1,
+            sync_epoch = sync_epoch + 1
+      WHERE id = '<ledger_id>'::uuid;
+     COMMIT;
+     ```
+
+     > 说明：`import-entries.mts` CLI 已删除（2026-09-02），本 SQL 事务即未来导入功能的服务端写入形态（`docs/design/data-import-export-client-analysis.md` §7.5：entries + 余额 + `sync_epoch + 1` 同事务）。若 `now() - N days` 跨出当前月，调小 `g % 20` 使行落在当前月。
   3. 观察客户端 Console 与明细页。
 - **预期**：
   - 出现 `[sync:pull] epoch diff detected · watermark cleared → full re-pull`；
   - 日志顺序为 **先 strict 清零、后写 epoch**（`sync:epoch` 的新值只在清零成功后落盘）；
-  - 导入的 **全部行可达**，出现在对应月份，月度合计正确；
+  - 批量写入的 **全部行可达**，出现在对应月份，月度合计正确（含余额 `-600` 元）；
   - 重拉过程中明细页**无逐轮跳动**（仅收敛后刷新一次）；
   - 重拉完成后 `sync:epoch:{familyId}` 的值 = `E0 + 1`。
 - **实际**：
@@ -91,7 +123,7 @@
 
 - **Category**：并发
 - **Severity**：P0
-- **前置条件**：同 SP-003（借用导入触发的全量重拉窗口），或用 SP-001 的首登多轮窗口。
+- **前置条件**：同 SP-003（借用批量写入触发的全量重拉窗口），或用 SP-001 的首登多轮窗口。
 - **步骤**：
   1. 在客户端进入多轮拉取窗口（Console 已出现 `page=1` 及以后）；
   2. 窗口内立即**手动记一笔**当月流水，再**改一笔**、**删一笔**已有流水；
