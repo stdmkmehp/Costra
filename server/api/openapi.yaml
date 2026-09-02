@@ -2165,6 +2165,15 @@ components:
         balance_version:
           type: integer
           description: 资产独立乐观锁版本（独立于 ledgers.version，避免与账本名修改互相 conflict）
+        # L13 E1 · 批量写入版本戳（migration 0019）
+        sync_epoch:
+          type: integer
+          format: int64
+          description: |
+            批量写入版本戳（L13 E1）。仅在绕过 entryService 的批量写入路径（导入 / 运维脚本 /
+            数据修复）中同事务 +1。客户端本地按 family 记录 { [ledgerId]: sync_epoch }，比对不一致
+            = "上次同步后发生过批量写入" → watermark 清零 → 全量重拉，规避 change_seq"已取号未提交"洞。
+            optional：灰度期旧服务端不返回；客户端缺失归一化为 0，与本列 DEFAULT 0 对齐。
 
     # ---- accounts ----
     # COSTRA-020 Round-2 P0-1：对齐 DB schema §3.4 accounts 表
@@ -2478,7 +2487,7 @@ components:
 
     SyncPullResponse:
       type: object
-      required: [watermark, has_more, categories_revision, changes]
+      required: [watermark, has_more, changes]
       properties:
         watermark:
           type: integer
@@ -2493,6 +2502,8 @@ components:
           description: |
             系统分类签名（migration 0004 配套 · spec §4）。
             客户端比对此值与本地缓存签名，不一致则绕过 24h TTL 强刷分类列表。
+            L13 §4.3：仅在收敛轮（has_more=false）返回；has_more=true 的分页轮**可能缺省**，
+            避免全表扫系统分类的 per-request 固定成本被分页循环 ×10~40。因此 optional。
             签名规范：仅纳入 family_id IS NULL 且 deleted_at IS NULL 的行，
             按 sortOrder ASC + id localeCompare 排序，单条字段顺序
             id|parentId|name|icon|type|sortOrder|isDirectDefault(1/0)|isParentDefault(1/0)|displayOrder
