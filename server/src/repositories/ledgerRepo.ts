@@ -39,6 +39,8 @@ export interface LedgerEntity {
   balanceCents: number;
   balanceBaselineSeq: number;
   balanceVersion: number;
+  // ─── 批量写入版本戳（L13 E1 · migration 0019）────────────────────────
+  syncEpoch: number;
 }
 
 interface LedgerRow {
@@ -54,6 +56,8 @@ interface LedgerRow {
   balance_cents: string | number;
   balance_baseline_seq: string | number;
   balance_version: number;
+  // BIGINT · 真 PG 返 string · pg-mem 返 number
+  sync_epoch: string | number;
 }
 
 function rowToEntity(r: LedgerRow): LedgerEntity {
@@ -69,12 +73,13 @@ function rowToEntity(r: LedgerRow): LedgerEntity {
     balanceCents: Number(r.balance_cents),
     balanceBaselineSeq: Number(r.balance_baseline_seq),
     balanceVersion: r.balance_version,
+    syncEpoch: Number(r.sync_epoch),
   };
 }
 
 const SELECT_COLUMNS = `
   id, family_id, name, currency, created_at, updated_at, deleted_at, version,
-  balance_cents, balance_baseline_seq, balance_version
+  balance_cents, balance_baseline_seq, balance_version, sync_epoch
 `;
 
 /**

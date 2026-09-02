@@ -3,6 +3,24 @@
  *
  * 设计文档：docs/design/data-export-format.md
  *
+ * ⚠️ L13 E1 批量写入铁律（docs/design/sync-pull-pagination-design.md §4.2 / §3.9）：
+ *   本脚本直写 entries（绕过 entryService），会命中 change_seq"已取号未提交"洞（§3.1）——
+ *   同 family 并发单笔写入可能先提交并把客户端 watermark 推过本导入事务的号段区间，
+ *   导致导入数据被客户端永久拉不到。规避方式：本脚本在**同一事务**内，对所有受影响账本执行
+ *     UPDATE ledgers SET sync_epoch = sync_epoch + 1;
+ *   客户端下一轮 /sync/pull 比对 epoch 不一致 → 清零 watermark 全量重拉（幂等对账）。
+ *
+ *   其余审计事项（保留脚本可用性的前提）：
+ *     - client_ref_id：小程序本地 entry 以 client_ref_id 为主键；导入行写入该列（用 entryId 派生），
+ *       客户端全量重拉时能与本地对齐、避免"同一笔被视作两条"。
+ *       ⚠️ 边界：服务端唯一约束是 uq_entries_ledger_client_ref(ledger_id, client_ref_id)，
+ *       而客户端本地 key 是 `entry:{client_ref_id}`（**不含 ledger_id**）。因此把**同一份 CSV
+ *       导入两个不同账本**在服务端合法（两行），在客户端会写到同一个 key → 后写覆盖前写。
+ *       1:1 家庭语义下不会发生；若将来支持多账本导入，必须改为按 (ledger, entry) 派生
+ *       client_ref_id，或让客户端本地 key 纳入 ledger_id。
+ *     - balance_cents：本脚本不走 entryService 的资产累加，导入后账本资产净值不会自动叠加。
+ *       如需资产反映导入流水，须在导入后由运维单独重锚（rebaseBalance / migrate-ledger-asset.sh）。
+ *
  * 用法：
  *   cd server && npx tsx scripts/import-entries.mts \
  *     --file ./imports/data.csv \
@@ -588,6 +606,8 @@ async function run(args: Args, pool: Pool) {
 
   if (!args.dryRun && finalRows.length > 0) {
     const client: PoolClient = await pool.connect();
+    // L13 E1：收集实际发生写入的账本，事务末尾统一 sync_epoch + 1。
+    const affectedLedgerIds = new Set<string>();
     try {
       await client.query('BEGIN');
 
@@ -613,31 +633,47 @@ async function run(args: Args, pool: Pool) {
             [row.entryId, row.amount, row.currency, row.type, row.categoryId, row.note || null, occurredAt, row.sharedType],
           );
           updated++;
+          affectedLedgerIds.add(row.ledgerId);
         } else {
+          // L13 E1：client_ref_id 写入（用 entryId），供客户端全量重拉时与本地主键对齐。
           const res = await client.query(
             `INSERT INTO entries (id, ledger_id, amount, currency, type, category_id,
-                                  account_id, to_account_id, note, occurred_at, created_by, shared_type)
-             VALUES ($1, $2, $3, $4, $5, $6, NULL, NULL, $7, $8, $9, $10)
+                                  account_id, to_account_id, note, occurred_at, created_by, shared_type,
+                                  client_ref_id)
+             VALUES ($1, $2, $3, $4, $5, $6, NULL, NULL, $7, $8, $9, $10, $1)
              ON CONFLICT (id) DO NOTHING
              RETURNING id`,
             [row.entryId, row.ledgerId, row.amount, row.currency, row.type, row.categoryId, row.note || null, occurredAt, row.userId, row.sharedType],
           );
           if (res.rows.length > 0) {
             inserted++;
+            affectedLedgerIds.add(row.ledgerId);
           } else {
             // UUID 碰撞兜底：重新生成
             const ts = new Date(occurredAt).getTime();
             const newId = generateUuidV7(ts);
             await client.query(
               `INSERT INTO entries (id, ledger_id, amount, currency, type, category_id,
-                                    account_id, to_account_id, note, occurred_at, created_by, shared_type)
-               VALUES ($1, $2, $3, $4, $5, $6, NULL, NULL, $7, $8, $9, $10)`,
+                                    account_id, to_account_id, note, occurred_at, created_by, shared_type,
+                                    client_ref_id)
+               VALUES ($1, $2, $3, $4, $5, $6, NULL, NULL, $7, $8, $9, $10, $1)`,
               [newId, row.ledgerId, row.amount, row.currency, row.type, row.categoryId, row.note || null, occurredAt, row.userId, row.sharedType],
             );
             inserted++;
+            affectedLedgerIds.add(row.ledgerId);
             issues.push({ row: row.rowNum, severity: 'WARNING', message: `UUID碰撞已自动重新生成: ${row.entryId} → ${newId}` });
           }
         }
+      }
+
+      // ── L13 E1：同事务对受影响账本 sync_epoch + 1（§4.2）──────────────────
+      //   与批量 INSERT/UPDATE 同一事务、COMMIT 原子可见，不存在"数据到了标记没到"窗口。
+      //   客户端下一轮 /sync/pull 比对 epoch 不一致 → 清零 watermark 全量重拉。
+      if (affectedLedgerIds.size > 0) {
+        await client.query(
+          `UPDATE ledgers SET sync_epoch = sync_epoch + 1 WHERE id = ANY($1)`,
+          [[...affectedLedgerIds]],
+        );
       }
 
       await client.query('COMMIT');

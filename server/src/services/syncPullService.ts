@@ -48,6 +48,10 @@ export interface SyncPullResult {
   /**
    * 系统分类签名（migration 0004 配套 · spec §4）
    *
+   * L13（§4.3）：仅在收敛轮（has_more=false）计算并返回。has_more=true 的分页轮跳过
+   *   computeSystemCategoriesRevision()（全表扫系统分类 + JS 排序 + 拼串），避免分页循环
+   *   把这项 per-request 固定成本 ×10~40。因此类型为 optional。
+   *
    * 签名规范（与 miniprogram/services/categoryService.ts computeCategoriesSignature
    * 双端必须逐字符一致）：
    *   - 仅纳入 family_id IS NULL（系统分类）且 deleted_at IS NULL 的行
@@ -60,7 +64,7 @@ export interface SyncPullResult {
    * 客户端比对此值与本地缓存签名，不一致则绕过 24h TTL 强刷分类列表，
    * 关闭"分类改动 24h 内客户端不可见"的窗口。
    */
-  categories_revision: string;
+  categories_revision?: string;
   changes: {
     entries: ReturnType<typeof entryToWire>[];
     /**
@@ -162,11 +166,14 @@ export async function syncPull(input: SyncPullInput): Promise<SyncPullResult> {
     : input.since;
 
   // 4. 计算系统分类签名（spec §4）
-  const categoriesRevision = await computeSystemCategoriesRevision();
+  //    L13 §4.3：仅收敛轮（has_more=false）计算；分页轮跳过，避免全表扫系统分类的
+  //    per-request 固定成本被分页循环 ×10~40。字段 optional，向后兼容。
+  const categoriesRevision = hasMore ? undefined : await computeSystemCategoriesRevision();
 
-  // 5. COSTRA-4xx：下发该 family 下所有 active ledger 的最新状态（含 balance 字段）
-  //    1:1 语义下，一个 family 就一行 ledger，数据量可忽略，每次都全量下发
-  //    客户端据此更新本地缓存的 balance_cents / balance_baseline_seq / balance_version
+  // 5. COSTRA-4xx：下发该 family 下所有 active ledger 的最新状态（含 balance + sync_epoch）
+  //    1:1 语义下，一个 family 就一行 ledger，数据量可忽略，每次都全量下发（含分页轮）：
+  //    - 供客户端 E1 epoch 前置比对（L13 §4.2）
+  //    - 供资产不断供（每轮覆盖写 ledgerBalanceApi 缓存）
   const ledgers = await listLedgersForFamily(input.familyId);
 
   return {
@@ -200,6 +207,8 @@ interface LedgerWire {
   balance_cents: number;
   balance_baseline_seq: number;
   balance_version: number;
+  /** L13 E1：批量写入版本戳。客户端据此前置比对，不一致则全量重拉（§4.2） */
+  sync_epoch: number;
   updated_at: string;
   version: number;
 }
@@ -213,6 +222,7 @@ function ledgerToWire(l: import('../repositories/ledgerRepo.js').LedgerEntity): 
     balance_cents: l.balanceCents,
     balance_baseline_seq: l.balanceBaselineSeq,
     balance_version: l.balanceVersion,
+    sync_epoch: l.syncEpoch,
     updated_at: l.updatedAt.toISOString(),
     version: l.version,
   };

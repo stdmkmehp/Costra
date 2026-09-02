@@ -233,7 +233,7 @@ describe('GET /sync/pull', () => {
       headers: { authorization: `Bearer ${token}` },
     });
     expect(res.statusCode).toBe(200);
-    const body = res.json() as { watermark: number; has_more: boolean; changes: { entries: Array<{ amount: number; change_seq: number }> } };
+    const body = res.json() as { watermark: number; has_more: boolean; categories_revision?: string; changes: { entries: Array<{ amount: number; change_seq: number }>; ledgers: Array<{ id: string; sync_epoch?: number }> } };
     expect(body.changes.entries.length).toBe(3);
     expect(body.has_more).toBe(false);
     // v1.2：验证 change_seq ASC 顺序（严格单调 · 不会撞）
@@ -243,6 +243,11 @@ describe('GET /sync/pull', () => {
     }
     // watermark 等于末位 entry 的 change_seq
     expect(body.watermark).toBe(seqs[seqs.length - 1]);
+    // L13：收敛轮（has_more=false）返回 categories_revision
+    expect(typeof body.categories_revision).toBe('string');
+    // L13 E1：ledgers[] 含 sync_epoch（migration 0019）
+    expect(body.changes.ledgers.length).toBe(1);
+    expect(body.changes.ledgers[0].sync_epoch).toBe(0);
   });
 
   it('T9 limit=2 · 写 5 entry → has_more=true + entries.length=2', async () => {
@@ -256,9 +261,11 @@ describe('GET /sync/pull', () => {
       headers: { authorization: `Bearer ${token}` },
     });
     expect(res.statusCode).toBe(200);
-    const body = res.json() as { watermark: string; has_more: boolean; changes: { entries: unknown[] } };
+    const body = res.json() as { watermark: string; has_more: boolean; categories_revision?: string; changes: { entries: unknown[] } };
     expect(body.changes.entries.length).toBe(2);
     expect(body.has_more).toBe(true);
+    // L13 §4.3：has_more=true 的分页轮跳过 computeSystemCategoriesRevision → 字段缺省
+    expect(body.categories_revision).toBeUndefined();
   });
 
   it('T10 二次拉用上次 watermark → 跟进数据', async () => {
@@ -620,5 +627,34 @@ describe('GET /sync/pull', () => {
     expect(b2.changes.entries[0].deleted_at).not.toBeNull();
     expect(b2.changes.entries[0].change_seq).toBeGreaterThan(watermark1);
     expect(b2.watermark).toBeGreaterThan(watermark1);
+  });
+
+  // ─── L13 E1：ledgers[].sync_epoch 透传与批量写入检测（migration 0019）─────────
+
+  it('T21 ledgers[].sync_epoch 初始为 0 · 批量写入路径 +1 后透传新值', async () => {
+    const pool = (await import('../src/db/pool.js')).getPool();
+
+    // 初始：sync_epoch = 0（DEFAULT）
+    const r1 = await app.inject({
+      method: 'GET',
+      url: `/v1/sync/pull?family_id=${FAMILY_ID}&since=${EPOCH}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const b1 = r1.json() as { changes: { ledgers: Array<{ id: string; sync_epoch: number }> } };
+    expect(b1.changes.ledgers.length).toBe(1);
+    expect(b1.changes.ledgers[0].id).toBe(LEDGER_ID);
+    expect(b1.changes.ledgers[0].sync_epoch).toBe(0);
+
+    // 模拟批量写入路径：同事务 sync_epoch + 1（导入脚本约定 · §4.2）
+    await pool.query(`UPDATE ledgers SET sync_epoch = sync_epoch + 1 WHERE id = $1`, [LEDGER_ID]);
+
+    // 再拉：sync_epoch 透传新值 → 客户端据此触发全量重拉
+    const r2 = await app.inject({
+      method: 'GET',
+      url: `/v1/sync/pull?family_id=${FAMILY_ID}&since=${EPOCH}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const b2 = r2.json() as { changes: { ledgers: Array<{ sync_epoch: number }> } };
+    expect(b2.changes.ledgers[0].sync_epoch).toBe(1);
   });
 });
