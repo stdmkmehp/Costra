@@ -152,6 +152,39 @@ export async function hasPendingEntryOp(clientRefId: string): Promise<boolean> {
   return !!(await findInFlightOp(clientRefId));
 }
 
+/**
+ * 一次性读出所有存在 pending / in-flight（待 drain + 已 drain 未 ack）op 的 entry client_ref_id 集合。
+ *
+ * 供 sync pull 批量落盘（L13 §4.4 ③）的相等档判定使用：`serverVer === localVer` 时，
+ * 若本地该 ref 有未上行的编辑 / 软删则跳过覆盖（保护本地改动），否则按内容等价比较决定是否覆盖。
+ *
+ * ⚠️ 性能纪律（§4.4 实现纪律）：批开始**一次性**构建成 Set，禁止逐条调 `hasPendingEntryOp`——
+ *   后者内部是 O(index) 遍历，逐条调会把批量落盘退化成 O(n×pending) 次 storage 读。
+ *   本函数只遍历 index + drained 各一遍（O(pending)，pending 常态 <10）。
+ *
+ * ⚠️ **有意不含 `outbox:__dead_letter`**（L13 §4.4 ③ 决策 29 · 不是遗漏，勿"顺手对齐"）：
+ *   注意与 `pendingCount()` 口径不同——后者含 dead-letter，因为它服务的是 logout 前的
+ *   "有未上行数据"风险提示，宁可多报。而本函数服务的是"是否阻止服务端同 version 覆盖"，
+ *   两者结论必须分开取：
+ *     - dead-letter 是**终态**：无自动重试、无重投入口、只有 logout / storage 版本迁移会清。
+ *       算作 pending 就等于**永久**跳过相等档 → 该行与服务端长期分叉且无收敛机制，
+ *       §3.6 的 canonical 字段自愈（category_id 降级 / shared_type 填充）对它永久失效。
+ *     - 且这种"保护"是半截的：服务端那行 version 一旦 +1，`serverVer > localVer` 分支
+ *       照样覆盖 ⇒ 换来的只是把覆盖时刻推迟到不确定的将来，不是真的保住用户改动。
+ *   ⇒ 本模型以服务端为唯一真源：改动没送达 = 没发生，让 pull 覆盖并收敛。
+ *   用户改动被静默吞掉的根因是 **dead-letter 本身没有可见性与重投能力**，属独立课题
+ *   （见 docs/follow-up/sync-p2-improvements.md L14），不在此处打补丁掩盖。
+ */
+export async function listPendingEntryRefs(): Promise<Set<string>> {
+  const seqs = [...await readIndex(), ...await readDrained()];
+  const refs = new Set<string>();
+  for (const seq of seqs) {
+    const op = await getItem<SyncOp>(opKey(seq));
+    if (op && op.entity === 'entry') refs.add(op.client_ref_id);
+  }
+  return refs;
+}
+
 
 /**
  * 入队操作，支持 op 合并：

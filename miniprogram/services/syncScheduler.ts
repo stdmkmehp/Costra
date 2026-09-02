@@ -17,7 +17,7 @@ import { logger } from '../utils/logger';
 
 // ─── 类型 ─────────────────────────────────────────────────────────────────────
 
-export type TriggerSource = 'launch' | 'network-recover' | 'page-show' | 'periodic' | 'mutation' | 'hide' | 'conflict-retry' | 'ledger-switch';
+export type TriggerSource = 'launch' | 'network-recover' | 'page-show' | 'periodic' | 'mutation' | 'hide' | 'conflict-retry' | 'ledger-switch' | 'pull-continue';
 
 export interface SyncResult {
   pushed: number;
@@ -35,6 +35,8 @@ const SHOW_DEBOUNCE_MS = 5000;
 const PERIODIC_INTERVAL_MS = 60_000;
 const CONFLICT_RETRY_DELAY_MS = 1000;
 const MAX_CONFLICT_RETRIES = 3;
+/** L13 §4.3：分页循环截断（MAX_PULL_PAGES）后续拉延迟 */
+const PULL_CONTINUE_DELAY_MS = 300;
 
 // ─── module-level state ──────────────────────────────────────────────────────
 
@@ -43,6 +45,8 @@ let pendingRetrigger = false; // L6 修复：mutex skip 时标记，释放后重
 let lastShowTriggerAt = 0;
 let periodicTimer: ReturnType<typeof setInterval> | null = null;
 let conflictRetryTimer: ReturnType<typeof setTimeout> | null = null;
+/** L13：分页截断续拉 timer（纳入 stopScheduler / __test__.reset 清理） */
+let pullContinueTimer: ReturnType<typeof setTimeout> | null = null;
 let conflictRetryCount = 0;
 /** 常驻监听（网络恢复 / outbox 入队）只注册一次，与 timer 生命周期解耦 */
 let listenersRegistered = false;
@@ -84,22 +88,38 @@ export async function syncOnce(trigger: TriggerSource): Promise<SyncResult | nul
 
     // push 先于 pull（push 可能创建 entry，pull 可以拉回 server_id/version）
     const pushResult = await pushDelta();
-    const pullResult = await syncPull(familyId, { limit: 200 });
+    const pullResult = await syncPull(familyId);
 
-    const pulled = pullResult.changes?.entries?.length || 0;
+    // L13：pulled = C2 applied 汇总（非拉回条数），epoch 全量重拉时语义不失真
+    const pulled = pullResult.pulled;
     const elapsed = Date.now() - t0;
     markPerf(`sync.${trigger}.done`, {
       elapsed,
       pushed: pushResult.pushed,
       pulled,
+      pages: pullResult.pages,
+      pullHasMore: pullResult.hasMore,
+      epochReset: pullResult.epochReset,
       conflicts: pushResult.conflicts,
       rejected: pushResult.rejected,
       failed: pushResult.failed,
     });
     logger.debug(
       'sync',
-      `✓ ok · pushed=${pushResult.pushed} conflicts=${pushResult.conflicts} rejected=${pushResult.rejected} failed=${pushResult.failed} pulled=${pulled} watermark=${pullResult.watermark} (trigger=${trigger}) [${elapsed}ms]`
+      `✓ ok · pushed=${pushResult.pushed} conflicts=${pushResult.conflicts} rejected=${pushResult.rejected} failed=${pushResult.failed} pulled=${pulled} pages=${pullResult.pages} watermark=${pullResult.watermark} (trigger=${trigger}) [${elapsed}ms]`
     );
+
+    // L13 §4.3：分页循环截断（达到 MAX_PULL_PAGES 仍有剩余）→ 300ms 后续拉。
+    //   续拉走 syncOnce mutex，与 conflict-retry 独立；timer 保存在模块级变量，
+    //   纳入 stopScheduler() / __test__.reset() 清理，避免 logout 后或测试间残留触发。
+    if (pullResult.hasMore) {
+      logger.debug('sync', 'pull truncated · scheduling pull-continue');
+      if (pullContinueTimer) clearTimeout(pullContinueTimer);
+      pullContinueTimer = setTimeout(() => {
+        pullContinueTimer = null;
+        void syncOnce('pull-continue');
+      }, PULL_CONTINUE_DELAY_MS);
+    }
 
     // L7: dead-letter 告警（有条目无法同步时醒目提示）
     const dlSize = await deadLetterSize();
@@ -242,6 +262,10 @@ export function stopScheduler(): void {
     clearTimeout(conflictRetryTimer);
     conflictRetryTimer = null;
   }
+  if (pullContinueTimer) {
+    clearTimeout(pullContinueTimer);
+    pullContinueTimer = null;
+  }
 }
 
 // ─── page-show debounce ──────────────────────────────────────────────────────
@@ -284,6 +308,10 @@ export const __test__ = {
     if (conflictRetryTimer) {
       clearTimeout(conflictRetryTimer);
       conflictRetryTimer = null;
+    }
+    if (pullContinueTimer) {
+      clearTimeout(pullContinueTimer);
+      pullContinueTimer = null;
     }
   },
   getIsRunning(): boolean {

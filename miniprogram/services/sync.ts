@@ -5,31 +5,48 @@
 //   - Bug F: wireOps 只发协议字段（不含 retries 等内部字段）
 // migration 0004: 消费 sync pull 的 categories_revision 字段，触发分类强刷
 //
+// L13（sync/pull 分页收敛 · docs/design/sync-pull-pagination-design.md）：
+//   - syncPull 由"单轮"改为"分页循环"（C1 · limit 500 · 截断续拉 · epoch 前置比对）
+//   - E1 epoch：批量写入检测 + 全量重拉（§4.2）
+//   - 批量落盘走 applyServerEntriesBatch（C2 · 废除 entry:__index）
+//   - maybeRefreshCategoriesByRevision 仅收敛轮消费（§4.3）
+//
 // logout 竞态：跨越 logout 边界的 in-flight response 不再由本文件拦截。
-//   已由 storage.ts 的写屏障（blockWrites/unblockWrites）在 setItem 出口统一兜底，
-//   本文件不需要维护身份门。
+//   已由 storage.ts 的写屏障（blockWrites/unblockWrites）在 setItem 出口统一兜底。
 
 import { request, ApiError } from './request';
 import { logger } from '../utils/logger';
-import { getWatermark, setWatermark, applyServerChanges, getEntry } from './db';
-import { drainBatch, ackResultsBySeq, ackBatchFailure, PushResultItem, SyncOp } from './outbox';
+import {
+  getWatermark,
+  setWatermark,
+  setWatermarkStrict,
+  applyServerEntriesBatch,
+  readLedgerEpochs,
+  writeLedgerEpochs,
+  getEntry,
+  type LedgerEpochs,
+} from './db';
+import {
+  drainBatch,
+  ackResultsBySeq,
+  ackBatchFailure,
+  listPendingEntryRefs,
+  PushResultItem,
+  SyncOp,
+} from './outbox';
 import {
   getCachedSystemCategoriesSignature,
   refreshCategories,
   warmUpMemoryCache,
 } from './categoryService';
 import { applyLedgerBalanceFromSync } from './ledgerBalanceApi';
+import { __isWriteBlocked } from './storage';
 
 export type Entity = 'entry' | 'category' | 'budget';
 
 export interface SyncPullResponse {
   watermark: number;
   has_more?: boolean;
-  /**
-   * 系统分类签名（migration 0004 配套 · spec §4）。
-   * 客户端比对此值与本地缓存签名，不一致则绕过 24h TTL 强刷分类列表，
-   * 关闭"分类改动 24h 内客户端不可见"的窗口。
-   */
   categories_revision?: string;
   changes: {
     entries?: unknown[];
@@ -40,8 +57,65 @@ export interface SyncPullResponse {
 }
 
 /**
+ * syncPull 分页循环结果（L13 §4.3）
+ */
+export interface SyncPullOutcome {
+  /** 最终落盘的 watermark */
+  watermark: number;
+  /** 本次实际新增/更新的 entry 条数（C2 applied 汇总，非拉回条数） */
+  pulled: number;
+  /** 实际发出的请求轮数（含 epoch 重置轮） */
+  pages: number;
+  /** 达到 MAX_PULL_PAGES 截断，仍有剩余（已安排续拉） */
+  hasMore: boolean;
+  /** 本次是否发生了 epoch 重置（全量重拉） */
+  epochReset: boolean;
+}
+
+// ─── L13 常量 ─────────────────────────────────────────────────────────────────
+
+const PULL_LIMIT = 500;          // 协议上限 · 5,000 条 → 10 轮
+const MAX_PULL_PAGES = 40;       // 20,000 条/次 · 超出截断并 300ms 续拉
+
+/** 让出逻辑层（setData 派发、用户事件回调）· 小程序逻辑层与渲染层分线程 */
+async function yieldToEventLoop(): Promise<void> {
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+}
+
+/**
+ * 从响应 ledgers[] 提取 { [ledgerId]: sync_epoch }。
+ * 缺失值归一化为 0（§4.2）：服务端列 DEFAULT 0；灰度期旧服务端不返回 sync_epoch，
+ *   `?? 0` 后与服务端上线后返回的 0 天然一致，避免升级风暴的第二个入口。
+ */
+function extractEpochs(ledgers: unknown[] | undefined): LedgerEpochs {
+  const out: LedgerEpochs = {};
+  for (const raw of ledgers || []) {
+    const l = raw as { id?: string; sync_epoch?: number };
+    if (l && typeof l.id === 'string') {
+      out[l.id] = typeof l.sync_epoch === 'number' ? l.sync_epoch : 0;
+    }
+  }
+  return out;
+}
+
+/**
+ * epoch 比对：key 集合不同或任一值不同 → diff（§4.2 比对语义）。
+ * 本地有 ledgerId 而响应缺失（账本软删/重建导致 id 变更）也视为 diff → 全量重拉（防御性兜底）。
+ *
+ * ⚠️ 前置条件：调用方必须先排除"本轮一个 ledger 都没下发"的情况（见 syncPull）。
+ *   "服务端本轮没返回 ledgers" ≠ "账本消失"，交给本函数会误判 diff 并触发无意义重拉。
+ */
+function anyEpochDiff(local: LedgerEpochs, server: LedgerEpochs): boolean {
+  const keys = new Set([...Object.keys(local), ...Object.keys(server)]);
+  for (const k of keys) {
+    if ((local[k] ?? -1) !== (server[k] ?? -1)) return true;
+  }
+  return false;
+}
+
+/**
  * 检查 categories_revision 是否变化，若变化则后台强刷分类列表。
- * fire-and-forget · 不阻塞 sync pull 主流程。
+ * fire-and-forget · 不阻塞 sync pull 主流程。仅在收敛轮（has_more=false）调用（L13 §4.3）。
  *
  * 双端签名规范见：docs/design/categories-restructure-spec.md §4.2
  */
@@ -49,12 +123,9 @@ function maybeRefreshCategoriesByRevision(familyId: string, serverRevision: stri
   if (!serverRevision || !familyId) return;
   const localSig = getCachedSystemCategoriesSignature();
   if (localSig && localSig === serverRevision) return; // 系统分类一致 · 无需刷新
-  // 不一致 · 后台拉新分类（绕过 24h TTL · refreshCategories 会写缓存 + warmUp 内存 +
-  // 在签名变化时广播 CATEGORIES_LOADED 事件，明细页等据此重渲）
   logger.debug('sync:revision', `categories_revision changed (local="${localSig.slice(0, 16)}…" → server="${serverRevision.slice(0, 16)}…") · forcing refresh`);
   refreshCategories(familyId)
     .then(items => {
-      // refreshCategories 内部已 warmUp，但显式补一次确保签名同步
       warmUpMemoryCache(familyId, items);
     })
     .catch(err => {
@@ -63,46 +134,130 @@ function maybeRefreshCategoriesByRevision(familyId: string, serverRevision: stri
 }
 
 /**
- * 拉增量（家庭维度）
+ * 拉增量（家庭维度）· L13 分页循环 + epoch 前置比对/重置。
+ *
+ * 循环封闭在本函数内：不逐轮 emit SYNC_DONE，由 syncOnce 收敛后广播一次（§4.3）。
  */
-export async function syncPull(
-  familyId: string,
-  opts?: { limit?: number }
-): Promise<SyncPullResponse> {
-  const since = await getWatermark(familyId);
-  logger.debug('sync:pull', `requesting · family=${familyId} since=${since} limit=${opts?.limit ?? 200}`);
+export async function syncPull(familyId: string): Promise<SyncPullOutcome> {
+  let since = await getWatermark(familyId);
+  let applied = 0;
+  let pages = 0;
+  let truncated = false;
+  let epochReset = false;
 
-  const resp = await request<SyncPullResponse>({
-    method: 'GET',
-    path: '/sync/pull',
-    query: {
-      family_id: familyId,
-      since,
-      limit: opts?.limit ?? 200
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    logger.debug('sync:pull', `requesting · family=${familyId} since=${since} limit=${PULL_LIMIT} page=${pages}`);
+    const resp = await request<SyncPullResponse>({
+      method: 'GET',
+      path: '/sync/pull',
+      query: { family_id: familyId, since, limit: PULL_LIMIT },
+    });
+
+    if (!resp || typeof resp.watermark !== 'number') {
+      logger.warn('sync:pull', `⚠️ invalid response · watermark=${resp?.watermark} type=${typeof resp?.watermark}`);
+      break;
     }
-  });
 
-  if (resp && typeof resp.watermark === 'number') {
-    const entryCount = resp.changes?.entries?.length || 0;
-    const catCount = resp.changes?.categories?.length || 0;
-    logger.debug('sync:pull', `received · watermark=${resp.watermark} entries=${entryCount} categories=${catCount} has_more=${resp.has_more}`);
-    if (resp.changes) {
-      await applyServerChanges(resp.changes);
-      // COSTRA-4xx：把 sync-pull 下发的 ledgers[] 增量写入 ledgerBalanceApi 缓存
-      if (resp.changes.ledgers && resp.changes.ledgers.length > 0) {
-        for (const wire of resp.changes.ledgers) {
-          await applyLedgerBalanceFromSync(wire as { id: string; balance_cents?: number; balance_baseline_seq?: number; balance_version?: number });
-        }
+    const serverLedgers = resp.changes?.ledgers;
+
+    // ── watermark 合法性前置校验（§4.3）─────────────────────────────────────
+    //   放在 epoch 环节之前：非法/回退的响应不应驱动任何本地状态变更（含 epoch 重置）。
+    if (!Number.isInteger(resp.watermark) || resp.watermark < since) {
+      logger.warn('sync:pull', `invalid watermark regression · watermark=${resp.watermark} since=${since} · abort loop`);
+      break; // 不应用 entries，等待下轮 sync
+    }
+    if (resp.has_more && resp.watermark === since) {
+      logger.error('sync:pull', 'has_more without watermark progress · abort loop');
+      break; // 防服务端异常导致紧密死循环
+    }
+
+    // ── 资产不断供：每轮 ledgers 覆盖写缓存（§4.3/§4.7）─────────────────────
+    //   必须在 epoch 判定**之前**：epoch 重置轮会 continue，放在其后会导致持续批量写入
+    //   期间（epoch 连轮变化直到截断）资产整轮不更新。balance 是服务端权威值、与
+    //   watermark 无关，任何一轮下发都可安全覆盖写。
+    for (const wire of serverLedgers || []) {
+      await applyLedgerBalanceFromSync(wire as { id: string; balance_cents?: number; balance_baseline_seq?: number; balance_version?: number });
+    }
+
+    // ── E1 epoch 前置比对（§4.2）──────────────────────────────────────────
+    const serverEpochs = extractEpochs(serverLedgers);
+    const localEpochs = await readLedgerEpochs(familyId);
+    if (Object.keys(serverEpochs).length === 0) {
+      // 本轮未下发任何 ledger（服务端 findFirstByFamilyId 返回 null 的自愈窗口等）。
+      //   "没下发" ≠ "账本消失"：若按 key 集合语义判 diff，会先清零重拉一次、把 {} 记为
+      //   本地 epoch，账本自愈后再判一次 diff 再重拉。两次全量重拉纯属自伤。
+      //   ⇒ 视为"本轮无 epoch 信息"：既不比对也不写入，等下轮带 ledger 的响应再追踪。
+      logger.debug('sync:pull', 'no ledgers in response · skip epoch compare this round');
+    } else if (localEpochs === null) {
+      // 首登/升级：采信当前值写入，不触发重置（避免升级风暴）
+      await writeLedgerEpochs(familyId, serverEpochs);
+    } else if (anyEpochDiff(localEpochs, serverEpochs)) {
+      // "上次同步后发生过批量写入" → 清零 watermark 全量重拉。
+      // ⚠️ 写序不变量（§4.2）：必须先 setWatermarkStrict(0) 并确认成功，才能写 epoch。
+      //   反序或清零失败仍写 epoch，会落到「epoch 新 + watermark 旧高值」的真丢数据状态。
+      try {
+        await setWatermarkStrict(familyId, 0);
+      } catch (err) {
+        logger.warn('sync:pull', 'epoch reset: strict watermark clear failed · abort this round, keep old epoch', err);
+        break; // 本轮中止、不写 epoch；下轮 sync 仍判 diff 并重试，幂等无损
       }
+      await writeLedgerEpochs(familyId, serverEpochs);
+      since = 0;
+      epochReset = true;
+      logger.info('sync:pull', 'epoch diff detected · watermark cleared → full re-pull');
+      // 重置轮同样计入请求预算并受截断约束 + 让出：持续批量写入期间（epoch 连续变化）
+      // 不计数会让循环脱离 MAX_PULL_PAGES 保护，退化为紧密请求循环；截断后由
+      // pull-continue 续拉兜底，幂等无损。
+      pages++;
+      if (pages >= MAX_PULL_PAGES) {
+        truncated = true;
+        break;
+      }
+      await yieldToEventLoop();
+      continue; // 本轮 entries 不应用，直接从 0 重拉
     }
+
+    // ── 应用 entries（C2 批量落盘）────────────────────────────────────────
+    const wires = resp.changes?.entries || [];
+    if (wires.length > 0) {
+      const pendingRefs = await listPendingEntryRefs();
+      const result = await applyServerEntriesBatch(wires, { pendingRefs });
+      applied += result.applied;
+    }
+
+    // ── watermark 逐轮落盘（中断可续）──────────────────────────────────────
     await setWatermark(familyId, resp.watermark);
-    // migration 0004: 检查分类签名是否变化，触发强刷（fire-and-forget）
-    maybeRefreshCategoriesByRevision(familyId, resp.categories_revision);
-  } else {
-    logger.warn('sync:pull', `⚠️ invalid response · watermark=${resp?.watermark} type=${typeof resp?.watermark}`);
+    since = resp.watermark;
+    pages++;
+
+    if (!resp.has_more) {
+      // 仅收敛轮消费 categories_revision（§4.3）
+      maybeRefreshCategoriesByRevision(familyId, resp.categories_revision);
+      break;
+    }
+
+    if (pages >= MAX_PULL_PAGES) {
+      truncated = true;
+      break;
+    }
+
+    await yieldToEventLoop(); // 让出逻辑层
+
+    if (__isWriteBlocked()) {
+      // logout 写屏障已开：storage 会吞写入，主动退出省请求
+      logger.debug('sync:pull', 'write barrier open · abort loop');
+      break;
+    }
   }
 
-  return resp;
+  return {
+    watermark: since,
+    pulled: applied,
+    pages,
+    hasMore: truncated,
+    epochReset,
+  };
 }
 
 /**
@@ -197,7 +352,6 @@ export async function pushDelta(): Promise<{
     const errMsg = (err as ApiError)?.message || 'unknown';
 
     // 409 或其他错误：都走 ackBatchFailure 保守重试
-    // 不再区分 409（之前无条件清除会导致数据丢失）
     logger.warn('sync:pushDelta', `⚠️ HTTP ${status || 'network'} error · batchKey=${batchKey} msg="${errMsg}" → ackBatchFailure`);
     const failed = await ackBatchFailure(batchKey);
     logger.warn('sync:pushDelta', `failure recovered=${failed} ops back to index`);

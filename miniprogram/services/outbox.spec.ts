@@ -8,6 +8,7 @@ import {
   ackBatchFailure,
   size,
   pendingCount,
+  listPendingEntryRefs,
   __peek,
   __clear,
   PushResultItem,
@@ -346,5 +347,30 @@ describe('services/outbox', () => {
     expect(computeRetryBackoff(3)).toBe(11500);  // 3000 + 8500
     expect(computeRetryBackoff(5)).toBe(20000);  // 封顶 20s
     expect(computeRetryBackoff(100)).toBe(20000); // 超出仍是封顶
+  });
+
+  // ─── listPendingEntryRefs（L13 §4.4）──────────────────────────────────────
+
+  it('listPendingEntryRefs 覆盖 index + drained 两态', async () => {
+    // 两条 index 中的 entry op
+    await enqueue({ op: 'create', entity: 'entry', client_ref_id: 'ref-idx-1', base_version: null, payload: { ledger_id: 'l1', amount: 1, currency: 'CNY', type: 'expense', category_id: null, note: '', occurred_at: '2026-05-09T00:00:00.000Z' } });
+    await enqueue({ op: 'create', entity: 'entry', client_ref_id: 'ref-idx-2', base_version: null, payload: { ledger_id: 'l1', amount: 1, currency: 'CNY', type: 'expense', category_id: null, note: '', occurred_at: '2026-05-09T00:00:00.000Z' } });
+
+    // drain 一条 → 进入 drained（未 ack）
+    const drained = await drainBatch(1);
+    expect(drained).not.toBeNull();
+    const drainedRef = drained!.batch[0].client_ref_id;
+
+    const refs = await listPendingEntryRefs();
+    // index 剩余 1 + drained 1 = 两个 ref 都在
+    expect(refs.has('ref-idx-1')).toBe(true);
+    expect(refs.has('ref-idx-2')).toBe(true);
+    expect(refs.has(drainedRef)).toBe(true);
+    expect(refs.size).toBe(2);
+  });
+
+  it('listPendingEntryRefs 空队列返回空 Set', async () => {
+    const refs = await listPendingEntryRefs();
+    expect(refs.size).toBe(0);
   });
 });

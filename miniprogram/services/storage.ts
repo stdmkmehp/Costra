@@ -157,6 +157,28 @@ export async function setItem<T>(key: string, data: T, ttlMs?: number): Promise<
   }
 }
 
+/**
+ * 严格写：写屏障开启或 wx.setStorage 失败时**抛错**（不吞、不静默）。
+ *
+ * 存在意义（L13 §3.7 / §4.2）：普通 setItem 在写屏障开启或写失败时只记日志、向上返回
+ *   成功，这对绝大多数缓存路径是合理的（写失败不阻断业务）。但 epoch 重置的 watermark
+ *   清零若被吞掉，会落到「epoch 记新值 + watermark 仍是旧高值」的**真丢数据**状态
+ *   （下轮比对一致不再重置，洞内行 change_seq < watermark 永远拉不到）。因此 epoch reset
+ *   分支的 watermark 清零必须走本函数，写失败即抛错，交由调用方中止本轮、不写 epoch。
+ *
+ * ⚠️ 仅供 epoch reset 场景（setWatermarkStrict）使用；不扩散到普通业务写路径，
+ *   避免把预算/资产/公告/统计等缓存的"写失败不阻断业务"语义一并收紧（blast radius 过大）。
+ */
+export async function setItemStrict<T>(key: string, data: T, ttlMs?: number): Promise<void> {
+  if (typeof wx === 'undefined') return;
+  if (writesBlocked && !BARRIER_ALLOWLIST.has(key)) {
+    throw new Error(`storage: write blocked (barrier open) · key=${key}`);
+  }
+  const envelope: Envelope<T> = { v: STORAGE_VERSION, t: Date.now(), ttl: ttlMs, d: data };
+  // 不 catch：失败向上抛，由调用方决定中止流程（epoch reset 语义）。
+  await wx.setStorage({ key, data: envelope });
+}
+
 export async function getItem<T>(key: string): Promise<T | null> {
   if (typeof wx === 'undefined') return null;
   try {

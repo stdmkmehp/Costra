@@ -136,7 +136,7 @@ export async function fetchLedgerBalance(ledgerId: string): Promise<LedgerBalanc
 /**
  * 把服务端 sync-pull 下发的 ledger 增量数据写入本地缓存。
  *
- * 调用方：services/sync.ts 在 applyServerChanges 之后调用
+ * 调用方：services/sync.ts 在分页循环内每轮调用
  *   for (const wireLedger of changes.ledgers || []) { applyLedgerBalanceFromSync(wireLedger); }
  */
 export async function applyLedgerBalanceFromSync(wire: {

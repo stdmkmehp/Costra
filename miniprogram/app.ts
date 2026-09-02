@@ -12,6 +12,7 @@
 import { initAuth, isLoggedIn, getToken, loginFlow } from './services/auth';
 import { getEnv } from './services/env';
 import { ensureVersion } from './services/storage';
+import { cleanupLegacyEntryIndex } from './services/db';
 import { startScheduler, stopScheduler, syncOnce } from './services/syncScheduler';
 import { tokens } from './tokens/index';
 import { eventBus, EventNames } from './services/eventBus';
@@ -127,6 +128,9 @@ App<AppOption>({
       markPerf('app.ensure-version.start');
       await ensureVersion();
       markPerf('app.ensure-version.done');
+      // L13：清理老版本遗留的 entry:__index（已废除该 key · 不 bump STORAGE_VERSION）。
+      //   fire-and-forget · 不阻塞 bootstrap；rebuild 键枚举另有显式排除，不依赖此清理已执行。
+      void cleanupLegacyEntryIndex();
       markPerf('app.init-auth.start');
       await initAuth();
       markPerf('app.init-auth.done');

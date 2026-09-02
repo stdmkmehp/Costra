@@ -11,6 +11,7 @@
 //      模块单例存活，必须显式清，否则重新登录后命中上一位用户的陈旧数据。
 
 import { clearAllForReset } from './storage';
+import { __test__ as dbInternal } from './db';
 import { clearBudgetCache } from './budgetApi';
 import { clearLedgerBalanceCache } from './ledgerBalanceApi';
 import { clearStatisticsCache } from './statisticsApi';
@@ -31,6 +32,10 @@ export async function resetLocalData(): Promise<void> {
   clearFamilyCaches();
   invalidateUserOverview();
   invalidateAnnouncementCache();
+  // L13 §4.5 纪律 3：R5 月索引写队列是跨账号存活的模块级内存态，logout 必须显式清，
+  //   否则上一账号未排空的索引写任务链残留到新会话。
+  //   （epoch 记录存 storage，由下方 clearAllForReset 全量清空，无需在此登记。）
+  dbInternal.resetIndexQueue();
 
   // 存储层：全量清空，仅保留设备指纹 + 重写版本号
   try {

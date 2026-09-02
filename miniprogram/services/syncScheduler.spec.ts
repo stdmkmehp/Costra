@@ -88,8 +88,7 @@ describe('services/syncScheduler', () => {
     mockedGetActiveFamilyId.mockResolvedValue('family-123');
     mockedPushDelta.mockResolvedValue({ pushed: 2, conflicts: 1, rejected: 1, failed: 0 });
     mockedSyncPull.mockResolvedValue({
-      watermark: 100,
-      changes: { entries: [{ id: 'e1' }, { id: 'e2' }], categories: [], budgets: [], ledgers: [] },
+      watermark: 100, pulled: 2, pages: 1, hasMore: false, epochReset: false,
     });
 
     const result = await syncOnce('launch');
@@ -108,7 +107,7 @@ describe('services/syncScheduler', () => {
     const pullCallOrder = mockedSyncPull.mock.invocationCallOrder[0];
     expect(pushCallOrder).toBeLessThan(pullCallOrder);
 
-    expect(mockedSyncPull).toHaveBeenCalledWith('family-123', { limit: 200 });
+    expect(mockedSyncPull).toHaveBeenCalledWith('family-123');
   });
 
   // T4: syncOnce 并发触发第 2 次 mutex 跳过 → 返 null（第 2 次）
@@ -123,8 +122,7 @@ describe('services/syncScheduler', () => {
     );
     mockedPushDelta.mockImplementation(() => pendingPromise);
     mockedSyncPull.mockResolvedValue({
-      watermark: 100,
-      changes: { entries: [], categories: [], budgets: [], ledgers: [] },
+      watermark: 100, pulled: 0, pages: 1, hasMore: false, epochReset: false,
     });
 
     // 发起第一次（pending）
@@ -164,8 +162,7 @@ describe('services/syncScheduler', () => {
     mockedGetActiveFamilyId.mockResolvedValue('family-123');
     mockedPushDelta.mockResolvedValue({ pushed: 0, conflicts: 0, rejected: 0, failed: 0 });
     mockedSyncPull.mockResolvedValue({
-      watermark: 100,
-      changes: { entries: [], categories: [], budgets: [], ledgers: [] },
+      watermark: 100, pulled: 0, pages: 1, hasMore: false, epochReset: false,
     });
 
     // 第一次调用
@@ -195,8 +192,7 @@ describe('services/syncScheduler', () => {
     mockedGetActiveFamilyId.mockResolvedValue('family-123');
     mockedPushDelta.mockResolvedValue({ pushed: 0, conflicts: 0, rejected: 0, failed: 0 });
     mockedSyncPull.mockResolvedValue({
-      watermark: 100,
-      changes: { entries: [], categories: [], budgets: [], ledgers: [] },
+      watermark: 100, pulled: 0, pages: 1, hasMore: false, epochReset: false,
     });
 
     // stub wx.onNetworkStatusChange（startScheduler 调用）
@@ -236,8 +232,7 @@ describe('services/syncScheduler', () => {
     mockedGetActiveFamilyId.mockResolvedValue('family-456');
     mockedPushDelta.mockResolvedValue({ pushed: 0, conflicts: 0, rejected: 0, failed: 0 });
     mockedSyncPull.mockResolvedValue({
-      watermark: 100,
-      changes: { entries: [], categories: [], budgets: [], ledgers: [] },
+      watermark: 100, pulled: 0, pages: 1, hasMore: false, epochReset: false,
     });
 
     const result = await syncOnce('network-recover');
@@ -252,8 +247,7 @@ describe('services/syncScheduler', () => {
     mockedGetActiveFamilyId.mockResolvedValue('family-123');
     mockedPushDelta.mockResolvedValue({ pushed: 0, conflicts: 0, rejected: 0, failed: 0 });
     mockedSyncPull.mockResolvedValue({
-      watermark: 100,
-      changes: { entries: [{ id: 'e1' }, { id: 'e2' }, { id: 'e3' }], categories: [], budgets: [], ledgers: [] },
+      watermark: 100, pulled: 3, pages: 1, hasMore: false, epochReset: false,
     });
 
     await syncOnce('periodic');
@@ -271,8 +265,7 @@ describe('services/syncScheduler', () => {
     mockedGetActiveFamilyId.mockResolvedValue('family-123');
     mockedPushDelta.mockResolvedValue({ pushed: 2, conflicts: 0, rejected: 0, failed: 0 });
     mockedSyncPull.mockResolvedValue({
-      watermark: 100,
-      changes: { entries: [], categories: [], budgets: [], ledgers: [] },
+      watermark: 100, pulled: 0, pages: 1, hasMore: false, epochReset: false,
     });
 
     await syncOnce('mutation');
@@ -290,8 +283,7 @@ describe('services/syncScheduler', () => {
     mockedGetActiveFamilyId.mockResolvedValue('family-123');
     mockedPushDelta.mockResolvedValue({ pushed: 0, conflicts: 0, rejected: 0, failed: 0 });
     mockedSyncPull.mockResolvedValue({
-      watermark: 100,
-      changes: { entries: [], categories: [], budgets: [], ledgers: [] },
+      watermark: 100, pulled: 0, pages: 1, hasMore: false, epochReset: false,
     });
 
     await syncOnce('periodic');
@@ -323,8 +315,7 @@ describe('services/syncScheduler', () => {
     mockedGetActiveFamilyId.mockResolvedValue('family-123');
     mockedPushDelta.mockResolvedValue({ pushed: 0, conflicts: 0, rejected: 0, failed: 0 });
     mockedSyncPull.mockResolvedValue({
-      watermark: 100,
-      changes: { entries: [], categories: [], budgets: [], ledgers: [] },
+      watermark: 100, pulled: 0, pages: 1, hasMore: false, epochReset: false,
     });
 
     vi.stubGlobal('wx', { onNetworkStatusChange: vi.fn() });
@@ -355,8 +346,7 @@ describe('services/syncScheduler', () => {
     mockedGetActiveFamilyId.mockResolvedValue('family-123');
     mockedPushDelta.mockResolvedValue({ pushed: 0, conflicts: 0, rejected: 0, failed: 0 });
     mockedSyncPull.mockResolvedValue({
-      watermark: 1,
-      changes: { entries: [], categories: [], budgets: [], ledgers: [] },
+      watermark: 1, pulled: 0, pages: 1, hasMore: false, epochReset: false,
     });
 
     const onNetworkCb = vi.fn();
@@ -382,8 +372,7 @@ describe('services/syncScheduler', () => {
     mockedGetActiveFamilyId.mockResolvedValue('family-123');
     mockedPushDelta.mockResolvedValue({ pushed: 0, conflicts: 0, rejected: 0, failed: 0 });
     mockedSyncPull.mockResolvedValue({
-      watermark: 100,
-      changes: { entries: [], categories: [], budgets: [], ledgers: [] },
+      watermark: 100, pulled: 0, pages: 1, hasMore: false, epochReset: false,
     });
 
     vi.stubGlobal('wx', { onNetworkStatusChange: vi.fn() });
@@ -407,8 +396,7 @@ describe('services/syncScheduler', () => {
     mockedGetActiveFamilyId.mockResolvedValue('family-123');
     mockedPushDelta.mockResolvedValue({ pushed: 5, conflicts: 0, rejected: 0, failed: 0 });
     mockedSyncPull.mockResolvedValue({
-      watermark: 200,
-      changes: { entries: [{ id: 'e1' }, { id: 'e2' }], categories: [], budgets: [], ledgers: [] },
+      watermark: 200, pulled: 2, pages: 1, hasMore: false, epochReset: false,
     });
 
     await syncOnce('mutation');
@@ -428,8 +416,7 @@ describe('services/syncScheduler', () => {
     mockedGetActiveFamilyId.mockResolvedValue('family-123');
     mockedPushDelta.mockResolvedValue({ pushed: 1, conflicts: 1, rejected: 0, failed: 0 });
     mockedSyncPull.mockResolvedValue({
-      watermark: 100,
-      changes: { entries: [], categories: [], budgets: [], ledgers: [] },
+      watermark: 100, pulled: 0, pages: 1, hasMore: false, epochReset: false,
     });
 
     await syncOnce('mutation');
@@ -452,8 +439,7 @@ describe('services/syncScheduler', () => {
     mockedGetActiveFamilyId.mockResolvedValue('family-123');
     mockedPushDelta.mockResolvedValue({ pushed: 0, conflicts: 0, rejected: 2, failed: 0 });
     mockedSyncPull.mockResolvedValue({
-      watermark: 100,
-      changes: { entries: [], categories: [], budgets: [], ledgers: [] },
+      watermark: 100, pulled: 0, pages: 1, hasMore: false, epochReset: false,
     });
 
     await syncOnce('mutation');
@@ -472,8 +458,7 @@ describe('services/syncScheduler', () => {
     // 每次都有 conflict
     mockedPushDelta.mockResolvedValue({ pushed: 1, conflicts: 1, rejected: 0, failed: 0 });
     mockedSyncPull.mockResolvedValue({
-      watermark: 100,
-      changes: { entries: [], categories: [], budgets: [], ledgers: [] },
+      watermark: 100, pulled: 0, pages: 1, hasMore: false, epochReset: false,
     });
 
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -514,8 +499,7 @@ describe('services/syncScheduler', () => {
     mockedGetActiveFamilyId.mockResolvedValue('family-123');
     mockedPushDelta.mockResolvedValue({ pushed: 1, conflicts: 1, rejected: 0, failed: 0 });
     mockedSyncPull.mockResolvedValue({
-      watermark: 100,
-      changes: { entries: [], categories: [], budgets: [], ledgers: [] },
+      watermark: 100, pulled: 0, pages: 1, hasMore: false, epochReset: false,
     });
 
     // 第 1 次有冲突
@@ -543,8 +527,7 @@ describe('services/syncScheduler', () => {
     mockedGetActiveFamilyId.mockResolvedValue('family-123');
     mockedPushDelta.mockResolvedValue({ pushed: 1, conflicts: 1, rejected: 0, failed: 0 });
     mockedSyncPull.mockResolvedValue({
-      watermark: 100,
-      changes: { entries: [], categories: [], budgets: [], ledgers: [] },
+      watermark: 100, pulled: 0, pages: 1, hasMore: false, epochReset: false,
     });
 
     // 第 1 次 mutation 有冲突
@@ -563,13 +546,65 @@ describe('services/syncScheduler', () => {
     mockedGetActiveFamilyId.mockResolvedValue('family-123');
     mockedPushDelta.mockResolvedValue({ pushed: 1, conflicts: 0, rejected: 0, failed: 0 });
     mockedSyncPull.mockResolvedValue({
-      watermark: 100,
-      changes: { entries: [], categories: [], budgets: [], ledgers: [] },
+      watermark: 100, pulled: 0, pages: 1, hasMore: false, epochReset: false,
     });
 
     const result = await syncOnce('hide');
     expect(result).not.toBeNull();
     expect(result!.trigger).toBe('hide');
     expect(mockedEventBusEmit).toHaveBeenCalledWith('sync-done', expect.objectContaining({ trigger: 'hide' }));
+  });
+
+  // ─── L13：pull-continue 截断续拉调度 ─────────────────────────────────────────
+
+  // T23: pull 截断（hasMore=true）→ 300ms 后自动触发 pull-continue
+  it('T23: schedules pull-continue after 300ms when pull truncated', async () => {
+    mockedIsLoggedIn.mockReturnValue(true);
+    mockedGetActiveFamilyId.mockResolvedValue('family-123');
+    mockedPushDelta.mockResolvedValue({ pushed: 0, conflicts: 0, rejected: 0, failed: 0 });
+    // 首轮截断，续拉轮收敛
+    mockedSyncPull
+      .mockResolvedValueOnce({ watermark: 20000, pulled: 20000, pages: 40, hasMore: true, epochReset: false })
+      .mockResolvedValue({ watermark: 20500, pulled: 500, pages: 1, hasMore: false, epochReset: false });
+
+    await syncOnce('launch');
+    expect(mockedSyncPull).toHaveBeenCalledTimes(1);
+
+    // 300ms 前不触发
+    await vi.advanceTimersByTimeAsync(200);
+    expect(mockedSyncPull).toHaveBeenCalledTimes(1);
+
+    // 300ms 时触发 pull-continue
+    await vi.advanceTimersByTimeAsync(150);
+    expect(mockedSyncPull).toHaveBeenCalledTimes(2);
+  });
+
+  // T24: stopScheduler 清理 pull-continue timer（不残留触发）
+  it('T24: stopScheduler clears pending pull-continue timer', async () => {
+    mockedIsLoggedIn.mockReturnValue(true);
+    mockedGetActiveFamilyId.mockResolvedValue('family-123');
+    mockedPushDelta.mockResolvedValue({ pushed: 0, conflicts: 0, rejected: 0, failed: 0 });
+    mockedSyncPull.mockResolvedValue({ watermark: 20000, pulled: 20000, pages: 40, hasMore: true, epochReset: false });
+
+    await syncOnce('launch');
+    expect(mockedSyncPull).toHaveBeenCalledTimes(1);
+
+    // 续拉 timer 已排程；stopScheduler 应清掉它
+    stopScheduler();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(mockedSyncPull).toHaveBeenCalledTimes(1); // 无残留触发
+  });
+
+  // T25: __test__.reset 清理 pull-continue timer
+  it('T25: __test__.reset clears pending pull-continue timer', async () => {
+    mockedIsLoggedIn.mockReturnValue(true);
+    mockedGetActiveFamilyId.mockResolvedValue('family-123');
+    mockedPushDelta.mockResolvedValue({ pushed: 0, conflicts: 0, rejected: 0, failed: 0 });
+    mockedSyncPull.mockResolvedValue({ watermark: 20000, pulled: 20000, pages: 40, hasMore: true, epochReset: false });
+
+    await syncOnce('launch');
+    __test__.reset();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(mockedSyncPull).toHaveBeenCalledTimes(1);
   });
 });
