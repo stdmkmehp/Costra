@@ -1,5 +1,9 @@
 // pages-gm/impersonate/index.ts · GM 切换登录身份页
-// 事实源: docs/ops/gm-impersonate-design.md §3.4
+// 事实源: docs/ops/gm-impersonate-design.md §3.4（v2 · 2026-09-02 双榜单改造）
+//
+// 双榜单（近7天活跃 / 最近注册）一次全量下发（各 Top 200 · 服务端 Redis 缓存 30min），
+// 每区客户端本地翻页（每页 10 条 · 独立页码）：本地切片瞬时、每页条数固定 ⇒ 列表高度恒定，
+// 翻页按钮位置不动（根治旧版"翻页发请求 → loading 跳动 → 按钮滑出屏幕"）。
 //
 // 切换流程（复用 mine 页 logout 清理语义 + D7 远端吊销）：
 //   确认弹窗 → syncOnce('hide') → pendingCount>0 二次弹窗
@@ -8,25 +12,43 @@
 // 不设置 globalData.userLoggedOut（impersonate 后已是登录态，非登出）。
 
 import { getToken, gmLoginAs, revokeSessionRemote, clearToken } from '../../services/auth';
-import { listGmUsers, type GmUserItem } from '../../services/gmApi';
+import { listGmUsers, type GmActiveUserItem, type GmRecentUserItem } from '../../services/gmApi';
 import { syncOnce, stopScheduler, startScheduler } from '../../services/syncScheduler';
 import { pendingCount } from '../../services/outbox';
 import { resetLocalData } from '../../services/localReset';
 import { logger } from '../../utils/logger';
 
-interface GmUserView extends GmUserItem {
-  created_text: string;
+/** 每区每页条数（双区同页 · 条数固定保证翻页时布局高度恒定） */
+const PAGE_SIZE = 10;
+
+interface ActiveView extends GmActiveUserItem {
+  meta_text: string;
+  initial: string;
+}
+
+interface RecentView extends GmRecentUserItem {
+  meta_text: string;
   initial: string;
 }
 
 Page({
   data: {
-    items: [] as GmUserView[],
-    page: 1,
-    hasMore: false,
-    loading: false,
+    activeItems: [] as ActiveView[],
+    recentItems: [] as RecentView[],
+    activePage: 1,
+    recentPage: 1,
+    activePages: 1,
+    recentPages: 1,
+    activeTotal: 0,
+    recentTotal: 0,
+    loading: true,
     switching: false,
   },
+
+  // 全量榜单挂实例属性（非渲染态 · 避免大数组进 data 参与 diff）；
+  // onLoad 每次整体重新赋值替换引用，初始空数组永不被原地修改，多实例无共享隐患
+  _activeAll: [] as ActiveView[],
+  _recentAll: [] as RecentView[],
 
   onLoad() {
     // 防御：非 GM 用户直接返回（服务端仍有 requireGm 实时查库兜底）
@@ -35,7 +57,7 @@ Page({
       setTimeout(() => { wx.navigateBack({ fail: () => { /* 无栈可退时静默 */ } }); }, 600);
       return;
     }
-    void this._loadPage(1);
+    void this._loadLists();
   },
 
   onTapCreateFake() {
@@ -45,7 +67,7 @@ Page({
 
   onTapUser(e: WechatMiniprogram.TouchEvent) {
     if (this.data.switching) return;
-    const item = e.currentTarget.dataset.item as GmUserView;
+    const item = e.currentTarget.dataset.item as ActiveView | RecentView;
     if (!item?.id) return;
     void this._switchTo({ userId: item.id }, item.nickname);
   },
@@ -53,25 +75,37 @@ Page({
   /** 切换中遮罩的 touchmove 截断（防滚动穿透） */
   noop() { /*  intentionally empty */ },
 
-  onPrevPage() {
-    if (this.data.loading || this.data.page <= 1) return;
-    void this._loadPage(this.data.page - 1);
+  onActivePrev() {
+    if (this.data.activePage > 1) this._setActivePage(this.data.activePage - 1);
   },
 
-  onNextPage() {
-    if (this.data.loading || !this.data.hasMore) return;
-    void this._loadPage(this.data.page + 1);
+  onActiveNext() {
+    if (this.data.activePage < this.data.activePages) this._setActivePage(this.data.activePage + 1);
   },
 
-  async _loadPage(page: number) {
-    if (this.data.loading) return;
+  onRecentPrev() {
+    if (this.data.recentPage > 1) this._setRecentPage(this.data.recentPage - 1);
+  },
+
+  onRecentNext() {
+    if (this.data.recentPage < this.data.recentPages) this._setRecentPage(this.data.recentPage + 1);
+  },
+
+  async _loadLists() {
     this.setData({ loading: true });
     try {
-      const resp = await listGmUsers(page);
+      const resp = await listGmUsers();
+      this._activeAll = resp.active.map(_toActiveView);
+      this._recentAll = resp.recent.map(_toRecentView);
       this.setData({
-        items: resp.items.map(_toView),
-        page: resp.page,
-        hasMore: resp.has_more,
+        activePage: 1,
+        recentPage: 1,
+        activePages: _pageCount(this._activeAll.length),
+        recentPages: _pageCount(this._recentAll.length),
+        activeTotal: this._activeAll.length,
+        recentTotal: this._recentAll.length,
+        activeItems: _slicePage(this._activeAll, 1),
+        recentItems: _slicePage(this._recentAll, 1),
         loading: false,
       });
     } catch (err) {
@@ -79,6 +113,14 @@ Page({
       this.setData({ loading: false });
       wx.showToast({ title: '加载失败', icon: 'none' });
     }
+  },
+
+  _setActivePage(page: number) {
+    this.setData({ activePage: page, activeItems: _slicePage(this._activeAll, page) });
+  },
+
+  _setRecentPage(page: number) {
+    this.setData({ recentPage: page, recentItems: _slicePage(this._recentAll, page) });
   },
 
   async _switchTo(target: { userId?: string; createFake?: boolean }, label: string) {
@@ -140,10 +182,27 @@ Page({
   },
 });
 
-function _toView(u: GmUserItem): GmUserView {
+function _pageCount(total: number): number {
+  return Math.max(1, Math.ceil(total / PAGE_SIZE));
+}
+
+function _slicePage<T>(all: T[], page: number): T[] {
+  const start = (page - 1) * PAGE_SIZE;
+  return all.slice(start, start + PAGE_SIZE);
+}
+
+function _toActiveView(u: GmActiveUserItem): ActiveView {
   return {
     ...u,
-    created_text: _formatDate(u.created_at),
+    meta_text: `近7天 ${u.entry_count_7d} 笔 · 最后活跃 ${_formatDateTime(u.last_active_at)} · ${u.id_short}`,
+    initial: (u.nickname || '?').slice(0, 1),
+  };
+}
+
+function _toRecentView(u: GmRecentUserItem): RecentView {
+  return {
+    ...u,
+    meta_text: `${_formatDate(u.created_at)} 注册 · ${u.id_short}`,
     initial: (u.nickname || '?').slice(0, 1),
   };
 }
@@ -151,4 +210,13 @@ function _toView(u: GmUserItem): GmUserView {
 function _formatDate(iso: string): string {
   const d = new Date(iso);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function _formatDateTime(iso: string): string {
+  const d = new Date(iso);
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mi = String(d.getMinutes()).padStart(2, '0');
+  return `${mm}-${dd} ${hh}:${mi}`;
 }

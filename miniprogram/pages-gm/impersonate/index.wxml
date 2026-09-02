@@ -1,17 +1,17 @@
-<!-- pages-gm/impersonate/index.wxml · GM 切换登录身份 -->
+<!-- pages-gm/impersonate/index.wxml · GM 切换登录身份（双榜单 · 本地分页） -->
 <view class="gm">
   <!-- 伪造身份登录 -->
   <view class="gm__section-title">伪造身份登录</view>
   <view class="gm__fake">
     <view class="gm__fake-btn" bindtap="onTapCreateFake">新建伪造账号登录</view>
   </view>
-  <view class="gm__hint">伪造账号由系统自动分配（gm_fake_ 前缀），与真实账号物理隔离，可批量清理；复登同一伪造账号请从下方用户列表进入</view>
+  <view class="gm__hint">伪造账号由系统自动分配（gm_fake_ 前缀），与真实账号物理隔离，可批量清理；复登同一伪造账号请从下方「最近注册」进入</view>
 
-  <!-- 用户列表 -->
-  <view class="gm__section-title">用户列表</view>
+  <!-- 近7天活跃 -->
+  <view class="gm__section-title">近7天活跃（{{activeTotal}}）</view>
   <view class="gm__list">
     <view
-      wx:for="{{items}}"
+      wx:for="{{activeItems}}"
       wx:key="id"
       class="gm__user"
       data-item="{{item}}"
@@ -23,18 +23,44 @@
       <view wx:else class="gm__avatar gm__avatar--placeholder">{{item.initial}}</view>
       <view class="gm__user-main">
         <view class="gm__user-name">{{item.nickname}}</view>
-        <view class="gm__user-meta">{{item.created_text}} · {{item.id_short}}</view>
+        <view class="gm__user-meta">{{item.meta_text}}</view>
       </view>
       <view class="gm__arrow">›</view>
     </view>
-    <view wx:if="{{!loading && items.length === 0}}" class="gm__empty">暂无用户</view>
+    <view wx:if="{{!loading && activeItems.length === 0}}" class="gm__empty">近7天暂无活跃用户</view>
+  </view>
+  <view wx:if="{{activePages > 1}}" class="gm__pager">
+    <view class="gm__pager-btn {{activePage <= 1 ? 'gm__pager-btn--disabled' : ''}}" bindtap="onActivePrev">上一页</view>
+    <view class="gm__pager-info">{{activePage}} / {{activePages}}</view>
+    <view class="gm__pager-btn {{activePage >= activePages ? 'gm__pager-btn--disabled' : ''}}" bindtap="onActiveNext">下一页</view>
   </view>
 
-  <!-- 翻页 -->
-  <view class="gm__pager">
-    <view class="gm__pager-btn {{page <= 1 ? 'gm__pager-btn--disabled' : ''}}" bindtap="onPrevPage">上一页</view>
-    <view class="gm__pager-info">第 {{page}} 页</view>
-    <view class="gm__pager-btn {{!hasMore ? 'gm__pager-btn--disabled' : ''}}" bindtap="onNextPage">下一页</view>
+  <!-- 最近注册 -->
+  <view class="gm__section-title">最近注册（{{recentTotal}}）</view>
+  <view class="gm__list">
+    <view
+      wx:for="{{recentItems}}"
+      wx:key="id"
+      class="gm__user"
+      data-item="{{item}}"
+      bindtap="onTapUser"
+      hover-class="gm__user--hover"
+      hover-stay-time="60"
+    >
+      <image wx:if="{{item.avatar_url}}" class="gm__avatar" src="{{item.avatar_url}}" mode="aspectFill" />
+      <view wx:else class="gm__avatar gm__avatar--placeholder">{{item.initial}}</view>
+      <view class="gm__user-main">
+        <view class="gm__user-name">{{item.nickname}}</view>
+        <view class="gm__user-meta">{{item.meta_text}}</view>
+      </view>
+      <view class="gm__arrow">›</view>
+    </view>
+    <view wx:if="{{!loading && recentItems.length === 0}}" class="gm__empty">暂无用户</view>
+  </view>
+  <view wx:if="{{recentPages > 1}}" class="gm__pager">
+    <view class="gm__pager-btn {{recentPage <= 1 ? 'gm__pager-btn--disabled' : ''}}" bindtap="onRecentPrev">上一页</view>
+    <view class="gm__pager-info">{{recentPage}} / {{recentPages}}</view>
+    <view class="gm__pager-btn {{recentPage >= recentPages ? 'gm__pager-btn--disabled' : ''}}" bindtap="onRecentNext">下一页</view>
   </view>
 
   <!-- 切换中遮罩 -->

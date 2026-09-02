@@ -4,8 +4,21 @@
 // 且需避免 auth → gmApi → request → auth 循环依赖，故不放入本模块）。
 import { request } from './request';
 
-/** GM 用户列表项（服务端不返回 openid · D3） */
-export interface GmUserItem {
+/** GM 活跃榜条目（近 7 天活跃 · 服务端不返回 openid · D3） */
+export interface GmActiveUserItem {
+  id: string;
+  id_short: string;
+  nickname: string;
+  avatar_url: string | null;
+  created_at: string;
+  /** 近 7 天 entries 写入数 */
+  entry_count_7d: number;
+  /** 最后一笔 entries 写入时间（ISO） */
+  last_active_at: string;
+}
+
+/** GM 注册榜条目 */
+export interface GmRecentUserItem {
   id: string;
   id_short: string;
   nickname: string;
@@ -13,18 +26,19 @@ export interface GmUserItem {
   created_at: string;
 }
 
-export interface GmUsersPage {
-  items: GmUserItem[];
-  page: number;
-  page_size: number;
-  has_more: boolean;
+/**
+ * GM 用户双榜单（各 Top 200 · 服务端整榜 Redis 缓存 30min）
+ * 无分页参数：一次全量下发，分页由页面本地切片。
+ */
+export interface GmUserLists {
+  active: GmActiveUserItem[];
+  recent: GmRecentUserItem[];
 }
 
-/** GM 用户列表（created_at DESC 稳定排序 · 排除软删） */
-export async function listGmUsers(page: number, pageSize = 20): Promise<GmUsersPage> {
-  return request<GmUsersPage>({
+/** GM 用户双榜单：active = 近7天活跃（entry_count_7d DESC），recent = 最近注册（created_at DESC） */
+export async function listGmUsers(): Promise<GmUserLists> {
+  return request<GmUserLists>({
     method: 'GET',
     path: '/gm/users',
-    query: { page, page_size: pageSize },
   });
 }

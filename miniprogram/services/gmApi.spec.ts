@@ -15,37 +15,39 @@ describe('services/gmApi · listGmUsers', () => {
     requestMock.mockReset();
   });
 
-  it('请求形状：GET /gm/users + query page/page_size', async () => {
-    const page = {
-      items: [
+  it('请求形状：GET /gm/users 无分页参数（双榜一次全量下发）', async () => {
+    const lists = {
+      active: [
         {
           id: '00000000-0000-0000-0000-000000000001',
           id_short: '00000000',
           nickname: '用户A',
           avatar_url: null,
           created_at: '2026-08-20T00:00:00.000Z',
+          entry_count_7d: 12,
+          last_active_at: '2026-09-02T02:10:00.000Z',
         },
       ],
-      page: 2,
-      page_size: 10,
-      has_more: false,
+      recent: [
+        {
+          id: '00000000-0000-0000-0000-000000000002',
+          id_short: '00000000',
+          nickname: '用户B',
+          avatar_url: null,
+          created_at: '2026-09-01T00:00:00.000Z',
+        },
+      ],
     };
-    requestMock.mockResolvedValueOnce(page);
+    requestMock.mockResolvedValueOnce(lists);
 
-    const resp = await listGmUsers(2, 10);
+    const resp = await listGmUsers();
 
-    expect(resp).toEqual(page);
+    expect(resp).toEqual(lists);
     expect(requestMock).toHaveBeenCalledTimes(1);
     const opts = requestMock.mock.calls[0][0];
     expect(opts.method).toBe('GET');
     expect(opts.path).toBe('/gm/users');
-    expect(opts.query).toEqual({ page: 2, page_size: 10 });
-  });
-
-  it('默认 pageSize = 20', async () => {
-    requestMock.mockResolvedValueOnce({ items: [], page: 1, page_size: 20, has_more: false });
-    await listGmUsers(1);
-    expect(requestMock.mock.calls[0][0].query).toEqual({ page: 1, page_size: 20 });
+    expect(opts.query).toBeUndefined();
   });
 
   it('错误透传：服务端 403 PERMISSION_DENIED 原样 reject', async () => {
@@ -54,6 +56,6 @@ describe('services/gmApi · listGmUsers', () => {
     err.status = 403;
     requestMock.mockRejectedValueOnce(err);
 
-    await expect(listGmUsers(1)).rejects.toMatchObject({ code: 'PERMISSION_DENIED', status: 403 });
+    await expect(listGmUsers()).rejects.toMatchObject({ code: 'PERMISSION_DENIED', status: 403 });
   });
 });
