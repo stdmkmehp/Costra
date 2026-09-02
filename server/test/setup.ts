@@ -117,7 +117,9 @@ function applyMigrations(db: IMemoryDb): void {
       -- COSTRA-4xx · migration 0012：资产字段
       balance_cents        BIGINT NOT NULL DEFAULT 0,
       balance_baseline_seq BIGINT NOT NULL DEFAULT 0,
-      balance_version     INTEGER NOT NULL DEFAULT 1
+      balance_version     INTEGER NOT NULL DEFAULT 1,
+      -- L13 · migration 0019：批量写入版本戳（E1）
+      sync_epoch          BIGINT NOT NULL DEFAULT 0
     );
     CREATE TYPE family_role AS ENUM ('owner', 'member', 'viewer');
     CREATE TABLE family_members (
