@@ -32,7 +32,7 @@
 ## L13: sync pull 的 `has_more` 无人消费（大批量增量收敛极慢 + 月度合计静默错误）
 
 > 来源: 2026-08-27 客户端导入/导出方案二轮评审发现（`docs/design/data-import-export-client-analysis.md` §5.1，该方案将其列为 **E0 硬前置卡**）
-> 状态: 待排期 · **解决方案待设计**（本节只录问题与设计约束，不出方案）
+> 状态: **已施工** · 方案定稿见 `docs/design/sync-pull-pagination-design.md` v0.8（E1 epoch 版本戳 + C1 分页循环 + C2 批量落盘·废除 `entry:__index` + R5 月索引写串行队列）。2026-09-01 落地：服务端 migration 0019 `ledgers.sync_epoch` + syncPullService 透传/`has_more` 轮跳过 `categories_revision`；小程序 `applyServerEntriesBatch`（判定 `>` + pending 闸门 + `sameEntryContent`）+ 废除全局索引 + R5 串行队列 + `setWatermarkStrict` + epoch 前置比对/重置 + `pull-continue` 续拉；导入脚本同事务 `sync_epoch + 1`。2026-09-02 第四轮复核修复（v0.8）：批末 null 重建改 per-batch 共享扫描（消 O(月数×实体数)）、remove-only delta 跳过写入、`ledgers` 为空不比对 epoch、资产写前移至 epoch 判定之前、watermark 校验前移、`flushIndexQueue` 超限抛错；冒烟用例落地 `qa/cases/sync-pagination-smoke.md`（含协议 §8 `smoke_sync_05` = SP-001）。本节保持"只录问题"定位。
 
 **问题**: 服务端 `/sync/pull` 早已正确返回 `has_more`（`entryRepo.findEntriesByFamilySince` 多取一行判定），但客户端 `syncPull` 只把它打进 debug 日志，**没有任何循环消费**：
 
@@ -67,3 +67,31 @@ logger.debug('sync:pull', `received · watermark=${resp.watermark} ... has_more=
 - 收敛期间明细页不得显示"完整合计"状态的伪精确数字（要么有"同步中"提示，要么不结算为 `ready-full`）；
 - 中断（杀小程序 / 断网）后恢复不从头重拉；
 - 不回归既有用例：`db.spec.ts` watermark 单调性、`syncScheduler` 的 mutex 与 conflict-retry 行为。
+
+## L14: outbox dead-letter 是静默黑洞（本地改动被吞且无可见性 / 无重投）
+
+> 来源: 2026-09-02 L13 第四轮复核。判定 dead-letter **不计入** `listPendingEntryRefs` 的相等档闸门时，暴露出的上游问题（L13 决策 29）。
+
+**问题**: `ackBatchFailure` 连续失败 `MAX_RETRIES=5` 次后，op 被 `moveToDeadLetter` 移入 `outbox:__dead_letter`。这是**终态**：
+
+- 没有自动重试（dead-letter 不参与 `drainBatch`）；
+- 没有手动重投入口，没有任何 UI；
+- 唯一"清理"方式是 logout（`clearAllForReset`）或 storage 版本迁移——即**连同用户数据一起丢弃**；
+- 可见性只有 `syncScheduler.ts` 的一行 `logger.error('⚠️ DEAD_LETTER … data may be lost')`，用户完全看不到。
+
+**由此产生的可观察后果**（L13 复核确认，属**已知取舍**而非缺陷）:
+
+- dead 的 `delete` op：本地软删不推进 `version` ⇒ 下一次 pull 在"相等档 + 内容漂移（`deleted_at`）"判定下覆盖本地 ⇒ **用户删掉的流水自己回来了**，无提示；
+- dead 的 `update` op：同理，本地编辑被回退成服务端旧值；
+- dead 的 `create` op：服务端根本没有该行，pull 永不下发 ⇒ 本地变成**永久幽灵行**，任何设备都看不到它，且不会再尝试上行。
+
+**为什么不在 L13 里顺手修**: 把 dead-letter 塞进 `pendingRefs` 只能得到**半截保护**——服务端那行 `version` 一旦 +1，`serverVer > localVer` 分支照样覆盖；换来的只是把覆盖时刻推迟到不确定的将来，同时让 §3.6 的 canonical 字段自愈对这些行永久失效，并让该行与服务端长期分叉且无收敛机制。属于"为掩盖问题写硬逻辑"，方向错误。
+
+**正确方向（待方案）**:
+
+1. **可见性**：dead-letter 非空时给用户明确入口（"有 N 条改动未能同步"），而不是只打日志；
+2. **重投**：提供手动重试通道（重置 `retries` + 换 `idempotency_key` 回 index），网络长期恢复后应能自愈；
+3. **放弃语义**：若确认放弃，应显式告知"该条已回退为服务端版本"，而不是让它在某次 pull 后静默变回去；
+4. 顺带明确 `create` 幽灵行的处置（重投 / 提示删除）。
+
+**关联**: L13 §4.4 ③ 决策 29；`miniprogram/services/outbox.ts` 的 `listPendingEntryRefs` 有配套注释说明"有意不含 dead-letter"，改动前请先读该注释。

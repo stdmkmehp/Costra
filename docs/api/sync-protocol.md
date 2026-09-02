@@ -196,11 +196,12 @@ Headers:
 {
   "watermark": "2026-04-23T09:45:12.318Z",   // 本批最大 updated_at
   "has_more": false,                         // true 时客户端应立刻再请一次
+  "categories_revision": "…",                // 系统分类签名；L13 起仅收敛轮(has_more=false)返回
   "changes": {
     "entries":    [ {...Entry},  {...Entry} ],
     "categories": [ {...Category} ],
     "budgets":    [],
-    "ledgers":    []
+    "ledgers":    [ {...Ledger} ]            // 含 sync_epoch（L13 E1）
   }
 }
 ```
@@ -211,33 +212,59 @@ Headers:
 |---|---|---|
 | `source_recurring_id` | `uuid \| null` | 来源定时规则；手工流水为 `null`。客户端只用于展示“定”角标，不得回传修改 |
 
+`changes.ledgers[*]` 携带 `sync_epoch`（L13 E1 · migration 0019）：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `sync_epoch` | `integer`（optional） | 批量写入版本戳。仅在绕过 `entryService` 的批量写入路径（导入 / 运维脚本 / 数据修复）中同事务 `+1`；日常单笔记账不加。灰度期旧服务端不返回，客户端缺失**归一化为 0**（与服务端列 `DEFAULT 0` 对齐）。 |
+
+`categories_revision`（L13 §4.3）：**仅在收敛轮（`has_more=false`）返回**；`has_more=true` 的分页轮可能缺省，避免全表扫系统分类的 per-request 固定成本被分页循环放大。字段因此为 optional。
+
 ### 3.3 客户端规则
 
 ```
-for entity in ['ledgers','categories','budgets','entries']:  // 顺序重要
-  for item in changes[entity]:
-    local = localStore.get(entity, item.id)
-    if item.deleted_at is not None:
-      if local is None or local.version < item.version:
-        localStore.softDelete(entity, item.id, item.version)
-    else:
-      if local is None:
-        localStore.insert(entity, item)
-      elif item.version > local.version:
-        if local.dirty:
-          // 发生并发：本地未上行 + 服务端已变更
-          mergeIntoConflictQueue(local, item)   // 见 conflict-strategy.md
-        else:
-          localStore.replace(entity, item)
-      # else: item.version <= local.version，忽略（幂等）
+since = localStore.getWatermark(family_id)
+loop:
+  resp = GET /sync/pull { family_id, since, limit }
 
-localStore.setWatermark(family_id, watermark)
-if has_more: retry pull immediately
+  # watermark 合法性前置校验（L13 v0.8 前移）：非法/回退的响应不驱动任何本地状态变更（含 epoch 重置）
+  if resp.watermark < since or (resp.has_more and resp.watermark == since): break
+
+  # 资产不断供（L13 v0.8 前移）：必须早于 epoch 判定，否则重置轮 continue 会跳过；
+  # balance 是服务端权威值、与 watermark 无关，任何一轮下发都可安全覆盖写
+  applyLedgerBalance(resp.changes.ledgers)
+
+  # L13 E1：epoch 前置比对（§4.2）· 提取 ledgers[].sync_epoch 归一化 ?? 0
+  serverEpochs = extract(resp.changes.ledgers)        # { [ledgerId]: sync_epoch ?? 0 }
+  localEpochs  = localStore.getLedgerEpochs(family_id) # null = 首登/升级
+  if serverEpochs is empty:                            # "本轮没下发 ledger" ≠ "账本消失"（R11）
+    pass                                               # 不比对也不写入，等下轮带 ledger 的响应再追踪
+  elif localEpochs is None:
+    localStore.setLedgerEpochs(family_id, serverEpochs) # 采信追踪，不重置（避免升级风暴）
+  elif anyDiff(localEpochs, serverEpochs):              # 含 key 集合比对
+    # 写序不变量：先清零 watermark 且确认成功，才写 epoch（反序会真丢数据）
+    setWatermarkStrict(family_id, 0)                     # 写失败则中止本轮、不写 epoch
+    localStore.setLedgerEpochs(family_id, serverEpochs)
+    since = 0
+    continue                                             # 本轮 entries 不应用，全量重拉
+
+  for item in resp.changes.entries:                      # 判定见下
+    applyServerEntry(item)
+  localStore.setWatermark(family_id, resp.watermark)
+  since = resp.watermark
+  if not resp.has_more:
+    maybeRefreshCategoriesByRevision(resp.categories_revision) # 仅收敛轮消费
+    break
+  if reached MAX_PULL_PAGES: schedule pull-continue; break
 ```
+
+entry 判定（L13 §4.4 ③）：`serverVer > localVer` 覆盖；`<` 跳过；相等时按 **pending 闸门 + 内容等价比较**分流——有 pending op → 跳过（保护本地未上行编辑/软删）；无 pending 且内容等价 → 跳过；无 pending 但 canonical 字段（`category_id` / `shared_type` 等）漂移 → 覆盖拉回。客户端本地 `version` 是 push ack 回填、内容未回写，故“同 version 即同内容”在客户端不成立，必须比内容。
 
 ### 3.4 实体顺序约束
 
 客户端必须按 **ledgers → categories → budgets → entries** 顺序消费，否则可能因外键未到先行插入 entry 而命中本地约束。
+
+> **现状注记（L13）**：MVP 下 `categories` / `budgets` 恒空（各有独立管理通道），`ledgers` 实体不落盘（本地无读者，仅用于 epoch 比对 + 资产缓存覆盖写）。客户端已删除多实体顺序消费的 `applyServerChanges`，`entries` 走批量落盘 `applyServerEntriesBatch`。因此本约束当前**无适用对象**，保留为未来实体扩展时的契约。
 
 ### 3.5 软删处理
 
@@ -378,6 +405,8 @@ if has_more: retry pull immediately
 | `smoke_sync_03` | 离线记 5 条 → 联网后 push 一次 → pull 一次 → 本地 5 条全部带 `id` + `version=1` 且 dirty 清零 |
 | `smoke_sync_04` | A 端改 entry v=3 → B 端在 v=2 基础上 update → B 收到 `conflict` + `server_record.version=4` |
 | `smoke_sync_05` | pull 返回 `has_more=true` → 客户端立即二次 pull；最终 watermark 单调推进 |
+
+> `smoke_sync_05` 的可执行用例见 `qa/cases/sync-pagination-smoke.md` **SP-001**；该文件同时覆盖中断续拉（SP-002）、`sync_epoch` 触发全量重拉（SP-003）、重拉期间并发记账（SP-004）、稳态零成本与灰度兼容（SP-005）。
 
 ---
 

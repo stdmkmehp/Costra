@@ -1205,7 +1205,10 @@ setInterval(POLL_INTERVAL_MS) 或 事件触发
 2. 从规范化产物批量 `INSERT entries`（带预生成 `entry_id` + `client_ref_id`，走 `entries` 现有列语义）；
 3. 正确生成 `change_seq`（`nextval('entries_change_seq')`，与 entryRepo 同源）；
 4. 汇总 delta，**在事务末尾一次性**更新 `ledgers.balance_cents / balance_version`（对齐 `ledgerRepo.applyBalanceDelta`，transfer 不产生 delta）；
-5. `UPDATE data_jobs SET status='succeeded', finished_at, result_summary`（**条件更新**，见下）。
+5. **批量写入第二条铁律（L13 E1）**：对本次导入受影响的每个账本执行 `UPDATE ledgers SET sync_epoch = sync_epoch + 1`（**必须与上述 INSERT 同一事务**）。理由见 `docs/design/sync-pull-pagination-design.md` §4.2：`change_seq` 走 `nextval` 有"已取号未提交"洞（§3.1），批量长事务在 COMMIT 前若同 family 有并发单笔写入先提交，会把客户端 watermark 推过本批号段区间 → 导入数据被客户端永久拉不到。`sync_epoch + 1` 与 INSERT 同事务原子可见，客户端下一轮 pull 比对 epoch 不一致即清零 watermark 全量重拉。**忘记 +1 = 退化回 R1 洞（洞无人知）**，是本方案唯一靠约定守住的失败模式，须列入 review 检查项。
+6. `UPDATE data_jobs SET status='succeeded', finished_at, result_summary`（**条件更新**，见下）。
+
+> **导入上线前置（决策 16 · L13 §8 决策 23）**：`sync_epoch` 的客户端消费能力（epoch 前置比对 + 全量重拉）必须**先于**任何生产批量写入入口上线。若导入功能上线时仍有旧版本客户端未具备 epoch 消费能力，这些客户端仍会踩 R1 洞。故导入上线的前置条件 = **客户端 epoch 消费版本已达目标覆盖率**。
 
 **成功状态不能在事务提交后再单独更新**，否则：
 
