@@ -121,24 +121,84 @@ export async function findById(id: string, client?: Runner): Promise<UserEntity 
   return res.rows[0] ? rowToEntity(res.rows[0]) : null;
 }
 
+// --- GM 用户双榜单（GET /gm/users 消费 · 均不返回 openid · D3）---
+
+/** 活跃榜条目：近 7 天 entries 数 + 最后活跃时间 */
+export interface ActiveUserSummary {
+  id: string;
+  nickname: string;
+  avatarUrl: string | null;
+  createdAt: Date;
+  entryCount7d: number;
+  lastActiveAt: Date;
+}
+
+/** 注册榜条目 */
+export interface RecentUserSummary {
+  id: string;
+  nickname: string;
+  avatarUrl: string | null;
+  createdAt: Date;
+}
+
 /**
- * GM 用户列表（GET /gm/users 消费）：created_at DESC, id DESC 稳定排序；排除软删。
- * limit 由调用方按 page_size+1 传入判 has_more。
+ * GM 活跃榜：近 7 天（since 起）有 entries 写入的用户，entryCount7d DESC,
+ * lastActiveAt DESC, id DESC 稳定排序；INNER JOIN 天然排除无流水用户；排除软删。
+ * 窗口起点由调用方传入（避免 SQL interval 字面量，兼容 pg-mem）。
  */
-export async function listRecentUsers(limit: number, offset: number, client?: Runner): Promise<UserEntity[]> {
+export async function listActiveUsers(
+  since: Date,
+  limit: number,
+  client?: Runner,
+): Promise<ActiveUserSummary[]> {
   const runner = client ?? exec();
   const res = await runner.query(
-    `SELECT id, wx_openid, wx_unionid, nickname, avatar_url, timezone,
-            has_completed_profile, is_gm,
-            created_at, updated_at, deleted_at, version,
-            preferred_family_id, preferred_ledger_id, preferred_revision, preferred_updated_at
-       FROM users
-      WHERE deleted_at IS NULL
-      ORDER BY created_at DESC, id DESC
-      LIMIT $1 OFFSET $2`,
-    [limit, offset],
+    `SELECT u.id, u.nickname, u.avatar_url, u.created_at,
+            e.cnt AS entry_count_7d, e.last_at AS last_active_at
+       FROM users u
+       JOIN (
+             SELECT created_by, count(*) AS cnt, max(created_at) AS last_at
+               FROM entries
+              WHERE created_at >= $1
+                AND deleted_at IS NULL
+              GROUP BY created_by
+            ) e ON e.created_by = u.id
+      WHERE u.deleted_at IS NULL
+      ORDER BY e.cnt DESC, e.last_at DESC, u.id DESC
+      LIMIT $2`,
+    [since, limit],
   );
-  return res.rows.map(rowToEntity);
+  type ActiveRow = UserRow & { entry_count_7d: number | string; last_active_at: Date };
+  return (res.rows as unknown as ActiveRow[]).map((r) => ({
+    id: r.id,
+    nickname: r.nickname,
+    avatarUrl: r.avatar_url,
+    createdAt: r.created_at,
+    entryCount7d: Number(r.entry_count_7d), // count(*) → int8 · node-pg 返回 string
+    lastActiveAt: r.last_active_at,
+  }));
+}
+
+/** GM 注册榜：created_at DESC, id DESC 稳定排序；排除软删。 */
+export async function listRecentRegistered(
+  limit: number,
+  client?: Runner,
+): Promise<RecentUserSummary[]> {
+  const runner = client ?? exec();
+  const res = await runner.query(
+    `SELECT u.id, u.nickname, u.avatar_url, u.created_at
+       FROM users u
+      WHERE u.deleted_at IS NULL
+      ORDER BY u.created_at DESC, u.id DESC
+      LIMIT $1`,
+    [limit],
+  );
+  return res.rows.map((r) => ({
+    id: r.id,
+    nickname: r.nickname,
+    avatarUrl: r.avatar_url,
+    createdAt: r.created_at,
+  }));
 }
 
 export interface CreateUserInput {

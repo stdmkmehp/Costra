@@ -190,17 +190,14 @@ paths:
   /gm/users:
     get:
       tags: [gm]
-      summary: GM 用户列表（GM-only）
+      summary: GM 用户双榜单（GM-only）
       description: |
         仅 `users.is_gm = true` 的用户可访问（服务端实时查库校验，授权/回收即时生效）。
-        按 created_at DESC, id DESC 稳定排序；**不返回 openid**（选人用 user_id · D3）。
-      parameters:
-        - name: page
-          in: query
-          schema: { type: integer, minimum: 1, default: 1 }
-        - name: page_size
-          in: query
-          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+        一次返回两个封顶榜单（各 Top 200），分页由客户端本地切片，端点无分页参数：
+        - `active`：近 7 天活跃（按 entries 写入数），entry_count_7d DESC, last_active_at DESC, id DESC
+        - `recent`：最近注册，created_at DESC, id DESC
+        两榜语义独立、不去重（同一用户可同时出现）；**不返回 openid**（选人用 user_id · D3）。
+        整榜走 Redis read-through 缓存（`cache:v1:gm:active-users` · TTL 1800s · Redis 异常降级直查 SQL）。
       responses:
         '200':
           description: OK
@@ -208,10 +205,25 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [items, page, page_size, has_more]
+                required: [active, recent]
                 properties:
-                  items:
+                  active:
                     type: array
+                    maxItems: 200
+                    items:
+                      type: object
+                      required: [id, id_short, nickname, avatar_url, created_at, entry_count_7d, last_active_at]
+                      properties:
+                        id: { type: string, format: uuid }
+                        id_short: { type: string, description: user id 前 8 位短码 }
+                        nickname: { type: string }
+                        avatar_url: { type: string, format: uri, nullable: true }
+                        created_at: { type: string, format: date-time }
+                        entry_count_7d: { type: integer, minimum: 1, description: 近 7 天 entries 写入数 }
+                        last_active_at: { type: string, format: date-time, description: 最后一笔 entries 写入时间 }
+                  recent:
+                    type: array
+                    maxItems: 200
                     items:
                       type: object
                       required: [id, id_short, nickname, avatar_url, created_at]
@@ -221,9 +233,6 @@ paths:
                         nickname: { type: string }
                         avatar_url: { type: string, format: uri, nullable: true }
                         created_at: { type: string, format: date-time }
-                  page: { type: integer }
-                  page_size: { type: integer }
-                  has_more: { type: boolean }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
 

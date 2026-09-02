@@ -30,6 +30,8 @@ export interface TTLConfig {
   rateWindowSec: number;
   /** JWT 校验时钟偏移容错（秒，默认 60；ttl-policy.md §4.3） */
   clockToleranceSec: number;
+  /** GM 用户双榜单 Redis 缓存时效（秒，默认 1800 = 30min） */
+  gmActiveUsersSec: number;
 }
 
 function parseIntOr(v: string | undefined, fallback: number, key: string): number {
@@ -53,6 +55,7 @@ export function loadTTL(env: NodeJS.ProcessEnv = process.env): Readonly<TTLConfi
     cursorHours: parseIntOr(env.TTL_CURSOR_HOURS, 72, 'TTL_CURSOR_HOURS'),
     rateWindowSec: parseIntOr(env.TTL_RATE_WINDOW_SEC, 60, 'TTL_RATE_WINDOW_SEC'),
     clockToleranceSec: parseIntOr(env.TTL_CLOCK_TOLERANCE_SEC, 60, 'TTL_CLOCK_TOLERANCE_SEC'),
+    gmActiveUsersSec: parseIntOr(env.TTL_GM_ACTIVE_USERS_SEC, 1800, 'TTL_GM_ACTIVE_USERS_SEC'),
   };
 
   // 一致性校验：invite 默认值不得超过上限

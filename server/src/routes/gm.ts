@@ -3,8 +3,11 @@
  *
  * 事实源：docs/ops/gm-impersonate-design.md · server/api/openapi.yaml paths /gm/users | /gm/impersonate
  *
- * 契约约束：
- *   - GET  /gm/users        → 200 { items, page, page_size, has_more }（GM-only · 不返回 openid · D3）
+ * 契约约束（v2 · 2026-09-02 双榜单改造）：
+ *   - GET  /gm/users        → 200 { active, recent } 双榜全量（各 ≤200 · GM-only · 不返回 openid · D3）
+ *                             active = 近7天活跃（entry_count_7d DESC），recent = 最近注册（created_at DESC）；
+ *                             整榜走 gmActiveUsersCache read-through（TTL 30min · Redis 异常降级直查 SQL），
+ *                             分页由客户端本地切片，端点无分页参数
  *   - POST /gm/impersonate  body: { user_id } | { create_fake: true }（必须二选一）→ 200 AuthTokenPair（与 wx-login 同形）
  *
  * 安全模型：
@@ -19,9 +22,39 @@ import { AppError } from '../errors/AppError.js';
 import { ErrorCode } from '../errors/ErrorCode.js';
 import * as userRepo from '../repositories/userRepo.js';
 import { createAuthService } from '../services/authService.js';
+import { getGmListsCached } from '../services/gmActiveUsersCache.js';
 import { code2Session } from '../wx/code2Session.js';
 
 interface JwtPayload { sub: string; iat: number; exp: number }
+
+/** 双榜单各榜上限（活跃/注册均 Top 200 · 客户端本地分页全量下发） */
+const GM_LIST_LIMIT = 200;
+/** 活跃窗口：近 7 天 */
+const GM_ACTIVE_WINDOW_MS = 7 * 24 * 3600 * 1000;
+
+/** 响应线形（缓存 payload 同形 · 日期已 ISO 序列化） */
+interface GmActiveItem {
+  id: string;
+  id_short: string;
+  nickname: string;
+  avatar_url: string | null;
+  created_at: string;
+  entry_count_7d: number;
+  last_active_at: string;
+}
+
+interface GmRecentItem {
+  id: string;
+  id_short: string;
+  nickname: string;
+  avatar_url: string | null;
+  created_at: string;
+}
+
+interface GmUserLists {
+  active: GmActiveItem[];
+  recent: GmRecentItem[];
+}
 
 /**
  * GM 校验（对齐 users.ts parseUserId 的鉴权模式，追加实时查库 is_gm 判定 · D2）。
@@ -42,15 +75,6 @@ async function requireGm(request: FastifyRequest): Promise<string> {
 }
 
 // --- Schema 定义 ---
-
-const listUsersQuerySchema = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    page: { type: 'integer', minimum: 1, default: 1 },
-    page_size: { type: 'integer', minimum: 1, maximum: 50, default: 20 },
-  },
-} as const;
 
 const impersonateBodySchema = {
   type: 'object',
@@ -75,26 +99,36 @@ type ImpersonateBody = {
 export async function registerGmRoutes(app: FastifyInstance): Promise<void> {
   const svc = createAuthService({ app, wxCode2Session: code2Session });
 
-  // GET /gm/users · GM 用户列表（created_at DESC 稳定排序 · 不返回 openid）
-  app.get<{ Querystring: { page?: number; page_size?: number } }>(
-    '/gm/users',
-    { schema: { querystring: listUsersQuerySchema } },
-    async (req, reply) => {
-      await requireGm(req);
-      const page = req.query.page ?? 1;
-      const pageSize = req.query.page_size ?? 20;
-      // page_size+1 探测 has_more
-      const rows = await userRepo.listRecentUsers(pageSize + 1, (page - 1) * pageSize);
-      const items = rows.slice(0, pageSize).map((u) => ({
-        id: u.id,
-        id_short: u.id.slice(0, 8),
-        nickname: u.nickname,
-        avatar_url: u.avatarUrl,
-        created_at: u.createdAt.toISOString(),
-      }));
-      reply.code(200).send({ items, page, page_size: pageSize, has_more: rows.length > pageSize });
-    },
-  );
+  // GET /gm/users · GM 用户双榜单（近7天活跃 + 最近注册 · 各 Top 200 · 整榜缓存 · 不返回 openid）
+  app.get('/gm/users', async (req, reply) => {
+    await requireGm(req);
+    const lists = await getGmListsCached<GmUserLists>(async () => {
+      const since = new Date(Date.now() - GM_ACTIVE_WINDOW_MS);
+      const [active, recent] = await Promise.all([
+        userRepo.listActiveUsers(since, GM_LIST_LIMIT),
+        userRepo.listRecentRegistered(GM_LIST_LIMIT),
+      ]);
+      return {
+        active: active.map((u) => ({
+          id: u.id,
+          id_short: u.id.slice(0, 8),
+          nickname: u.nickname,
+          avatar_url: u.avatarUrl,
+          created_at: u.createdAt.toISOString(),
+          entry_count_7d: u.entryCount7d,
+          last_active_at: u.lastActiveAt.toISOString(),
+        })),
+        recent: recent.map((u) => ({
+          id: u.id,
+          id_short: u.id.slice(0, 8),
+          nickname: u.nickname,
+          avatar_url: u.avatarUrl,
+          created_at: u.createdAt.toISOString(),
+        })),
+      };
+    }, app.log);
+    reply.code(200).send(lists);
+  });
 
   // POST /gm/impersonate · GM 登录指定账号（user_id）或新建伪造账号（create_fake）
   app.post<{ Body: ImpersonateBody }>(
