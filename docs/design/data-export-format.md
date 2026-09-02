@@ -1,14 +1,19 @@
 # 数据导入/导出格式设计
 
-> 状态：v1 脚本版已实现 · **v2 客户端版方案已冻结**  
-> 适用版本：v0.2+（v1 脚本）· v2（客户端 · 见 `docs/design/data-import-export-client-analysis.md`）  
-> 实现方式：v1 后台脚本 · v2 客户端异步任务
+> 状态：**已废弃（2026-09-02）· 仅作历史留档**  
+> v1 CLI 脚本（`server/scripts/export-entries.mts` / `import-entries.mts`）已删除。  
+> 现行方案见 `docs/design/data-import-export-client-analysis.md`（v0.7+ · 9 列纯 RFC 4180）。  
+> 本文档描述的 15 列含 UUID 格式不再有任何生产实现，请勿据此开发新功能。
+
+> ~~状态：v1 脚本版已实现 · v2 客户端版方案已冻结~~  
+> ~~适用版本：v0.2+（v1 脚本）· v2（客户端）~~  
+> ~~实现方式：v1 后台脚本 · v2 客户端异步任务~~
 
 > **重要**：本文档为 v1 CLI 脚本版格式定义。v2 客户端版的完整方案见  
-> `docs/design/data-import-export-client-analysis.md` v0.3。  
+> `docs/design/data-import-export-client-analysis.md`。  
 > v2 对格式做了重大调整：导出列从 15 列精简到 9 列、不保留任何 UUID、  
-> 导入采用「检测 → 确认导入」两阶段、支出归属默认改为 `个人`。  
-> v1 脚本保留为运维应急入口，但格式以 v2 为准。
+> 导入采用「检测 → 确认导入」两阶段、支出归属默认改为家庭语义。  
+> ~~v1 脚本保留为运维应急入口，但格式以 v2 为准~~（v1 脚本已删除）。
 
 ---
 
