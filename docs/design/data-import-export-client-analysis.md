@@ -1,14 +1,28 @@
 # 客户端账本数据导入 / 导出方案
 
-> 状态：**v0.8 · 待评审**（v0.7 曾标记"方案冻结"，第四轮 code-level review 发现 3 项 P0 + 9 项 P1，冻结状态撤销；v0.8 逐条收敛后重新提交评审）
+> 状态：**v1.0 · 动工前基线**（第六轮 review 对 v0.9 的三项 P0 做了代码级穿透验证：一项证伪、一项修正、一项升级；`sync_epoch_floor_seq` 方案因收益证伪被**整体取代**为服务端 `sync-hold`）
 > 2026-08-28 后置修订：服务端 Redis 业务缓存已回滚移除，§7.5 的「导入缓存失效」要求随之作废（R21 消解）。
 > 前置文档：`docs/design/data-export-format.md`（v1 脚本版 · 已废弃留档）
 > 触发背景：v1 只支持运维在服务器上跑脚本；本方案把导入 / 导出下沉到小程序端用户自助能力。
 >
 > ⚠️ **文档边界（v0.8 确立）**：`docs/design/sync-pull-pagination-design.md`（L13）已于 2026-09-01 全量落地并**进入完成态，不再接受新增修订**。本方案对 sync-pull 通道所需的任何增量改动，一律在**本文档 §5.2** 中定义与冻结，L13 文档只作为既有不变量的引用来源。
 >
+> **v1.0 变更摘要**（详见 §15 修订记录 · 2026-09-02）：
+> - **架构决策变更 · `sync_epoch_floor_seq` 被 `sync-hold` 取代**：`floor_seq` 的 `LEAST` 单调性（不变量 F1）意味着 floor **永远停在第一次导入的位置** —— 第二次及以后的每次导入，客户端都要从"第一次导入之前"重拉，收益单调衰减至与 v0.7 的清零全量重拉等价（推导见 §5.2.1）。改用**服务端侧 `sync-hold`**：导入取号前先用独立短事务把 `ledgers.sync_hold_seq` 钉住，导入期间 `sync/pull` 不推进该 family 的 watermark，COMMIT 时与余额同语句原子解除。**"已取号未提交"洞根本不会形成** ⇒ 不需要 epoch 重拉、**客户端零改动、取消版本覆盖率门槛、导入可与导出同期发布**（§5.2）。
+> - **P0 · 导出分片必须按"行数 + 字节数"双阈值切分**：只按 5,000 行切片，在备注较长时单片可达 3MB+，仍会撞导入侧 1MB 硬顶 —— 「自产自入闭环」以另一种触发条件复发（量化推导见 §9.2）。
+> - **P0 · 修正 v0.9 §5.2.3 ④ 的误判**：`floorSeq > localWatermark` 是新设备/离线设备的**常态**而非异常，且该情形下正常增量 pull 天然覆盖号段。随 `floor_seq` 移除一并作废，教训记入 §5.2.1。
+> - **P1 · 已取号未提交洞并非导入独有**：两笔普通记账 A(seq=100)/B(seq=101)，B 先提交即可让 A 永久拉不到。`0016` 的 `CACHE 1` 只保证单调、不保证提交序。`sync-hold` 是通用机制，未来可推广到该根因（§5.2.5、R36）。
+> - **P1 · 其余**：`stage='writing'` 在大事务内不可见 ⇒ 导入收敛为单可观测阶段（§7.2）；`uq_entries_ledger_client_ref` 冲突是重试幂等的**预期结局**，不得归入 `CONSTRAINT_VIOLATION` 告警（§7.5、§9.5）；`data_jobs.detect_id` FK 补 `ON DELETE CASCADE`（§7.3）；自产文件成员未匹配需提供昵称映射出口，否则「家庭数据交接」场景不可用（§3.3、§4.3）。
+> - **工作量 28 → 25.5 人天**（不建真 PG 测试通道则 23.5）：删除 E5c（客户端 floor 消费 1.5），E2b 改为 sync-hold 服务端实现（§12）。
+>
+> **v0.9 变更摘要**（⚠️ 第 1 条的 `floor_seq` 已被 v1.0 整体取代，保留仅作演进留档 · 详见 §15 修订记录 · 2026-09-02）：
+> - **P0 · 修正 `sync_epoch_floor_seq` off-by-one**：`floor_seq` 必须写 `MIN(本批 change_seq) - 1`，否则 sync 的 `change_seq > watermark` 会跳过本批首条。
+> - **P1 · 导入终态条件更新语义收紧**：导入事务内 `run_token` 条件更新影响行数必须为 1；若为 0 必须 rollback 已插入数据/余额/epoch，不能沿用导出侧"放弃写回"语义。
+> - **P1 · 任务与检测会话生命周期对齐**：`data_jobs.detect_id` 保留 FK，因此 `import_detect_sessions` 元数据与任务同寿 30 天；24h 只限制 report 文件可下载时间，隐私敏感 `.rows.ndjson.gz` 仍按终态及时清理。
+> - **P1/P2 · 清理冻结决策旧口径**：同步记账人未匹配分级、原始 CSV 不落盘、错误码数量等表述。
+>
 > **v0.8 变更摘要**（详见 §15 修订记录 · 2026-09-02）：
-> - **P0 · 全文补齐错误码契约**：原文只写裸 HTTP status，违反"客户端依 `code` 判分支"铁律，且现有 `ErrorCode` 枚举无一可表达本方案语义（`413` 根本不存在）。新增 §9.5，定义 5 个新 code 与 multipart 超限映射（§9.5）。
+> - **P0 · 全文补齐错误码契约**：原文只写裸 HTTP status，违反"客户端依 `code` 判分支"铁律，且现有 `ErrorCode` 枚举无一可表达本方案语义（`413` 根本不存在）。新增 §9.5，定义 6 个新 code 与 multipart 超限映射（§9.5）。
 > - **P0 · 修正 §9.3 formula guard 不可逆**：原编解码规则非互逆，备注原文 `'备注` 自产自入后会丢掉前导单引号。改为"首字符为 `'` 无条件加一层"（§9.3）。
 > - **P0 · 修正导入后客户端重拉量级**：原文"5,000 条 ≈ 10 页，秒级收敛"把导入行数当成重拉量。epoch diff 实际触发 `since=0` 全量重拉（含软删行）且 family 内**每台设备**各一次，老账本会撞 `MAX_PULL_PAGES=40` 硬顶。新增 **`ledgers.sync_epoch_floor_seq`**，把全量重拉收敛为"从导入批次起点重拉"（§5.1、§5.2）。
 > - **P1 · 导出侧补分片**：原"导出不设上限 + 导入 5,000 行"使「自产自入闭环」在大账本上直接不成立（§2.3、§9.2）。
@@ -25,10 +39,10 @@
 > - **删除 Costra preamble**，回归纯 RFC 4180；格式识别改用 9 列表头指纹（§2.1）。
 > - 导入时区显式 `Asia/Shanghai`；缺省归属改为**沿用账本所属家庭的默认语义**；修正转账分类名（§3.6、§3.8、§3.7）。
 >
-> **v0.7 变更摘要**（⚠️ 其中第 2 条「epoch 全量重拉」与工作量数字**已被 v0.8 推翻**，保留仅作演进留档 · 2026-09-02）：
+> **v0.7 变更摘要**（⚠️ 其中第 2 条「epoch 全量重拉」与工作量数字**已被 v0.8 推翻**；第 6 条「导出先行 / 导入等版本覆盖率」**已被 v1.0 取消**（`sync-hold` 无客户端依赖）。保留仅作演进留档 · 2026-09-02）：
 > - **E0 前置已关闭**：`sync/pull` 的 `has_more` 消费已按 `docs/design/sync-pull-pagination-design.md` v0.8 全量落地（分页循环 + 批量落盘 + `ledgers.sync_epoch` + 月索引串行队列，migration `0019`）；导入上线唯一剩余前置 = **客户端 epoch 消费版本覆盖率**（§5.1）。
 > - **导入数据到达路径明确为 epoch 全量重拉**：导入事务 `sync_epoch + 1` → 客户端下一轮 pull 前置比对不一致 → 清零 watermark 全量重拉（并非"落在增量窗口内"）（§5.1）。
-> - **`data_jobs` 迁移编号 0019 → 0020**：`0019` 已被 `ledgers.sync_epoch` 占用（§7.3）。
+> - **`data_jobs` 迁移编号 0019 → 0020**：`0019` 已被 `ledgers.sync_epoch` 占用（§7.3）。（⚠️ 2026-09-04 更新：`0020` 又被 `0020_tips.sql` 占用，顺延至 **`0021`**，下同。）
 > - **commit 复核补行锁**：复核 SQL 由纯 `SELECT` 改 `SELECT ... FOR UPDATE`，堵住"复核通过 → 成员并发退出 → 仍写入"的 TOCTOU（§7.5、R12）。
 > - **导出游标独立**：不复用 `entryService.list` 的 `updated_at DESC` 游标，改 `occurred_at ASC, id ASC` 专用游标（§7.5）。
 > - **释放策略**：导出只读、无 epoch 依赖，**可先行发布**；导入入口等客户端版本覆盖率达标后开放（§5.1、§14）。
@@ -45,7 +59,7 @@
 | 载体格式 | **只支持 CSV**；不做 JSON / XLSX |
 | 导入选文件 | `wx.chooseMessageFile` 从微信聊天中选择 CSV |
 | 导出交付 | `wx.downloadFile` 下载临时文件后，使用 `wx.shareFileMessage` 转发到微信聊天 |
-| 导出范围 | **按账本 + 日期范围导出范围内全部流水**，包含账本内所有成员创建的记录（不按 `created_by` 过滤）；单文件 ≤ 5,000 行，超出自动分片为多文件（§9.2）|
+| 导出范围 | **按账本 + 日期范围导出范围内全部流水**，包含账本内所有成员创建的记录（不按 `created_by` 过滤）；单文件 ≤ 5,000 行**且** ≤ 900KB，任一触顶即自动分片（§9.2）|
 | 二次同意 | 不需要；登录鉴权 + 活跃账本成员权限校验即足够 |
 | 执行模型 | 导入、导出都创建**服务端异步任务** |
 | 导出列设计 | **不保留**账本ID / 记账人ID / 记录ID；仅保留昵称、分类名等人类可读字段 |
@@ -53,20 +67,20 @@
 | 归属默认 | 支出缺省归属**沿用账本所属家庭的默认语义**（个人家庭→个人 / 共同家庭→共同，复用 `entryService.resolveDefaultSharedType`）|
 | 导入并发约束 | **同一账本同时只允许一个导入任务在执行**；detect **同一用户同时只允许一个** |
 | 导入两阶段 | **先检测 → 再确认导入**；检测阶段返回所有错误和 warning，由用户决定是否继续 |
-| 记账人匹配 | 按昵称匹配家庭成员；未匹配时归属当前导入操作者 + warning；**同名多个成员 → ERROR**（§3.3）|
+| 记账人匹配 | 按昵称匹配家庭活跃成员；同名多个成员 → ERROR；未匹配时**自产文件 ERROR、外部 CSV 归属当前导入操作者 + WARNING**；自产文件未匹配必须提供**昵称→活跃成员映射**出口（§3.3、§4.3）|
 | 任务持久化 | 任务落 PG 表 `data_jobs`（导入导出共用）；用户退出后可再回来查看进度与下载 |
 | 进度显示 | **不承诺真实百分比**；客户端按 `stage + stage_started_at` 做**阶段型渐近模拟进度**，成功才跳 100%（§7.2） |
 | worker | 复用 recurringScheduler 范式：进程内轮询 + advisory lock + `FOR UPDATE SKIP LOCKED`，不引入队列中间件 |
-| 上传源文件 | 检测流式解析完**即删原始 CSV**；规范化行数据落 **server-only 私有磁盘**（压缩 NDJSON），检测元数据落 PG `import_detect_sessions`（§7.4）；**Redis 不存任何 CSV 行内容** |
+| 上传源文件 | 原始 CSV 只作为请求流/内存缓冲参与解析，**全程不持久化落盘**；规范化行数据落 **server-only 私有磁盘**（压缩 NDJSON），检测元数据落 PG `import_detect_sessions`（§7.4）；**Redis 不存任何 CSV 行内容** |
 | 导入幂等 | detect 阶段预生成 `entry_id`(v7) + `client_ref_id=import:<detect_id>:<row>`；entries + 余额 + `job=succeeded` **同一事务提交**；导入任务**仅瞬态错误可重试**（§7.5） |
 | 导入缓存失效 | 导入不走 `entryService`；但服务端业务缓存已移除，**无需任何失效调用**（§7.5）|
-| 客户端数据到达 | **不做导入专用推送/旁路**；依赖既有 sync（周期 / 切页 / mutation）。~~前置依赖：先修 `has_more` 无人消费~~ **已修复（L13 落地）**；导入后经 **`sync_epoch` + `sync_epoch_floor_seq` 定点重拉**到达（§5.1、§5.2）|
-| **sync-pull 增量改动** | L13 文档已完成态、不再修订。本方案所需的 sync-pull 改动（`ledgers.sync_epoch_floor_seq` 服务端下发 + 客户端定点回退）**由本文档 §5.2 定义与冻结**，随 `0020` 迁移一并落地 |
-| 错误码契约 | 全部端点必须返回 `ErrorCode`，客户端依 `code` 判分支。新增 5 个 code + multipart 超限映射（§9.5）；**不允许只写裸 HTTP status** |
+| 客户端数据到达 | **不做导入专用推送/旁路**；依赖既有 sync（周期 / 切页 / mutation）。~~前置依赖：先修 `has_more` 无人消费~~ **已修复（L13 落地）**；导入期间由服务端 **`sync-hold`** 钉住 watermark，COMMIT 时原子解除，导入数据**自然落在下一轮增量窗口内**，客户端零改动（§5.1、§5.2）|
+| **sync-pull 增量改动** | L13 文档已完成态、不再修订。本方案所需的 sync-pull 改动（`ledgers.sync_hold_seq` / `sync_hold_until` + pull 侧 watermark 钳制）**由本文档 §5.2 定义与冻结**，随 `0021` 迁移一并落地；**客户端不需要任何配套改动** |
+| 错误码契约 | 全部端点必须返回 `ErrorCode`，客户端依 `code` 判分支。新增 6 个 code + multipart 超限映射（§9.5）；**不允许只写裸 HTTP status** |
 | 导出文件 | 存 `/data/exports/<yyyy-mm>/<job_id>.csv`；保留 24h；下载走应用层鉴权 + 应用流式返回（不走 nginx） |
 | CSV 安全 | 所有导出（含错误报告）单元格走 **Formula Injection 防护**（`apostrophe-v2` 可逆编码 + quote-all，§9.3） |
 | 文件格式 | **纯 RFC 4180**（UTF-8 BOM + CRLF + quote-all）；**无 preamble / 无注释行**；Costra 格式由 9 列表头指纹识别（§2.1） |
-| 规模上限 | 单次导入 ≤ **5,000 行**且 ≤ **1MB**（§9.1）；上限为全链路交集，非单侧推导。**导出单文件同取 5,000 行**，保证自产自入闭环（§9.2）|
+| 规模上限 | 单次导入 ≤ **5,000 行**（不含表头）且 ≤ **1MB**（§9.1）；上限为全链路交集，非单侧推导。**导出单文件同取 5,000 行且 ≤ 900KB 双阈值**，保证自产自入闭环（§9.2）|
 | 过期清理 | 新增宿主机 cron `maintenance.sh purge-exports` + `purge-import-staging`（孤儿产物兜底）；任务元数据保留 30 天 |
 | 页面入口 | `我的 → 设置 → 账本导入 / 导出` |
 | v1 CLI 脚本 | **已删除（2026-09-02）**，不再保留运维 CLI 入口；应急导数走 `infra/scripts/psql-exec.sh` 直连 SQL |
@@ -143,7 +157,7 @@ Costra_我的家庭_2026-01-01至2026-07-21_20260721T173900_1of2.csv
 - 账本名中的 `/`、`\`、`:`、`*`、`?`、`"`、`<`、`>`、`|` 替换为 `_`。
 - 文件名即微信原生文件消息的主要可识别信息，必须包含 `Costra + 账本名 + 日期范围`。
 - 导出时刻用于避免同一区间多次导出发生同名覆盖。
-- **`_NofM` 后缀仅在 `part_count > 1` 时追加**（§9.2 分片）；单文件保持原格式，不写 `_1of1`。
+- **`_NofM` 后缀仅在 `part_count > 1` 时追加**（§9.2 双阈值分片）；单文件保持原格式，不写 `_1of1`。
 - 日期范围选"全部"时（§6.2 `from`/`to` 省略），用**实际数据的首末 `occurred_at`** 填充；空账本用当天日期。文件名不允许出现空缺段。
 
 ### 2.3 导出列定义
@@ -177,8 +191,8 @@ Costra_我的家庭_2026-01-01至2026-07-21_20260721T173900_1of2.csv
 3. **同一格式 CSV 既能导出也能导入回**（v0.8 补齐边界，见下）
 
 > **"自产自入闭环"的两条明确代价**（v0.8 新增 · 原文只写"不保证精确还原 ID"，掩盖了两个更大的损失）：
-> 1. **`created_by` 归属可能整体漂移**：导出只保留昵称，导入按昵称匹配活跃成员。若成员改过昵称或已退出家庭，该成员的记录在自产自入后会归到导入操作者名下，污染按 `entries.created_by` 聚合的成员统计。§3.3 已把"自产文件未匹配"提升为 ERROR 来阻断静默漂移。
-> 2. **行数受导入上限约束**：导入硬顶 5,000 行 / 1MB（§9.1）。若导出不设限，30,000 条的账本导出后**根本导不回去**，本原则与 §1「Costra 数据迁回」场景一起失效。v0.8 因此给导出也加了 5,000 行单文件上限 + 自动分片（§9.2），使闭环在任意规模下成立。
+> 1. **`created_by` 归属可能整体漂移**：导出只保留昵称，导入按昵称匹配活跃成员。若成员改过昵称或已退出家庭，该成员的记录在自产自入后会归到导入操作者名下，污染按 `entries.created_by` 聚合的成员统计。§3.3 已把"自产文件未匹配"提升为 ERROR 来阻断静默漂移，并要求提供昵称映射出口（否则「家庭数据交接」场景只剩"大批丢行"与"全归一人"两个都不可接受的选项）。
+> 2. **行数与字节数双重受导入上限约束**：导入硬顶 5,000 行 **且** 1MB（§9.1，两者是与关系）。若导出不设限，30,000 条的账本导出后**根本导不回去**，本原则与 §1「Costra 数据迁回」场景一起失效。v0.8 给导出加了 5,000 行分片，**v1.0 补上字节阈值** —— 只按行数切片时，备注较长的账本单片仍会超过 1MB（量化见 §9.2），闭环会以另一种触发条件复发。
 
 ### 2.4 导出文件示例
 
@@ -286,6 +300,13 @@ Costra 导入 CSV 需要至少包含：日期、类型、金额、一级分类 �
 > - **外部 CSV**：昵称本就与 Costra 家庭无关（微信账单里根本没有这一列语义），匹配不上是常态而非异常，保持 WARNING + 归操作者。
 >
 > 该分级同时保证了 §2.3 的闭环承诺：自产自入路径上不存在"静默的 `created_by` 漂移"。
+
+> **规则 4a 必须配一个出口，否则 §1「家庭数据交接」场景不可用**（v1.0 新增 · P1）：导出不按 `created_by` 过滤，因此自产文件**必然**包含历史成员。只要有一人退出家庭或改过昵称，接手方导入时该成员的**全部记录都是 ERROR**。而文档给的引导（"改回昵称或删除该列"）中，删列会让所有记录归到操作者名下 —— 正是规则 4a 要避免的漂移，只是换成"用户显式选择"。用户实际只有"大批丢行"和"全部归一人"两个都不可接受的选项，等于该场景没有可用路径。
+>
+> **要求**：检测报告页对"自产文件中未匹配的昵称"提供**一次性映射交互** —— 列出每个未匹配昵称及其影响行数，让用户为其选择一个当前活跃成员（或显式选择"归我"）。映射结果随 `detect_id` 落入产物（§7.4 步骤 4 的 `created_by` 直接写映射后的 user_id），commit 阶段不再二次解析。
+> - 映射前这些行仍计为 ERROR（不可导入），映射后转为 WARNING（可导入 + 报告中留痕）。
+> - 未匹配昵称数量上限 20（超出说明文件与目标家庭根本不匹配，直接引导重选账本），避免检测报告页退化成批量表单。
+> - 映射交互属 E1（产物结构）+ E5（页面）范围，工作量已计入 §12。
 
 ### 3.4 「类型」列的模糊兼容
 
@@ -529,7 +550,7 @@ v0.8 执行顺序（**收流与建会话解耦**）：
 
 ```text
 1. 校验 JWT + ledger 权限 + 频控（Redis 计数器，§9.1）
-2. 收流到内存/临时缓冲（≤1MB，受 multipart fileSize 兜底），同时增量计算 file_sha256
+2. 收流到内存缓冲（≤1MB，受 multipart fileSize 兜底；原始 CSV 不持久化落盘），同时增量计算 file_sha256
    —— 此阶段【不建会话】，不占并发槽
 3. 查 (user_id, ledger_id, file_sha256) 且 status='ready' 且 expires_at > now() 的会话
    命中 → 直接返回该会话的 DetectReport（不建会话、不解析、不占槽）
@@ -541,6 +562,11 @@ v0.8 执行顺序（**收流与建会话解耦**）：
 
 - 索引：`import_detect_sessions (user_id, ledger_id, file_sha256)`（§7.3）。
 - 注意：这不影响"重复导入产生重复记录"的既定语义（§3.9）—— 幂等只作用于 **detect 的 15 分钟有效期内**，用户主动重新检测（超期后）仍会得到新 `detect_id`。
+- **命中时必须顺延 `expires_at`**（v1.0 · P2）：若命中一个只剩 10 秒的 ready 会话就原样返回，用户看完检测报告再点"确认导入"必然撞 `410 DETECT_SESSION_EXPIRED` —— 幂等反而制造了一次失败。命中即把 `expires_at` 重置为 `now() + 15min`（行产物仍在，无额外成本）。
+
+> **v0.8 重排的真实收益边界（v1.0 准确化）**：新顺序**没有**解决"弱网重发"这一主场景 —— 重发时第一个请求通常仍在 `detecting`（正因为还没返回才重发），步骤 3 只查 `status='ready'` ⇒ 不命中 ⇒ 步骤 4 仍撞 `409 DETECT_IN_PROGRESS`。sha256 幂等实际覆盖的仍是"首次已完成 + 响应丢失 / 用户 15 分钟内重传同文件"这个窄窗口。
+> v0.8 重排换到的真实收益是：**幂等命中时不再需要先插一行 `detecting` 再收场**（v0.7 的顺序会在用户任务列表里凭空多出失败记录），以及收流不占并发槽。这两条本身值得做，但不要把它当成"弱网重发已解决"。
+> 若未来要真正覆盖弱网重发，方向是让步骤 3 也匹配"同 sha 的 `detecting` 会话"并返回"检测中"语义（而非冲突），让客户端转入轮询 —— 不在本期范围。
 
 > **显式承认的边界**：步骤 2 的收流阶段不受"同用户单并发"保护。这是有意的取舍 —— 并发槽要防的是**解析**（单核 CPU 大头，§4.4），而收 1MB 流的成本可忽略，且频控（步骤 1）已在更外层限制总量。把并发判定挪到收流之后，是让 sha256 幂等真正覆盖弱网重发场景的必要代价。
 
@@ -573,6 +599,10 @@ v0.8 执行顺序（**收流与建会话解耦**）：
   ],
   "errors_truncated": false,
   "warnings_truncated": false,
+  "unmatched_members": [
+    { "nickname": "老王", "row_count": 312 },
+    { "nickname": "小李（旧）", "row_count": 45 }
+  ],
   "report_path": "/import-detect-sessions/019.../report",
   "created_at": "2026-08-05T16:00:00+08:00",
   "expires_at": "2026-08-05T16:15:00+08:00"
@@ -587,6 +617,8 @@ v0.8 执行顺序（**收流与建会话解耦**）：
   - `value_preview`：仅该出错字段的值，**截断至 120 字符**。
   - `code`：机读错误码，客户端据此本地化文案，不依赖服务端中文串。
 - `errors_truncated` / `warnings_truncated`：为 true 时表示还有更多，引导用户下载完整报告。
+- `unmatched_members`（v1.0 新增）：**仅在 `is_costra_export = true` 时非空** —— 文件中"填了记账人但匹配不上活跃成员"的昵称及其影响行数，供客户端渲染 §4.3 的映射区（§3.3 规则 4a 的出口）。超过 20 个时只返回前 20 条并附 `unmatched_members_truncated: true`，客户端改为引导重选账本。外部 CSV 恒为空数组（未匹配按 WARNING 归操作者，无需交互）。
+  - 配套：`commit` 请求体新增可选 `member_mapping: { [nickname]: userId | "__self__" }`，服务端在 commit 前校验每个 userId 仍是活跃成员（与 §7.5 的复核同一次 `FOR UPDATE`），并据此改写产物中的 `created_by`。未出现在映射里的昵称，其行按 ERROR 跳过。
 - `report_path`：§7.6 完整问题报告 CSV 的**相对路径**（应用层鉴权 · 校验属主）；本身也是导出，走 §9.3 Formula 防护。
 - `expires_at`：`ready` 会话有效期 15 分钟；超时后 `commit` 返回 `410 DETECT_SESSION_EXPIRED`，需重新检测。
 
@@ -650,6 +682,30 @@ v0.8 执行顺序（**收流与建会话解耦**）：
 [          取消 · 重新选择文件          ]
 ```
 
+**自产文件的记账人未匹配 → 映射区（v1.0 新增 · §3.3 规则 4a 的出口）**
+
+仅当 `is_costra_export = true` 且存在未匹配昵称时插入此区（位置在错误详情之上，因为它是**可操作**的、能把 ERROR 转成可导入）：
+
+```text
+┌─ 记账人需要确认（2 个） ────────────────┐
+│  文件中有 2 个记账人不是本家庭的活跃成员，  │
+│  请为其指定归属，或跳过这些记录。          │
+│                                          │
+│  「老王」 · 影响 312 条                   │
+│     归属：[ 请选择 ▾ ]                    │
+│  「小李（旧）」 · 影响 45 条               │
+│     归属：[ 小李 ▾ ]                      │
+│                                          │
+│  未指定的记账人，其记录将被跳过。          │
+└──────────────────────────────────────────┘
+```
+
+- 下拉选项 = 当前家庭活跃成员 + `归到我名下`（显式选择，不是静默默认）。
+- 未指定的昵称，其记录**保持 ERROR**（跳过），确认按钮上的条数实时随映射变化。
+- 未匹配昵称超过 20 个时不渲染此区，直接提示 `文件中的记账人与本账本所属家庭差异过大，请确认是否选错了目标账本`。
+- 映射结果随 `detect_id` **落入产物**（`created_by` 直接写映射后的 user_id），commit 阶段不再二次解析 —— 与 §7.4"用户看到的检测结果与实际写入内容逐字段一致"的承诺保持一致。
+- 外部 CSV（`is_costra_export = false`）**不出现此区**：未匹配是常态，按 §3.3 规则 4b 归操作者 + WARNING 即可，多加一步交互只是噪音。
+
 #### 用户决策路径
 
 | 检测结果 | 用户可选项 |
@@ -675,6 +731,13 @@ paths:
               required: [detect_id]
               properties:
                 detect_id: { type: string, format: uuid }
+                # v1.0：自产文件的记账人昵称映射（§3.3 规则 4a 出口 / §4.3 映射区）
+                # key = CSV 中未匹配的昵称；value = 目标 user_id 或 "__self__"（归操作者）
+                # 省略或未覆盖的昵称，其行按 ERROR 跳过
+                member_mapping:
+                  type: object
+                  nullable: true
+                  additionalProperties: { type: string }
       responses:
         '202':
           description: 导入任务已创建
@@ -737,22 +800,22 @@ paths:
    - 收到报告后 disableAlertBeforeUnload
 ⑦ 展示检测报告：可导入 N 条 / 错误 M 条 / warning K 条
 ⑧ 用户决策：
-   - 点"确认导入 N 条" → POST /v1/import-jobs/commit { detect_id }
+   - 点"确认导入 N 条" → POST /v1/import-jobs/commit { detect_id, member_mapping? }
    - 服务端创建异步任务 → 返回 202 + job_id
    - 或点"取消 · 重新选择文件" → 回到步骤 ④
 ⑨ 页面切到任务卡：`正在后台导入 · 可以离开此页面`
 ⑩ 任务 succeeded 后，客户端调 triggerOnMutation() 主动推一轮 sync（§5.1）
-⑪ 数据经既有 sync 通道落本地库，明细页 / 统计页按既有 SYNC_DONE 机制刷新
+⑪ 数据落在既有 sync 的**自然增量窗口**内（导入期间由服务端 `sync-hold` 保护，§5.2），明细页 / 统计页按既有 SYNC_DONE 机制刷新
 ```
 
-### 5.1 导入数据如何到达客户端（v0.8 修正 · 关键）
+### 5.1 导入数据如何到达客户端（v1.0 定稿 · 关键）
 
 #### 结论：不做导入专用旁路，依赖既有 sync
 
 Costra 客户端已有完整的增量下行机制，导入**不需要**任何新通道：
 
 - 服务端 `entries.change_seq` 是全库单调序列，客户端按 family 维护 watermark（`GET /sync/pull?since=<change_seq>`）；`syncPull` 已按 L13 落地为**分页循环**（`limit=500` / `MAX_PULL_PAGES=40` / 截断 300ms `pull-continue` 续拉 / `SYNC_DONE` 收敛后一次广播）。
-- 导入写入的 entries 天然带上更大的 `change_seq`；且导入事务对受影响账本推进 `sync_epoch` 与 `sync_epoch_floor_seq`（§7.5 步骤 5），客户端下一轮 pull **前置比对 epoch 不一致 → 把 watermark 回退到 `floor_seq` → 定点重拉**（见下方"导入后的实际路径"与 §5.2）。
+- 导入写入的 entries 天然带上更大的 `change_seq`，**因此自然落在下一轮增量窗口内**。唯一需要堵的是 `change_seq`「已取号未提交」洞，v1.0 用服务端 **`sync-hold`** 在洞形成之前就消除它（§5.2）：导入取号前钉住该 family 的 watermark，COMMIT 时与余额同语句原子解除。**客户端不需要感知导入的存在。**
 - 触发源已足够密集：`periodic`(60s) / `page-show`(5s debounce) / `mutation` / `network-recover` / `launch`。
 - `applyServerEntriesBatch` 批量落盘，经**月索引写串行队列**维护月索引，明细页 `SYNC_DONE` → `_refreshIfChanged`（签名 diff）刷新。
 
@@ -768,151 +831,214 @@ v0.6 列出的前置缺陷「`sync/pull` 的 `has_more` 无人消费」已按 `d
 |---|---|
 | C1 分页循环 | 客户端 `syncPull` 循环消费 `has_more`（`limit=500` / `MAX_PULL_PAGES=40` / 截断 300ms `pull-continue` 续拉 / `SYNC_DONE` 收敛后一次广播且 `pulled=applied`） |
 | C2 批量落盘 | `applyServerEntriesBatch` 批量写入，废除 `entry:__index` 单 key 数组（O(n²) 写放大消失），rebuild 改 `wx.getStorageInfo` 键枚举 |
-| E1 epoch 版本戳 | `ledgers.sync_epoch`（migration `0019`）；任何绕过 `entryService` 的批量写入必须**同事务** `+1`；客户端 epoch 不一致（含 key 集合缺失）即清零 watermark 全量重拉。**v0.8 在此基础上增加 `sync_epoch_floor_seq`，把"清零全量"收窄为"定点回退"，改动定义见 §5.2** |
+| E1 epoch 版本戳 | `ledgers.sync_epoch`（migration `0019`）；客户端 epoch 不一致（含 key 集合缺失）即清零 watermark 全量重拉。**v1.0 起：导入路径不再使用 epoch**（改用 §5.2 的 `sync-hold`，成本远低）；`sync_epoch` 保留给**无法走 hold 的路径**（运维直连 SQL 数据修复），二者分工见 §5.2.5 |
 | R5 月索引串行队列 | mutation / hydrate / 批量 / rebuild 四方写者入队；批末重读为 null 走不入队的裸推导重建 |
 | 服务端配套 | `has_more=true` 轮跳过 `computeSystemCategoriesRevision()`；`ledgers[]` 透传 `sync_epoch` |
 
 由此 v0.6 担心的"导入 5,000 条需 25 轮 ≈ 25 分钟、期间月度合计静默错误"已不存在；「新设备首次登录有几千条流水的老账号」这一既有场景同样收敛。
 
-#### 导入后的实际路径（v0.8 修正 · 从"全量重拉"改为"定点重拉"）
+#### 导入后的实际路径（v1.0 定稿 · sync-hold 下回归自然增量）
 
-> ⚠️ **v0.7 的量级算错了**（P0 修正）。原文写"5,000 条量级账本 ≈ 10 页 × 500，秒级收敛"，这句把**导入行数**当成了**重拉量**。实际上 epoch diff 触发的是 `setWatermarkStrict(familyId, 0)`，客户端从 `since=0` 重拉的是该 family 的**全部历史 entries**，而且：
->
-> - `entryRepo.findEntriesByFamilySince` **不过滤 `deleted_at`**（sync 协议 §3.5：软删行必须在窗口内返回），历史删除的记录也全部重传；
-> - 客户端硬顶是 `MAX_PULL_PAGES=40`（20,000 条）。一个用了两年的账本（2 万条 + 历史软删）再导入 5,000 条 ≈ 25,000 行 → **撞顶截断**，转入 300ms `pull-continue` 续拉，不是"秒级收敛"；
-> - `sync_epoch` 是 **ledger 级**的，family 内**所有成员的所有设备**各自触发一次全量重拉，一次导入被放大成 N 份全量下行；
-> - `miniprogram/services/db.ts` 目前**没有微信 storage 配额（单 key 1MB / 总量 10MB）超限的降级分支**，全量重拉恰恰是最逼近容量上限的场景，行为未定义。
->
-> 结论：v0.7 的路径能保证正确性，但代价与"导入了多少"完全脱钩，只与"账本活了多久"相关 —— 这是不可接受的成本模型。
+演进过程（三版都错过一次，值得留档）：
 
-v0.8 引入 **`ledgers.sync_epoch_floor_seq`**（定义与客户端改动见 §5.2），把重拉区间从"全量"收敛为"导入批次起点之后"：
+| 版本 | 主张 | 为什么不成立 |
+|---|---|---|
+| v0.6 | "导入的 entries 带更大 `change_seq`，自动落在下一次 pull 窗口内" | 忽略了 `change_seq`「已取号未提交」洞：导入长事务先取号段 `[a,b]`，期间并发单笔取号 `c > b` 并**先**提交，客户端 watermark 被推到 `c`，`[a,b]` 永久落在 watermark 之后 |
+| v0.7 | epoch diff → 清零 watermark → 全量重拉 | 正确但成本与"导入了多少"完全脱钩：老账本 2.5 万行（`findEntriesByFamilySince` **不过滤 `deleted_at`**）× family 内每台设备，且撞 `MAX_PULL_PAGES=40` 硬顶 |
+| v0.8/v0.9 | 加 `sync_epoch_floor_seq`，回退到 `min(local, floor)` 而非 0 | **收益证伪**：F1 的 `LEAST` 单调性使 floor 永远停在第一次导入的位置，第二次起等价于清零（推导见 §5.2.1）|
+| **v1.0** | **服务端 `sync-hold`：让洞根本不形成** | — |
 
-1. 导入事务 COMMIT，原子可见：entries + 余额 + `sync_epoch + 1` + **`sync_epoch_floor_seq = MIN(本批 change_seq) - 1`** + `job=succeeded`（§7.5 步骤 5）；
-2. 客户端下一轮 `syncPull` 前置比对 epoch，不一致时**不再清零**，而是把 watermark 置为 `min(localWatermark, serverFloorSeq)`，随后从该点循环拉取；
-3. 重拉量 = 导入条数 + 导入事务开启期间的并发写入量，与账本历史规模**无关**。5,000 行导入 ≈ 10 页 × 500，此时"秒级收敛"才成立；
-4. `SYNC_DONE` 仍只在收敛后广播一次，页面不呈现中间态；
-5. 落盘判定 `serverVer > localVer || (serverVer === localVer && !pendingRefs.has(ref) && !sameEntryContent)` 保证与本地 outbox pending op 不冲突，重拉幂等。
+v1.0 的路径回到 v0.6 的形态，但这一次它是**成立的** —— 因为 §5.2 已经在服务端消除了唯一让它不成立的因素：
 
-**为什么 `floor_seq` 仍能完整堵住 `change_seq`「已取号未提交」洞**：该洞的成因是导入长事务先取了号段 `[a, b]` 但未提交，期间并发单笔写入取号 `c > b` 并**先**提交，客户端 watermark 被推到 `c`，导入提交后 `[a, b]` 永远落在 watermark 之后（永久拉不到）。`floor_seq = a - 1` 取在整个号段之前，客户端回退到 `a - 1` 后必然重新覆盖 `[a, b]` 与 `c`，洞被完整包住。**清零全量重拉只是这个正确解的过度加强版，`floor_seq` 是它的最小充分形式。**
+1. 导入 worker 在开启大事务**之前**，用一个独立短事务把该账本的 `sync_hold_seq` 钉在"当前已分配号段之后不再推进"的位置并立即提交；
+2. 导入大事务照常 `INSERT entries`（取号 `[a, b]`）；此期间 `sync/pull` 对该 family **只下发 `change_seq ≤ hold` 的变更、watermark 不越过 hold**，因此没有任何客户端能把 watermark 推过 `a`；
+3. 导入 COMMIT：entries + 余额 + **hold 解除** + `job=succeeded` 同一事务原子可见；
+4. 客户端下一轮 `syncPull`（`triggerOnMutation()` 触发，秒级）以**原有 watermark** 继续增量拉取，`[a, b]` 与导入期间的并发写入一并落在窗口内；
+5. 重拉量 **= 导入条数 + 导入期间的并发写入量**，与账本历史规模无关，且**不随导入次数衰减**；
+6. `SYNC_DONE` 仍只在收敛后广播一次；落盘判定 `serverVer > localVer || (serverVer === localVer && !pendingRefs.has(ref) && !sameEntryContent)` 保证与本地 outbox pending op 不冲突。
 
-**上线前置（唯一剩余门槛）**：客户端 epoch 消费能力必须先于导入入口达到目标版本覆盖率（决策 16、§7.5）。旧版本客户端无 epoch 逻辑，遇到导入这类批量写入会踩上述洞（导入数据永久拉不到）。
+**附带消除的两个问题**：
 
-> ⚠️ **v0.8 使门槛的版本口径发生了变化**：目标覆盖率现在指"**已消费 `sync_epoch_floor_seq` 的版本**"，而非 L13 落地的那个 epoch 版本。§5.2 定义了对"只认 `sync_epoch`、不认 `floor_seq`"的中间版本客户端的兼容降级（自动回退到清零全量重拉），因此中间版本**不会丢数据**，只是成本回到 v0.7 水平 —— 门槛可按"不丢数据"放行，按"成本可接受"择机收紧。
+- **余额与明细不再错位**。`sync.ts` 每轮都会用 `ledgers[].balance_cents` 覆盖写资产缓存（"资产不断供"）。在 epoch 方案下，导入 COMMIT 后余额**立即**被覆盖写，而明细要等重拉若干轮 —— 页面会出现"资产变了但流水没变"的窗口。hold 期间余额 UPDATE 未提交、对其它连接不可见，解除与 entries 同一个 COMMIT，二者**天然同时到达**。
+- **上线门槛消失**。旧客户端不需要任何 epoch/floor 消费能力也不会丢数据（洞不形成），因此 **导入入口不再需要版本覆盖率门槛，可与导出同期发布**（§14.2）。
 
-**导出功能只读、无 epoch 依赖，可先行发布；导入入口等覆盖率达标后开放**（§14）。
+> **仍然诚实的边界**：hold 期间（典型 3~10s）该 family 的 sync 暂停推进，其它成员刚记的账要等 hold 解除后才下发到别人设备上。这是**纯延迟、无正确性影响**，且量级远小于既有的 60s 周期同步。记账本身**不被阻塞**（这正是 sync-hold 优于"用 advisory lock 互斥取号"的地方，对比见 §5.2.1）。
 
 #### 为什么不需要"按月拉取"
 
-`_hydrateRemoteMonthEntries`（`/entries` 游标分页拉完整月）只在"本地该月完整为空 且 remote-empty 未确认"时触发，是为**冷启动/清缓存**场景设计的兜底，不是增量通道。导入后走 sync（epoch 定点重拉）即可，两条路径职责清晰，不应混用。
+`_hydrateRemoteMonthEntries`（`/entries` 游标分页拉完整月）只在"本地该月完整为空 且 remote-empty 未确认"时触发，是为**冷启动/清缓存**场景设计的兜底，不是增量通道。导入后走既有 sync 增量窗口即可，两条路径职责清晰，不应混用。
 
 ---
 
-### 5.2 本方案对 sync-pull 的增量改动（v0.8 新增 · 在本文档冻结）
+### 5.2 本方案对 sync-pull 的增量改动：服务端 `sync-hold`（v1.0 定稿 · 在本文档冻结）
 
 > **文档边界**：`docs/design/sync-pull-pagination-design.md`（L13）已于 2026-09-01 全量落地并**进入完成态，不再接受新增修订**。本节是本方案对 sync-pull 通道所需改动的**唯一事实源**；L13 文档仅作为既有不变量的引用来源，实现时**不要回头去改它**。
 >
-> 之所以把改动放在这里而不是那里：`sync_epoch_floor_seq` 是**为批量写入场景服务的**，它的唯一生产写入方就是本方案的导入事务。L13 的职责是"修 `has_more` 无人消费"，已经收口；把只服务于导入的字段追加进一个已完成的设计文档，会让那份文档的"完成"状态失真，也让后人分不清哪些是 L13 验收过的、哪些是后续追加的。
+> 之所以把改动放在这里而不是那里：`sync-hold` 是**为批量写入场景服务的**，它的唯一生产写入方就是本方案的导入事务。L13 的职责是"修 `has_more` 无人消费"，已经收口；把只服务于导入的机制追加进一个已完成的设计文档，会让那份文档的"完成"状态失真。
+>
+> ⚠️ **v1.0 取代了 v0.8/v0.9 的 `sync_epoch_floor_seq` 方案**。被取代方案的要点与证伪推导保留在 §5.2.7，**不要按它实现**。
 
-#### 5.2.1 为什么需要这个改动（而不是沿用清零）
+#### 5.2.1 方案选型：为什么是 `sync-hold`，不是 `floor_seq`，也不是 advisory lock
 
-见 §5.1「导入后的实际路径」的量级分析：沿用 `setWatermarkStrict(0)` 会让**一次 5,000 行的导入**在老账本上退化成 **family 内每台设备各一次 2.5 万行全量重拉 + 撞 40 页硬顶**。正确性没问题，成本模型不可接受。
+要解决的问题只有一个：**`change_seq`「已取号未提交」洞**。
 
-`floor_seq` 不是为绕过问题而加的补丁，而是把"清零"这一过度加强的解**收窄到它的最小充分形式**（论证见 §5.1）。
-
-#### 5.2.2 服务端改动
-
-**① DB（并入 `0020` 迁移，§7.3）**
-
-```sql
--- ledgers 增列：批量写入号段下界
--- 语义：最近一次批量写入所占 change_seq 号段的【前一个值】。
---       客户端 epoch diff 时把 watermark 回退到这里，即可完整覆盖该号段。
--- 默认 0：与 sync_epoch DEFAULT 0 对齐；0 等价于"回退到全量"，是安全侧默认值。
-ALTER TABLE ledgers
-  ADD COLUMN IF NOT EXISTS sync_epoch_floor_seq BIGINT NOT NULL DEFAULT 0;
-
-COMMENT ON COLUMN ledgers.sync_epoch_floor_seq IS
-'最近一次批量写入（导入等绕过 entryService 的路径）所占 change_seq 号段的下界-1。
- 必须与 sync_epoch 在同一事务内更新。客户端 epoch diff 时回退 watermark 至此值，
- 用于覆盖 change_seq「已取号未提交」洞，替代成本高昂的清零全量重拉。';
+```text
+导入长事务取号段 [a, b]（未提交）
+  ↓ 期间同 family 有单笔记账取号 c > b 并【先】提交
+客户端 pull → watermark 被推到 c
+  ↓ 导入 COMMIT
+[a, b] 全部落在 watermark 之后 → 客户端【永久】拉不到这批数据
 ```
 
-⚠️ 同步 `server/test/setup.ts` 的 pg-mem 内嵌 DDL（与 `0019` 同一硬约定）。
+四种解法对比（判据：正确性 / 成本是否随使用次数衰减 / 客户端是否要改 / 是否阻塞在线记账）：
 
-**② 写入方（导入事务内，§7.5 步骤 5）**
+| 方案 | 机制 | 正确性 | 成本模型 | 客户端 | 阻塞记账 | 结论 |
+|---|---|:---:|---|:---:|:---:|---|
+| A · epoch 清零（v0.7） | 洞形成后靠"重拉全部"覆盖 | ✅ | ❌ 恒等于账本历史规模 × family 设备数，撞 `MAX_PULL_PAGES=40` | 需 epoch 消费 | 否 | 成本不可接受 |
+| B · `floor_seq`（v0.8/v0.9） | 洞形成后回退到号段之前 | ✅ | ❌ **收益随导入次数衰减至与 A 等价**（见下） | 需 epoch + floor 消费 + 版本门槛 | 否 | **收益证伪 · 废弃** |
+| C · advisory lock 互斥取号 | 让并发写入不能在导入期间取到更大号 | ✅ | ✅ 无重拉 | 零改动 | **是**（导入期该 family 记账排队） | 正确但代价放错了位置 |
+| **D · `sync-hold`（v1.0 采用）** | **让 watermark 在导入期间不推进 ⇒ 洞不形成** | ✅ | ✅ 无重拉、不衰减 | **零改动** | 否 | ✅ |
+
+**B 为什么被证伪（关键推导，必须留档）**：`floor_seq` 的安全性依赖不变量 F1「只减不增」（`LEAST`），因为服务端无法确认"所有客户端都已消费完上一个 floor"。而 F1 的直接后果是：
+
+```text
+第 1 次导入：floor := s1 - 1                      客户端从 s1-1 重拉 → 5,000 条   ✅ 收益成立
+第 2 次导入：floor := LEAST(s1-1, s2-1) = s1-1    ← 因为 s2 > s1
+             客户端从 s1-1 重拉 → 拉【第一次导入至今的全部变更】
+第 N 次导入：floor 恒为 s1-1                      → 重拉量单调递增，趋近全量
+```
+
+而 §1 的「外部账单迁入」是**按月重复**的主场景，不是一次性操作。B 在第 2 次导入起就开始退化，一年后与 A（清零全量）无实质差别 —— 却额外付出：一个 DB 列、`LedgerWire` 字段、客户端 epoch 结构升级（`number` → `{epoch, floorSeq}`）、E2b + E5c 共 2 人天、以及**导入上线必须等客户端版本覆盖率**的排期代价。**为一个会衰减到零的收益，买下一个永久的上线门槛，是明确的负收益。**
+
+> 附带记录 v0.9 §5.2.3 ④ 的一处判定错误（随 B 废弃一并作废，留作教训）：原文称 `floorSeq > localWatermark`"理论上不应发生"并要求 `logger.error` + 回退清零。事实相反 —— 该条件在新设备、离线设备、家庭内不常打开小程序的成员上是**常态**；且此时 `localWatermark < floor`，正常增量 pull 天然覆盖整个号段，安全性无需任何额外动作。按原文实现会把这些设备一律推入全量重拉，恰好把方案想消除的成本原样搬回。**教训：任何"理论上不应发生"的分支，都要先问一遍"新设备 / 离线设备会不会命中"。**
+
+**C 与 D 的区别**：两者都在"洞形成之前"下手，但 C 限制的是**写入方**（并发记账必须等导入取完号），D 限制的是**读出方**（watermark 暂不推进）。记账是用户前台操作、延迟直接可感；sync 是后台机制、已有 60s 周期基线。**把代价放在后台通道上，而不是放在用户按下"保存"的那一刻。**
+
+#### 5.2.2 服务端改动 ① · DB（并入 `0021` 迁移，§7.3）
 
 ```sql
--- 与 INSERT entries 同一事务；min_change_seq 取本批实际写入的最小 change_seq
+-- ledgers 增列：sync 推进闸门（批量写入期间钉住 watermark）
+--   sync_hold_seq   = 闸门位置。NULL = 无 hold（默认态，绝大多数时间）。
+--                     非 NULL 时：/sync/pull 对该 family 只下发 change_seq <= 闸门 的变更。
+--   sync_hold_until = 闸门自动失效时刻（防"进程崩溃留下永久 hold"把 sync 卡死）。
+ALTER TABLE ledgers
+  ADD COLUMN IF NOT EXISTS sync_hold_seq   BIGINT,
+  ADD COLUMN IF NOT EXISTS sync_hold_until TIMESTAMPTZ;
+
+COMMENT ON COLUMN ledgers.sync_hold_seq IS
+'批量写入（导入等绕过 entryService 的路径）期间的 sync 推进闸门：
+ /sync/pull 只下发 change_seq <= LEAST(所有未过期 hold) 的变更，使客户端 watermark
+ 不可能越过尚未提交的号段，从根上消除 change_seq「已取号未提交」洞。
+ NULL = 无 hold。必须与 sync_hold_until 配对写入，并在导入 COMMIT 时同语句清除。';
+
+COMMENT ON COLUMN ledgers.sync_hold_until IS
+'hold 自动失效时刻（= 设置时刻 + HOLD_TTL）。崩溃兜底：pull 侧一律按
+ sync_hold_until > now() 判定 hold 是否有效，过期 hold 视为不存在。
+ 因此进程崩溃最坏只让该 family 的 sync 延迟 HOLD_TTL，不会永久卡死。';
+```
+
+- ⚠️ 同步 `server/test/setup.ts` 的 pg-mem 内嵌 DDL（与 `0019` 同一硬约定）。
+- 两列**可空、无默认值**：无 hold 是常态，用 NULL 表达比用 `0` sentinel 更明确，也避免"0 是否是合法闸门"的歧义 —— 这正是 `floor_seq` 方案栽过的坑（v0.9 为此专门补了"初始化判定必须看 `sync_epoch=0`"的绕行规则）。
+- **不加索引**：pull 本来就按 `family_id` 取 ledgers（`ledgerRepo.findFirstByFamilyId`），hold 字段随行读出，**零额外查询**。
+
+#### 5.2.3 服务端改动 ② · 写入方（导入 worker）
+
+**阶段 1 · 设置 hold（独立短事务，必须在大事务之前提交）**
+
+```sql
+-- 独立事务 · 立即提交 · 不在导入大事务内
 UPDATE ledgers
-   SET sync_epoch           = sync_epoch + 1,
-       sync_epoch_floor_seq = LEAST(
-         CASE WHEN sync_epoch_floor_seq = 0 THEN $2 ELSE sync_epoch_floor_seq END,
-         $2
-       )
+   SET sync_hold_seq   = (SELECT last_value FROM entries_change_seq),
+       sync_hold_until = now() + $2::interval        -- $2 = HOLD_TTL
+ WHERE id = $1
+   AND deleted_at IS NULL;
+```
+
+> **不变量 H1 · hold 必须先于取号提交**：闸门取"当前已分配的最大号"，导入随后取的号必然 `> 闸门`。若把设置 hold 放进导入大事务，它对 pull 连接**不可见**（未提交），闸门形同不存在 —— 这是本机制唯一的致命误用，须列入 review 检查项。
+>
+> **为什么用 `last_value` 而不是 `nextval`**：`last_value` 的语义精确表达"此刻之前的号都已分配，闸门放在这里"。取值偏小是**安全**的（闸门更保守，只是多 hold 住几条并发写入几秒）；即便偏大也不丢数据（会把尚未取号的导入数据暂时挡在闸门外，hold 解除后立刻恢复）。
+> ⚠️ pg-mem 对 `SELECT last_value FROM <sequence>` 的支持需在 E2 动工时验证；不支持则改用 `nextval` 并接受"每次导入消耗一个号"（`0016` 后序列有空洞无害），实现上抽成一个 repo 函数以便测试替换。
+
+**阶段 2 · 导入大事务**（§7.5）：正常 `INSERT entries` + 余额 + **hold 解除** + `job=succeeded`，全部同一事务。
+
+hold 的解除**并入 §7.5 步骤 4 的那条末尾 `UPDATE ledgers`**：
+
+```sql
+UPDATE ledgers
+   SET balance_cents    = balance_cents + $2,
+       balance_version  = balance_version + 1,
+       sync_hold_seq    = NULL,
+       sync_hold_until  = NULL
  WHERE id = $1;
 ```
 
-`LEAST(...)` 的作用：若上一次批量写入的 floor 尚未被所有客户端消费完（如短时间内连续两次导入），floor **只能向更小的方向移动**，绝不能被后一次导入抬高 —— 抬高会把前一次的号段漏在回退区间之外，重新打开洞。
+> **不变量 H2 · 解除必须与余额同一条语句、同一事务**。理由与 v0.8 对 `sync_epoch` 的论证同构，且这里更强：
+> - 分两条 ⇒ `ledgers` 热点行锁窗口翻倍；
+> - 全 transfer 的导入 `delta = 0`，而 `ledgerRepo.applyBalanceDelta` 明文 short-circuit（`if (input.delta === 0) return false`）**直接跳过 UPDATE** —— 若解除搭在它上面就会被一起跳过，hold 只能等 `HOLD_TTL` 自然过期，该 family 的 sync 白停两分钟；
+> - 因此导入路径**不能复用 `applyBalanceDelta`**，必须走专用的 `releaseHoldAndApplyDelta(ledgerId, delta)`，`delta = 0` 时**也要执行**（只是不动 balance）。这一条写进 E2 实现清单。
 
-> **不变量 F1（必须列入 review 检查项）**：`sync_epoch_floor_seq` **只减不增**，直到有明确证据表明所有客户端已消费。本方案不实现"消费确认"机制，因此该字段在生产中**永远单调不增**（除非人工重置）。代价是长期多次导入后 floor 会逐渐逼近历史早期、重拉区间变大；这在导入是低频用户操作的前提下可接受，且始终不劣于 v0.7 的"每次都全量"。
+**阶段 3 · 失败路径**：事务 ROLLBACK 时 hold **不会**被解除（它是阶段 1 独立提交的）。因此 worker 在任务转 `failed` / 转 `queued` 重试后，**必须显式再发一条独立事务清除 hold**；即使这一步也失败，`sync_hold_until` 兜底。
 
-> **不变量 F2**：`sync_epoch` 与 `sync_epoch_floor_seq` **必须同一条 UPDATE、同一个事务**。只更新前者 = 客户端回退到陈旧 floor（可能拉不全）；只更新后者 = 客户端根本不触发回退（epoch 没变）。两者分离是本节唯一靠约定守住的失败模式。
+> **不变量 H3 · hold 泄漏的唯一后果是延迟**。任何异常路径（`kill -9`、DB 断连、worker 崩在大事务中间）最坏是把 hold 留到 `sync_hold_until`。**`HOLD_TTL` 取 120s**：远大于 5,000 行导入的典型耗时（3~10s）与 `lock_timeout` 兜底，又足够小到用户不会把"同步慢了两分钟"当故障。
+> 配套：hold 存活超过 `HOLD_TTL` 的情形应打 `logger.error`（说明 worker 异常退出），纳入 `maintenance.sh error-report` 的扫描面。
 
-**③ 下发（`syncPullService.ts` 的 `LedgerWire`）**
+#### 5.2.4 服务端改动 ③ · 读出方（`syncPullService`）
 
-`ledgers[]` 每项新增 `sync_epoch_floor_seq: number`，与既有 `sync_epoch` 并列，随每轮（含分页轮）全量下发。`ledgerRepo` 的 `SELECT_COLUMNS` 与 `rowToEntity` 同步增列。
-
-#### 5.2.3 客户端改动
-
-**① epoch 记录结构升级**
-
-L13 现有本地结构是 `familyId → { ledgerId: epoch }`。升级为同时记录 floor：
-
-```ts
-type LedgerEpochRecord = { epoch: number; floorSeq: number };
-type LedgerEpochs = Record<string, LedgerEpochRecord>;
-```
-
-**读取旧格式（`number`）时按 `{ epoch: n, floorSeq: 0 }` 升级**，避免版本切换时全量重拉一次（`floorSeq: 0` 只在真的发生 diff 时才退化为全量，不会主动触发）。
-
-**② diff 后的回退取值（替代 `setWatermarkStrict(0)`）**
+`syncPull` 在调 `findEntriesByFamilySince` 之前，先算该 family 的有效闸门：
 
 ```text
-diff 命中时：
-  serverFloor = server.floorSeq ?? 0        // 服务端未下发该字段 ⇒ 0 ⇒ 退化为全量（安全侧）
-  target      = Math.min(localWatermark, serverFloor)
-  setWatermarkStrict(familyId, target)      // 仍是 strict：写失败即中止本轮、不写 epoch
-  writeLedgerEpochs(familyId, serverEpochs) // 仍在 setWatermarkStrict 成功之后
-  since = target
+holds = 该 family 下所有 active ledger 中 sync_hold_until > now() 的 sync_hold_seq
+cap   = holds 为空 ? null : min(holds)
 ```
 
-**③ 必须原样保留的 L13 不变量**（回归风险最高的四条，实现时逐条对照）：
+- `cap === null`（无 hold · 常态）→ 行为与今天**完全一致**，零回归面。
+- `cap !== null` → 查询加 `AND e.change_seq <= cap`，并且：
+  - `watermark` 推进仍取"本批实际返回的最大 `change_seq`"（既有语义不变），因此**天然不会越过 cap**；
+  - `has_more` 同样在 `<= cap` 的结果集内判定 —— 若因 cap 截断而"暂时没有更多"，返回 `has_more=false` 是**正确**的：客户端本轮收敛，下一轮（周期 / mutation / `triggerOnMutation()`）再来。**不得**为 hold 造一个"服务端还有数据但拉不到"的 `has_more=true`，否则客户端会在 300ms `pull-continue` 里空转 40 轮。
 
-| 不变量 | 内容 |
-|---|---|
-| 写序 | **先** `setWatermarkStrict` 成功，**才** `writeLedgerEpochs`。反序或清零失败仍写 epoch → 落到「epoch 新 + watermark 旧高值」的真丢数据态 |
-| 空 ledgers | `changes.ledgers` 为空 ⇒ 跳过整个 epoch 环节（"没下发" ≠ "账本消失"） |
-| 顺序 | watermark 合法性校验与资产覆盖写都排在 epoch 判定**之前**（epoch 轮 `continue` 会跳过其后逻辑） |
-| 预算 | epoch 重置轮**计入** `pages` 并受 `MAX_PULL_PAGES` 截断约束，截断后由 `pull-continue` 兜底 |
+> **不变量 H4 · 取 `min`，不取"所属 ledger 的 hold"**：watermark 是 **family 级单值**，hold 是 **ledger 级**。当前 1:1 语义下 family 只有一个账本（`findFirstByFamilyId` 明文"至多一行"），但**必须按 min 实现** —— 一旦未来放开 1:N，取某个 ledger 的 hold 会让另一个 ledger 的号段漏在闸门之外，重新打开洞。这正是 `floor_seq` 方案在客户端侧留下的同类缺口（floor 是 ledger 级、watermark 是 family 级，聚合语义从未定义），在服务端一次性收口。
+>
+> **实现落点**：`listLedgersForFamily` 已经取回 ledger 行，`SELECT_COLUMNS` 加两列即可，**不增加查询次数**。
 
-**④ 单调性防御**：`target` 恒 `≤ localWatermark`，即回退只会让 watermark 变小或不变，不会前跳。若服务端返回的 `floorSeq > localWatermark`（理论上不应发生），`Math.min` 自动退化为"不回退"，此时仅靠 epoch 已变的事实无法保证覆盖 —— 故实现需对该情况打 `logger.error` 并**回退到清零**，不静默放行。
+**下发**：`LedgerWire` **不新增字段** —— hold 是纯服务端机制，客户端不需要知道。这是本方案与 `floor_seq` 最大的工程差异：**契约不变、客户端零改动、无版本兼容矩阵、无覆盖率门槛。**
 
-#### 5.2.4 版本兼容矩阵
+#### 5.2.5 与 `sync_epoch` 的分工（`0019` 保留，不回退）
 
-| 客户端版本 | 服务端行为 | 结果 |
+`sync_epoch`（L13 E1）**继续保留**，职责收窄：
+
+| 路径 | 用什么 | 理由 |
 |---|---|---|
-| 无 epoch 逻辑（L13 之前） | 正常下发 | ❌ **踩洞，导入数据永久拉不到** —— 这正是 §14 版本覆盖率门槛要挡的对象 |
-| 有 epoch、无 floor（L13 ~ v0.8 之间） | 下发的 `sync_epoch_floor_seq` 被忽略 | ✅ 数据正确；成本回到 v0.7 的清零全量重拉 |
-| 有 epoch + floor（v0.8 起） | 正常消费 | ✅ 数据正确；定点重拉，成本与导入量成正比 |
-| 任意版本 + 老服务端（未下发 floor） | 字段缺失 | ✅ 客户端 `?? 0` ⇒ 退化为全量，安全侧 |
+| 导入（本方案） | **`sync-hold`** | 有 worker、能控制事务边界、能保证 hold 先于取号提交 |
+| 运维直连 SQL 数据修复（`infra/scripts/psql-exec.sh`） | **`sync_epoch + 1`** | 人工 ad-hoc SQL 不便要求"先独立事务设 hold"⇒ 保留"事后清零重拉"这把重锤，代价可接受（低频、时间窗可控） |
 
-四种组合中**没有"丢数据"的新增格子**：新增字段只影响成本，不影响正确性。这是把改动做成"增量字段 + 安全侧默认"而非"改变既有语义"的直接收益。
+因此 `0019` 的列注释与 `openapi.yaml` 中"任何绕过 `entryService` 的批量写入必须同事务 `sync_epoch + 1`"需**改为**"**未经 `sync-hold` 保护的**批量写入必须同事务 `sync_epoch + 1`"。这是 E2b 的文档同步项（不改 `0019` 迁移本身，只改注释与文档）。
 
-#### 5.2.5 测试要求
+> **P1 · 「已取号未提交」洞并非导入独有**（v1.0 新增记录）：两笔**普通**记账 A(`seq=100`) / B(`seq=101`)，若 B 先提交，客户端 watermark 即被推到 101，A 提交后**永久拉不到**。`0016` 的 `CACHE 1` 只保证序列**单调**，不保证**提交顺序**。也就是说 L13 的 epoch 与本节的 hold 都只是给"批量写入"这条路径打的补丁，根因（watermark 直接采用 `nextval` 值、未区分"已分配"与"已提交"）仍存在于普通并发记账路径上。
+> - 实际发生概率低（单笔事务窗口毫秒级，且需要 pull 恰好插在两次提交之间），但**不为零**，现有代码无任何防护 —— 记入 **R36**，作为独立课题 follow-up，不在本方案范围内解决。
+> - `sync-hold` 是**通用机制**：未来若要根治，可让 `entryService` 三条写路径在取号时挂一个极短 hold，或改用"pull 只下发 `change_seq < 最小活跃事务号`"的可见性快照 —— 本节的 DDL 与 pull 侧钳制逻辑可直接复用。这是选 D 而非 C 的额外长期收益。
 
-- 服务端：同事务更新两字段的单测；`LEAST` 单调性单测（连续两次导入，floor 不被抬高）。
-- 客户端：`{epoch, floorSeq}` 新旧格式读取兼容；diff 后 `target = min(local, floor)` 取值；`floorSeq > localWatermark` 时回退清零 + 打 error；四条 L13 不变量的回归用例**必须复用 L13 既有测试，不得重写**。
-- 集成：导入 5,000 行到一个已有 2 万条历史的账本，断言客户端本轮拉取条数落在 `[5000, 5000 + 并发窗口]`，而非 25,000（这是本节唯一的收益断言，缺了它整个改动无从验收）。
+#### 5.2.6 测试要求
+
+- **服务端 · hold 设置**：`sync_hold_seq` 严格**小于**导入随后取到的首个 `change_seq`（H1 的 off-by-one 断言）；hold 在独立事务中已提交（用两个连接断言跨连接可见性）。
+- **服务端 · hold 解除**：与余额同一条语句（H2）；**`delta = 0` 的全 transfer 导入也必须解除 hold** —— 这是 v0.8 在 `sync_epoch` 上踩过的坑，必须有专门用例。
+- **服务端 · pull 钳制**：`cap` 存在时不下发 `change_seq > cap` 的行、watermark 不越过 cap、`has_more=false`；`sync_hold_until` 已过期的 hold 视为不存在（H3）；多 ledger 场景取 `min`（H4 —— 即使当前 1:1 也要有用例，防未来放开 1:N 时静默失效）。
+- **服务端 · 洞的回归用例（核心，缺了整个机制无从验收）**：模拟"导入取号 `[a,b]` 未提交 → 并发单笔取号 `c>b` 并提交 → pull → 导入提交 → pull"，断言**两轮 pull 合计覆盖 `[a,b]` 与 `c` 的全部行**。同一用例在**移除 hold 的对照组**下必须失败（证明它真的在测洞，而不是在测一个恒真命题）。
+- **服务端 · 失败路径**：导入 ROLLBACK 后 worker 显式清除 hold；worker 崩溃时 hold 按 `sync_hold_until` 自动失效。
+- **客户端**：**无新增用例** —— 本方案不改客户端。L13 既有的 epoch / watermark / 分页循环测试保持原样，**不得放宽断言**。
+- **集成**：导入 5,000 行到一个已有 2 万条历史的账本，断言客户端本轮拉取条数落在 `[5000, 5000 + 导入期间并发写入量]`，**而非 25,000**；并断言**第二、第三次导入的拉取量与第一次同量级**（这是 v1.0 相对 `floor_seq` 的核心收益断言，直接证伪 §5.2.1 的衰减问题）。
+
+#### 5.2.7 被取代方案留档 · `sync_epoch_floor_seq`（v0.8/v0.9 · **不要实现**）
+
+要点（保留以免后人重复推导）：在 `ledgers` 加 `sync_epoch_floor_seq BIGINT`，导入事务内与 `sync_epoch + 1` 同语句写 `LEAST(sync_epoch_floor_seq, MIN(本批 change_seq) - 1)`，随 `LedgerWire` 下发；客户端 epoch 记录升级为 `{epoch, floorSeq}`，diff 时把 watermark 回退到 `min(localWatermark, min{各 diff ledger 的 floorSeq})` 而非清零。
+
+废弃理由（完整推导见 §5.2.1）：
+
+1. **收益随导入次数衰减到零**（F1 的 `LEAST` 使 floor 永远停在首次导入位置），而按月导入正是主场景；
+2. 换来一个**永久的客户端版本覆盖率门槛**，导入无法与导出同期发布；
+3. 客户端需改 epoch 存储结构 + 兼容旧格式 + 四条 L13 不变量回归（E5c 1.5 人天），回归面正落在**已完成态的 L13 核心路径**上；
+4. 洞形成后再补救，本质上比"不让洞形成"多一整层状态机（epoch 比对、写序不变量、空 `ledgers` 分支、floor 聚合、单调性防御），每一层都是新的失败模式 —— v0.9 的 P0（off-by-one）与 v1.0 的两处 P0（常态误判为异常、ledger/family 聚合未定义）都出自这一层。
+
+**结论：正确的抽象层次是"不让 watermark 越过未提交的号段"，而不是"越过之后再退回来"。**
 
 ---
 
@@ -1143,15 +1269,29 @@ p = floor + (cap - floor) * (1 - e^(-elapsed / τ))
 > **τ 的前提是 worker 能被及时观测到**（v0.8 补充 · P1）：上表把 `queued` 定为**恒 0%、无 τ**。这个设计只在"排队时间远短于执行时间"时成立。而 §7.5 的 worker 是 `advisory lock + LIMIT 1` 的**全局串行**模型，若再沿用 `recurringScheduler` 的 60s 轮询间隔，用户点完"确认导入"最长要盯着一个**纹丝不动的 0% 进度条 60 秒**，然后才开始 3~10s 的真实工作 —— 模拟进度做得再平滑也救不回来。
 > 故 §7.5 明确了两件事：poll 间隔取 **2s**，且 commit / 创建导出任务的事务提交后**立即事件触发**一次 worker。`queued` 的期望停留时间因此被压到"前面排队任务的执行时长"，通常为 0。若未来观测到排队常态化，再给 `queued` 补 τ（区间 0% → 5%），而不是先做一个假动画掩盖排队。
 
+> **导入只有一个可观测阶段 —— `writing` 必须从 import 的阶段集里删除**（v1.0 修正 · P1）：v0.5 已经识别过"大事务内的进度写入在 COMMIT 前对其它连接不可见"，并因此删掉了 `progress_current/total`。但 v0.9 把 `stage` 留在了同一个陷阱里：§7.5 的导入是**单个大事务**，事务内 `UPDATE data_jobs SET stage='writing'` 对轮询连接同样不可见。实际观测序列是：
+>
+> ```text
+> validating（事务外，可见）→ 【长时间静止】→ succeeded
+> ```
+>
+> `writing` **从未出现**，用户会看到进度条卡在 `validating` 的 cap（20%）直到瞬间跳 100% —— 正是 v0.5 要消除的"最糟的假进度"。
+>
+> v1.0 决策：**导入侧合并为单一 `validating` 阶段**，区间改为 **5% → 90%**，τ 按"整个导入耗时"取值（5,000 行上限下取 **τ = 8s**）。文案改为中性的 `正在导入流水`（不再区分校验/写入，因为用户无法观测到这个边界）。
+> 配套：`data_job_stage` ENUM 保留 `writing` 值（导出无关、留作未来扩展代价为零），但 §7.3 的 `chk_data_jobs_stage_scope` 的 **import 分支去掉 `writing`**，让越界写入在开发期就炸出来。
+> 另一条路是"用独立连接在大事务外写 `stage`"，但那会引入一个与事务原子性脱钩的旁路状态（崩溃时留下 `writing` 却无数据），为一个纯展示字段付这个代价不值得。
+
 | `stage` | 进度区间 | 展示文案 |
 |---|---:|---|
 | `queued` | 0% | `等待处理` |
-| `validating` | 5% → 20% | `正在校验导入环境`（导入）|
-| `writing` | 20% → 90% | `正在导入流水`（导入）|
+| `validating`（导入唯一可观测阶段 · τ=8s）| 5% → 90% | `正在导入流水`（导入）|
 | `querying` | 20% → 90% | `正在整理数据`（导出）|
-| `packaging` | 90% → 98% | `正在生成 CSV 文件…`（导出）|
+| `packaging` | 90% → 98% | `正在收尾`（导出 · sha256 + rename）|
 | `succeeded` | 100%（立即） | `已完成` |
 | `failed` | 不显示百分比 | `处理失败 · 查看原因` |
+
+> **`writing` 已从导入阶段集移除**（v1.0 · 见上方说明）；ENUM 值保留但 import 分支的 CHECK 不再允许（§7.3）。
+> **`packaging` 的语义收窄**（v1.0 · P2）：§7.5 要求导出"边查边逐批 append 落盘"，不存在一个独立的"生成文件"阶段。`packaging` 实际只覆盖**收尾**（算 sha256 + `.tmp → 正式名` rename），耗时接近零，文案相应改为 `正在收尾`，不再写"正在生成 CSV 文件…"（那会让用户以为主要工作在这一步）。
 
 #### 明确禁止的文案
 
@@ -1172,27 +1312,28 @@ p = floor + (cap - floor) * (1 - e^(-elapsed / τ))
 
 ### 7.3 问题三：任务是否对应一张 PostgreSQL 表
 
-**是。新增一张统一任务表 `data_jobs`（迁移编号接 `0020_data_jobs.sql`；`0019` 已被 `ledgers.sync_epoch` 占用），导入和导出共用。同一迁移还包含 §5.2 的 `ledgers.sync_epoch_floor_seq` 增列。**
+**是。新增一张统一任务表 `data_jobs`（迁移编号接 `0021_data_jobs.sql`；`0019` / `0020` 已分别被 `ledgers.sync_epoch` / `0020_tips.sql` 占用），导入和导出共用。同一迁移还包含 §5.2 的 `ledgers.sync_hold_seq` / `sync_hold_until` 增列。**
 
 采用与 `recurring_rules` 一致的"状态字段自持久化"范式。
 
 ```sql
--- 0020_data_jobs.sql（草案 · v0.8）
+-- 0021_data_jobs.sql（草案 · v1.0）
 --
 -- ⚠️ 建表顺序：import_detect_sessions 必须先建（data_jobs.detect_id 引用它）。
 --    v0.5 草案把 data_jobs 放前面并引用后面才创建的表，DDL 直接报错。
 --    两表不做互相 FK：sessions.job_id 只作普通列（避免循环依赖 + 插入顺序死锁）。
 --
 -- 本迁移包含三部分：
---    A) ledgers.sync_epoch_floor_seq 增列（§5.2 · 定点重拉）
+--    A) ledgers.sync_hold_seq / sync_hold_until 增列（§5.2 · sync-hold）
 --    B) import_detect_sessions
 --    C) data_jobs
 
 -- ─────────────────────────────────────────────────────────────────────
--- A) §5.2：批量写入号段下界（与 sync_epoch 配套 · 同事务更新）
+-- A) §5.2：sync 推进闸门（批量写入期间钉住 watermark · 详见 §5.2.2 列注释）
 -- ─────────────────────────────────────────────────────────────────────
 ALTER TABLE ledgers
-  ADD COLUMN IF NOT EXISTS sync_epoch_floor_seq BIGINT NOT NULL DEFAULT 0;
+  ADD COLUMN IF NOT EXISTS sync_hold_seq   BIGINT,
+  ADD COLUMN IF NOT EXISTS sync_hold_until TIMESTAMPTZ;
 
 DO $$ BEGIN
   CREATE TYPE data_job_type AS ENUM ('import', 'export');
@@ -1239,12 +1380,15 @@ CREATE TABLE IF NOT EXISTS import_detect_sessions (
     error_count      INTEGER NOT NULL DEFAULT 0,
     warning_count    INTEGER NOT NULL DEFAULT 0,
     report_preview   JSONB,                                   -- errors/warnings 各前 100 条
+                                                              -- ⚠️ v1.0：含备注/昵称原文片段（value_preview），
+                                                              -- 与"不记录行内容"的隐私口径冲突 ⇒ 任务终态后置 NULL（§7.4）
 
     -- 生命周期
-    job_id           UUID,                                    -- 确认后关联的导入任务（不设 FK · 见文件头说明）
+    job_id           UUID,                                    -- 确认后关联的导入任务（不设反向 FK；任务表持有 detect_id FK）
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-    expires_at       TIMESTAMPTZ NOT NULL,                    -- ready 后 15 分钟（行产物有效期）
+    expires_at       TIMESTAMPTZ NOT NULL,                    -- ready 后 15 分钟（行产物 / commit 有效期）
     -- v0.8：报告文件与导出文件同寿 24h，独立于 expires_at（§7.4 生命周期冲突修复）
+    -- v0.9：会话元数据因 data_jobs.detect_id FK 与任务同寿 30 天；24h 只约束 report 文件可下载性。
     report_expires_at TIMESTAMPTZ,
     consumed_at      TIMESTAMPTZ
 );
@@ -1279,7 +1423,10 @@ CREATE TABLE IF NOT EXISTS data_jobs (
 
     -- 导入入参（检测→确认两阶段）
     -- UNIQUE：保证一个检测会话最多产生一个导入任务（§7.4 commit 原子消费依赖此约束）
-    detect_id        UUID UNIQUE REFERENCES import_detect_sessions(id),
+    -- ON DELETE CASCADE（v1.0 · P1）：ledger 硬删时两表都会被 ledgers 的 CASCADE 波及，
+    --   删除顺序不由应用控制，无 ON DELETE（默认 NO ACTION）存在撞 FK 的可执行性风险。
+    --   ⚠️ 不能用 SET NULL —— chk_data_jobs_type_fields 要求 import 行 detect_id NOT NULL。
+    detect_id        UUID UNIQUE REFERENCES import_detect_sessions(id) ON DELETE CASCADE,
     -- 导出入参（v0.8：均可空 · NULL 表示"全部"，§6.2）
     date_from        DATE,
     date_to          DATE,
@@ -1316,9 +1463,11 @@ CREATE TABLE IF NOT EXISTS data_jobs (
       (type = 'export' AND detect_id IS NULL)
     ),
     -- v0.8：stage 必须属于该 type 的合法阶段集（§7.2 表）
+    -- v1.0：import 分支去掉 'writing'（大事务内写入对轮询连接不可见，导入只有一个
+    --       可观测阶段；ENUM 值保留但不允许写入，见 §7.2）
     CONSTRAINT chk_data_jobs_stage_scope CHECK (
       stage IS NULL
-      OR (type = 'import' AND stage IN ('queued', 'validating', 'writing'))
+      OR (type = 'import' AND stage IN ('queued', 'validating'))
       OR (type = 'export' AND stage IN ('queued', 'querying', 'packaging'))
     ),
     -- v0.8：日期范围顺序
@@ -1352,13 +1501,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_data_jobs_active_export_per_user
 
 > **为什么补这三条 CHECK**（v0.8 · P1）：v0.7 的 `detect_id` / `date_from` / `date_to` 全部可空且无任何约束，"import 必须有 detect_id""export 不该有 detect_id""import 不该出现 `querying` 阶段"三条语义完全靠代码自觉。本项目的既定口径是**不靠约定守不变量**（同 §7.5 的 `sync_epoch` 铁律讨论），能下沉到 DB 的约束就不要留在文档里。三条 CHECK 的写入成本为零，却能让任何越界写入在开发期就炸出来。
 
-> **DB migration 双写约定**：`0020_data_jobs.sql` 落地时必须同步在 `server/test/setup.ts` 内嵌 DDL 里对齐**三部分**（`ledgers.sync_epoch_floor_seq` + 两张表 + 索引）。pg-mem 不支持的 partial unique index（`WHERE ... status IN (...)` / `WHERE status='detecting'`）在测试环境跳过 —— 由此产生的验证缺口见下方"真实 PG 测试通道"。
+> **DB migration 双写约定**：`0021_data_jobs.sql` 落地时必须同步在 `server/test/setup.ts` 内嵌 DDL 里对齐**三部分**（`ledgers.sync_hold_seq` / `sync_hold_until` + 两张表 + 索引）。pg-mem 不支持的 partial unique index（`WHERE ... status IN (...)` / `WHERE status='detecting'`）在测试环境跳过 —— 由此产生的验证缺口见下方"真实 PG 测试通道"。
 
 > **真实 PG 测试通道（v0.8 新增 · 必须先决策，不能悬空）**：v0.7 写下"并发约束的行为测试必须放到真实 PG 的集成测试"，但**仓库当前没有这条通道** —— `npm test` 是 vitest + pg-mem，`server/test/setup.ts` 用内嵌 DDL 起 pg-mem。这与 v0.6 修掉的"§9.4 审计无载体"是同一类问题：**提了要求却没有载体 = 等于没落地**，只会在验收时被当成"已覆盖"。
 > 二选一，必须在动工前定：
-> - **A（推荐）**：新增 docker-compose 起真 PG 的集成测试 profile（`vitest --project integration`），只跑约束/并发/事务这类 pg-mem 覆盖不到的用例。**计入工作量 E2 +2 人天**，长期收益是 `FOR UPDATE`、partial unique、advisory lock、锁顺序这些本方案重度依赖的语义终于有了自动化验证。
+> - **A（推荐）**：新增 docker-compose 起真 PG 的集成测试 profile（`vitest --project integration`），只跑约束/并发/事务这类 pg-mem 覆盖不到的用例。**计入工作量 E7 2 人天**，长期收益是 `FOR UPDATE`、partial unique、advisory lock、锁顺序这些本方案重度依赖的语义终于有了自动化验证。
 > - **B**：明确承认"三处 partial unique 与 commit 行锁**无自动化验证**，仅靠 code review + 生产观测"，并把这条写进 §11 风险清单（作为已接受风险），不再声称"必须放到集成测试"。
 > 不允许保留 v0.7 那种"要求存在、载体不存在"的中间状态。
+>
+> ⚠️ **v1.0 后这个决策的权重上升了**：`sync-hold`（§5.2）的正确性核心是**跨事务可见性**（不变量 H1：hold 必须在独立事务中先提交，否则闸门形同不存在）与**并发语义**（洞的回归用例需要同时持有两个未提交事务）。pg-mem **没有真实的锁与并发语义**，这类用例在 pg-mem 上要么写不出来、要么写出来是恒真的假绿。选 B 就意味着本方案最关键的机制只有 code review 兜底 —— 这个取舍必须由人明确签下，而不是默认滑过去。
 
 > **ID 生成一致性**：业务 repo 统一走 `newId()`（UUID v7，见 `server/src/id/idGen.ts`）。`data_jobs` / `import_detect_sessions` 的 `DEFAULT gen_random_uuid()` 仅作 DB 兜底；应用层 INSERT 应显式传 v7 id，与 entries 一致，避免 v4/v7 混用。
 
@@ -1377,7 +1528,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_data_jobs_active_export_per_user
 | 文件 | 存哪里 | 保留时长 | 清理方式 |
 |---|---|---|---|
 | **用户上传的原始 CSV（导入源）** | **全程不落盘**（multipart 流直接进 parser） | 单次请求内，秒级 | 请求结束即释放 |
-| **导入检测元数据** | PG `import_detect_sessions` | 行产物 15 分钟；报告字段 24h（见下） | 定时清理 + cron 兜底 |
+| **导入检测元数据** | PG `import_detect_sessions` | **元数据 30 天**（与任务同寿 · FK 约束）；其中行产物字段指向的文件 15 分钟、report 文件 24h | 定时清理 + cron 兜底 |
 | **导入规范化行产物** | **server-only** `/data/import-staging/<yyyy-mm>/<detect_id>.rows.ndjson.gz` | 同检测会话；任务终态后删 | 应用清理 + `purge-import-staging` cron |
 | **导入问题报告 CSV** | **server-only** `/data/import-staging/<yyyy-mm>/<detect_id>.report.csv` | **24 小时**（与导出文件同寿，见下）| `purge-import-staging` cron |
 | **导出 CSV（含分片）** | 服务器本地 `/data/exports/<yyyy-mm>/<job_id>_<part>.csv` | **24 小时** | `purge-exports` cron |
@@ -1386,11 +1537,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_data_jobs_active_export_per_user
 
 > 检测行数据不进 Redis：生产 Redis 512MB + `allkeys-lru` + AOF everysec，把完整账单塞进单 key 会挤掉缓存/会话、产生大 key 延迟、写进 AOF、故障时让已完成检测报告消失。故落 **server-only 私有磁盘**，Redis 不参与。
 
-> **问题报告的生命周期必须独立于会话行**（v0.8 修正 · P1）：v0.7 一边规定"report 保留 24h，导入成功后仍可查 warning 明细"，一边在生命周期里规定"已 `consumed` 的会话**直到关联任务终态**（即清理）"。导入成功 = 任务终态 → 会话行被清 → `/import-detect-sessions/{id}/report` 直接 404，两条规则互相拆台。
+> **问题报告的生命周期必须独立于 commit 有效期；会话元数据必须与任务 FK 对齐**（v0.8/v0.9 修正 · P1）：v0.7 一边规定"report 保留 24h，导入成功后仍可查 warning 明细"，一边在生命周期里规定"已 `consumed` 的会话**直到关联任务终态**（即清理）"。导入成功 = 任务终态 → 会话行被清 → `/import-detect-sessions/{id}/report` 直接 404，两条规则互相拆台。v0.8 改为新增 `report_expires_at`，但若会话行 24h 后删除，又会与 `data_jobs.detect_id REFERENCES import_detect_sessions(id)` 冲突。
 >
-> v0.8 的解法：**会话行本身保留 24h，只删行产物**。
+> v0.9 的解法：**会话元数据保留 30 天，与任务元数据同寿；只提前删除隐私敏感文件**。
 > - 新增 `report_expires_at`（= ready 时刻 + 24h），与 `expires_at`（行产物 / commit 有效期 15 分钟）**解耦**；
-> - 任务终态时删 `.rows.ndjson.gz`，但**保留会话行与 report 文件**至 `report_expires_at`；
+> - 任务终态时删 `.rows.ndjson.gz`；report 文件保留至 `report_expires_at` 后删除；会话行保留至关联 `data_jobs` 元数据清理，确保 FK 不冲突；
 > - 端点仍是 `/import-detect-sessions/{detect_id}/report`，**不迁到 `data_jobs`** —— 因为 report 在 detect 阶段就要能下载（此时 job 还不存在），迁走会导致检测报告页拿不到下载入口。客户端从任务卡上的 `detect_id`（§7.6 已下发）即可拼出 URL。
 > - `commit` 的 410 判定只看 `expires_at`，与 `report_expires_at` 无关。
 
@@ -1458,14 +1609,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_data_jobs_active_export_per_user
 #### 生命周期与清理
 
 - `ready` 未确认：15 分钟过期（`expires_at`）→ commit 返回 `410 DETECT_SESSION_EXPIRED`。
-- 已 `consumed`：即使超 15 分钟也**不清理**，直到关联任务终态。
+- 已 `consumed`：即使超 15 分钟也**不清理元数据**，直到关联任务元数据一同清理。
 - 僵死 `detecting`（进程异常退出遗留）：按 `created_at` 超时（如 10 分钟）回收，释放 §4.4 的并发槽。
-- 导入成功：提交完成后删除规范化行产物（隐私最小化）；**会话行与问题报告保留至 `report_expires_at`（24h）**。
-- 可重试失败：保留行产物到重试结束；最终失败：删行产物，仅留任务结果摘要与问题报告（同样 24h）。
+- 导入成功：提交完成后删除规范化行产物（隐私最小化）；**会话元数据保留 30 天，与 `data_jobs.detect_id` FK 同寿**；问题报告文件只保留至 `report_expires_at`（24h）。**同时把 `report_preview` 置 NULL**（v1.0 · P2）—— 它含 `value_preview` 的备注/昵称原文片段，与 §7.4 / §9.4"不记录行内容"的口径不一致，不应随元数据留存 30 天；用户此时若要看 warning 明细，走 report 文件（24h 内）。
+- 可重试失败：保留行产物到重试结束；最终失败：删行产物，仅留任务结果摘要与问题报告文件（同样 24h）。
 - 应用侧每分钟清理过期 `ready` / 僵死 `detecting` 会话及其孤儿产物；启动时补偿清理一次。
-- **会话行的最终删除条件**：`report_expires_at < now()` **且**（无关联 job 或关联 job 已终态）。两者缺一都不能删 —— 前者会打断 24h 报告承诺，后者会让运行中的 job 丢失 `detect_id` 引用。
-- 宿主机 cron `maintenance.sh purge-import-staging` / `purge-exports` 作为孤儿兜底（参照 `purge-idempotency`，建议每日 04:37）。
-- **任务元数据保留 30 天**：文件过期后行仍在（`file_expires_at < now()`），客户端展示"文件已过期，可重新生成"。
+- **会话行的最终删除条件**：无关联 job，或关联的 `data_jobs` 已先按 30 天策略删除。不能按 `report_expires_at` 单独删除被任务引用的会话行，否则会被 `data_jobs.detect_id` FK 拦住，或迫使实现取消 FK。
+- 宿主机 cron `maintenance.sh purge-import-staging` / `purge-exports` 作为孤儿文件兜底（参照 `purge-idempotency`，建议每日 04:37）。
+- **任务元数据保留 30 天**：文件过期后行仍在（`file_expires_at < now()`），客户端展示"文件已过期，可重新生成"。检测会话元数据随任务元数据同寿，隐私敏感内容靠行产物与报告文件清理控制。
 
 #### 过期后的用户体验
 
@@ -1509,16 +1660,18 @@ v0.8 冻结：
 
 #### 导入必须"数据 + 成功状态"同一事务提交（核心）
 
-导入任务的以下操作必须在**同一个 PostgreSQL 事务**内完成，且**顺序有讲究**：
+导入任务的以下操作必须在**同一个 PostgreSQL 事务**内完成，且**顺序有讲究**。
+
+> **前置步骤（事务之外）**：开启大事务**之前**，先用一条独立短事务设置 `sync-hold` 并提交（§5.2.3 阶段 1）。这是不变量 H1 —— 放进大事务等于闸门不存在。
 
 1. **复核 detect 上下文有效性**（v0.6 新增 · 见下方"为什么 FK 兜底不成立"）；
 2. 从规范化产物批量 `INSERT entries`（带预生成 `entry_id` + `client_ref_id`，走 `entries` 现有列语义）；
 3. 正确生成 `change_seq`（`nextval('entries_change_seq')`，与 entryRepo 同源）；
-4. 汇总 delta，**在事务末尾一次性**更新 `ledgers.balance_cents / balance_version`（对齐 `ledgerRepo.applyBalanceDelta`，transfer 不产生 delta）；
-5. **批量写入第二条铁律（epoch + floor）**：对本次导入受影响的每个账本执行 `sync_epoch + 1` **与** `sync_epoch_floor_seq = LEAST(..., MIN(本批 change_seq))`（**必须与上述 INSERT 同一事务、同一条 UPDATE**，SQL 见 §5.2.2）。理由：`change_seq` 走 `nextval` 有"已取号未提交"洞，批量长事务在 COMMIT 前若同 family 有并发单笔写入先提交，会把客户端 watermark 推过本批号段区间 → 导入数据被客户端永久拉不到。epoch 变化触发客户端回退，floor 决定回退到哪里。**忘记这一步 = 洞重新打开且无人知晓**，是本方案唯一靠约定守住的失败模式，须列入 review 检查项（不变量 F1 / F2 见 §5.2.2）。
-6. `UPDATE data_jobs SET status='succeeded', finished_at, result_summary`（**条件更新**，见下）。
+4. **事务末尾一次性**执行**一条** `UPDATE ledgers`，同时完成三件事：汇总 delta 更新 `balance_cents / balance_version`（transfer 不产生 delta）**＋ 解除 `sync_hold_seq` / `sync_hold_until`**（SQL 见 §5.2.3）。
+   ⚠️ **不能复用 `ledgerRepo.applyBalanceDelta`** —— 它在 `delta === 0` 时 short-circuit 跳过整条 UPDATE，全 transfer 的导入会连带跳过 hold 解除（不变量 H2）。必须走专用的 `releaseHoldAndApplyDelta(ledgerId, delta)`，`delta = 0` 时也执行。
+5. `UPDATE data_jobs SET status='succeeded', finished_at, result_summary`（**条件更新**，见下；导入场景 rowCount 必须为 1，否则抛错并回滚整个事务）。
 
-> **导入上线前置（决策 16）**：`sync_epoch` / `sync_epoch_floor_seq` 的客户端消费能力必须**先于**任何生产批量写入入口上线。版本兼容矩阵与"哪种旧版本会丢数据、哪种只是变慢"见 §5.2.4。
+> **失败路径必须显式清除 hold**（§5.2.3 阶段 3）：hold 是阶段 1 独立提交的，事务 ROLLBACK **不会**回滚它。任务转 `failed` / 转 `queued` 重试后必须再发一条独立事务清除；即便这一步也失败，`sync_hold_until`（120s）兜底。**忘记这一步的后果是该 family 的 sync 白停两分钟，不是数据丢失**（不变量 H3）—— 这正是 `sync-hold` 相对 `sync_epoch` 的关键优势：**遗漏的代价从"数据永久拉不到"降级为"延迟两分钟"。**
 
 **成功状态不能在事务提交后再单独更新**，否则：
 
@@ -1529,9 +1682,9 @@ entries 已 COMMIT → 进程崩溃 → job 仍是 processing → 恢复重跑 �
 同事务后只有两种结局：entries + 余额 + job=succeeded 一起成功，或一起回滚。回滚后行产物仍在，重试用同一组 `entry_id/client_ref_id`，靠 `uq_entries_ledger_client_ref` 保证不重复。
 
 > **余额 UPDATE 必须放在事务末尾**（v0.6 补充）：`ledgers` 是**同账本所有记账的公共热点行** —— `entryService.createWithIdempotency` 每次记账都要 `applyBalanceDelta` 更新它。导入大事务一旦碰过这一行，行锁就持有到 COMMIT，期间该账本所有成员的记账请求全部排队（PG pool `max=10`，很容易连带耗尽连接）。把它挪到最末尾可把持锁窗口从"整个导入时长"压缩到"最后一次 UPDATE 到 COMMIT"。
-> **v0.8 补充**：步骤 5 的 `sync_epoch` / `sync_epoch_floor_seq` 也写 `ledgers` 行，**必须与余额 UPDATE 合并为同一条 `UPDATE ledgers SET balance_cents=..., balance_version=..., sync_epoch=..., sync_epoch_floor_seq=... WHERE id=$1`**，而不是分两条。分两条会把热点行锁的持有窗口翻倍，且在 `delta = 0`（全 transfer 的导入）时 `applyBalanceDelta` 会跳过 UPDATE —— 若 epoch 搭在它上面就会被一起跳过，直接触发不变量 F2 的失败模式。
+> **v1.0 补充**：hold 解除写的是同一行，因此**必须与余额合并为同一条语句**（不变量 H2，§5.2.3）—— 与 v0.8 对 `sync_epoch` 的论证同构。注意**设置** hold 的那条独立短事务（§5.2.3 阶段 1）也会碰这一行，但它是"取锁即提交"的毫秒级事务，不构成持锁窗口。
 > 另需设 `lock_timeout` / `statement_timeout` 兜底，避免导入被其它长事务卡住时无限等待。
-> 注意 `entries_change_seq` 已被 `0016` 改为 `CACHE 1`（为修资产 stale 问题保证严格单调），故 N 条导入 = N 次序列往返，是耗时的隐藏放大项 —— 这也是 §9.1 把上限降到 5,000 行的原因之一。同时它保证了 §5.2 的 `MIN(本批 change_seq)` 是一个稳定可取的值。
+> 注意 `entries_change_seq` 已被 `0016` 改为 `CACHE 1`（为修资产 stale 问题保证严格单调），故 N 条导入 = N 次序列往返，是耗时的隐藏放大项 —— 这也是 §9.1 把上限降到 5,000 行的原因之一。同时它保证了 §5.2.3 阶段 1 取到的 `last_value` 是一个稳定可用的闸门位置。
 
 #### 为什么"靠 FK 兜底"不成立，必须显式复核（v0.6 新增 · P0）
 
@@ -1548,6 +1701,8 @@ v0.5 的 R12 论证是："detect→commit 之间上下文失效时，遇 FK 失�
 ```sql
 -- 1) 操作者仍是该账本所属家庭的活跃成员（否则整批 failed · 不可重试）
 -- 2) 产物中所有 distinct created_by 仍是该家庭活跃成员
+--    v1.0：$2 必须包含 member_mapping 映射【之后】的 user_id 集合（§4.3），
+--          否则用户映射到一个刚退出的成员时会绕过复核。
 --    FOR UPDATE：锁成员行至事务结束，堵住「复核通过 → 成员并发退出 → 仍写入」的 TOCTOU
 --    （对齐 familyMemberRepo.lockActiveMember 既有语义；leave/remove 的 UPDATE 会与此锁冲突）
 SELECT user_id FROM family_members
@@ -1577,8 +1732,41 @@ UPDATE data_jobs
    SET status = $newStatus, finished_at = now(), result_summary = $summary, ...
  WHERE id = $jobId
    AND status = 'processing'
-   AND run_token = $myToken;   -- 旧/超时 worker 的 token 不匹配 → 0 行 → 放弃写回
+   AND run_token = $myToken;
 ```
+
+`rowCount` 处理按任务类型分流：
+
+| 场景 | `rowCount = 1` | `rowCount = 0` |
+|---|---|---|
+| 导入成功事务内 | 正常 COMMIT：entries + 余额 + hold 解除 + job=succeeded 同时可见 | **必须抛错并 ROLLBACK 整个事务**。不得提交已插入 entries；否则会出现"数据已入库但 job 未成功 / 后续重跑撞唯一约束" |
+| 导入失败状态写回 | 正常写 failed 或 queued retry | 放弃写回即可；没有业务数据副作用（但**仍需清除 hold**，§5.2.3 阶段 3）|
+| 导出终态写回 | 正常写 succeeded/failed | 放弃写回并清理本 worker 产生的临时文件；旧 worker 不覆盖新结果 |
+
+> **v0.9 强制项**：不能把通用 worker 的"token 不匹配 → 放弃写回"无差别套到导入成功路径。导入成功路径的条件更新是事务原子性的一部分，影响行数不是 1 就必须让整个事务失败。
+
+#### `uq_entries_ledger_client_ref` 冲突是预期结局，不是约束违规（v1.0 新增 · P1）
+
+§7.5 明确设计了"重试复用同一组 `entry_id / client_ref_id`，靠 `uq_entries_ledger_client_ref` 保证不重复"。但若按 §9.5 把所有 `23505`（unique_violation）归入 `CONSTRAINT_VIOLATION`，就会与这条设计正面冲突：
+
+```text
+lease 过期 → 任务被另一个 worker 抢占 → 双 worker 并跑
+  ↓ 先完成的那个已 COMMIT（entries 全部落库、job=succeeded）
+后完成的那个 INSERT → 撞 uq_entries_ledger_client_ref (23505)
+  ↓ 按 v0.9 归类
+CONSTRAINT_VIOLATION + retryable=false + 【触发告警】+ job 写成 failed
+```
+
+结果是：① 一个**其实已经成功**的导入被展示成失败；② 告警噪音（文档还写着"`CONSTRAINT_VIOLATION` 意味着 detect 校验集有遗漏，属 bug，应触发告警"）。
+
+**要求**：捕获 `23505` 时先判 `constraint` 名：
+
+| 冲突约束 | 处理 |
+|---|---|
+| `uq_entries_ledger_client_ref` | **重读 `data_jobs.status`** —— 为 `succeeded` 则按"已由另一次执行完成"正常结束（不写任何终态、不告警）；否则按 `TRANSIENT_DB` 重试（说明是并发中间态）|
+| 其它任何约束 | 才落 `CONSTRAINT_VIOLATION` + 告警（detect 校验集有漏，属 bug）|
+
+这与既有纪律一致 —— §7.5 已经规定"COMMIT 结果不确定时先重读 `data_jobs.status`"，本条只是把同一判据前移到唯一冲突分支。
 
 #### 重试分类（导入不裸重试）
 
@@ -1591,6 +1779,7 @@ UPDATE data_jobs
 | | 文件格式不支持（`CONSTRAINT_VIOLATION`）|
 
 > `error_code` 取值域与客户端文案映射见 §9.5 末尾的表。`CONSTRAINT_VIOLATION` 意味着 §3.11 的 detect 校验集有遗漏（属 bug），应触发告警而不只是提示用户。
+> ⚠️ **`uq_entries_ledger_client_ref` 冲突不在此列** —— 它是重试幂等的预期结局，走上一小节的专用分流，既不告警也不写 failed。
 
 - 可重试：`status='queued'`、`retryable=true`、`next_attempt_at=now()+退避`（`attempts < 3`）。
 - 不可重试：直接 `status='failed'`，删行产物。
@@ -1628,7 +1817,7 @@ LIMIT $6
 
 2. 每批序列化后**直接 append 写入当前分片文件流**，不在内存累积完整 CSV；
 3. **批间 `await setImmediate()`** 主动让出 event loop，保证在线请求不被饿死；
-4. **满 5,000 行切下一个分片**（§9.2），每个分片独立带 BOM + 表头，保证任一分片单独打开或单独回导都合法；
+4. **满 5,000 行或满 900KB 即切下一个分片**（§9.2 双阈值），每个分片独立带 BOM + 表头，保证任一分片单独打开或单独回导都合法；
 5. 导出任务全局串行执行（§7.5 并发模型），并受 `uq_data_jobs_active_export_per_user` 约束创建。
 
 如此内存恒定、导出侧不设总行数上限，同时每个产物文件都落在导入上限内（闭环成立，§2.3）。
@@ -1696,12 +1885,13 @@ stage → 进度区间与展示文案（无真实条数）：
 | `stage` | 进度区间 | 展示文案 |
 |---|---:|---|
 | `queued` | 0% | `等待处理` |
-| `validating` | 5% → 20% | `正在校验导入环境` |
-| `writing` | 20% → 90% | `正在导入流水` |
+| `validating`（导入唯一可观测阶段 · τ=8s）| 5% → 90% | `正在导入流水` |
 | `querying` | 20% → 90% | `正在整理数据` |
-| `packaging` | 90% → 98% | `正在生成 CSV 文件…` |
+| `packaging` | 90% → 98% | `正在收尾` |
 | `succeeded` | 100% | `已完成` |
 | `failed` | 不显示百分比 | `处理失败 · 查看原因` |
+
+> 与 §7.2 的表保持一致（v1.0）：`writing` 已从导入阶段集移除（大事务内不可见）；`packaging` 只覆盖收尾。
 
 ---
 
@@ -1768,8 +1958,8 @@ stage → 进度区间与展示文案（无真实条数）：
 7. 校验通过后展示确认卡：目标账本、文件名、大小，以及说明 `点击开始检测，查看文件中的错误和警告。`
 8. 点 `开始检测` 后上传；调用 `wx.enableAlertBeforeUnload({ message: '文件仍在上传，离开将取消本次检测。' })`
 9. 收到检测报告后调用 `wx.disableAlertBeforeUnload()`，展示检测报告页
-10. 用户查看报告，决定是否继续
-11. 点 `确认导入 N 条` → POST /v1/import-jobs/commit → 收到 202 + job_id → 切任务卡
+10. 用户查看报告，决定是否继续；**若报告含 `unmatched_members`（自产文件），先在映射区为每个昵称指定归属**（§4.3）
+11. 点 `确认导入 N 条` → POST /v1/import-jobs/commit `{ detect_id, member_mapping? }` → 收到 202 + job_id → 切任务卡
 12. 或点 `取消 · 重新选择文件` → 回到步骤 4
 
 ### 8.4 导出按钮逻辑
@@ -1796,7 +1986,8 @@ stage → 进度区间与展示文案（无真实条数）：
 - 用户已离开页面：下次进入设置页时用副文案和小绿点提示
 - **导入任务首次观测到 `succeeded` 时**：调用 `triggerOnMutation()` 推一轮 sync，把数据到达从"最长 60s"缩短到秒级（§5.1）。需按 `job_id` 去重，避免多次轮询重复触发。
 
-> **导入完成态的文案必须诚实**：数据写入服务端成功 ≠ 本地已全部可见（sync 需要若干轮）。任务卡完成文案用 `已导入 N 条 · M 条跳过`，**不要**写"账本已更新完成"。若用户此时切到明细页而本地尚未收齐，页面会先展示已同步的部分 —— 这是 §5.1 的既有 sync 语义，不额外加拦截或 loading 遮罩（否则又变成为导入加旁路）。
+> **导入完成态的文案必须诚实**：数据写入服务端成功 ≠ 本地已全部可见（sync 需要一到几轮）。任务卡完成文案用 `已导入 N 条 · M 条跳过`，**不要**写"账本已更新完成"。若用户此时切到明细页而本地尚未收齐，页面会先展示已同步的部分 —— 这是 §5.1 的既有 sync 语义，不额外加拦截或 loading 遮罩（否则又变成为导入加旁路）。
+> **v1.0 补充**：`sync-hold` 把重拉量压到"导入条数 + 并发窗口"（5,000 行 ≈ 10 轮 × 500），实际收齐通常在一次 `syncPull` 的分页循环内完成，上述窗口比 v0.7/v0.9 的全量或定点重拉短得多 —— 但**仍然不是零**，文案纪律不变。
 
 ---
 
@@ -1811,7 +2002,7 @@ stage → 进度区间与展示文案（无真实条数）：
 | 记录ID | **不允许传入**；若 CSV 表头包含 `记录ID` / `id` / `entry_id`，检测阶段返回 ERROR |
 | 记账人字段 | 按昵称匹配家庭成员；未匹配归属操作者 + warning；**同名多个成员 → ERROR**（§3.3）|
 | 文件大小 | ≤ **1MB**（见下方"规模上限的全链路推导"）；客户端先校验，服务端按路由二次校验，超限 `413 PAYLOAD_TOO_LARGE`（三层阈值顺序见 §9.5）|
-| 行数上限 | 单次导入 ≤ **5,000 行**；超限检测阶段 ERROR |
+| 行数上限 | 单次导入 ≤ **5,000 行**（**数据行、不含表头**，§9.2 对称口径）；超限检测阶段 ERROR |
 | 后缀白名单 | 仅 `.csv`（**大小写不敏感**：`.CSV` / `.Csv` 同样放行；`wx.chooseMessageFile` 的 `extension` 参数亦按小写传入并在服务端归一后比对）|
 | 内容校验 | UTF-8（可带 BOM）+ RFC 4180 + 必填表头；拒绝 XLSX / JSON / 二进制 |
 | DB 硬约束校验 | detect 必须覆盖 `entries` 全部 CHECK / 引用约束（§3.11），否则"可导入 N 条"与实际写入不一致 |
@@ -1831,8 +2022,8 @@ v0.5 的 `5MB / 20,000 行` 是**只按"PG 单事务能扛多久"单侧推导**�
 | nginx `client_max_body_size` | **全仓库 0 处配置 → 默认 1MB** | ❌ 5MB 在反代层直接 413，Fastify 收不到 |
 | `@fastify/multipart` | 全局 `fileSize: 2MB, files: 1`（`server/src/app.ts`）| ❌ 需为导入抬高全局上传上限（副作用波及头像等所有上传）|
 | nginx `proxy_read_timeout` | `60s`（`costra.cloud.conf.prod`）| ⚠️ 20,000 行流式解析+校验+gzip+SHA256 在 2 核上可能超时，而服务端已写完产物 → 用户拿不到报告却已耗掉算力 |
-| 客户端本地库 | 微信单 key 1MB / 总量 10MB 约束仍在（L13 已废除 `entry:__index`，原 `appendToIndex` 全量重写 O(n²) 消失）| ⚠️ 20,000 条实体占用可观，10MB 总量仍是硬顶；O(n²) 卡死风险已消失。**v0.8 补记：`db.ts` 当前无 quota 超限降级分支，这是既有缺口**（R26 相关，§14.1 spike 3 需实测） |
-| sync 下行通道 | L13 已落地分页循环（limit 500 × 最多 40 页 + 截断 300ms 续拉）；v0.8 再加 `floor_seq` 定点重拉（§5.2）| ✅ 已修复；但 5MB 仍被 nginx / multipart / 超时 / 存储四道关卡否决 |
+| 客户端本地库 | 微信单 key 1MB / 总量 10MB 约束仍在（L13 已废除 `entry:__index`，原 `appendToIndex` 全量重写 O(n²) 消失）| ⚠️ 20,000 条实体占用可观，10MB 总量仍是硬顶；O(n²) 卡死风险已消失。**v1.0 补记：`db.ts` 无 quota 超限降级分支是既有缺口，但 `sync-hold` 取消了全量重拉后，导入不再是"逼近容量上限"的场景**（R26 已消解，缺口本身仍记为 R37）|
+| sync 下行通道 | L13 已落地分页循环（limit 500 × 最多 40 页 + 截断 300ms 续拉）；v1.0 用服务端 `sync-hold` 让导入回归自然增量（§5.2）| ✅ 已修复；但 5MB 仍被 nginx / multipart / 超时 / 存储四道关卡否决 |
 
 **真实业务量反推**：9 列中文 CSV 每行约 60~120 字节（quote-all 后取上界）。个人一年记账 1,000~3,000 条 ≈ **150~400KB**；微信/支付宝导出一年账单同量级。5MB ≈ 5 万行，**对家庭记账是不存在的场景**。
 
@@ -1863,7 +2054,7 @@ v0.5 的 `5MB / 20,000 行` 是**只按"PG 单事务能扛多久"单侧推导**�
 | 导出权限 | 请求者必须是该账本所属家庭的活跃成员；不做二次同意 |
 | 数据范围 | 账本日期范围内全部未删除流水，包含所有成员；日期边界**显式按 `Asia/Shanghai` 换算**（SQL 见 §7.5，用 `luxon`，禁止硬编码 `+08:00`）|
 | 生成方式 | **必须流式**：游标分页读 + 逐批 append 落盘 + 批间 `await setImmediate()` 让出 event loop（§7.5）|
-| 规模上限 | **总行数不设上限**（靠流式保证内存恒定）；但**单文件 ≤ 5,000 行，超出自动分片**（见下）。必须验证大账本导出不拖慢在线 API P99 |
+| 规模上限 | **总行数不设上限**（靠流式保证内存恒定）；但**单文件 ≤ 5,000 行且 ≤ 900KB，任一触顶即自动分片**（见下）。必须验证大账本导出不拖慢在线 API P99 |
 | 并发 | 同一用户同时最多 1 个运行中的导出任务（**DB 唯一索引 `uq_data_jobs_active_export_per_user` 兜底**，不只应用层 check）；执行侧为全局串行（§7.5）|
 | CSV 安全 | 所有单元格走 §9.3 Formula Injection 防护 + quote-all |
 | 文件名安全 | 文件名与 `Content-Disposition` 删除 CR/LF、C0 控制字符、路径符号，限长（防 header 注入/路径问题） |
@@ -1873,7 +2064,7 @@ v0.5 的 `5MB / 20,000 行` 是**只按"PG 单事务能扛多久"单侧推导**�
 | 审计 | user_id、ledger_id、日期范围、entry_count、job_id、sha256 |
 | 清理 | 定时任务删除 24 小时前的实体文件，任务元数据保留 30 天 |
 
-#### 导出分片：单文件 5,000 行（v0.8 新增 · P1）
+#### 导出分片：单文件 5,000 行 **且** ≤ 900KB 双阈值（v0.8 引入 · v1.0 补字节阈值 · P0）
 
 v0.7 让导出"不设上限"而导入硬顶 5,000 行 / 1MB，这个不对称直接**推翻了三处已冻结的承诺**：
 
@@ -1885,14 +2076,34 @@ v0.7 让导出"不设上限"而导入硬顶 5,000 行 / 1MB，这个不对称直
 
 一个 3 万条的账本导出后是 ~3MB / 3 万行的单文件，**在导入侧连 detect 都进不去**。用户唯一的补救办法是自己用 Excel 切分 —— 而 §1 排第一的用户画像恰恰是"不想折腾的记账用户"。
 
-v0.8 规则：
+> ⚠️ **v0.8 的"只按 5,000 行切片"仍不足以保证闭环**（v1.0 修正 · P0）。导入的硬顶是 **5,000 行 AND ≤1MB**（两者是**与**关系，§9.1），而 §9.1 推导用的"每行 60~120 字节"是**按短备注估的**。上界其实高得多：
+>
+> ```text
+> note 上限 200 【字符】（DB CHECK char_length ≤ 200）
+>   中文 UTF-8 每字符 3 字节 → 单条备注最多 600 字节
+>   + 9 列 quote-all（18 个引号）+ 分类名 + 昵称 + 日期时间 + CRLF
+>   ⇒ 单行完全可以达到 700B 以上
+>
+> 5,000 行 × 700B ≈ 3.4MB  ≫  导入侧 1MB 硬顶
+>   ⇒ 该分片上传时直接 413 PAYLOAD_TOO_LARGE
+>   ⇒ 用户导出的文件【依然导不回去】
+> ```
+>
+> 也就是说 R31 并没有被 v0.8 真正关闭，只是把触发条件从"记录条数多"换成了"备注写得长"—— 后者对"习惯写详细备注"的用户是**必然**命中，而不是边缘情况。
 
-- 导出 writer 每写满 **5,000 行**切下一个分片，文件名追加 `_NofM`（§2.2 / §6.2）；
+v1.0 规则：
+
+- 导出 writer 同时维护**两个计数器**：已写数据行数与**已写字节数**（按实际编码后的 `Buffer.byteLength`，含 BOM 与表头）；
+  - 行数达 **5,000**，或字节数达 **900KB**（1MB 留 10% 余量给 multipart 封装开销与末行不确定性）—— **任一触顶即切下一个分片**；
+  - 字节计数必须在**写入前**判断（"若写入本行会超阈值 → 先切片"），否则末行会把分片顶出阈值；
 - **每个分片都是独立完整的 CSV**：各自带 UTF-8 BOM + 9 列表头 + CRLF + quote-all，任一分片单独在 Excel 打开或单独回导都合法；
 - 分片数 `part_count` 与 `files[]` 一并下发（§6.2），客户端逐个下载并转发（§6.3）；
-- 记录**不跨分片切分**（一条记录必然完整落在一个分片内，含 multiline 备注）。
+- 记录**不跨分片切分**（一条记录必然完整落在一个分片内，含 multiline 备注）；
+- 单条记录本身超过 900KB 是**不可能**的（9 列全部有 DB 长度约束，理论上界 ~1KB），故不需要"单行超阈值"的降级分支 —— 但实现里应加一条断言，若出现即视为 bug。
 
-> 为什么不用"导出也不限、只在文档里提醒用户分批"：那是把设计缺口转嫁为用户操作负担，且用户在**导出时**根本无从得知未来导入会失败。分片让闭环在任意规模下自动成立，实现成本仅是 writer 里的一个计数器与文件切换。
+> **导入侧的对称口径**：5,000 行上限指**数据行、不含表头**（否则满片的 5,000 数据行 + 1 表头会在边界被拒，自产自入在恰好满片时失败）。这条要写进 §9.1 的行数校验实现。
+
+> 为什么不用"导出也不限、只在文档里提醒用户分批"：那是把设计缺口转嫁为用户操作负担，且用户在**导出时**根本无从得知未来导入会失败。双阈值分片让闭环在任意规模、任意备注长度下自动成立，实现成本仅是 writer 里的两个计数器与一次文件切换。
 
 ### 9.3 CSV Formula Injection 防护
 
@@ -2007,7 +2218,7 @@ v0.6 决策：**不新建审计表，走结构化 pino 日志**。
 
 #### 落地清单（缺一项则启动期自检失败）
 
-新增 code 必须**同步**六处，`ErrorCode.ts` 的 `assertErrorCodeCoverage()` 会在模块加载期强制校验前三张表：
+新增 code 必须**同步**六处，`ErrorCode.ts` 的 `assertErrorCodeCoverage()` 会在模块加载期强制校验下列**第 2 / 3 / 4 项**（status / retry / logLevel 三张映射表，漏一张即启动失败）：
 
 1. `server/src/errors/ErrorCode.ts` → `ErrorCode` 枚举
 2. 同文件 → `ErrorHttpStatus` 映射
@@ -2023,6 +2234,8 @@ v0.6 决策：**不新建审计表，走结构化 pino 日志**。
 需在 `errorHandler.ts` 增一条映射：`error.code === 'FST_REQ_FILE_TOO_LARGE'` → `PAYLOAD_TOO_LARGE`。
 
 > 注意两级限制的关系：nginx `client_max_body_size 2m` 会在**反代层**直接返回 nginx 自己的 413 HTML（不带 `code`）。因此客户端**必须先做本地 1MB 校验**（§8.3 步骤 6），把这条路径变成兜底而非常规路径；服务端 multipart 的 2MB 限制是第二道兜底。三层阈值（客户端 1MB < multipart 2MB ≤ nginx 2MB）的顺序不能颠倒。
+>
+> **配套要求**（v1.0 补充 · P2）：§6.3 的上传/下载鉴权封装职责 3 是"把 `statusCode` + 响应体解析为 `ErrorCode`"，但 nginx 413 的响应体是 **HTML 而非 JSON**。封装必须显式处理"响应体非 JSON"分支，按 `statusCode` 兜底映射（413 → `PAYLOAD_TOO_LARGE`、502/504 → 网络类可重试），**不得**在 JSON 解析处抛错 —— 否则用户会看到"服务异常"而不是"文件太大"，等于这条兜底路径白做。
 
 #### `data_jobs.error_code` 的取值域
 
@@ -2078,7 +2291,8 @@ v1 脚本已删除，下表保留作为格式演进对照与"为什么 v2 不兼
 | 时区 | 进程本地 `Date` | 显式 `Asia/Shanghai`（导入导出双侧，§3.6 / §9.2）|
 | 缓存失效 | 无缓存 | 无（服务端业务缓存已移除，实时聚合；§7.5）|
 
-> ~~**CLI 脚本的行为反转必须做成入参**~~（v0.7 作废）：原要求 service 把归属默认、金额精度做成显式选项以兼容 CLI 的 v1 行为；v1 CLI 已删除，service 只有 v2 一套语义（归属沿用家庭默认语义、金额超两位小数 ERROR），无需兼容选项。
+> ~~**CLI 脚本的行为反转必须做成入参**~~（v0.7 作废）：原要求 service 把归属默认、金额精度做成显式选项以兼容 CLI 的 v1 行为；v1 CLI 已删除，service 只有 v2 一套语义，无需兼容选项。
+> ⚠️ **v1.0 更正**：此处原写"金额超两位小数 ERROR"，与 §3.5 的"四舍五入到分 + WARNING"矛盾。**以 §3.5 为准**（柔性降级、不丢行），本行的旧表述作废。
 
 ---
 
@@ -2102,53 +2316,62 @@ v1 脚本已删除，下表保留作为格式演进对照与"为什么 v2 不兼
 | R14 | 导出/暂存文件占满磁盘 | 低 | 中 | 24h TTL + 按月分桶 + `purge-exports`/`purge-import-staging` cron；导入文件受 1MB/5,000 行上限约束；导出流式生成不占内存 |
 | R15 | 导出 CSV 被表格软件当公式执行 | 中 | 高 | §9.3 `apostrophe-v2` 可逆防护 + quote-all；文件名/header 控制字符防护 |
 | R16 | 检测产物损坏 / SHA 不匹配 | 低 | 中 | commit 前校验 `artifact_sha256`；不匹配直接 failed（不可重试），提示重新检测 |
-| R17 | 旧/超时 worker 覆盖新执行结果 | 低 | 中 | 终态用 `run_token` 条件更新，token 不匹配则 0 行放弃写回（§7.5）|
+| R17 | 旧/超时 worker 覆盖新执行结果 | 低 | 中 | 终态用 `run_token` 条件更新；导出/失败态 token 不匹配则放弃写回，**导入成功事务内 token 不匹配必须 rollback**（§7.5）|
 | R18 | detect 端点被反复上传放大 CPU/磁盘 | 中 | 中 | detect 单独频控（独立 Redis 计数器）+ **同用户单并发** + 1MB/5,000 行上限 + 流式解析 + sha256 幂等复用（§9.1）|
-| R19 | ~~导入后数据迟迟不出现在客户端~~ → **未升级的旧客户端踩 `change_seq` 洞** | 中 | **高** | 原根因（`has_more` 无人消费）已随 L13 修复关闭（§5.1）：任务成功后客户端调 `triggerOnMutation()`，导入数据经 epoch **定点重拉**秒级可见。残余风险：导入入口开放时仍有未升级的旧版本客户端（无 epoch 逻辑）→ 导入数据永久拉不到。**缓解 = 版本覆盖率门槛**（决策 16、§5.1）；版本兼容矩阵见 §5.2.4 |
+| R19 | ~~导入后数据迟迟不出现在客户端~~ → **已完全消解（v1.0）** | — | — | 原根因（`has_more` 无人消费）随 L13 修复关闭；`change_seq` 洞随 v1.0 的 `sync-hold` **根本不形成**（§5.2）。任务成功后客户端调 `triggerOnMutation()`，导入数据落在**自然增量窗口**内秒级可见。**旧客户端不再有丢数据风险 ⇒ 版本覆盖率门槛取消** |
 | R20 | 导入 detect 通过但 commit 撞 DB 约束致整批失败 | 中 | 高 | detect 校验集必须是 `entries` 全部硬约束的超集（§3.11）；`note` 超长截断 + WARNING 而非丢行（**按 code point 截断**，防 lone surrogate 反而炸事务）|
 | R21 | ~~导入后统计/预算显示旧数字~~ | — | — | **已消解**：服务端业务缓存已于 2026-08-28 移除，统计/预算实时聚合，无陈旧窗口（§7.5）。重新引入读缓存时需重开此项 |
 | R22 | 导入大事务阻塞同账本记账 | 中 | 中 | 余额 + epoch 合并为**同一条**末尾 UPDATE 缩短持锁窗口 + `lock_timeout` 兜底 + 5,000 行上限（§7.5）|
 | R23 | 大账本导出拖慢在线 API | 中 | 中 | 游标流式读 + 逐批落盘 + 批间 `setImmediate()` 让出 event loop + 全局串行执行（§7.5 / §9.2）|
 | R24 | 同名成员导致错归属 | 中 | 高 | `users.nickname` 无 UNIQUE，同名时**该行 ERROR** 而非静默取第一个（§3.3）|
 | R25 | 导入时区错误致跨月漂移 | 中 | 高 | 显式按 `Asia/Shanghai` 构造 `occurred_at`，禁止依赖进程本地时区；统一用 `luxon`（§3.6）|
-| **R26** | **epoch 重拉把一次导入放大成全 family 全量下行** | 高 | **高** | v0.7 的清零重拉在老账本上 = 每台设备 2.5 万行、撞 40 页硬顶。新增 `sync_epoch_floor_seq` 定点回退，重拉量与账本历史规模解耦（§5.1、§5.2）|
-| **R27** | **`sync_epoch` 与 `floor_seq` 未同事务/同语句更新** | 中 | **高** | 只更新前者 → 回退到陈旧 floor（可能拉不全）；只更新后者 → 客户端根本不触发回退。强制合并进末尾那条 `UPDATE ledgers`（不变量 F2，§5.2.2 / §7.5）|
-| **R28** | **`floor_seq` 被后续导入抬高，重新打开号段洞** | 中 | 高 | `LEAST(...)` 保证只减不增（不变量 F1，§5.2.2）+ 单测断言连续两次导入 floor 不上移 |
+| **R26** | ~~epoch 重拉把一次导入放大成全 family 全量下行~~ → **已消解（v1.0）** | — | — | v0.7 的清零重拉、v0.8/v0.9 的 `floor_seq` 定点重拉都是"洞形成后补救"。`sync-hold` 让洞不形成 ⇒ **完全没有重拉**，客户端按原 watermark 继续增量（§5.1、§5.2）|
+| **R27** | **hold 解除未与余额 UPDATE 同语句 / 同事务** | 中 | 中 | 分两条 ⇒ 热点行锁窗口翻倍；`delta=0` 的全 transfer 导入若复用 `applyBalanceDelta`（short-circuit 跳过 UPDATE）会连带跳过解除。强制走专用 `releaseHoldAndApplyDelta`（不变量 H2，§5.2.3 / §7.5）。**后果仅为 sync 延迟至 `HOLD_TTL`，不丢数据** |
+| **R28** | **hold 在导入大事务【内】设置，闸门形同不存在** | 中 | **高** | 未提交的 hold 对 pull 连接不可见 ⇒ 洞照旧形成 ⇒ 导入数据永久拉不到。必须独立短事务先提交（不变量 H1，§5.2.3）+ 单测断言"hold 严格小于本批首个 `change_seq`"+ 移除 hold 的对照组用例必须失败（§5.2.6）|
 | **R29** | **formula guard 不可逆致备注被静默改写** | 中 | **高** | v1 编解码非互逆，`'备注` 自产自入后丢单引号。改 `apostrophe-v2`（首字符 `'` 无条件加一层）+ 6 行往返单测（§9.3）|
 | **R30** | **错误响应无 `code`，客户端只能按 status 猜** | 高 | 中 | 两种 409、两种 410 无法区分，413 根本没有 code。新增 6 个 code + multipart 超限映射（§9.5）|
-| **R31** | **导出无上限使自产自入闭环失效** | 高 | 中 | 导出单文件 5,000 行自动分片，每片独立完整可回导（§9.2）|
+| **R31** | **导出无上限使自产自入闭环失效** | 高 | 中 | 导出单文件 **5,000 行 且 900KB 双阈值**自动分片，每片独立完整可回导（§9.2）。⚠️ v0.8 只按行数切片并不足够：note 200 字符中文 = 600B，5,000 行可达 3.4MB ≫ 导入 1MB 硬顶，闭环会以"备注写得长"为触发条件复发 |
 | **R32** | **上传/下载绕过 `request.ts`，token 过期即死** | 高 | 中 | 导出耗时数分钟后 token 常已过期，裸 `wx.downloadFile` 401 后重试仍失败。新增鉴权封装：`ensureFreshToken` + 401 重放一次 + code 映射（§6.3）|
-| **R33** | **partial unique / 行锁 / advisory lock 无自动化验证** | 中 | 中 | pg-mem 不支持这些语义，而本方案的并发正确性重度依赖它们。§7.3 给出 A（建真 PG 集成测试通道，+2 人天）/ B（明确承认无验证并接受）二选一，**不允许保留"要求存在、载体不存在"的中间态** |
+| **R33** | **partial unique / 行锁 / advisory lock / `sync-hold` 跨事务可见性无自动化验证** | 中 | **高**（v1.0 由中升高）| pg-mem 不支持这些语义，而本方案的并发正确性重度依赖它们；v1.0 起还叠加了 `sync-hold` 的 H1（跨事务可见性）与洞的回归用例（需同时持有两个未提交事务）—— 这类用例在 pg-mem 上写出来会是**恒真的假绿**。§7.3 给出 A（建真 PG 集成测试通道，E7 2 人天）/ B（明确承认无验证并接受）二选一，**不允许保留"要求存在、载体不存在"的中间态** |
+| **R34** | ~~`floor_seq` 写成 `MIN(change_seq)` 导致首条漏拉~~ → **已消解（v1.0）** | — | — | `floor_seq` 方案整体被 `sync-hold` 取代，该 off-by-one 面消失。hold 侧的对应不变量是 H1（闸门必须严格小于本批首个 `change_seq`），且**取值偏小是安全侧**，不存在等价的 off-by-one 风险（§5.2.3）|
+| **R35** | **检测会话删除与 `data_jobs.detect_id` FK 冲突** | 中 | 中 | 会话元数据与任务元数据同寿 30 天；24h 只清 report 文件，终态立即清 `.rows.ndjson.gz`，不按 `report_expires_at` 删除被任务引用的会话行。**v1.0 补**：FK 显式 `ON DELETE CASCADE`（ledger 硬删时两表同被级联，无 ON DELETE 有可执行性风险；且因 `chk_data_jobs_type_fields` 不能用 SET NULL）（§7.3 / §7.4）|
+| **R36** | **「已取号未提交」洞在【普通并发记账】路径上同样存在** | 低 | **高** | 两笔记账 A(`seq=100`)/B(`seq=101`)，B 先提交 ⇒ watermark=101 ⇒ A 永久拉不到。`0016` 的 `CACHE 1` 只保证单调、不保证提交序。**本方案范围外**（hold 只覆盖导入），记为独立课题 follow-up；`sync-hold` 的 DDL 与 pull 钳制逻辑可被未来的根治方案直接复用（§5.2.5）|
+| **R37** | **`db.ts` 无微信 storage 配额超限降级分支** | 低 | 中 | 单 key 1MB / 总量 10MB 超限时行为未定义。`sync-hold` 取消全量重拉后，导入不再是逼近上限的场景（R26 消解），故本方案不再依赖它 —— 但缺口本身仍存在（新设备首登老账号仍会全量拉），记为既有课题 follow-up（§9.1）|
+| **R38** | **`uq_entries_ledger_client_ref` 冲突被误判为约束违规** | 中 | 中 | lease 复位导致双 worker 并跑时该冲突是**设计预期结局**（§7.5 重试幂等的实现手段），若归入 `CONSTRAINT_VIOLATION` 会把一个已成功的导入写成 `failed` 并误触发"detect 校验集有漏"告警。必须按 `constraint` 名分流：该约束 → 重读 `data_jobs.status`，`succeeded` 即正常结束（§7.5）|
+| **R39** | **导入 `stage='writing'` 在大事务内不可见，进度条卡死** | 高 | 低 | 与 v0.5 删除 `progress_current/total` 的成因完全相同。导入收敛为单一 `validating` 阶段（5%→90%，τ=8s），`chk_data_jobs_stage_scope` 的 import 分支去掉 `writing`（§7.2 / §7.3）|
+| **R40** | **自产文件成员未匹配无出口，「家庭数据交接」场景不可用** | 高 | 中 | 导出必含历史成员，一人退出/改昵称即导致该成员全部行 ERROR；用户只剩"大批丢行"或"删列全归一人"两个都不可接受的选项。检测报告页必须提供**昵称→活跃成员一次性映射**（上限 20 个未匹配昵称），映射结果落产物（§3.3 / §4.3）|
 
 ---
 
-## 12. 工作量估算（v0.8 重估）
+## 12. 工作量估算（v1.0 重估）
 
-> v0.7 的 17.5 人天是在**漏掉四类工作**、且 E1 严重低估的前提下算出来的。v0.8 逐项补齐后为 **28 人天**（含 §7.3 选项 A 的真 PG 测试通道）。
+> v0.7 的 17.5 人天漏掉四类工作且 E1 严重低估；v0.8 补齐后为 28 人天。v1.0 用 `sync-hold` 取代 `floor_seq` 后**删掉整张客户端卡（E5c）并简化 E2b**，同时把 §3.3 的成员映射出口计入 E1/E5 ⇒ **25.5 人天**（含 §7.3 选项 A 的真 PG 测试通道）。
 
-| 卡 | 内容 | v0.7 | v0.8 |
+| 卡 | 内容 | v0.8 | v1.0 |
 |---|---|---:|---:|
 | ~~E0~~ | ~~前置 · 修 `sync/pull` 的 `has_more` 无人消费~~ **✅ 已完成（2026-09-01）**（L13 落地，§5.1）| 已消耗 | 已消耗 |
-| E1 | 后端 · import/export service：引入 RFC 4180 流式 parser/stringifier（**选型见下**）+ §9.3 `apostrophe-v2` 编解码 + 9 列表头指纹 + §3 全部解析规则（9 组别名、类型模糊、金额清洗、6 种日期格式、分类匹配含全角/繁简、成员匹配、归属推导）+ §3.11 九条 DB 约束校验 + 单测 | 2.5 | **5** |
-| E2 | 后端 · `0020` 迁移（`sync_epoch_floor_seq` + 两表 + 三处 partial unique + 三条 CHECK）+ repo + worker（advisory lock / SKIP LOCKED / run_token / lease / 2s poll / 事件 kick）+ 阶段更新 + 僵死恢复 + 原子成功提交（含 epoch & floor 同语句）+ commit 前复核（含 `FOR UPDATE` 行锁）+ `purge-*` cron | 3.5 | **4** |
-| **E2b** | **后端 · §5.2 sync-pull 增量改动**：`ledgerRepo` / `LedgerWire` 下发 `sync_epoch_floor_seq` + `LEAST` 单调性 + 服务端单测 | — | **0.5** |
-| E3 | 后端 · detect（v0.8 新顺序：收流→sha→幂等→建会话→流式解析→私有产物）/commit API、export **流式 + 分片**、`/download?part` 应用流式 + `/report` 鉴权、nginx `client_max_body_size`、**两个 bind mount 的 compose + 目录初始化**、detect 频控（Redis 计数器）、审计日志 | 3.5 | **4** |
-| **E3b** | **后端 · §9.5 错误码契约**：6 个新 code × 三张映射表 + `error-codes.md` + `openapi.yaml` + 客户端 mapper + multipart `FST_REQ_FILE_TOO_LARGE` 映射 | — | **1** |
+| E1 | 后端 · import/export service：引入 RFC 4180 流式 parser/stringifier（**选型见下**）+ §9.3 `apostrophe-v2` 编解码 + 9 列表头指纹 + §3 全部解析规则（9 组别名、类型模糊、金额清洗、6 种日期格式、分类匹配含全角/繁简、成员匹配、归属推导）+ §3.11 九条 DB 约束校验 + **§3.3 昵称映射的产物结构** + 单测 | 5 | **5.5** |
+| E2 | 后端 · `0021` 迁移（**`sync_hold_seq`/`sync_hold_until`** + 两表 + 三处 partial unique + 三条 CHECK）+ repo + worker（advisory lock / SKIP LOCKED / run_token / lease / 2s poll / 事件 kick）+ 阶段更新 + 僵死恢复 + 原子成功提交（含 **`releaseHoldAndApplyDelta` 同语句**、导入成功终态 rowCount=1 否则 rollback、**`23505` 按 constraint 名分流**）+ **hold 设置/失败清除/TTL 兜底** + commit 前复核（含 `FOR UPDATE` 行锁）+ `purge-*` cron | 4 | **4.5** |
+| **E2b** | **后端 · §5.2 pull 侧 hold 钳制**：`ledgerRepo.SELECT_COLUMNS` 增两列 + `syncPullService` 算 `cap=min(未过期 hold)` + `change_seq <= cap` 钳制 + `has_more` 语义 + `0019` 注释与 openapi 口径同步 + 服务端单测（含**洞的回归用例 + 移除 hold 的对照组**）| 0.5 | **1** |
+| E3 | 后端 · detect（v0.8 新顺序：收流→sha→幂等→建会话→流式解析→私有产物）/commit API、export **流式 + 双阈值分片**、`/download?part` 应用流式 + `/report` 鉴权、nginx `client_max_body_size`、**两个 bind mount 的 compose + 目录初始化**、detect 频控（Redis 计数器）、审计日志 | 4 | **4** |
+| **E3b** | **后端 · §9.5 错误码契约**：6 个新 code × 三张映射表 + `error-codes.md` + `openapi.yaml` + 客户端 mapper + multipart `FST_REQ_FILE_TOO_LARGE` 映射 | 1 | **1** |
 | E4 | 小程序 · 设置入口、数据管理页、导入/导出表单（含"全部"日期范围） | 2.5 | 2.5 |
-| E5 | 小程序 · 检测报告页、任务中心、阶段型模拟进度（`server_now` 基准）、轮询恢复、完成卡、**多分片逐个 shareFileMessage**、成功后 `triggerOnMutation()` | 2.5 | **3** |
-| **E5b** | **小程序 · 上传/下载鉴权封装**（`ensureFreshToken` + 401 重放一次 + errMsg/code 映射，§6.3）| — | **1** |
-| **E5c** | **小程序 · §5.2 客户端改动**：epoch 记录升级为 `{epoch, floorSeq}`（含旧格式兼容）+ diff 后 `min(local, floor)` 回退 + 四条 L13 不变量回归 + 单测 | — | **1.5** |
-| E6 | QA · iOS / Android / PC 微信、后台切换、断网、并发、过期、重试幂等、CSV 注入、**自产自入闭环（含分片）**、权限矩阵、**老账本（>2 万条）导入后多端 sync 收敛验证** | 3 | **3.5** |
-| **E7** | **真 PG 集成测试通道**（§7.3 选项 A）：compose profile + vitest project + 约束/并发/锁顺序用例 | — | **2** |
-| **合计** | | **17.5** | **28** |
+| E5 | 小程序 · 检测报告页（**含 §3.3 昵称→成员映射交互**）、任务中心、阶段型模拟进度（`server_now` 基准 · 导入单阶段）、轮询恢复、完成卡、**多分片逐个 shareFileMessage**、成功后 `triggerOnMutation()` | 3 | **3.5** |
+| **E5b** | **小程序 · 上传/下载鉴权封装**（`ensureFreshToken` + 401 重放一次 + errMsg/code 映射 + **非 JSON 响应体按 status 兜底**，§6.3）| 1 | **1** |
+| ~~E5c~~ | ~~小程序 · epoch 记录升级为 `{epoch, floorSeq}` + 定点回退~~ **❌ 取消（v1.0）**：`sync-hold` 是纯服务端机制，**客户端零改动**（§5.2.4）| 1.5 | **0** |
+| E6 | QA · iOS / Android / PC 微信、后台切换、断网、并发、过期、重试幂等、CSV 注入、**自产自入闭环（含分片 + 长备注 900KB 边界）**、权限矩阵、**老账本（>2 万条）导入后多端 sync 收敛验证**、**连续三次导入拉取量同量级** | 3.5 | **3.5** |
+| **E7** | **真 PG 集成测试通道**（§7.3 选项 A）：compose profile + vitest project + 约束/并发/锁顺序用例 | 2 | **2** |
+| **合计** | | **28** | **25.5** |
 
-> **E1 为什么从 2.5 涨到 5**：原估值只覆盖了"写一个 CSV 解析器"，但 §3 是本方案信息密度最高的一节 —— 9 组列名别名、3 类类型模糊匹配、5 步金额清洗、6 种日期格式 + 时区构造、5 步分类匹配（含全角/繁简归一与跨 type 专用文案）、4 分支成员匹配、3 分支归属推导、9 条 DB 硬约束校验，每一条都要配单测（§3.11 明确要求"逐条覆盖"）。再加上 `apostrophe-v2` 的 6 行往返断言与表头指纹。这是一整个解析层，不是一个函数。
+> **E1 为什么是 5.5 人天**：§3 是本方案信息密度最高的一节 —— 9 组列名别名、3 类类型模糊匹配、5 步金额清洗、6 种日期格式 + 时区构造、5 步分类匹配（含全角/繁简归一与跨 type 专用文案）、4 分支成员匹配、3 分支归属推导、9 条 DB 硬约束校验，每一条都要配单测（§3.11 明确要求"逐条覆盖"）。再加上 `apostrophe-v2` 的 6 行往返断言、表头指纹、以及 v1.0 新增的昵称映射产物结构。这是一整个解析层，不是一个函数。
 >
 > **CSV 库选型是 E1 的前置决策**：`server/package.json` 当前**无任何 CSV 依赖**（v1 CLI 删除后 `csvEscape` 也一并消失，§9.3）。需要一个支持**流式 + quoted multiline** 的 parser。选型约束：体积可控、无原生扩展（生产是 alpine 容器）、维护活跃。建议在 E1 动工前用半天做选型 spike 并记入决策。
 >
-> **E7 若选 §7.3 的方案 B（不建通道）**：合计降为 **26 人天**，但必须把 R33 作为已接受风险写入验收记录，且三处 partial unique 与 commit 行锁的正确性只由 code review 保证。
+> **E2b 为什么反而从 0.5 涨到 1**：卡的内容整体变了。`floor_seq` 版只是"多下发一个字段 + 两个单测"；hold 版要改 pull 的**查询条件与 `has_more` 判定**（sync 的核心路径），并且必须写"洞的回归用例 + 移除 hold 的对照组"这一对用例 —— 后者是整个机制唯一的有效性证明，不能省。**但净收益仍是 -1 人天**（E5c 的 1.5 被删掉），且省下的排期代价（导入不必等版本覆盖率）远大于这 1 人天。
+>
+> **E7 若选 §7.3 的方案 B（不建通道）**：合计降为 **23.5 人天**，但必须把 R33 作为已接受风险写入验收记录，且三处 partial unique 与 commit 行锁的正确性只由 code review 保证。
 
-> **释放策略与工作量的关系**：导出相关部分（E1 的导出侧、E2 导出 worker、E3 导出流式/download、E4/E5 导出页面、E5b、E3b）**不受客户端版本覆盖率门槛约束，可先行发布**；但**不等于可以少做**——§14 列出了导出发布的 5 项必做 DoD。仅导入入口（含 E2b/E5c 的 floor 链路）需等覆盖率达标。
+> **释放策略与工作量的关系**（v1.0 简化）：`sync-hold` 取消了客户端版本覆盖率门槛，因此**导入与导出可同期发布**，不再需要拆两阶段释放。§14.2 保留的"导出 DoD 5 项"仍然有效 —— 它们是导出自身的完整性要求，与释放顺序无关。
 
 ---
 
@@ -2172,33 +2395,95 @@ v1 脚本已删除，下表保留作为格式演进对照与"为什么 v2 不兼
 
 1. **真机 spike（导出交付命门）**：验证 `wx.chooseMessageFile` 选择 CSV 与 `wx.shareFileMessage` 转发 CSV 在 iOS / Android 的实际表现（历史上 .csv 分享存在端差异，须在动工前证伪风险）。**分片场景一并验证**：连续多次 `shareFileMessage` 是否会被微信限频或折叠。
 2. **基建 spike**：验证 nginx `client_max_body_size 2m` 生效后 1MB CSV 上传通路完整（multipart 保持 2MB 不改），以及 5,000 行 detect 的实测端到端耗时稳定落在 `proxy_read_timeout 60s` 内。
-3. **老账本重拉 spike（P0 相关）**：在 staging 造一个 2 万条 + 历史软删的账本，实测 §5.2 定点重拉的实际拉取量与耗时，并观察微信 storage 占用是否逼近 10MB。**这是 `floor_seq` 方案的证伪前提** —— 若定点重拉仍不可接受，需要在动工前改设计而不是上线后补救。
-4. **CSV 库选型**（半天）：流式 + quoted multiline + alpine 友好，见 §12 E1 备注。
-5. **决策 §7.3 的 A/B**：真 PG 集成测试通道做还是不做。不做就把 R33 写进验收记录，**不允许悬空**。
+3. **`sync-hold` spike（P0 相关 · 取代 v0.9 的"老账本重拉 spike"）**：验证三件事 ——
+   - `SELECT last_value FROM entries_change_seq` 在 **pg-mem 与真实 PG** 上的可用性（不支持则改 `nextval` 并抽成可替换的 repo 函数，§5.2.3）；
+   - 在 staging 造一个 2 万条 + 历史软删的账本，导入 5,000 行后实测客户端拉取量应为 **~5,000 而非 25,000**，且**连续三次导入的拉取量同量级**（这是 v1.0 相对 `floor_seq` 的核心收益，必须实测证明而不是纸上推导）；
+   - hold 期间其它成员记账**不被阻塞**（这是选 D 而非 C 的前提），且 sync 延迟不超过 hold 存活时间。
+4. **CSV 单行字节量级实测（P0 相关）**：造一批 200 字符中文备注 + 长分类名的记录，实测 quote-all 后的单行字节数，据此复核 §9.2 的 900KB 阈值是否留足余量（若单行可超 1KB，需下调阈值或提高分片粒度）。
+5. **CSV 库选型**（半天）：流式 + quoted multiline + alpine 友好，见 §12 E1 备注。
+6. **决策 §7.3 的 A/B**：真 PG 集成测试通道做还是不做。不做就把 R33 写进验收记录，**不允许悬空**。
+   > ⚠️ v1.0 后这个决策的权重**上升**了：`sync-hold` 的正确性核心（H1 的跨事务可见性、H4 的 min 聚合、洞的回归用例）本质上是**并发与事务语义**，而 pg-mem 无真实锁/并发语义。选 B 就意味着本方案最关键的机制只有 code review 兜底。
 
-### 14.2 释放策略
+### 14.2 释放策略（v1.0 简化）
 
-**导出先行发布**（只读、无 epoch 依赖），**导入入口等客户端 `floor_seq` 消费版本覆盖率达标后开放**（§5.1、§5.2.4）。
+**导入与导出可同期发布。** `sync-hold` 是纯服务端机制、客户端零改动，v0.7~v0.9 的"导入等客户端版本覆盖率"门槛**已取消**（§5.2.4、R19）。
 
-> ⚠️ **"导出先行"不等于"导出可以少做"**。以下 5 项**全部属于导出侧**，是导出发布的 DoD，一项都不能推迟到导入阶段：
+> 以下 5 项属于**导出侧的 DoD**，与释放顺序无关，一项都不能省：
 >
 > | # | 项 | 出处 | 不做的后果 |
 > |---|---|---|---|
 > | 1 | `apostrophe-v2` 可逆编码 + 6 行往返单测 | §9.3 / R29 | 导出的备注被静默改写，且用户在导回时才发现 |
-> | 2 | 单文件 5,000 行分片 | §9.2 / R31 | 大账本导出物永远导不回，闭环承诺失效 |
-> | 3 | 上传/下载鉴权封装 | §6.3 / R32 | 导出完成后 token 已过期，"发送到微信"必定失败且无法重试 |
+> | 2 | 单文件 **5,000 行 + 900KB 双阈值**分片 | §9.2 / R31 | 大账本或长备注账本的导出物永远导不回，闭环承诺失效 |
+> | 3 | 上传/下载鉴权封装（含非 JSON 响应体兜底）| §6.3 / §9.5 / R32 | 导出完成后 token 已过期，"发送到微信"必定失败且无法重试 |
 > | 4 | 导出游标的时区边界 + 微秒安全编码 | §7.5 / R25 | 首末日各错 8 小时的记录；同微秒记录跨页漏读 |
 > | 5 | `from`/`to` 可选 + 错误码契约 | §6.2 / §9.5 / R30 | "全部"这一默认选项无法表达；错误只能按 status 猜 |
 
+> 而**导入侧**新增一项 DoD（v1.0）：§3.3 的昵称→成员映射交互（R40）。缺了它，§1 的「家庭数据交接」场景在任何成员变动过的家庭里都不可用。
+
 ### 14.3 后续产出
 
-6. 输出正式技术方案 `data-import-export-tech-spec.md`，冻结：`0020` 迁移三部分（含 `sync_epoch_floor_seq`）、worker 执行模型、API 与错误码、事务模型、commit 前复核清单（含 `FOR UPDATE` 行锁）、§9.3 编解码、§5.2 的 F1/F2 不变量。
-7. 设计 `settings/data-management` 页面高保真交互状态（含多分片完成卡）。
-8. 拆成 E1~E7 七张卡并排期。
+7. 输出正式技术方案 `data-import-export-tech-spec.md`，冻结：`0021` 迁移三部分（含 `sync_hold_seq`/`sync_hold_until` 与 detect session 30 天元数据保留 + `ON DELETE CASCADE`）、worker 执行模型、API 与错误码、事务模型、commit 前复核清单（含 `FOR UPDATE` 行锁）、导入成功终态 rowCount=1 否则 rollback、`23505` 按 constraint 名分流、§9.3 编解码、§9.2 双阈值分片、**§5.2 的 H1~H4 四条不变量**。
+8. 设计 `settings/data-management` 页面高保真交互状态（含多分片完成卡 + 昵称映射交互）。
+9. 拆成 E1~E7 六张卡（E5c 已取消）并排期。
+10. 提 follow-up 课题单：**R36**（普通并发记账路径的 `change_seq` 洞根治）、**R37**（`db.ts` storage quota 降级分支）—— 两者都在本方案范围外，但都是本轮 review 挖出的既有缺陷，不应随本方案结束一起被遗忘。
 
 ---
 
 ## 15. 修订记录
+
+### v1.0（2026-09-02）· 第六轮 review · P0 代码级穿透验证 · 架构决策变更
+
+背景：v0.9 自称"动工前基线"，但 §5.2 的 `sync_epoch_floor_seq` 是 v0.8 才新增、只经过一轮 review 的章节。本轮对三项 P0 逐条用代码事实（`miniprogram/services/sync.ts`、`db.ts`、`server/src/repositories/ledgerRepo.ts`、`entryRepo.ts`、`syncPullService.ts`、`0001_init.sql`）做穿透验证：**一项证伪、一项修正、一项升级**，结论是 `floor_seq` 整体不可用。本轮只修文档，不改代码。
+
+#### 一等修订（P0）
+
+| # | 问题 | v0.9 | v1.0 决策 | 影响章节 |
+|---|---|---|---|---|
+| 1 | **`floor_seq` 的收益随导入次数衰减到零** | "首次/未累积时重拉量与账本历史规模无关；连续导入从最早保留 floor 起算，这是 F1 的已接受成本" | **不是"可接受成本"，而是收益归零**：F1 的 `LEAST` 使 floor 永远停在第一次导入位置 ⇒ 第 N 次导入等价于清零全量（推导见 §5.2.1）。而 §1「外部账单迁入」是**按月重复**的主场景。为一个会衰减到零的收益买下一个**永久的客户端版本覆盖率门槛**，是负收益。⇒ **整体改用服务端 `sync-hold`**：导入取号前独立短事务钉住 `ledgers.sync_hold_seq`，pull 期间不推进该 family 的 watermark，COMMIT 时与余额同语句原子解除。**洞根本不形成** ⇒ 无重拉、客户端零改动、无版本门槛、导入可与导出同期发布 | §0 §5.1 **§5.2（重写）** §7.2 §7.3 §7.5 §9.1 §12 §14 R19 R26 R27 R28 R34 |
+| 2 | **导出分片只按行数切，长备注下仍撞导入 1MB 硬顶** | "导出 writer 每写满 5,000 行切下一个分片" | 导入硬顶是 5,000 行 **AND** 1MB（与关系）。而 note 上限 200 **字符**、中文 UTF-8 = 600B，加 quote-all 后单行可超 700B ⇒ 5,000 行 ≈ **3.4MB ≫ 1MB** ⇒ 分片上传即 413，**R31 以"备注写得长"为触发条件复发**。改为 **5,000 行 + 900KB 双阈值，任一触顶即切片**，且字节数须在写入前判断 | §0 §2.2 §2.3 §7.5 §9.1 §9.2 R31 |
+| 3 | **`floorSeq > localWatermark` 被误判为"理论上不应发生"** | 要求 `logger.error` + 回退到清零 | 该条件在**新设备 / 离线设备 / 家庭内不常打开小程序的成员**上是**常态**；且此时 `localWatermark < floor`，正常增量 pull 天然覆盖整个号段，安全性无需任何动作。按 v0.9 实现会把这些设备一律推入全量重拉，恰好把方案想消除的成本原样搬回。随 `floor_seq` 移除一并作废，**教训留档**（§5.2.1）| §5.2.1 |
+
+> **额外发现（root cause 级）**：`change_seq`「已取号未提交」洞**并非导入独有**。两笔普通记账 A(`seq=100`)/B(`seq=101`)，B 先提交即可让 A 永久拉不到；`0016` 的 `CACHE 1` 只保证序列单调、**不保证提交顺序**。L13 的 epoch 与本方案的 hold 都只是给"批量写入"打的补丁，根因（watermark 直接采用 `nextval` 值、未区分"已分配"与"已提交"）仍在。记入 **R36** 作为独立课题；`sync-hold` 的 DDL 与 pull 钳制逻辑可被未来的根治方案直接复用 —— 这是选 D（hold）而非 C（advisory lock 互斥取号）的额外长期收益。
+
+#### 二等修订（P1）
+
+| # | 问题 | v1.0 决策 | 章节 |
+|---|---|---|---|
+| 4 | `stage='writing'` 在导入大事务内 UPDATE，对轮询连接**不可见** —— 与 v0.5 删除 `progress_current/total` 的成因完全相同，进度条会卡在 20% 直到瞬间 100% | 导入收敛为**单一 `validating` 阶段**（5%→90%，τ=8s，文案 `正在导入流水`）；`chk_data_jobs_stage_scope` 的 import 分支去掉 `writing`（ENUM 值保留） | §7.2 §7.3 §7.6 R39 |
+| 5 | `uq_entries_ledger_client_ref` 冲突被归入 `CONSTRAINT_VIOLATION` + 告警 + `failed`，但它恰是 §7.5 重试幂等的**设计预期结局**（lease 复位双 worker） | 捕获 `23505` 时按 `constraint` 名分流：该约束 → **重读 `data_jobs.status`**，`succeeded` 即正常结束（不写终态、不告警），否则按 `TRANSIENT_DB` 重试；其它约束才落 `CONSTRAINT_VIOLATION` | §7.5 §9.5 R38 |
+| 6 | §3.3 规则 4a（自产文件未匹配 = ERROR）**没有出口**：导出必含历史成员，一人退出/改昵称即让该成员全部行 ERROR，用户只剩"大批丢行"或"删列全归一人"两个都不可接受的选项 ⇒ §1「家庭数据交接」场景实质不可用 | 检测报告页提供**昵称→活跃成员一次性映射**（列出未匹配昵称与影响行数，可选映射目标或"归我"；上限 20 个），映射结果随 `detect_id` 落产物；映射前 ERROR、映射后 WARNING | §0 §3.3 §12 §14.2 R40 |
+| 7 | `data_jobs.detect_id` FK **无 `ON DELETE` 子句**：ledger 硬删时两表同被 `ledgers` 的 CASCADE 波及，删除顺序不由应用控制，有撞 FK 的可执行性风险（同 v0.6 修过的"DDL 不可执行"类问题）| 显式 `ON DELETE CASCADE`。⚠️ **不能用 `SET NULL`** —— `chk_data_jobs_type_fields` 要求 import 行 `detect_id NOT NULL` | §7.3 R35 |
+
+#### 三等修订（P2 · 一致性）
+
+- **`packaging` 阶段语义收窄**：§7.5 要求"边查边逐批 append 落盘"，不存在独立的"生成文件"阶段。`packaging` 实际只覆盖收尾（sha256 + rename），文案由 `正在生成 CSV 文件…` 改为 `正在收尾`（§7.2 §7.6）。
+- **导入 5,000 行上限明确为"数据行、不含表头"**：否则恰好满片的自产文件（5,000 数据行 + 1 表头）会在边界被拒（§0 §9.1 §9.2）。
+- **nginx 413 的响应体是 HTML 而非 JSON**：§6.3 鉴权封装的"解析为 `ErrorCode`"必须显式处理非 JSON 分支、按 `statusCode` 兜底映射，否则用户看到"服务异常"而非"文件太大"（§9.5 §12 E5b）。
+- **§9.5 落地清单编号错位**：`assertErrorCodeCoverage()` 校验的是清单的**第 2/3/4 项**（status / retry / logLevel），原文写"前三张表"易让实现者漏掉 `ErrorLogLevels`（§9.5）。
+- **§7.4 存储表口径与 v0.9 正文冲突**：表格仍写"导入检测元数据保留 15 分钟/24h"，而 v0.9 的结论是元数据随任务同寿 30 天（§7.4）。
+- **`report_preview` 的隐私口径**：它含备注/昵称原文片段却随会话保留 30 天，与"日志不得记录行内容"的承诺不一致 ⇒ 任务终态后清空该字段（§7.3 §7.4）。
+- **金额精度口径自相矛盾**：§3.5 是"四舍五入到分 + WARNING"，§10.1 却写 v2 语义是"超两位小数 ERROR" ⇒ 统一按 §3.5 的柔性降级（§10.1）。
+- **detect 幂等命中时 `expires_at` 需顺延**：否则命中一个只剩 10 秒的 ready 会话，用户看完报告点确认必撞 `410`（§4.2）。
+- **§4.2 detect 幂等的收益表述需准确化**：v0.8 重排后仍只覆盖"首次已完成但响应丢失"的窄窗口 —— 弱网重发时首个请求通常仍在 `detecting`，第二个请求仍撞 `409`。真实收益是"幂等命中不再产生 failed 会话"，不是"修好了弱网重发"（§4.2）。
+- **§5.2 测试要求中"L13 既有测试不得重写"改为"断言语义不得放宽"**：`sync-hold` 不改客户端，L13 测试原样保留即可（原表述在 `floor_seq` 下本身不可执行 —— 类型签名变了测试不可能原样复用）。
+
+#### 工作量
+
+**28 → 25.5 人天**（选项 B 则 23.5）。E5c（客户端 floor 消费 1.5）**取消**；E2b 内容置换为 pull 侧 hold 钳制并从 0.5 涨到 1；E1/E2/E5 各 +0.5（昵称映射、hold 生命周期、映射交互）。**净收益不止 -2.5 人天 —— 更大的收益是取消了"导入等客户端版本覆盖率"这一排期门槛。**
+
+---
+
+### v0.9（2026-09-02）· 第五轮 review 收尾 · 修正动工前阻断项
+
+背景：v0.8 整体方向合理，但第五轮 review 发现 `floor_seq` SQL 示例存在 off-by-one P0，以及导入成功终态更新、检测会话生命周期、冻结决策表三类 P1/P2 口径缺口。本轮只修文档，不改代码。
+
+| # | 问题 | v0.8 | v0.9 决策 | 影响章节 |
+|---|---|---|---|---|
+| 1 | **`sync_epoch_floor_seq` SQL 示例漏 `- 1`，且初始化 sentinel 选错会抬高合法 floor=0** | SQL 注释称 `$2 = min_change_seq` 并直接写入；且用 `sync_epoch_floor_seq=0` 判断未初始化 | `$2` 明确定义为 `floor_seq = MIN(本批 change_seq) - 1`；若误写 `MIN(change_seq)` 会跳过本批首条。初始化判定改看更新前 `sync_epoch=0`，因为 0 也是合法 floor。补 off-by-one 与初始化单测要求 | §5.1 §5.2 §7.5 R27 R28 R34 |
+| 2 | **导入成功路径误套通用 `run_token` 语义** | `rowCount=0 → 放弃写回`，对导入会造成 entries 已入库但 job 未成功 | 导入成功事务内条件更新 rowCount 必须为 1，否则抛错并 rollback 整个事务；导出/失败态仍可放弃写回 | §7.5 R17 |
+| 3 | **`data_jobs.detect_id` FK 与 24h 删除会话行冲突** | 会话行 24h 后可删，但任务元数据保留 30 天且持有 FK | 保留 FK；会话元数据与任务同寿 30 天。24h 只清 report 文件，终态及时清 `.rows.ndjson.gz` | §7.3 §7.4 R35 |
+| 4 | 冻结决策表残留旧口径 | 记账人未匹配一律 warning；原始 CSV 解析后删除；新增 5 个 code | 同步为自产文件未匹配 ERROR、原始 CSV 不持久化落盘、新增 6 个 code | §0 |
+| 5 | floor 成本模型表述过度乐观 | "重拉量与账本历史规模无关"未限定连续导入场景 | 补充：首次/未累积时成立；无消费确认下连续导入会从最早保留 floor 起算，这是 F1 的安全成本 | §5.1 §5.2 R26 |
 
 ### v0.8（2026-09-02）· 第四轮 code-level review · 撤销冻结
 
@@ -2254,7 +2539,7 @@ v1 脚本已删除，下表保留作为格式演进对照与"为什么 v2 不兼
 |---|---|---|---|---|
 | 1 | **`has_more` 前置缺陷已修复但文档仍按"待修"叙述** | §0/§5.1/§12/§14/R19 均写"必须先修 / 正式方案待设计" | 全部改写为"已修复（L13 · v0.8 落地）"；E0 卡标记已完成，剩余工作量重算为 **18 人天** | §0 §5.1 §9.1 §12 §14 R19 |
 | 2 | **导入数据到达路径描述错误** | "导入写入的 entries 天然带上更大的 `change_seq`，自动落在下一次 pull 的窗口内" | 导入事务 `sync_epoch + 1` → 客户端前置比对不一致 → **清零 watermark 全量重拉**（5,000 条量级 ≈ 10 页 × 500，秒级）；正常增量窗口路径仅适用于非批量写入 | §5.1 |
-| 3 | **`data_jobs` 迁移编号冲突** | `0019_data_jobs.sql` | `0019` 已被 `ledgers.sync_epoch` 占用 → 改 **`0020`** | §7.3 §12 |
+| 3 | **`data_jobs` 迁移编号冲突** | `0019_data_jobs.sql` | `0019` 已被 `ledgers.sync_epoch` 占用 → 改 `0020`；后 `0020` 又被 `0020_tips.sql` 占用（2026-09-04）→ 顺延 **`0021`** | §7.3 §12 |
 | 4 | **commit 复核是纯 SELECT，复核→写入间存在 TOCTOU** | "显式复核 active 成员 + 分类未软删" | 复核 SQL 改 **`SELECT ... FOR UPDATE`** 锁成员行（操作者 + 所有 distinct `created_by`，`ORDER BY user_id` 固定加锁顺序），对齐 `lockActiveMember` 语义；明示锁顺序不变量 `family_members → entries → ledgers` | §7.5 R12 |
 | 5 | **导出游标语义错误** | "复用 `entryService.list` 的 cursor 语义"（`updated_at DESC, id DESC`）| **专用导出游标**：`occurred_at ASC, id ASC`，过滤 `deleted_at IS NULL` + 日期范围，cursor 编码 `occurred_at|id` | §7.5 |
 | 6 | **释放策略未定义** | 导入导出并列排期 | **导出先行发布**（只读、无 epoch 依赖）；**导入入口等客户端 epoch 消费版本覆盖率达标后开放**（决策 16 仍是唯一剩余前置） | §5.1 §12 §14 |
