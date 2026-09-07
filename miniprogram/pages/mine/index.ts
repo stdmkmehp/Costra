@@ -42,6 +42,11 @@ Page({
     ledgerDays: 0,
     entryCount: 0,
     overviewLoaded: false,
+    // 赞赏横幅与头像徽章（与宏观数据同一数据源 · tech-spec v1.2 §7.3）
+    tipEntryVisible: false,
+    supporterBadge: false,
+    badgeVisible: false,
+    supportScore: 0,
   },
 
   _profileBadgeOnHandler: null as (() => void) | null,
@@ -51,6 +56,7 @@ Page({
   _entryUpdatedHandler: null as (() => void) | null,
   _syncDoneHandler: null as ((payload?: unknown) => void) | null,
   _profileUpdatedHandler: null as ((payload?: unknown) => void) | null,
+  _tipSummaryUpdatedHandler: null as (() => void) | null,
 
   _refreshSafeAreaLayout(force = false) {
     // COSTRA-216: 获取安全区指标，设置自定义导航栏高度
@@ -117,6 +123,11 @@ Page({
     this._profileUpdatedHandler = profileUpdatedHandler;
     eventBus.on(EventNames.PROFILE_UPDATED, profileUpdatedHandler);
 
+    // TIP_SUMMARY_UPDATED: 赞赏交付完成 / 徽章可见性变更 → 重拉 overview（tech-spec §7.3）
+    const tipSummaryUpdatedHandler = () => { void this._refreshOverview(); };
+    this._tipSummaryUpdatedHandler = tipSummaryUpdatedHandler;
+    eventBus.on(EventNames.TIP_SUMMARY_UPDATED, tipSummaryUpdatedHandler);
+
     // 等 bootstrap 完成再判登录态
     const app = getApp<AppWithBootstrapAndGlobal>();
     void app.bootstrapPromise.then(() => {
@@ -165,6 +176,10 @@ Page({
       eventBus.off(EventNames.PROFILE_UPDATED, this._profileUpdatedHandler);
       this._profileUpdatedHandler = null;
     }
+    if (this._tipSummaryUpdatedHandler) {
+      eventBus.off(EventNames.TIP_SUMMARY_UPDATED, this._tipSummaryUpdatedHandler);
+      this._tipSummaryUpdatedHandler = null;
+    }
   },
 
   onShow() {
@@ -188,6 +203,7 @@ Page({
           ledgerDays: cached.ledger_days,
           entryCount: cached.entry_count,
           overviewLoaded: true,
+          ...this._tipFieldsFromOverview(cached),
         });
       }
       void this._refreshOverview();
@@ -214,10 +230,37 @@ Page({
         ledgerDays: fresh.ledger_days,
         entryCount: fresh.entry_count,
         overviewLoaded: true,
+        ...this._tipFieldsFromOverview(fresh),
       });
     } catch {
       // 静默：保持原值；首次失败时用 0 兜底（data 默认 0），不弹 toast 打扰
     }
+  },
+
+  /**
+   * 从 overview 提取赞赏展示字段（tech-spec v1.2 §7.3）：
+   *   - 横幅：tip_entry_visible=true 才展示（停购后已支持用户仍可见历史入口）；
+   *   - 头像徽章：supporter_badge && !badge_hidden（"拥有"与"可见"不混淆）；
+   *   - 旧后端无这些字段 ⇒ 一律按 false 降级（不展示横幅/徽章）。
+   */
+  _tipFieldsFromOverview(ov: {
+    tip_entry_visible?: boolean;
+    supporter_badge?: boolean;
+    badge_hidden?: boolean;
+    support_score?: number;
+  }) {
+    const supporterBadge = ov.supporter_badge === true;
+    return {
+      tipEntryVisible: ov.tip_entry_visible === true,
+      supporterBadge,
+      badgeVisible: supporterBadge && ov.badge_hidden !== true,
+      supportScore: Number(ov.support_score) || 0,
+    };
+  },
+
+  /** 赞赏横幅 → 赞赏页 */
+  onTapSupport() {
+    wx.navigateTo({ url: '/pages-family/support/index' });
   },
 
   /** 检查公告未读红点 */

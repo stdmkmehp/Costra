@@ -1,0 +1,96 @@
+<!-- pages-family/support/index · 赞赏页（支持 Costra） -->
+<!-- 区块结构：徽章区 / 说明区 / 档位区 / 记录区 / 占位区 / 说明尾（产品 §5.2） -->
+<view class="support">
+
+  <!-- 徽章区：纪念章 + 状态文案（支持度为主口径、次数为辅 · 不出现金额） -->
+  <view class="badge-hero">
+    <image
+      class="badge-hero__img"
+      src="{{summary.supporterBadge ? '/assets/tip/badge-lit.png' : '/assets/tip/badge-outline.png'}}"
+      mode="aspectFit"
+    />
+    <view wx:if="{{summary.supporterBadge}}" class="badge-hero__status">
+      支持度 {{summary.supportScore}} · 第 {{summary.tipCount}} 次支持
+    </view>
+    <view wx:else class="badge-hero__status badge-hero__status--dim">尚未点亮</view>
+    <view wx:if="{{phase === 'done'}}" class="badge-hero__thanks">感谢你的支持，徽章已点亮</view>
+  </view>
+
+  <!-- 说明区：为什么需要支持 + 加粗"功能永久免费" -->
+  <view class="section">
+    <view class="section__body">Costra 由个人开发者独立维护，服务器、域名与备案成本均由开发者自付。你的每一份支持，都会直接用于这些日常开销，让 Costra 走得更远。</view>
+    <view class="section__body section__body--bold">所有记账功能永久免费，赞赏不解锁任何功能。</view>
+  </view>
+
+  <!-- 档位区：三张全宽卡片竖排 -->
+  <view class="tiers">
+    <view
+      wx:for="{{products}}"
+      wx:key="productKey"
+      class="tier {{(!payEligible || !purchasable || phase === 'paying' || phase === 'settling') ? 'tier--disabled' : ''}}"
+      hover-class="{{(!payEligible || !purchasable || phase === 'paying' || phase === 'settling') ? '' : 'tier--hover'}}"
+      hover-stay-time="60"
+      data-key="{{item.productKey}}"
+      bindtap="onTapProduct"
+    >
+      <view class="tier__main">
+        <view class="tier__title">{{item.title}}</view>
+        <view class="tier__sub">{{item.subDesc}}</view>
+        <view class="tier__delta">支持度 +{{item.supportDelta}}</view>
+      </view>
+      <view class="tier__price">
+        <text wx:if="{{phase === 'paying' && payingKey === item.productKey}}" class="tier__loading">…</text>
+        <text wx:else>¥{{item.priceText}}</text>
+      </view>
+    </view>
+
+    <!-- 闸门/灰度说明（渲染期置灰 · AC-6） -->
+    <view wx:if="{{!payEligible}}" class="tiers__notice">{{ineligibleText}}</view>
+    <view wx:elif="{{catalogReady && !purchasable && !catalogOffline}}" class="tiers__notice">赞赏暂未开放，敬请期待</view>
+
+    <!-- 支付失败单行提示（不暴露技术细节 · 保持可重试） -->
+    <view wx:if="{{errorText}}" class="tiers__error">{{errorText}}</view>
+  </view>
+
+  <!-- settling 态：正在确认（不宣称成功） -->
+  <view wx:if="{{phase === 'settling'}}" class="settling">正在确认，请稍候…</view>
+  <view wx:if="{{settlingTimedOut}}" class="settling settling--dim">
+    <text>稍后将自动到账</text>
+    <text class="settling__refresh" bindtap="onTapRefreshStatus">刷新状态</text>
+  </view>
+
+  <!-- 徽章可见性开关（仅有徽章时展示 · 关闭只影响展示不影响记录） -->
+  <view wx:if="{{summary.supporterBadge}}" class="visibility">
+    <view class="visibility__label">头像徽章公开展示</view>
+    <switch
+      class="visibility__switch"
+      checked="{{!summary.badgeHidden}}"
+      disabled="{{badgeSwitchBusy}}"
+      bindchange="onBadgeVisibilityChange"
+      color="#C08A7B"
+    />
+  </view>
+
+  <!-- 记录区：我的支持记录（时间 + 档位名 + 支持度增量 · 不展示订单号与金额） -->
+  <view class="history">
+    <view class="history__title">我的支持记录</view>
+    <view wx:if="{{summary.history.length === 0}}" class="history__empty">还没有支持记录</view>
+    <view wx:for="{{summary.history}}" wx:key="time" class="history__row">
+      <view class="history__cell history__cell--time">{{item.dateText}}</view>
+      <view class="history__cell history__cell--title">{{item.title}}</view>
+      <view class="history__cell history__cell--delta">+{{item.supportDelta}}</view>
+    </view>
+  </view>
+
+  <!-- 占位区：更多外观选项（灰字不可点 · 不承诺时间） -->
+  <view class="placeholder">更多外观选项正在开发中</view>
+
+  <!-- 说明尾：四项告知（§7.3 · 分行陈述费率 · 不对比不解释） -->
+  <view class="footnote">
+    <view class="footnote__line">支付由微信虚拟支付提供。</view>
+    <view class="footnote__line">在 Android、鸿蒙、Windows 等终端，微信收取 1% 技术服务费，结算周期 T+3。</view>
+    <view class="footnote__line">在 iOS 终端，Apple 收取 12% 佣金，结算周期约 45~60 天。</view>
+    <view class="footnote__line">退款规则：iOS 用户由 Apple 处理退款，其他平台可通过意见反馈联系开发者。</view>
+    <view class="footnote__line">全终端月支付限额 10 万元。</view>
+  </view>
+</view>

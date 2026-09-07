@@ -20,6 +20,12 @@ export interface UserOverview {
   entry_count: number;
   /** 有记账记录的天数（按 occurred_at 在 Asia/Shanghai 时区下的 DISTINCT date） */
   ledger_days: number;
+  /** 赞赏扩展（tech-spec v1.2 §7.3 · 后端固定下发；可选是为兼容旧后端） */
+  tip_entry_visible?: boolean;
+  supporter_badge?: boolean;
+  badge_hidden?: boolean;
+  tip_count?: number;
+  support_score?: number;
 }
 
 const TTL_MS = 5 * 60 * 1000;

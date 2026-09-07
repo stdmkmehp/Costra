@@ -73,6 +73,61 @@
   color: rgba(28, 27, 26, 0.48);
 }
 
+/* 支持者纪念章（头像右下角 · 与右上角资料红点错开 · 产品 §4.2） */
+.profile__tip-badge {
+  position: absolute;
+  right: -4rpx;
+  bottom: -4rpx;
+  width: 48rpx;
+  height: 48rpx;
+}
+
+/* ─── 赞赏横幅（独立成组 · 非列表项 · 产品 §5.1） ──────────────────────────── */
+.support-banner {
+  display: flex;
+  align-items: center;
+  margin-top: 8rpx;
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  /* 顶部 4rpx 陶土色装饰条（页面唯一"情感色"点缀 · 呼应徽章色） */
+  border-top: 4rpx solid #C08A7B;
+  padding: 28rpx 32rpx;
+}
+
+.support-banner--hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.support-banner__badge {
+  width: 72rpx;
+  height: 72rpx;
+  flex-shrink: 0;
+}
+
+.support-banner__body {
+  flex: 1;
+  min-width: 0;
+  margin-left: 24rpx;
+}
+
+.support-banner__title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.support-banner__sub {
+  margin-top: 6rpx;
+  font-size: 24rpx;
+  color: rgba(28, 27, 26, 0.48);
+}
+
+.support-banner__cta {
+  margin-top: 10rpx;
+  font-size: 26rpx;
+  color: #C08A7B;
+}
+
 /* ─── 宏观数据总览：2 列网格 + 无卡片底色 ──────────────────────────────────── */
 .overview {
   display: flex;

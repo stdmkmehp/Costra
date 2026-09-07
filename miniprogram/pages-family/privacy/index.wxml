@@ -1,6 +1,6 @@
 <view class="privacy">
   <view class="privacy__title">用户隐私保护指引</view>
-  <view class="privacy__updated">更新日期：2026年6月</view>
+  <view class="privacy__updated">更新日期：2026年9月</view>
 
   <view class="privacy__section">
     <view class="privacy__section-title">一、引言</view>
@@ -14,6 +14,7 @@
     <view class="privacy__body privacy__body--indent">2. <text class="privacy__bold">账单记录</text>：您主动输入的金额、分类、备注、时间等记账信息，用于提供记账及统计功能。</view>
     <view class="privacy__body privacy__body--indent">3. <text class="privacy__bold">微信登录凭证（OpenID）</text>：用于唯一标识您的账号，不会向任何第三方披露。</view>
     <view class="privacy__body privacy__body--indent">4. <text class="privacy__bold">设备信息</text>：系统版本、设备型号等，用于兼容性保障及问题排查。</view>
+    <view class="privacy__body privacy__body--indent">5. <text class="privacy__bold">赞赏订单记录</text>：如您自愿通过"支持 Costra"进行赞赏，我们将保存赞赏订单记录（档位、时间、支持度），用于向您展示徽章与支持记录。支付过程由微信支付或 Apple 完成，我们不收集银行卡号等支付要素。</view>
   </view>
 
   <view class="privacy__section">
@@ -34,7 +35,7 @@
 
   <view class="privacy__section">
     <view class="privacy__section-title">五、信息存储与安全</view>
-    <view class="privacy__body">您的个人信息存储于中国境内的服务器（域名：costra.cloud，已完成 ICP 备案）。我们采用 HTTPS 加密传输、访问控制等技术措施保护您的信息安全。账单数据仅您本人（及您明确邀请的家庭成员）可见。</view>
+    <view class="privacy__body">您的个人信息存储于中国境内的服务器（域名：costra.cloud，已完成 ICP 备案）。我们采用 HTTPS 加密传输、访问控制等技术措施保护您的信息安全。账单数据仅您本人（及您明确邀请的家庭成员）可见。赞赏订单记录将在您的账号存续期间留存，用于向您持续提供徽章与支持记录展示。</view>
   </view>
 
   <view class="privacy__section">
@@ -55,7 +56,17 @@
   </view>
 
   <view class="privacy__section">
-    <view class="privacy__section-title">九、联系我们</view>
+    <view class="privacy__section-title">九、支付与赞赏</view>
+    <view class="privacy__body">赞赏支付由微信虚拟支付提供（iOS 终端由 Apple 处理支付）。相关规则如实告知如下：</view>
+    <view class="privacy__body privacy__body--indent">• 在 Android、鸿蒙、Windows 等终端，微信收取 1% 技术服务费，结算周期 T+3。</view>
+    <view class="privacy__body privacy__body--indent">• 在 iOS 终端，Apple 收取 12% 佣金，结算周期约 45~60 天。</view>
+    <view class="privacy__body privacy__body--indent">• 退款规则：iOS 用户由 Apple 处理退款，其他平台可通过意见反馈联系开发者。</view>
+    <view class="privacy__body privacy__body--indent">• 全终端月支付限额 10 万元。</view>
+    <view class="privacy__body">赞赏完全自愿，不影响任何记账功能；已获得的徽章与支持度不因退款而回收。</view>
+  </view>
+
+  <view class="privacy__section">
+    <view class="privacy__section-title">十、联系我们</view>
     <view class="privacy__body">如对本指引有任何疑问，请通过"我的"页面的用户反馈功能联系我们。</view>
   </view>
 

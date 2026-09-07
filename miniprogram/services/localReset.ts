@@ -18,6 +18,7 @@ import { clearStatisticsCache } from './statisticsApi';
 import { clearFamilyCaches } from './familyApi';
 import { invalidateUserOverview } from './userOverviewApi';
 import { invalidateAnnouncementCache } from './announcementApi';
+import { clearTipCatalogCache } from './tipApi';
 import { logger } from '../utils/logger';
 
 /**
@@ -32,6 +33,8 @@ export async function resetLocalData(): Promise<void> {
   clearFamilyCaches();
   invalidateUserOverview();
   invalidateAnnouncementCache();
+  // tips 商品目录模块级镜像（tech-spec v1.2 §7.5 · 持久化部分由下方 clearAllForReset 全量清）
+  clearTipCatalogCache();
   // L13 §4.5 纪律 3：R5 月索引写队列是跨账号存活的模块级内存态，logout 必须显式清，
   //   否则上一账号未排空的索引写任务链残留到新会话。
   //   （epoch 记录存 storage，由下方 clearAllForReset 全量清空，无需在此登记。）
