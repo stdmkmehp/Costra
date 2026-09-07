@@ -52,6 +52,40 @@ export interface AppEnv {
 
   /** 生产日志落盘固定文件（pino 写入 · 默认 /var/log/costra/server.log · 轮转由宿主机 logrotate 负责） */
   logFile: string;
+
+  /**
+   * 虚拟支付（赞赏）灰度模式（tech-spec v1.2 §2.5）：
+   *   off       功能关闭（下单拒绝；products 返回 purchasable=false）
+   *   allowlist 仅 WX_PAY_TEST_USER_IDS 内用户可下单（灰度联调）
+   *   on        全量放开
+   */
+  wxPayMode: 'off' | 'allowlist' | 'on';
+  /** 灰度白名单（用户 UUID 列表；非法 UUID ⇒ 启动失败） */
+  wxPayTestUserIds: string[];
+  /** 虚拟支付 OfferID（WX_PAY_MODE != off 时必填 · 启动校验） */
+  wxPayOfferId: string | undefined;
+  /** 虚拟支付 AppKey（仅服务端持有 · HMAC 密钥；WX_PAY_MODE != off 时必填） */
+  wxPayAppKey: string | undefined;
+  /** 消息推送 Token（可选 · 配置了则 GET /tips/notify 启用签名校验握手） */
+  wxMsgPushToken: string | undefined;
+}
+
+function parseWxPayMode(v: string): 'off' | 'allowlist' | 'on' {
+  if (v === 'off' || v === 'allowlist' || v === 'on') return v;
+  throw new Error(`[env] WX_PAY_MODE must be off|allowlist|on, got: ${v}`);
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function parseWxPayTestUserIds(v: string | undefined): string[] {
+  if (v == null || v === '') return [];
+  const ids = v.split(',').map((s) => s.trim()).filter((s) => s !== '');
+  for (const id of ids) {
+    if (!UUID_RE.test(id)) {
+      throw new Error(`[env] WX_PAY_TEST_USER_IDS contains invalid UUID: ${id}`);
+    }
+  }
+  return ids;
 }
 
 function required(env: NodeJS.ProcessEnv, key: string): string {
@@ -131,7 +165,24 @@ export function loadEnv(env: NodeJS.ProcessEnv = process.env): Readonly<AppEnv> 
     userVisibleFamilyLimit: parseIntOrDefault(env['USER_VISIBLE_FAMILY_LIMIT'], 3),
 
     logFile: optional(env, 'COSTRA_LOG_FILE', '/var/log/costra/server.log'),
+
+    wxPayMode: parseWxPayMode(optional(env, 'WX_PAY_MODE', 'off')),
+    wxPayTestUserIds: parseWxPayTestUserIds(env['WX_PAY_TEST_USER_IDS']),
+    wxPayOfferId: env['WX_PAY_OFFER_ID'] === '' ? undefined : env['WX_PAY_OFFER_ID'],
+    wxPayAppKey: env['WX_PAY_APP_KEY'] === '' ? undefined : env['WX_PAY_APP_KEY'],
+    wxMsgPushToken: env['WX_MSG_PUSH_TOKEN'] === '' ? undefined : env['WX_MSG_PUSH_TOKEN'],
   };
+
+  // 虚拟支付：非 off 模式必须配齐 OfferID 与 AppKey（tech-spec v1.2 §2.5 启动校验）
+  if (cfg.wxPayMode !== 'off') {
+    if (!cfg.wxPayOfferId) {
+      throw new Error('[env] WX_PAY_OFFER_ID is required when WX_PAY_MODE != off');
+    }
+    if (!cfg.wxPayAppKey) {
+      throw new Error('[env] WX_PAY_APP_KEY is required when WX_PAY_MODE != off');
+    }
+  }
+
   return Object.freeze(cfg);
 }
 

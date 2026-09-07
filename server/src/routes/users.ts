@@ -14,6 +14,7 @@
  */
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { appEnv } from '../config/env.js';
 import { AppError } from '../errors/AppError.js';
 import { ErrorCode } from '../errors/ErrorCode.js';
 import * as userRepo from '../repositories/userRepo.js';
@@ -21,6 +22,7 @@ import * as userOverviewRepo from '../repositories/userOverviewRepo.js';
 import * as familyRepo from '../repositories/familyRepo.js';
 import * as familyMemberRepo from '../repositories/familyMemberRepo.js';
 import * as ledgerRepo from '../repositories/ledgerRepo.js';
+import * as tipOrderRepo from '../repositories/tipOrderRepo.js';
 
 interface JwtPayload { sub: string; iat: number; exp: number }
 
@@ -256,11 +258,29 @@ export async function registerUsersRoutes(app: FastifyInstance): Promise<void> {
   );
 
   // GET /users/me/overview
-  // 返回当前用户跨所有账本的宏观聚合：记账笔数 + 有记账的天数（Asia/Shanghai）。
-  // 用途：mine 页宏观数据区。前端 SWR 缓存，ENTRY_SAVED/UPDATED/SYNC_DONE 失效。
+  // 返回当前用户跨所有账本的宏观聚合：记账笔数 + 有记账的天数（Asia/Shanghai）
+  // + 赞赏派生权益（tech-spec v1.2 §7.3：一条聚合 SQL 驱动四态 + 徽章/次数/支持度）。
+  // 用途：mine 页宏观数据区 + 赞赏横幅/徽章。前端 SWR 缓存，ENTRY_SAVED/UPDATED/SYNC_DONE 失效。
   app.get('/users/me/overview', async (req, reply) => {
     const userId = await parseUserId(req);
-    const overview = await userOverviewRepo.getUserOverview(userId);
-    reply.code(200).send(overview);
+    const [overview, tipAgg, badgeHidden] = await Promise.all([
+      userOverviewRepo.getUserOverview(userId),
+      tipOrderRepo.aggregateTipSummary(userId),
+      tipOrderRepo.getBadgeHidden(userId),
+    ]);
+    // supporter_badge 当前等价于 tip_count > 0（唯一权益 supporter_badge 的特例化 ·
+    // 新增权益类型时须改为独立 hasEntitlement 派生 · tech-spec §7.3）
+    const supporterBadge = tipAgg.tipCount > 0;
+    const env = appEnv();
+    const tipEntryVisible =
+      env.wxPayMode === 'on' || env.wxPayTestUserIds.includes(userId) || supporterBadge;
+    reply.code(200).send({
+      ...overview,
+      tip_entry_visible: tipEntryVisible,
+      supporter_badge: supporterBadge,
+      badge_hidden: badgeHidden,
+      tip_count: tipAgg.tipCount,
+      support_score: tipAgg.supportScore,
+    });
   });
 }

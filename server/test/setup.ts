@@ -46,6 +46,13 @@ function setupEnv(): void {
   process.env.SUBJECT_TYPE = 'individual';
   process.env.SUBJECT_CONTACT_EMAIL = 'test@example.com';
   process.env.SUBJECT_PRIVACY_EFFECTIVE_DATE = '2026-01-01';
+  // 虚拟支付（migration 0020 · tech-spec v1.2 §2.5）：默认 on 便于直测下单链路；
+  // 测试 off/allowlist 场景时自行改写 process.env 后再次 __resetEnvForTests()。
+  process.env.WX_PAY_MODE = 'on';
+  process.env.WX_PAY_TEST_USER_IDS = '';
+  process.env.WX_PAY_OFFER_ID = 'test-offer-id';
+  process.env.WX_PAY_APP_KEY = 'test-app-key';
+  process.env.WX_MSG_PUSH_TOKEN = '';
 
   __resetEnvForTests();
   __resetTTLForTests();
@@ -79,8 +86,43 @@ function applyMigrations(db: IMemoryDb): void {
       preferred_revision      BIGINT NOT NULL DEFAULT 0,
       preferred_updated_at    TIMESTAMPTZ,
       -- migration 0018_users_is_gm.sql
-      is_gm                   BOOLEAN NOT NULL DEFAULT FALSE
+      is_gm                   BOOLEAN NOT NULL DEFAULT FALSE,
+      -- migration 0020_tips.sql
+      tip_badge_hidden        BOOLEAN NOT NULL DEFAULT FALSE
     );
+    -- migration 0020_tips.sql · tip_orders（pg-mem 适配版）
+    -- 跳过 idx_tip_orders_probe_due（WHERE status='created' 列等值谓词 ·
+    --   与 uq_families_one_personal_per_owner 同属 pg-mem 已知污染场景）；
+    -- uq_tip_orders_wx_order_id（WHERE wx_order_id IS NOT NULL）属同族 IS NULL 谓词，直接建。
+    CREATE TABLE IF NOT EXISTS tip_orders (
+      id                  UUID PRIMARY KEY,
+      user_id             UUID NOT NULL REFERENCES users(id),
+      openid              TEXT NOT NULL,
+      product_type        TEXT NOT NULL,
+      product_key         TEXT NOT NULL,
+      product_title       TEXT NOT NULL,
+      wx_product_id       TEXT NOT NULL,
+      price_cents         BIGINT NOT NULL,
+      support_delta       INTEGER NOT NULL,
+      entitlement_keys    TEXT[] NOT NULL,
+      upstream_order_type SMALLINT,
+      out_trade_no        TEXT NOT NULL,
+      wx_order_id         TEXT,
+      channel_order_id    TEXT,
+      wxpay_order_id      TEXT,
+      upstream_status     SMALLINT,
+      status              TEXT NOT NULL DEFAULT 'created',
+      created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+      paid_at             TIMESTAMPTZ,
+      delivered_at        TIMESTAMPTZ,
+      refunded_at         TIMESTAMPTZ,
+      last_probed_at      TIMESTAMPTZ,
+      next_probe_at       TIMESTAMPTZ NOT NULL,
+      probe_count         INTEGER NOT NULL DEFAULT 0,
+      updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_tip_orders_out_trade_no ON tip_orders (out_trade_no);
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_tip_orders_wx_order_id ON tip_orders (wx_order_id) WHERE wx_order_id IS NOT NULL;
     CREATE TABLE user_sessions (
       jti             UUID PRIMARY KEY,
       user_id         UUID NOT NULL,
@@ -399,7 +441,7 @@ function registerPgMemFunctions(db: IMemoryDb): void {
 function resetPgMem(): void {
   if (memDb) {
     memDb.public.none(
-      'DELETE FROM recurring_rules; DELETE FROM workday_calendars; DELETE FROM entries; DELETE FROM budgets; DELETE FROM category_redirects; DELETE FROM categories; DELETE FROM family_invites; DELETE FROM family_members; DELETE FROM ledgers; DELETE FROM families; DELETE FROM user_sessions; DELETE FROM users; DELETE FROM idempotency_keys; DELETE FROM announcement_reads; DELETE FROM announcements;',
+      'DELETE FROM recurring_rules; DELETE FROM workday_calendars; DELETE FROM entries; DELETE FROM budgets; DELETE FROM category_redirects; DELETE FROM categories; DELETE FROM family_invites; DELETE FROM family_members; DELETE FROM ledgers; DELETE FROM families; DELETE FROM user_sessions; DELETE FROM tip_orders; DELETE FROM users; DELETE FROM idempotency_keys; DELETE FROM announcement_reads; DELETE FROM announcements;',
     );
   }
 }
@@ -446,6 +488,8 @@ beforeAll(() => {
 });
 
 beforeEach(async () => {
+  // env 单例每用例重置（测试改写 process.env.WX_PAY_* 等后不得跨用例残留）
+  setupEnv();
   resetPgMem();
   await resetRedisMock();
   setupDefaultWxFetch();

@@ -32,6 +32,14 @@ export interface TTLConfig {
   clockToleranceSec: number;
   /** GM 用户双榜单 Redis 缓存时效（秒，默认 1800 = 30min） */
   gmActiveUsersSec: number;
+  /** 赞赏：对账调度器 tick 周期（秒，默认 60） */
+  tipSchedulerTickSec: number;
+  /** 赞赏：探测租约/节流（秒，默认 3 · 与客户端退避 2/2/4/8/15 耦合：5 次有效探测 t=0/4/8/16/31） */
+  tipProbeMinIntervalSec: number;
+  /** 赞赏：created 单观察窗口（秒，默认 1800 = 30min · T3：窗口外未支付 ⇒ mark_expired） */
+  tipProbeWindowSec: number;
+  /** 赞赏：对账单次扫描批量上限（默认 50） */
+  tipProbeBatchSize: number;
 }
 
 function parseIntOr(v: string | undefined, fallback: number, key: string): number {
@@ -56,7 +64,19 @@ export function loadTTL(env: NodeJS.ProcessEnv = process.env): Readonly<TTLConfi
     rateWindowSec: parseIntOr(env.TTL_RATE_WINDOW_SEC, 60, 'TTL_RATE_WINDOW_SEC'),
     clockToleranceSec: parseIntOr(env.TTL_CLOCK_TOLERANCE_SEC, 60, 'TTL_CLOCK_TOLERANCE_SEC'),
     gmActiveUsersSec: parseIntOr(env.TTL_GM_ACTIVE_USERS_SEC, 1800, 'TTL_GM_ACTIVE_USERS_SEC'),
+    tipSchedulerTickSec: parseIntOr(env.TTL_TIP_SCHEDULER_TICK_SEC, 60, 'TTL_TIP_SCHEDULER_TICK_SEC'),
+    tipProbeMinIntervalSec: parseIntOr(env.TTL_TIP_PROBE_MIN_INTERVAL_SEC, 3, 'TTL_TIP_PROBE_MIN_INTERVAL_SEC'),
+    tipProbeWindowSec: parseIntOr(env.TTL_TIP_PROBE_WINDOW_SEC, 1800, 'TTL_TIP_PROBE_WINDOW_SEC'),
+    tipProbeBatchSize: parseIntOr(env.TTL_TIP_PROBE_BATCH_SIZE, 50, 'TTL_TIP_PROBE_BATCH_SIZE'),
   };
+
+  // tech-spec v1.2 §6.1 节奏表最后一档为 T+30min（1800s）：windowSec 必须 ≥ 1800，
+  // 否则最后一档探测永远落在 T3 窗口外（节奏失真）。
+  if (cfg.tipProbeWindowSec < 1800) {
+    throw new Error(
+      `TTL_TIP_PROBE_WINDOW_SEC must be >= 1800 (probe schedule's last slot T+30min), got: ${cfg.tipProbeWindowSec}`,
+    );
+  }
 
   // 一致性校验：invite 默认值不得超过上限
   if (cfg.inviteDefaultHours > cfg.inviteMaxHours) {

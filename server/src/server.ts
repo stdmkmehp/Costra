@@ -13,11 +13,14 @@
 import 'dotenv/config';
 import { buildApp } from './app.js';
 import { appEnv } from './config/env.js';
+import { assertTipProductsPublishable } from './config/tipProducts.js';
 import { closePool } from './db/pool.js';
 import { closeRedis } from './db/redis.js';
 
 async function main(): Promise<void> {
   const env = appEnv();
+  // 虚拟支付 B2 闸门：开启支付（on / allowlist）时道具 ID 必须已回填，否则拒绝启动
+  if (env.wxPayMode !== 'off') assertTipProductsPublishable();
   const app = await buildApp();
 
   const shutdown = async (signal: string): Promise<void> => {

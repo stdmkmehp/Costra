@@ -18,6 +18,7 @@
 export enum ErrorCode {
   // --- 400 参数 / 请求体 ---
   INVALID_ARGUMENT = 'INVALID_ARGUMENT',
+  PAYMENT_PRODUCT_INVALID = 'PAYMENT_PRODUCT_INVALID',
   MALFORMED_JSON = 'MALFORMED_JSON',
   IDEMPOTENCY_KEY_REQUIRED = 'IDEMPOTENCY_KEY_REQUIRED',
   IDEMPOTENCY_KEY_MISMATCH = 'IDEMPOTENCY_KEY_MISMATCH',
@@ -64,6 +65,7 @@ export enum ErrorCode {
  */
 export const ErrorHttpStatus: Readonly<Record<ErrorCode, number>> = Object.freeze({
   [ErrorCode.INVALID_ARGUMENT]: 400,
+  [ErrorCode.PAYMENT_PRODUCT_INVALID]: 400,
   [ErrorCode.MALFORMED_JSON]: 400,
   [ErrorCode.IDEMPOTENCY_KEY_REQUIRED]: 400,
   [ErrorCode.IDEMPOTENCY_KEY_MISMATCH]: 409,
@@ -109,6 +111,7 @@ export type RetryStrategy = 'none' | 'refresh-once' | 'retry-after' | 'exp-backo
 
 export const ErrorRetryStrategy: Readonly<Record<ErrorCode, RetryStrategy>> = Object.freeze({
   [ErrorCode.INVALID_ARGUMENT]: 'none',
+  [ErrorCode.PAYMENT_PRODUCT_INVALID]: 'none',
   [ErrorCode.MALFORMED_JSON]: 'none',
   [ErrorCode.IDEMPOTENCY_KEY_REQUIRED]: 'none',
   [ErrorCode.IDEMPOTENCY_KEY_MISMATCH]: 'none',
@@ -165,6 +168,8 @@ export type ErrorLogLevel = 'info' | 'warn' | 'error';
 export const ErrorLogLevels: Readonly<Record<ErrorCode, ErrorLogLevel>> = Object.freeze({
   // --- 客户端 bug：请求根本不该发出来 ---
   [ErrorCode.INVALID_ARGUMENT]: 'warn',
+  // 商品目录无此 product_key：配置/客户端版本不一致，需关注但非系统故障
+  [ErrorCode.PAYMENT_PRODUCT_INVALID]: 'warn',
   [ErrorCode.MALFORMED_JSON]: 'warn',
   [ErrorCode.IDEMPOTENCY_KEY_REQUIRED]: 'warn',
   [ErrorCode.IDEMPOTENCY_KEY_MISMATCH]: 'warn',

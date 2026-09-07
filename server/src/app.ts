@@ -40,15 +40,21 @@ import { registerWorkdayCalendarRoutes } from './routes/workdayCalendar.js';
 import { registerLedgersRoutes } from './routes/ledgers.js';
 import { registerBudgetsRoutes } from './routes/budgets.js';
 import { registerGmRoutes } from './routes/gm.js';
+import { registerTipsRoutes } from './routes/tips.js';
 import { createRecurringService } from './services/recurringService.js';
 import { createEntryService } from './services/entryService.js';
 import { createScheduler, type RecurringScheduler } from './services/recurringScheduler.js';
+import {
+  createTipReconcileScheduler,
+  type TipReconcileScheduler,
+} from './services/tipReconcileScheduler.js';
 import { refreshCache as refreshWorkdayCache } from './services/workdayProvider.js';
 
-// 让 app.recurringScheduler 可访问（测试和优雅关停用）
+// 让 app.recurringScheduler / app.tipReconcileScheduler 可访问（测试和优雅关停用）
 declare module 'fastify' {
   interface FastifyInstance {
     recurringScheduler?: RecurringScheduler;
+    tipReconcileScheduler?: TipReconcileScheduler;
   }
 }
 
@@ -106,8 +112,17 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   }
   // T2 · workday 节假日缓存：服务启动时预载一次（每日凌晨由 scheduler tick 刷新）
   await refreshWorkdayCache();
+
+  // tips · 赞赏对账调度器（tech-spec v1.2 §6.1 · 60s tick · commit-before-fetch）
+  const tipReconcileScheduler = createTipReconcileScheduler();
+  app.decorate('tipReconcileScheduler', tipReconcileScheduler);
+  if (opts.autoStartScheduler !== false) {
+    tipReconcileScheduler.start(); // test 环境内部会自动跳过 setInterval
+  }
+
   app.addHook('onClose', async () => {
     await scheduler.stop();
+    await tipReconcileScheduler.stop();
   });
 
   // 业务路由全部进 /v1 prefix 子作用域（COSTRA-156 · 让实装服从 OpenAPI servers 契约）
@@ -127,6 +142,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
     await registerLedgersRoutes(v1);
     await registerBudgetsRoutes(v1);
     await registerGmRoutes(v1);
+    await registerTipsRoutes(v1);
   }, { prefix: '/v1' });
 
   return app;

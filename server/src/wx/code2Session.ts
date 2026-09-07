@@ -59,16 +59,22 @@ export function __resetWxFetchForTests(): void {
 }
 
 /**
- * URL 脱敏：把 secret=xxx 替换为 secret=***REDACTED***。
- * 导出供单测覆盖（保证对各种 secret 形态鲁棒）。
+ * URL 脱敏：把 secret=xxx / access_token=xxx / pay_sig=xxx 替换为 ***REDACTED***。
+ * 导出供单测覆盖（保证对各种敏感参数形态鲁棒）。
  *
  * 规则：
- *   - 大小写不敏感，匹配 secret= / Secret= / SECRET= 等
+ *   - 大小写不敏感，匹配 secret= / access_token= / pay_sig= 等
  *   - 命中位置开始直到下一个 & 或字符串尾
  *   - 返回全新字符串，不修改入参
+ *
+ * 覆盖范围（E2 · tech-spec v1.2 §2.6 access_token 管理）：虚拟支付引入 access_token / pay_sig 后，
+ * query_order 与 stable_token 的 URL/异常日志复用本函数脱敏。
  */
 export function redactUrlSecret(url: string): string {
-  return url.replace(/([?&](?:secret|SECRET|Secret))=[^&]*/g, '$1=***REDACTED***');
+  return url.replace(
+    /([?&](?:secret|access_token|pay_sig))=[^&]*/gi,
+    '$1=***REDACTED***',
+  );
 }
 
 /**
