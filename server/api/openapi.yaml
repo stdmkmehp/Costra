@@ -173,6 +173,10 @@ paths:
         返回当前用户跨所有账本的宏观计数（按 entries.created_by 聚合）。
         - entry_count：未删除流水总数
         - ledger_days：有记账记录的天数（occurred_at 在 Asia/Shanghai 时区下 DISTINCT date）
+        tips 扩展字段（tech-spec v1.2 §7.3）：
+        - tip_entry_visible：赞赏入口可见性 = (WX_PAY_MODE=on) OR 用户在测试名单 OR 存在已结算赞赏单
+        - supporter_badge / tip_count / support_score：派生自 tip_orders（status∈{delivered,refunded} AND delivered_at IS NOT NULL）
+        - badge_hidden：用户设置的徽章隐藏开关（users.tip_badge_hidden）
       responses:
         '200':
           description: OK
@@ -180,10 +184,15 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [entry_count, ledger_days]
+                required: [entry_count, ledger_days, tip_entry_visible, supporter_badge, badge_hidden, tip_count, support_score]
                 properties:
                   entry_count: { type: integer, minimum: 0, description: 未删除流水总数 }
                   ledger_days: { type: integer, minimum: 0, description: 有记账记录的天数（Asia/Shanghai） }
+                  tip_entry_visible: { type: boolean, description: 赞赏入口可见性（mode=on · 测试名单 · 有已结算赞赏单 三分量或） }
+                  supporter_badge: { type: boolean, description: 派生支持者徽章（存在已交付赞赏单） }
+                  badge_hidden: { type: boolean, description: 徽章隐藏开关（"仅自己可见"） }
+                  tip_count: { type: integer, minimum: 0, description: 已结算赞赏次数 }
+                  support_score: { type: integer, minimum: 0, description: 累计支持度（订单快照 support_delta 求和） }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
   # ============ gm ============
@@ -1538,6 +1547,222 @@ paths:
         '404':
           description: 该年份无数据
 
+  /tips/orders:
+    post:
+      operationId: createTipOrder
+      tags: [tips]
+      summary: 创建赞赏订单（虚拟支付）
+      description: |
+        虚拟支付赞赏下单（tech-spec v1.2 §4.1）。body 仅两个字段：product_key + code
+        （wx.login() 返回的 code · 服务端 code2Session 换 session_key 签名 · 用完即弃不落库）。
+        支付身份闸门：code2Session.openid === users.wx_openid，不一致不落单直接 403。
+        响应为微信 wx.requestVirtualPayment 所需的签名三要素（signData 一次 stringify · 客户端原样回传）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [product_key, code]
+              additionalProperties: false
+              properties:
+                product_key: { type: string, description: '静态商品目录 key（如 coffee）' }
+                code: { type: string, description: 'wx.login() 返回的 code' }
+      responses:
+        '200':
+          description: 下单成功（返回调起支付所需签名）
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [out_trade_no, pay_data]
+                properties:
+                  out_trade_no: { type: string, description: '我方单号（幂等锚 · T+30位hex）' }
+                  pay_data:
+                    type: object
+                    required: [signData, paySig, signature, mode]
+                    properties:
+                      signData: { type: string, description: '官方 8 字段 JSON 字符串（原样回传 wx.requestVirtualPayment）' }
+                      paySig: { type: string, description: 'HMAC-SHA256(uri&body, AppKey)' }
+                      signature: { type: string, description: 'HMAC-SHA256(signData, session_key)' }
+                      mode: { type: string, enum: [short_series_goods] }
+        '400':
+          description: PAYMENT_PRODUCT_INVALID（product_key 不在目录）
+        '403':
+          description: PERMISSION_DENIED（支付身份不一致 · details.reason='payment_identity_mismatch'）
+        '422':
+          description: BUSINESS_RULE_VIOLATION（WX_PAY_MODE=off 或非白名单 · details.reason='payment_disabled'）
+        '429':
+          description: RATE_LIMITED（日限 20 单）
+        '503':
+          description: UNAVAILABLE（微信侧下单失败 · 请重新登录后重试）
+
+  /tips/products:
+    get:
+      operationId: listTipProducts
+      tags: [tips]
+      summary: 商品目录（赞赏档位）
+      description: |
+        返回静态商品目录与 purchasable（tech-spec v1.2 §4.5.1）。
+        purchasable = (WX_PAY_MODE='on') || (='allowlist' 且当前用户在白名单)。
+        wx_product_id 为服务端签名专用字段，不下发。
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [purchasable, products]
+                properties:
+                  purchasable: { type: boolean }
+                  products:
+                    type: array
+                    items:
+                      type: object
+                      required: [type, product_key, title, price_cents, support_delta, entitlement_keys, sub_desc]
+                      properties:
+                        type: { type: string, enum: [tip] }
+                        product_key: { type: string }
+                        title: { type: string }
+                        price_cents: { type: integer }
+                        support_delta: { type: integer }
+                        entitlement_keys: { type: array, items: { type: string } }
+                        sub_desc: { type: string }
+
+  /tips/summary:
+    get:
+      operationId: getTipSummary
+      tags: [tips]
+      summary: 赞赏权益聚合（派生 · 无单独权益表）
+      description: |
+        派生权益查询（tech-spec v1.2 §4.5.2）：单条聚合 SQL（status IN delivered/refunded
+        AND delivered_at IS NOT NULL）驱动徽章/次数/支持度；granted_at = MIN(delivered_at)。
+        若存在本人 10 分钟内的 created 单，响应发送后 fire-and-forget 触发一次
+        受探测租约保护的 query_order（绝不 await 上游 · 每次请求最多一单）。
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [entitlements, supporter_badge, tip_count, support_score, badge_hidden, has_pending_orders, history]
+                properties:
+                  entitlements:
+                    type: array
+                    items:
+                      type: object
+                      required: [key, granted_at]
+                      properties:
+                        key: { type: string, example: supporter_badge }
+                        granted_at: { type: string, format: date-time, nullable: true }
+                  supporter_badge: { type: boolean }
+                  tip_count: { type: integer }
+                  support_score: { type: integer }
+                  badge_hidden: { type: boolean }
+                  has_pending_orders: { type: boolean }
+                  history:
+                    type: array
+                    description: |
+                      最近 20 条已结算单。`out_trade_no` 为本人业务单号，客户端 settling
+                      用「本单是否出现在本数组」判定发货（次数基线在 summary 首拉失败时不可得）。
+                      仍不返回金额、openid 与任何平台 ID。
+                    items:
+                      type: object
+                      required: [out_trade_no, time, title, status, support_delta]
+                      properties:
+                        out_trade_no: { type: string, description: "本人业务单号（'T' + 30 位 hex）" }
+                        time: { type: string, format: date-time }
+                        title: { type: string }
+                        status: { type: string, enum: [delivered, refunded] }
+                        support_delta: { type: integer }
+
+  /tips/summary/badge-visibility:
+    put:
+      operationId: setTipBadgeVisibility
+      tags: [tips]
+      summary: 设置头像徽章可见性（"仅自己可见"开关）
+      description: |
+        更新 users.tip_badge_hidden（tech-spec v1.2 §4.5.3）。
+        响应 badge_visible 与 supporter_badge AND NOT badge_hidden 语义一致。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [badge_hidden]
+              additionalProperties: false
+              properties:
+                badge_hidden: { type: boolean, description: 'true=仅自己可见 · false=公开可见' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [badge_hidden, badge_visible]
+                properties:
+                  badge_hidden: { type: boolean }
+                  badge_visible: { type: boolean }
+
+  /tips/notify:
+    get:
+      operationId: verifyTipNotify
+      tags: [tips]
+      summary: 微信消息推送握手
+      description: |
+        消息推送 URL 配置校验（tech-spec v1.2 §4.2.1）。配置 WX_MSG_PUSH_TOKEN 时
+        按 sha1(sort(token,timestamp,nonce)) 验签；echostr 回显约束：text/plain、
+        X-Content-Type-Options: nosniff、长度 ≤128、字符集 [A-Za-z0-9_-]，否则回 'success'。
+      security: []
+      parameters:
+        - name: signature
+          in: query
+          schema: { type: string }
+        - name: timestamp
+          in: query
+          schema: { type: string }
+        - name: nonce
+          in: query
+          schema: { type: string }
+        - name: echostr
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: echostr 回显或 'success'（text/plain）
+        '401':
+          description: 签名校验失败（配置了 token 且 signature 不匹配）
+    post:
+      operationId: handleTipNotify
+      tags: [tips]
+      summary: 虚拟支付消息推送（明文 XML）
+      description: |
+        xpay 推送入口（tech-spec v1.2 §4.2.2/§4.2.3 · 明文 XML 单实现 · bodyLimit 64KB）：
+          - xpay_goods_deliver_notify ⇒ 弱校验推送字段后，受探测租约保护触发 query_order
+            复核（唯一资金凭证）并按对账矩阵执行；settle/keep_*/mark_*/冲突回成功回包，
+            schedule_probe/retry 与租约竞争失败回 retry（平台重推）；
+          - xpay_refund_notify ⇒ 只 warn + 成功回包（不做自动资金变更）；
+          - xpay_subscribe_ios_refund_query_notify ⇒ info + 成功回包；
+          - 未知 Event ⇒ debug + 成功回包；解析失败 ⇒ 400。
+        成功回包为固定 XML 常量：<xml><ErrCode>0</ErrCode><ErrMsg><![CDATA[success]]></ErrMsg></xml>
+      security: []
+      requestBody:
+        required: true
+        content:
+          text/xml:
+            schema: { type: string, description: '明文 XML 推送体' }
+      responses:
+        '200':
+          description: 固定成功回包 XML
+        '400':
+          description: XML 解析失败（平台将重推）
+        '500':
+          description: 回 retry 让平台重推（schedule_probe/retry/租约竞争）
+
 components:
   securitySchemes:
     BearerAuth:
@@ -1601,6 +1826,7 @@ components:
         - IDEMPOTENCY_KEY_REQUIRED
         - IDEMPOTENCY_KEY_MISMATCH
         - UNSUPPORTED_MEDIA_TYPE
+        - PAYMENT_PRODUCT_INVALID
         - UNAUTHENTICATED
         - TOKEN_EXPIRED
         - REFRESH_TOKEN_INVALID
@@ -1875,7 +2101,7 @@ components:
     FamilyPaidContribution:
       type: object
       required: [user_id, nickname, avatar_url, status, amount, ratio_bps]
-      description: COSTRA-222: 公共支出垫付贡献
+      description: 'COSTRA-222: 公共支出垫付贡献'
       properties:
         user_id: { type: string, format: uuid }
         nickname: { type: string }
@@ -1887,7 +2113,7 @@ components:
     FamilyPersonalExpenseBlock:
       type: object
       required: [user_id, nickname, avatar_url, status, amount, categories]
-      description: COSTRA-222: 成员个人支出块
+      description: 'COSTRA-222: 成员个人支出块'
       properties:
         user_id: { type: string, format: uuid }
         nickname: { type: string }

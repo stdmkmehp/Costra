@@ -71,6 +71,7 @@
 | 2 | `MALFORMED_JSON` | param | ❌ | ❌ | 请求体 JSON 解析失败 |
 | 3 | `IDEMPOTENCY_KEY_REQUIRED` | param | ❌ | ❌（客户端拦截器 bug） | 写操作未带 `Idempotency-Key` 头 |
 | 4 | `UNSUPPORTED_MEDIA_TYPE` | param | ❌ | ❌ | `Content-Type` 非 `application/json` |
+| 4b | `PAYMENT_PRODUCT_INVALID` | param | ❌ | ✅ 提示"暂不可用" | 赞赏下单 `product_key` 不在静态商品目录（配置/客户端版本不一致）。`details.product_key` 回传原值（tech-spec v1.2 §9） |
 
 ### 2.2 401 · 未授权
 
@@ -85,7 +86,7 @@
 
 | # | code | category | retryable | user_action | 场景说明 |
 |---|---|---|---|---|---|
-| 9 | `PERMISSION_DENIED` | permission | ❌ | ✅ 提示"权限不足" | 有身份但无权限（如 `viewer` 尝试写 / 非 owner 改家庭） |
+| 9 | `PERMISSION_DENIED` | permission | ❌ | ✅ 提示"权限不足" | 有身份但无权限（如 `viewer` 尝试写 / 非 owner 改家庭）；赞赏下单 openid 与账号绑定不一致时 `details.reason='payment_identity_mismatch'`（tech-spec v1.2 §9） |
 | 10 | `FAMILY_NOT_MEMBER` | permission | ❌ | ✅ 跳回家庭首页 | 访问非自己家庭的资源 |
 | 10b | `FAMILY_PERSONAL_NOT_DELETABLE` | permission | ❌ | ✅ 提示"不可删除" | 尝试删除个人 family（kind='personal' · ADR-0007 §5.7.3 · COSTRA-164 R1）|
 
@@ -113,7 +114,7 @@
 
 | # | code | category | retryable | user_action | 场景说明 |
 |---|---|---|---|---|---|
-| 16 | `BUSINESS_RULE_VIOLATION` | param | ❌ | ✅ 文案按 `details.rule` 分支 | 业务规则拒绝。`details.rule` 为枚举：`family_member_limit` / `shared_family_limit` / `shared_family_hard_limit` / `personal_family_not_invitable` / `category_name_duplicate` / `budget_overlap` / `ledger_archived` / `entry_occurred_at_future` / `currency_mismatch` |
+| 16 | `BUSINESS_RULE_VIOLATION` | param | ❌ | ✅ 文案按 `details.rule` 分支 | 业务规则拒绝。`details.rule` 为枚举：`family_member_limit` / `shared_family_limit` / `shared_family_hard_limit` / `personal_family_not_invitable` / `category_name_duplicate` / `budget_overlap` / `ledger_archived` / `entry_occurred_at_future` / `currency_mismatch`。例外：赞赏下单支付未开放（`WX_PAY_MODE=off` 或非白名单）用 `details.reason='payment_disabled'`，不占 rule 枚举（tech-spec v1.2 §9） |
 
 ### 2.8 429 · 限流
 
@@ -215,7 +216,7 @@ throw new AppError(ErrorCode.INVALID_ARGUMENT, 'field "amount" must be > 0', {
 | level | 判据 | code |
 |---|---|---|
 | `info` | 预期内的业务分支：服务端与客户端都按契约正常运作，客户端有明确的降级 / 重试 / 提示路径，出现频率与用户规模正相关。仅为链路可观测性留痕 | `NOT_FOUND` · `VERSION_CONFLICT` · `DUPLICATE_RESOURCE` · `ALREADY_MEMBER` · `INVITE_EXPIRED` · `BUSINESS_RULE_VIOLATION` · `FAMILY_PERSONAL_NOT_DELETABLE` · `TOKEN_EXPIRED` · `REFRESH_TOKEN_INVALID` |
-| `warn` | 请求方行为异常而服务端正常：客户端 bug（参数 / 幂等键 / Content-Type）、疑似越权或探测（非过期类 401、403）、限流命中、占位端点被调用。需观测趋势，不需立即介入 | `INVALID_ARGUMENT` · `MALFORMED_JSON` · `IDEMPOTENCY_KEY_REQUIRED` · `IDEMPOTENCY_KEY_MISMATCH` · `UNSUPPORTED_MEDIA_TYPE` · `UNAUTHENTICATED` · `WX_CODE_INVALID` · `PERMISSION_DENIED` · `FAMILY_NOT_MEMBER` · `RATE_LIMITED` · `NOT_IMPLEMENTED` |
+| `warn` | 请求方行为异常而服务端正常：客户端 bug（参数 / 幂等键 / Content-Type）、疑似越权或探测（非过期类 401、403）、限流命中、占位端点被调用、商品配置不一致。需观测趋势，不需立即介入 | `INVALID_ARGUMENT` · `MALFORMED_JSON` · `IDEMPOTENCY_KEY_REQUIRED` · `IDEMPOTENCY_KEY_MISMATCH` · `UNSUPPORTED_MEDIA_TYPE` · `UNAUTHENTICATED` · `WX_CODE_INVALID` · `PERMISSION_DENIED` · `FAMILY_NOT_MEMBER` · `RATE_LIMITED` · `NOT_IMPLEMENTED` · `PAYMENT_PRODUCT_INVALID` |
 | `error` | 服务端自身故障，需要人介入排查 | `INTERNAL` · `UNAVAILABLE` · `TIMEOUT` |
 
 **日志字段必带 `message`**：同一个 code 常有多个抛出点（如 `NOT_FOUND` 在 `budgetService` 内就有 3 处：ledger 不存在 / family 不存在 / 删除未设置的预算），只靠 `code` + `details` 无法定位抛出点。
