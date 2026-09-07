@@ -119,7 +119,7 @@ gmLoginAs(target: { userId?: string; createFake?: boolean }, gmAccessToken: stri
 
 ### 3.4 新建分包页 `pages-gm/impersonate/index`
 - `app.json` 注册 subpackage `pages-gm`（不加入 preloadRule）。
-- UI（v2）：双 section——「近7天活跃」（副标题：近7天 N 笔 · 最后活跃 MM-DD HH:mm · id 短码）在上、「最近注册」（副标题：注册日期 · id 短码）在下；每区独立本地翻页（每页 10 条 · 页码 `x / y` · 单页时隐藏翻页行）+ 顶部「伪造身份登录」入口（单按钮「新建伪造账号登录」，伪造 openid 由服务端自动分配）→ 选中后确认弹窗（左确认右取消，项目惯例）。
+- UI（v2）：双 section——「近7天活跃」（副标题：近7天 N 笔 · 最后活跃 MM-DD HH:mm · id 短码）在上、「最近注册」（副标题：注册日期 · id 短码）在下；每区独立本地翻页（每页 10 条 · 页码 `x / y` · 单页时隐藏翻页行）+ 顶部「伪造身份登录」入口（单按钮「新建伪造账号登录」，伪造 openid 由服务端自动分配）→ 选中后确认弹窗（原生 wx.showModal，左取消右确认，项目惯例）。
 - **切换流程**（复用 logout 清理语义，复用现有导出，顺序与 mine 页 logout 对齐）：
   1. 确认弹窗 → `syncOnce('hide')`
   2. `outbox.pendingCount() > 0` → 二次弹窗（文案对齐 mine："最新记录可能尚未同步，切换后可能丢失"）
