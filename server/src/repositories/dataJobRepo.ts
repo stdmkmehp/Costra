@@ -423,10 +423,12 @@ export async function claimQueuedJobs(
   for (const row of candidates.rows) {
     // 阶段按类型分流（§7.2 v1.0）：导出 claim 即 querying；导入唯一可观测阶段是 validating
     //（导入是单大事务，writing 阶段对轮询连接不可见，已从 import 阶段集移除）
+    // CAST 不可省：CASE 全字面量分支被 PG 解析为 text，赋枚举列须显式 cast，
+    // 否则真 PG 报 42804（pg-mem 不校验枚举赋值，单测覆盖不到 · 2026-09-08 生产事故）
     const updated = await client.query<DataJobRow>(
       `UPDATE data_jobs
           SET status = 'processing',
-              stage = CASE type WHEN 'import' THEN 'validating' ELSE 'querying' END,
+              stage = CAST(CASE type WHEN 'import' THEN 'validating' ELSE 'querying' END AS data_job_stage),
               stage_started_at = now(),
               attempts = attempts + 1,
               run_token = $2,
