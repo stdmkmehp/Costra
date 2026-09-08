@@ -1763,6 +1763,253 @@ paths:
         '500':
           description: 回 retry 让平台重推（schedule_probe/retry/租约竞争）
 
+  /export-jobs:
+    post:
+      operationId: createExportJob
+      tags: [data-jobs]
+      summary: 创建账本导出任务
+      description: |
+        创建账本 CSV 导出任务（data-import-export v1.0 §6）。
+        body 全部可选：ledger_id（目标账本 · 缺省 = 当前活跃账本：users.preferred_ledger_id →
+        个人账本兜底）+ from/to（YYYY-MM-DD · Asia/Shanghai 当日含起止，缺省 = 全部流水）。
+        区间落库为半开区间 [from, to+1d)（export_from/export_to 列注释「结束（不含）」）。
+        并发闸口：每用户至多一个活跃导出任务（queued/processing），命中返 409。
+        任务由 worker 异步执行（2s 轮询 + 创建后 kick），客户端轮询 /data-jobs 观察进度。
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                ledger_id: { type: string, format: uuid, description: '目标账本（缺省 = 当前活跃账本）' }
+                from: { type: string, pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}$', description: '起始日期（含 · Asia/Shanghai）' }
+                to: { type: string, pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}$', description: '结束日期（含 · Asia/Shanghai）' }
+      responses:
+        '201':
+          description: 任务已创建（返回 data_job 对象）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataJob' }
+        '400':
+          description: INVALID_ARGUMENT（日期格式非法 / from 晚于 to / ledger_id 非法）
+        '401':
+          description: UNAUTHENTICATED
+        '403':
+          description: FAMILY_NOT_MEMBER（指定账本但当前用户非其活跃成员）
+        '404':
+          description: NOT_FOUND（指定账本不存在或已删除 / 无可用账本）
+        '409':
+          description: EXPORT_JOB_IN_PROGRESS（已有进行中的导出任务 · details.job_id 回传活跃任务）
+
+  /data-jobs:
+    get:
+      operationId: listDataJobs
+      tags: [data-jobs]
+      summary: 任务中心列表（本人最近任务 · 带 server_now）
+      description: |
+        按创建时间倒序返回本人最近的导入/导出任务（一期只有导出）。
+        server_now 为服务端当前时间，是客户端阶段型模拟进度的时间基准。
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [jobs, server_now]
+                properties:
+                  jobs:
+                    type: array
+                    items: { $ref: '#/components/schemas/DataJob' }
+                  server_now: { type: string, format: date-time }
+        '401':
+          description: UNAUTHENTICATED
+
+  /data-jobs/{job_id}:
+    get:
+      operationId: getDataJob
+      tags: [data-jobs]
+      summary: 单任务详情（带 server_now）
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/DataJob'
+                  - type: object
+                    required: [server_now]
+                    properties:
+                      server_now: { type: string, format: date-time }
+        '401':
+          description: UNAUTHENTICATED
+        '404':
+          description: NOT_FOUND（任务不存在或非本人）
+
+  /data-jobs/{job_id}/download:
+    get:
+      operationId: downloadDataJobFile
+      tags: [data-jobs]
+      summary: 下载导出产物分片
+      description: |
+        流式下载 succeeded 任务的分片文件（text/csv; charset=utf-8 ·
+        Content-Disposition 携带 RFC 5987 UTF-8 文件名 · X-Content-Sha256 头供客户端强校验）。
+        完成前下载 404；产物过 24h 有效期（或已被清理）410 EXPORT_FILE_EXPIRED。
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: part
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, default: 1 }
+          description: '分片序号（缺省 = 第 1 分片）'
+      responses:
+        '200':
+          description: CSV 分片文件流
+          content:
+            text/csv:
+              schema: { type: string, format: binary }
+        '401':
+          description: UNAUTHENTICATED
+        '404':
+          description: NOT_FOUND（任务不存在 / 非本人 / 未完成 / part 越界）
+        '410':
+          description: EXPORT_FILE_EXPIRED（产物已过 24h 有效期被清理）
+
+  /import-jobs/detect:
+    post:
+      operationId: detectImportJob
+      tags: [data-jobs]
+      summary: 上传 CSV 并同步检测（DetectReport）
+      description: |
+        两步导入的第一步（data-import-export v1.0 §4.2）：multipart 上传 CSV（字段名 file +
+        必填字段 ledger_id），服务端同步完成表头指纹 / 别名映射 / 全字段校验，落检测产物
+        （规范化行 NDJSON gzip + 问题报告 CSV），返回 DetectReport。
+        大小上限：客户端本地 1MB 预校验，服务端应用层二次校验 1MB（超限 413 PAYLOAD_TOO_LARGE），
+        multipart 2MB 为第二道兜底（§9.5 三层阈值）。数据行上限 5,000（超限检测阶段 ERROR）。
+        幂等：同（user, ledger, sha256）且 ready 未过期 ⇒ 直接复用并重置 15min 有效期。
+        频控：单用户 5 分钟 ≤5 次（429 RATE_LIMITED）。
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, ledger_id]
+              properties:
+                file: { type: string, format: binary, description: 'UTF-8 CSV（可带 BOM · ≤1MB）' }
+                ledger_id: { type: string, format: uuid, description: '目标账本（须为本家庭活跃账本）' }
+      responses:
+        '200':
+          description: 检测完成（DetectReport · 会话 15 分钟内可 commit）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DetectReport' }
+        '400':
+          description: INVALID_ARGUMENT（缺列 / 重复列 / 禁止列 / 超行数 / 非 UTF-8 / XLSX / JSON / CSV 非法）
+        '401':
+          description: UNAUTHENTICATED
+        '403':
+          description: FAMILY_NOT_MEMBER（非目标家庭活跃成员）
+        '404':
+          description: NOT_FOUND（账本不存在）
+        '409':
+          description: DETECT_IN_PROGRESS（已有检测会话进行中）/ IMPORT_JOB_IN_PROGRESS（该账本已有导入任务）
+        '413':
+          description: PAYLOAD_TOO_LARGE（文件超 1MB）
+        '429':
+          description: RATE_LIMITED（5 分钟 5 次 · 带 Retry-After）
+
+  /import-jobs/commit:
+    post:
+      operationId: commitImportJob
+      tags: [data-jobs]
+      summary: 确认导入（原子消费检测会话 + 创建导入任务）
+      description: |
+        两步导入的第二步（§4.3）：在 15 分钟有效期内携带 detect_id 与可选 member_mapping
+        （昵称 → user_id 或 '__self__'；仅 is_costra_export=true 且存在未匹配昵称时需要）。
+        服务端在同一事务内锁定会话、创建任务（queued）、标记会话 consumed 并回填 job_id。
+        幂等锚 = detect_id 状态机：重复 commit 回放原 job_id，不建双任务。
+        频控：单用户 5 分钟 ≤3 个导入任务（429 RATE_LIMITED）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [detect_id]
+              additionalProperties: false
+              properties:
+                detect_id: { type: string, format: uuid }
+                member_mapping:
+                  type: object
+                  additionalProperties: { type: string }
+                  description: 昵称 → 目标成员 user_id 或 '__self__'
+      responses:
+        '202':
+          description: 任务已创建（客户端轮询 /data-jobs 观察进度）
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [job_id, status]
+                properties:
+                  job_id: { type: string, format: uuid }
+                  status: { type: string, enum: [queued, processing, succeeded, failed] }
+        '400':
+          description: INVALID_ARGUMENT（body 非法 / 无可导入行）
+        '401':
+          description: UNAUTHENTICATED
+        '404':
+          description: NOT_FOUND（会话不存在或非本人）
+        '409':
+          description: IMPORT_JOB_IN_PROGRESS（该账本已有导入任务 · details.job_id 回传活跃任务）
+        '410':
+          description: DETECT_SESSION_EXPIRED（会话过 15 分钟有效期 / 不可消费 · 需重新上传）
+        '429':
+          description: RATE_LIMITED（5 分钟 3 个 · 带 Retry-After）
+
+  /import-detect-sessions/{detect_id}/report:
+    get:
+      operationId: downloadImportDetectReport
+      tags: [data-jobs]
+      summary: 下载检测问题报告 CSV
+      description: |
+        流式下载检测报告（text/csv; charset=utf-8 · RFC 5987 UTF-8 文件名）。
+        报告寿命独立于 commit 有效期：24h（report_expires_at）；导入成功后行产物立即删除，
+        报告保留至 24h 供事后核对。检测无错误/警告时不生成报告（404）。
+        报告不可用（无报告 / 已过 24h / 产物被清理）一律 404 —— 它不影响该会话在 15min
+        内继续 commit，故不用 410 DETECT_SESSION_EXPIRED（§7.4 两条生命周期已解耦）。
+      parameters:
+        - name: detect_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: CSV 报告文件流
+          content:
+            text/csv:
+              schema: { type: string, format: binary }
+        '401':
+          description: UNAUTHENTICATED
+        '404':
+          description: NOT_FOUND（会话不存在 / 非本人 / 无报告 / 报告已过 24h 或产物被清理）
+
 components:
   securitySchemes:
     BearerAuth:
@@ -1837,7 +2084,14 @@ components:
         - NOT_FOUND
         - VERSION_CONFLICT
         - DUPLICATE_RESOURCE
+        - ALREADY_MEMBER
+        - EXPORT_JOB_IN_PROGRESS
+        - IMPORT_JOB_IN_PROGRESS
+        - DETECT_IN_PROGRESS
         - INVITE_EXPIRED
+        - EXPORT_FILE_EXPIRED
+        - DETECT_SESSION_EXPIRED
+        - PAYLOAD_TOO_LARGE
         - BUSINESS_RULE_VIOLATION
         - RATE_LIMITED
         - INTERNAL
@@ -1874,7 +2128,187 @@ components:
             server_record:
               type: object
               description: 服务端当前版本（客户端据此决定合并策略）
-              additionalProperties: true
+          additionalProperties: true
+
+    DataJobFile:
+      type: object
+      required: [part, filename, size_bytes, sha256, download_path]
+      properties:
+        part: { type: integer, minimum: 1 }
+        filename: { type: string, description: '用户可见文件名（已做非法字符防护 · 多分片带 _NofM 后缀）' }
+        size_bytes: { type: integer }
+        sha256: { type: string, description: '分片内容 SHA-256（hex · 客户端下载后强校验）' }
+        download_path: { type: string, description: '相对下载路径（/data-jobs/{id}/download?part=N）' }
+
+    DataJob:
+      type: object
+      description: |
+        导入/导出统一任务对象（data-import-export v1.0 §6/§7.6 · 二期起含导入）。
+        客户端轮询语义：导出 succeeded ⇒ 读 files 下载；导入 succeeded ⇒ result_summary
+        有 imported/skipped 且客户端触发 triggerOnMutation 同步刷新；failed ⇒ error.code
+        只用于日志（用户文案由 error-mapper 统一）；stage + stage_started_at + server_now
+        驱动阶段型模拟进度（导出 querying → packaging；导入 validating 单阶段）。
+      required:
+        - id
+        - type
+        - status
+        - stage
+        - stage_started_at
+        - retryable
+        - error
+        - attempts
+        - created_at
+        - started_at
+        - finished_at
+        - result_summary
+        - files
+        - file_expires_at
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string, enum: [import, export] }
+        status: { type: string, enum: [queued, processing, succeeded, failed] }
+        stage:
+          type: string
+          enum: [validating, writing, querying, packaging]
+          nullable: true
+          description: 进行中阶段（导出固定 querying → packaging；失败时保留失败阶段）
+        stage_started_at: { type: string, format: date-time, nullable: true }
+        retryable: { type: boolean, description: 'failed 语义下：是否可安全重试' }
+        error:
+          type: object
+          nullable: true
+          required: [code, message, stage]
+          properties:
+            code:
+              type: string
+              enum: [ARTIFACT_MISSING, CONTEXT_INVALIDATED, CONSTRAINT_VIOLATION, TRANSIENT_DB, TRANSIENT_IO, WORKER_LOST, QUEUE_LEASE_EXPIRED, INTERNAL]
+              description: |
+                任务执行期失败分类（§9.5 · 与 HTTP 错误码是两套东西）。
+                终态失败（status=failed · retryable=false）：ARTIFACT_MISSING / CONTEXT_INVALIDATED /
+                CONSTRAINT_VIOLATION / INTERNAL；
+                重试中（status=queued · 保留上次失败原因）：TRANSIENT_DB / TRANSIENT_IO / WORKER_LOST；
+                排队租约到期（status=failed · retryable=true · 释放并发闸口后可重新发起）：QUEUE_LEASE_EXPIRED。
+                客户端文案唯一出口 = error-mapper.describeDataJobError（禁渲染 message）。
+            message: { type: string, description: '开发向 · 不直接展示终端用户' }
+            stage:
+              type: string
+              enum: [validating, writing, querying, packaging]
+              nullable: true
+        attempts: { type: integer, description: '已尝试次数（claim 时递增）' }
+        detect_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: 导入溯源链（type=import 时非空 · 导出恒 null）
+        ledger_id:
+          type: string
+          format: uuid
+          description: 任务所属账本（导出为创建时解析/指定的目标账本）
+        ledger_name:
+          type: string
+          nullable: true
+          description: 任务所属账本名（§7.6 · 任务卡展示归属；多账本用户据此区分）
+        export_from:
+          type: string
+          format: date-time
+          nullable: true
+          description: 导出区间起点（含 · 双 null = 全部流水）
+        export_to:
+          type: string
+          format: date-time
+          nullable: true
+          description: 导出区间排他端（不含 · = 所选止日次日 00:00；客户端「重新生成」用 result_summary.source_date_from/to 原区间重发，不反解端点）
+        created_at: { type: string, format: date-time }
+        started_at: { type: string, format: date-time, nullable: true }
+        finished_at: { type: string, format: date-time, nullable: true }
+        result_summary:
+          type: object
+          nullable: true
+          description: '导出：{ entry_count, part_count, storage_month, source_date_from, source_date_to }；导入：{ imported, skipped, error_count, warning_count }（§7.6）'
+        files:
+          type: array
+          items: { $ref: '#/components/schemas/DataJobFile' }
+        file_expires_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: 产物有效期（succeeded + 24h · 过期后下载 410）
+
+    DetectReport:
+      type: object
+      description: |
+        导入检测报告（data-import-export v1.0 §4.2）。
+        errors_preview/warnings_preview 各前 100 条（超出由 *_truncated 标记，完整清单走
+        report_path 的 CSV 下载）；value_preview ≤120 code points 且公式守卫编码沿用导出态。
+        unmatched_members 仅 is_costra_export=true 时非空（外部 CSV 未匹配直接归操作者 + WARNING）。
+      required:
+        - detect_id
+        - ledger_id
+        - ledger_name
+        - family_kind
+        - file_name
+        - file_size
+        - file_sha256
+        - is_costra_export
+        - formula_guard
+        - total_rows
+        - importable_rows
+        - error_count
+        - warning_count
+        - errors_preview
+        - warnings_preview
+        - errors_truncated
+        - warnings_truncated
+        - unmatched_members
+        - unmatched_members_truncated
+        - report_path
+        - created_at
+        - expires_at
+      properties:
+        detect_id: { type: string, format: uuid }
+        ledger_id: { type: string, format: uuid }
+        ledger_name: { type: string }
+        family_kind: { type: string, enum: [personal, shared] }
+        file_name: { type: string, nullable: true }
+        file_size: { type: integer, description: '字节数' }
+        file_sha256: { type: string, description: '源文件内容 SHA-256（hex）' }
+        is_costra_export: { type: boolean, description: '表头指纹九列精确匹配' }
+        formula_guard: { type: string, enum: [apostrophe-v2, none] }
+        total_rows: { type: integer, description: '数据行总数（不含表头）' }
+        importable_rows: { type: integer, description: '可导入行数（= total - 错误行数）' }
+        error_count: { type: integer }
+        warning_count: { type: integer }
+        errors_preview:
+          type: array
+          items: { $ref: '#/components/schemas/DetectReportIssue' }
+        warnings_preview:
+          type: array
+          items: { $ref: '#/components/schemas/DetectReportIssue' }
+        errors_truncated: { type: boolean }
+        warnings_truncated: { type: boolean }
+        unmatched_members:
+          type: array
+          items:
+            type: object
+            required: [nickname, row_count]
+            properties:
+              nickname: { type: string }
+              row_count: { type: integer }
+        unmatched_members_truncated: { type: boolean }
+        report_path: { type: string, description: '报告下载相对路径（24h 有效）' }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time, description: 'commit 有效期（15 分钟）' }
+
+    DetectReportIssue:
+      type: object
+      required: [row, field, code, value_preview]
+      properties:
+        row: { type: integer, description: '逻辑记录序号（表头=0，首条数据=1 · 报告 CSV 另含物理行号）' }
+        field: { type: string, description: '标准列名（汇总级为空串）' }
+        code:
+          type: string
+          description: '机读码（EMPTY_REQUIRED/DATE_INVALID/TIME_INVALID/TYPE_UNRECOGNIZED/AMOUNT_INVALID/AMOUNT_ZERO/CATEGORY_NOT_FOUND/CATEGORY_TYPE_MISMATCH/MEMBER_AMBIGUOUS/MEMBER_UNMATCHED/AMOUNT_NEGATIVE_ABS/AMOUNT_ROUNDED/SUBCATEGORY_FALLBACK/SHARED_TYPE_IGNORED/SHARED_TYPE_UNRECOGNIZED/NOTE_TRUNCATED/SHARED_DEFAULT_SUMMARY/SHARED_FORCED_PERSONAL）'
+        value_preview: { type: string, description: '出错字段的值（≤120 code points）' }
 
     AuthTokenPair:
       type: object
@@ -2405,8 +2839,9 @@ components:
           type: integer
           format: int64
           description: |
-            批量写入版本戳（L13 E1）。仅在绕过 entryService 的批量写入路径（导入 / 运维脚本 /
-            数据修复）中同事务 +1。客户端本地按 family 记录 { [ledgerId]: sync_epoch }，比对不一致
+            批量写入版本戳（L13 E1）。仅在绕过 entryService 且未经 sync-hold 保护的批量写入路径
+            （运维脚本 / 数据修复）中同事务 +1；导入 worker 大事务由 sync-hold 保护（§5.2 · 不 +1）。
+            客户端本地按 family 记录 { [ledgerId]: sync_epoch }，比对不一致
             = "上次同步后发生过批量写入" → watermark 清零 → 全量重拉，规避 change_seq"已取号未提交"洞。
             optional：灰度期旧服务端不返回；客户端缺失归一化为 0，与本列 DEFAULT 0 对齐。
 

@@ -15,6 +15,7 @@
  *   1. AppError → 使用 code + httpStatus 序列化；保留 details + retryAfterSec
  *   2. Fastify 内置校验错误（`FST_ERR_VALIDATION` / error.validation）→ 映射为 INVALID_ARGUMENT
  *   3. Fastify 内置 body parse 错误 → UNSUPPORTED_MEDIA_TYPE / MALFORMED_JSON
+ *   3b. multipart 文件超限（FST_REQ_FILE_TOO_LARGE）→ PAYLOAD_TOO_LARGE（导入方案 §9.5）
  *   4. 其他 Error → 转 INTERNAL，日志记录原 cause
  *   5. 路由未命中（setNotFoundHandler）→ NOT_FOUND
  *
@@ -128,6 +129,19 @@ export async function registerErrorHandler(app: FastifyInstance): Promise<void> 
       (err as { cause?: unknown }).cause instanceof SyntaxError
     ) {
       serialize(new AppError(ErrorCode.MALFORMED_JSON, { message: err.message }), req, reply);
+      return;
+    }
+    //   3.3 multipart 文件超 fileSize 上限（@fastify/multipart · 导入方案 §9.5）：
+    //     该错误不是 AppError，没有映射会漏成 500 INTERNAL（用户看到"服务异常"而不是"文件太大"）。
+    if (err.code === 'FST_REQ_FILE_TOO_LARGE') {
+      serialize(
+        new AppError(ErrorCode.PAYLOAD_TOO_LARGE, {
+          message: '文件超过大小上限，请拆分后分批导入',
+          cause: err,
+        }),
+        req,
+        reply,
+      );
       return;
     }
 

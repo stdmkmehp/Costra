@@ -41,6 +41,9 @@ export interface LedgerEntity {
   balanceVersion: number;
   // ─── 批量写入版本戳（L13 E1 · migration 0019）────────────────────────
   syncEpoch: number;
+  // ─── 导入 sync-hold（migration 0021 · 方案 §5.2 · 无 hold 为 NULL 常态）───
+  syncHoldSeq: number | null;
+  syncHoldUntil: Date | null;
 }
 
 interface LedgerRow {
@@ -58,6 +61,9 @@ interface LedgerRow {
   balance_version: number;
   // BIGINT · 真 PG 返 string · pg-mem 返 number
   sync_epoch: string | number;
+  // BIGINT 可空 · 真 PG 返 string · pg-mem 返 number（无 hold 为 NULL 常态）
+  sync_hold_seq: string | number | null;
+  sync_hold_until: Date | null;
 }
 
 function rowToEntity(r: LedgerRow): LedgerEntity {
@@ -74,12 +80,15 @@ function rowToEntity(r: LedgerRow): LedgerEntity {
     balanceBaselineSeq: Number(r.balance_baseline_seq),
     balanceVersion: r.balance_version,
     syncEpoch: Number(r.sync_epoch),
+    syncHoldSeq: r.sync_hold_seq == null ? null : Number(r.sync_hold_seq),
+    syncHoldUntil: r.sync_hold_until,
   };
 }
 
 const SELECT_COLUMNS = `
   id, family_id, name, currency, created_at, updated_at, deleted_at, version,
-  balance_cents, balance_baseline_seq, balance_version, sync_epoch
+  balance_cents, balance_baseline_seq, balance_version, sync_epoch,
+  sync_hold_seq, sync_hold_until
 `;
 
 /**
@@ -169,18 +178,20 @@ export async function findById(
 export async function findWithFamilyById(
   ledgerId: string,
   client?: Runner,
-): Promise<{ id: string; familyId: string; kind: string } | null> {
+): Promise<{ id: string; familyId: string; kind: string; name: string } | null> {
   const runner = client ?? exec();
   const res = await runner.query(
-    `SELECT l.id AS ledger_id, l.family_id AS family_id, f.kind AS kind
+    `SELECT l.id AS ledger_id, l.family_id AS family_id, f.kind AS kind, l.name AS ledger_name
        FROM ledgers l
        JOIN families f ON f.id = l.family_id AND f.deleted_at IS NULL
       WHERE l.id = $1 AND l.deleted_at IS NULL
       LIMIT 1`,
     [ledgerId],
   );
-  const row = res.rows[0] as unknown as { ledger_id: string; family_id: string; kind: string } | undefined;
-  return row ? { id: row.ledger_id, familyId: row.family_id, kind: row.kind } : null;
+  const row = res.rows[0] as unknown as
+    | { ledger_id: string; family_id: string; kind: string; ledger_name: string }
+    | undefined;
+  return row ? { id: row.ledger_id, familyId: row.family_id, kind: row.kind, name: row.ledger_name } : null;
 }
 
 /**
@@ -201,6 +212,26 @@ export async function findFirstByFamilyId(
     [familyId],
   );
   return res.rows[0] ? rowToEntity(res.rows[0]) : null;
+}
+
+/**
+ * 查 family 的全部 active ledger（当前 1:1 语义下至多一行）。
+ * 消费方：syncPullService —— sync-hold 钳制必须按"所有未过期 hold 取 min"（不变量 H4），
+ * 即使当前 1:1 也按集合实现，防未来放开 1:N 时另一个 ledger 的号段漏出闸门。
+ */
+export async function findAllActiveByFamilyId(
+  familyId: string,
+  client?: Runner,
+): Promise<LedgerEntity[]> {
+  const runner = client ?? exec();
+  const res = await runner.query(
+    `SELECT ${SELECT_COLUMNS}
+       FROM ledgers
+      WHERE family_id = $1 AND deleted_at IS NULL
+      ORDER BY created_at ASC`,
+    [familyId],
+  );
+  return res.rows.map(rowToEntity);
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -322,6 +353,98 @@ export async function rebaseBalance(
     [input.ledgerId, input.newBalanceCents, input.clientBaseVersion],
   );
   return res.rows[0] ? rowToEntity(res.rows[0]) : null;
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 导入 sync-hold（migration 0021 · 方案 §5.2 · E2b）
+// ═════════════════════════════════════════════════════════════════════════════
+
+/** hold 兜底 TTL（方案 §5.2.3 不变量 H3 · 远大于 5,000 行导入典型耗时 3~10s） */
+export const SYNC_HOLD_TTL_SECONDS = 120;
+
+/**
+ * 设置 sync-hold（独立短事务 · 必须在导入大事务之前提交 · 不变量 H1）。
+ *
+ * 闸门 = 当前已分配的最大 change_seq：导入随后取的号必然 > 闸门，
+ * pull 侧按 `change_seq <= MIN(未过期 hold)` 钳制，watermark 不可能越过未提交号段。
+ *
+ * ⚠️ pg-mem 不支持 `SELECT last_value FROM <sequence>`（"not selectable"），
+ * 按方案 §5.2.3 的既定兜底改用 `nextval` —— 每次导入消耗一个号（0016 后序列有空洞无害），
+ * 取值偏大是安全侧（§5.2.3：把尚未取号的导入数据暂时挡在闸门外，hold 解除后立即恢复）。
+ *
+ * 返回闸门值（供失败路径条件清除 · 防误清新一轮执行设置的 hold）；
+ * 返回 null = ledger 已删除（调用方按上下文失效处理）。
+ */
+export async function setSyncHold(ledgerId: string, client?: Runner): Promise<number | null> {
+  const runner = client ?? exec();
+  const res = await runner.query(
+    `UPDATE ledgers
+        SET sync_hold_seq   = (SELECT nextval('entries_change_seq')),
+            sync_hold_until = now() + interval '${SYNC_HOLD_TTL_SECONDS} seconds'
+      WHERE id = $1 AND deleted_at IS NULL
+      RETURNING sync_hold_seq`,
+    [ledgerId],
+  );
+  const row = (res.rows as Array<{ sync_hold_seq: string | number | null }>)[0];
+  if (!row) return null;
+  return row.sync_hold_seq == null ? null : Number(row.sync_hold_seq);
+}
+
+/**
+ * 清除 sync-hold（导入失败/重试路径 · 方案 §5.2.3 阶段 3 不变量 H3）。
+ * 传 expectedSeq 时为条件清除（仅当当前闸门值仍是本执行体设置的那个），
+ * 防并发误清新一轮导入设置的 hold；即使本调用失败，sync_hold_until 也兜底自愈。
+ */
+export async function clearSyncHold(
+  ledgerId: string,
+  expectedSeq?: number | null,
+  client?: Runner,
+): Promise<void> {
+  const runner = client ?? exec();
+  if (expectedSeq != null) {
+    await runner.query(
+      `UPDATE ledgers
+          SET sync_hold_seq = NULL, sync_hold_until = NULL
+        WHERE id = $1 AND sync_hold_seq = $2`,
+      [ledgerId, expectedSeq],
+    );
+    return;
+  }
+  await runner.query(
+    `UPDATE ledgers
+        SET sync_hold_seq = NULL, sync_hold_until = NULL
+      WHERE id = $1 AND (sync_hold_seq IS NOT NULL OR sync_hold_until IS NOT NULL)`,
+    [ledgerId],
+  );
+}
+
+/**
+ * 导入大事务末尾的唯一 ledgers 写（不变量 H2 · 与余额同一语句同事务）：
+ * 汇总 delta 更新 balance_cents/balance_version + 解除 sync_hold。
+ *
+ * ⚠️ 不能复用 applyBalanceDelta：它在 delta=0 时 short-circuit 跳过 UPDATE，
+ * 全 transfer 导入会连带跳过 hold 解除（该 family 的 sync 白停 120s）。
+ * 本函数 delta=0 时也执行（只是不动 balance 数值——仍会推进 balance_version，
+ * 与"一次业务动作 = 一次版本推进"口径一致）。
+ *
+ * ⚠️ 刻意不 bump sync_epoch（方案 §5.2.5）：导入路径用 sync-hold 防止 watermark
+ * 越过未提交号段，导入数据走正常增量窗口下发；sync_epoch +1 仅留给
+ * 未经 sync-hold 保护的批量写入（运维直连 SQL 修复）。
+ */
+export async function releaseHoldAndApplyDelta(
+  input: { ledgerId: string; delta: number },
+  client: Runner,
+): Promise<boolean> {
+  const res = await client.query(
+    `UPDATE ledgers
+        SET balance_cents   = balance_cents + $2,
+            balance_version = balance_version + 1,
+            sync_hold_seq   = NULL,
+            sync_hold_until = NULL
+      WHERE id = $1`,
+    [input.ledgerId, input.delta],
+  );
+  return (res.rowCount ?? 0) > 0;
 }
 
 // ─── 停服迁移 / 数据回填 ──────────────────────────────────────────────────

@@ -42,9 +42,17 @@ export enum ErrorCode {
   VERSION_CONFLICT = 'VERSION_CONFLICT',
   DUPLICATE_RESOURCE = 'DUPLICATE_RESOURCE',
   ALREADY_MEMBER = 'ALREADY_MEMBER',
+  EXPORT_JOB_IN_PROGRESS = 'EXPORT_JOB_IN_PROGRESS',
+  IMPORT_JOB_IN_PROGRESS = 'IMPORT_JOB_IN_PROGRESS',
+  DETECT_IN_PROGRESS = 'DETECT_IN_PROGRESS',
 
   // --- 410 已失效 ---
   INVITE_EXPIRED = 'INVITE_EXPIRED',
+  EXPORT_FILE_EXPIRED = 'EXPORT_FILE_EXPIRED',
+  DETECT_SESSION_EXPIRED = 'DETECT_SESSION_EXPIRED',
+
+  // --- 413 载荷过大 ---
+  PAYLOAD_TOO_LARGE = 'PAYLOAD_TOO_LARGE',
 
   // --- 422 业务规则 ---
   BUSINESS_RULE_VIOLATION = 'BUSINESS_RULE_VIOLATION',
@@ -85,8 +93,15 @@ export const ErrorHttpStatus: Readonly<Record<ErrorCode, number>> = Object.freez
   [ErrorCode.VERSION_CONFLICT]: 409,
   [ErrorCode.DUPLICATE_RESOURCE]: 409,
   [ErrorCode.ALREADY_MEMBER]: 409,
+  [ErrorCode.EXPORT_JOB_IN_PROGRESS]: 409,
+  [ErrorCode.IMPORT_JOB_IN_PROGRESS]: 409,
+  [ErrorCode.DETECT_IN_PROGRESS]: 409,
 
   [ErrorCode.INVITE_EXPIRED]: 410,
+  [ErrorCode.EXPORT_FILE_EXPIRED]: 410,
+  [ErrorCode.DETECT_SESSION_EXPIRED]: 410,
+
+  [ErrorCode.PAYLOAD_TOO_LARGE]: 413,
 
   [ErrorCode.BUSINESS_RULE_VIOLATION]: 422,
 
@@ -131,8 +146,15 @@ export const ErrorRetryStrategy: Readonly<Record<ErrorCode, RetryStrategy>> = Ob
   [ErrorCode.VERSION_CONFLICT]: 'none',
   [ErrorCode.DUPLICATE_RESOURCE]: 'none',
   [ErrorCode.ALREADY_MEMBER]: 'none',
+  [ErrorCode.EXPORT_JOB_IN_PROGRESS]: 'none',
+  [ErrorCode.IMPORT_JOB_IN_PROGRESS]: 'none',
+  [ErrorCode.DETECT_IN_PROGRESS]: 'none',
 
   [ErrorCode.INVITE_EXPIRED]: 'none',
+  [ErrorCode.EXPORT_FILE_EXPIRED]: 'none',
+  [ErrorCode.DETECT_SESSION_EXPIRED]: 'none',
+
+  [ErrorCode.PAYLOAD_TOO_LARGE]: 'none',
 
   [ErrorCode.BUSINESS_RULE_VIOLATION]: 'none',
 
@@ -174,6 +196,8 @@ export const ErrorLogLevels: Readonly<Record<ErrorCode, ErrorLogLevel>> = Object
   [ErrorCode.IDEMPOTENCY_KEY_REQUIRED]: 'warn',
   [ErrorCode.IDEMPOTENCY_KEY_MISMATCH]: 'warn',
   [ErrorCode.UNSUPPORTED_MEDIA_TYPE]: 'warn',
+  // 客户端本应先做本地 1MB 校验，走到服务端说明校验被绕过（方案 §9.5）
+  [ErrorCode.PAYLOAD_TOO_LARGE]: 'warn',
 
   // --- 401：过期类是正常生命周期（客户端自动刷新 / 跳登录），伪造类才可疑 ---
   [ErrorCode.UNAUTHENTICATED]: 'warn',
@@ -193,9 +217,17 @@ export const ErrorLogLevels: Readonly<Record<ErrorCode, ErrorLogLevel>> = Object
   [ErrorCode.VERSION_CONFLICT]: 'info',
   [ErrorCode.DUPLICATE_RESOURCE]: 'info',
   [ErrorCode.ALREADY_MEMBER]: 'info',
+  // 并发闸口：用户重复发起导出是设计内的正常分支（客户端轮询任务卡）
+  [ErrorCode.EXPORT_JOB_IN_PROGRESS]: 'info',
+  // 并发闸口：同账本导入任务 / 同用户检测会话（方案 §4.4 · 与导出口径一致）
+  [ErrorCode.IMPORT_JOB_IN_PROGRESS]: 'info',
+  [ErrorCode.DETECT_IN_PROGRESS]: 'info',
 
   // --- 410：TTL 到期是设计内的 ---
   [ErrorCode.INVITE_EXPIRED]: 'info',
+  [ErrorCode.EXPORT_FILE_EXPIRED]: 'info',
+  // 检测会话 15 分钟有效期到期 / 已被消费（方案 §4.5）
+  [ErrorCode.DETECT_SESSION_EXPIRED]: 'info',
 
   // --- 422：业务规则拒绝，UI 有对应文案 ---
   [ErrorCode.BUSINESS_RULE_VIOLATION]: 'info',

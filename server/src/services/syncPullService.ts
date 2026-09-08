@@ -151,30 +151,46 @@ export async function syncPull(input: SyncPullInput): Promise<SyncPullResult> {
     });
   }
 
-  // 2. 拉增量（rows: PullEntryRow[] = EntryEntity & { familyId } · 含 changeSeq）
+  // 2. sync-hold 钳制（导入方案 v1.0 §5.2.4 · E2b）：
+  //    cap = 该 family 所有未过期 hold 的 MIN(sync_hold_seq)（不变量 H4：取 min 而非"所属 ledger"，防 1:N 放开后漏闸门）；
+  //    cap === null（无 hold · 常态）⇒ 行为与既有完全一致，零回归面；
+  //    cap !== null ⇒ entries 查询加 change_seq <= cap，watermark 天然不越过 cap，
+  //    has_more 在钳制后的结果集内判定（截断即 false · 客户端本轮收敛，下轮周期/mutation 再来——
+  //    不得为 hold 造"服务端还有数据但拉不到"的 has_more=true，否则客户端在 300ms 续拉里空转）。
+  const ledgerEntities = await ledgerRepo.findAllActiveByFamilyId(input.familyId);
+  const now = new Date();
+  const activeHolds = ledgerEntities
+    .filter((l) => l.syncHoldSeq !== null && l.syncHoldUntil !== null && l.syncHoldUntil > now)
+    .map((l) => l.syncHoldSeq as number);
+  const cap = activeHolds.length > 0 ? Math.min(...activeHolds) : null;
+
+  // 3. 拉增量（rows: PullEntryRow[] = EntryEntity & { familyId } · 含 changeSeq）
   const { rows, hasMore } = await findEntriesByFamilySince({
     since: input.since,
     familyId: input.familyId,
     limit: input.limit,
+    cap,
   });
 
-  // 3. watermark 推进（v1.2：用 changeSeq 单调推进）
+  // 4. watermark 推进（v1.2：用 changeSeq 单调推进）
   //    rows 已按 change_seq ASC 排序（entryRepo SQL）+ sequence 严格单调 → 末位即最大
   //    rows.length === 0 时保持 since 不变（协议 §6.3 单调铁律）
+  //    sync-hold 下 rows 天然 ≤ cap（查询已钳制），watermark 不可能越过未提交号段（§5.2.4）
   const watermark = rows.length > 0
     ? rows[rows.length - 1].changeSeq
     : input.since;
 
-  // 4. 计算系统分类签名（spec §4）
+  // 5. 计算系统分类签名（spec §4）
   //    L13 §4.3：仅收敛轮（has_more=false）计算；分页轮跳过，避免全表扫系统分类的
   //    per-request 固定成本被分页循环 ×10~40。字段 optional，向后兼容。
   const categoriesRevision = hasMore ? undefined : await computeSystemCategoriesRevision();
 
-  // 5. COSTRA-4xx：下发该 family 下所有 active ledger 的最新状态（含 balance + sync_epoch）
+  // 6. COSTRA-4xx：下发该 family 下所有 active ledger 的最新状态（含 balance + sync_epoch）
   //    1:1 语义下，一个 family 就一行 ledger，数据量可忽略，每次都全量下发（含分页轮）：
   //    - 供客户端 E1 epoch 前置比对（L13 §4.2）
   //    - 供资产不断供（每轮覆盖写 ledgerBalanceApi 缓存）
-  const ledgers = await listLedgersForFamily(input.familyId);
+  //    sync-hold 是纯服务端机制：LedgerWire 不新增字段（§5.2.4 · 客户端零改动）
+  const ledgers = ledgerEntities.map(ledgerToWire);
 
   return {
     watermark,
@@ -187,16 +203,6 @@ export async function syncPull(input: SyncPullInput): Promise<SyncPullResult> {
       ledgers,
     },
   };
-}
-
-/**
- * 拉取 family 下所有 active ledger（含 balance 字段），用于 sync-pull 下发。
- * 1:1 语义下至多一行。
- */
-async function listLedgersForFamily(familyId: string): Promise<LedgerWire[]> {
-  const ledger = await ledgerRepo.findFirstByFamilyId(familyId);
-  if (!ledger) return [];
-  return [ledgerToWire(ledger)];
 }
 
 interface LedgerWire {

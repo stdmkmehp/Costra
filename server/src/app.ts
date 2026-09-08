@@ -41,6 +41,8 @@ import { registerLedgersRoutes } from './routes/ledgers.js';
 import { registerBudgetsRoutes } from './routes/budgets.js';
 import { registerGmRoutes } from './routes/gm.js';
 import { registerTipsRoutes } from './routes/tips.js';
+import { registerDataJobsRoutes } from './routes/dataJobs.js';
+import { registerImportJobsRoutes } from './routes/importJobs.js';
 import { createRecurringService } from './services/recurringService.js';
 import { createEntryService } from './services/entryService.js';
 import { createScheduler, type RecurringScheduler } from './services/recurringScheduler.js';
@@ -48,13 +50,18 @@ import {
   createTipReconcileScheduler,
   type TipReconcileScheduler,
 } from './services/tipReconcileScheduler.js';
+import {
+  createDataJobScheduler,
+  type DataJobScheduler,
+} from './services/dataJobScheduler.js';
 import { refreshCache as refreshWorkdayCache } from './services/workdayProvider.js';
 
-// 让 app.recurringScheduler / app.tipReconcileScheduler 可访问（测试和优雅关停用）
+// 让 app.recurringScheduler / app.tipReconcileScheduler / app.dataJobScheduler 可访问（测试和优雅关停用）
 declare module 'fastify' {
   interface FastifyInstance {
     recurringScheduler?: RecurringScheduler;
     tipReconcileScheduler?: TipReconcileScheduler;
+    dataJobScheduler?: DataJobScheduler;
   }
 }
 
@@ -120,9 +127,17 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
     tipReconcileScheduler.start(); // test 环境内部会自动跳过 setInterval
   }
 
+  // 数据任务调度器（data-import-export v1.0 §7.5 · 2s tick + 创建后 kick · 一期仅导出）
+  const dataJobScheduler = createDataJobScheduler();
+  app.decorate('dataJobScheduler', dataJobScheduler);
+  if (opts.autoStartScheduler !== false) {
+    dataJobScheduler.start(); // test 环境内部会自动跳过 setInterval
+  }
+
   app.addHook('onClose', async () => {
     await scheduler.stop();
     await tipReconcileScheduler.stop();
+    await dataJobScheduler.stop();
   });
 
   // 业务路由全部进 /v1 prefix 子作用域（COSTRA-156 · 让实装服从 OpenAPI servers 契约）
@@ -143,6 +158,8 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
     await registerBudgetsRoutes(v1);
     await registerGmRoutes(v1);
     await registerTipsRoutes(v1);
+    await registerDataJobsRoutes(v1);
+    await registerImportJobsRoutes(v1);
   }, { prefix: '/v1' });
 
   return app;

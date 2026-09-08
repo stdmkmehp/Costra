@@ -140,6 +140,34 @@ export async function lockActiveMemberByLedger(
 }
 
 /**
+ * 在写事务中按 family + user_ids 集合锁定活跃成员行（导入 worker 复核 · §7.5）。
+ *
+ * 与 lockActiveMember 的区别：入参是 id 集合，返回仍活跃的 user_id 列表。
+ * 逐 id 按字典序加锁（与 ORDER BY user_id 单语句等价的全序），防并发路径间死锁；
+ * FOR UPDATE 与 setLeftAt/setAllActiveLeftAt 的 UPDATE 冲突，锁持有至事务结束（堵 TOCTOU）。
+ * 逐 id 而非 `= ANY($2)`：pg-mem 不支持数组参数 ANY 比较（测试通道与真 PG 行为须一致）。
+ *
+ * 加锁顺序必须为「family_members → entries → ledgers」（与 entryService 写路径一致）。
+ */
+export async function lockActiveMembersByIds(
+  familyId: string,
+  userIds: readonly string[],
+  client: Runner,
+): Promise<string[]> {
+  const active: string[] = [];
+  for (const userId of [...userIds].sort()) {
+    const res = await client.query(
+      `SELECT user_id FROM family_members
+        WHERE family_id = $1 AND user_id = $2 AND left_at IS NULL
+        FOR UPDATE`,
+      [familyId, userId],
+    );
+    if ((res.rows as Array<{ user_id: string }>)[0]) active.push(userId);
+  }
+  return active;
+}
+
+/**
  * COSTRA-260: 校验 user 是否为 family 的成员（包含 active + left）
  *
  * 用途：统计接口的 user_id 维度越权防护 —— 允许查询已退出成员的历史数据，

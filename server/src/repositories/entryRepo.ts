@@ -347,6 +347,12 @@ export interface PullCursor {
   familyId: string;
   /** 单批次最多返回 · 默认 200 · 上限 500 */
   limit: number;
+  /**
+   * 导入 sync-hold 钳制上界（方案 §5.2.4 · E2b）：非 null 时只下发 change_seq <= cap 的行。
+   * cap = 该 family 所有未过期 hold 的 MIN(sync_hold_seq)；无 hold 传 null（常态 · 零回归面）。
+   * has_more 在 <= cap 的结果集内判定（截断即 false · 客户端本轮收敛下轮再来）。
+   */
+  cap?: number | null;
 }
 
 /**
@@ -388,9 +394,10 @@ export async function findEntriesByFamilySince(
        JOIN ledgers l ON l.id = e.ledger_id
       WHERE l.family_id = $1
         AND e.change_seq > $2
+        AND ($4::bigint IS NULL OR e.change_seq <= $4)
       ORDER BY e.change_seq ASC
       LIMIT $3`,
-    [cursor.familyId, cursor.since, limitPlusOne],
+    [cursor.familyId, cursor.since, limitPlusOne, cursor.cap ?? null],
   );
   const rows = res.rows.slice(0, cursor.limit).map((row): PullEntryRow => ({
     ...rowToEntity(row),
