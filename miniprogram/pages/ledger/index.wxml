@@ -335,7 +335,7 @@
       </view>
       <view class="ctx-menu__item" catchtap="onCtxAmount">
         <view class="ctx-ic ctx-ic--amount"><text>¥</text></view>
-        <text class="ctx-menu__text">修改金额</text>
+        <text class="ctx-menu__text">修改金额/日期</text>
       </view>
       <view class="ctx-menu__item" catchtap="onCtxCategory">
         <view class="ctx-ic ctx-ic--grid"><view></view><view></view><view></view><view></view></view>

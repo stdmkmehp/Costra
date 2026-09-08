@@ -210,8 +210,8 @@ export function clampMenuPosition(
 ): { left: number; top: number } {
   const rpxToPx = (windowWidth || 375) / 750;
   // 菜单尺寸须与 styles/ctx-menu.wxss .ctx-menu 保持同步：
-  // 宽 300rpx；高 = 4×96rpx item + 上下 padding 8rpx×2 + 删除项 margin 6rpx = 408rpx
-  const menuW = 300 * rpxToPx;
+  // 宽 320rpx；高 = 4×96rpx item + 上下 padding 8rpx×2 + 删除项 margin 6rpx = 408rpx
+  const menuW = 320 * rpxToPx;
   const menuH = 408 * rpxToPx;
   const margin = 12;
 

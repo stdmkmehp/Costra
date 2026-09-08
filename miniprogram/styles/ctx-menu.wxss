@@ -15,7 +15,9 @@
 /* ─── 菜单卡片：暖调浮起白 + 毛玻璃 ─── */
 .ctx-menu {
   position: fixed;
-  width: 300rpx;
+  /* 宽 320rpx：容纳最长项「修改金额/日期」（6 汉字 + 斜杠）仍留安全余量；
+     改动须同步 ledger/index.ts 与 pages-recurring/list/model.ts 的 menuW 常量 */
+  width: 320rpx;
   background: rgba(250, 249, 245, 0.82);
   -webkit-backdrop-filter: blur(26rpx) saturate(180%);
   backdrop-filter: blur(26rpx) saturate(180%);
@@ -184,16 +186,19 @@
   border-radius: 0 2rpx 2rpx 0;
 }
 
-/* 启用：线条三角（沿用线条语言） */
-.ctx-ic--play {
-  position: relative;
-  margin-left: 10rpx;  /* 视觉重心补偿：三角的几何中心≠视觉中心，需左移抵消 */
+/* 启用：线条三角（沿用线条语言）。
+   三角本体画在 ::before 上：.ctx-ic 容器保持 34rpx 居中外盒（与全组图标同宽，
+   文字左缘才能逐行对齐）；若直接在元素自身用 width:0 + border 画三角，
+   margin/border 会把 flex 项外盒撑宽，导致该行文字右偏。 */
+.ctx-ic--play::before {
+  content: '';
   width: 0;
   height: 0;
   border-left: 14rpx solid currentColor;
   border-top: 9rpx solid transparent;
   border-bottom: 9rpx solid transparent;
-  background: transparent;
+  /* 视觉重心补偿：右指三角的质心位于包围盒中心左侧，右移 4rpx 使质心对齐容器中心 */
+  margin-left: 4rpx;
 }
 
 /* 禁用：两根等高竖线，居中于 34rpx 容器 */

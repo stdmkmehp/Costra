@@ -2082,10 +2082,10 @@ Page({
 
     const winW = this._winW || 375;
     const winH = this._winH || 667;
-    // 菜单尺寸估算（rpx → px）：须与 index.wxss .ctx-menu 保持同步
-    // （宽 300rpx，高约 5×96rpx item + 上下 padding 8rpx + 删除项 margin 6rpx）
+    // 菜单尺寸估算（rpx → px）：须与 styles/ctx-menu.wxss .ctx-menu 保持同步
+    // （宽 320rpx，高约 5×96rpx item + 上下 padding 8rpx + 删除项 margin 6rpx）
     const rpxToPx = winW / 750;
-    const menuW = 300 * rpxToPx;
+    const menuW = 320 * rpxToPx;
     const menuH = 510 * rpxToPx;
     const margin = 12;
 
@@ -2136,7 +2136,7 @@ Page({
     this._openEditNote(refId);
   },
 
-  /** 菜单：修改金额 */
+  /** 菜单：修改金额/日期（面板内含日期键，保存时 occurred_at 一并入 changedFields） */
   onCtxAmount() {
     const refId = this._ctxRefId;
     this.onCtxMenuClose();

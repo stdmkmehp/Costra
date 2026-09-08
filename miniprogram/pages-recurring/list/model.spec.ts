@@ -84,19 +84,19 @@ describe('list/model', () => {
 
   describe('clampMenuPosition', () => {
     // 窗口 400×800，rpxToPx = 400/750 ≈ 0.5333
-    // menuW = 300 × 0.5333 = 160, menuH = 408 × 0.5333 ≈ 217.6
+    // menuW = 320 × 0.5333 ≈ 170.67, menuH = 408 × 0.5333 ≈ 217.6
     it('居中触点：left = x - menuW/2，向下展开 top = y', () => {
       const { left, top } = clampMenuPosition(200, 300, 400, 800, 0);
-      // left = 200 - 160/2 = 120
-      expect(left).toBe(120);
+      // left = 200 - 170.67/2 ≈ 114.67
+      expect(left).toBeCloseTo(114.67, 1);
       // 下方空间 800-300=500 > menuH+margin，向下展开
       expect(top).toBe(300);
     });
 
     it('右溢出：left 被 clamp 到 winW - menuW - margin', () => {
       const { left } = clampMenuPosition(390, 300, 400, 800, 0);
-      // 左上角 left = 390 - 80 = 310 > 400 - 160 - 12 = 228 → clamp 到 228
-      expect(left).toBe(228);
+      // 左上角 left = 390 - 85.33 ≈ 304.67 > 400 - 170.67 - 12 ≈ 217.33 → clamp 到 217.33
+      expect(left).toBeCloseTo(217.33, 1);
       expect(left).toBeLessThan(390);
     });
 
