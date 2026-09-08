@@ -54,7 +54,7 @@
 
 ---
 
-## 2. 错误码完整字典（共 22 条）
+## 2. 错误码完整字典（共 30 条）
 
 > **字段说明**：
 > - `HTTP`：对应 HTTP 状态码  
@@ -103,12 +103,24 @@
 | 12 | `VERSION_CONFLICT` | conflict | ❌（自动合并） | ✅ 可能弹合并 UI | 乐观锁冲突；响应体为 `ConflictError`；客户端按 `conflict-strategy.md` §4 处理 |
 | 13 | `DUPLICATE_RESOURCE` | conflict | ❌ | ✅ 提示"已存在" | 唯一约束冲突（如家庭内分类名重复） |
 | 14 | `IDEMPOTENCY_KEY_MISMATCH` | conflict | ❌ | ❌（开发 bug） | 同 `Idempotency-Key` 但 body hash 不一致；24h 内同 key 必须同请求体。详见 `id-strategy.md §3.3` |
+| 14a | `ALREADY_MEMBER` | conflict | ❌ | ✅ 提示"已是成员" | 重复加入已是成员的家庭 |
+| 14b | `EXPORT_JOB_IN_PROGRESS` | conflict | ❌ | ✅ 提示"等待完成" | 该用户已有进行中的导出任务（每用户单一活跃导出闸口 · data-import-export v1.0 §9.5） |
+| 14c | `IMPORT_JOB_IN_PROGRESS` | conflict | ❌ | ✅ 提示"等待完成" | 该账本已有进行中的导入任务（同账本单一活跃导入闸口 · data-import-export v1.0 §9.5） |
+| 14d | `DETECT_IN_PROGRESS` | conflict | ❌ | ✅ 提示"稍候" | 该用户已有进行中的检测会话（同用户单一检测并发闸口 · data-import-export v1.0 §9.5） |
 
 ### 2.6 410 · 已失效
 
 | # | code | category | retryable | user_action | 场景说明 |
 |---|---|---|---|---|---|
 | 15 | `INVITE_EXPIRED` | resource | ❌ | ✅ 提示"邀请已过期，请重新邀请" | 邀请口令过 TTL 或已被使用 |
+| 15b | `EXPORT_FILE_EXPIRED` | resource | ❌ | ✅ 提示"重新导出" | 导出产物已过 24h 有效期被清理（data-import-export v1.0 §9.5） |
+| 15c | `DETECT_SESSION_EXPIRED` | resource | ❌ | ✅ 提示"重新上传" | 检测会话已过 15 分钟有效期或已被消费，需重新上传检测（data-import-export v1.0 §9.5） |
+
+### 2.6a 413 · 载荷过大
+
+| # | code | category | retryable | user_action | 场景说明 |
+|---|---|---|---|---|---|
+| 15d | `PAYLOAD_TOO_LARGE` | param | ❌ | ✅ 提示"拆分文件" | 上传文件超过 1MB 上限（客户端应先本地校验；含 multipart 超限 `FST_REQ_FILE_TOO_LARGE` 的映射 · data-import-export v1.0 §9.5） |
 
 ### 2.7 422 · 业务规则
 
@@ -168,7 +180,14 @@
 | `NOT_FOUND` | 记录不存在 | 可能已被删除 | 刷新 |
 | `VERSION_CONFLICT` | 数据冲突 | 该条记录已被其他成员修改 | 查看差异 |
 | `DUPLICATE_RESOURCE` | 已存在 | 该名称已被使用，请换一个 | — |
+| `ALREADY_MEMBER` | 已是成员 | 你已经在该家庭中 | — |
+| `EXPORT_JOB_IN_PROGRESS` | 已有导出任务进行中 | 请等待当前导出完成后再发起 | — |
+| `IMPORT_JOB_IN_PROGRESS` | 该账本已有导入任务进行中 | 请等待当前导入完成后再发起 | — |
+| `DETECT_IN_PROGRESS` | 上一个文件还在检测中 | 请稍候 | — |
 | `INVITE_EXPIRED` | 邀请已过期 | 请联系家庭成员重新邀请 | — |
+| `EXPORT_FILE_EXPIRED` | 文件已过期 | 请重新导出 | — |
+| `DETECT_SESSION_EXPIRED` | 检测已过期 | 请重新上传文件 | — |
+| `PAYLOAD_TOO_LARGE` | 文件过大 | 文件超过 1MB（约 5,000 条记录），请拆分后分批导入 | — |
 | `BUSINESS_RULE_VIOLATION` | （按 `details.rule` 分支） | — | — |
 | `RATE_LIMITED` | 操作过于频繁 | 请稍后再试 | — |
 | `INTERNAL` / `UNAVAILABLE` / `TIMEOUT` | 网络异常 | 请稍后再试 | — |
@@ -215,8 +234,8 @@ throw new AppError(ErrorCode.INVALID_ARGUMENT, 'field "amount" must be > 0', {
 
 | level | 判据 | code |
 |---|---|---|
-| `info` | 预期内的业务分支：服务端与客户端都按契约正常运作，客户端有明确的降级 / 重试 / 提示路径，出现频率与用户规模正相关。仅为链路可观测性留痕 | `NOT_FOUND` · `VERSION_CONFLICT` · `DUPLICATE_RESOURCE` · `ALREADY_MEMBER` · `INVITE_EXPIRED` · `BUSINESS_RULE_VIOLATION` · `FAMILY_PERSONAL_NOT_DELETABLE` · `TOKEN_EXPIRED` · `REFRESH_TOKEN_INVALID` |
-| `warn` | 请求方行为异常而服务端正常：客户端 bug（参数 / 幂等键 / Content-Type）、疑似越权或探测（非过期类 401、403）、限流命中、占位端点被调用、商品配置不一致。需观测趋势，不需立即介入 | `INVALID_ARGUMENT` · `MALFORMED_JSON` · `IDEMPOTENCY_KEY_REQUIRED` · `IDEMPOTENCY_KEY_MISMATCH` · `UNSUPPORTED_MEDIA_TYPE` · `UNAUTHENTICATED` · `WX_CODE_INVALID` · `PERMISSION_DENIED` · `FAMILY_NOT_MEMBER` · `RATE_LIMITED` · `NOT_IMPLEMENTED` · `PAYMENT_PRODUCT_INVALID` |
+| `info` | 预期内的业务分支：服务端与客户端都按契约正常运作，客户端有明确的降级 / 重试 / 提示路径，出现频率与用户规模正相关。仅为链路可观测性留痕 | `NOT_FOUND` · `VERSION_CONFLICT` · `DUPLICATE_RESOURCE` · `ALREADY_MEMBER` · `INVITE_EXPIRED` · `EXPORT_JOB_IN_PROGRESS` · `IMPORT_JOB_IN_PROGRESS` · `DETECT_IN_PROGRESS` · `EXPORT_FILE_EXPIRED` · `DETECT_SESSION_EXPIRED` · `BUSINESS_RULE_VIOLATION` · `FAMILY_PERSONAL_NOT_DELETABLE` · `TOKEN_EXPIRED` · `REFRESH_TOKEN_INVALID` |
+| `warn` | 请求方行为异常而服务端正常：客户端 bug（参数 / 幂等键 / Content-Type）、疑似越权或探测（非过期类 401、403）、限流命中、占位端点被调用、商品配置不一致、客户端大小校验被绕过。需观测趋势，不需立即介入 | `INVALID_ARGUMENT` · `MALFORMED_JSON` · `IDEMPOTENCY_KEY_REQUIRED` · `IDEMPOTENCY_KEY_MISMATCH` · `UNSUPPORTED_MEDIA_TYPE` · `PAYLOAD_TOO_LARGE` · `UNAUTHENTICATED` · `WX_CODE_INVALID` · `PERMISSION_DENIED` · `FAMILY_NOT_MEMBER` · `RATE_LIMITED` · `NOT_IMPLEMENTED` · `PAYMENT_PRODUCT_INVALID` |
 | `error` | 服务端自身故障，需要人介入排查 | `INTERNAL` · `UNAVAILABLE` · `TIMEOUT` |
 
 **日志字段必带 `message`**：同一个 code 常有多个抛出点（如 `NOT_FOUND` 在 `budgetService` 内就有 3 处：ledger 不存在 / family 不存在 / 删除未设置的预算），只靠 `code` + `details` 无法定位抛出点。

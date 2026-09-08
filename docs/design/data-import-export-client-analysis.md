@@ -751,7 +751,7 @@ paths:
         '409':
           description: code=IMPORT_JOB_IN_PROGRESS · 该账本已有导入任务在执行
         '410':
-          description: code=DETECT_SESSION_EXPIRED · 检测报告已过期，请重新检测
+          description: code=DETECT_SESSION_EXPIRED · 检测会话已过期（15min），请重新检测
 ```
 
 #### 确认后异步任务
@@ -777,10 +777,11 @@ paths:
 > 实现：`import_detect_sessions` 上加 partial unique index `(user_id) WHERE status='detecting'`；解析结束（ready/failed）即释放。异常退出导致的僵死 `detecting` 会话由 §7.4 的定时清理按 `created_at` 超时回收。
 > **并发槽保护的是解析而非收流**（v0.8 补充）：判定点后移到 sha256 之后，见 §4.2 的顺序说明与边界承认。
 
-### 4.5 检测报告过期与重新检测
+### 4.5 检测会话过期与重新检测
 
-- 检测报告有效期 **15 分钟**
-- 超时后 `commit` 返回 `410 Gone`，客户端提示 `检测报告已过期，请重新选择文件检测`
+- **检测会话**（= `commit` 有效期）**15 分钟**（`expires_at`）
+- 超时后 `commit` 返回 `410 DETECT_SESSION_EXPIRED`，客户端提示 `检测已过期，请重新选择文件`
+- **问题报告文件寿命独立：24h**（`report_expires_at` · §7.4 v0.8 解耦）。报告不可用（无报告 / 已过 24h / 产物被清理）时 `/import-detect-sessions/{id}/report` 返 **404**，**不是 410** —— 报告没了并不影响该会话在 15 分钟内继续 `commit`；若借用会话过期码，客户端会把仍可确认导入的检测卡整卡重置（v1.3 修正 · §7.6 该端点契约本就是 404）
 - 检测阶段不保留 CSV 文件本体，只保留规范化行产物与摘要（§7.4）
 - 服务端定时清理过期 `ready` 会话及其产物
 
@@ -1050,7 +1051,7 @@ cap   = holds 为空 ? null : min(holds)
 ① 我的 → 设置 → 账本导入 / 导出 → 导出账本
 ② 选择账本、日期范围
 ③ 点"开始导出"
-④ POST /v1/export-jobs → HTTP 202 { job_id }
+④ POST /v1/export-jobs → HTTP 201（返回任务对象，含 job_id）
 ⑤ 页面立即显示任务卡："正在后台生成 · 可以离开此页面"
 ⑥ 服务端按账本拉取全部成员流水 → 生成 CSV → 任务 succeeded
 ⑦ 用户回到页面，任务卡切换为完成态
@@ -1071,16 +1072,16 @@ paths:
           application/json:
             schema:
               type: object
-              required: [ledger_id]
               properties:
+                # ledger_id 可选：缺省回退活跃账本解析；指定时与 detect 同一判据（v1.1）
                 ledger_id: { type: string, format: uuid }
                 # from/to 均可选：省略表示"全部"（§8.4 的默认选项）
                 # 只给 from = 从该日至今；只给 to = 开天辟地至该日
                 from: { type: string, format: date, nullable: true }
                 to:   { type: string, format: date, nullable: true }
       responses:
-        '202':
-          description: 导出任务已创建
+        '201':
+          description: 导出任务已创建（返回完整任务对象，同 GET /data-jobs/:job_id）
         '409':
           description: code=EXPORT_JOB_IN_PROGRESS · 该用户已有导出任务在执行
 ```
@@ -1393,8 +1394,8 @@ CREATE TABLE IF NOT EXISTS import_detect_sessions (
     consumed_at      TIMESTAMPTZ
 );
 
-CREATE INDEX IF NOT EXISTS idx_detect_sessions_user
-  ON import_detect_sessions (user_id, created_at DESC);
+-- v1.1 移除 idx_detect_sessions_user：无消费者（不存在「列用户检测会话」端点，
+-- 任务中心走 data_jobs 侧 idx_data_jobs_user_recent）——无消费者不建索引。
 
 -- §4.2 detect 幂等：同 (user, ledger, sha256) 的 ready 会话可复用
 CREATE INDEX IF NOT EXISTS idx_detect_sessions_dedup
@@ -1442,18 +1443,21 @@ CREATE TABLE IF NOT EXISTS data_jobs (
     -- 失败信息（error_code 取值见 §9.5）
     error_code       TEXT,
     error_message    TEXT,
-    retryable        BOOLEAN NOT NULL DEFAULT false,          -- 仅瞬态错误可重试（§7.5）
+    retryable        BOOLEAN NOT NULL DEFAULT false,          -- 执行期终态失败=false；QUEUE_LEASE_EXPIRED=true（§9.5）
 
     -- worker 抢占与生命周期（run_token/lease 防旧 worker 覆盖新结果）
     attempts         INTEGER NOT NULL DEFAULT 0,
     run_token        UUID,                                    -- 本次执行令牌 · 终态条件更新须匹配
-    lease_expires_at TIMESTAMPTZ,                             -- 租约到期 · 超时才允许被复位
+    lease_expires_at TIMESTAMPTZ,                             -- 执行租约（90s）· 超时才允许被复位
     next_attempt_at  TIMESTAMPTZ,                             -- 可重试任务的下次可抢占时刻（退避）
+    -- v1.3 补：排队租约（10min）· 仅对「从未被认领」的 queued 生效（claim 时置 NULL），
+    -- 用于释放 §4.4 并发闸口，不参与调度判定。语义与算术依据见 §9.5「排队租约」。
+    expires_at       TIMESTAMPTZ,
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     started_at       TIMESTAMPTZ,
     finished_at      TIMESTAMPTZ,
 
-    version          INTEGER NOT NULL DEFAULT 1,
+    -- v1.1 移除 version 列：run_token 条件更新已覆盖其乐观锁用途（无独立消费者）。
 
     -- v0.8：type 与入参字段的一致性（原本全可空且无约束，靠代码自觉）
     CONSTRAINT chk_data_jobs_type_fields CHECK (
@@ -2248,9 +2252,35 @@ v0.6 决策：**不新建审计表，走结构化 pino 日志**。
 | `CONSTRAINT_VIOLATION` | false | 数据违反 DB 业务约束（detect 校验集有漏，属 bug，需告警）|
 | `TRANSIENT_DB` | true | 连接瞬断 / deadlock / `lock_timeout` |
 | `TRANSIENT_IO` | true | 临时 IO 错误 |
-| `INTERNAL` | false | 未分类异常（需人工排查）|
+| `WORKER_LOST` | true | 执行租约（90s）过期被 scheduler 回收（§7.5 僵尸回收）|
+| `QUEUE_LEASE_EXPIRED` | true | 排队租约（10min）内未被 worker 认领（见下方「排队租约」）|
+| `INTERNAL` | false | 未分类异常（需人工排查 · 含僵尸重试次数耗尽）|
+
+> **中间态也会带 `error_code`**（v1.3 补 · 实现既有行为）：瞬时失败回队（`markRetryQueued`）保留上次失败原因且 `status=queued`，因此 `TRANSIENT_DB` / `TRANSIENT_IO` / `WORKER_LOST` 会出现在**重试中**的任务上，不代表任务已失败。客户端只在 `status=failed` 时渲染失败文案。
 
 客户端按此渲染失败原因文案，不解析 `error_message`（后者仅供服务端排查，可能含技术细节）。
+
+#### 排队租约 `expires_at` 与 `QUEUE_LEASE_EXPIRED`（v1.3 补 · 实现既有机制）
+
+`data_jobs` 有**两条互不相干的租约**，因为它们兜的是两种不同的失败：
+
+| 租约列 | 时长 | 适用状态 | 兜的失败 |
+|---|---|---|---|
+| `lease_expires_at` | 90s（执行期续租）| `processing` | worker 执行中崩溃 ⇒ `recoverZombies` 回收 |
+| `expires_at` | 10min | `queued` | worker 长时间不可用，任务**从未被认领** |
+
+**为什么 `queued` 也必须有到期出口**：§4.4 的两个并发闸口（`uq_data_jobs_active_export_per_user` / `uq_data_jobs_active_import_per_family`）都以 `status IN ('queued','processing')` 判定占用。若 worker 进程挂掉，一个永远 `queued` 的任务会**永久占死**该用户的导出槽 / 该 family 的导入槽，且无自愈路径 —— 导入更严重：`detect` 的前置闸口也看这个索引，用户连"选文件检测"都做不了，只能靠运维直连 SQL 解锁。这是"用 `queued` 态做互斥"这一选择的必然配套，不是冗余设计。
+
+**语义边界（三条，实现已满足）**：
+
+- **不参与调度判定**：`claimQueuedJobs` 只看 `status` + `next_attempt_at`，**不读 `expires_at`**。它不是"过期就不执行"，纯粹服务于闸口释放。
+- **只对"从未被认领"的任务生效**：`claimQueuedJobs` 认领时置 `expires_at = NULL`，此后该列永久为空；而回收谓词是 `expires_at IS NOT NULL AND expires_at <= now()`。因此指数退避（5/15/45s）中的重试任务、僵尸回队任务**不可能**被误杀。
+- **惰性回收，作用域与闸口同源**：导出 per-user（`failExpiredQueuedJob(userId)`）、导入 per-family（`failExpiredQueuedImportJob(familyId)`），在**同一作用域的下一次创建请求**里回收。即被卡住的用户自己下次点导出/检测就会清掉自己的幽灵，无跨用户误伤，也不需要额外定时任务。
+- **`retryable=true`**：与终态失败（`retryable=false`）区分 —— 排队超时不是数据问题，闸口释放后原样重发即可成功。这是 `failed` 态下唯一 `retryable=true` 的 code。
+
+**10min 的算术依据**：判据是 `10min > 最坏合法排队时长`，否则会把"正常排队"误杀成失败。worker 全局串行且 `CLAIM_BATCH_SIZE=1`（§7.5），故最坏合法排队 = 前置任务数 × 单任务上限。单任务上限由 `statement_timeout` 约束（导入大事务 60s，导出分片查询同量级），即 10min 可容纳约 10 个前置满时长任务排在自己前面。而并发闸口保证**同一用户/家庭最多一个活跃任务**，10 个前置任务意味着 10 个不同用户在同一分钟内各发起一个满负载任务 —— 远超当前规模（§9.1 频控：单用户 5 分钟 ≤3 个导入任务）。若未来 worker 改多实例或放开闸口粒度，此值需按同一算式重算。
+
+> 为何写 `failed` 而不是"读时判定为不占槽"：后者会让幽灵任务在 worker 恢复后**复活并与新任务并跑**（导入靠 `uq_entries_ledger_client_ref` 兜，但那是让 DB 约束去兜设计漏洞）。让幽灵进终态、`claim` 自然扫不到，是干净解。
 
 ---
 
@@ -2430,6 +2460,62 @@ v1 脚本已删除，下表保留作为格式演进对照与"为什么 v2 不兼
 ---
 
 ## 15. 修订记录
+
+### v1.1（2026-09-08）· 两期落地后的对照评审对齐批次
+
+两期全栈落地后做了一次「实现 vs 本文档」对照评审（核心机制全部咬合、无 P0），本批次把评审发现的口径偏差逐项对齐（以代码侧修改为主，文档侧仅本节与 §7.3 草案两处无消费者项清理）：
+
+| # | 偏差 | 对齐结果 |
+|---|---|---|
+| 1 | 导出不能选账本（API 不收 `ledger_id` · 客户端固定活跃账本） | `/export-jobs` 接受可选 `ledger_id`（缺省回退活跃账本解析）；客户端导入/导出卡均补「目标账本」选择器（>1 个账本时显示 · §8.3/§8.4 步骤 2） |
+| 2 | 导出 to 边界 `<= endOf(day)` 有亚毫秒漏行窗口 | 落库改半开区间 `[from, to+1d)`（`export_to` = 排他端），导出 SQL 改 `<`；migration 0021 补回 `chk_data_jobs_date_range`；`result_summary.source_date_from/to` 承载用户所选日期（「重新生成」按原账本原区间重发，不反解端点） |
+| 3 | 文件名日期段 `yyyyMMdd` | 改回 §2.2 冻结的 `yyyy-MM-dd` |
+| 4 | 上传/下载非 JSON 响应体无 statusCode 兜底 | 413→`PAYLOAD_TOO_LARGE`、502/503/504→`CLIENT_NETWORK_ERROR`（§9.5 配套要求） |
+| 5 | `unmatched_members_truncated` 客户端零消费 | >20 个未匹配昵称时不渲染映射区，引导确认是否选错目标账本（§4.3） |
+| 6 | 检测上传无防误返回 | `wx.enableAlertBeforeUnload`（§8.3 步骤 8-9 · R4 缓解） |
+| 7 | queued 进度 0→20% τ=4s | 改回 §7.2 明文：queued 恒 0% |
+| 8 | 阶段文案「正在读取流水/正在打包文件/排队中」 | 改回 §7.2：正在整理数据 / 正在收尾 / 等待处理 |
+| 9 | `data_jobs.error_code` 无消费者 | 任务中心失败卡按 code 渲染失败原因（§9.5 取值域 · 禁渲染 error_message） |
+| 10 | 设置页副文案静态 | 三态优先级：进行中 > 有完成未看 > 默认（§8.1） |
+| 11 | 导出完成审计缺文件摘要 | done 审计补 `file_sha256[]`（§2.5/§9.2） |
+| 12 | worker claim `LIMIT 5` | 改回 §7.5 `LIMIT 1`（消除批内排队任务租约过期被双跑的窗口） |
+| 13 | §7.3 草案 `version` 列 / `idx_detect_sessions_user` 无消费者 | 从草案移除（run_token 条件更新已覆盖 version 用途；无「列用户会话」端点） |
+| 14 | 交互小项：校验失败 Toast、无确认卡步骤、多分片无串联提示、完成无轻震、onShow 拉 50 条 | 对齐 §8.3/§6.3/§8.5/§6.4：就地错误展示、确认卡（开始检测）、「第 N/M 个文件已发送」、终态轻震、默认 20 条 |
+
+遗留确认项：**R33 的 A/B 决策**（真 PG 集成测试通道）仍需在验收记录落字 —— §5.2.6「洞的回归用例 + 移除 hold 的对照组」在 pg-mem 上是恒真假绿，不允许悬空。
+
+### v1.3（2026-09-08）· 三轮对账评审修复批次
+
+v1.2 后再做一轮独立复核（核心不变量 —— sync-hold H1/H2/H3、`syncPull` 取 `MIN(未过期 hold)` 钳制、锁序、`run_token` 条件写回、`client_ref_id` 双路径分流、隐私清理链、半开区间 —— 全部咬合，仍无 P0）。本轮**同时纠正了一条评审误判**：初判「排队租约 `expires_at` 机制未进方案 ⇒ 疑似过度设计且会把排队久误渲成失败」，经逐字复核代码为**误报**——`claimQueuedJobs` 认领时即置 `expires_at = NULL`，退避中的重试任务不可能被回收；回收作用域与闸口作用域同源（导出 per-user / 导入 per-family），是被卡用户自己下次创建时的惰性自愈。该机制是「用 `queued` 态做互斥」的必要配套（详见 §9.5 新增小节），残留问题仅为文档未登记。其余发现逐项对齐：
+
+| # | 偏差 | 对齐结果 |
+|---|---|---|
+| 1 | `ledger_name` 是 §7.6 明列的客户端字段（§8.2 UI 稿亦要求），但服务端序列化 / openapi / 客户端模型三处全无 ⇒ 多账本用户无法区分任务归属 | `listByOwner` / `findById` 改 `LEFT JOIN ledgers` 取名（列清单收敛为单一事实源数组，派生带前缀版本）；`create` 响应用已解析的 ledger 补齐；openapi 补 `ledger_name`；任务卡在多账本时渲染「账本名 · 区间」 |
+| 2 | `data_jobs.error_code` 值域四处不一致（实现写 8 个 · §9.5 表 6 个 · openapi 漏 3 个却多列 `WORKER_LOST` · 客户端 7 个） | 以实现为准统一为 8 个：§9.5 表补 `WORKER_LOST` / `QUEUE_LEASE_EXPIRED` 并标注「中间态也会带 error_code」（`markRetryQueued` 保留上次失败原因且 `status=queued`）；openapi 改 enum + 分类说明；客户端补 `WORKER_LOST` 文案 |
+| 3 | 排队租约 `expires_at`（10min）+ `QUEUE_LEASE_EXPIRED` 未进方案（§7.2/§7.3/§9.5 均无） | §7.3 表补 `expires_at` 列；§9.5 新增「排队租约」小节，写明必要性（两个闸口以 `queued` 判占用 ⇒ 无到期出口则永久锁死账号级功能）、三条语义边界（不参与调度判定 / 只对从未被认领者生效 / 惰性回收且作用域同闸口）、`retryable=true` 的理由，以及 **10min 的算术依据**（`10min > 前置任务数 × 单任务 statement_timeout 60s` ⇒ 可容纳约 10 个满时长前置任务，远超闸口+频控允许的规模） |
+| 4 | `member_mapping` 目标成员活跃性未在 commit 同步校验（§4.2 明文要求），推迟到 worker 复核 ⇒ 整批 `CONTEXT_INVALIDATED` 异步失败且会话已消费，用户必须重新上传 | commit 事务内逐个 `isActiveMember` 校验，不通过即 400（不加锁：并发安全的单一事实源仍是 worker 的 `FOR UPDATE` 复核，此处只做提前失败） |
+| 5 | 客户端 `hasActiveImport` 全局判定，比服务端 per-family 闸口更严 ⇒ 多账本用户被别账本任务误挡 | 按当前导入目标账本过滤；切换目标账本后重算闸口 |
+| 6 | `runDetectPipeline` 仅在「内容非法」两条路径 `markFailed`；产物落盘 / `markReady` 抛非预期异常时会话滞留 `detecting` ⇒ 后续 detect 连吃 409 直到 10min 僵尸阈值 | detect 路由（并发槽的申请者）补兜底释放：非 `ImportFileInvalidError` 时 `markFailed` 后重抛原异常（写失败只 warn，不掩盖原异常） |
+| 7 | `/import-detect-sessions/{id}/report` 过期返 410 `DETECT_SESSION_EXPIRED`（§7.6 契约是 404），且客户端捕获该 code 会重置整张导入卡 ⇒ 报告被清理但会话仍在 15min 有效期内时，清掉用户尚可 commit 的检测结果 | 报告不可用（无报告 / 过 24h / 产物被清理）统一 **404**；客户端只提示不重置；§4.5 顺带修正 v0.7 遗留的「检测报告有效期 15 分钟」表述（会话 15min 与报告 24h 是两条生命周期） |
+| 8 | `result_summary.error_count` 原样写 `session.errorCount`，已被映射成功导入的行仍计在 error（§3.3 承诺「映射后转为 WARNING」未在数据层体现） | 按映射消费行数在 error/warning 间转移。算术精确性有依据：`importCsv` 所有 ERROR 分支都 `continue` 不入产物，唯一例外就是待映射行 ⇒ 「产物中 `createdBy IS NULL` 的行」与「`MEMBER_UNMATCHED` ERROR」严格一一对应 |
+| 9 | `retryable` 语义分叉（0021 注释与 openapi 写「终态失败=false」，`failExpiredQueuedJob*` 写 `failed + true`） | 统一表述：执行期终态失败=false，排队租约到期=true（0021 列注释 + §7.3 + §9.5） |
+| 10 | `uq_data_jobs_detect` 是死索引（列定义已是 `detect_id UUID UNIQUE`，全局唯一强于「仅 queued/processing 内唯一」，部分索引恒被覆盖） | 删除该索引（0021 未上生产），保留说明性注释；`csvExport.test.ts` 改为断言「唯一性由列级 UNIQUE 承担且不再建部分索引」 |
+
+> **评审方法论教训**（第二次同类，值得固化）：本轮初判把「未进方案」直接推导为「有害」，属先射箭后画靶。定级前必须先证明害处真实存在；且判断某列语义时要读**所有写该列的 SQL**（尤其 `claim` 的 `SET` 子句），只读 `WHERE` 会得出相反结论。
+
+### v1.2（2026-09-08）· 二轮对账评审修复批次
+
+v1.1 对齐后再做一轮「方案 vs 实现」全量对账。评审初判的「导入大事务未 bump `sync_epoch`」经复核为**误报**——§5.2.5 明文：导入路径用 sync-hold，`sync_epoch + 1` 仅留给未经 sync-hold 保护的批量写入（运维直连 SQL）。为防止再次误判，`releaseHoldAndApplyDelta` 补「刻意不 bump」注释，H2 用例反向锁死「导入不推进 `sync_epoch`」断言。其余发现逐项对齐：
+
+| # | 偏差 | 对齐结果 |
+|---|---|---|
+| 1 | detect 路径的导入闸口不回收排队幽灵（仅 commit 路径回收）⇒ worker 宕机 >10min 时该 family detect/commit 双堵至 worker 恢复 | detect 路径补 `failExpiredQueuedImportJob`（与 commit 对称）；测试 D13 |
+| 2 | detect 无服务端 `.csv` 后缀白名单（§9.1 明文要求） | 服务端归一比对（大小写不敏感）；无文件名时不拦（UTF-8/RFC4180/表头指纹等内容校验仍是真实闸门）；测试 D14 |
+| 3 | §6.1/§6.2 写 `POST /export-jobs` → HTTP 202 | 改文档为 **201**（实现 / openapi / 测试三方一致，改文档最省） |
+| 4 | §6.2 `required: [ledger_id]` | 改文档为可选（v1.1 实现已支持缺省回退活跃账本） |
+| 5 | `GET /data-jobs` limit 默认值实现/openapi 为 50（§6.4/§7.6 写默认 20） | 代码 + openapi 改默认 **20**，对齐文档 |
+| 6 | download `part` 实现/openapi 为 required（§6.5 写 optional default 1） | 代码 schema + openapi 改 **optional default 1**，对齐文档 |
+| 7 | migration 0021 注释多处失准（DETECT_SESSION_EXPIRED 误写 409、`file_expires_at` 误写 72h、`report_preview` 误写 ≤50/≤20、stage 注释含 `writing`、result_summary/files 形状过期） | 就地修正注释（0021 未上生产，注释级改动） |
 
 ### v1.0（2026-09-02）· 第六轮 review · P0 代码级穿透验证 · 架构决策变更
 
