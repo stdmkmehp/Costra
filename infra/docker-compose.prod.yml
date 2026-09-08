@@ -221,6 +221,11 @@ services:
       - /data/logs/server:/var/log/costra
       # 用户上传文件（头像等）· server 写入 · nginx 只读服务
       - /data/uploads:/var/costra/uploads
+      # 账本导出产物（CSV 分片 · 24h TTL）· server 写入与流式回源
+      - /data/exports:/var/costra/exports
+      # 账本导入暂存（规范化行 NDJSON gzip + 问题报告 CSV · server 写入）
+      # 目录布局 /var/costra/import-staging/<yyyy-mm>/<detect_id>.*（entryImport.ts）
+      - /data/import-staging:/var/costra/import-staging
 
     depends_on:
       postgres:

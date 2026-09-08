@@ -116,6 +116,9 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_read_timeout 60s;
         proxy_connect_timeout 5s;
+        # 账本导入上传上限（data-import-export v1.0 §9.5 三层阈值：
+        # 客户端 1MB 本地校验 < 服务端应用层 1MB < multipart 2MB = 本层 2MB 兜底）
+        client_max_body_size 2m;
 
         # 限流（FU-PROD-RATE-LIMIT 后续基于 limit_req_zone 完整化）
         # 当前仅日志识别 · 不真限
