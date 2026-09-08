@@ -291,11 +291,33 @@ export async function uploadWithAuth(opts: UploadWithAuthOptions): Promise<Uploa
 /**
  * 发送文件到微信聊天（微信原生分享面板 · 完成卡唯一出口动作）。
  * 用户取消分享时微信走 fail（errMsg 含 cancel）⇒ 返回 false 而不抛错。
+ *
+ * downloadFile 临时路径无文件后缀，真机 shareFileMessage 按路径后缀判定文件类型，
+ * 无后缀直接 fail（开发者工具模拟器不校验 · 2026-09-08 实机复现）；故先复制到
+ * USER_DATA_PATH 固定草稿名（覆盖复用防堆积 · 自带 .csv 后缀），展示名仍用服务端原始文件名。
  */
 export async function shareCsvToChat(filePath: string, fileName: string): Promise<boolean> {
+  const sharePath = `${wx.env.USER_DATA_PATH}/costra-share.csv`;
+  const fs = wx.getFileSystemManager();
+  try {
+    fs.unlinkSync(sharePath);
+  } catch {
+    // 草稿文件首次分享时尚不存在
+  }
+  await new Promise<void>((resolve, reject) => {
+    fs.copyFile({
+      srcPath: filePath,
+      destPath: sharePath,
+      success: () => resolve(),
+      fail: (err) => {
+        logger.warn(MODULE, 'share copyFile fail', err);
+        reject(err);
+      },
+    });
+  });
   return new Promise((resolve, reject) => {
     wx.shareFileMessage({
-      filePath,
+      filePath: sharePath,
       fileName,
       success: () => resolve(true),
       fail: (err) => {
@@ -303,6 +325,7 @@ export async function shareCsvToChat(filePath: string, fileName: string): Promis
           resolve(false);
           return;
         }
+        logger.warn(MODULE, 'shareFileMessage fail', err);
         reject(err);
       },
     });
