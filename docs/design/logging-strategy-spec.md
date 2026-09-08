@@ -1,6 +1,6 @@
 # Costra 日志策略规范（Logging Strategy Spec）
 
-> 状态：已实施 · 日期：2026-06-30（2026-08-14 §5 修订：服务器日志统一落盘固定文件 + 宿主机 logrotate）· 关联：客户端 `miniprogram/utils/logger.ts`、服务器 Fastify/pino、`infra/docker-compose.prod.yml`、`infra/logrotate/costra-ops`
+> 状态：已实施 · 日期：2026-06-30（2026-08-14 §5 修订：服务器日志统一落盘固定文件 + 宿主机 logrotate；2026-09-08 §2 增补 G：模块 logger 统一注入）· 关联：客户端 `miniprogram/utils/logger.ts`、服务器 Fastify/pino、`infra/docker-compose.prod.yml`、`infra/logrotate/costra-ops`
 
 本规范统一约束 Costra 客户端（微信小程序）与服务器（Fastify + pino）的日志行为，目标是：日志可读、信息全面、周期噪音可控、用户写操作可审计、长期运行不膨胀。
 
@@ -27,6 +27,7 @@
 | E | 客户端 console 迁移范围 | **全量替换**为统一 `logger` |
 | — | 写操作日志脱敏 | **不脱敏**，要求字段详细（含金额/分类/日期/备注） |
 | F | 服务器日志轮转路线 | **落盘固定文件 + 宿主机 logrotate 唯一轮转源**（2026-08-14 起 · 取代"stdout → docker json-file"） |
+| G | 调度器/服务模块 logger | **一律注入 `ServiceLogger`（`logger.ts` 契约 · buildApp 装配 `app.log.child({ module })`），禁止模块自建 `pino()`**（2026-09-08 起 · 自建实例默认写 stdout，绕开落盘出口 ⇒ docker logs 可见但 server.log 缺失、`report-error-logs.sh` 每日扫描失明；曾致 `dataJobScheduler`/`tipReconcileScheduler`/`entryImport` 三模块告警盲区） |
 
 ---
 
