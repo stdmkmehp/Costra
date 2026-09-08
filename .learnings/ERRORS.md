@@ -386,3 +386,31 @@ ENOENT: no such file or directory, stat '/Users/weizhao/Desktop/Costra/server/sr
 - **Notes**: 已改用 LSP/内容搜索核对类型与调用点。
 
 ---
+
+## [ERR-20260908-001] buddy_cloud_image_auth
+
+**Logged**: 2026-09-08T00:00:00+08:00
+**Priority**: low
+**Status**: pending
+**Area**: config
+
+### Summary
+云端图片生成客户端在当前命令执行环境使用回退端点时被服务端拒绝认证。
+
+### Error
+```text
+invalid or expired JWT token
+```
+
+### Context
+- 已从 IDE 会话获取新凭证后调用 `buddy-cloud.py image`。
+- 当前执行环境没有 `ACC_PRODUCT_CONFIG_V3` 或 `BUDDY_CLOUD_ENDPOINT`，脚本只能使用默认回退端点。
+
+### Suggested Fix
+确认命令执行环境可继承 IDE 的生成服务端点配置，或由连接服务返回可供脚本使用的临时凭证与端点。
+
+### Metadata
+- Reproducible: unknown
+- Related Files: `/Applications/CodeBuddy CN.app/Contents/Resources/app/extensions/genie/out/extension/builtin/buddy-multimodal-generation/scripts/buddy-cloud.py`
+
+---
