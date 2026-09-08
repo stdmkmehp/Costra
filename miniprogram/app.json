@@ -25,6 +25,7 @@
       "pages": [
         "home/index",
         "settings/index",
+        "settings/data-management/index",
         "privacy/index",
         "bulletin/index",
         "about/index",

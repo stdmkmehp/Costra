@@ -44,9 +44,18 @@ const DEFAULT_MAP: Record<string, MappedError> = {
   VERSION_CONFLICT:           { title: '数据冲突', desc: '该条记录已被其他成员修改', action: 'view-conflict' },
   DUPLICATE_RESOURCE:         { title: '已存在', desc: '该名称已被使用，请换一个' },
   IDEMPOTENCY_KEY_MISMATCH:   { title: '请求异常', desc: '请稍后再试' },
+  ALREADY_MEMBER:             { title: '已是成员', desc: '你已经在该家庭中' },
+  EXPORT_JOB_IN_PROGRESS:     { title: '已有导出任务进行中', desc: '请等待当前导出完成后再发起' },
+  IMPORT_JOB_IN_PROGRESS:     { title: '该账本已有导入任务进行中', desc: '请等待当前导入完成后再发起' },
+  DETECT_IN_PROGRESS:         { title: '上一个文件还在检测中', desc: '请稍候' },
 
   // 410
   INVITE_EXPIRED: { title: '邀请链接已失效', desc: '该链接已被使用或已过期，请联系家庭创建者重新发起邀请' },
+  EXPORT_FILE_EXPIRED: { title: '文件已过期', desc: '请重新导出' },
+  DETECT_SESSION_EXPIRED: { title: '检测已过期', desc: '请重新上传文件' },
+
+  // 413
+  PAYLOAD_TOO_LARGE: { title: '文件过大', desc: '文件超过 1MB（约 5,000 条记录），请拆分后分批导入' },
 
   // 429
   RATE_LIMITED: { title: '操作过于频繁', desc: '请稍后再试' },
@@ -98,4 +107,27 @@ export function mapError(err: ApiErrorLike): MappedError {
 
   // 未知 code → 兜底
   return { title: '网络异常', desc: '请稍后再试' };
+}
+
+// ─── data_jobs 失败原因（data-import-export v1.0 §9.5 error_code 取值域）────────────
+// 任务中心失败卡片按 code 渲染（禁渲染服务端 error_message · 内部细节不暴露）。
+// 值域含中间态 code：TRANSIENT_* / WORKER_LOST 会出现在「重试中」的 queued 任务上
+// （markRetryQueued 保留上次失败原因），当前页面只在 failed 渲染，登记于此保证唯一出口完备。
+const DATA_JOB_ERROR_MESSAGES: Record<string, string> = {
+  ARTIFACT_MISSING: '检测产物已失效，请重新检测后导入',
+  CONTEXT_INVALIDATED: '账本或成员信息已变化，请重新检测后导入',
+  CONSTRAINT_VIOLATION: '数据校验失败，请重新检测后导入',
+  TRANSIENT_DB: '服务繁忙，请稍后重试',
+  TRANSIENT_IO: '服务繁忙，请稍后重试',
+  WORKER_LOST: '服务繁忙，请稍后重试',
+  QUEUE_LEASE_EXPIRED: '任务排队超时，请重新发起',
+  INTERNAL: '服务异常，请稍后重试',
+};
+
+/**
+ * data_jobs.error_code → 用户可读失败原因（§9.5 按 code 渲染的唯一出口）。
+ * 未知 code 归 mapError 同款兜底文案。
+ */
+export function describeDataJobError(code: string | null | undefined): string {
+  return (code && DATA_JOB_ERROR_MESSAGES[code]) || '网络异常，请稍后再试';
 }

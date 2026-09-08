@@ -1,0 +1,354 @@
+/* pages-family/settings/data-management · 数据管理（账本导出） */
+/* 视觉遵循 app.wxss 设计变量：暖灰白底 + 白卡 + 油墨黑 */
+
+.page {
+  padding: 32rpx 32rpx 64rpx;
+  background: var(--color-bg);
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+/* ─── 卡片 ──────────────────────────────────────────── */
+.card {
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  padding: 32rpx;
+  margin-bottom: 24rpx;
+}
+
+.card__title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.card__desc {
+  margin-top: 12rpx;
+  font-size: 26rpx;
+  line-height: 1.6;
+  color: var(--color-text-muted);
+}
+
+.card__note {
+  margin-top: 16rpx;
+  font-size: 24rpx;
+  color: var(--color-text-muted);
+}
+
+/* ─── 表单行 ──────────────────────────────────────────── */
+.form-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24rpx 0 8rpx;
+  margin-top: 8rpx;
+  border-top: 1rpx solid var(--color-divider);
+}
+
+.form-row--hover {
+  opacity: 0.6;
+}
+
+.form-row__label {
+  font-size: 28rpx;
+  color: var(--color-text);
+}
+
+.form-row__right {
+  display: flex;
+  align-items: center;
+}
+
+.form-row__value {
+  font-size: 28rpx;
+  color: var(--color-text-muted);
+}
+
+.form-row__chevron {
+  margin-left: 8rpx;
+  font-size: 28rpx;
+  color: var(--color-text-muted);
+}
+
+/* ─── 按钮 ──────────────────────────────────────────── */
+.primary-btn {
+  margin-top: 32rpx;
+  background: var(--color-primary);
+  color: var(--color-role-text-on-green);
+  font-size: 30rpx;
+  font-weight: 600;
+  border-radius: var(--radius-md);
+}
+
+.primary-btn::after {
+  border: none;
+}
+
+.primary-btn--disabled {
+  opacity: 0.5;
+}
+
+.secondary-btn {
+  margin-top: 24rpx;
+  background: var(--color-surface);
+  color: var(--color-primary);
+  font-size: 28rpx;
+  border-radius: var(--radius-md);
+  border: 1rpx solid var(--color-primary);
+}
+
+.secondary-btn::after {
+  border: none;
+}
+
+/* ─── 任务中心 ──────────────────────────────────────────── */
+.section-title {
+  margin: 32rpx 0 16rpx;
+  padding: 0 8rpx;
+  font-size: 26rpx;
+  color: var(--color-text-muted);
+}
+
+.task-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.task-card__status {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.task-card__status--succeeded {
+  color: var(--color-success);
+}
+
+.task-card__status--failed,
+.task-card__status--expired {
+  color: var(--color-text-muted);
+}
+
+.task-card__time {
+  font-size: 24rpx;
+  color: var(--color-text-muted);
+}
+
+.task-card__meta {
+  margin-top: 8rpx;
+  font-size: 26rpx;
+  color: var(--color-text-muted);
+}
+
+.task-card__stage {
+  margin-top: 16rpx;
+  font-size: 26rpx;
+  color: var(--color-text);
+}
+
+.task-card__countdown {
+  margin-top: 16rpx;
+  font-size: 24rpx;
+  color: var(--color-semantic-warning, #FA9D3B);
+}
+
+.task-card__hint {
+  margin-top: 16rpx;
+  font-size: 26rpx;
+  color: var(--color-text-muted);
+}
+
+/* ─── 进度条 ──────────────────────────────────────────── */
+.progress {
+  margin-top: 16rpx;
+  height: 8rpx;
+  border-radius: var(--radius-pill);
+  background: var(--color-divider);
+  overflow: hidden;
+}
+
+.progress__bar {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--color-primary);
+  transition: width 0.6s linear;
+}
+
+/* ─── 文件行 ──────────────────────────────────────────── */
+.file-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20rpx 0;
+  margin-top: 8rpx;
+  border-top: 1rpx solid var(--color-divider);
+}
+
+.file-row__info {
+  flex: 1;
+  min-width: 0;
+  margin-right: 24rpx;
+}
+
+.file-row__name {
+  font-size: 26rpx;
+  color: var(--color-text);
+  word-break: break-all;
+}
+
+.file-row__size {
+  margin-top: 4rpx;
+  font-size: 24rpx;
+  color: var(--color-text-muted);
+}
+
+.file-row__btn {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0 28rpx;
+  height: 60rpx;
+  line-height: 60rpx;
+  font-size: 26rpx;
+  background: var(--color-primary);
+  color: var(--color-role-text-on-green);
+  border-radius: var(--radius-pill);
+}
+
+.file-row__btn::after {
+  border: none;
+}
+
+.file-row__btn--disabled {
+  opacity: 0.5;
+}
+
+/* ─── 空态 ──────────────────────────────────────────── */
+.empty {
+  padding: 64rpx 0;
+  text-align: center;
+  font-size: 26rpx;
+  color: var(--color-text-muted);
+}
+
+/* ─── 导入卡：文件与统计 ──────────────────────────────────────────── */
+.import-file {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-top: 20rpx;
+  padding: 20rpx 0;
+  border-top: 1rpx solid var(--color-divider);
+}
+
+.import-file__name {
+  font-size: 28rpx;
+  color: var(--color-text);
+  word-break: break-all;
+  flex: 1;
+  min-width: 0;
+  margin-right: 16rpx;
+}
+
+.import-file__size {
+  font-size: 24rpx;
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.import-summary {
+  margin-top: 8rpx;
+  font-size: 26rpx;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+/* ─── 导入卡：问题预览 ──────────────────────────────────────────── */
+.issue-row {
+  margin-top: 12rpx;
+  font-size: 24rpx;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+
+.issue-row--error {
+  color: var(--color-semantic-danger, #C08A7B);
+}
+
+.issue-row--warning {
+  color: var(--color-semantic-warning, #FA9D3B);
+}
+
+.issue-overflow {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  color: var(--color-text-muted);
+}
+
+/* ─── 导入卡：成员映射 ──────────────────────────────────────────── */
+.mapping-title {
+  margin-top: 24rpx;
+  font-size: 26rpx;
+  color: var(--color-text);
+}
+
+.mapping-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20rpx 0;
+  border-top: 1rpx solid var(--color-divider);
+  margin-top: 8rpx;
+}
+
+.mapping-row__left {
+  flex: 1;
+  min-width: 0;
+  margin-right: 16rpx;
+}
+
+.mapping-row__nick {
+  font-size: 28rpx;
+  color: var(--color-text);
+}
+
+.mapping-row__count {
+  margin-left: 12rpx;
+  font-size: 24rpx;
+  color: var(--color-text-muted);
+}
+
+.mapping-row__right {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.mapping-row__target {
+  font-size: 28rpx;
+  color: var(--color-primary);
+}
+
+.mapping-row__target--empty {
+  color: var(--color-text-muted);
+}
+
+/* ─── 导入卡：按钮组 ──────────────────────────────────────────── */
+.import-actions {
+  display: flex;
+  gap: 24rpx;
+}
+
+.import-actions__btn {
+  flex: 1;
+  margin-left: 0;
+  margin-right: 0;
+}
+
+/* 本地校验失败就地展示（§8.3 · 不使用一闪而过的 Toast） */
+.form-error {
+  margin-top: 16rpx;
+  font-size: 24rpx;
+  line-height: 1.5;
+  color: var(--color-semantic-danger, #C08A7B);
+}
