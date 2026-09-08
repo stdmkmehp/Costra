@@ -161,8 +161,80 @@ function applyMigrations(db: IMemoryDb): void {
       balance_baseline_seq BIGINT NOT NULL DEFAULT 0,
       balance_version     INTEGER NOT NULL DEFAULT 1,
       -- L13 · migration 0019：批量写入版本戳（E1）
-      sync_epoch          BIGINT NOT NULL DEFAULT 0
+      sync_epoch          BIGINT NOT NULL DEFAULT 0,
+      -- migration 0021：导入 sync-hold 两列（worker 大事务前设置 · 提交时同事务释放）
+      sync_hold_seq       BIGINT,
+      sync_hold_until     TIMESTAMPTZ
     );
+    -- migration 0021_data_jobs.sql · 导入/导出（pg-mem 适配版）
+    -- 差异（同 tip_orders 既有做法）：
+    --   - type/status/stage 用 TEXT 而非 enum；刻意不带任何 CHECK
+    --     （chk_data_jobs_type_fields 四分支 / chk_import_detect_sessions_* 只能静态断言生产 SQL）；
+    --   - detect_id 不带列级 UNIQUE / ON DELETE CASCADE；
+    --   - 跳过全部部分索引：uq_data_jobs_run_token / uq_data_jobs_active_export_per_user /
+    --     uq_data_jobs_active_import_per_family / idx_data_jobs_due /
+    --     uq_data_jobs_idempotency_key / uq_detect_sessions_active_per_user（生产 DDL 保留）；
+    --   - "每用户单一活跃导出任务"/"每用户单一进行中检测"在 pg-mem 由 create 路径的先 SELECT
+    --     判定覆盖，生产竞态由部分唯一索引 23505 兜底（路由两层都接）。
+    CREATE TABLE IF NOT EXISTS import_detect_sessions (
+      id                 UUID PRIMARY KEY,
+      user_id            UUID NOT NULL REFERENCES users(id),
+      family_id          UUID NOT NULL REFERENCES families(id),
+      ledger_id          UUID NOT NULL REFERENCES ledgers(id),
+      status             TEXT NOT NULL DEFAULT 'detecting',
+      file_name          TEXT,
+      file_size          BIGINT,
+      file_sha256        TEXT,
+      is_costra_export   BOOLEAN NOT NULL DEFAULT FALSE,
+      formula_guard      TEXT,
+      member_mapping     JSONB,
+      artifact_path      TEXT,
+      artifact_sha256    TEXT,
+      report_path        TEXT,
+      total_rows         INTEGER,
+      importable_rows    INTEGER,
+      error_count        INTEGER,
+      warning_count      INTEGER,
+      report_preview     JSONB,
+      job_id             UUID,
+      expires_at         TIMESTAMPTZ,
+      report_expires_at  TIMESTAMPTZ,
+      consumed_at        TIMESTAMPTZ,
+      created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE TABLE IF NOT EXISTS data_jobs (
+      id                 UUID PRIMARY KEY,
+      type               TEXT NOT NULL,
+      status             TEXT NOT NULL DEFAULT 'queued',
+      user_id            UUID NOT NULL REFERENCES users(id),
+      family_id          UUID NOT NULL REFERENCES families(id),
+      ledger_id          UUID NOT NULL REFERENCES ledgers(id),
+      detect_id          UUID,
+      source_hash        TEXT,
+      ruleset_version    INTEGER,
+      export_from        TIMESTAMPTZ,
+      export_to          TIMESTAMPTZ,
+      attempts           INTEGER NOT NULL DEFAULT 0,
+      stage              TEXT,
+      stage_started_at   TIMESTAMPTZ,
+      run_token          UUID,
+      lease_expires_at   TIMESTAMPTZ,
+      retryable          BOOLEAN NOT NULL DEFAULT false,
+      error_code         TEXT,
+      error_message      TEXT,
+      next_attempt_at    TIMESTAMPTZ,
+      expires_at         TIMESTAMPTZ,
+      result_summary     JSONB,
+      files              JSONB,
+      file_expires_at    TIMESTAMPTZ,
+      idempotency_key    TEXT,
+      created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+      started_at         TIMESTAMPTZ,
+      finished_at        TIMESTAMPTZ
+    );
+    CREATE INDEX IF NOT EXISTS idx_data_jobs_owner_created ON data_jobs (user_id, created_at DESC);
+    -- 非部分索引可直接建（同文件重复上传秒出的去重查找锚 · 与生产 DDL 对齐）
+    CREATE INDEX IF NOT EXISTS idx_detect_sessions_dedup ON import_detect_sessions (user_id, ledger_id, file_sha256);
     CREATE TYPE family_role AS ENUM ('owner', 'member', 'viewer');
     CREATE TABLE family_members (
       family_id       UUID NOT NULL,
@@ -441,7 +513,7 @@ function registerPgMemFunctions(db: IMemoryDb): void {
 function resetPgMem(): void {
   if (memDb) {
     memDb.public.none(
-      'DELETE FROM recurring_rules; DELETE FROM workday_calendars; DELETE FROM entries; DELETE FROM budgets; DELETE FROM category_redirects; DELETE FROM categories; DELETE FROM family_invites; DELETE FROM family_members; DELETE FROM ledgers; DELETE FROM families; DELETE FROM user_sessions; DELETE FROM tip_orders; DELETE FROM users; DELETE FROM idempotency_keys; DELETE FROM announcement_reads; DELETE FROM announcements;',
+      'DELETE FROM data_jobs; DELETE FROM import_detect_sessions; DELETE FROM recurring_rules; DELETE FROM workday_calendars; DELETE FROM entries; DELETE FROM budgets; DELETE FROM category_redirects; DELETE FROM categories; DELETE FROM family_invites; DELETE FROM family_members; DELETE FROM ledgers; DELETE FROM families; DELETE FROM user_sessions; DELETE FROM tip_orders; DELETE FROM users; DELETE FROM idempotency_keys; DELETE FROM announcement_reads; DELETE FROM announcements;',
     );
   }
 }
