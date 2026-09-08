@@ -29,9 +29,9 @@ import { unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { DateTime } from 'luxon';
-import pino from 'pino';
 import type { PoolClient } from 'pg';
 import { getPool } from '../db/pool.js';
+import type { ServiceLogger } from '../logger.js';
 import * as dataJobRepo from '../repositories/dataJobRepo.js';
 import type { DataJobEntity } from '../repositories/dataJobRepo.js';
 import * as familyMemberRepo from '../repositories/familyMemberRepo.js';
@@ -50,11 +50,6 @@ import {
   type ImportIssue,
   type NormalizedImportRow,
 } from './importCsv.js';
-
-const logger = pino({
-  level: process.env['LOG_LEVEL'] ?? 'info',
-  timestamp: pino.stdTimeFunctions.isoTime,
-}).child({ module: 'entryImport' });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 错误类型（调度层按类分流 · §7.5 重试分类表）
@@ -245,13 +240,13 @@ export function readDetectArtifactRows(expectedPath: string, expectedSha256: str
 }
 
 /** 删文件（best-effort · 文件不存在视为成功） */
-export async function deleteDetectFile(path: string | null): Promise<void> {
+export async function deleteDetectFile(path: string | null, log: ServiceLogger): Promise<void> {
   if (!path) return;
   try {
     await unlink(path);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-      logger.warn({ err, path }, 'delete detect file failed (ignored)');
+      log.warn({ err, path }, 'delete detect file failed (ignored)');
     }
   }
 }
@@ -285,6 +280,7 @@ export interface RunImportOutcome {
 export async function runEntryImport(
   job: DataJobEntity,
   holdRef: { seq: number | null },
+  log: ServiceLogger,
 ): Promise<RunImportOutcome> {
   const runToken = job.runToken;
   if (!runToken) throw new ImportArtifactError('import job claimed without run_token');
@@ -446,7 +442,7 @@ export async function runEntryImport(
   }
 
   // 5. 提交后：删规范化行产物（隐私最小化 · §7.4）；报告 CSV 保留至 report_expires_at
-  await deleteDetectFile(session.artifactPath);
+  await deleteDetectFile(session.artifactPath, log);
 
   return { imported: finalRows.length, skipped };
 }
@@ -612,30 +608,30 @@ export async function runDetectPipeline(input: DetectPipelineInput): Promise<Imp
  *   3. report 过期（24h）→ 删报告文件；ready/failed 且无关联 job 的行整行删除
  *     （consumed 行与 data_jobs 元数据同寿 30 天，由 maintenance cron 收尾 · §7.4）。
  */
-export async function cleanupDetectSessions(): Promise<void> {
+export async function cleanupDetectSessions(log: ServiceLogger): Promise<void> {
   try {
     const zombies = await importDetectRepo.reapZombieDetecting();
     for (const s of zombies) {
-      await deleteDetectFile(s.artifactPath);
-      await deleteDetectFile(s.reportPath);
-      logger.warn({ detect_id: s.id, user_id: s.userId }, 'zombie detecting session reaped');
+      await deleteDetectFile(s.artifactPath, log);
+      await deleteDetectFile(s.reportPath, log);
+      log.warn({ detect_id: s.id, user_id: s.userId }, 'zombie detecting session reaped');
     }
 
     const expiredReady = await importDetectRepo.listReadyExpiredWithArtifact();
     for (const s of expiredReady) {
-      await deleteDetectFile(s.artifactPath);
+      await deleteDetectFile(s.artifactPath, log);
       await importDetectRepo.clearArtifactPath(s.id);
     }
 
     const reportExpired = await importDetectRepo.listReportExpired();
     for (const s of reportExpired) {
-      await deleteDetectFile(s.reportPath);
+      await deleteDetectFile(s.reportPath, log);
       await importDetectRepo.clearReportPath(s.id);
       if ((s.status === 'ready' || s.status === 'failed') && s.jobId === null) {
         await importDetectRepo.deleteSessionRow(s.id);
       }
     }
   } catch (err) {
-    logger.error({ err }, 'detect session cleanup failed');
+    log.error({ err }, 'detect session cleanup failed');
   }
 }

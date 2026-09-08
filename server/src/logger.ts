@@ -17,8 +17,18 @@
  * 落盘路径由 env.ts 统一管理（COSTRA_LOG_FILE），不在此处直接读 process.env。
  */
 
-import { stdTimeFunctions } from 'pino';
+import { stdTimeFunctions, type Logger as PinoLogger } from 'pino';
 import type { NodeEnv } from './config/env.js';
+
+/**
+ * 调度器 / 服务函数注入用最小日志契约（与 tipService.TipLog 同一风格）。
+ *
+ * 统一出口约束：业务模块一律注入本契约，禁止自行 pino() 建实例 —— 自建实例默认写
+ * stdout，会绕开 production 落盘文件出口（docker logs 可见但 server.log 缺失，
+ * report-error-logs.sh 每日扫描对其失明）。生产由 buildApp 注入 app.log 或带
+ * module 标签的 child；测试注入 noop 对象。pino.Logger / FastifyBaseLogger 结构天然满足。
+ */
+export type ServiceLogger = Pick<PinoLogger, 'info' | 'warn' | 'error'>;
 
 export type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal';
 

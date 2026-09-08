@@ -51,6 +51,9 @@ beforeEach(async () => {
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
+/** 直测 entryImport 函数的注入日志（生产由 buildApp 注入 app.log child · 测试静默） */
+const noopLog = { info: () => undefined, warn: () => undefined, error: () => undefined };
+
 function mockCode2Session(openid: string): void {
   setWxFetchForTests(
     (async (): Promise<Response> => {
@@ -774,7 +777,7 @@ describe('W · 导入 worker（大事务原子性 · §7.5）', () => {
     // 不 commit（会话仍 ready）直接造任务执行
     const job = await fabricateClaimedImportJob({ userId, ledgerId, detectId, sourceHash: 'sha' });
     const holdRef = { seq: null as number | null };
-    await expect(runEntryImport(job, holdRef)).rejects.toBeInstanceOf(ImportContextInvalidError);
+    await expect(runEntryImport(job, holdRef, noopLog)).rejects.toBeInstanceOf(ImportContextInvalidError);
     expect(holdRef.seq).toBeNull(); // hold 未设置
   });
 
@@ -799,7 +802,7 @@ describe('W · 导入 worker（大事务原子性 · §7.5）', () => {
     );
 
     const holdRef = { seq: null as number | null };
-    await expect(runEntryImport(job, holdRef)).rejects.toBeInstanceOf(ImportClientRefConflictError);
+    await expect(runEntryImport(job, holdRef, noopLog)).rejects.toBeInstanceOf(ImportClientRefConflictError);
     // 失败路径 hold 未清（调度层职责）；这里验证 hold 被设置过
     expect(holdRef.seq).not.toBeNull();
     // 清理（避免影响同用例后续断言）
@@ -1008,7 +1011,7 @@ describe('CL · cleanupDetectSessions（§7.4 生命周期）', () => {
        VALUES ($1, $2, $3, $4, 'detecting', now() - interval '20 minutes')`,
       [id, userId, familyId, ledgerId],
     );
-    await cleanupDetectSessions();
+    await cleanupDetectSessions(noopLog);
     expect((await getSessionRow(id)).status).toBe('failed');
   });
 
@@ -1024,7 +1027,7 @@ describe('CL · cleanupDetectSessions（§7.4 生命周期）', () => {
       `UPDATE import_detect_sessions SET expires_at = now() - interval '1 second' WHERE id = $1`,
       [detectId],
     );
-    await cleanupDetectSessions();
+    await cleanupDetectSessions(noopLog);
     const after = await getSessionRow(detectId);
     expect(after.status).toBe('ready'); // 派生过期不改状态机
     expect(after.artifact_path).toBeNull();
@@ -1044,7 +1047,7 @@ describe('CL · cleanupDetectSessions（§7.4 生命周期）', () => {
       `UPDATE import_detect_sessions SET report_expires_at = now() - interval '1 second' WHERE id = $1`,
       [detectId],
     );
-    await cleanupDetectSessions();
+    await cleanupDetectSessions(noopLog);
     expect(existsSync(reportPath)).toBe(false);
     const rows = (await getPool().query(`SELECT COUNT(*) AS n FROM import_detect_sessions WHERE id = $1`, [detectId])).rows[0] as { n: number };
     expect(Number(rows.n)).toBe(0); // 整行删除

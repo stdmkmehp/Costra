@@ -18,20 +18,15 @@
  */
 
 import type { PoolClient } from 'pg';
-import pino from 'pino';
 import { getPool } from '../db/pool.js';
 import { ttl } from '../config/ttl.js';
 import * as tipOrderRepo from '../repositories/tipOrderRepo.js';
 import type { TipOrderEntity } from '../repositories/tipOrderRepo.js';
+import type { ServiceLogger } from '../logger.js';
 import { probeAndApply } from './tipService.js';
 
 /** advisory lock 的 32-bit key · 'TIPS' in hex · 与 recurring 的 'RECU' 不冲突 */
 const ADVISORY_LOCK_KEY = 0x54495053;
-
-const logger = pino({
-  level: process.env['LOG_LEVEL'] ?? 'info',
-  timestamp: pino.stdTimeFunctions.isoTime,
-}).child({ module: 'tipReconcileScheduler' });
 
 export interface TipReconcileScheduler {
   /** 启动 setInterval · test 环境自动跳过 */
@@ -64,7 +59,11 @@ async function releaseLock(client: PoolClient): Promise<void> {
   }
 }
 
-export function createTipReconcileScheduler(): TipReconcileScheduler {
+/**
+ * @param opts.log 由 buildApp 注入 app.log.child({ module: 'tipReconcileScheduler' }) · 禁止模块自建 pino
+ */
+export function createTipReconcileScheduler(opts: { log: ServiceLogger }): TipReconcileScheduler {
+  const logger = opts.log;
   let timerHandle: NodeJS.Timeout | null = null;
   let ticking = false;
 

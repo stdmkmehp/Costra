@@ -26,8 +26,8 @@
  */
 
 import type { PoolClient } from 'pg';
-import pino from 'pino';
 import { DateTime } from 'luxon';
+import type { ServiceLogger } from '../logger.js';
 import { getPool } from '../db/pool.js';
 import * as dataJobRepo from '../repositories/dataJobRepo.js';
 import type { DataJobEntity } from '../repositories/dataJobRepo.js';
@@ -63,11 +63,6 @@ const ZOMBIE_BATCH_SIZE = 20;
 export const DATA_JOB_MAX_ATTEMPTS = 3;
 /** 瞬时重试退避基数（attempts × 5s） */
 const RETRY_BACKOFF_BASE_MS = 5_000;
-
-const logger = pino({
-  level: process.env['LOG_LEVEL'] ?? 'info',
-  timestamp: pino.stdTimeFunctions.isoTime,
-}).child({ module: 'dataJobScheduler' });
 
 export interface DataJobScheduler {
   /** 启动 setInterval · test 环境自动跳过 */
@@ -206,7 +201,16 @@ export function classifyImportError(err: unknown, attempts: number): FailureVerd
 /** 检测会话清理间隔（§7.4 · 每分钟应用侧清理） */
 const DETECT_CLEANUP_INTERVAL_MS = 60_000;
 
-export function createDataJobScheduler(): DataJobScheduler {
+/**
+ * @param opts.log 调度器自身日志（buildApp 注入 app.log.child({ module: 'dataJobScheduler' })）
+ * @param opts.importLog entryImport 系函数日志（child({ module: 'entryImport' }) · 保持模块标签不失真）
+ */
+export function createDataJobScheduler(opts: {
+  log: ServiceLogger;
+  importLog: ServiceLogger;
+}): DataJobScheduler {
+  const logger = opts.log;
+  const importLogger = opts.importLog;
   let timerHandle: NodeJS.Timeout | null = null;
   let cleanupTimerHandle: NodeJS.Timeout | null = null;
   let ticking = false;
@@ -367,7 +371,7 @@ export function createDataJobScheduler(): DataJobScheduler {
     // 供失败路径条件清除 hold（runEntryImport 设置成功后回传闸门值；H2 事务内释放后置回 null）
     const holdRef: { seq: number | null } = { seq: null };
     try {
-      const outcome = await runEntryImport(job, holdRef);
+      const outcome = await runEntryImport(job, holdRef, importLogger);
       logger.info(
         {
           audit: 'data_import',
@@ -428,7 +432,7 @@ export function createDataJobScheduler(): DataJobScheduler {
         // 终态清理：删规范化行产物（报告 CSV 保留至 24h · §7.4 v0.9）+ 预览置 NULL
         if (job.detectId) {
           const session = await importDetectRepo.findById(job.detectId).catch(() => null);
-          await deleteDetectFile(session?.artifactPath ?? null);
+          await deleteDetectFile(session?.artifactPath ?? null, importLogger);
           await importDetectRepo.clearReportPreview(job.detectId).catch(() => {
             /* 清理失败由周期任务兜底 */
           });
@@ -496,11 +500,11 @@ export function createDataJobScheduler(): DataJobScheduler {
     // 检测会话清理（§7.4）：启动补偿一次 + 每分钟周期
     //（僵尸 detecting 转 failed 释放并发槽 / ready 过期删行产物 / report 过期删文件）
     if (cleanupTimerHandle == null) {
-      void cleanupDetectSessions().catch(() => {
+      void cleanupDetectSessions(importLogger).catch(() => {
         /* 清理函数内部已捕获 · 这里兜底 */
       });
       cleanupTimerHandle = setInterval(() => {
-        void cleanupDetectSessions().catch(() => {
+        void cleanupDetectSessions(importLogger).catch(() => {
           /* 同上 */
         });
       }, DETECT_CLEANUP_INTERVAL_MS);

@@ -121,14 +121,21 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   await refreshWorkdayCache();
 
   // tips · 赞赏对账调度器（tech-spec v1.2 §6.1 · 60s tick · commit-before-fetch）
-  const tipReconcileScheduler = createTipReconcileScheduler();
+  // 日志统一走 app.log（child 保留 module 标签）⇒ 与请求日志同一落盘出口
+  const tipReconcileScheduler = createTipReconcileScheduler({
+    log: app.log.child({ module: 'tipReconcileScheduler' }),
+  });
   app.decorate('tipReconcileScheduler', tipReconcileScheduler);
   if (opts.autoStartScheduler !== false) {
     tipReconcileScheduler.start(); // test 环境内部会自动跳过 setInterval
   }
 
   // 数据任务调度器（data-import-export v1.0 §7.5 · 2s tick + 创建后 kick · 一期仅导出）
-  const dataJobScheduler = createDataJobScheduler();
+  // 日志统一走 app.log（child 保留 module 标签）⇒ 与请求日志同一落盘出口
+  const dataJobScheduler = createDataJobScheduler({
+    log: app.log.child({ module: 'dataJobScheduler' }),
+    importLog: app.log.child({ module: 'entryImport' }),
+  });
   app.decorate('dataJobScheduler', dataJobScheduler);
   if (opts.autoStartScheduler !== false) {
     dataJobScheduler.start(); // test 环境内部会自动跳过 setInterval
