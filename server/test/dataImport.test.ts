@@ -197,6 +197,7 @@ async function fabricateClaimedImportJob(input: {
     userId: row['user_id'] as string,
     familyId: row['family_id'] as string,
     ledgerId: row['ledger_id'] as string,
+    ledgerName: null, // 直造实体不走 JOIN 路径 · 与 INSERT...RETURNING 口径一致
     detectId: row['detect_id'] as string,
     sourceHash: row['source_hash'] as string,
     rulesetVersion: 1,
@@ -337,10 +338,13 @@ describe('D · POST /v1/import-jobs/detect', () => {
     expect((res.json() as { code: string }).code).toBe('PAYLOAD_TOO_LARGE');
   });
 
-  it('D7: XLSX 魔数 ⇒ 400 + 会话 failed', async () => {
+  it('D7: XLSX 魔数（伪装 .csv 后缀）⇒ 400 + 会话 failed', async () => {
     const { token, ledgerId } = await login('u-d7');
     const xlsx = Buffer.concat([Buffer.from('PK\x03\x04', 'binary'), Buffer.alloc(100, 0)]);
-    const res = await detect(token, xlsx, ledgerId, 'book.xlsx');
+    // 文件名必须过 §9.1 后缀白名单才能走到魔数检测：.xlsx 会被白名单以
+    // "only .csv files are supported" 提前拦截（不建会话），魔数检测的真实闸门
+    // 场景是「用户把 book.xlsx 改名 book.csv」——内容校验兜底（§9.1 内容校验行）。
+    const res = await detect(token, xlsx, ledgerId, 'book.csv');
     expect(res.statusCode).toBe(400);
     expect((res.json() as { message: string }).message).toContain('Excel');
     const sessions = (await getPool().query(`SELECT status FROM import_detect_sessions`)).rows as Array<{ status: string }>;

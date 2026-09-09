@@ -164,6 +164,7 @@ function fabricateClaimedJob(overrides: Partial<DataJobEntity>): DataJobEntity {
     userId: '',
     familyId: '',
     ledgerId: '',
+    ledgerName: null, // 直造实体不走 JOIN 路径 · 与 INSERT...RETURNING 口径一致
     detectId: null,
     sourceHash: null,
     rulesetVersion: null,

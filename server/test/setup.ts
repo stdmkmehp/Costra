@@ -176,6 +176,11 @@ function applyMigrations(db: IMemoryDb): void {
     --     uq_data_jobs_idempotency_key / uq_detect_sessions_active_per_user（生产 DDL 保留）；
     --   - "每用户单一活跃导出任务"/"每用户单一进行中检测"在 pg-mem 由 create 路径的先 SELECT
     --     判定覆盖，生产竞态由部分唯一索引 23505 兜底（路由两层都接）。
+    --   - stage 列仍是 TEXT，但必须注册 data_job_stage 枚举类型名：
+    --     claimQueuedJobs 的 CASE 写 stage 带显式 CAST(... AS data_job_stage)
+    --     （生产 42804 修复 · 2026-09-08），pg-mem 对未注册类型名直接抛
+    --     "type does not exist"（2026-09-09 实锤 · 任务永滞 queued）。
+    CREATE TYPE data_job_stage AS ENUM ('validating', 'writing', 'querying', 'packaging');
     CREATE TABLE IF NOT EXISTS import_detect_sessions (
       id                 UUID PRIMARY KEY,
       user_id            UUID NOT NULL REFERENCES users(id),
