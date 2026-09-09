@@ -8,6 +8,7 @@
  *   POST /import-jobs/detect                      上传 CSV + 同步检测 → DetectReport
  *   POST /import-jobs/commit                      确认导入（原子消费会话 + 创建任务）→ 202
  *   GET  /import-detect-sessions/{detect_id}/report  下载问题报告 CSV（24h 独立寿命）
+ *   GET  /import-jobs/demo-csv                    下载导入示例 CSV（动态生成 · 含全分类 · 不落盘）
  *
  * 闸口与幂等：
  *   - detect 频控：单用户 5 分钟 ≤5 次（Redis 独立计数器 · §9.1）；
@@ -41,6 +42,7 @@ import {
   runDetectPipeline,
 } from '../services/entryImport.js';
 import { IMPORT_RULESET_VERSION } from '../services/importCsv.js';
+import { buildImportDemoCsv } from '../services/importDemoCsv.js';
 
 // ==============================================================================
 // 常量（方案冻结值 · §9.1）
@@ -54,8 +56,14 @@ const DETECT_RATE_LIMIT = 5;
 /** commit 频控：5 分钟 3 个导入任务 */
 const COMMIT_RATE_WINDOW_SEC = 300;
 const COMMIT_RATE_LIMIT = 3;
+/** demo 频控：5 分钟 10 次（内存生成不落盘，宽于 detect · §4.6） */
+const DEMO_RATE_WINDOW_SEC = 300;
+const DEMO_RATE_LIMIT = 10;
 
 const SHANGHAI_ZONE = 'Asia/Shanghai';
+
+/** 示例文件名（固定 · 多次下载覆盖同名无歧义 · §4.6） */
+const DEMO_FILENAME = 'Costra_导入示例.csv';
 
 // ==============================================================================
 // DetectReport 序列化（§4.2 契约字段）
@@ -94,6 +102,8 @@ function toDetectReport(session: ImportDetectSessionEntity, ledger: DetectLedger
     warnings_truncated: preview?.warnings_truncated ?? false,
     unmatched_members: preview?.unmatched_members ?? [],
     unmatched_members_truncated: preview?.unmatched_members_truncated ?? false,
+    // 旧会话的 report_preview JSON 无此字段（15min 内自然过期），读取兜底 0
+    subcategory_fallback_count: preview?.subcategory_fallback_count ?? 0,
     // 相对路径不含 /v1（客户端 apiBaseUrl 已含 · 与导出 download_path 惯例一致）
     report_path: `/import-detect-sessions/${session.id}/report`,
     created_at: session.createdAt.toISOString(),
@@ -355,6 +365,56 @@ export async function registerImportJobsRoutes(app: FastifyInstance): Promise<vo
     );
 
     reply.code(200).send(toDetectReport(ready ?? session, ledger));
+  });
+
+  // ─── GET /import-jobs/demo-csv · 下载导入示例 CSV（§4.6 · 内存生成不落盘，不走 data_jobs） ───
+  app.get('/import-jobs/demo-csv', async (req, reply) => {
+    const userId = await requireUserId(req);
+
+    // 频控（Redis 独立计数器 · 与 detect 同范式 · 5min/10 次）
+    const redis = getRedis();
+    const rateKey = `rate:v1:import-demo:${userId}`;
+    const hits = await redis.incr(rateKey);
+    if (hits === 1) await redis.expire(rateKey, DEMO_RATE_WINDOW_SEC);
+    if (hits > DEMO_RATE_LIMIT) {
+      const pttl = await redis.pttl(rateKey);
+      throw new AppError(ErrorCode.RATE_LIMITED, {
+        message: 'too many import demo requests',
+        retryAfterSec: Math.max(1, Math.ceil(pttl / 1000)),
+      });
+    }
+
+    // ledger_id 必填：示例按目标账本的可见分类（系统 + 家庭自定义）与活跃成员生成
+    const ledgerId = (req.query as Record<string, unknown>)['ledger_id'];
+    if (typeof ledgerId !== 'string' || !UUID_PATTERN.test(ledgerId)) {
+      throw new AppError(ErrorCode.INVALID_ARGUMENT, {
+        message: 'ledger_id is required',
+        details: { field: 'ledger_id', constraint: 'uuid' },
+      });
+    }
+    const ledger = await ledgerRepo.findWithFamilyById(ledgerId);
+    if (!ledger) {
+      throw new AppError(ErrorCode.NOT_FOUND, { message: 'ledger not found' });
+    }
+    const memberOk = await familyMemberRepo.isActiveMember(userId, ledger.familyId);
+    if (!memberOk) {
+      throw new AppError(ErrorCode.FAMILY_NOT_MEMBER, { message: 'not an active member of this family' });
+    }
+
+    const [categories, members] = await Promise.all([
+      categoryRepo.findByFamily(ledger.familyId),
+      loadActiveMembers(ledger.familyId),
+    ]);
+    const csv = buildImportDemoCsv({
+      familyKind: ledger.kind === 'personal' ? 'personal' : 'shared',
+      categories,
+      memberNicknames: members.map((m) => m.nickname),
+      today: DateTime.now().setZone(SHANGHAI_ZONE).toFormat('yyyy-MM-dd'),
+    });
+    reply
+      .header('Content-Type', 'text/csv; charset=utf-8')
+      .header('Content-Disposition', buildContentDisposition(DEMO_FILENAME))
+      .send(csv);
   });
 
   // ─── POST /import-jobs/commit · 确认导入（原子消费会话 + 创建任务）───────────

@@ -1983,6 +1983,43 @@ paths:
         '429':
           description: RATE_LIMITED（5 分钟 3 个 · 带 Retry-After）
 
+  /import-jobs/demo-csv:
+    get:
+      operationId: downloadImportDemoCsv
+      tags: [data-jobs]
+      summary: 下载导入示例 CSV（动态生成 · 含全部可用分类）
+      description: |
+        生成并返回导入示例文件（text/csv; charset=utf-8 · RFC 5987 UTF-8 文件名
+        `Costra_导入示例.csv`）：目标账本可见的每个二级分类（系统 + 家庭自定义）一行
+        合法示例记录，用户删行即完成分类选型。格式与自产导出严格同口径
+        （9 标准列 + BOM + CRLF + quote-all ⇒ 表头指纹 is_costra_export）。
+        填充口径：日期=生成日、时间=23:45、金额=0.01、归属 共同/个人 交替
+        （personal 账本全为个人；收入/转账留空）、记账人=家庭活跃成员昵称轮换、
+        备注=固定样例文本。内存生成不落盘、不入 data_jobs。
+        频控：单用户 5 分钟 ≤10 次（429 RATE_LIMITED）。
+      parameters:
+        - name: ledger_id
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+          description: 目标账本（决定可见分类与成员昵称 · 须为本家庭活跃账本）
+      responses:
+        '200':
+          description: 示例 CSV 文件
+          content:
+            text/csv:
+              schema: { type: string, format: binary }
+        '400':
+          description: INVALID_ARGUMENT（ledger_id 缺失或非法）
+        '401':
+          description: UNAUTHENTICATED
+        '403':
+          description: FAMILY_NOT_MEMBER（非目标家庭活跃成员）
+        '404':
+          description: NOT_FOUND（账本不存在）
+        '429':
+          description: RATE_LIMITED（5 分钟 10 次 · 带 Retry-After）
+
   /import-detect-sessions/{detect_id}/report:
     get:
       operationId: downloadImportDetectReport
@@ -2261,6 +2298,7 @@ components:
         - warnings_truncated
         - unmatched_members
         - unmatched_members_truncated
+        - subcategory_fallback_count
         - report_path
         - created_at
         - expires_at
@@ -2295,6 +2333,9 @@ components:
               nickname: { type: string }
               row_count: { type: integer }
         unmatched_members_truncated: { type: boolean }
+        subcategory_fallback_count:
+          type: integer
+          description: '二级分类降级默认子分类的行数（SUBCATEGORY_FALLBACK 全量聚合 · 二次确认弹窗数据源）'
         report_path: { type: string, description: '报告下载相对路径（24h 有效）' }
         created_at: { type: string, format: date-time }
         expires_at: { type: string, format: date-time, description: 'commit 有效期（15 分钟）' }
