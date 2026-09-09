@@ -119,7 +119,17 @@ describe('listDataJobs', () => {
 
   it('limit 参数透传', async () => {
     requestMock.mockResolvedValueOnce({ jobs: [], server_now: '2026-09-07T10:01:00.000Z' });
-    await listDataJobs(10);
+    await listDataJobs(25);
+    expect(requestMock).toHaveBeenCalledWith({
+      path: '/data-jobs',
+      method: 'GET',
+      query: { limit: 25 },
+    });
+  });
+
+  it('缺省 limit = 10（任务中心只展示最近 10 条）', async () => {
+    requestMock.mockResolvedValueOnce({ jobs: [], server_now: '2026-09-07T10:01:00.000Z' });
+    await listDataJobs();
     expect(requestMock).toHaveBeenCalledWith({
       path: '/data-jobs',
       method: 'GET',
