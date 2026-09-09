@@ -35,6 +35,9 @@ import {
   describeImportIssue,
   demoCsvPath,
   DEMO_CSV_FILENAME,
+  saveImportDetectDraft,
+  loadImportDetectDraft,
+  clearImportDetectDraft,
   type DetectReport,
 } from '../../../services/importApi';
 import {
@@ -48,6 +51,7 @@ import {
   removeCsvShareDraft,
 } from '../../../services/fileTransfer';
 import { triggerOnMutation } from '../../../services/syncScheduler';
+import { getSafeAreaMetrics } from '../../../utils/safeArea';
 import type { ApiError } from '../../../services/request';
 import {
   calcSimulatedProgress,
@@ -69,6 +73,12 @@ const POLL_FAST_WINDOW_MS = 30_000;
 const CREATE_COOLDOWN_MS = 3_000;
 /** 「下载示例文件」分享发起后的按钮冷却（防连点反复拉起分享面板 · §4.6） */
 const DEMO_COOLDOWN_MS = 3_000;
+/**
+ * 新任务卡入场动画标记的持有时长。
+ * 摘除 class 会立即终止在播动画，故必须持有到动画自然播完：
+ * 动画总时长 = max(下滑 600ms, 高亮 2000ms) = 2s，加 1s 节拍余量取 3s。
+ */
+const NEW_CARD_ANIMATION_MS = 3_000;
 
 /** 客户端本地大小上限（§9.1 三层阈值第一层 · 服务端二次校验兜底） */
 const IMPORT_MAX_FILE_BYTES = 1024 * 1024;
@@ -103,16 +113,12 @@ interface JobCard {
   id: string;
   type: DataJob['type'];
   status: DataJob['status'];
+  /** 标题（恒带类型前缀）：导出中/导入中 · 导出完成/导入完成 · 导出已过期 · 导出失败/导入失败 */
   statusText: string;
   stageName: string;
   progress: number;
-  /** 导出：N 条流水；导入：N 条入库（null = 未知） */
-  entryCount: number | null;
-  /** 导入跳过条数（>0 才展示） */
-  skippedCount: number | null;
-  rangeLabel: string;
-  /** 任务所属账本名（多账本时展示归属 · 单账本冗余不渲染 · §7.6/§8.2） */
-  ledgerName: string;
+  /** 副行（空则不渲染）：账本名（多账本 · §7.6/§8.2）· 导出区间 · 条数（导出 N 条流水 / 导入 已导入 N 条 · 跳过 M 条） */
+  metaText: string;
   createdLabel: string;
   isExpired: boolean;
   countdownText: string | null;
@@ -179,8 +185,6 @@ Page({
     hasActiveImport: false,
     /** 检测报告分享草稿准备中（「下载问题报告」按钮态） */
     reportPreparing: false,
-    /** 示例文件分享草稿准备中（「下载示例文件」按钮态 · §4.6） */
-    demoPreparing: false,
     /** 「下载示例文件」冷却剩余秒数（0 = 可点击 · DEMO_COOLDOWN_MS 防连点） */
     demoCooldown: 0,
     // ─── 任务中心 ───
@@ -194,8 +198,8 @@ Page({
   _serverNowMs: 0,
   _serverNowAt: 0,
   _rawJobs: [] as DataJob[],
-  /** 新出现任务的 id 集合（_renderTick 消费当帧即清 · 首载豁免见 _refreshJobs） */
-  _newJobIds: new Set<string>(),
+  /** 新出现任务的入场标记（id → 标记时刻 ms · 持有 NEW_CARD_ANIMATION_MS 后才摘除 · 首载豁免见 _refreshJobs） */
+  _newJobMarks: new Map<string, number>(),
   /** 是否已成功拉取过任务列表（首载整列不算"新增"，避免打开页面时全部齐播入场动画） */
   _jobsLoadedOnce: false,
   /** 「开始导出」冷却截止时间戳（0 = 无冷却） */
@@ -224,7 +228,8 @@ Page({
   onLoad(): void {
     const today = shanghaiDateKeyFromIso(new Date().toISOString());
     this.setData({ today });
-    void this._loadLedgerOptions();
+    // 草稿恢复依赖账本选项（校验账本有效性 + 切换导入目标），串在选项加载之后
+    void this._loadLedgerOptions().then(() => this._restoreDetectDraft());
     void this._refreshJobs();
     this._startTimers();
   },
@@ -294,6 +299,51 @@ Page({
       logger.warn(MODULE, 'load ledger name fail', err);
       this.setData({ ledgerName: '当前账本' });
     }
+  },
+
+  /**
+   * 检测草稿恢复（importApi 本地镜像 · 仅 onLoad 一次；onShow 时页面未销毁，_report 仍在内存）。
+   * - 账本选项未拉到（弱网）⇒ 本次不恢复且保留草稿（下回网好再进来仍可恢复）；
+   * - 草稿账本已不在选项（退家庭/账本删除）⇒ 草稿失效清除；
+   * - 恢复 = 结果区所需的全部内存态重建：导入目标账本切回草稿账本、映射草稿回填、
+   *   成员选项与报告分享草稿重备（onUnload 已回收）。
+   */
+  async _restoreDetectDraft(): Promise<void> {
+    if (this._destroyed) return;
+    const draft = await loadImportDetectDraft();
+    if (!draft || this._destroyed) return;
+    if (this._ledgerOptions.length === 0) return;
+    const option = this._ledgerOptions.find((o) => o.ledgerId === draft.report.ledgerId);
+    if (!option) {
+      void clearImportDetectDraft();
+      return;
+    }
+    const prevLedgerId = this._importLedgerId;
+    this._importLedgerId = option.ledgerId;
+    this._importLedgerFamilyId = option.familyId;
+    this._report = draft.report;
+    this._mappingDraft = { ...draft.memberMapping };
+    if (draft.report.unmatchedMembers.length > 0) {
+      await this._loadMemberOptions();
+    }
+    // 异步窗口内用户已开始新流程（选文件/检测/重置）⇒ 放弃恢复，不覆盖用户新选择
+    if (this._destroyed || this.data.importState !== 'idle' || this._report !== draft.report) return;
+    // 导入目标账本被草稿改写 ⇒ demo 草稿按新账本重备（对齐 _pickLedger 的切账本语义）
+    if (prevLedgerId !== '' && prevLedgerId !== option.ledgerId) {
+      this._dropDemoDraft(prevLedgerId);
+      void this._prepareDemoDraft(option.ledgerId);
+    }
+    if (draft.report.errorCount + draft.report.warningCount > 0) {
+      void this._prepareReportDraft(draft.report);
+    }
+    this.setData({
+      importState: 'report',
+      importLedgerName: option.name,
+      importFileName: draft.report.fileName ?? '导入文件.csv',
+      importFileSizeText: formatFileSize(draft.report.fileSize),
+      fileError: '',
+    });
+    this._syncImportDerived();
   },
 
   onPickImportLedger(): void {
@@ -386,7 +436,7 @@ Page({
       // 新出现任务标记入场动画（首载豁免：页面首次成功拉取时整列不算"新增"）
       if (this._jobsLoadedOnce) {
         for (const job of jobs) {
-          if (!prevById.has(job.id)) this._newJobIds.add(job.id);
+          if (!prevById.has(job.id)) this._newJobMarks.set(job.id, Date.now());
         }
       }
       this._jobsLoadedOnce = true;
@@ -426,19 +476,22 @@ Page({
       this.setData({ hasActiveImport });
     }
     if (this._rawJobs.length === 0) {
-      this._newJobIds.clear();
+      this._newJobMarks.clear();
       if (this.data.jobs.length !== 0) this.setData({ jobs: [] });
       this._syncShareDrafts([]);
       return;
     }
     const serverNowMs = this._currentServerNowMs();
+    const nowMs = Date.now();
     const cards = this._rawJobs.map((job) => {
-      const card = buildJobCard(job, serverNowMs);
-      card.isNew = this._newJobIds.has(job.id);
+      const card = buildJobCard(job, serverNowMs, this.data.showLedgerPicker);
+      const markedAt = this._newJobMarks.get(job.id);
+      // 摘除 class 会立即终止在播动画：标记须持有满 NEW_CARD_ANIMATION_MS，
+      // 期间 class 值不变、wx:key 复用节点，动画正常播完；到期摘除无视觉影响
+      card.isNew = markedAt !== undefined && nowMs - markedAt < NEW_CARD_ANIMATION_MS;
+      if (markedAt !== undefined && !card.isNew) this._newJobMarks.delete(job.id);
       return card;
     });
-    // isNew 仅存在于任务卡节点创建当帧：wx:key 复用节点，下一拍数据摘除 class，动画只播一次
-    this._newJobIds.clear();
     this.setData({ jobs: cards });
     this._syncShareDrafts(cards);
   },
@@ -595,12 +648,13 @@ Page({
   /**
    * 示例文件草稿预下载（§4.6 · 进入页面/切换导入账本时启动）。
    * 无 sha256 契约故不强校验（与检测报告同）；就绪校验要求目标账本未再切换。
+   * 全程后台静默：不驱动按钮态（示例 CSV 极小，准备瞬态外显只会造成按钮文案闪烁），
+   * 未就绪反馈由 onDownloadDemoTap 的 Toast 兜底分支承担。
    */
   async _prepareDemoDraft(ledgerId: string): Promise<void> {
     const key = this._demoDraftKey(ledgerId);
     if (key === '' || this._shareInflight.has(key) || this._shareDrafts.has(key)) return;
     this._shareInflight.add(key);
-    if (ledgerId === this._importLedgerId) this.setData({ demoPreparing: true });
     try {
       const { tempFilePath } = await downloadWithAuth({ path: demoCsvPath(ledgerId) });
       const sharePath = await prepareCsvShareDraft(tempFilePath, demoShareDraftName());
@@ -617,7 +671,6 @@ Page({
       logger.warn(MODULE, `prepare demo draft fail · ${key}`, err);
     } finally {
       this._shareInflight.delete(key);
-      if (ledgerId === this._importLedgerId) this.setData({ demoPreparing: false });
     }
   },
 
@@ -687,6 +740,8 @@ Page({
       const report = await detectImportFile({ filePath: this._importFilePath, ledgerId });
       this._disableLeaveAlert();
       this._report = report;
+      // 落地本地草稿：离开页面后 15 分钟有效期内可恢复结果区（映射选择随映射变更同步更新）
+      void saveImportDetectDraft(report, {});
       // 分享手势门控：报告草稿预下载（结果区「下载问题报告」⇒ tap 同步栈直调 sharePreparedCsv）。
       // 仅在确有问题时预下载：服务端仅在 errors+warnings>0 时生成报告文件
       // （entryImport.writeDetectArtifacts），无问题时对 report_path 的下载恒 404，
@@ -818,6 +873,8 @@ Page({
         this._mappingDraft[nickname] =
           idx < options.length ? options[idx]!.userId : '__self__';
         this._syncImportDerived();
+        // 映射选择同步进草稿：离开页面恢复后已做选择不丢（ttl 随会话有效期，不续期）
+        if (this._report) void saveImportDetectDraft(this._report, this._mappingDraft);
       },
       fail: () => {
         /* 取消选择无操作 */
@@ -855,13 +912,13 @@ Page({
    * 此处同步栈内直调 sharePreparedCsv，禁止加前置 await。
    */
   onDownloadDemoTap(): void {
-    if (this.data.demoPreparing || this.data.demoCooldown > 0) return;
+    if (this.data.demoCooldown > 0) return;
     const key = this._demoDraftKey();
     const ready = key !== '' ? this._shareDrafts.get(key) : undefined;
     if (!ready) {
       // 草稿未就绪（尚未准备或此前失败）：重新准备，就绪后再点（未发起分享不进冷却）
       if (key !== '') this._shareFailed.delete(key);
-      wx.showToast({ title: '示例文件准备中，完成后请再次点击', icon: 'none' });
+      wx.showToast({ title: '示例文件准备中，请稍后再次点击下载', icon: 'none' });
       if (this._importLedgerId !== '') void this._prepareDemoDraft(this._importLedgerId);
       return;
     }
@@ -926,9 +983,11 @@ Page({
         detectId: report.detectId,
         memberMapping: { ...this._mappingDraft },
       });
-      wx.showToast({ title: '导入任务已创建，结果见下方数据任务', icon: 'none' });
+      wx.showToast({ title: '导入任务已创建，结果在数据任务中查看', icon: 'none' });
       this._resetImportCard();
       await this._refreshJobs();
+      // 与导出创建行为对称：结果卡重置（report → idle 折叠）后滚动到任务区，新任务卡落在视口约 1/3 处
+      wx.nextTick(() => this._scrollToJobs());
     } catch (err) {
       const apiErr = err as ApiError;
       if (apiErr?.code === 'DETECT_SESSION_EXPIRED') {
@@ -968,6 +1027,8 @@ Page({
     }
     this._report = null;
     this._mappingDraft = {};
+    // commit 成功 / 手动重选 / 会话过期共用本出口 ⇒ 本地草稿一并清除
+    void clearImportDetectDraft();
     this.setData({
       importState: 'idle',
       fileError: '',
@@ -1083,7 +1144,7 @@ Page({
   async _createJob(range: { from?: string; to?: string }, ledgerId?: string): Promise<void> {
     try {
       await createExportJob({ ...range, ledgerId: ledgerId ?? (this._exportLedgerId || undefined) });
-      wx.showToast({ title: '导出任务已创建，请在下方数据任务查看和下载', icon: 'none' });
+      wx.showToast({ title: '导出任务已创建，请在数据任务中查看和下载', icon: 'none' });
       this._startCreateCooldown();
       await this._refreshJobs();
       // 新任务卡插入列表顶部，滚动到任务区确保 toast 指引的"下方"可见（卡片入场动画不被错过）
@@ -1125,16 +1186,18 @@ Page({
     if (demoCooldown !== this.data.demoCooldown) this.setData({ demoCooldown });
   },
 
-  /** 滚动到「数据任务」区（导出创建成功后 · 区域不存在时静默跳过） */
+  /** 滚动到「数据任务」区（导入/导出任务创建成功后 · 新任务卡落在视口约 1/3 处 · 区域不存在时静默跳过） */
   _scrollToJobs(): void {
     const query = wx.createSelectorQuery().in(this);
-    query.select('.section-title').boundingClientRect();
+    query.select('.task-card').boundingClientRect();
     query.selectViewport().scrollOffset();
     query.exec((res) => {
       const rect = res?.[0] as WechatMiniprogram.BoundingClientRectCallbackResult | null;
-      const viewport = res?.[1] as WechatMiniprogram.ScrollOffsetCallbackResult | null;
-      if (!rect || !viewport) return;
-      wx.pageScrollTo({ scrollTop: viewport.scrollTop + rect.top - 24, duration: 300 });
+      const offset = res?.[1] as WechatMiniprogram.ScrollOffsetCallbackResult | null;
+      if (!rect || !offset) return;
+      // 任务卡顶部落在视口约 1/3 处 ⇒ 卡片主体视觉居中；内容不足时 pageScrollTo 自动收束
+      const targetTop = getSafeAreaMetrics().windowHeight * 0.32;
+      wx.pageScrollTo({ scrollTop: offset.scrollTop + rect.top - targetTop, duration: 300 });
     });
   },
 
@@ -1194,8 +1257,9 @@ Page({
 // 任务卡构建（页面渲染与已读标记的公共出口）
 // ==============================================================================
 
-function buildJobCard(job: DataJob, serverNowMs: number): JobCard {
+function buildJobCard(job: DataJob, serverNowMs: number, showLedgerName: boolean): JobCard {
   const isImport = job.type === 'import';
+  const typeLabel = isImport ? '导入' : '导出';
   const expired =
     !isImport && job.status === 'succeeded' && isExportFileExpired(job.fileExpiresAt, serverNowMs);
   const stageElapsedMs =
@@ -1211,6 +1275,14 @@ function buildJobCard(job: DataJob, serverNowMs: number): JobCard {
         ? 100
         : 0;
 
+  // 副行：账本名（多账本）· 导出区间 · 条数；导入无区间概念，只给结果条数（§8.5 完成文案「已导入 N 条」）
+  const metaParts: string[] = [];
+  if (showLedgerName && job.ledgerName) metaParts.push(job.ledgerName);
+  if (!isImport) metaParts.push(rangeLabelOf(job));
+  const count = isImport ? job.importedCount : job.entryCount;
+  if (count !== null) metaParts.push(isImport ? `已导入 ${count} 条` : `${count} 条流水`);
+  if (isImport && (job.skippedCount ?? 0) > 0) metaParts.push(`跳过 ${job.skippedCount} 条`);
+
   return {
     id: job.id,
     type: job.type,
@@ -1218,19 +1290,14 @@ function buildJobCard(job: DataJob, serverNowMs: number): JobCard {
     statusText:
       job.status === 'succeeded'
         ? expired
-          ? '已过期'
-          : '已完成'
+          ? '导出已过期'
+          : `${typeLabel}完成`
         : job.status === 'failed'
-          ? isImport
-            ? '导入失败'
-            : '导出失败'
-          : '进行中',
+          ? `${typeLabel}失败`
+          : `${typeLabel}中`,
     stageName: stageDisplayName(job.status === 'queued' ? null : job.stage),
     progress,
-    entryCount: isImport ? job.importedCount : job.entryCount,
-    skippedCount: isImport ? job.skippedCount : null,
-    rangeLabel: isImport ? '导入 CSV' : rangeLabelOf(job),
-    ledgerName: job.ledgerName ?? '',
+    metaText: metaParts.join(' · '),
     createdLabel: fmtLocal(job.createdAt),
     isExpired: expired,
     countdownText: expired || isImport ? null : formatExpiresCountdown(job.fileExpiresAt, serverNowMs),

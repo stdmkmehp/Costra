@@ -22,7 +22,7 @@
 
     <!-- 选择前 -->
     <block wx:if="{{importState === 'idle'}}">
-      <view class="card__note">选择导入文件进行检测，检测结果 15 分钟内有效；确认前不会写入任何数据。</view>
+      <view class="card__note">选择导入文件进行检测，确认前不会写入任何数据。</view>
       <button
         class="primary-btn {{hasActiveImport ? 'primary-btn--disabled' : ''}}"
         bindtap="onPickImportFile"
@@ -31,9 +31,9 @@
       <button
         class="secondary-btn"
         bindtap="onDownloadDemoTap"
-        disabled="{{demoPreparing || demoCooldown > 0}}"
-      >{{demoPreparing ? '示例文件准备中…' : demoCooldown > 0 ? demoCooldown + 's 后可再次下载' : '下载示例文件'}}</button>
-      <view class="card__note">示例文件含全部可用分类和成员名。请在电脑上编辑：删除不需要的行、修改金额与日期后，发回微信聊天再选择导入。</view>
+        disabled="{{demoCooldown > 0}}"
+      >{{demoCooldown > 0 ? demoCooldown + 's 后可再次下载' : '下载示例文件'}}</button>
+      <view class="card__note">示例文件含全部可用分类和成员名。请在示例文件的基础上进行编辑后，发回微信聊天再选择导入。</view>
       <view class="form-error" wx:if="{{fileError}}">{{fileError}}</view>
     </block>
 
@@ -43,7 +43,7 @@
         <text class="import-file__name">{{importFileName}}</text>
         <text class="import-file__size">{{importFileSizeText}}</text>
       </view>
-      <view class="card__note">将对账本「{{importLedgerName}}」进行检测；确认前不会写入任何数据。</view>
+      <view class="card__note">将对账本「{{importLedgerName}}」进行导入检测；确认前不会写入任何数据。</view>
       <button class="primary-btn" bindtap="onStartDetectTap">开始检测</button>
       <button class="secondary-btn" bindtap="onResetImportTap">重新选择文件</button>
     </block>
@@ -111,7 +111,7 @@
       >{{committing ? '正在提交…' : commitLabel}}</button>
       <button class="secondary-btn" wx:if="{{showReportDownload}}" bindtap="onDownloadReportTap" disabled="{{reportPreparing}}">{{reportPreparing ? '准备中…' : '下载问题报告'}}</button>
       <button class="secondary-btn" bindtap="onResetImportTap">重新选择文件</button>
-      <view class="card__note">确认后将在后台导入，结果见下方数据任务。</view>
+      <view class="card__note">检测结果 15 分钟内有效，过期需重新选择文件检测；确认后将在后台导入，结果见下方数据任务。</view>
     </block>
   </view>
 
@@ -128,7 +128,7 @@
         <text class="form-row__chevron">›</text>
       </view>
     </view>
-    <view class="card__note" wx:if="{{exportSharedHint}}">将导出该账本范围内所有成员的流水。</view>
+    <view class="card__note" wx:if="{{exportSharedHint}}">将导出该账本内所有成员的流水。</view>
 
     <view class="form-row" bindtap="onRangeTap" hover-class="form-row--hover">
       <text class="form-row__label">时间范围</text>
@@ -165,7 +165,7 @@
       class="primary-btn {{(creating || createCooldown > 0) ? 'primary-btn--disabled' : ''}}"
       bindtap="onCreateTap"
       disabled="{{creating || createCooldown > 0}}"
-    >{{creating ? '正在创建…' : createCooldown > 0 ? createCooldown + 's 后可再次导出' : '开始导出'}}</button>
+    >{{creating ? '正在创建…' : createCooldown > 0 ? createCooldown + 's 后可再次导出' : '生成导出文件'}}</button>
   </view>
 
   <!-- ─── 任务中心（导入/导出统一 · §8.3 步骤 7） ─── -->
@@ -176,9 +176,7 @@
       <text class="task-card__status task-card__status--{{item.status}}{{item.isExpired ? ' task-card__status--expired' : ''}}">{{item.statusText}}</text>
       <text class="task-card__time">{{item.createdLabel}}</text>
     </view>
-    <view class="task-card__meta">
-      <text wx:if="{{showLedgerPicker && item.ledgerName}}">{{item.ledgerName}} · </text>{{item.rangeLabel}}<text wx:if="{{item.entryCount !== null}}"> · {{item.type === 'import' ? '导入' : ''}}{{item.entryCount}} 条{{item.type === 'import' ? '' : '流水'}}</text><text wx:if="{{item.skippedCount > 0}}"> · 跳过 {{item.skippedCount}} 条</text>
-    </view>
+    <view class="task-card__meta" wx:if="{{item.metaText}}">{{item.metaText}}</view>
 
     <!-- 进行中：阶段 + 模拟进度 -->
     <block wx:if="{{item.status === 'queued' || item.status === 'processing'}}">
