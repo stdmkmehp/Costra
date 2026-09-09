@@ -1,16 +1,5 @@
 <!-- pages-family/settings/index.wxml · 设置页 · 布局对齐 bulletin 公告页 -->
 <view class="settings">
-  <view class="settings__item" bindtap="onTapDataManagement" hover-class="settings__item--hover" hover-stay-time="60">
-    <view class="settings__label">
-      <view class="settings__label-main">
-        账本导入 / 导出
-        <view class="settings__dot" wx:if="{{showDataJobDot}}"></view>
-      </view>
-      <view class="settings__sub">{{dataJobSubtext}}</view>
-    </view>
-    <view class="settings__arrow">›</view>
-  </view>
-
   <!-- GM 工具 · 仅 is_gm 用户可见 -->
   <block wx:if="{{isGm}}">
     <view class="settings__section-title">GM 工具</view>
@@ -19,4 +8,7 @@
       <view class="settings__arrow">›</view>
     </view>
   </block>
+
+  <!-- 空态：当前无任何可用设置项（普通用户） -->
+  <view wx:elif="{{gmLoaded}}" class="settings__empty">暂无可用设置项</view>
 </view>

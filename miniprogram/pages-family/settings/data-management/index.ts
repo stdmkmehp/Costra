@@ -1,4 +1,4 @@
-// pages-family/settings/data-management/index · 数据管理（账本导入 + 导出 · 二期）
+// pages-family/settings/data-management/index · 账本导入 / 导出（导入 + 导出 · 二期）
 //
 // 事实源：docs/design/data-import-export-client-analysis.md v1.0 §4/§6/§8.3/§14.2
 //
@@ -8,7 +8,8 @@
 //     detect（上传期间防误返回 R4）→ 就地结果区（统计/问题预览/成员映射/下载报告）→ commit → 任务卡
 //   - 导出表单：选择账本（同上）→ 时间范围（全部/今年/本月/自定义）→ POST /export-jobs
 //   - 任务中心：轮询 GET /data-jobs（2s 起步，30s 后降频 5s）+ 阶段型模拟进度（server_now 基准）
-//     · 导出完成卡：文件信息 + 24h 倒计时 + 逐分片「发送到微信」（多分片给第 N/M 提示 · §6.3）
+//     · 导出完成卡：文件信息 + 24h 倒计时 + 逐分片「发送到微信」（多分片给第 N/M 提示 · §6.3）；
+//       分享草稿预下载（shareFileMessage 手势门控 · 下载/校验/复制全部前置 · 见 fileTransfer 头注）
 //     · 导入完成卡：导入 N 条 / 跳过 M 条（succeeded 后触发一次 triggerOnMutation 同步刷新）
 //     · 页面可见期间任务进入终态 ⇒ 轻震反馈（§8.5）
 //   - 派生态：过期（file_expires_at < server_now ⇒ 重新生成）/ 失败（按 error_code 渲染 · §9.5；
@@ -32,9 +33,20 @@ import {
   detectImportFile,
   commitImportJob,
   describeImportIssue,
+  demoCsvPath,
+  DEMO_CSV_FILENAME,
   type DetectReport,
 } from '../../../services/importApi';
-import { downloadWithAuth, verifyFileSha256, shareCsvToChat } from '../../../services/fileTransfer';
+import {
+  downloadWithAuth,
+  verifyFileSha256,
+  exportShareDraftName,
+  reportShareDraftName,
+  demoShareDraftName,
+  prepareCsvShareDraft,
+  sharePreparedCsv,
+  removeCsvShareDraft,
+} from '../../../services/fileTransfer';
 import { triggerOnMutation } from '../../../services/syncScheduler';
 import type { ApiError } from '../../../services/request';
 import {
@@ -53,6 +65,8 @@ const MODULE = 'dataMgmt';
 const POLL_FAST_MS = 2_000;
 const POLL_SLOW_MS = 5_000;
 const POLL_FAST_WINDOW_MS = 30_000;
+/** 「开始导出」创建成功后的按钮冷却（防连点 · 服务端 EXPORT_JOB_IN_PROGRESS 闸口之外的体验层） */
+const CREATE_COOLDOWN_MS = 3_000;
 
 /** 客户端本地大小上限（§9.1 三层阈值第一层 · 服务端二次校验兜底） */
 const IMPORT_MAX_FILE_BYTES = 1024 * 1024;
@@ -71,11 +85,16 @@ interface LedgerOption {
 interface FileCard {
   part: number;
   filename: string;
+  /** 文件名头段（溢出省略 · 与 nameTail 拼出中间省略显示） */
+  nameHead: string;
+  /** 文件名尾段（固定显示 · 时间戳或分片段 + .csv） */
+  nameTail: string;
   sizeText: string;
   downloadPath: string;
   sha256: string;
-  downloading: boolean;
-  downloadPercent: number;
+  /** 分享草稿准备中（下载 + sha256 校验 + 复制 · 手势门控要求全部前置） */
+  preparing: boolean;
+  preparePercent: number;
 }
 
 interface JobCard {
@@ -103,6 +122,8 @@ interface JobCard {
   errorCode: string | null;
   /** 失败原因（按 error_code 渲染 · §9.5 · 禁渲染 error_message） */
   errorText: string | null;
+  /** 新出现任务的入场动画标记（仅节点创建当帧为 true · 下一拍摘除） */
+  isNew: boolean;
 }
 
 /** 成员映射行（仅自产文件存在未匹配昵称时渲染 · §8.3 步骤 5） */
@@ -135,6 +156,8 @@ Page({
     customTo: '',
     today: '',
     creating: false,
+    /** 「开始导出」冷却剩余秒数（0 = 可点击 · CREATE_COOLDOWN_MS 防连点） */
+    createCooldown: 0,
     // ─── 导入卡（§8.3 状态机） ───
     importState: 'idle' as ImportState,
     fileError: '',
@@ -148,8 +171,14 @@ Page({
     mappingTooMany: false,
     commitEnabled: false,
     commitLabel: '确认导入',
+    /** 本次将导入条数（importableRows + 已映射行数 · 二次确认弹窗与按钮共用 · §4.6） */
+    commitCount: 0,
     committing: false,
     hasActiveImport: false,
+    /** 检测报告分享草稿准备中（「下载问题报告」按钮态） */
+    reportPreparing: false,
+    /** 示例文件分享草稿准备中（「下载示例文件」按钮态 · §4.6） */
+    demoPreparing: false,
     // ─── 任务中心 ───
     loading: true,
     jobs: [] as JobCard[],
@@ -161,6 +190,12 @@ Page({
   _serverNowMs: 0,
   _serverNowAt: 0,
   _rawJobs: [] as DataJob[],
+  /** 新出现任务的 id 集合（_renderTick 消费当帧即清 · 首载豁免见 _refreshJobs） */
+  _newJobIds: new Set<string>(),
+  /** 是否已成功拉取过任务列表（首载整列不算"新增"，避免打开页面时全部齐播入场动画） */
+  _jobsLoadedOnce: false,
+  /** 「开始导出」冷却截止时间戳（0 = 无冷却） */
+  _createCooldownEnd: 0,
   // 账本选项与当前选择（导入/导出各自独立 · 默认当前活跃账本）
   _ledgerOptions: [] as LedgerOption[],
   _importLedgerId: '',
@@ -171,6 +206,14 @@ Page({
   _report: null as DetectReport | null,
   _mappingDraft: {} as Record<string, string>,
   _memberOptions: [] as Array<{ userId: string; nickname: string }>,
+  // 分享草稿（不进视图层）：就绪表 key → {sharePath, filename}；准备中/已失败 key 集合。
+  // key 规约：导出分片 = `${jobId}:{part}`；导入检测报告 = `report:{detectId}`；
+  // 导入示例 = `demo:{ledgerId}`（按目标账本隔离 · 切账本重备 · §4.6）。
+  _shareDrafts: new Map<string, { sharePath: string; filename: string }>(),
+  _shareInflight: new Set<string>(),
+  _shareFailed: new Set<string>(),
+  /** 页面已销毁（onUnload 后异步准备完成须丢弃草稿，防 USER_DATA_PATH 孤儿文件） */
+  _destroyed: false,
 
   onLoad(): void {
     const today = shanghaiDateKeyFromIso(new Date().toISOString());
@@ -193,6 +236,10 @@ Page({
   onUnload(): void {
     this._stopTimers();
     this._disableLeaveAlert();
+    this._destroyed = true;
+    // 分享草稿统一回收（USER_DATA_PATH 是持久存储，页面销毁后不再消费）
+    for (const [, draft] of this._shareDrafts) removeCsvShareDraft(draft.sharePath);
+    this._shareDrafts.clear();
   },
 
   // ─── 初始化 ─────────────────────────────────────────────
@@ -225,6 +272,8 @@ Page({
         exportSharedHint: exportPick.familyKind === 'shared',
         ledgerName: active.name,
       });
+      // 示例文件草稿预下载（§4.6 · 手势门控要求异步准备前置；重复触发由草稿表去重）
+      void this._prepareDemoDraft(importPick.ledgerId);
     } catch (err) {
       logger.warn(MODULE, 'load ledger options fail', err);
       void this._loadLedgerName();
@@ -258,9 +307,12 @@ Page({
         const picked = options[res.tapIndex];
         if (!picked) return;
         if (kind === 'import') {
+          // 示例文件按账本生成（成员/自定义分类不同）：清旧草稿 + 按新账本重备（§4.6）
+          this._dropDemoDraft();
           this._importLedgerId = picked.ledgerId;
           this._importLedgerFamilyId = picked.familyId;
           this.setData({ importLedgerName: picked.name });
+          void this._prepareDemoDraft(picked.ledgerId);
           // 闸口按目标账本判定，切账本后必须重算（否则沿用上一个账本的结论）
           this._renderTick();
         } else {
@@ -325,6 +377,13 @@ Page({
         return prev !== undefined && prev !== j.status && (j.status === 'succeeded' || j.status === 'failed');
       });
       if (justSettled) wx.vibrateShort({ type: 'light' });
+      // 新出现任务标记入场动画（首载豁免：页面首次成功拉取时整列不算"新增"）
+      if (this._jobsLoadedOnce) {
+        for (const job of jobs) {
+          if (!prevById.has(job.id)) this._newJobIds.add(job.id);
+        }
+      }
+      this._jobsLoadedOnce = true;
       this._rawJobs = jobs;
       this._renderTick();
       // 展示即已读（设置页小绿点真相源）；导入成功首见 ⇒ 触发一次主动同步（§8.3 步骤 7）
@@ -344,8 +403,9 @@ Page({
     }
   },
 
-  /** 按最新服务端时间锚点重建任务卡（轮询与本地 1s 节拍共用） */
+  /** 按最新服务端时间锚点重建任务卡（轮询与本地 1s 节拍共用 · 顺带驱动导出按钮冷却倒数） */
   _renderTick(): void {
+    this._syncCreateCooldown();
     // 服务端导入闸口是 per-family（uq_data_jobs_active_import_per_family），
     // 故只有「当前导入目标账本」自身有进行中导入才该挡入口；
     // 按全局判定会让多账本用户被别账本的任务误挡（比服务端更严）。
@@ -359,12 +419,199 @@ Page({
       this.setData({ hasActiveImport });
     }
     if (this._rawJobs.length === 0) {
+      this._newJobIds.clear();
       if (this.data.jobs.length !== 0) this.setData({ jobs: [] });
+      this._syncShareDrafts([]);
       return;
     }
     const serverNowMs = this._currentServerNowMs();
-    const cards = this._rawJobs.map((job) => buildJobCard(job, serverNowMs));
+    const cards = this._rawJobs.map((job) => {
+      const card = buildJobCard(job, serverNowMs);
+      card.isNew = this._newJobIds.has(job.id);
+      return card;
+    });
+    // isNew 仅存在于任务卡节点创建当帧：wx:key 复用节点，下一拍数据摘除 class，动画只播一次
+    this._newJobIds.clear();
     this.setData({ jobs: cards });
+    this._syncShareDrafts(cards);
+  },
+
+  // ─── 分享草稿生命周期（shareFileMessage 手势门控：异步准备全部前置 · 见 fileTransfer 头注） ───
+
+  /**
+   * 按当前任务卡集合驱动草稿：导出完成且未过期的分片 ⇒ 后台预下载；
+   * 失效（过期/删除/列表清空）⇒ 回收磁盘草稿。检测报告草稿由导入卡生命周期单独管理。
+   */
+  _syncShareDrafts(cards: JobCard[]): void {
+    const validKeys = new Set<string>();
+    for (const card of cards) {
+      if (card.type !== 'export' || card.status !== 'succeeded' || card.isExpired) continue;
+      for (const file of card.files) {
+        const key = `${card.id}:${file.part}`;
+        validKeys.add(key);
+        if (
+          !this._shareDrafts.has(key) &&
+          !this._shareInflight.has(key) &&
+          !this._shareFailed.has(key)
+        ) {
+          void this._prepareShareDraft(card.id, file);
+        }
+      }
+    }
+    this._purgeShareDrafts(validKeys);
+  },
+
+  /** 回收失效草稿（导出按 validKeys · 报告草稿只看当前 _report · demo 草稿只看当前导入目标账本 · 幂等） */
+  _purgeShareDrafts(validKeys: Set<string>): void {
+    const reportKey = this._reportDraftKey();
+    const demoKey = this._demoDraftKey();
+    for (const [key, draft] of this._shareDrafts) {
+      if (validKeys.has(key) || (reportKey !== '' && key === reportKey) || (demoKey !== '' && key === demoKey)) continue;
+      removeCsvShareDraft(draft.sharePath);
+      this._shareDrafts.delete(key);
+    }
+    for (const key of this._shareFailed) {
+      if (validKeys.has(key) || (reportKey !== '' && key === reportKey) || (demoKey !== '' && key === demoKey)) continue;
+      this._shareFailed.delete(key);
+    }
+  },
+
+  _reportDraftKey(): string {
+    return this._report ? `report:${this._report.detectId}` : '';
+  },
+
+  _demoDraftKey(ledgerId?: string): string {
+    const id = ledgerId ?? this._importLedgerId;
+    return id !== '' ? `demo:${id}` : '';
+  },
+
+  /** 丢弃指定（默认当前导入目标账本）的示例草稿（切账本时 · 幂等） */
+  _dropDemoDraft(ledgerId?: string): void {
+    const key = this._demoDraftKey(ledgerId);
+    if (key === '') return;
+    const draft = this._shareDrafts.get(key);
+    if (draft) {
+      removeCsvShareDraft(draft.sharePath);
+      this._shareDrafts.delete(key);
+    }
+    this._shareFailed.delete(key);
+  },
+
+  /** 准备完成瞬间的再校验：任务须仍存在、导出 succeeded、未按服务端时间过期、分片仍在 */
+  _isShareTargetValid(jobId: string, part: number): boolean {
+    if (this._destroyed) return false;
+    const job = this._rawJobs.find((j) => j.id === jobId);
+    if (!job || job.type !== 'export' || job.status !== 'succeeded') return false;
+    if (isExportFileExpired(job.fileExpiresAt, this._currentServerNowMs())) return false;
+    return job.files.some((f) => f.part === part);
+  },
+
+  /**
+   * 预下载分享草稿（下载 → sha256 强校验 → 复制到带后缀草稿路径）。
+   * 失败进 _shareFailed 不再自动重试（防轮询节拍无限重试刷 Toast），由用户点击触发重试。
+   */
+  async _prepareShareDraft(jobId: string, file: FileCard, fromTap = false): Promise<void> {
+    const key = `${jobId}:${file.part}`;
+    if (this._shareInflight.has(key) || this._shareDrafts.has(key)) return;
+    this._shareInflight.add(key);
+    this._patchFileCard(jobId, file.part, { preparing: true, preparePercent: 0 });
+    try {
+      const { tempFilePath } = await downloadWithAuth({
+        path: file.downloadPath,
+        onProgress: (percent) => {
+          this._patchFileCard(jobId, file.part, { preparePercent: percent });
+        },
+      });
+      await verifyFileSha256(tempFilePath, file.sha256);
+      const sharePath = await prepareCsvShareDraft(tempFilePath, exportShareDraftName(jobId, file.part));
+      if (this._isShareTargetValid(jobId, file.part)) {
+        this._shareDrafts.set(key, { sharePath, filename: file.filename });
+        this._shareFailed.delete(key);
+      } else {
+        // 目标已失效/页面已销毁 ⇒ 不入就绪表，草稿立即清掉
+        removeCsvShareDraft(sharePath);
+      }
+    } catch (err) {
+      const apiErr = err as ApiError;
+      this._shareFailed.add(key);
+      if (apiErr?.code === 'EXPORT_FILE_EXPIRED') {
+        wx.showToast({ title: '文件已过期，请重新导出', icon: 'none' });
+        await this._refreshJobs(); // 派生态由服务端时间重新判定
+      } else if (apiErr?.code === 'CLIENT_CHECKSUM_MISMATCH') {
+        wx.showToast({ title: '文件校验失败，请重新下载', icon: 'none' });
+      } else if (fromTap) {
+        this._showErrorToast(apiErr);
+      } else {
+        logger.warn(MODULE, `prepare share draft fail · ${key}`, err);
+      }
+    } finally {
+      this._shareInflight.delete(key);
+      this._patchFileCard(jobId, file.part, { preparing: false, preparePercent: 0 });
+    }
+  },
+
+  /** 检测报告草稿预下载（detect 完成渲染结果区时启动 · 报告无 sha256 契约故不强校验） */
+  async _prepareReportDraft(report: DetectReport): Promise<void> {
+    const key = `report:${report.detectId}`;
+    if (this._shareInflight.has(key) || this._shareDrafts.has(key)) return;
+    this._shareInflight.add(key);
+    this.setData({ reportPreparing: true });
+    try {
+      const { tempFilePath } = await downloadWithAuth({ path: report.reportPath });
+      const sharePath = await prepareCsvShareDraft(tempFilePath, reportShareDraftName(report.detectId));
+      const dateKey = shanghaiDateKeyFromIso(report.createdAt);
+      if (!this._destroyed && this._report?.detectId === report.detectId) {
+        this._shareDrafts.set(key, {
+          sharePath,
+          filename: `Costra_导入检测报告_${dateKey}.csv`,
+        });
+        this._shareFailed.delete(key);
+      } else {
+        removeCsvShareDraft(sharePath);
+      }
+    } catch (err) {
+      const apiErr = err as ApiError;
+      this._shareFailed.add(key);
+      // 报告寿命（24h）与检测会话 commit 有效期（15min）解耦（§7.4）：报告不可用
+      // 不影响本次确认导入，故只提示、不重置导入卡（服务端此处返 404 而非会话过期码）
+      if (apiErr?.code === 'NOT_FOUND') {
+        wx.showToast({ title: '检测报告已不可用', icon: 'none' });
+      } else {
+        logger.warn(MODULE, 'prepare report draft fail', err);
+      }
+    } finally {
+      this._shareInflight.delete(key);
+      this.setData({ reportPreparing: false });
+    }
+  },
+
+  /**
+   * 示例文件草稿预下载（§4.6 · 进入页面/切换导入账本时启动）。
+   * 无 sha256 契约故不强校验（与检测报告同）；就绪校验要求目标账本未再切换。
+   */
+  async _prepareDemoDraft(ledgerId: string): Promise<void> {
+    const key = this._demoDraftKey(ledgerId);
+    if (key === '' || this._shareInflight.has(key) || this._shareDrafts.has(key)) return;
+    this._shareInflight.add(key);
+    if (ledgerId === this._importLedgerId) this.setData({ demoPreparing: true });
+    try {
+      const { tempFilePath } = await downloadWithAuth({ path: demoCsvPath(ledgerId) });
+      const sharePath = await prepareCsvShareDraft(tempFilePath, demoShareDraftName());
+      if (!this._destroyed && this._importLedgerId === ledgerId) {
+        this._shareDrafts.set(key, { sharePath, filename: DEMO_CSV_FILENAME });
+        this._shareFailed.delete(key);
+      } else {
+        // 页面已销毁或账本已切换 ⇒ 不入就绪表，草稿立即清掉
+        removeCsvShareDraft(sharePath);
+      }
+    } catch (err) {
+      // 静默失败不打扰（示例非关键路径）：按钮点击时再重试并提示
+      this._shareFailed.add(key);
+      logger.warn(MODULE, `prepare demo draft fail · ${key}`, err);
+    } finally {
+      this._shareInflight.delete(key);
+      if (ledgerId === this._importLedgerId) this.setData({ demoPreparing: false });
+    }
   },
 
   // ─── 导入卡：选择与校验（§8.3 步骤 3-7 · 校验失败就地展示不 Toast） ─────────────────
@@ -375,16 +622,19 @@ Page({
       this.setData({ fileError: '该账本已有导入任务进行中，请等待完成' });
       return;
     }
+    // extension 必须双写法 ['.csv', 'csv']：Android 按带点后缀匹配、iOS 按不带点匹配（官方文档未写明，
+    // 社区实测的端差异），只写一种会在另一端把文件列表滤空；选中后仍有下方大小写不敏感的手动 .csv
+    // 校验 + 服务端内容校验兜底（§14.1 spike 结论）
     wx.chooseMessageFile({
       count: 1,
       type: 'file',
-      extension: ['.csv'],
+      extension: ['.csv', 'csv', '.CSV', 'CSV'],
       success: (res) => {
         const file = res.tempFiles?.[0];
         if (!file) return;
         const name = file.name || '导入文件.csv';
         if (!name.toLowerCase().endsWith('.csv')) {
-          this.setData({ fileError: '仅支持 CSV 文件' });
+          this.setData({ fileError: '仅支持 csv 文件' });
           return;
         }
         // 客户端本地大小校验（§9.1 三层阈值第一层 · 服务端二次校验兜底）
@@ -430,6 +680,13 @@ Page({
       const report = await detectImportFile({ filePath: this._importFilePath, ledgerId });
       this._disableLeaveAlert();
       this._report = report;
+      // 分享手势门控：报告草稿预下载（结果区「下载问题报告」⇒ tap 同步栈直调 sharePreparedCsv）。
+      // 仅在确有问题时预下载：服务端仅在 errors+warnings>0 时生成报告文件
+      // （entryImport.writeDetectArtifacts），无问题时对 report_path 的下载恒 404，
+      // 无条件预下载会误弹「检测报告已不可用」（下载入口 showReportDownload 同条件隐藏）。
+      if (report.errorCount + report.warningCount > 0) {
+        void this._prepareReportDraft(report);
+      }
       this._mappingDraft = {};
       if (report.unmatchedMembers.length > 0) {
         await this._loadMemberOptions();
@@ -530,6 +787,7 @@ Page({
       mappingTooMany,
       commitEnabled: commitCount > 0 && !mappingTooMany && !this.data.committing,
       commitLabel: `确认导入 ${commitCount} 条`,
+      commitCount,
     });
   },
 
@@ -560,38 +818,96 @@ Page({
     });
   },
 
-  async onDownloadReportTap(): Promise<void> {
+  /**
+   * 「下载问题报告」→ 发送到微信。
+   * shareFileMessage 手势门控（见 fileTransfer 头注）：报告草稿在 detect 完成时已预下载，
+   * 此处同步栈内直调 sharePreparedCsv，禁止加前置 await。
+   */
+  onDownloadReportTap(): void {
     const report = this._report;
-    if (!report) return;
-    try {
-      const { tempFilePath } = await downloadWithAuth({ path: report.reportPath });
-      const dateKey = shanghaiDateKeyFromIso(report.createdAt);
-      const shared = await shareCsvToChat(tempFilePath, `Costra_导入检测报告_${dateKey}.csv`);
+    if (!report || this.data.reportPreparing) return;
+    const key = `report:${report.detectId}`;
+    const ready = this._shareDrafts.get(key);
+    if (!ready) {
+      // 草稿未就绪（此前准备失败）：重新准备，就绪后再点
+      this._shareFailed.delete(key);
+      wx.showToast({ title: '报告准备中，完成后请再次点击', icon: 'none' });
+      void this._prepareReportDraft(report);
+      return;
+    }
+    void sharePreparedCsv(ready.sharePath, ready.filename).then((shared) => {
       if (!shared) {
         wx.showToast({ title: '已取消分享', icon: 'none' });
       }
-    } catch (err) {
-      const apiErr = err as ApiError;
-      // 报告寿命（24h）与检测会话 commit 有效期（15min）解耦（§7.4）：报告不可用
-      // 不影响本次确认导入，故只提示、不重置导入卡（服务端此处返 404 而非会话过期码）
-      if (apiErr?.code === 'NOT_FOUND') {
-        wx.showToast({ title: '检测报告已不可用', icon: 'none' });
-        return;
-      }
-      this._showErrorToast(apiErr);
-    }
+    }, (err) => this._showErrorToast(err as ApiError));
   },
 
-  async onCommitImportTap(): Promise<void> {
+  /**
+   * 「下载示例文件」→ 发送到微信（§4.6）。
+   * shareFileMessage 手势门控：示例草稿在页面加载/切换账本时已预下载，
+   * 此处同步栈内直调 sharePreparedCsv，禁止加前置 await。
+   */
+  onDownloadDemoTap(): void {
+    if (this.data.demoPreparing) return;
+    const key = this._demoDraftKey();
+    const ready = key !== '' ? this._shareDrafts.get(key) : undefined;
+    if (!ready) {
+      // 草稿未就绪（尚未准备或此前失败）：重新准备，就绪后再点
+      if (key !== '') this._shareFailed.delete(key);
+      wx.showToast({ title: '示例文件准备中，完成后请再次点击', icon: 'none' });
+      if (this._importLedgerId !== '') void this._prepareDemoDraft(this._importLedgerId);
+      return;
+    }
+    void sharePreparedCsv(ready.sharePath, ready.filename).then((shared) => {
+      if (!shared) {
+        wx.showToast({ title: '已取消分享', icon: 'none' });
+      }
+    }, (err) => this._showErrorToast(err as ApiError));
+  },
+
+  /**
+   * 确认导入的二次确认弹窗（§4.6）：提交前汇总展示导入/跳过条数、
+   * 昵称映射去向与系统降级分类条数，用户确认后才真正创建导入任务。
+   */
+  onCommitImportTap(): void {
     const report = this._report;
     if (!report || !this.data.commitEnabled || this.data.committing) return;
+
+    const commitCount = this.data.commitCount;
+    const skipped = report.totalRows - commitCount;
+    const lines = [`将导入 ${commitCount} 条流水${skipped > 0 ? `，跳过 ${skipped} 条` : ''}`];
+    const mappings = Object.entries(this._mappingDraft)
+      .filter(([, target]) => target !== '')
+      .map(([nick, target]) => `「${nick}」→ ${target === '__self__' ? '我' : this._mappingTargetLabel(target)}`);
+    if (mappings.length > 0) {
+      lines.push(`昵称映射：${mappings.join('、')}`);
+    }
+    if (report.subcategoryFallbackCount > 0) {
+      lines.push(`其中 ${report.subcategoryFallbackCount} 条的二级分类不存在，将归入默认子分类`);
+    }
+    lines.push('确认后将在后台导入，结果见下方数据任务');
+
+    wx.showModal({
+      title: '确认导入',
+      content: lines.join('\n'),
+      confirmText: '确认导入',
+      cancelText: '再想想',
+      success: (res) => {
+        if (res.confirm) void this._doCommitImport();
+      },
+    });
+  },
+
+  async _doCommitImport(): Promise<void> {
+    const report = this._report;
+    if (!report || this.data.committing) return;
     this.setData({ committing: true, commitEnabled: false });
     try {
       await commitImportJob({
         detectId: report.detectId,
         memberMapping: { ...this._mappingDraft },
       });
-      wx.showToast({ title: '导入任务已创建', icon: 'none' });
+      wx.showToast({ title: '导入任务已创建，结果见下方数据任务', icon: 'none' });
       this._resetImportCard();
       await this._refreshJobs();
     } catch (err) {
@@ -621,6 +937,16 @@ Page({
   _resetImportCard(): void {
     this._disableLeaveAlert();
     this._importFilePath = '';
+    // 报告草稿随导入卡生命周期回收（在途准备完成时会因 _report 已空而自弃）
+    const reportKey = this._reportDraftKey();
+    if (reportKey !== '') {
+      const draft = this._shareDrafts.get(reportKey);
+      if (draft) {
+        removeCsvShareDraft(draft.sharePath);
+        this._shareDrafts.delete(reportKey);
+      }
+      this._shareFailed.delete(reportKey);
+    }
     this._report = null;
     this._mappingDraft = {};
     this.setData({
@@ -632,10 +958,12 @@ Page({
       issuesPreview: [],
       issuesOverflowText: '',
       showReportDownload: false,
+      reportPreparing: false,
       mappingRows: [],
       mappingTooMany: false,
       commitEnabled: false,
       commitLabel: '确认导入',
+      commitCount: 0,
     });
   },
 
@@ -736,7 +1064,11 @@ Page({
   async _createJob(range: { from?: string; to?: string }, ledgerId?: string): Promise<void> {
     try {
       await createExportJob({ ...range, ledgerId: ledgerId ?? (this._exportLedgerId || undefined) });
+      wx.showToast({ title: '导出任务已创建，请在下方数据任务查看和下载', icon: 'none' });
+      this._startCreateCooldown();
       await this._refreshJobs();
+      // 新任务卡插入列表顶部，滚动到任务区确保 toast 指引的"下方"可见（卡片入场动画不被错过）
+      wx.nextTick(() => this._scrollToJobs());
     } catch (err) {
       const apiErr = err as ApiError;
       if (apiErr?.code === 'EXPORT_JOB_IN_PROGRESS') {
@@ -749,49 +1081,68 @@ Page({
     }
   },
 
+  /** 创建成功后启动按钮冷却（防连点 · 立即折算一次让按钮即刻置灰） */
+  _startCreateCooldown(): void {
+    this._createCooldownEnd = Date.now() + CREATE_COOLDOWN_MS;
+    this._syncCreateCooldown();
+  },
+
+  /** 按真实时间戳折算剩余冷却秒数（1s 节拍驱动 · 页面隐藏期间节拍暂停，恢复后按时间戳自愈） */
+  _syncCreateCooldown(): void {
+    const remain = Math.ceil((this._createCooldownEnd - Date.now()) / 1000);
+    const createCooldown = remain > 0 ? remain : 0;
+    if (createCooldown !== this.data.createCooldown) this.setData({ createCooldown });
+  },
+
+  /** 滚动到「数据任务」区（导出创建成功后 · 区域不存在时静默跳过） */
+  _scrollToJobs(): void {
+    const query = wx.createSelectorQuery().in(this);
+    query.select('.section-title').boundingClientRect();
+    query.selectViewport().scrollOffset();
+    query.exec((res) => {
+      const rect = res?.[0] as WechatMiniprogram.BoundingClientRectCallbackResult | null;
+      const viewport = res?.[1] as WechatMiniprogram.ScrollOffsetCallbackResult | null;
+      if (!rect || !viewport) return;
+      wx.pageScrollTo({ scrollTop: viewport.scrollTop + rect.top - 24, duration: 300 });
+    });
+  },
+
   _showErrorToast(err: ApiError): void {
     const mapped = mapError(err);
     wx.showToast({ title: mapped.desc || mapped.title || '请稍后再试', icon: 'none' });
   },
 
-  async onDownloadTap(e: WechatMiniprogram.TouchEvent): Promise<void> {
+  /**
+   * 「发送到微信」（§6.3 · 完成卡唯一出口动作）。
+   * shareFileMessage 手势门控（can only be invoked by user TAP gesture · 见 fileTransfer 头注）：
+   * 下载/校验/复制已在草稿准备阶段完成，此处同步栈内直调 sharePreparedCsv，禁止加前置 await。
+   */
+  onDownloadTap(e: WechatMiniprogram.TouchEvent): void {
     const { jobId, part } = e.currentTarget.dataset as { jobId: string; part: number };
     const jobCard = this.data.jobs.find((j) => j.id === jobId);
     const fileCard = jobCard?.files.find((f) => f.part === Number(part));
-    if (!jobCard || !fileCard || fileCard.downloading) return;
+    if (!jobCard || !fileCard || fileCard.preparing) return;
 
-    this._patchFileCard(jobId, fileCard.part, { downloading: true, downloadPercent: 0 });
-    try {
-      const { tempFilePath } = await downloadWithAuth({
-        path: fileCard.downloadPath,
-        onProgress: (percent) => {
-          this._patchFileCard(jobId, fileCard.part, { downloadPercent: percent });
-        },
-      });
-      await verifyFileSha256(tempFilePath, fileCard.sha256);
-      const shared = await shareCsvToChat(tempFilePath, fileCard.filename);
+    const key = `${jobId}:${fileCard.part}`;
+    const ready = this._shareDrafts.get(key);
+    if (!ready) {
+      // 草稿未就绪（此前准备失败）：重新准备，就绪后再点发送
+      this._shareFailed.delete(key);
+      wx.showToast({ title: '文件准备中，完成后请再次点击发送', icon: 'none' });
+      void this._prepareShareDraft(jobId, fileCard, true);
+      return;
+    }
+    void sharePreparedCsv(ready.sharePath, ready.filename).then((shared) => {
       if (!shared) {
         wx.showToast({ title: '已取消分享', icon: 'none' });
       } else if (jobCard.files.length > 1 && fileCard.part < jobCard.files.length) {
-        // §6.3：多分片逐个下载转发，每次转发之间给明确提示
+        // §6.3：多分片逐个转发，每次转发之间给明确提示
         wx.showToast({
           title: `第 ${fileCard.part} / ${jobCard.files.length} 个文件已发送`,
           icon: 'none',
         });
       }
-    } catch (err) {
-      const apiErr = err as ApiError;
-      if (apiErr?.code === 'EXPORT_FILE_EXPIRED') {
-        wx.showToast({ title: '文件已过期，请重新导出', icon: 'none' });
-        await this._refreshJobs(); // 派生态由服务端时间重新判定
-      } else if (apiErr?.code === 'CLIENT_CHECKSUM_MISMATCH') {
-        wx.showToast({ title: '文件校验失败，请重新下载', icon: 'none' });
-      } else {
-        this._showErrorToast(apiErr);
-      }
-    } finally {
-      this._patchFileCard(jobId, fileCard.part, { downloading: false, downloadPercent: 0 });
-    }
+    }, (err) => this._showErrorToast(err as ApiError));
   },
 
   _patchFileCard(jobId: string, part: number, patch: Partial<FileCard>): void {
@@ -858,19 +1209,34 @@ function buildJobCard(job: DataJob, serverNowMs: number): JobCard {
     ledgerId: job.ledgerId,
     errorCode: job.error?.code ?? null,
     errorText: job.status === 'failed' ? describeDataJobError(job.error?.code) : null,
+    isNew: false,
   };
 }
 
 function buildFileCard(file: DataJobFile): FileCard {
+  const { head, tail } = splitExportFilename(file.filename);
   return {
     part: file.part,
     filename: file.filename,
+    nameHead: head,
+    nameTail: tail,
     sizeText: formatFileSize(file.sizeBytes),
     downloadPath: file.downloadPath,
     sha256: file.sha256,
-    downloading: false,
-    downloadPercent: 0,
+    preparing: false,
+    preparePercent: 0,
   };
+}
+
+/**
+ * 导出文件名拆头/尾两段（头段溢出省略 ⇒ 中间省略效果）。
+ * 依赖服务端冻结命名 Costra_{账本}_{start}至{end}_{ts}[_NofM].csv（server entryExport §2.2）：
+ * 最后一个 "_" 之后恒为时间戳或分片段，其内部不含 "_"。
+ */
+function splitExportFilename(filename: string): { head: string; tail: string } {
+  const sep = filename.lastIndexOf('_');
+  if (sep <= 0 || sep === filename.length - 1) return { head: filename, tail: '' };
+  return { head: filename.slice(0, sep + 1), tail: filename.slice(sep + 1) };
 }
 
 function rangeLabelOf(job: DataJob): string {

@@ -288,24 +288,42 @@ export async function uploadWithAuth(opts: UploadWithAuthOptions): Promise<Uploa
   throw classifyUploadErrorBody(res.statusCode, typeof res.data === 'string' ? res.data : '');
 }
 
+// ==============================================================================
+// 微信聊天分享（wx.shareFileMessage · 完成卡唯一出口动作）
+// ==============================================================================
+//
+// 真机两条硬约束（2026-09-08 实机复现 · 开发者工具均不校验）：
+//   1. 后缀：downloadFile 临时路径无文件后缀，真机按路径后缀判定文件类型，无后缀
+//      直接 fail ⇒ 须先复制到 USER_DATA_PATH 带 .csv 后缀的草稿文件；
+//   2. 手势门控：shareFileMessage 只允许在用户 tap 手势的同步调用栈内发起
+//      （fail: can only be invoked by user TAP gesture），任何前置 await
+//      （下载/校验/复制）都会脱离手势栈 ⇒ 异步工作必须全部前置到准备阶段
+//      （prepareCsvShareDraft），tap 处理器内只调 sharePreparedCsv 且禁止前置 await。
+
+/** 导出分片草稿名（按 jobId+part 隔离 · 多分片/多任务互不覆盖） */
+export function exportShareDraftName(jobId: string, part: number): string {
+  return `costra-share-export-${jobId}-${part}.csv`;
+}
+
+/** 导入检测报告草稿名（按 detectId 隔离） */
+export function reportShareDraftName(detectId: string): string {
+  return `costra-share-report-${detectId}.csv`;
+}
+
+/** 导入示例草稿名（固定 · 多次准备覆盖复用防堆积 · §4.6） */
+export function demoShareDraftName(): string {
+  return 'costra-share-import-demo.csv';
+}
+
 /**
- * 发送文件到微信聊天（微信原生分享面板 · 完成卡唯一出口动作）。
- * 用户取消分享时微信走 fail（errMsg 含 cancel）⇒ 返回 false 而不抛错。
- *
- * downloadFile 临时路径无文件后缀，真机 shareFileMessage 按路径后缀判定文件类型，
- * 无后缀直接 fail（开发者工具模拟器不校验 · 2026-09-08 实机复现）；故先复制到
- * USER_DATA_PATH 固定草稿名（覆盖复用防堆积 · 自带 .csv 后缀），展示名仍用服务端原始文件名。
+ * 复制下载产物为带 .csv 后缀的分享草稿（覆盖复用防堆积 · 展示名仍用服务端原始文件名）。
+ * 异步操作，须在 tap 手势前的准备阶段完成；返回草稿路径（喂 sharePreparedCsv）。
  */
-export async function shareCsvToChat(filePath: string, fileName: string): Promise<boolean> {
-  const sharePath = `${wx.env.USER_DATA_PATH}/costra-share.csv`;
-  const fs = wx.getFileSystemManager();
-  try {
-    fs.unlinkSync(sharePath);
-  } catch {
-    // 草稿文件首次分享时尚不存在
-  }
+export async function prepareCsvShareDraft(filePath: string, draftName: string): Promise<string> {
+  const sharePath = `${wx.env.USER_DATA_PATH}/${draftName}`;
+  removeCsvShareDraft(sharePath);
   await new Promise<void>((resolve, reject) => {
-    fs.copyFile({
+    wx.getFileSystemManager().copyFile({
       srcPath: filePath,
       destPath: sharePath,
       success: () => resolve(),
@@ -315,6 +333,15 @@ export async function shareCsvToChat(filePath: string, fileName: string): Promis
       },
     });
   });
+  return sharePath;
+}
+
+/**
+ * 发送已就绪草稿到微信聊天（微信原生分享面板）。
+ * 函数体无前置 await（Promise executor 同步执行）⇒ 可在 tap 手势同步栈内安全调用；
+ * 调用方同样禁止在其前加 await。用户取消分享时微信走 fail（errMsg 含 cancel）⇒ 返回 false 而不抛错。
+ */
+export function sharePreparedCsv(sharePath: string, fileName: string): Promise<boolean> {
   return new Promise((resolve, reject) => {
     wx.shareFileMessage({
       filePath: sharePath,
@@ -330,4 +357,13 @@ export async function shareCsvToChat(filePath: string, fileName: string): Promis
       },
     });
   });
+}
+
+/** 清理分享草稿（任务过期/消失 · 导入卡重置 · 页面卸载时调用 · 幂等） */
+export function removeCsvShareDraft(sharePath: string): void {
+  try {
+    wx.getFileSystemManager().unlinkSync(sharePath);
+  } catch {
+    /* 草稿尚不存在 */
+  }
 }

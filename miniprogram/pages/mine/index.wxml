@@ -48,7 +48,6 @@
       <view class="support-banner__body">
         <view class="support-banner__title">支持 Costra</view>
         <view wx:if="{{supporterBadge}}" class="support-banner__sub">支持度 {{supportScore}} · 感谢你</view>
-        <view wx:else class="support-banner__sub">记账功能永久免费，赞赏完全自愿</view>
         <view class="support-banner__cta">{{supporterBadge ? '再次支持' : '去支持'}} ›</view>
       </view>
     </view>
@@ -61,6 +60,13 @@
       </view>
       <view class="menu__item" bindtap="onTapRecurring" hover-class="menu__item--hover" hover-stay-time="60">
         <view class="menu__label">定时记账</view>
+        <view class="menu__arrow">›</view>
+      </view>
+      <view class="menu__item" bindtap="onTapDataManagement" hover-class="menu__item--hover" hover-stay-time="60">
+        <view class="menu__label">
+          账本导入 / 导出
+          <view wx:if="{{showDataJobDot}}" class="menu__dot"></view>
+        </view>
         <view class="menu__arrow">›</view>
       </view>
       <view class="menu__item" bindtap="onTapBulletin" hover-class="menu__item--hover" hover-stay-time="60">

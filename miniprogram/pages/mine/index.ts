@@ -7,7 +7,8 @@
 // 改造要点（2026-06-08）：
 //   - 顶部用户区：头像居中放大（160rpx），昵称居中，下方"已记账 X 天"
 //   - 宏观数据：横向 2 列（记账天数 / 记账笔数）· 走 GET /users/me/overview
-//   - 功能列表：定时记账 / 创建协作 / 公告 / 意见反馈 / 关于 Costra — 意见反馈使用无样式 button 承载 open-type=feedback，内层 view 复用普通菜单项布局
+//   - 功能列表：创建协作 / 定时记账 / 账本导入导出 / 公告 / 意见反馈 / 关于 Costra / 设置 — 意见反馈使用无样式 button 承载 open-type=feedback，内层 view 复用普通菜单项布局
+//   - 账本导入/导出入口：小绿点 = 存在未读的已完成数据任务（data-import-export v1.0 §8.1）
 //   - 退出登录 / 合规 footer 完整保留（ICP 备案号仅展示，不再点击复制）
 
 import { hasValidSession, getSession, logout, getToken } from '../../services/auth';
@@ -21,6 +22,7 @@ import {
 } from '../../services/userOverviewApi';
 import { pendingCount } from '../../services/outbox';
 import { hasUnreadAnnouncements } from '../../services/announcementApi';
+import { listDataJobs, getSeenCompletedJobIds } from '../../services/dataJobApi';
 import { buildAppShareContent } from '../../utils/share';
 
 interface AppWithBootstrapAndGlobal {
@@ -47,6 +49,8 @@ Page({
     supporterBadge: false,
     badgeVisible: false,
     supportScore: 0,
+    // 账本导入/导出入口绿点（§8.1）
+    showDataJobDot: false,
   },
 
   _profileBadgeOnHandler: null as (() => void) | null,
@@ -213,6 +217,9 @@ Page({
       // 但公告菜单项的红点需用户真正阅读后才消失（后端 is_read 驱动）
       void this._checkBulletinBadge();
 
+      // 账本导入/导出入口绿点（§8.1）
+      void this._refreshDataJobEntry();
+
       // COSTRA-150: 页面 onShow 触发同步调度（debounce 5s）
       triggerOnPageShow('mine');
 
@@ -277,6 +284,21 @@ Page({
 
   onTapRecurring() {
     wx.navigateTo({ url: '/pages-recurring/list/index' });
+  },
+
+  /** 入口绿点：存在未读的已完成数据任务（§8.1 · 失败静默保持现状） */
+  async _refreshDataJobEntry() {
+    try {
+      const [{ jobs }, seen] = await Promise.all([listDataJobs(), getSeenCompletedJobIds()]);
+      const unseen = jobs.some((j) => j.status === 'succeeded' && !seen.includes(j.id));
+      this.setData({ showDataJobDot: unseen });
+    } catch {
+      // 网络失败：保持既有展示（不闪烁）
+    }
+  },
+
+  onTapDataManagement() {
+    wx.navigateTo({ url: '/pages-family/settings/data-management/index' });
   },
 
   onTapSettings() {

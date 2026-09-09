@@ -55,6 +55,8 @@ export interface DetectReportWire {
   warnings_truncated: boolean;
   unmatched_members: UnmatchedMemberWire[];
   unmatched_members_truncated: boolean;
+  /** 二级分类降级默认子分类的行数（全量聚合 · 二次确认弹窗数据源 · §4.6） */
+  subcategory_fallback_count: number;
   report_path: string;
   created_at: string;
   expires_at: string;
@@ -94,6 +96,8 @@ export interface DetectReport {
   warningsTruncated: boolean;
   unmatchedMembers: UnmatchedMember[];
   unmatchedMembersTruncated: boolean;
+  /** 二级分类降级默认子分类的行数（全量聚合 · 二次确认弹窗数据源 · §4.6） */
+  subcategoryFallbackCount: number;
   /** 报告下载相对路径（直接喂 downloadWithAuth · 24h 有效） */
   reportPath: string;
   createdAt: string;
@@ -130,6 +134,7 @@ export function adaptDetectReport(wire: DetectReportWire): DetectReport {
       rowCount: m.row_count,
     })),
     unmatchedMembersTruncated: wire.unmatched_members_truncated === true,
+    subcategoryFallbackCount: wire.subcategory_fallback_count ?? 0,
     reportPath: wire.report_path,
     createdAt: wire.created_at,
     expiresAt: wire.expires_at,
@@ -189,13 +194,13 @@ export function describeImportIssue(issue: DetectReportIssue): string {
       body = '非支出类型的归属列已忽略';
       break;
     case 'SHARED_TYPE_UNRECOGNIZED':
-      body = `归属无法识别${v ? `「${v}」` : ''}，已按家庭默认处理`;
+      body = `归属无法识别${v ? `「${v}」` : ''}，已按「个人」处理`;
       break;
     case 'NOTE_TRUNCATED':
       body = '备注超过 200 字，已截断';
       break;
     case 'SHARED_DEFAULT_SUMMARY':
-      body = '多条支出未指定归属，将按共同家庭默认记为「共同」';
+      body = '多条支出未指定归属，将记为「个人」';
       break;
     case 'SHARED_FORCED_PERSONAL':
       body = '目标为个人账本，归属列已统一按「个人」处理';
@@ -208,6 +213,14 @@ export function describeImportIssue(issue: DetectReportIssue): string {
 }
 
 // ─── 端点 ───
+
+/** 导入示例 CSV 下载路径（§4.6 · 直接喂 fileTransfer.downloadWithAuth） */
+export function demoCsvPath(ledgerId: string): string {
+  return `/import-jobs/demo-csv?ledger_id=${encodeURIComponent(ledgerId)}`;
+}
+
+/** 示例文件展示名（分享面板与微信文件消息可见 · 与服务端 Content-Disposition 一致） */
+export const DEMO_CSV_FILENAME = 'Costra_导入示例.csv';
 
 /**
  * 上传 CSV 并同步检测（§4.2）。

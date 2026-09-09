@@ -182,6 +182,16 @@
 .menu__item--hover { background: rgba(0, 0, 0, 0.04); }
 .menu > .menu__item:last-child { border-bottom: none; }
 .menu__label { flex: 1; font-size: 28rpx; color: var(--color-text); }
+/* 未读完成数据任务小绿点（账本导入/导出入口 · 8rpx · data-import-export §8.1） */
+.menu__dot {
+  display: inline-block;
+  width: 8rpx;
+  height: 8rpx;
+  border-radius: 50%;
+  background: var(--color-success);
+  vertical-align: middle;
+  margin-left: 12rpx;
+}
 .menu__badge-dot {
   display: inline-block;
   width: 14rpx;

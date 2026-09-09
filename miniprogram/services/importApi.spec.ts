@@ -35,6 +35,7 @@ function wireReport(overrides: Partial<DetectReportWire> = {}): DetectReportWire
     warnings_truncated: false,
     unmatched_members: [{ nickname: '老王', row_count: 3 }],
     unmatched_members_truncated: false,
+    subcategory_fallback_count: 2,
     report_path: '/v1/import-detect-sessions/d-1/report',
     created_at: '2026-09-07T10:00:00.000Z',
     expires_at: '2026-09-07T10:15:00.000Z',
@@ -69,6 +70,7 @@ describe('adaptDetectReport', () => {
     });
     expect(r.errorsPreview[0]).toEqual({ row: 2, field: '金额', code: 'AMOUNT_INVALID', valuePreview: 'abc' });
     expect(r.unmatchedMembers[0]).toEqual({ nickname: '老王', rowCount: 3 });
+    expect(r.subcategoryFallbackCount).toBe(2);
   });
 
   it('缺省字段防御（undefined 预览/映射 ⇒ 空数组 + false）', () => {
@@ -80,6 +82,7 @@ describe('adaptDetectReport', () => {
     delete partial['errors_truncated'];
     delete partial['warnings_truncated'];
     delete partial['unmatched_members_truncated'];
+    delete partial['subcategory_fallback_count'];
     const r = adaptDetectReport(partial as unknown as DetectReportWire);
     expect(r.errorsPreview).toEqual([]);
     expect(r.warningsPreview).toEqual([]);
@@ -87,6 +90,7 @@ describe('adaptDetectReport', () => {
     expect(r.errorsTruncated).toBe(false);
     expect(r.warningsTruncated).toBe(false);
     expect(r.unmatchedMembersTruncated).toBe(false);
+    expect(r.subcategoryFallbackCount).toBe(0);
   });
 });
 
@@ -138,7 +142,7 @@ describe('describeImportIssue · 按 code 本地化（§4.2）', () => {
 
   it('汇总级（row=0）不带行号前缀', () => {
     expect(describeImportIssue(I('SHARED_FORCED_PERSONAL', { row: 0, field: '归属' }))).toBe('目标为个人账本，归属列已统一按「个人」处理');
-    expect(describeImportIssue(I('SHARED_DEFAULT_SUMMARY', { row: 0, field: '归属' }))).toBe('多条支出未指定归属，将按共同家庭默认记为「共同」');
+    expect(describeImportIssue(I('SHARED_DEFAULT_SUMMARY', { row: 0, field: '归属' }))).toBe('多条支出未指定归属，将记为「个人」');
   });
 
   it('未知 code 兜底展示原 code（不吞信息）', () => {
