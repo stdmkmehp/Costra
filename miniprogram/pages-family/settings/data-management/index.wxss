@@ -391,18 +391,6 @@
   color: var(--color-text-muted);
 }
 
-/* ─── 导入卡：按钮组 ──────────────────────────────────────────── */
-.import-actions {
-  display: flex;
-  gap: 24rpx;
-}
-
-.import-actions__btn {
-  flex: 1;
-  margin-left: 0;
-  margin-right: 0;
-}
-
 /* 本地校验失败就地展示（§8.3 · 不使用一闪而过的 Toast） */
 .form-error {
   margin-top: 16rpx;

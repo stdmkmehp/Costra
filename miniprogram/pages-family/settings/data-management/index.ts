@@ -67,6 +67,8 @@ const POLL_SLOW_MS = 5_000;
 const POLL_FAST_WINDOW_MS = 30_000;
 /** 「开始导出」创建成功后的按钮冷却（防连点 · 服务端 EXPORT_JOB_IN_PROGRESS 闸口之外的体验层） */
 const CREATE_COOLDOWN_MS = 3_000;
+/** 「下载示例文件」分享发起后的按钮冷却（防连点反复拉起分享面板 · §4.6） */
+const DEMO_COOLDOWN_MS = 3_000;
 
 /** 客户端本地大小上限（§9.1 三层阈值第一层 · 服务端二次校验兜底） */
 const IMPORT_MAX_FILE_BYTES = 1024 * 1024;
@@ -179,6 +181,8 @@ Page({
     reportPreparing: false,
     /** 示例文件分享草稿准备中（「下载示例文件」按钮态 · §4.6） */
     demoPreparing: false,
+    /** 「下载示例文件」冷却剩余秒数（0 = 可点击 · DEMO_COOLDOWN_MS 防连点） */
+    demoCooldown: 0,
     // ─── 任务中心 ───
     loading: true,
     jobs: [] as JobCard[],
@@ -196,6 +200,8 @@ Page({
   _jobsLoadedOnce: false,
   /** 「开始导出」冷却截止时间戳（0 = 无冷却） */
   _createCooldownEnd: 0,
+  /** 「下载示例文件」冷却截止时间戳（0 = 无冷却） */
+  _demoCooldownEnd: 0,
   // 账本选项与当前选择（导入/导出各自独立 · 默认当前活跃账本）
   _ledgerOptions: [] as LedgerOption[],
   _importLedgerId: '',
@@ -403,9 +409,10 @@ Page({
     }
   },
 
-  /** 按最新服务端时间锚点重建任务卡（轮询与本地 1s 节拍共用 · 顺带驱动导出按钮冷却倒数） */
+  /** 按最新服务端时间锚点重建任务卡（轮询与本地 1s 节拍共用 · 顺带驱动导出/示例按钮冷却倒数） */
   _renderTick(): void {
     this._syncCreateCooldown();
+    this._syncDemoCooldown();
     // 服务端导入闸口是 per-family（uq_data_jobs_active_import_per_family），
     // 故只有「当前导入目标账本」自身有进行中导入才该挡入口；
     // 按全局判定会让多账本用户被别账本的任务误挡（比服务端更严）。
@@ -848,16 +855,18 @@ Page({
    * 此处同步栈内直调 sharePreparedCsv，禁止加前置 await。
    */
   onDownloadDemoTap(): void {
-    if (this.data.demoPreparing) return;
+    if (this.data.demoPreparing || this.data.demoCooldown > 0) return;
     const key = this._demoDraftKey();
     const ready = key !== '' ? this._shareDrafts.get(key) : undefined;
     if (!ready) {
-      // 草稿未就绪（尚未准备或此前失败）：重新准备，就绪后再点
+      // 草稿未就绪（尚未准备或此前失败）：重新准备，就绪后再点（未发起分享不进冷却）
       if (key !== '') this._shareFailed.delete(key);
       wx.showToast({ title: '示例文件准备中，完成后请再次点击', icon: 'none' });
       if (this._importLedgerId !== '') void this._prepareDemoDraft(this._importLedgerId);
       return;
     }
+    // 分享面板拉起即进 3s 冷却（用户取消同样生效 · 防连点反复拉起）
+    this._startDemoCooldown();
     void sharePreparedCsv(ready.sharePath, ready.filename).then((shared) => {
       if (!shared) {
         wx.showToast({ title: '已取消分享', icon: 'none' });
@@ -866,26 +875,36 @@ Page({
   },
 
   /**
-   * 确认导入的二次确认弹窗（§4.6）：提交前汇总展示导入/跳过条数、
+   * 确认导入的二次确认弹窗（§4.6.4）：提交前汇总展示目标账本、导入/跳过条数、
    * 昵称映射去向与系统降级分类条数，用户确认后才真正创建导入任务。
+   * wx.showModal 无富文本能力，视觉层次靠分组：关键事实（目标账本/条数）置顶为头部，
+   * 映射与降级明细居中，空行分隔，流程说明垫底。
    */
   onCommitImportTap(): void {
     const report = this._report;
     if (!report || !this.data.commitEnabled || this.data.committing) return;
 
+    const ledgerName = this.data.importLedgerName || this.data.ledgerName;
     const commitCount = this.data.commitCount;
     const skipped = report.totalRows - commitCount;
-    const lines = [`将导入 ${commitCount} 条流水${skipped > 0 ? `，跳过 ${skipped} 条` : ''}`];
+    const lines = [
+      `目标账本：「${ledgerName}」`,
+      `将导入 ${commitCount} 条流水${skipped > 0 ? `，跳过 ${skipped} 条` : ''}`,
+    ];
+    const details: string[] = [];
     const mappings = Object.entries(this._mappingDraft)
       .filter(([, target]) => target !== '')
       .map(([nick, target]) => `「${nick}」→ ${target === '__self__' ? '我' : this._mappingTargetLabel(target)}`);
     if (mappings.length > 0) {
-      lines.push(`昵称映射：${mappings.join('、')}`);
+      details.push(`昵称映射：${mappings.join('、')}`);
     }
     if (report.subcategoryFallbackCount > 0) {
-      lines.push(`其中 ${report.subcategoryFallbackCount} 条的二级分类不存在，将归入默认子分类`);
+      details.push(`其中 ${report.subcategoryFallbackCount} 条的二级分类不存在，将归入默认子分类`);
     }
-    lines.push('确认后将在后台导入，结果见下方数据任务');
+    if (details.length > 0) {
+      lines.push('', ...details);
+    }
+    lines.push('', '确认后将在后台导入，结果见下方数据任务');
 
     wx.showModal({
       title: '确认导入',
@@ -1092,6 +1111,18 @@ Page({
     const remain = Math.ceil((this._createCooldownEnd - Date.now()) / 1000);
     const createCooldown = remain > 0 ? remain : 0;
     if (createCooldown !== this.data.createCooldown) this.setData({ createCooldown });
+  },
+
+  /** 示例分享发起后启动按钮冷却（防连点 · 立即折算一次让按钮即刻置灰） */
+  _startDemoCooldown(): void {
+    this._demoCooldownEnd = Date.now() + DEMO_COOLDOWN_MS;
+    this._syncDemoCooldown();
+  },
+
+  _syncDemoCooldown(): void {
+    const remain = Math.ceil((this._demoCooldownEnd - Date.now()) / 1000);
+    const demoCooldown = remain > 0 ? remain : 0;
+    if (demoCooldown !== this.data.demoCooldown) this.setData({ demoCooldown });
   },
 
   /** 滚动到「数据任务」区（导出创建成功后 · 区域不存在时静默跳过） */
