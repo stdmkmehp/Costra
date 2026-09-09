@@ -580,6 +580,8 @@ export async function runDetectPipeline(input: DetectPipelineInput): Promise<Imp
     errors_truncated: analysis.errors.length > PREVIEW_LIMIT,
     warnings_truncated: analysis.warnings.length > PREVIEW_LIMIT,
     unmatched_members_truncated: analysis.unmatchedMembersTruncated,
+    // 全量聚合（不经预览截断）：客户端二次确认弹窗的「系统将 N 条归入默认子分类」（§4.6）
+    subcategory_fallback_count: analysis.warnings.filter((w) => w.code === 'SUBCATEGORY_FALLBACK').length,
   };
   await importDetectRepo.markReady(session.id, {
     isCostraExport: analysis.isCostraExport,

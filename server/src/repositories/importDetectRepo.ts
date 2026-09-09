@@ -40,6 +40,8 @@ export interface DetectReportPreview {
   errors_truncated: boolean;
   warnings_truncated: boolean;
   unmatched_members_truncated: boolean;
+  /** SUBCATEGORY_FALLBACK 警告聚合行数（§4.6 二次确认弹窗「系统改分类」数据源 · 不受预览截断影响） */
+  subcategory_fallback_count: number;
 }
 
 export interface ImportDetectSessionEntity {

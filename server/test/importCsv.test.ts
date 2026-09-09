@@ -437,9 +437,9 @@ describe('归属推导（§3.8）', () => {
     expect(S('personal').rows[0]!.sharedType).toBe('personal');
   });
 
-  it('S2: 支出空值沿用家庭默认：共同家庭 → shared + 汇总 WARNING；个人家庭 → personal 无提示', () => {
+  it('S2: 支出空值缺省「个人」：共同家庭 → personal + 汇总 WARNING；个人家庭 → personal 无提示', () => {
     const shared = S('');
-    expect(shared.rows[0]!.sharedType).toBe('shared');
+    expect(shared.rows[0]!.sharedType).toBe('personal');
     const summary = shared.warnings.find((w) => w.code === 'SHARED_DEFAULT_SUMMARY');
     expect(summary?.message).toContain('1 条支出未指定归属');
     const personal = S('', '支出', 'personal');
@@ -460,9 +460,9 @@ describe('归属推导（§3.8）', () => {
     expect(r.warnings.some((w) => w.code === 'SHARED_FORCED_PERSONAL')).toBe(true);
   });
 
-  it('S5: 归属无法识别 ⇒ 家庭默认 + WARNING', () => {
+  it('S5: 归属无法识别 ⇒ 记为「个人」+ WARNING', () => {
     const r = S('AA制');
-    expect(r.rows[0]!.sharedType).toBe('shared'); // 共同家庭默认
+    expect(r.rows[0]!.sharedType).toBe('personal');
     expect(r.warnings[0]?.code).toBe('SHARED_TYPE_UNRECOGNIZED');
   });
 });

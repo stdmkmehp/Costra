@@ -554,7 +554,7 @@ export function analyzeImportCsv(text: string, ctx: ImportAnalyzeContext): Impor
   const warnings: ImportIssue[] = [];
   const rows: NormalizedImportRow[] = [];
   const unmatchedAgg = new Map<string, number>();
-  /** 归属缺省汇总（§3.8 · 共同家庭缺归属列/空值提示） */
+  /** 归属缺省汇总（§3.8 · 共同家庭缺归属列/空值时提示「将记为个人」） */
   let sharedDefaultCount = 0;
   /** 个人家庭强制 personal 汇总（§3.8 跨家庭污染 · 仅在确有归属值被忽略时提示） */
   let forcedPersonalCount = 0;
@@ -786,12 +786,12 @@ export function analyzeImportCsv(text: string, ctx: ImportAnalyzeContext): Impor
       } else if (key === '个人' || key === 'personal') {
         sharedType = 'personal';
       } else if (rawShared === '') {
-        // 空（支出）→ 家庭默认语义（shared 家庭 ⇒ shared）
-        sharedType = ctx.familyKind === 'shared' ? 'shared' : 'personal';
+        // 空（支出）→ 缺省「个人」（对齐记账面板 UI 实际缺省 · §3.8 · 2026-09-09 修订）
+        sharedType = 'personal';
         if (ctx.familyKind === 'shared') sharedDefaultCount += 1;
       } else {
-        sharedType = ctx.familyKind === 'shared' ? 'shared' : 'personal';
-        pushIssue(warnings, rowNo, physicalLine, '归属', 'SHARED_TYPE_UNRECOGNIZED', rawShared, `第 ${rowNo} 条记录：归属无法识别，已按家庭默认处理`);
+        sharedType = 'personal';
+        pushIssue(warnings, rowNo, physicalLine, '归属', 'SHARED_TYPE_UNRECOGNIZED', rawShared, `第 ${rowNo} 条记录：归属无法识别，已按「个人」处理`);
       }
     }
 
@@ -821,7 +821,7 @@ export function analyzeImportCsv(text: string, ctx: ImportAnalyzeContext): Impor
 
   // 6. 汇总级 WARNING（§3.8 · row=0 口径）
   if (sharedDefaultCount > 0) {
-    pushIssue(warnings, 0, 0, '归属', 'SHARED_DEFAULT_SUMMARY', '', `${sharedDefaultCount} 条支出未指定归属，将按共同家庭默认记为「共同」`);
+    pushIssue(warnings, 0, 0, '归属', 'SHARED_DEFAULT_SUMMARY', '', `${sharedDefaultCount} 条支出未指定归属，将记为「个人」`);
   }
   if (forcedPersonalCount > 0) {
     pushIssue(warnings, 0, 0, '归属', 'SHARED_FORCED_PERSONAL', '', '目标为个人账本，归属列已统一按「个人」处理');
