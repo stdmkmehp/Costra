@@ -9,7 +9,7 @@
  *   2. 全分类清单：每个可导入二级分类一行（系统 + 家庭自定义），用户删行即完成选型。
  *
  * 填充口径（与用户确认的冻结值）：
- *   - 日期 = 生成日（统一值，Excel 一次查找替换改完）；时间 = 23:45；
+ *   - 日期 = 生成日、时间 = 生成时刻（Asia/Shanghai · 全文件统一值，Excel 一次查找替换改完）；
  *   - 金额 = 0.01（最小合法值，即使整文件误导入 88 行合计 0.88 元，几乎无害）；
  *   - 归属：共同/个人交替（shared）/ 全部个人（personal · 与导入时 SHARED_FORCED_PERSONAL
  *     口径一致，所见即所得）；收入/转账留空；
@@ -19,6 +19,7 @@
  * 纯函数，不依赖 DB/IO，单测直接注入夹具。
  */
 
+import { DateTime } from 'luxon';
 import type { CategoryEntity } from '../repositories/categoryRepo.js';
 import { CSV_BOM, CSV_CRLF, formatCsvHeaderRow, formatCsvRow } from '../utils/csv.js';
 
@@ -28,8 +29,8 @@ export interface ImportDemoInput {
   categories: readonly CategoryEntity[];
   /** 活跃成员昵称（轮换填充记账人 · 至少含操作者本人） */
   memberNicknames: readonly string[];
-  /** 生成日（YYYY-MM-DD · Asia/Shanghai） */
-  today: string;
+  /** 生成时刻（Asia/Shanghai · 日期与时间列统一取它） */
+  now: DateTime;
 }
 
 /** entries.type ↔ 列值（§2.3 列 3） */
@@ -42,7 +43,6 @@ const TYPE_LABEL: Record<CategoryEntity['type'], string> = {
 /** 组内展示顺序：与记账面板认知一致（支出 → 收入 → 转账） */
 const TYPE_ORDER: readonly CategoryEntity['type'][] = ['expense', 'income', 'transfer'];
 
-const DEMO_TIME = '23:45';
 const DEMO_AMOUNT = '0.01';
 const DEMO_NOTE = '这是一条备注样例';
 
@@ -69,6 +69,8 @@ export function buildImportDemoCsv(input: ImportDemoInput): string {
   }
 
   const members = input.memberNicknames;
+  const date = input.now.toFormat('yyyy-MM-dd');
+  const time = input.now.toFormat('HH:mm');
   const lines: string[] = [formatCsvHeaderRow()];
   let rowIndex = 0;
   let expenseIndex = 0;
@@ -84,8 +86,8 @@ export function buildImportDemoCsv(input: ImportDemoInput): string {
               : '个人';
       lines.push(
         formatCsvRow([
-          input.today,
-          DEMO_TIME,
+          date,
+          time,
           TYPE_LABEL[t1.type],
           DEMO_AMOUNT,
           t1.name,

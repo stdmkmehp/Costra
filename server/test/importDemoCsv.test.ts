@@ -8,6 +8,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { DateTime } from 'luxon';
 import { buildImportDemoCsv } from '../src/services/importDemoCsv.js';
 import { analyzeImportCsv, type ImportAnalyzeContext } from '../src/services/importCsv.js';
 import type { CategoryEntity } from '../src/repositories/categoryRepo.js';
@@ -67,14 +68,15 @@ const CATEGORIES: CategoryEntity[] = [
 ];
 
 const MEMBERS = ['小赵', '小李'];
-const TODAY = '2026-09-09';
+/** 固定生成时刻（日期与时间列断言基准 · Asia/Shanghai） */
+const NOW = DateTime.fromISO('2026-09-09T14:30:00', { zone: 'Asia/Shanghai' });
 
 function build(overrides: Partial<Parameters<typeof buildImportDemoCsv>[0]> = {}) {
   return buildImportDemoCsv({
     familyKind: 'shared',
     categories: CATEGORIES,
     memberNicknames: MEMBERS,
-    today: TODAY,
+    now: NOW,
     ...overrides,
   });
 }
@@ -119,12 +121,12 @@ describe('结构与填充口径（§4.6）', () => {
     ]);
   });
 
-  it('日期/时间/金额/备注统一填充；收入与转账行归属留空', () => {
+  it('日期=生成日、时间=生成时刻（同源统一填充）；金额/备注统一；收入与转账行归属留空', () => {
     const lines = linesOf(build()).slice(1);
     for (const line of lines) {
       const cols = line.split(',').map((c) => c.slice(1, -1));
-      expect(cols[0]).toBe(TODAY);
-      expect(cols[1]).toBe('23:45');
+      expect(cols[0]).toBe('2026-09-09');
+      expect(cols[1]).toBe('14:30');
       expect(cols[3]).toBe('0.01');
       expect(cols[8]).toBe('这是一条备注样例');
       if (cols[2] !== '支出') expect(cols[6]).toBe('');

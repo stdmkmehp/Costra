@@ -409,7 +409,7 @@ export async function registerImportJobsRoutes(app: FastifyInstance): Promise<vo
       familyKind: ledger.kind === 'personal' ? 'personal' : 'shared',
       categories,
       memberNicknames: members.map((m) => m.nickname),
-      today: DateTime.now().setZone(SHANGHAI_ZONE).toFormat('yyyy-MM-dd'),
+      now: DateTime.now().setZone(SHANGHAI_ZONE),
     });
     reply
       .header('Content-Type', 'text/csv; charset=utf-8')
