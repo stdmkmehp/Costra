@@ -5,14 +5,29 @@
 //   - adaptDetectReport：snake_case → camelCase 全字段（含预览/映射/截断标志缺省防御）
 //   - commitImportJob：body 组装（空映射不带 member_mapping 字段）
 //   - describeImportIssue：行级/汇总级/未知 code 的本地化文案（§4.2 客户端按 code 本地化）
+//   - 检测草稿本地镜像：ttl 与会话有效期同窗 / 过期不落地 / 损坏防御
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 const requestMock = vi.hoisted(() => vi.fn());
 vi.mock('./request', () => ({ request: requestMock }));
 
-import { commitImportJob, adaptDetectReport, describeImportIssue } from './importApi';
-import type { DetectReportWire } from './importApi';
+const storageMock = vi.hoisted(() => ({
+  getItem: vi.fn(),
+  setItem: vi.fn(),
+  removeItem: vi.fn(),
+}));
+vi.mock('./storage', () => storageMock);
+
+import {
+  commitImportJob,
+  adaptDetectReport,
+  describeImportIssue,
+  saveImportDetectDraft,
+  loadImportDetectDraft,
+  clearImportDetectDraft,
+} from './importApi';
+import type { DetectReportWire, ImportDetectDraft } from './importApi';
 
 function wireReport(overrides: Partial<DetectReportWire> = {}): DetectReportWire {
   return {
@@ -45,6 +60,9 @@ function wireReport(overrides: Partial<DetectReportWire> = {}): DetectReportWire
 
 beforeEach(() => {
   requestMock.mockReset();
+  storageMock.getItem.mockReset();
+  storageMock.setItem.mockReset();
+  storageMock.removeItem.mockReset();
 });
 
 describe('adaptDetectReport', () => {
@@ -147,5 +165,65 @@ describe('describeImportIssue · 按 code 本地化（§4.2）', () => {
 
   it('未知 code 兜底展示原 code（不吞信息）', () => {
     expect(describeImportIssue(I('SOME_FUTURE_CODE'))).toBe('第 3 条 · SOME_FUTURE_CODE');
+  });
+});
+
+describe('检测草稿本地镜像（save/load/clear · ttl 与会话 expires_at 同窗）', () => {
+  const NOW = Date.parse('2026-09-07T10:00:00.000Z'); // wireReport 的 created_at
+
+  it('保存：数据原样写入，ttl = expiresAt - now', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    try {
+      const report = adaptDetectReport(wireReport()); // expires_at = 10:15
+      await saveImportDetectDraft(report, { 老王: '__self__' });
+      expect(storageMock.setItem).toHaveBeenCalledWith(
+        'import:detectDraft',
+        { report, memberMapping: { 老王: '__self__' } },
+        15 * 60 * 1000,
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('保存：已过期 / expiresAt 不可解析 ⇒ 不落地', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    try {
+      const expired = adaptDetectReport(wireReport({ expires_at: '2026-09-07T09:59:00.000Z' }));
+      await saveImportDetectDraft(expired, {});
+      const bad = adaptDetectReport(wireReport({ expires_at: 'not-a-date' }));
+      await saveImportDetectDraft(bad, {});
+      expect(storageMock.setItem).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('读取：结构合法原样返回；null / 损坏结构 ⇒ null；memberMapping 缺失兜底空对象', async () => {
+    const report = adaptDetectReport(wireReport());
+    storageMock.getItem.mockResolvedValueOnce({ report, memberMapping: { 老王: 'u-1' } });
+    await expect(loadImportDetectDraft()).resolves.toEqual({ report, memberMapping: { 老王: 'u-1' } });
+
+    storageMock.getItem.mockResolvedValueOnce(null);
+    await expect(loadImportDetectDraft()).resolves.toBeNull();
+
+    // 缺 detectId ⇒ 损坏丢弃
+    storageMock.getItem.mockResolvedValueOnce({ report: { expiresAt: 'x' } } as unknown as ImportDetectDraft);
+    await expect(loadImportDetectDraft()).resolves.toBeNull();
+
+    // 非对象 ⇒ 损坏丢弃
+    storageMock.getItem.mockResolvedValueOnce('garbage' as unknown as ImportDetectDraft);
+    await expect(loadImportDetectDraft()).resolves.toBeNull();
+
+    // memberMapping 缺失 ⇒ 兜底 {}
+    storageMock.getItem.mockResolvedValueOnce({ report } as unknown as ImportDetectDraft);
+    await expect(loadImportDetectDraft()).resolves.toEqual({ report, memberMapping: {} });
+  });
+
+  it('清除 ⇒ removeItem 同 key（幂等）', async () => {
+    await clearImportDetectDraft();
+    expect(storageMock.removeItem).toHaveBeenCalledWith('import:detectDraft');
   });
 });

@@ -16,6 +16,7 @@
 
 import { request } from './request';
 import { uploadWithAuth } from './fileTransfer';
+import { getItem, removeItem, setItem } from './storage';
 
 // ─── wire（snake_case · 与服务端序列化一一对应） ───
 
@@ -258,4 +259,45 @@ export async function commitImportJob(input: {
     body,
   });
   return { jobId: res.job_id, status: res.status };
+}
+
+// ==============================================================================
+// 检测结果本地草稿（离开页面后可恢复 · 与会话 15 分钟有效期同窗）
+// ==============================================================================
+//
+// 检测报告本是页面级瞬态（退出页面即丢），但服务端会话在 expires_at 前仍可 commit、
+// 报告文件更可下载 24h。草稿让「15 分钟内有效」跨页面往返成立：回到页面未过期则
+// 直接恢复结果区，可继续映射 / 确认 / 下载报告。
+// 清理链：commit / 手动重置 / 会话过期 ⇒ 页面调 clear；TTL 到期 ⇒ getItem 自动回收；
+// logout ⇒ clearAllForReset 全量覆盖（无需逐 key 登记）。
+
+const DETECT_DRAFT_KEY = 'import:detectDraft';
+
+export interface ImportDetectDraft {
+  report: DetectReport;
+  /** 昵称映射草稿（target = user_id | '__self__' · 恢复后保留已做选择） */
+  memberMapping: Record<string, string>;
+}
+
+/** 保存检测草稿（ttl = 会话剩余有效期 · 窗口非正/不可解析不落地） */
+export async function saveImportDetectDraft(
+  report: DetectReport,
+  memberMapping: Record<string, string>,
+): Promise<void> {
+  const ttlMs = Date.parse(report.expiresAt) - Date.now();
+  if (!Number.isFinite(ttlMs) || ttlMs <= 0) return;
+  await setItem<ImportDetectDraft>(DETECT_DRAFT_KEY, { report, memberMapping }, ttlMs);
+}
+
+/** 读取草稿（TTL 到期由 getItem 自动回收返回 null · 结构损坏防御性丢弃） */
+export async function loadImportDetectDraft(): Promise<ImportDetectDraft | null> {
+  const draft = await getItem<ImportDetectDraft>(DETECT_DRAFT_KEY);
+  if (!draft || typeof draft !== 'object') return null;
+  if (typeof draft.report?.detectId !== 'string' || typeof draft.report?.expiresAt !== 'string') return null;
+  return { report: draft.report, memberMapping: draft.memberMapping ?? {} };
+}
+
+/** 清除草稿（commit / 手动重置 / 会话过期时 · 幂等） */
+export async function clearImportDetectDraft(): Promise<void> {
+  await removeItem(DETECT_DRAFT_KEY);
 }
