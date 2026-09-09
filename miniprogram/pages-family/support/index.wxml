@@ -1,5 +1,5 @@
 <!-- pages-family/support/index · 赞赏页（支持 Costra） -->
-<!-- 区块结构：徽章区 / 说明区 / 档位区 / 记录区 / 占位区 / 说明尾（产品 §5.2） -->
+<!-- 区块结构：徽章区 / 说明区 / 档位区 / 记录区 -->
 <view class="support">
 
   <!-- 徽章区：纪念章 + 状态文案（支持度为主口径、次数为辅 · 不出现金额） -->
@@ -18,8 +18,8 @@
 
   <!-- 说明区：为什么需要支持 + 加粗"功能永久免费" -->
   <view class="section">
-    <view class="section__body">Costra 由个人开发者独立维护，服务器、域名与备案成本均由开发者自付。你的每一份支持，都会直接用于这些日常开销，让 Costra 走得更远。</view>
-    <view class="section__body section__body--bold">所有记账功能永久免费，赞赏不解锁任何功能。</view>
+    <view class="section__body">Costra 由个人开发者独立维护，服务器、域名与小程序认证等成本都由开发者自付。你的每一份支持，都在陪伴 Costra 走得更远。</view>
+    <view class="section__body section__body--bold">所有记账功能对所有用户永久免费，赞赏不解锁任何记账功能。</view>
   </view>
 
   <!-- 档位区：三张全宽卡片竖排 -->
@@ -80,17 +80,5 @@
       <view class="history__cell history__cell--title">{{item.title}}</view>
       <view class="history__cell history__cell--delta">+{{item.supportDelta}}</view>
     </view>
-  </view>
-
-  <!-- 占位区：更多外观选项（灰字不可点 · 不承诺时间） -->
-  <view class="placeholder">更多外观选项正在开发中</view>
-
-  <!-- 说明尾：四项告知（§7.3 · 分行陈述费率 · 不对比不解释） -->
-  <view class="footnote">
-    <view class="footnote__line">支付由微信虚拟支付提供。</view>
-    <view class="footnote__line">在 Android、鸿蒙、Windows 等终端，微信收取 1% 技术服务费，结算周期 T+3。</view>
-    <view class="footnote__line">在 iOS 终端，Apple 收取 12% 佣金，结算周期约 45~60 天。</view>
-    <view class="footnote__line">退款规则：iOS 用户由 Apple 处理退款，其他平台可通过意见反馈联系开发者。</view>
-    <view class="footnote__line">全终端月支付限额 10 万元。</view>
   </view>
 </view>

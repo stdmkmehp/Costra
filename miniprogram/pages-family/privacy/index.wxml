@@ -58,11 +58,9 @@
   <view class="privacy__section">
     <view class="privacy__section-title">九、支付与赞赏</view>
     <view class="privacy__body">赞赏支付由微信虚拟支付提供（iOS 终端由 Apple 处理支付）。相关规则如实告知如下：</view>
-    <view class="privacy__body privacy__body--indent">• 在 Android、鸿蒙、Windows 等终端，微信收取 1% 技术服务费，结算周期 T+3。</view>
-    <view class="privacy__body privacy__body--indent">• 在 iOS 终端，Apple 收取 12% 佣金，结算周期约 45~60 天。</view>
-    <view class="privacy__body privacy__body--indent">• 退款规则：iOS 用户由 Apple 处理退款，其他平台可通过意见反馈联系开发者。</view>
+    <view class="privacy__body privacy__body--indent">• 退款规则：可通过意见反馈联系开发者。</view>
     <view class="privacy__body privacy__body--indent">• 全终端月支付限额 10 万元。</view>
-    <view class="privacy__body">赞赏完全自愿，不影响任何记账功能；已获得的徽章与支持度不因退款而回收。</view>
+    <view class="privacy__body">赞赏完全自愿，不影响任何记账功能。</view>
   </view>
 
   <view class="privacy__section">

@@ -104,12 +104,12 @@ Page({
     if (!this.data.payEligible || !this.data.purchasable) return;
     if (this.data.phase === 'paying' || this.data.phase === 'settling') return;
 
-    // 二次确认（产品 §5.3 三项缺一不可：金额档位 + 获得物 + 退款规则一句话）
+    // 二次确认（金额档位 + 获得物）
     const confirmRes = await wx.showModal({
       title: `${product.title} · ¥${product.priceText}`,
       content:
-        '获得「支持者纪念章」徽章（不影响任何功能）。\n' +
-        '退款规则：iOS 用户由 Apple 处理退款，其他平台可通过意见反馈联系开发者。',
+        '获得「支持者纪念章」徽章\n' +
+        '（不解锁任何记账功能）',
       confirmText: '去支付',
       cancelText: '再想想',
     });
