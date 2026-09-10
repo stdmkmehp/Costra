@@ -126,7 +126,7 @@
 
 | # | code | category | retryable | user_action | 场景说明 |
 |---|---|---|---|---|---|
-| 16 | `BUSINESS_RULE_VIOLATION` | param | ❌ | ✅ 文案按 `details.rule` 分支 | 业务规则拒绝。`details.rule` 为枚举：`family_member_limit` / `shared_family_limit` / `shared_family_hard_limit` / `personal_family_not_invitable` / `category_name_duplicate` / `budget_overlap` / `ledger_archived` / `entry_occurred_at_future` / `currency_mismatch`。例外：赞赏下单支付未开放（`WX_PAY_MODE=off` 或非白名单）用 `details.reason='payment_disabled'`，不占 rule 枚举（tech-spec v1.2 §9） |
+| 16 | `BUSINESS_RULE_VIOLATION` | param | ❌ | ✅ 文案按 `details.rule` 分支 | 业务规则拒绝。`details.rule` 为枚举：`family_member_limit` / `shared_family_limit` / `shared_family_hard_limit` / `personal_family_not_invitable` / `category_name_duplicate` / `budget_overlap` / `ledger_archived` / `entry_occurred_at_future` / `currency_mismatch` / `ledger_entry_limit`（【临时限制 · 2026-09-10】单账本条目软上限 8000 · 导入前置校验）。例外：赞赏下单支付未开放（`WX_PAY_MODE=off` 或非白名单）用 `details.reason='payment_disabled'`，不占 rule 枚举（tech-spec v1.2 §9） |
 
 ### 2.8 429 · 限流
 
@@ -205,6 +205,7 @@
 | `ledger_archived` | 该账本已归档，无法继续记账 |
 | `entry_occurred_at_future` | 记账时间不能晚于当前时间 1 小时以上 |
 | `currency_mismatch` | 流水币种与账本不一致 |
+| `ledger_entry_limit` | 当前账本条目将超过 8000 条，大账本存在性能退化问题，我们正在排期优化（预计两个月），期间暂无法继续导入（【临时限制 · 2026-09-10】· 优化完成后放宽/移除） |
 
 ---
 

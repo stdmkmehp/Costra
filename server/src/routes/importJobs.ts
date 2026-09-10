@@ -33,10 +33,12 @@ import { getPool } from '../db/pool.js';
 import { requireUserId } from '../plugins/requireUser.js';
 import * as categoryRepo from '../repositories/categoryRepo.js';
 import * as dataJobRepo from '../repositories/dataJobRepo.js';
+import * as entryRepo from '../repositories/entryRepo.js';
 import * as familyMemberRepo from '../repositories/familyMemberRepo.js';
 import * as importDetectRepo from '../repositories/importDetectRepo.js';
 import type { ImportDetectSessionEntity } from '../repositories/importDetectRepo.js';
 import * as ledgerRepo from '../repositories/ledgerRepo.js';
+import { maxLedgerEntries } from '../config/defaults.js';
 import {
   ImportFileInvalidError,
   runDetectPipeline,
@@ -497,6 +499,27 @@ export async function registerImportJobsRoutes(app: FastifyInstance): Promise<vo
         throw new AppError(ErrorCode.IMPORT_JOB_IN_PROGRESS, {
           message: 'an import job is already in progress for this ledger',
           details: { job_id: activeImport.id },
+        });
+      }
+
+      // 单账本条目软上限（【临时限制 · 2026-09-10】· 见 config/defaults.ts maxLedgerEntries）：
+      // 导入行数上界 + 账本现有有效条目数 > 上限 ⇒ 拒绝。上界取 totalRows（detect 数据行总数）：
+      // 实际写入 = importableRows + member_mapping 激活的待映射行（entryImport 步骤 2），两者均出自
+      // 数据行，故恒 ≤ totalRows（importableRows 不含待映射行，以其为上界会被映射突破）；代价是
+      // ERROR 行偏多的文件被偏保守拒绝，临时限制下可接受。count 与本 commit 同事务读，避免与并发写
+      // 竞态。校验置于并发闸口之后：冲突场景优先报更可操作的 IMPORT_JOB_IN_PROGRESS。
+      // 优化完成后应放宽或移除此限制。
+      const existingEntries = await entryRepo.countActiveByLedger(session.ledgerId, client);
+      const totalRows = session.totalRows ?? 0;
+      if (existingEntries + totalRows > maxLedgerEntries) {
+        throw new AppError(ErrorCode.BUSINESS_RULE_VIOLATION, {
+          message: `ledger entry count would exceed limit: existing=${existingEntries} + total_rows=${totalRows} > ${maxLedgerEntries}`,
+          details: {
+            rule: 'ledger_entry_limit',
+            limit: maxLedgerEntries,
+            existing: existingEntries,
+            total_rows: totalRows,
+          },
         });
       }
 

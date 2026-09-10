@@ -531,3 +531,16 @@ export async function findByClientRefId(clientRefId: string, userId: string, cli
   );
   return res.rows[0] ? rowToEntity(res.rows[0]) : null;
 }
+
+/**
+ * 统计账本现有有效条目数（软删 deleted_at 不计入 · 与列表/同步展示口径一致）。
+ * 用于导入前的单账本条目软上限校验（临时限制 · 见 config/defaults.ts maxLedgerEntries）。
+ */
+export async function countActiveByLedger(ledgerId: string, client?: Runner): Promise<number> {
+  const runner = client ?? exec();
+  const res = await runner.query(
+    `SELECT COUNT(*)::int AS n FROM entries WHERE ledger_id = $1 AND deleted_at IS NULL`,
+    [ledgerId],
+  );
+  return Number((res.rows[0] as { n?: number } | undefined)?.n ?? 0);
+}

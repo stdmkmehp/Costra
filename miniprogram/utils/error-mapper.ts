@@ -5,7 +5,7 @@
 //   - 所有 ApiError 统一走 mapError 转译为 { title, desc, action? }
 //   - BUSINESS_RULE_VIOLATION 按 details.rule 分支（error-codes.md §4.2）
 
-import { maxSharedFamilies, maxSharedFamiliesHardLimit, maxFamilyMembers } from '../config/defaults';
+import { maxSharedFamilies, maxSharedFamiliesHardLimit, maxFamilyMembers, maxLedgerEntries } from '../config/defaults';
 
 export interface MappedError {
   title: string;
@@ -79,6 +79,8 @@ const BUSINESS_RULE_TEXT: Record<string, string> = {
   ledger_archived:           '该账本已归档，无法继续记账',
   entry_occurred_at_future:  '记账时间不能晚于当前时间 1 小时以上',
   currency_mismatch:         '流水币种与账本不一致',
+  // 【临时限制 · 2026-09-10】单账本条目软上限：优化完成后随服务端一并放宽/移除
+  ledger_entry_limit:     `当前账本条目将超过 ${maxLedgerEntries} 条，大账本存在性能退化问题，我们正在排期优化（预计两个月），期间暂无法继续导入`,
 };
 
 /**

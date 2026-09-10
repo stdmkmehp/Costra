@@ -22,3 +22,11 @@ export const maxSharedFamiliesHardLimit = 20;
  * ⚠️ 必须与 server/src/config/defaults.ts maxFamilyMembers 保持一致
  */
 export const maxFamilyMembers = 8;
+
+/**
+ * 单账本条目数软上限（【临时限制 · 2026-09-10】）。
+ * 小程序在单账本条目数很大时存在明显性能退化，优化排期约两个月人力，
+ * 期间用此上限拦住会突破 8000 的导入。优化完成后应放宽或移除此限制。
+ * ⚠️ 必须与 server/src/config/defaults.ts maxLedgerEntries 保持一致
+ */
+export const maxLedgerEntries = 8000;
