@@ -9,7 +9,8 @@
 //   - 导出表单：选择账本（同上）→ 时间范围（全部/今年/本月/自定义）→ POST /export-jobs
 //   - 任务中心：轮询 GET /data-jobs（2s 起步，30s 后降频 5s）+ 阶段型模拟进度（server_now 基准）
 //     · 导出完成卡：文件信息 + 24h 倒计时 + 逐分片「发送到微信」（多分片给第 N/M 提示 · §6.3）；
-//       分享草稿预下载（shareFileMessage 手势门控 · 下载/校验/复制全部前置 · 见 fileTransfer 头注）
+//       分享草稿预下载（shareFileMessage 手势门控 · 下载/校验/复制全部前置 · 串行单并发防打满
+//       小带宽 · 见 fileTransfer 头注）
 //     · 导入完成卡：导入 N 条 / 跳过 M 条（succeeded 后触发一次 triggerOnMutation 同步刷新）
 //     · 页面可见期间任务进入终态 ⇒ 轻震反馈（§8.5）
 //   - 派生态：过期（file_expires_at < server_now ⇒ 重新生成）/ 失败（按 error_code 渲染 · §9.5；
@@ -69,6 +70,15 @@ const MODULE = 'dataMgmt';
 const POLL_FAST_MS = 2_000;
 const POLL_SLOW_MS = 5_000;
 const POLL_FAST_WINDOW_MS = 30_000;
+/**
+ * 分享草稿预下载进行中时的轮询节拍（降频至 8s）。
+ * 下载（wx.downloadFile）与轮询（wx.request）共享同一条出口带宽——生产 Lighthouse 出口 1Mbps
+ * 硬顶（≈125KB/s），单个导出文件（最大 ~500KB）满速下载已需 4~10s 独占带宽；此时若仍以 2s
+ * 节拍发 /data-jobs，poll 请求会被下载挤到 10s timeout 之后 ⇒ `poll jobs fail timeout`。
+ * 串行队列只保证下载彼此单并发、并不与 poll 互斥，故须在 drain 期间主动把轮询降频让路。
+ * 下载全部 drain 完毕后节拍自动回落到常规两段式（2s→5s）。
+ */
+const POLL_DOWNLOADING_MS = 8_000;
 /** 「开始导出」创建成功后的按钮冷却（防连点 · 服务端 EXPORT_JOB_IN_PROGRESS 闸口之外的体验层） */
 const CREATE_COOLDOWN_MS = 3_000;
 /** 「下载示例文件」分享发起后的按钮冷却（防连点反复拉起分享面板 · §4.6） */
@@ -192,14 +202,21 @@ Page({
     jobs: [] as JobCard[],
   },
 
-  _pollTimer: null as ReturnType<typeof setInterval> | null,
+  // 轮询用「下一拍自调度」（setTimeout 链）而非固定 setInterval：每拍结束按当前状态重算下一拍间隔，
+  // 使「下载 drain 期间降频让路」随下载开始/结束自适应，无需在 drain 边界手动切换定时器。
+  _pollTimer: null as ReturnType<typeof setTimeout> | null,
+  // 轮询链存活哨兵：_startTimers 置 true、_stopTimers 置 false；自调度仅在 true 时续拍
+  // （避免本拍 _refreshJobs 执行期间被 onHide/onUnload 停止后仍误续下一拍）。
+  _pollActive: false,
   _renderTimer: null as ReturnType<typeof setInterval> | null,
   _pollStartedAt: 0,
   _serverNowMs: 0,
   _serverNowAt: 0,
   _rawJobs: [] as DataJob[],
   /** 新出现任务的入场标记（id → 标记时刻 ms · 持有 NEW_CARD_ANIMATION_MS 后才摘除 · 首载豁免见 _refreshJobs） */
-  _newJobMarks: new Map<string, number>(),
+  // Map/Set 字段以 null 占位、onLoad 开头才真正 new：微信对 Page 配置的「自由数据」做深拷贝，
+  // 非简单值会触发 Free data 告警且拷贝语义未定义（官方建议即 onLoad 内赋值）
+  _newJobMarks: null as unknown as Map<string, number>,
   /** 是否已成功拉取过任务列表（首载整列不算"新增"，避免打开页面时全部齐播入场动画） */
   _jobsLoadedOnce: false,
   /** 「开始导出」冷却截止时间戳（0 = 无冷却） */
@@ -219,13 +236,26 @@ Page({
   // 分享草稿（不进视图层）：就绪表 key → {sharePath, filename}；准备中/已失败 key 集合。
   // key 规约：导出分片 = `${jobId}:{part}`；导入检测报告 = `report:{detectId}`；
   // 导入示例 = `demo:{ledgerId}`（按目标账本隔离 · 切账本重备 · §4.6）。
-  _shareDrafts: new Map<string, { sharePath: string; filename: string }>(),
-  _shareInflight: new Set<string>(),
-  _shareFailed: new Set<string>(),
+  _shareDrafts: null as unknown as Map<string, { sharePath: string; filename: string }>,
+  _shareInflight: null as unknown as Set<string>,
+  _shareFailed: null as unknown as Set<string>,
+  /**
+   * 分享草稿串行预下载队列（FIFO · 单并发 · key 规约同 _shareDrafts）。
+   * 全分片并行预下载会在小带宽环境瞬间打满服务器出方向带宽、饿死同窗口的 API 小请求
+   * （2026-09-09 staging 实锤：双端 × 多分片并行 ⇒ /data-jobs /sync/pull 集体 10s 超时）；
+   * 串行化把峰值流量压到单文件，手势门控语义不变。
+   */
+  _shareQueue: [] as Array<{ key: string; jobId: string; part: number; fromTap: boolean }>,
+  _shareQueueDraining: false,
   /** 页面已销毁（onUnload 后异步准备完成须丢弃草稿，防 USER_DATA_PATH 孤儿文件） */
   _destroyed: false,
 
   onLoad(): void {
+    // Map/Set 实例字段真正初始化（声明处是 null 占位 · onLoad 恒早于 onShow/定时器/事件等一切使用点）
+    this._newJobMarks = new Map<string, number>();
+    this._shareDrafts = new Map<string, { sharePath: string; filename: string }>();
+    this._shareInflight = new Set<string>();
+    this._shareFailed = new Set<string>();
     const today = shanghaiDateKeyFromIso(new Date().toISOString());
     this.setData({ today });
     // 草稿恢复依赖账本选项（校验账本有效性 + 切换导入目标），串在选项加载之后
@@ -248,7 +278,9 @@ Page({
     this._stopTimers();
     this._disableLeaveAlert();
     this._destroyed = true;
-    // 分享草稿统一回收（USER_DATA_PATH 是持久存储，页面销毁后不再消费）
+    // 分享草稿统一回收（USER_DATA_PATH 是持久存储，页面销毁后不再消费）；
+    // 队列清空后，在途的串行消费循环在 await 返回时因 _destroyed 自然终止
+    this._shareQueue.length = 0;
     for (const [, draft] of this._shareDrafts) removeCsvShareDraft(draft.sharePath);
     this._shareDrafts.clear();
   },
@@ -388,25 +420,42 @@ Page({
   // ─── 轮询与渲染节拍 ──────────────────────────────────────
 
   _startTimers(): void {
-    if (!this._pollTimer) {
+    if (!this._pollActive) {
+      this._pollActive = true;
       this._pollStartedAt = Date.now();
-      this._pollTimer = setInterval(() => {
-        void this._refreshJobs();
-        // 30s 后降频（§14.2：2s 起步，之后 5s）
-        if (Date.now() - this._pollStartedAt > POLL_FAST_WINDOW_MS && this._pollTimer) {
-          clearInterval(this._pollTimer);
-          this._pollTimer = setInterval(() => void this._refreshJobs(), POLL_SLOW_MS);
-        }
-      }, POLL_FAST_MS);
+      // 立即拉一次，随后由 _scheduleNextPoll 按当前状态自调度下一拍
+      void this._refreshJobs().finally(() => this._scheduleNextPoll());
     }
     if (!this._renderTimer) {
       this._renderTimer = setInterval(() => this._renderTick(), 1_000);
     }
   },
 
+  /**
+   * 计算并挂起下一次轮询（setTimeout 链 · 每拍按当前状态重算间隔）。
+   *   - 分享草稿正在 drain 下载 ⇒ 降频 POLL_DOWNLOADING_MS，把出口带宽让给下载，避免 poll 被挤到 timeout；
+   *   - 否则按常规两段式：进入页面 POLL_FAST_WINDOW_MS 内 POLL_FAST_MS，之后 POLL_SLOW_MS。
+   * _pollActive 为 false（已 _stopTimers）时不再续拍，实现自然停止（含本拍执行期间被 onHide/onUnload 停止的情况）。
+   */
+  _scheduleNextPoll(): void {
+    if (!this._pollActive) return;
+    let interval: number;
+    if (this._shareQueueDraining) {
+      interval = POLL_DOWNLOADING_MS;
+    } else if (Date.now() - this._pollStartedAt > POLL_FAST_WINDOW_MS) {
+      interval = POLL_SLOW_MS;
+    } else {
+      interval = POLL_FAST_MS;
+    }
+    this._pollTimer = setTimeout(() => {
+      void this._refreshJobs().finally(() => this._scheduleNextPoll());
+    }, interval);
+  },
+
   _stopTimers(): void {
+    this._pollActive = false;
     if (this._pollTimer) {
-      clearInterval(this._pollTimer);
+      clearTimeout(this._pollTimer);
       this._pollTimer = null;
     }
     if (this._renderTimer) {
@@ -496,10 +545,10 @@ Page({
     this._syncShareDrafts(cards);
   },
 
-  // ─── 分享草稿生命周期（shareFileMessage 手势门控：异步准备全部前置 · 见 fileTransfer 头注） ───
+  // ─── 分享草稿生命周期（shareFileMessage 手势门控：异步准备全部前置 · 串行单并发 · 见 fileTransfer 头注） ───
 
   /**
-   * 按当前任务卡集合驱动草稿：导出完成且未过期的分片 ⇒ 后台预下载；
+   * 按当前任务卡集合驱动草稿：导出完成且未过期的分片 ⇒ 入队串行预下载；
    * 失效（过期/删除/列表清空）⇒ 回收磁盘草稿。检测报告草稿由导入卡生命周期单独管理。
    */
   _syncShareDrafts(cards: JobCard[]): void {
@@ -509,16 +558,54 @@ Page({
       for (const file of card.files) {
         const key = `${card.id}:${file.part}`;
         validKeys.add(key);
-        if (
-          !this._shareDrafts.has(key) &&
-          !this._shareInflight.has(key) &&
-          !this._shareFailed.has(key)
-        ) {
-          void this._prepareShareDraft(card.id, file);
-        }
+        // 失败集合不自动重试（防轮询节拍无限重试刷 Toast），由用户点击触发
+        if (!this._shareFailed.has(key)) this._enqueueShareDraft(card.id, file.part);
       }
     }
     this._purgeShareDrafts(validKeys);
+  },
+
+  /**
+   * 预下载入队（去重 · fromTap 提权到队首）。
+   * 已就绪/在途 ⇒ 跳过；已在队列 ⇒ 普通节拍不重复入队，用户点击则提权移到队首。
+   */
+  _enqueueShareDraft(jobId: string, part: number, fromTap = false): void {
+    const key = `${jobId}:${part}`;
+    if (this._shareDrafts.has(key) || this._shareInflight.has(key)) return;
+    const queuedAt = this._shareQueue.findIndex((e) => e.key === key);
+    if (queuedAt >= 0) {
+      if (!fromTap) return;
+      this._shareQueue.splice(queuedAt, 1);
+    }
+    const entry = { key, jobId, part, fromTap };
+    if (fromTap) this._shareQueue.unshift(entry);
+    else this._shareQueue.push(entry);
+    void this._drainShareQueue();
+  },
+
+  /**
+   * 串行消费预下载队列（单并发 · 重入安全）。
+   * 出队时按最新任务卡重新解析 FileCard 并再校验目标有效性（排队期间任务可能已失效，
+   * 失效条目由本循环跳过，等价于出队即弃，无需在 _purgeShareDrafts 里回头清队列）。
+   */
+  async _drainShareQueue(): Promise<void> {
+    if (this._shareQueueDraining) return;
+    this._shareQueueDraining = true;
+    try {
+      for (;;) {
+        const entry = this._shareQueue.shift();
+        if (!entry || this._destroyed) break;
+        // 排队期间已被其他路径完成/标记失败 ⇒ 跳过
+        if (this._shareDrafts.has(entry.key) || this._shareFailed.has(entry.key)) continue;
+        const file = this.data.jobs
+          .find((j) => j.id === entry.jobId)
+          ?.files.find((f) => f.part === entry.part);
+        if (!file || !this._isShareTargetValid(entry.jobId, entry.part)) continue;
+        await this._prepareShareDraft(entry.jobId, file, entry.fromTap);
+      }
+    } finally {
+      this._shareQueueDraining = false;
+    }
   },
 
   /** 回收失效草稿（导出按 validKeys · 报告草稿只看当前 _report · demo 草稿只看当前导入目标账本 · 幂等） */
@@ -610,10 +697,14 @@ Page({
     }
   },
 
-  /** 检测报告草稿预下载（detect 完成渲染结果区时启动 · 报告无 sha256 契约故不强校验） */
+  /**
+   * 检测报告草稿预下载（detect 完成渲染结果区时启动 · 报告无 sha256 契约故不强校验）。
+   * 失败进 _shareFailed 不再自动重试（对齐导出分片纪律），由用户点击清标记触发重试；
+   * _shareFailed 随 onLoad 重建，下次进页面仍自愈试一次。
+   */
   async _prepareReportDraft(report: DetectReport): Promise<void> {
     const key = `report:${report.detectId}`;
-    if (this._shareInflight.has(key) || this._shareDrafts.has(key)) return;
+    if (this._shareInflight.has(key) || this._shareDrafts.has(key) || this._shareFailed.has(key)) return;
     this._shareInflight.add(key);
     this.setData({ reportPreparing: true });
     try {
@@ -653,7 +744,9 @@ Page({
    */
   async _prepareDemoDraft(ledgerId: string): Promise<void> {
     const key = this._demoDraftKey(ledgerId);
-    if (key === '' || this._shareInflight.has(key) || this._shareDrafts.has(key)) return;
+    // _shareFailed 闸（对齐导出分片纪律）：onShow → _loadLedgerOptions 是自动路径，缺闸会在
+    // 持续断网时每次切回页面重试一次并刷 warn；点击/切账本路径均先清标记再调本函数，不受闸挡。
+    if (key === '' || this._shareInflight.has(key) || this._shareDrafts.has(key) || this._shareFailed.has(key)) return;
     this._shareInflight.add(key);
     try {
       const { tempFilePath } = await downloadWithAuth({ path: demoCsvPath(ledgerId) });
@@ -961,7 +1054,7 @@ Page({
     if (details.length > 0) {
       lines.push('', ...details);
     }
-    lines.push('', '确认后将在后台导入，结果见下方数据任务');
+    lines.push('', '确认后将在后台导入，结果在任务列表中查看');
 
     wx.showModal({
       title: '确认导入',
@@ -983,7 +1076,7 @@ Page({
         detectId: report.detectId,
         memberMapping: { ...this._mappingDraft },
       });
-      wx.showToast({ title: '导入任务已创建，结果在数据任务中查看', icon: 'none' });
+      wx.showToast({ title: '导入任务已创建', icon: 'none' });
       this._resetImportCard();
       await this._refreshJobs();
       // 与导出创建行为对称：结果卡重置（report → idle 折叠）后滚动到任务区，新任务卡落在视口约 1/3 处
@@ -1144,7 +1237,7 @@ Page({
   async _createJob(range: { from?: string; to?: string }, ledgerId?: string): Promise<void> {
     try {
       await createExportJob({ ...range, ledgerId: ledgerId ?? (this._exportLedgerId || undefined) });
-      wx.showToast({ title: '导出任务已创建，请在数据任务中查看和下载', icon: 'none' });
+      wx.showToast({ title: '导出任务已创建', icon: 'none' });
       this._startCreateCooldown();
       await this._refreshJobs();
       // 新任务卡插入列表顶部，滚动到任务区确保 toast 指引的"下方"可见（卡片入场动画不被错过）
@@ -1186,7 +1279,7 @@ Page({
     if (demoCooldown !== this.data.demoCooldown) this.setData({ demoCooldown });
   },
 
-  /** 滚动到「数据任务」区（导入/导出任务创建成功后 · 新任务卡落在视口约 1/3 处 · 区域不存在时静默跳过） */
+  /** 滚动到「任务列表」区（导入/导出任务创建成功后 · 新任务卡落在视口约 1/3 处 · 区域不存在时静默跳过） */
   _scrollToJobs(): void {
     const query = wx.createSelectorQuery().in(this);
     query.select('.task-card').boundingClientRect();
@@ -1220,10 +1313,10 @@ Page({
     const key = `${jobId}:${fileCard.part}`;
     const ready = this._shareDrafts.get(key);
     if (!ready) {
-      // 草稿未就绪（此前准备失败）：重新准备，就绪后再点发送
+      // 草稿未就绪（尚未准备或此前失败）：提权插到预下载队首优先准备，就绪后再点发送
       this._shareFailed.delete(key);
       wx.showToast({ title: '文件准备中，完成后请再次点击发送', icon: 'none' });
-      void this._prepareShareDraft(jobId, fileCard, true);
+      this._enqueueShareDraft(jobId, fileCard.part, true);
       return;
     }
     void sharePreparedCsv(ready.sharePath, ready.filename).then((shared) => {

@@ -3,8 +3,8 @@
 
   <!-- ─── 导入卡（§8.3 状态机：选择账本 → 选择文件 → 确认卡 → 检测中 → 就地结果区） ─── -->
   <view class="card">
-    <view class="card__title">导入账本 csv</view>
-    <view class="card__desc">从微信聊天中选择 csv 文件（≤1MB）进行格式和内容检测，检测后可确认导入到目标账本「{{importLedgerName || ledgerName}}」。</view>
+    <view class="card__title">导入账本</view>
+    <view class="card__desc">从微信聊天中选择 csv 文件（≤1MB ≤5000条）进行格式检测和内容检测，检测后可确认导入到目标账本「{{importLedgerName || ledgerName}}」。</view>
 
     <!-- 目标账本（>1 个账本时 · §8.3 步骤 2 · 确认前可改） -->
     <view
@@ -111,13 +111,13 @@
       >{{committing ? '正在提交…' : commitLabel}}</button>
       <button class="secondary-btn" wx:if="{{showReportDownload}}" bindtap="onDownloadReportTap" disabled="{{reportPreparing}}">{{reportPreparing ? '准备中…' : '下载问题报告'}}</button>
       <button class="secondary-btn" bindtap="onResetImportTap">重新选择文件</button>
-      <view class="card__note">检测结果 15 分钟内有效，过期需重新选择文件检测；确认后将在后台导入，结果见下方数据任务。</view>
+      <view class="card__note">检测结果 15 分钟内有效，过期需重新选择文件检测；确认后将在后台导入，结果在任务列表中查看。</view>
     </block>
   </view>
 
   <!-- ─── 导出卡 ─── -->
   <view class="card">
-    <view class="card__title">导出账本 csv</view>
+    <view class="card__title">导出账本</view>
     <view class="card__desc">将目标账本「{{exportLedgerName || ledgerName}}」的流水导出为 Excel 兼容的 csv 文件，可发送到微信聊天保存或分享。</view>
 
     <!-- 目标账本（>1 个账本时 · §8.4 步骤 2） -->
@@ -165,11 +165,11 @@
       class="primary-btn {{(creating || createCooldown > 0) ? 'primary-btn--disabled' : ''}}"
       bindtap="onCreateTap"
       disabled="{{creating || createCooldown > 0}}"
-    >{{creating ? '正在创建…' : createCooldown > 0 ? createCooldown + 's 后可再次导出' : '生成导出文件'}}</button>
+    >{{creating ? '正在创建…' : createCooldown > 0 ? createCooldown + 's 后可再次导出' : '导出账本数据'}}</button>
   </view>
 
   <!-- ─── 任务中心（导入/导出统一 · §8.3 步骤 7） ─── -->
-  <view class="section-title" wx:if="{{jobs.length > 0}}">数据任务</view>
+  <view class="section-title" wx:if="{{jobs.length > 0}}">任务列表</view>
 
   <view class="card task-card {{item.isNew ? 'task-card--enter' : ''}}" wx:for="{{jobs}}" wx:key="id">
     <view class="task-card__head">
@@ -241,5 +241,5 @@
     </block>
   </view>
 
-  <view class="empty" wx:if="{{!loading && jobs.length === 0}}">暂无数据任务</view>
+  <view class="empty" wx:if="{{!loading && jobs.length === 0}}">暂无任务</view>
 </view>

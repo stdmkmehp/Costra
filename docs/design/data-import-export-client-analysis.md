@@ -820,7 +820,7 @@ CSV 解析器不识别注释语法（§2.1：`#` 开头行当普通记录），�
 
 1. 进入页面 / 切换导入目标账本 ⇒ 静默预下载（`downloadWithAuth` → `prepareCsvShareDraft`，草稿 key = `demo:{ledgerId}`，固定草稿名 `costra-share-import-demo.csv` 覆盖复用）；
 2. 导入卡 `idle` 态主按钮下方次要按钮「下载示例文件」：草稿就绪 ⇒ tap 同步栈内直调 `sharePreparedCsv`；未就绪 ⇒ 按钮态「示例文件准备中…」/ toast 引导再点（未发起分享不进冷却）。分享面板拉起即进 **3s 按钮冷却**（`DEMO_COOLDOWN_MS`，与「开始导出」同款 1s 节拍倒数 + `Ns 后可再次下载` 文案；用户取消分享同样生效——防连点反复拉起微信分享面板）；
-3. 切账本清旧账本草稿并按新账本重备；`onUnload` 随草稿表统一回收；预下载失败静默（非关键路径），点击时重试。
+3. 切账本清旧账本草稿并按新账本重备；`onUnload` 随草稿表统一回收；预下载失败进 `_shareFailed` 静默（非关键路径），**自动路径（onShow → `_loadLedgerOptions`）不再重试**（v1.5 补：与导出分片同一纪律，此前守卫漏查 `_shareFailed` 导致每次 onShow 自动重试刷 warn），点击或切账本（均先清标记）时重试；`_shareFailed` 随 onLoad 重建，下次进页面自愈试一次。
 4. 入口仅 `idle` 态（`confirm`/`report` 态用户已选定文件，引导时机已过）。
 
 #### 4.6.4 确认导入二次确认弹窗
@@ -2531,6 +2531,13 @@ v1 脚本已删除，下表保留作为格式演进对照与"为什么 v2 不兼
 ---
 
 ## 15. 修订记录
+
+### v1.5（2026-09-09）· 预下载失败闸对齐（demo/报告守卫补 `_shareFailed` 短路）
+
+- 问题：`_prepareDemoDraft` / `_prepareReportDraft` 入口守卫只查 `_shareInflight`/`_shareDrafts`，**漏查 `_shareFailed`**；demo 的触发源含 onShow → `_loadLedgerOptions`，预下载失败后每次切回页面都会自动重试一次并刷 warn 日志。导出分片路径（`_syncShareDrafts` 入队前查闸 + 队列 drain 二次查）无此问题。§4.6 早已写明「失败静默、点击重试」纪律，属代码未跟上文档。
+- 修复：两入口守卫补 `_shareFailed.has(key)` 短路。点击（`onDownloadDemoTap` / `onShareReportTap`）与切账本（`_dropDemoDraft`）路径均先清标记再调 prepare，语义不变；`_shareFailed` 随 onLoad 重建，下次进页面仍自愈试一次。
+- 文档：§4.6 第 3 条措辞同步。
+- 验证：miniprogram `tsc --noEmit` 与 eslint 干净；该页无单测，行为待真机回归（断网进页 → 仅点击时重试）。
 
 ### v1.4（2026-09-09）· 导入支出缺省归属改为「个人」
 
