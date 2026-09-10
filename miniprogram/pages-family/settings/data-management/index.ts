@@ -7,7 +7,8 @@
 //     （wx.chooseMessageFile）→ 本地校验（类型/1MB · 失败就地展示不 Toast）→ 确认卡 →
 //     detect（上传期间防误返回 R4）→ 就地结果区（统计/问题预览/成员映射/下载报告）→ commit → 任务卡
 //   - 导出表单：选择账本（同上）→ 时间范围（全部/今年/本月/自定义）→ POST /export-jobs
-//   - 任务中心：轮询 GET /data-jobs（2s 起步，30s 后降频 5s）+ 阶段型模拟进度（server_now 基准）
+//   - 任务中心：轮询 GET /data-jobs（重置点立即拉一拍，随后 1→2→4→8s 指数退避封顶 · drain 期钉 8s）
+//     + 阶段型模拟进度（server_now 基准）
 //     · 导出完成卡：文件信息 + 24h 倒计时 + 逐分片「发送到微信」（多分片给第 N/M 提示 · §6.3）；
 //       分享草稿预下载（shareFileMessage 手势门控 · 下载/校验/复制全部前置 · 串行单并发防打满
 //       小带宽 · 见 fileTransfer 头注）
@@ -67,18 +68,25 @@ import { mapError, describeDataJobError } from '../../../utils/error-mapper';
 import { logger } from '../../../utils/logger';
 
 const MODULE = 'dataMgmt';
-const POLL_FAST_MS = 2_000;
-const POLL_SLOW_MS = 5_000;
-const POLL_FAST_WINDOW_MS = 30_000;
 /**
- * 分享草稿预下载进行中时的轮询节拍（降频至 8s）。
- * 下载（wx.downloadFile）与轮询（wx.request）共享同一条出口带宽——生产 Lighthouse 出口 1Mbps
- * 硬顶（≈125KB/s），单个导出文件（最大 ~500KB）满速下载已需 4~10s 独占带宽；此时若仍以 2s
- * 节拍发 /data-jobs，poll 请求会被下载挤到 10s timeout 之后 ⇒ `poll jobs fail timeout`。
- * 串行队列只保证下载彼此单并发、并不与 poll 互斥，故须在 drain 期间主动把轮询降频让路。
- * 下载全部 drain 完毕后节拍自动回落到常规两段式（2s→5s）。
+ * /data-jobs 轮询指数退避阶梯（拍间间隔 1→2→4→8，封顶档兼作 drain 降频档）。
+ * 规则集（2026-09-10 定稿 · 取代「进页 30s 内 2s、之后 5s」两段式）：
+ *   - 重置点（进页 onShow / 创建导出·导入成功 / 重新生成）**立即补一拍**，随后从首档起退避；
+ *   - 本轮观测到变化（新任务出现、status·stage 迁移、产物文件就绪）⇒ 退回首档；
+ *   - 连续无变化 ⇒ 逐级升档直至封顶——进页后自然形成 +1s/+2s/+4s/+8s 的收敛节奏；
+ *   - 超时/网络失败 ⇒ 直接跳封顶档（失败本身是拥塞信号，不在拥塞窗口里以密拍反复撞击）。
  */
-const POLL_DOWNLOADING_MS = 8_000;
+const POLL_MAX_MS = 8_000;
+const POLL_LADDER_MS = [1_000, 2_000, 4_000, POLL_MAX_MS] as const;
+/**
+ * 分享草稿预下载（drain）期间轮询钉在封顶档让路。
+ * 下载（wx.downloadFile）与轮询（wx.request）共享同一条出口带宽——staging Lighthouse 出口 1Mbps
+ * 硬顶（≈125KB/s）且为丢包式限速（policer），单个导出文件（最大 ~500KB）满速下载需 4~10s
+ * 独占带宽；同窗口 poll 小响应报文被丢后 TCP 重传退避可拖满 wx.request 10s 超时
+ * （`poll jobs fail timeout`）。串行队列只保证下载彼此单并发、并不与 poll 互斥，故 drain
+ * 期间按最低频让路；降频只降低碰撞概率、不能根绝（drain 窗口内那一拍仍有小概率超时记一条
+ * warn），为已评估接受的已知残留。drain 完毕后节拍自动回落退避阶梯原位。
+ */
 /** 「开始导出」创建成功后的按钮冷却（防连点 · 服务端 EXPORT_JOB_IN_PROGRESS 闸口之外的体验层） */
 const CREATE_COOLDOWN_MS = 3_000;
 /** 「下载示例文件」分享发起后的按钮冷却（防连点反复拉起分享面板 · §4.6） */
@@ -209,7 +217,8 @@ Page({
   // （避免本拍 _refreshJobs 执行期间被 onHide/onUnload 停止后仍误续下一拍）。
   _pollActive: false,
   _renderTimer: null as ReturnType<typeof setInterval> | null,
-  _pollStartedAt: 0,
+  /** 退避阶梯当前档位（0=首档 · 重置/升档/跳档规则见 POLL_LADDER_MS 头注） */
+  _pollRung: 0,
   _serverNowMs: 0,
   _serverNowAt: 0,
   _rawJobs: [] as DataJob[],
@@ -422,8 +431,8 @@ Page({
   _startTimers(): void {
     if (!this._pollActive) {
       this._pollActive = true;
-      this._pollStartedAt = Date.now();
-      // 立即拉一次，随后由 _scheduleNextPoll 按当前状态自调度下一拍
+      // 进入/回到页面是重置点：立即拉一拍（零等待），退避从首档重新算起
+      this._pollRung = 0;
       void this._refreshJobs().finally(() => this._scheduleNextPoll());
     }
     if (!this._renderTimer) {
@@ -433,21 +442,20 @@ Page({
 
   /**
    * 计算并挂起下一次轮询（setTimeout 链 · 每拍按当前状态重算间隔）。
-   *   - 分享草稿正在 drain 下载 ⇒ 降频 POLL_DOWNLOADING_MS，把出口带宽让给下载，避免 poll 被挤到 timeout；
-   *   - 否则按常规两段式：进入页面 POLL_FAST_WINDOW_MS 内 POLL_FAST_MS，之后 POLL_SLOW_MS。
+   * 间隔取退避阶梯当前档；分享草稿 drain 下载期间钉在封顶档（POLL_MAX_MS）把出口带宽让给下载。
+   * 重入安全：挂新拍前先清旧定时器——「创建任务成功 / 观测到变化」在链外重置档位后可随时
+   * 调本方法让新档位立即接管（原挂起拍可能还在 4~8s 之外），任意时刻至多一个挂起定时器。
    * _pollActive 为 false（已 _stopTimers）时不再续拍，实现自然停止（含本拍执行期间被 onHide/onUnload 停止的情况）。
    */
   _scheduleNextPoll(): void {
     if (!this._pollActive) return;
-    let interval: number;
-    if (this._shareQueueDraining) {
-      interval = POLL_DOWNLOADING_MS;
-    } else if (Date.now() - this._pollStartedAt > POLL_FAST_WINDOW_MS) {
-      interval = POLL_SLOW_MS;
-    } else {
-      interval = POLL_FAST_MS;
+    if (this._pollTimer) {
+      clearTimeout(this._pollTimer);
+      this._pollTimer = null;
     }
+    const interval = this._shareQueueDraining ? POLL_MAX_MS : POLL_LADDER_MS[this._pollRung];
     this._pollTimer = setTimeout(() => {
+      this._pollTimer = null;
       void this._refreshJobs().finally(() => this._scheduleNextPoll());
     }, interval);
   },
@@ -475,11 +483,25 @@ Page({
       const { jobs, serverNow } = await listDataJobs();
       this._serverNowMs = Date.parse(serverNow);
       this._serverNowAt = Date.now();
+      // 变化检测（退避重置信号 · 与轻震判定共用同一份 prev 快照）：
+      // 新任务出现 / status·stage 迁移 / 产物文件数变化 ⇒ 回首档；连续无变化 ⇒ 逐级升档至封顶
+      const prevById = new Map(this._rawJobs.map((j) => [j.id, j]));
+      const changed =
+        jobs.length !== this._rawJobs.length ||
+        jobs.some((j) => {
+          const prev = prevById.get(j.id);
+          return (
+            prev === undefined ||
+            prev.status !== j.status ||
+            prev.stage !== j.stage ||
+            prev.files.length !== j.files.length
+          );
+        });
+      this._pollRung = changed ? 0 : Math.min(this._pollRung + 1, POLL_LADDER_MS.length - 1);
       // 页面可见期间任务进入终态 ⇒ 轻震反馈（§8.5 · 首载无 prev 不震）
-      const prevById = new Map(this._rawJobs.map((j) => [j.id, j.status]));
       const justSettled = jobs.some((j) => {
         const prev = prevById.get(j.id);
-        return prev !== undefined && prev !== j.status && (j.status === 'succeeded' || j.status === 'failed');
+        return prev !== undefined && prev.status !== j.status && (j.status === 'succeeded' || j.status === 'failed');
       });
       if (justSettled) wx.vibrateShort({ type: 'light' });
       // 新出现任务标记入场动画（首载豁免：页面首次成功拉取时整列不算"新增"）
@@ -502,6 +524,8 @@ Page({
         void markDataJobSeen(job.id);
       }
     } catch (err) {
+      // 失败即跳封顶档：超时/断网本身是拥塞信号，不在拥塞窗口里以密拍反复撞击
+      this._pollRung = POLL_LADDER_MS.length - 1;
       logger.warn(MODULE, 'poll jobs fail', err);
     } finally {
       if (this.data.loading) this.setData({ loading: false });
@@ -1079,6 +1103,8 @@ Page({
       wx.showToast({ title: '导入任务已创建', icon: 'none' });
       this._resetImportCard();
       await this._refreshJobs();
+      // 同 _createJob：首档节拍立即接管
+      this._scheduleNextPoll();
       // 与导出创建行为对称：结果卡重置（report → idle 折叠）后滚动到任务区，新任务卡落在视口约 1/3 处
       wx.nextTick(() => this._scrollToJobs());
     } catch (err) {
@@ -1092,6 +1118,7 @@ Page({
         wx.showToast({ title: '该账本已有导入任务进行中', icon: 'none' });
         this._resetImportCard();
         await this._refreshJobs();
+        this._scheduleNextPoll();
         return;
       }
       this._showErrorToast(apiErr);
@@ -1240,6 +1267,8 @@ Page({
       wx.showToast({ title: '导出任务已创建', icon: 'none' });
       this._startCreateCooldown();
       await this._refreshJobs();
+      // 新任务入列已被变化检测重置回首档；重排下一拍让 1s 首档立即接管（原挂起拍可能还在 4~8s 外）
+      this._scheduleNextPoll();
       // 新任务卡插入列表顶部，滚动到任务区确保 toast 指引的"下方"可见（卡片入场动画不被错过）
       wx.nextTick(() => this._scrollToJobs());
     } catch (err) {
