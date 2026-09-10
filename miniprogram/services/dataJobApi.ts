@@ -169,8 +169,13 @@ export async function createExportJob(input: { ledgerId?: string; from?: string;
   return adaptDataJob(res);
 }
 
-/** 任务中心列表（倒序 · 带 server_now · 客户端默认拉最近 10 条；§6.4 服务端缺省 20 仅在未传 limit 时生效） */
-export async function listDataJobs(limit = 10): Promise<DataJobListResult> {
+/**
+ * 任务中心列表（倒序 · 带 server_now · 客户端默认拉最近 3 条；§6.4 服务端缺省 20 仅在未传 limit 时生效）。
+ * 【临时限制 · 2026-09-10】默认 10→3：进页面 `_syncShareDrafts` 会对列表内每个 succeeded 未过期导出
+ * 自动串行预下载，收窄列表即收窄自动预下载集合，缓解 1Mbps 出口带宽压力。属临时措施，
+ * 后期导出产物走对象存储/CDN 剥离 API 机带宽后应回调（放宽或恢复 10）。
+ */
+export async function listDataJobs(limit = 3): Promise<DataJobListResult> {
   const res = await request<DataJobListWire>({
     path: '/data-jobs',
     method: 'GET',
