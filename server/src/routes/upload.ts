@@ -143,6 +143,6 @@ export async function registerUploadRoutes(app: FastifyInstance): Promise<void> 
 
     app.log.info({ userId, filename, bytes: fileBuffer.length }, '[upload] avatar saved');
 
-    reply.code(201).send({ url });
+    return reply.code(201).send({ url });
   });
 }

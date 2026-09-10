@@ -66,7 +66,7 @@ export async function registerCategoriesRoutes(app: FastifyInstance): Promise<vo
       const userId = await parseUserId(req);
       const { family_id: familyId } = req.query;
       const categories = await categoryService.listCategories(userId, familyId);
-      reply.code(200).send(categories);
+      return reply.code(200).send(categories);
     },
   );
 
@@ -91,7 +91,7 @@ export async function registerCategoriesRoutes(app: FastifyInstance): Promise<vo
         },
         'category created',
       );
-      reply.code(201).send(category);
+      return reply.code(201).send(category);
     },
   );
 }

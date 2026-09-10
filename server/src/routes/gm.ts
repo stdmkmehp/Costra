@@ -127,7 +127,7 @@ export async function registerGmRoutes(app: FastifyInstance): Promise<void> {
         })),
       };
     }, app.log);
-    reply.code(200).send(lists);
+    return reply.code(200).send(lists);
   });
 
   // POST /gm/impersonate · GM 登录指定账号（user_id）或新建伪造账号（create_fake）
@@ -154,8 +154,7 @@ export async function registerGmRoutes(app: FastifyInstance): Promise<void> {
         }
         app.log.warn({ gmUserId, mode: 'user_id', targetUserId: target.id }, 'gm impersonate login');
         const pair = await svc.loginAsOpenid(target.wxOpenid, target.wxUnionid, body.client_fp ?? null);
-        reply.code(200).send(pair);
-        return;
+        return reply.code(200).send(pair);
       }
 
       // create_fake 路径：服务端生成伪造 openid（gm_fake_ + 32 位 hex · D4 前缀隔离），
@@ -163,7 +162,7 @@ export async function registerGmRoutes(app: FastifyInstance): Promise<void> {
       const fakeOpenid = `gm_fake_${randomUUID().replace(/-/g, '')}`;
       app.log.warn({ gmUserId, mode: 'fake_auto', fakeOpenid }, 'gm impersonate login');
       const pair = await svc.loginAsOpenid(fakeOpenid, null, body.client_fp ?? null);
-      reply.code(200).send(pair);
+      return reply.code(200).send(pair);
     },
   );
 }

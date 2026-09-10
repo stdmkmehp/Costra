@@ -18,6 +18,6 @@ import { ICP_INFO } from '../config/icp.js';
 
 export async function registerLegalRoutes(app: FastifyInstance): Promise<void> {
   app.get('/legal/icp', async (_req, reply) => {
-    reply.code(200).send(ICP_INFO);
+    return reply.code(200).send(ICP_INFO);
   });
 }

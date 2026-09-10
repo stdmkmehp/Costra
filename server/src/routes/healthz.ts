@@ -17,7 +17,7 @@ export async function registerHealthRoute(app: FastifyInstance): Promise<void> {
   // 健康探针由 K8s/SLB 高频轮询：成功路径降噪（per-route logLevel=warn），
   // 探针成功不再刷 info access log；探针失败（5xx）仍会被记录。
   app.get('/healthz', { logLevel: 'warn' }, async (_req, reply) => {
-    reply.code(200).send({
+    return reply.code(200).send({
       status: 'ok',
       build_sha: appEnv().buildSha,
       now_utc: new Date().toISOString(),

@@ -169,8 +169,7 @@ export async function registerEntriesRoutes(app: FastifyInstance): Promise<void>
           },
           'entry created',
         );
-        reply.code(201).send(entryToResponse(entry));
-        return;
+        return reply.code(201).send(entryToResponse(entry));
       }
       if (result.status === 'conflict') {
         throw new AppError(ErrorCode.VERSION_CONFLICT, {
@@ -198,7 +197,7 @@ export async function registerEntriesRoutes(app: FastifyInstance): Promise<void>
         cursor ?? null,
         limit,
       );
-      reply.code(200).send(result);
+      return reply.code(200).send(result);
     },
   );
 
@@ -209,7 +208,7 @@ export async function registerEntriesRoutes(app: FastifyInstance): Promise<void>
     async (req, reply) => {
       const userId = await parseUserId(req);
       const entry = await entryService.findById(userId, req.params.entry_id);
-      reply.code(200).send(entryToResponse(entry));
+      return reply.code(200).send(entryToResponse(entry));
     },
   );
 
@@ -247,8 +246,7 @@ export async function registerEntriesRoutes(app: FastifyInstance): Promise<void>
         },
         'entry updated',
       );
-      reply.code(200).send(entryToResponse(entry));
-      return;
+      return reply.code(200).send(entryToResponse(entry));
     }
     if (result.status === 'conflict') {
       throw new AppError(ErrorCode.VERSION_CONFLICT, {
@@ -274,7 +272,7 @@ export async function registerEntriesRoutes(app: FastifyInstance): Promise<void>
       if (typeof override === 'string' && override.toUpperCase() === 'PATCH') {
         return handlePatchEntry(req, reply);
       }
-      reply.code(405).send({
+      return reply.code(405).send({
         error: {
           code: 'METHOD_NOT_ALLOWED',
           message: 'POST /entries/{id} requires X-HTTP-Method-Override: PATCH',
@@ -301,8 +299,7 @@ export async function registerEntriesRoutes(app: FastifyInstance): Promise<void>
           { action: 'entry.delete', userId, entryId, baseVersion },
           'entry deleted',
         );
-        reply.code(204).send();
-        return;
+        return reply.code(204).send();
       }
       if (result.status === 'conflict') {
         throw new AppError(ErrorCode.VERSION_CONFLICT, {

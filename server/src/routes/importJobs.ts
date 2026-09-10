@@ -276,8 +276,7 @@ export async function registerImportJobsRoutes(app: FastifyInstance): Promise<vo
         { audit: 'data_import', action: 'detect-dedup', user_id: userId, ledger_id: ledger.id, detect_id: existing.id, file_sha256: fileSha256 },
         'import detect dedup hit',
       );
-      reply.code(200).send(toDetectReport(touched ?? existing, ledger));
-      return;
+      return reply.code(200).send(toDetectReport(touched ?? existing, ledger));
     }
 
     // 并发检测闸口（§4.4）：僵尸 detecting（>10min）即查即收（自愈释放并发槽）
@@ -364,11 +363,12 @@ export async function registerImportJobsRoutes(app: FastifyInstance): Promise<vo
       'import detect ready',
     );
 
-    reply.code(200).send(toDetectReport(ready ?? session, ledger));
+    return reply.code(200).send(toDetectReport(ready ?? session, ledger));
   });
 
   // ─── GET /import-jobs/demo-csv · 下载导入示例 CSV（§4.6 · 内存生成不落盘，不走 data_jobs） ───
-  app.get('/import-jobs/demo-csv', async (req, reply) => {
+  // compress: false —— text/csv 附件下载，保留 Content-Length / 语义直白，排除响应压缩
+  app.get('/import-jobs/demo-csv', { compress: false }, async (req, reply) => {
     const userId = await requireUserId(req);
 
     // 频控（Redis 独立计数器 · 与 detect 同范式 · 5min/10 次）
@@ -411,7 +411,7 @@ export async function registerImportJobsRoutes(app: FastifyInstance): Promise<vo
       memberNicknames: members.map((m) => m.nickname),
       now: DateTime.now().setZone(SHANGHAI_ZONE),
     });
-    reply
+    return reply
       .header('Content-Type', 'text/csv; charset=utf-8')
       .header('Content-Disposition', buildContentDisposition(DEMO_FILENAME))
       .send(csv);
@@ -446,8 +446,7 @@ export async function registerImportJobsRoutes(app: FastifyInstance): Promise<vo
       if (session.status === 'consumed') {
         const job = session.jobId ? await dataJobRepo.findById(session.jobId, client) : null;
         await client.query('COMMIT');
-        reply.code(202).send({ job_id: session.jobId, status: job?.status ?? 'queued' });
-        return;
+        return reply.code(202).send({ job_id: session.jobId, status: job?.status ?? 'queued' });
       }
       if (session.status !== 'ready') {
         throw new AppError(ErrorCode.DETECT_SESSION_EXPIRED, {
@@ -550,7 +549,7 @@ export async function registerImportJobsRoutes(app: FastifyInstance): Promise<vo
       // 事件触发：不等下一个 tick（worker 立即领取）
       app.dataJobScheduler?.kick();
 
-      reply.code(202).send({ job_id: job.id, status: 'queued' });
+      return reply.code(202).send({ job_id: job.id, status: 'queued' });
     } catch (err) {
       try {
         await client.query('ROLLBACK');
@@ -566,6 +565,8 @@ export async function registerImportJobsRoutes(app: FastifyInstance): Promise<vo
   // ─── GET /import-detect-sessions/{detect_id}/report · 下载问题报告 CSV ───────
   app.get<{ Params: { detect_id: string } }>(
     '/import-detect-sessions/:detect_id/report',
+    // compress: false —— 磁盘 CSV 直发 + 保留 Content-Length（下载进度依赖），排除响应压缩
+    { compress: false },
     async (req, reply) => {
       const userId = await requireUserId(req);
       const session = await importDetectRepo.findById(req.params.detect_id);

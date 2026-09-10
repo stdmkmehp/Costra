@@ -200,7 +200,7 @@ export async function registerSyncRoutes(app: FastifyInstance): Promise<void> {
         limit,
       });
 
-      reply.code(200).send(result);
+      return reply.code(200).send(result);
     },
   );
 
@@ -238,8 +238,7 @@ export async function registerSyncRoutes(app: FastifyInstance): Promise<void> {
       // 幂等键查表
       const check = await checkAndGet(idempotencyKey, SYNC_PUSH_ENDPOINT, reqHash);
       if (check.cached) {
-        reply.code(check.cached.statusCode).send(check.cached.body);
-        return;
+        return reply.code(check.cached.statusCode).send(check.cached.body);
       }
 
       // 逐条处理 ops（不开 batch transaction，每条独立事务）
@@ -274,7 +273,7 @@ export async function registerSyncRoutes(app: FastifyInstance): Promise<void> {
         responseBody,
       });
 
-      reply.code(200).send(responseBody);
+      return reply.code(200).send(responseBody);
     },
   );
 }

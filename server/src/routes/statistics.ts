@@ -91,7 +91,7 @@ export async function registerStatisticsRoutes(app: FastifyInstance): Promise<vo
         topN: req.query.top_n,
         userId: req.query.user_id,
       });
-      reply.code(200).send(result);
+      return reply.code(200).send(result);
     },
   );
 
@@ -110,7 +110,7 @@ export async function registerStatisticsRoutes(app: FastifyInstance): Promise<vo
         topN: req.query.top_n,
         userId: req.query.user_id,
       });
-      reply.code(200).send(result);
+      return reply.code(200).send(result);
     },
   );
 
@@ -145,7 +145,7 @@ export async function registerStatisticsRoutes(app: FastifyInstance): Promise<vo
         userId: req.query.user_id,
         entryType: req.query.entry_type,
       });
-      reply.code(200).send(result);
+      return reply.code(200).send(result);
     },
   );
 }

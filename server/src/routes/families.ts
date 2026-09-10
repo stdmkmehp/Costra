@@ -214,7 +214,7 @@ export async function registerFamiliesRoutes(app: FastifyInstance): Promise<void
   app.get('/families', async (req, reply) => {
     const userId = await parseUserId(req);
     const families = await familyService.listFamilies(userId);
-    reply.code(200).send(families);
+    return reply.code(200).send(families);
   });
 
   // POST /families
@@ -227,13 +227,12 @@ export async function registerFamiliesRoutes(app: FastifyInstance): Promise<void
       // 幂等检查
       const cached = await checkIdempotency(req, 'POST /families');
       if (cached) {
-        reply.code(cached.cached.statusCode).send(cached.cached.body);
-        return;
+        return reply.code(cached.cached.statusCode).send(cached.cached.body);
       }
 
       const result = await familyService.createFamily(userId, req.body);
       await saveIdempotency(req, 'POST /families', userId, 201, result);
-      reply.code(201).send(result);
+      return reply.code(201).send(result);
     },
   );
 
@@ -244,7 +243,7 @@ export async function registerFamiliesRoutes(app: FastifyInstance): Promise<void
     async (req, reply) => {
       const userId = await parseUserId(req);
       const result = await familyService.getFamilyDetail(userId, req.params.family_id);
-      reply.code(200).send(result);
+      return reply.code(200).send(result);
     },
   );
 
@@ -252,7 +251,7 @@ export async function registerFamiliesRoutes(app: FastifyInstance): Promise<void
   const handlePatchFamily = async (req: FastifyRequest<{ Params: { family_id: string }; Body: { name?: string; version: number } }>, reply: FastifyReply) => {
     const userId = await parseUserId(req);
     const result = await familyService.updateFamily(userId, req.params.family_id, req.body);
-    reply.code(200).send(result);
+    return reply.code(200).send(result);
   };
 
   app.patch<{ Params: { family_id: string }; Body: { name?: string; version: number } }>(
@@ -270,7 +269,7 @@ export async function registerFamiliesRoutes(app: FastifyInstance): Promise<void
       if (typeof override === 'string' && override.toUpperCase() === 'PATCH') {
         return handlePatchFamily(req, reply);
       }
-      reply.code(405).send({
+      return reply.code(405).send({
         error: {
           code: 'METHOD_NOT_ALLOWED',
           message: 'POST /families/{id} requires X-HTTP-Method-Override: PATCH',
@@ -289,13 +288,12 @@ export async function registerFamiliesRoutes(app: FastifyInstance): Promise<void
       // 幂等检查
       const cached = await checkIdempotency(req, 'DELETE /families/{family_id}');
       if (cached) {
-        reply.code(cached.cached.statusCode).send(cached.cached.body);
-        return;
+        return reply.code(cached.cached.statusCode).send(cached.cached.body);
       }
 
       await familyService.deleteFamily(userId, req.params.family_id, req.query.version);
       await saveIdempotency(req, 'DELETE /families/{family_id}', userId, 204, null);
-      reply.code(204).send();
+      return reply.code(204).send();
     },
   );
 
@@ -306,7 +304,7 @@ export async function registerFamiliesRoutes(app: FastifyInstance): Promise<void
     async (req, reply) => {
       const userId = await parseUserId(req);
       const result = await familyService.listMembers(userId, req.params.family_id);
-      reply.code(200).send(result);
+      return reply.code(200).send(result);
     },
   );
 
@@ -323,7 +321,7 @@ export async function registerFamiliesRoutes(app: FastifyInstance): Promise<void
         year: req.query.year,
         topN: req.query.top_n,
       });
-      reply.code(200).send(result);
+      return reply.code(200).send(result);
     },
   );
 
@@ -349,7 +347,7 @@ export async function registerFamiliesRoutes(app: FastifyInstance): Promise<void
         limit: req.query.limit,
         entryType,
       });
-      reply.code(200).send(result);
+      return reply.code(200).send(result);
     },
   );
 
@@ -363,8 +361,7 @@ export async function registerFamiliesRoutes(app: FastifyInstance): Promise<void
       // 幂等检查
       const cached = await checkIdempotency(req, 'POST /families/{family_id}/invites');
       if (cached) {
-        reply.code(cached.cached.statusCode).send(cached.cached.body);
-        return;
+        return reply.code(cached.cached.statusCode).send(cached.cached.body);
       }
 
       const result = await familyService.createInvite(userId, req.params.family_id, {
@@ -372,7 +369,7 @@ export async function registerFamiliesRoutes(app: FastifyInstance): Promise<void
         ttlHours: req.body.ttl_hours,
       });
       await saveIdempotency(req, 'POST /families/{family_id}/invites', userId, 201, result);
-      reply.code(201).send(result);
+      return reply.code(201).send(result);
     },
   );
 
@@ -383,7 +380,7 @@ export async function registerFamiliesRoutes(app: FastifyInstance): Promise<void
     async (req, reply) => {
       const userId = await parseUserId(req);
       await familyService.revokeInvite(userId, req.params.family_id, req.params.invite_id);
-      reply.code(204).send();
+      return reply.code(204).send();
     },
   );
 
@@ -396,7 +393,7 @@ export async function registerFamiliesRoutes(app: FastifyInstance): Promise<void
       // 需要登录（确保被邀请方已完成微信认证）
       await parseUserId(req);
       const result = await familyService.previewInvite({ invite_token: req.query.token });
-      reply.code(200).send(result);
+      return reply.code(200).send(result);
     },
   );
 
@@ -410,13 +407,12 @@ export async function registerFamiliesRoutes(app: FastifyInstance): Promise<void
       // 幂等检查
       const cached = await checkIdempotency(req, 'POST /families/invites/accept');
       if (cached) {
-        reply.code(cached.cached.statusCode).send(cached.cached.body);
-        return;
+        return reply.code(cached.cached.statusCode).send(cached.cached.body);
       }
 
       const result = await familyService.acceptInvite(userId, req.body);
       await saveIdempotency(req, 'POST /families/invites/accept', userId, 200, result);
-      reply.code(200).send(result);
+      return reply.code(200).send(result);
     },
   );
 
@@ -427,7 +423,7 @@ export async function registerFamiliesRoutes(app: FastifyInstance): Promise<void
     async (req, reply) => {
       const userId = await parseUserId(req);
       await familyService.removeMember(userId, req.params.family_id, req.params.user_id);
-      reply.code(204).send();
+      return reply.code(204).send();
     },
   );
 
@@ -443,13 +439,12 @@ export async function registerFamiliesRoutes(app: FastifyInstance): Promise<void
       // 幂等检查（与 POST /families 同范式：用户重试不会触发二次自动解散）
       const cached = await checkIdempotency(req, 'POST /families/{family_id}/members/me/leave');
       if (cached) {
-        reply.code(cached.cached.statusCode).send(cached.cached.body);
-        return;
+        return reply.code(cached.cached.statusCode).send(cached.cached.body);
       }
 
       await familyService.leaveFamily(userId, req.params.family_id);
       await saveIdempotency(req, 'POST /families/{family_id}/members/me/leave', userId, 204, null);
-      reply.code(204).send();
+      return reply.code(204).send();
     },
   );
 
@@ -459,7 +454,7 @@ export async function registerFamiliesRoutes(app: FastifyInstance): Promise<void
   const handlePatchMyColor = async (req: FastifyRequest<{ Params: { family_id: string }; Body: { color_choice: number } }>, reply: FastifyReply) => {
     const userId = await parseUserId(req);
     const result = await familyService.updateMyColorChoice(userId, req.params.family_id, req.body.color_choice);
-    reply.code(200).send(result);
+    return reply.code(200).send(result);
   };
 
   app.patch<{ Params: { family_id: string }; Body: { color_choice: number } }>(
@@ -477,7 +472,7 @@ export async function registerFamiliesRoutes(app: FastifyInstance): Promise<void
       if (typeof override === 'string' && override.toUpperCase() === 'PATCH') {
         return handlePatchMyColor(req, reply);
       }
-      reply.code(405).send({
+      return reply.code(405).send({
         error: {
           code: 'METHOD_NOT_ALLOWED',
           message: 'POST /families/{id}/members/me/color requires X-HTTP-Method-Override: PATCH',

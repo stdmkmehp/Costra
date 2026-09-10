@@ -321,7 +321,7 @@ export async function registerRecurringRoutes(
         await saveMutation(req, endpoint, userId, 200, body);
         return reply.code(200).send(body);
       }
-      reply.code(405).send({
+      return reply.code(405).send({
         error: {
           code: 'METHOD_NOT_ALLOWED',
           message: 'POST /recurring-entries/{id} requires X-HTTP-Method-Override: PATCH',

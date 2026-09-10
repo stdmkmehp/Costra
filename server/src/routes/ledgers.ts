@@ -70,7 +70,7 @@ export async function registerLedgersRoutes(app: FastifyInstance): Promise<void>
 
       const result = await ledgerService.getBalanceForUser(userId, ledgerId);
 
-      reply.code(200).send(result);
+      return reply.code(200).send(result);
     },
   );
 
@@ -103,7 +103,7 @@ export async function registerLedgersRoutes(app: FastifyInstance): Promise<void>
       'ledger balance rebased',
     );
 
-    reply.code(200).send(result);
+    return reply.code(200).send(result);
   }
 
   app.patch<{ Params: { ledger_id: string }; Body: { balance_cents: number; balance_version: number } }>(
@@ -121,7 +121,7 @@ export async function registerLedgersRoutes(app: FastifyInstance): Promise<void>
       if (typeof override === 'string' && override.toUpperCase() === 'PATCH') {
         return handlePatchBalance(req, reply);
       }
-      reply.code(405).send({
+      return reply.code(405).send({
         error: {
           code: 'METHOD_NOT_ALLOWED',
           message: 'POST /ledgers/{id}/balance requires X-HTTP-Method-Override: PATCH',

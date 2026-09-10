@@ -293,7 +293,7 @@ export async function registerDataJobsRoutes(app: FastifyInstance): Promise<void
     app.dataJobScheduler?.kick();
 
     // createExportJob 走 INSERT ... RETURNING（无法 JOIN 取名），用已解析的 ledger 补齐 ledger_name
-    reply.code(201).send(serializeJob({ ...job, ledgerName: ledger.name }));
+    return reply.code(201).send(serializeJob({ ...job, ledgerName: ledger.name }));
     },
   );
 
@@ -305,7 +305,7 @@ export async function registerDataJobsRoutes(app: FastifyInstance): Promise<void
       const userId = await requireUserId(req);
       const limit = req.query.limit ?? LIST_LIMIT_DEFAULT;
       const jobs = await dataJobRepo.listByOwner(userId, limit);
-      reply.code(200).send({
+      return reply.code(200).send({
         jobs: jobs.map(serializeJob),
         server_now: new Date().toISOString(),
       });
@@ -319,13 +319,14 @@ export async function registerDataJobsRoutes(app: FastifyInstance): Promise<void
     if (!job || job.userId !== userId) {
       throw new AppError(ErrorCode.NOT_FOUND, { message: 'data job not found' });
     }
-    reply.code(200).send({ ...serializeJob(job), server_now: new Date().toISOString() });
+    return reply.code(200).send({ ...serializeJob(job), server_now: new Date().toISOString() });
   });
 
   // GET /data-jobs/{job_id}/download?part=N · 下载导出分片
   app.get<{ Params: { job_id: string }; Querystring: { part?: number } }>(
     '/data-jobs/:job_id/download',
-    { schema: { querystring: downloadQuerySchema } },
+    // compress: false —— 磁盘 CSV 直发 + 保留 Content-Length（下载进度依赖），排除响应压缩
+    { compress: false, schema: { querystring: downloadQuerySchema } },
     async (req, reply) => {
       const userId = await requireUserId(req);
       const job = await dataJobRepo.findById(req.params.job_id);

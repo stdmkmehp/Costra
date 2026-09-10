@@ -19,6 +19,7 @@ import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastif
 import cors from '@fastify/cors';
 import sensible from '@fastify/sensible';
 import multipart from '@fastify/multipart';
+import compress from '@fastify/compress';
 import { randomUUID } from 'node:crypto';
 import { appEnv } from './config/env.js';
 import { createLogger } from './logger.js';
@@ -99,6 +100,21 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   // multipart：处理文件上传（头像等）；单文件限 2MB（upload 路由内部再校验）
   await app.register(multipart, {
     limits: { fileSize: 2 * 1024 * 1024, files: 1 },
+  });
+
+  // 响应压缩：gzip 唯一协商编码（微信客户端对 br/zstd/deflate 支持未文档化，不开）；
+  // threshold 1KB 以下不压（小响应压缩反而可能变大 + 白付 CPU）；
+  // globalDecompression: false —— 本插件默认还会挂 preParsing 请求体解压 hook，
+  //   但客户端（wx.request / wx.uploadFile）从不压缩请求体，该路径无消费者；
+  //   开着反而引入未评估的失败模式：插件抛的 FST_CP_ERR_INVALID_CONTENT 不是 AppError，
+  //   会落进 errorHandler 分支变成 500 INTERNAL（违背错误码契约）。
+  // 根作用域注册 ⇒ onSend 钩子覆盖全部路由（/healthz、/v1/* 子作用域、错误响应）；
+  //   三处文件下载路由用路由级 { compress: false } 排除（保留 Content-Length / 下载进度）。
+  await app.register(compress, {
+    global: true,
+    globalDecompression: false,
+    encodings: ['gzip'],
+    threshold: 1024,
   });
 
   // --- 核心插件 ---

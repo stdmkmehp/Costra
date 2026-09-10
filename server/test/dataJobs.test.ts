@@ -525,6 +525,17 @@ describe('W1 · worker 端到端', () => {
     expect(dl.headers['content-disposition']).toContain("filename*=UTF-8''");
     expect(dl.headers['x-content-sha256']).toBe(job.files[0]!.sha256);
 
+    // 响应压缩排除（compress: false）：即便客户端声明 accept-encoding: gzip，
+    // 下载路由也不压缩 —— 保留 Content-Length（进度依赖）、X-Content-Sha256 不变
+    const dlGzip = await app.inject({
+      method: 'GET',
+      url: `/v1/data-jobs/${jobId}/download?part=1`,
+      headers: { ...auth(token), 'accept-encoding': 'gzip' },
+    });
+    expect(dlGzip.statusCode).toBe(200);
+    expect(dlGzip.headers['content-encoding']).toBeUndefined();
+    expect(dlGzip.headers['content-length']).toBe(String(job.files[0]!.size_bytes));
+    expect(dlGzip.headers['x-content-sha256']).toBe(job.files[0]!.sha256);
     const content = dl.body;
     const buffer = dl.rawPayload;
     expect(createHash('sha256').update(buffer).digest('hex')).toBe(job.files[0]!.sha256);

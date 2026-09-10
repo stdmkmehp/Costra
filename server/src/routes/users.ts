@@ -109,7 +109,7 @@ export async function registerUsersRoutes(app: FastifyInstance): Promise<void> {
     if (!user) {
       throw new AppError(ErrorCode.UNAUTHENTICATED, { message: 'user not found' });
     }
-    reply.code(200).send(toUserView(user));
+    return reply.code(200).send(toUserView(user));
   });
 
   // PATCH /users/me handler（抽为内部函数 · 供 POST K3 兜底复用）
@@ -133,7 +133,7 @@ export async function registerUsersRoutes(app: FastifyInstance): Promise<void> {
     if (!user) {
       throw new AppError(ErrorCode.UNAUTHENTICATED, { message: 'user not found' });
     }
-    reply.code(200).send(toUserView(user));
+    return reply.code(200).send(toUserView(user));
   }
 
   // PATCH /users/me
@@ -153,7 +153,7 @@ export async function registerUsersRoutes(app: FastifyInstance): Promise<void> {
         return handlePatch(req, reply);
       }
       // 无 Method-Override header → 405 METHOD_NOT_ALLOWED
-      reply.code(405).send({
+      return reply.code(405).send({
         error: {
           code: 'METHOD_NOT_ALLOWED',
           message: 'POST /users/me requires X-HTTP-Method-Override: PATCH',
@@ -172,7 +172,7 @@ export async function registerUsersRoutes(app: FastifyInstance): Promise<void> {
     }
 
     if (!user.preferredFamilyId || !user.preferredLedgerId) {
-      reply.code(200).send({
+      return reply.code(200).send({
         preferred_family_id: null,
         preferred_ledger_id: null,
         preferred_family_kind: null,
@@ -180,7 +180,6 @@ export async function registerUsersRoutes(app: FastifyInstance): Promise<void> {
         preferred_revision: user.preferredRevision,
         preferred_updated_at: user.preferredUpdatedAt?.toISOString() ?? null,
       });
-      return;
     }
 
     const [family, ledger, isMember] = await Promise.all([
@@ -190,7 +189,7 @@ export async function registerUsersRoutes(app: FastifyInstance): Promise<void> {
     ]);
 
     if (!family || !ledger || ledger.familyId !== family.id || !isMember) {
-      reply.code(200).send({
+      return reply.code(200).send({
         preferred_family_id: null,
         preferred_ledger_id: null,
         preferred_family_kind: null,
@@ -198,10 +197,9 @@ export async function registerUsersRoutes(app: FastifyInstance): Promise<void> {
         preferred_revision: user.preferredRevision,
         preferred_updated_at: user.preferredUpdatedAt?.toISOString() ?? null,
       });
-      return;
     }
 
-    reply.code(200).send({
+    return reply.code(200).send({
       preferred_family_id: family.id,
       preferred_ledger_id: ledger.id,
       preferred_family_kind: family.kind,
@@ -253,7 +251,7 @@ export async function registerUsersRoutes(app: FastifyInstance): Promise<void> {
         preferredLedgerId:  body.preferred_ledger_id,
         clientRevision: body.client_revision,
       });
-      reply.code(204).send();
+      return reply.code(204).send();
     },
   );
 
@@ -274,7 +272,7 @@ export async function registerUsersRoutes(app: FastifyInstance): Promise<void> {
     const env = appEnv();
     const tipEntryVisible =
       env.wxPayMode === 'on' || env.wxPayTestUserIds.includes(userId) || supporterBadge;
-    reply.code(200).send({
+    return reply.code(200).send({
       ...overview,
       tip_entry_visible: tipEntryVisible,
       supporter_badge: supporterBadge,

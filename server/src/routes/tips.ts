@@ -87,7 +87,7 @@ export async function registerTipsRoutes(app: FastifyInstance): Promise<void> {
         log: req.log,
       });
       req.log.info({ action: 'tip.order.create', userId, outTradeNo: result.outTradeNo }, 'tip order created');
-      reply.code(200).send({
+      return reply.code(200).send({
         out_trade_no: result.outTradeNo,
         pay_data: {
           signData: result.payData.signData,
@@ -105,7 +105,7 @@ export async function registerTipsRoutes(app: FastifyInstance): Promise<void> {
     { schema: { querystring: { type: 'object', additionalProperties: false } } },
     async (req, reply) => {
       const userId = await requireUserId(req);
-      reply.code(200).send(tipService.listTipProducts(userId));
+      return reply.code(200).send(tipService.listTipProducts(userId));
     },
   );
 
@@ -113,7 +113,7 @@ export async function registerTipsRoutes(app: FastifyInstance): Promise<void> {
   tips.get('/tips/summary', async (req, reply) => {
     const userId = await requireUserId(req);
     const summary = await tipService.buildTipSummary(userId, req.log);
-    reply.code(200).send(summary);
+    return reply.code(200).send(summary);
   });
 
   // PUT /tips/summary/badge-visibility · 徽章可见性开关（tech-spec §4.7 · body {badge_hidden}）
@@ -126,7 +126,7 @@ export async function registerTipsRoutes(app: FastifyInstance): Promise<void> {
       await tipOrderRepo.setBadgeHidden(userId, hidden);
       const agg = await tipOrderRepo.aggregateTipSummary(userId);
       const supporterBadge = agg.tipCount > 0;
-      reply.code(200).send({
+      return reply.code(200).send({
         badge_hidden: hidden,
         badge_visible: supporterBadge && !hidden,
       });
@@ -170,10 +170,9 @@ export async function registerTipsRoutes(app: FastifyInstance): Promise<void> {
       reply.type('text/plain').header('X-Content-Type-Options', 'nosniff');
       const echostr = q.echostr;
       if (echostr && echostr.length <= 128 && /^[A-Za-z0-9_-]+$/.test(echostr)) {
-        reply.send(echostr);
-        return;
+        return reply.send(echostr);
       }
-      reply.send('success');
+      return reply.send('success');
     });
 
     // POST /tips/notify · 虚拟支付明文 XML 推送

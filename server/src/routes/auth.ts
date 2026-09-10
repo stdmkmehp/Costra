@@ -63,7 +63,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
     async (req, reply) => {
       const body = req.body;
       const pair = await svc.wxLogin(body.code, body.client_fp ?? null);
-      reply.code(200).send(pair);
+      return reply.code(200).send(pair);
     },
   );
 
@@ -74,7 +74,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
     },
     async (req, reply) => {
       const pair = await svc.refresh(req.body.refresh_token);
-      reply.code(200).send(pair);
+      return reply.code(200).send(pair);
     },
   );
 
@@ -85,7 +85,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
     },
     async (req, reply) => {
       await svc.logout(req.body?.refresh_token ?? '');
-      reply.code(204).send();
+      return reply.code(204).send();
     },
   );
 }

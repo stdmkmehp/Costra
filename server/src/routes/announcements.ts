@@ -48,7 +48,7 @@ export async function registerAnnouncementsRoutes(app: FastifyInstance): Promise
   app.get('/announcements', async (req, reply) => {
     const userId = await parseUserId(req);
     const list = await announcementRepo.listActive(userId);
-    reply.code(200).send(list.map(toView));
+    return reply.code(200).send(list.map(toView));
   });
 
   // POST /announcements/:id/read
@@ -62,7 +62,7 @@ export async function registerAnnouncementsRoutes(app: FastifyInstance): Promise
         throw new AppError(ErrorCode.INVALID_ARGUMENT, { message: 'invalid announcement id' });
       }
       await announcementRepo.markRead(userId, id);
-      reply.code(204).send();
+      return reply.code(204).send();
     },
   );
 }

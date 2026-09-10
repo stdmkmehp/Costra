@@ -92,11 +92,10 @@ export async function registerBudgetsRoutes(app: FastifyInstance): Promise<void>
         // 必须是裸 null 而非 { budget: null } 包装：旧客户端按响应体 truthiness
         // 消费（budgetApi.fetchBudget），包装对象会被误判为有效预算。
         // Fastify send(null) 会走"空 body"分支，故显式发字面量 'null'。
-        reply.code(200).type('application/json').send('null');
-        return;
+        return reply.code(200).type('application/json').send('null');
       }
 
-      reply.code(200).send(budgetToResponse(budget));
+      return reply.code(200).send(budgetToResponse(budget));
     },
   );
 
@@ -127,7 +126,7 @@ export async function registerBudgetsRoutes(app: FastifyInstance): Promise<void>
         'budget upserted',
       );
 
-      reply.code(200).send(budgetToResponse(budget));
+      return reply.code(200).send(budgetToResponse(budget));
     },
   );
 }

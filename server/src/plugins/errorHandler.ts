@@ -94,6 +94,13 @@ function serialize(
     reply.header('Retry-After', String(err.retryAfterSec));
   }
 
+  // 此处 send 不 return 是安全的（与 routes/* 的「必须 return reply.send」纪律不同）：
+  //   本函数唯一调用方是下面的 setErrorHandler / setNotFoundHandler，二者传入的都是
+  //   **同步** handler，不经 Fastify 的 wrapThenable（lib/wrap-thenable.js），
+  //   因此不存在「async resolve 成 undefined 后被补发 reply.send(undefined)」的竞态。
+  // ⚠️ 若将来把这两个 handler 改成 async，必须同步改为 return —— 否则在
+  //   @fastify/compress 的异步 onSend 下会静默返回空 body
+  //   （见 docs/design/response-compression-design.md §4.6）。
   reply.code(err.httpStatus).send(body);
 }
 
