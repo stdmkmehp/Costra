@@ -9,7 +9,7 @@
  *   E3  非 off 模式缺 WX_PAY_OFFER_ID / WX_PAY_APP_KEY ⇒ 启动失败；off 模式可缺省
  *   E4  不存在 WX_PAY_WEBHOOK_CODEC / WX_PAY_QUERY_ORDER_URL / WX_STABLE_TOKEN_URL 环境变量
  *       （v1.2 已删除的三态 codec 与 URL 覆盖 · 防回潮静态检查）
- *   E5  B2 发布闸门：wx_product_id 占位未回填 ⇒ assertTipProductsPublishable 抛错
+ *   E5  B2 发布闸门行为：wx_product_id 占位未回填 ⇒ assertTipProductsPublishable 抛错
  *   E6  migration 0020 生产 DDL 静态断言（pg-mem 侧无 CHECK ⇒ 只能查源文件）
  */
 
@@ -90,13 +90,24 @@ describe('tips env 解析（tech-spec §2.5）', () => {
 describe('tips 商品目录 · B2 发布闸门（tech-spec §5.4 / §12 B2）', () => {
   const filled: TipProduct[] = TIP_PRODUCTS.map((p) => ({ ...p, wxProductId: `real-${p.productKey}` }));
 
-  it('E5 · 占位未回填 ⇒ 抛错并列出档位；全部回填 ⇒ 通过', () => {
-    // 当前目录仍是占位（B2 未完成）：闸门必须拦住，且错误信息点名档位
-    expect(listUnpublishedProducts()).toEqual(TIP_PRODUCTS.filter((p) => p.enabled).map((p) => p.productKey));
-    expect(() => assertTipProductsPublishable()).toThrow(/wx_product_id/);
-    expect(() => assertTipProductsPublishable()).toThrow(/coffee/);
+  it('E5 · B2 闸门行为：占位未回填 ⇒ 抛错并列出档位；全部回填 ⇒ 通过', () => {
+    // 闸门行为用合成目录验证，不对现网 TIP_PRODUCTS 做状态断言：
+    // 现网目录允许在 WX_PAY_MODE=off 下带占位（新增档位开发期的合法状态，
+    // 见 tipProducts.ts「新增档位沿用 TODO_B2_ 占位约定」），
+    // 「现网必须全回填」类断言会随回填进度反复过期（2026-09-08 回填 50101~50103 时即过期一次）。
+    const placeholder: TipProduct[] = TIP_PRODUCTS.map((p) => ({
+      ...p,
+      wxProductId: `${WX_PRODUCT_ID_PLACEHOLDER_PREFIX}${p.productKey}`,
+    }));
 
-    // B2 回填后：闸门放行（未来回填真实道具 ID 时本用例自动转绿，无需改动）
+    // 拦截分支：占位未回填 ⇒ 抛错，错误信息含字段名与档位名
+    expect(listUnpublishedProducts(placeholder)).toEqual(
+      placeholder.filter((p) => p.enabled).map((p) => p.productKey),
+    );
+    expect(() => assertTipProductsPublishable(placeholder)).toThrow(/wx_product_id/);
+    expect(() => assertTipProductsPublishable(placeholder)).toThrow(/coffee/);
+
+    // 放行分支：全部回填 ⇒ 不抛
     expect(listUnpublishedProducts(filled)).toEqual([]);
     expect(() => assertTipProductsPublishable(filled)).not.toThrow();
   });
