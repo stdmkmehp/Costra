@@ -44,7 +44,7 @@ import {
 } from '../../../services/importApi';
 import {
   downloadWithAuth,
-  verifyFileSha256,
+  downloadViaPresign,
   exportShareDraftName,
   reportShareDraftName,
   demoShareDraftName,
@@ -687,13 +687,13 @@ Page({
     this._shareInflight.add(key);
     this._patchFileCard(jobId, file.part, { preparing: true, preparePercent: 0 });
     try {
-      const { tempFilePath } = await downloadWithAuth({
+      // 两步下载：sha256 以 /download 返回值为权威源（downloadViaPresign 内校验 · §4.0）
+      const { tempFilePath } = await downloadViaPresign({
         path: file.downloadPath,
         onProgress: (percent) => {
           this._patchFileCard(jobId, file.part, { preparePercent: percent });
         },
       });
-      await verifyFileSha256(tempFilePath, file.sha256);
       const sharePath = await prepareCsvShareDraft(tempFilePath, exportShareDraftName(jobId, file.part));
       if (this._isShareTargetValid(jobId, file.part)) {
         this._shareDrafts.set(key, { sharePath, filename: file.filename });
@@ -711,7 +711,7 @@ Page({
       } else if (apiErr?.code === 'CLIENT_CHECKSUM_MISMATCH') {
         wx.showToast({ title: '文件校验失败，请重新下载', icon: 'none' });
       } else if (fromTap) {
-        this._showErrorToast(apiErr);
+        this._showError(apiErr);
       } else {
         logger.warn(MODULE, `prepare share draft fail · ${key}`, err);
       }
@@ -732,7 +732,7 @@ Page({
     this._shareInflight.add(key);
     this.setData({ reportPreparing: true });
     try {
-      const { tempFilePath } = await downloadWithAuth({ path: report.reportPath });
+      const { tempFilePath } = await downloadViaPresign({ path: report.reportPath });
       const sharePath = await prepareCsvShareDraft(tempFilePath, reportShareDraftName(report.detectId));
       const dateKey = shanghaiDateKeyFromIso(report.createdAt);
       if (!this._destroyed && this._report?.detectId === report.detectId) {
@@ -1020,7 +1020,7 @@ Page({
       if (!shared) {
         wx.showToast({ title: '已取消分享', icon: 'none' });
       }
-    }, (err) => this._showErrorToast(err as ApiError));
+    }, (err) => this._showError(err as ApiError));
   },
 
   /**
@@ -1045,7 +1045,7 @@ Page({
       if (!shared) {
         wx.showToast({ title: '已取消分享', icon: 'none' });
       }
-    }, (err) => this._showErrorToast(err as ApiError));
+    }, (err) => this._showError(err as ApiError));
   },
 
   /**
@@ -1121,7 +1121,7 @@ Page({
         this._scheduleNextPoll();
         return;
       }
-      this._showErrorToast(apiErr);
+      this._showError(apiErr);
       this._syncImportDerived(); // 恢复按钮态
     } finally {
       this.setData({ committing: false });
@@ -1279,7 +1279,7 @@ Page({
         await this._refreshJobs();
         return;
       }
-      this._showErrorToast(apiErr);
+      this._showError(apiErr);
     }
   },
 
@@ -1323,8 +1323,22 @@ Page({
     });
   },
 
-  _showErrorToast(err: ApiError): void {
+  /**
+   * 错误反馈统一出口：默认轻量 toast；
+   * mapError 给出 detail（短文案装不下的完整说明，见 error-mapper）时升级为
+   * modal 纯告知（showCancel:false · 用户需完整阅读背景/排期，toast 两行必然截断）。
+   */
+  _showError(err: ApiError): void {
     const mapped = mapError(err);
+    if (mapped.detail) {
+      wx.showModal({
+        title: mapped.title,
+        content: mapped.detail,
+        showCancel: false,
+        confirmText: '知道了',
+      });
+      return;
+    }
     wx.showToast({ title: mapped.desc || mapped.title || '请稍后再试', icon: 'none' });
   },
 
@@ -1358,7 +1372,7 @@ Page({
           icon: 'none',
         });
       }
-    }, (err) => this._showErrorToast(err as ApiError));
+    }, (err) => this._showError(err as ApiError));
   },
 
   _patchFileCard(jobId: string, part: number, patch: Partial<FileCard>): void {

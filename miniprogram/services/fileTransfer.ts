@@ -1,6 +1,7 @@
-// services/fileTransfer.ts · 带鉴权的文件下载（账本导出产物）
+// services/fileTransfer.ts · 带鉴权的文件下载/上传 + COS 两步下载（账本导入导出产物）
 //
-// 事实源：docs/design/data-import-export-client-analysis.md v1.0 §6/§9.5/§14.2
+// 事实源：docs/design/data-import-export-client-analysis.md v1.0 §6/§9.5/§14.2 ·
+//         docs/design/cos-offload-phase1-import-export.md v0.2 §4.2/§5.3
 //
 // 为什么独立于 request.ts：wx.downloadFile 与 wx.request 是两套 API——
 // 下载层需要自带「刷 token → 注入 Authorization → 401 重放一次 → 错误分类」闭环：
@@ -8,12 +9,18 @@
 //   2. 401 ⇒ refreshToken() 一次并重放一次（与 request.ts 的 retried 语义对齐）；
 //   3. 非 200 时错误体在下载产物里（wx.downloadFile 任何状态都会落临时文件），
 //      需读文件解析 {code,message}；非 JSON 兜底 CLIENT_HTTP_{status}；
-//   4. 200 后用 wx.getFileInfo 强校验 sha256（导出契约 X-Content-Sha256 / files[].sha256）。
+//   4. 200 后用 wx.getFileInfo 强校验 sha256。
+//
+// COS 化一期（v0.2 §4.2）：导出分片/导入报告改两步下载 —— downloadViaPresign =
+// ① 业务路由（带鉴权 · 走 request.ts）取 300s COS 预签名 URL → ② 无鉴权直连 COS 下载
+// → ③ sha256 校验（以①返回值为权威源 · §4.0）；COS 403 换新 URL 重试一次。
+// demo-csv 等服务端直出文件仍走 downloadWithAuth。
 //
 // 纯函数（classifyDownloadErrorBody / makeDownloadApiError）独立导出供单测。
 
 import { getEnv } from './env';
 import { getToken, refreshToken } from './auth';
+import { request } from './request';
 import type { ApiError } from './request';
 import { logger } from '../utils/logger';
 
@@ -182,13 +189,91 @@ export async function downloadWithAuth(opts: DownloadWithAuthOptions): Promise<D
   }
 
   // 非 200：错误体在下载产物里，读出文本再分类
+  throw await classifyFailedDownload(res);
+}
+
+// ==============================================================================
+// 两步下载（COS 预签名 URL · cos-offload-phase1 v0.2 §4.2/§5.3）
+// ==============================================================================
+
+/** 下载路由签发响应（两步下载第一步 · sha256 以本响应为权威源 §4.0） */
+export interface PresignDownloadWire {
+  url: string;
+  size_bytes?: number;
+  /** 有值即校验（导出分片必有 · 导入报告现状不校验故无） */
+  sha256?: string;
+  filename?: string;
+}
+
+/** 无鉴权直连下载（COS 预签名 URL · 不带任何 header · 签名即凭证） */
+function wxDownloadNoAuth(
+  url: string,
+  onProgress?: (percent: number) => void,
+): Promise<WechatMiniprogram.DownloadFileSuccessCallbackResult> {
+  return new Promise((resolve, reject) => {
+    const task = wx.downloadFile({
+      url,
+      success: (res) => resolve(res),
+      fail: (err) => reject(err),
+    });
+    if (onProgress) {
+      task.onProgressUpdate((res) => {
+        if (typeof res.progress === 'number') onProgress(res.progress);
+      });
+    }
+  });
+}
+
+/** 非 200 下载结果 ⇒ ApiError（错误体在临时文件里 · 下载与两步下载同一分类纪律） */
+async function classifyFailedDownload(
+  res: WechatMiniprogram.DownloadFileSuccessCallbackResult,
+): Promise<ApiError> {
   let bodyText = '';
   try {
     bodyText = await readTempFileAsText(res.tempFilePath);
   } catch (readErr) {
     logger.warn(MODULE, `read error body fail · status=${res.statusCode}`, readErr);
   }
-  throw classifyDownloadErrorBody(res.statusCode, bodyText);
+  return classifyDownloadErrorBody(res.statusCode, bodyText);
+}
+
+/**
+ * 两步下载：① 业务路由（带鉴权 · request.ts 刷 token/401 重放）取 300s COS 预签名 URL
+ * → ② 无鉴权直连 COS 下载 → ③ sha256 校验（用步骤①返回值 · 权威源 §4.0）。
+ * COS 403（URL 过期/时钟偏移）⇒ 重调①换新 URL 重试一次（§4.0 决策）；再失败进通用分类。
+ */
+export async function downloadViaPresign(opts: {
+  /** 业务下载路由（相对路径 · 如 /data-jobs/{id}/download?part=1） */
+  path: string;
+  /** 下载进度回调（0..100 · 作用于步骤② · COS 回 Content-Length 进度即准） */
+  onProgress?: (percent: number) => void;
+}): Promise<DownloadedFile> {
+  const fetchAndDownload = async (): Promise<{
+    wire: PresignDownloadWire;
+    res: WechatMiniprogram.DownloadFileSuccessCallbackResult;
+  }> => {
+    const wire = await request<PresignDownloadWire>({ path: opts.path });
+    try {
+      const res = await wxDownloadNoAuth(wire.url, opts.onProgress);
+      return { wire, res };
+    } catch (err) {
+      logger.warn(MODULE, 'presign download network fail', err);
+      throw makeDownloadApiError(0, 'CLIENT_NETWORK_ERROR', '网络异常，请稍后重试');
+    }
+  };
+
+  let { wire, res } = await fetchAndDownload();
+  if (res.statusCode === 403) {
+    // 预签名失效兜底（§4.0）：重调①换新 URL 重试一次
+    ({ wire, res } = await fetchAndDownload());
+  }
+  if (res.statusCode !== 200) {
+    throw await classifyFailedDownload(res);
+  }
+  if (typeof wire.sha256 === 'string' && wire.sha256 !== '') {
+    await verifyFileSha256(res.tempFilePath, wire.sha256);
+  }
+  return { tempFilePath: res.tempFilePath };
 }
 
 /**

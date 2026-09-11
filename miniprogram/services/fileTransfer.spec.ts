@@ -60,6 +60,14 @@ describe('classifyDownloadErrorBody', () => {
     const err = classifyDownloadErrorBody(400, JSON.stringify({ error: 'bad' }));
     expect(err.code).toBe('CLIENT_HTTP_400');
   });
+
+  it('COS XML 错误体（两步下载换新 URL 重试后仍 403）⇒ CLIENT_HTTP_403 兜底', () => {
+    // §5.3.4 决策：COS XML 不进通用 JSON 解析，403 重试穷尽后走 statusCode 兜底
+    const xml = '<?xml version="1.0" encoding="UTF-8"?><Error><Code>AccessDenied</Code><Message>Request has expired</Message></Error>';
+    const err = classifyDownloadErrorBody(403, xml);
+    expect(err.code).toBe('CLIENT_HTTP_403');
+    expect(err.status).toBe(403);
+  });
 });
 
 describe('makeDownloadApiError', () => {
