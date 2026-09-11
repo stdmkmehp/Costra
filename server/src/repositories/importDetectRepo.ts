@@ -56,8 +56,10 @@ export interface ImportDetectSessionEntity {
   isCostraExport: boolean;
   formulaGuard: ImportFormulaGuard | null;
   memberMapping: Record<string, string> | null;
+  /** 规范化行产物 COS object key（staging/<yyyy-mm>/<id>.rows.ndjson.gz · 非本地路径） */
   artifactPath: string | null;
   artifactSha256: string | null;
+  /** 报告产物 COS object key（reports/<yyyy-mm>/<id>.report.csv · 非本地路径） */
   reportPath: string | null;
   totalRows: number | null;
   importableRows: number | null;
@@ -233,8 +235,10 @@ export async function markReady(
     isCostraExport: boolean;
     /** 自产文件 'apostrophe-v2' · 非自产 NULL */
     formulaGuard: ImportFormulaGuard | null;
+    /** 规范化行产物 COS object key */
     artifactPath: string;
     artifactSha256: string;
+    /** 报告产物 COS object key（无问题为 null） */
     reportPath: string | null;
     totalRows: number;
     importableRows: number;
@@ -326,7 +330,7 @@ export async function clearReportPreview(id: string, client?: Runner): Promise<v
 // 周期清理（§7.4 · 应用侧每分钟 + 启动补偿；行删除走 maintenance cron）
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** 僵尸 detecting → failed，返回受影响行（供调用方删可能存在的半成品文件） */
+/** 僵尸 detecting → failed，返回受影响行（供调用方删可能存在的半成品 COS 对象） */
 export async function reapZombieDetecting(client?: Runner): Promise<ImportDetectSessionEntity[]> {
   const runner = client ?? exec();
   const res = await runner.query(
@@ -337,7 +341,7 @@ export async function reapZombieDetecting(client?: Runner): Promise<ImportDetect
   return res.rows.map(rowToEntity);
 }
 
-/** ready 过期 → 待删行产物（15min 行产物寿命 · §7.4）；返回行供删文件后调 clearArtifactPath */
+/** ready 过期 → 待删行产物（15min 行产物寿命 · §7.4）；返回行供删 COS 对象后调 clearArtifactPath */
 export async function listReadyExpiredWithArtifact(client?: Runner): Promise<ImportDetectSessionEntity[]> {
   const runner = client ?? exec();
   const res = await runner.query(
@@ -347,7 +351,7 @@ export async function listReadyExpiredWithArtifact(client?: Runner): Promise<Imp
   return res.rows.map(rowToEntity);
 }
 
-/** report 过期（24h）→ 待删报告文件；调用方删文件后调 clearReportPath / deleteSessionRow */
+/** report 过期（24h）→ 待删报告对象；调用方删 COS 对象后调 clearReportPath / deleteSessionRow */
 export async function listReportExpired(client?: Runner): Promise<ImportDetectSessionEntity[]> {
   const runner = client ?? exec();
   const res = await runner.query(

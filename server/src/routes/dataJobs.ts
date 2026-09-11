@@ -8,7 +8,8 @@
  *   POST /export-jobs                     创建导出任务（body 可选 ledger_id/from/to · 账本缺省取当前活跃账本）
  *   GET  /data-jobs?limit=N               任务中心列表（倒序 · limit ≤50 · 带 server_now）
  *   GET  /data-jobs/{job_id}              单任务详情（带 server_now）
- *   GET  /data-jobs/{job_id}/download?part=N  下载分片（完成前 404 · 过期 410 EXPORT_FILE_EXPIRED）
+ *   GET  /data-jobs/{job_id}/download?part=N  签发分片 COS 预签名下载 URL（两步下载第一步 ·
+ *                                            完成前 404 · 过期 410 EXPORT_FILE_EXPIRED）
  *
  * 并发闸口：每用户至多一个活跃导出任务（queued/processing）。
  *   - 既有活跃任务 ⇒ 409 EXPORT_JOB_IN_PROGRESS；
@@ -16,9 +17,6 @@
  *   - 竞态由部分唯一索引 uq_data_jobs_active_export_per_user 23505 兜底 ⇒ 409。
  */
 
-import { createReadStream } from 'node:fs';
-import { promises as fs } from 'node:fs';
-import { join } from 'node:path';
 import { DateTime } from 'luxon';
 import type { FastifyInstance } from 'fastify';
 import { AppError } from '../errors/AppError.js';
@@ -31,7 +29,7 @@ import * as familyRepo from '../repositories/familyRepo.js';
 import * as familyMemberRepo from '../repositories/familyMemberRepo.js';
 import * as ledgerRepo from '../repositories/ledgerRepo.js';
 import type { LedgerEntity } from '../repositories/ledgerRepo.js';
-import { getExportRootForTests } from '../services/entryExport.js';
+import { getCosClient, PRESIGN_EXPIRES_SECONDS } from '../services/cosClient.js';
 
 const SHANGHAI_ZONE = 'Asia/Shanghai';
 const LIST_LIMIT_MAX = 50;
@@ -213,13 +211,6 @@ async function resolveExportLedger(userId: string, ledgerId: string | undefined)
   return ledger;
 }
 
-/** Content-Disposition（RFC 5987 · filename* 携带 UTF-8 文件名；CR/LF 剥除防 header 注入） */
-function buildContentDisposition(filename: string): string {
-  const safe = filename.replace(/[\r\n]/g, '');
-  const asciiFallback = safe.replace(/[^\x20-\x7e]/g, '_').replace(/"/g, '_');
-  return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(safe)}`;
-}
-
 // ==============================================================================
 // 注册
 // ==============================================================================
@@ -322,11 +313,11 @@ export async function registerDataJobsRoutes(app: FastifyInstance): Promise<void
     return reply.code(200).send({ ...serializeJob(job), server_now: new Date().toISOString() });
   });
 
-  // GET /data-jobs/{job_id}/download?part=N · 下载导出分片
+  // GET /data-jobs/{job_id}/download?part=N · 签发导出分片 COS 预签名下载 URL
+  // （两步下载第一步 · cos-offload-phase1 v0.2 §4.2：鉴权留在 Costra，流量交给 COS）
   app.get<{ Params: { job_id: string }; Querystring: { part?: number } }>(
     '/data-jobs/:job_id/download',
-    // compress: false —— 磁盘 CSV 直发 + 保留 Content-Length（下载进度依赖），排除响应压缩
-    { compress: false, schema: { querystring: downloadQuerySchema } },
+    { schema: { querystring: downloadQuerySchema } },
     async (req, reply) => {
       const userId = await requireUserId(req);
       const job = await dataJobRepo.findById(req.params.job_id);
@@ -337,7 +328,8 @@ export async function registerDataJobsRoutes(app: FastifyInstance): Promise<void
       if (job.status !== 'succeeded' || !job.files || job.files.length === 0) {
         throw new AppError(ErrorCode.NOT_FOUND, { message: 'export file not ready' });
       }
-      // 过期：24h 有效期已过 ⇒ 410（§9.5 EXPORT_FILE_EXPIRED）
+      // 过期：24h 有效期已过 ⇒ 410（§9.5 EXPORT_FILE_EXPIRED · 先于签发拦截；
+      // COS 30 天生命周期只兜底清理，用户可见过期由本判定保证）
       if (job.fileExpiresAt && job.fileExpiresAt.getTime() <= Date.now()) {
         throw new AppError(ErrorCode.EXPORT_FILE_EXPIRED, {
           message: 'export file has expired',
@@ -355,22 +347,19 @@ export async function registerDataJobsRoutes(app: FastifyInstance): Promise<void
         // 数据不一致（succeeded 但缺产物定位）⇒ 不当成用户可见资源
         throw new AppError(ErrorCode.NOT_FOUND, { message: 'export artifact metadata missing' });
       }
-      const filePath = join(getExportRootForTests(), storageMonth, `${job.id}_${file.part}.csv`);
-      try {
-        await fs.stat(filePath);
-      } catch {
-        // 磁盘产物已被清理（purge-exports / 运维手工清理）⇒ 语义上等同过期，引导重新导出
-        throw new AppError(ErrorCode.EXPORT_FILE_EXPIRED, {
-          message: 'export file has been purged',
-        });
-      }
-
-      reply
-        .header('Content-Type', 'text/csv; charset=utf-8')
-        .header('Content-Disposition', buildContentDisposition(file.filename))
-        .header('Content-Length', String(file.size_bytes))
-        .header('X-Content-Sha256', file.sha256);
-      return reply.send(createReadStream(filePath));
+      // 24h 窗口内对象必然在（生命周期 30 天 ≫ 24h · 无针对 succeeded 任务的删除路径）
+      // ⇒ 不做存在性预检直接签发；每分片单独签发 300s（§4.0 决策）
+      const url = await getCosClient().presignGet(
+        `exports/${storageMonth}/${job.id}_${file.part}.csv`,
+        PRESIGN_EXPIRES_SECONDS,
+      );
+      // sha256 以本响应为权威源（§4.0：与 URL 同源同刻 · 列表 files[].sha256 仅展示）
+      return reply.code(200).send({
+        url,
+        size_bytes: file.size_bytes,
+        sha256: file.sha256,
+        filename: file.filename,
+      });
     },
   );
 }

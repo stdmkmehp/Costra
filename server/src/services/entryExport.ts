@@ -9,7 +9,8 @@
  *   - 分片双阈值：5,000 行 或 900KB（含 BOM/表头），先到先切；
  *   - 每分片 = UTF-8 BOM + 表头行 + 数据行，行尾 CRLF，全字段 quote-all，
  *     单元格先过 `apostrophe-v2` Formula 防护（csv.ts）；
- *   - 产物先写 `.tmp` 再原子 rename 为正式名；同一 job 重试前清掉自己的旧分片；
+ *   - 产物 putObject 直传 COS（exports/<yyyy-MM>/<jobId>_<part>.csv · 同 key 覆盖写）；
+ *     同一 job 重试前清掉自己的旧分片（removeJobArtifacts · COS headObject 探测清场）；
  *   - 每页（500 行）`setImmediate` 让出事件循环，且按 30s 节奏续执行租约；
  *   - 只导出未软删流水；分类/记账人按 LEFT JOIN 原样取名（软删分类仍留名）。
  *
@@ -18,8 +19,6 @@
  */
 
 import { createHash } from 'node:crypto';
-import { promises as fs } from 'node:fs';
-import { join } from 'node:path';
 import type { QueryResult } from 'pg';
 import { DateTime } from 'luxon';
 import { getPool } from '../db/pool.js';
@@ -27,6 +26,7 @@ import * as dataJobRepo from '../repositories/dataJobRepo.js';
 import type { DataJobEntity, DataJobFileEntry } from '../repositories/dataJobRepo.js';
 import * as ledgerRepo from '../repositories/ledgerRepo.js';
 import * as familyMemberRepo from '../repositories/familyMemberRepo.js';
+import { getCosClient } from './cosClient.js';
 import {
   CSV_BOM,
   CSV_CRLF,
@@ -34,14 +34,6 @@ import {
   formatCsvRow,
   sanitizeFilenameComponent,
 } from '../utils/csv.js';
-
-/** 产物根目录（生产 /var/costra/exports · compose bind mount 到宿主机 /data/exports） */
-let exportRoot = process.env['EXPORT_DIR'] ?? '/var/costra/exports';
-
-/** 单测覆盖产物目录（pg-mem 环境下真实写盘到临时目录） */
-export function setExportRootForTests(dir: string): void {
-  exportRoot = dir;
-}
 
 const SHANGHAI_ZONE = 'Asia/Shanghai';
 /** 游标页大小（§7.2：500 条/页） */
@@ -94,7 +86,7 @@ export interface EntryExportOutcome {
   entryCount: number;
   partCount: number;
   files: DataJobFileEntry[];
-  /** 产物所在月目录名（yyyy-MM · 相对 exportRoot · 由调度器写入 result_summary.storage_month） */
+  /** 产物所在月前缀（yyyy-MM · COS object key 的 exports/<yyyy-MM>/ 段 · 由调度器写入 result_summary.storage_month） */
   storageMonth: string;
 }
 
@@ -143,7 +135,7 @@ function toCsvFields(row: EntryExportRow): string[] {
 }
 
 // ==============================================================================
-// 分片写盘
+// 分片上传（COS · cos-offload-phase1 v0.2 §4.1/§4.4）
 // ==============================================================================
 
 interface OpenPart {
@@ -154,37 +146,27 @@ interface OpenPart {
 }
 
 /**
- * 清理某 job 在产物目录下的全部既有分片（重试/终态失败时用）。
- * 分片文件名以 `<jobId>_` 前缀隔离，月目录不空则保留。
+ * 清理某 job 在 COS 的全部既有分片（重试/终态失败时用 · best-effort 不抛错）。
+ * 分片 key 为 exports/<yyyy-MM>/<jobId>_<part>.csv、part 自 1 连续编号 ⇒
+ * CAM 无 ListBucket 权限下用 headObject 逐片探测、首个 404 即止（策略含 HeadObject）。
+ * 月前缀探「当前月 + 上月」（Asia/Shanghai）：跨月重试的残留也覆盖；更早残留不可能
+ * （重试间隔 ≪ 1 个月），且 COS 30 天生命周期兜底。
  */
 export async function removeJobArtifacts(jobId: string): Promise<void> {
-  let monthDirs: string[] = [];
-  try {
-    monthDirs = await fs.readdir(exportRoot);
-  } catch {
-    return; // 根目录不存在 ⇒ 无产物
-  }
-  for (const monthDir of monthDirs) {
-    const dirPath = join(exportRoot, monthDir);
-    let files: string[] = [];
+  const cos = getCosClient();
+  const now = DateTime.now().setZone(SHANGHAI_ZONE);
+  const months = [now.toFormat('yyyy-MM'), now.minus({ months: 1 }).toFormat('yyyy-MM')];
+  for (const month of months) {
     try {
-      files = await fs.readdir(dirPath);
-    } catch {
-      continue;
-    }
-    for (const file of files) {
-      if (!file.startsWith(`${jobId}_`)) continue;
-      try {
-        await fs.rm(join(dirPath, file), { force: true });
-      } catch {
-        /* 单文件清理失败不阻塞其余 */
+      const keys: string[] = [];
+      for (let part = 1; ; part += 1) {
+        const key = `exports/${month}/${jobId}_${part}.csv`;
+        if (await cos.headObject(key)) keys.push(key);
+        else break;
       }
-    }
-    // 空月目录顺手清掉（purge-exports 也兜底）
-    try {
-      await fs.rmdir(dirPath);
+      await cos.deleteObjects(keys);
     } catch {
-      /* 非空或已删 · 忽略 */
+      /* 清场失败不阻塞本次执行（残留由同 key 覆盖写 / 30 天生命周期兜底） */
     }
   }
 }
@@ -203,7 +185,7 @@ const DEFAULT_LIMITS: EntryExportLimits = {
 };
 
 /**
- * 执行导出：读游标分页 → 组 CSV → 分片写盘 → 返回产物元数据。
+ * 执行导出：读游标分页 → 组 CSV → 分片上传 COS → 返回产物元数据。
  * 调用方（调度器）负责：claim 已发生、stage 推进、终态写回与失败归类。
  * limits 仅单测注入（生产一律默认阈值）。
  */
@@ -233,8 +215,7 @@ export async function runEntryExport(
 
   const pool = getPool();
   const exportMoment = DateTime.now().setZone(SHANGHAI_ZONE);
-  const monthDir = join(exportRoot, exportMoment.toFormat('yyyy-MM'));
-  await fs.mkdir(monthDir, { recursive: true });
+  const monthKey = exportMoment.toFormat('yyyy-MM');
 
   let entryCount = 0;
   let partCount = 0;
@@ -249,10 +230,7 @@ export async function runEntryExport(
 
   const flushPart = async (p: OpenPart): Promise<void> => {
     const buffer = Buffer.from(p.chunks.join(''), 'utf8');
-    const finalPath = join(monthDir, `${job.id}_${p.part}.csv`);
-    const tmpPath = `${finalPath}.tmp`;
-    await fs.writeFile(tmpPath, buffer);
-    await fs.rename(tmpPath, finalPath);
+    await getCosClient().putObject(`exports/${monthKey}/${job.id}_${p.part}.csv`, buffer);
     partSizes.push(buffer.byteLength);
     partSha256.push(createHash('sha256').update(buffer).digest('hex'));
     partCount = p.part;
@@ -366,10 +344,5 @@ export async function runEntryExport(
     };
   });
 
-  return { entryCount, partCount, files, storageMonth: exportMoment.toFormat('yyyy-MM') };
-}
-
-/** 供单测探测当前产物根目录 */
-export function getExportRootForTests(): string {
-  return exportRoot;
+  return { entryCount, partCount, files, storageMonth: monthKey };
 }

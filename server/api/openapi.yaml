@@ -1862,11 +1862,14 @@ paths:
     get:
       operationId: downloadDataJobFile
       tags: [data-jobs]
-      summary: 下载导出产物分片
+      summary: 签发导出分片 COS 预签名下载 URL（两步下载第一步）
       description: |
-        流式下载 succeeded 任务的分片文件（text/csv; charset=utf-8 ·
-        Content-Disposition 携带 RFC 5987 UTF-8 文件名 · X-Content-Sha256 头供客户端强校验）。
-        完成前下载 404；产物过 24h 有效期（或已被清理）410 EXPORT_FILE_EXPIRED。
+        返回 succeeded 任务指定分片的 COS 预签名下载 URL（300s 有效 · 自定义下载域名），
+        客户端携 URL 无鉴权直连 COS 下载（cos-offload-phase1 v0.2 §4.2）。
+        完成前下载 404；产物过 24h 有效期 410 EXPORT_FILE_EXPIRED（DB file_expires_at
+        判定，先于签发拦截；COS 30 天生命周期仅兜底清理）。
+        sha256 以本响应为权威源（与 URL 同源同刻 · 列表 files[].sha256 仅展示）；
+        预签名 URL 失效（COS 403）⇒ 重调本端点换新 URL 重试。
       parameters:
         - name: job_id
           in: path
@@ -1876,19 +1879,26 @@ paths:
           in: query
           required: false
           schema: { type: integer, minimum: 1, default: 1 }
-          description: '分片序号（缺省 = 第 1 分片）'
+          description: '分片序号（缺省 = 第 1 分片 · 每分片单独签发）'
       responses:
         '200':
-          description: CSV 分片文件流
+          description: 分片预签名下载信息
           content:
-            text/csv:
-              schema: { type: string, format: binary }
+            application/json:
+              schema:
+                type: object
+                required: [url, size_bytes, sha256, filename]
+                properties:
+                  url: { type: string, description: 'COS 预签名下载 URL（GET · 300s 有效）' }
+                  size_bytes: { type: integer, description: 分片字节数 }
+                  sha256: { type: string, description: '分片 SHA-256（十六进制小写 · 客户端校验权威源）' }
+                  filename: { type: string, description: 展示用文件名（UTF-8） }
         '401':
           description: UNAUTHENTICATED
         '404':
           description: NOT_FOUND（任务不存在 / 非本人 / 未完成 / part 越界）
         '410':
-          description: EXPORT_FILE_EXPIRED（产物已过 24h 有效期被清理）
+          description: EXPORT_FILE_EXPIRED（产物已过 24h 有效期）
 
   /import-jobs/detect:
     post:
@@ -2024,13 +2034,15 @@ paths:
     get:
       operationId: downloadImportDetectReport
       tags: [data-jobs]
-      summary: 下载检测问题报告 CSV
+      summary: 签发检测报告 COS 预签名下载 URL（两步下载第一步）
       description: |
-        流式下载检测报告（text/csv; charset=utf-8 · RFC 5987 UTF-8 文件名）。
+        返回检测报告的 COS 预签名下载 URL（300s 有效 · 自定义下载域名），
+        客户端携 URL 无鉴权直连 COS 下载（cos-offload-phase1 v0.2 §4.2）。
         报告寿命独立于 commit 有效期：24h（report_expires_at）；导入成功后行产物立即删除，
         报告保留至 24h 供事后核对。检测无错误/警告时不生成报告（404）。
-        报告不可用（无报告 / 已过 24h / 产物被清理）一律 404 —— 它不影响该会话在 15min
+        报告不可用（无报告 / 已过 24h）一律 404 —— 它不影响该会话在 15min
         内继续 commit，故不用 410 DETECT_SESSION_EXPIRED（§7.4 两条生命周期已解耦）。
+        报告现状不校验 sha256 ⇒ 响应不含 sha256。
       parameters:
         - name: detect_id
           in: path
@@ -2038,14 +2050,19 @@ paths:
           schema: { type: string, format: uuid }
       responses:
         '200':
-          description: CSV 报告文件流
+          description: 报告预签名下载信息
           content:
-            text/csv:
-              schema: { type: string, format: binary }
+            application/json:
+              schema:
+                type: object
+                required: [url, filename]
+                properties:
+                  url: { type: string, description: 'COS 预签名下载 URL（GET · 300s 有效）' }
+                  filename: { type: string, description: 展示用文件名（UTF-8） }
         '401':
           description: UNAUTHENTICATED
         '404':
-          description: NOT_FOUND（会话不存在 / 非本人 / 无报告 / 报告已过 24h 或产物被清理）
+          description: NOT_FOUND（会话不存在 / 非本人 / 无报告 / 报告已过 24h）
 
 components:
   securitySchemes:

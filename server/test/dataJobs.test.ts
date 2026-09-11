@@ -10,10 +10,11 @@
  *   R4  POST /export-jobs：并发闸口（活跃任务 409 EXPORT_JOB_IN_PROGRESS）
  *   R5  POST /export-jobs：排队幽灵回收（expires_at 过期的 queued 先终态化再放行新任务）
  *   R6  GET /data-jobs / {job_id}：列表倒序 + server_now + 详情（非本人 404）
- *   R7  下载：完成前 404 · part 越界 404 · 非本人 404 · 过期 410 EXPORT_FILE_EXPIRED ·
- *       磁盘产物缺失 410
+ *   R7  下载（签发 COS 预签名 URL · 两步下载第一步）：完成前 404 · part 越界 404 ·
+ *       非本人 404 · 过期 410 EXPORT_FILE_EXPIRED（24h 窗口内对象必然在 · 不做存在性预检）
  *   W1  worker 端到端：条目齐全（类型/归属/分类两级/记账人/备注/apostrophe 防护/金额）+
- *       BOM + 表头 + CRLF + sha256 头 + result_summary + file_expires_at≈24h + 文件名规则
+ *       BOM + 表头 + CRLF + COS 对象内容/sha256 + result_summary + file_expires_at≈24h +
+ *       文件名规则 + 签发 JSON（url/size_bytes/sha256/filename）
  *   W2  空账本导出：entry_count=0 · 单分片仅表头 · 文件名用当天日期
  *   W3  日期区间过滤：from/to 只导出区间内流水
  *   W4  上下文失效终态：账本软删 ⇒ failed CONTEXT_INVALIDATED（不可重试）
@@ -26,16 +27,13 @@
  */
 
 import { randomUUID, createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, existsSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app.js';
 import { getPool } from '../src/db/pool.js';
 import { setWxFetchForTests } from '../src/wx/code2Session.js';
+import { __setCosForTests } from '../src/services/cosClient.js';
 import {
-  setExportRootForTests,
   runEntryExport,
   removeJobArtifacts,
   ExportContextInvalidError,
@@ -44,19 +42,27 @@ import {
 } from '../src/services/entryExport.js';
 import { classifyExportError } from '../src/services/dataJobScheduler.js';
 import type { DataJobEntity } from '../src/repositories/dataJobRepo.js';
+import { MemoryCosStore } from './helpers/memoryCos.js';
 
 let app: FastifyInstance;
-let exportRoot: string;
+const cos = new MemoryCosStore();
 
 beforeAll(() => {
-  exportRoot = mkdtempSync(join(tmpdir(), 'costra-export-test-'));
-  setExportRootForTests(exportRoot);
+  __setCosForTests(cos);
 });
 
 beforeEach(async () => {
+  cos.clear();
   app = await buildApp({ disableLogger: true });
   await app.ready();
 });
+
+/** 读替身内对象文本（断言用 · 缺失即断言失败） */
+function cosText(key: string): string {
+  const buf = cos.content(key);
+  expect(buf, `COS 替身缺对象 ${key}`).toBeDefined();
+  return buf!.toString('utf8');
+}
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -513,33 +519,26 @@ describe('W1 · worker 端到端', () => {
     const filename = job.files[0]!.filename;
     expect(filename).toMatch(/^Costra_个人账本_2026-06-10至2026-06-18_\d{8}T\d{6}\.csv$/);
 
-    // 下载：内容 + 头
+    // 下载（两步下载第一步）：签发 300s 预签名 URL 返回 JSON · sha256 以本响应为权威源（§4.0）
     const dl = await app.inject({
       method: 'GET',
       url: `/v1/data-jobs/${jobId}/download?part=1`,
       headers: auth(token),
     });
     expect(dl.statusCode).toBe(200);
-    expect(dl.headers['content-type']).toContain('text/csv');
-    expect(dl.headers['content-disposition']).toContain('attachment');
-    expect(dl.headers['content-disposition']).toContain("filename*=UTF-8''");
-    expect(dl.headers['x-content-sha256']).toBe(job.files[0]!.sha256);
+    const presign = dl.json() as { url: string; size_bytes: number; sha256: string; filename: string };
+    const objectKey = `exports/${job.result_summary.storage_month}/${jobId}_1.csv`;
+    expect(presign.url).toBe(`${cos.downloadBase}/${objectKey}?fake-sign=1&expires=300`);
+    expect(presign.size_bytes).toBe(job.files[0]!.size_bytes);
+    expect(presign.sha256).toBe(job.files[0]!.sha256);
+    expect(presign.filename).toBe(job.files[0]!.filename);
 
-    // 响应压缩排除（compress: false）：即便客户端声明 accept-encoding: gzip，
-    // 下载路由也不压缩 —— 保留 Content-Length（进度依赖）、X-Content-Sha256 不变
-    const dlGzip = await app.inject({
-      method: 'GET',
-      url: `/v1/data-jobs/${jobId}/download?part=1`,
-      headers: { ...auth(token), 'accept-encoding': 'gzip' },
-    });
-    expect(dlGzip.statusCode).toBe(200);
-    expect(dlGzip.headers['content-encoding']).toBeUndefined();
-    expect(dlGzip.headers['content-length']).toBe(String(job.files[0]!.size_bytes));
-    expect(dlGzip.headers['x-content-sha256']).toBe(job.files[0]!.sha256);
-    const content = dl.body;
-    const buffer = dl.rawPayload;
+    // COS 对象内容（分片 putObject 直传 · sha256/size 对内存 Buffer 算）
+    const buffer = cos.content(objectKey)!;
+    expect(buffer).toBeDefined();
     expect(createHash('sha256').update(buffer).digest('hex')).toBe(job.files[0]!.sha256);
     expect(buffer.byteLength).toBe(job.files[0]!.size_bytes);
+    const content = buffer.toString('utf8');
 
     // BOM + 表头 + CRLF
     expect(content.charCodeAt(0)).toBe(0xfeff);
@@ -599,22 +598,6 @@ describe('W1 · worker 端到端', () => {
     expect((expired.json() as { code: string }).code).toBe('EXPORT_FILE_EXPIRED');
   });
 
-  it('磁盘产物缺失（已被清理）⇒ 410 EXPORT_FILE_EXPIRED', async () => {
-    const { token, userId, ledgerId } = await login('openid-w1x');
-    await insertEntry({ ledgerId, createdBy: userId, occurredAt: '2026-06-10T00:00:00Z' });
-    const create = await createExportJob(token);
-    const jobId = (create.json() as { id: string }).id;
-    await tick();
-    // 清掉磁盘产物但保留 DB 记录
-    await removeJobArtifacts(jobId);
-    const dl = await app.inject({
-      method: 'GET',
-      url: `/v1/data-jobs/${jobId}/download?part=1`,
-      headers: auth(token),
-    });
-    expect(dl.statusCode).toBe(410);
-    expect((dl.json() as { code: string }).code).toBe('EXPORT_FILE_EXPIRED');
-  });
 });
 
 // ==============================================================================
@@ -630,16 +613,11 @@ describe('W2 · 空账本导出', () => {
 
     const row = await getJobRow(jobId);
     expect(row['status']).toBe('succeeded');
-    const summary = row['result_summary'] as { entry_count: number; part_count: number };
+    const summary = row['result_summary'] as { entry_count: number; part_count: number; storage_month: string };
     expect(summary.entry_count).toBe(0);
     expect(summary.part_count).toBe(1);
 
-    const dl = await app.inject({
-      method: 'GET',
-      url: `/v1/data-jobs/${jobId}/download?part=1`,
-      headers: auth(token),
-    });
-    const content = dl.body;
+    const content = cosText(`exports/${summary.storage_month}/${jobId}_1.csv`);
     expect(content.charCodeAt(0)).toBe(0xfeff);
     expect(content.slice(1)).toBe(
       '"日期","时间","类型","金额","一级分类","二级分类","归属","记账人","备注"\r\n',
@@ -809,10 +787,7 @@ describe('X1 · 游标微秒安全', () => {
     });
 
     expect(outcome.entryCount).toBe(3);
-    const content = readFileSync(
-      join(exportRoot, outcome.storageMonth, `${job.id}_1.csv`),
-      'utf8',
-    );
+    const content = cosText(`exports/${outcome.storageMonth}/${job.id}_1.csv`);
     // 三行共享同一 occurred_at（pg-mem µs 截断），行序由 id ASC 决定（随机 UUID 不可预期）；
     // 本用例的断言核心是「不漏不重」，故按集合比较。
     const notes = [...content.matchAll(/"u45[678]"/g)].map((m) => m[0]);
@@ -852,7 +827,8 @@ describe('X2 · 分片双阈值', () => {
     expect(outcome.files[0]!.download_path).toBe(`/data-jobs/${job.id}/download?part=1`);
 
     for (const f of outcome.files) {
-      const buf = readFileSync(join(exportRoot, outcome.storageMonth, `${job.id}_${f.part}.csv`));
+      const buf = cos.content(`exports/${outcome.storageMonth}/${job.id}_${f.part}.csv`)!;
+      expect(buf).toBeDefined();
       expect(buf.byteLength).toBe(f.size_bytes);
       expect(createHash('sha256').update(buf).digest('hex')).toBe(f.sha256);
       const text = buf.toString('utf8');
@@ -896,7 +872,7 @@ describe('X2 · 分片双阈值', () => {
 // ==============================================================================
 
 describe('X3 · 重试清场', () => {
-  it('removeJobArtifacts 清掉同 job 全部旧分片（含 .tmp）', async () => {
+  it('removeJobArtifacts 清掉同 job 全部旧分片（COS headObject 探测清场）', async () => {
     const { userId, ledgerId } = await login('openid-x3');
     const familyId = (
       await getPool().query(`SELECT family_id FROM ledgers WHERE id = $1`, [ledgerId])
@@ -905,19 +881,16 @@ describe('X3 · 重试清场', () => {
 
     const job = fabricateClaimedJob({ userId, familyId, ledgerId });
     const outcome = await runEntryExport(job);
-    const monthDir = join(exportRoot, outcome.storageMonth);
-    expect(existsSync(join(monthDir, `${job.id}_1.csv`))).toBe(true);
+    const objectKey = `exports/${outcome.storageMonth}/${job.id}_1.csv`;
+    expect(cos.has(objectKey)).toBe(true);
 
-    // 手工遗留一个 .tmp 残留
-    writeFileSync(join(monthDir, `${job.id}_2.csv.tmp`), 'junk');
     await removeJobArtifacts(job.id);
-    expect(existsSync(join(monthDir, `${job.id}_1.csv`))).toBe(false);
-    expect(existsSync(join(monthDir, `${job.id}_2.csv.tmp`))).toBe(false);
+    expect(cos.has(objectKey)).toBe(false);
 
     // 重跑（模拟重试）：产物重新生成且不残留旧片
     const again = await runEntryExport(job);
     expect(again.partCount).toBe(1);
-    expect(existsSync(join(monthDir, `${job.id}_1.csv`))).toBe(true);
+    expect(cos.has(objectKey)).toBe(true);
   });
 });
 

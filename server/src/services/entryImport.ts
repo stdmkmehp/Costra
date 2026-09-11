@@ -4,8 +4,9 @@
  * 事实源：docs/design/data-import-export-client-analysis.md v1.0 §4.2/§4.3/§7.4/§7.5/§9.4
  *
  * 三块职责：
- *   1. 检测产物 IO：规范化行（NDJSON gzip）与问题报告 CSV 落 /var/costra/import-staging/<yyyy-mm>/
- *      （.tmp + rename 原子写 · 0600 · 原始 CSV 全程不落盘 · §7.4）；
+ *   1. 检测产物 IO：规范化行（NDJSON gzip）与问题报告 CSV 传 COS 私有桶
+ *      （staging/<yyyy-mm>/<detectId>.rows.ndjson.gz · reports/<yyyy-mm>/<detectId>.report.csv ·
+ *      putObject 覆盖写 · 原始 CSV 全程不落盘 · §7.4 · cos-offload-phase1 v0.2 §5.2）；
  *   2. worker 执行（runEntryImport）：sync-hold 设置（独立短事务 · H1）→ 大事务
  *      （复核 FOR UPDATE → 批量 INSERT → releaseHoldAndApplyDelta 同语句释放 hold + 余额（H2）
  *      → job=succeeded 条件更新 rowCount=1）→ 提交后删行产物（report 留 24h）；
@@ -24,9 +25,6 @@
  */
 
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { unlink } from 'node:fs/promises';
-import { join } from 'node:path';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { DateTime } from 'luxon';
 import type { PoolClient } from 'pg';
@@ -43,6 +41,7 @@ import type {
 import * as ledgerRepo from '../repositories/ledgerRepo.js';
 import type { CategoryEntity } from '../repositories/categoryRepo.js';
 import { CSV_BOM, CSV_CRLF, escapeCsvField, formatCsvRow } from '../utils/csv.js';
+import { getCosClient } from './cosClient.js';
 import {
   PREVIEW_LIMIT,
   analyzeImportCsv,
@@ -67,26 +66,7 @@ export class ImportClientRefConflictError extends Error {}
 export class ImportSuccessWriteBackRace extends Error {}
 
 // ─────────────────────────────────────────────────────────────────────────────
-// staging 目录（测试可替换）
-// ─────────────────────────────────────────────────────────────────────────────
-
-let stagingRootOverride: string | null = null;
-
-export function getImportStagingRoot(): string {
-  return stagingRootOverride ?? process.env['IMPORT_STAGING_DIR'] ?? '/var/costra/import-staging';
-}
-
-/** 测试专用：替换 staging 根目录（配合 __resetImportStagingRootForTests 还原） */
-export function setImportStagingRootForTests(root: string): void {
-  stagingRootOverride = root;
-}
-
-export function __resetImportStagingRootForTests(): void {
-  stagingRootOverride = null;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 产物 IO（§7.4 · .tmp + rename 原子写）
+// 产物 IO（§7.4 · COS putObject 覆盖写 · artifactPath/reportPath 两列存 COS object key）
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** 规范化行产物字段（§7.4 步骤 4 · NDJSON 每行一个 JSON） */
@@ -106,10 +86,12 @@ interface ArtifactRowWire {
 }
 
 export interface DetectArtifactsResult {
+  /** 规范化行产物 COS object key（staging/<yyyy-mm>/<detectId>.rows.ndjson.gz） */
   artifactPath: string;
   artifactSha256: string;
+  /** 报告产物 COS object key（reports/<yyyy-mm>/<detectId>.report.csv · 无问题为 null） */
   reportPath: string | null;
-  /** 产物所在月目录名（yyyy-MM · Asia/Shanghai · 磁盘定位用） */
+  /** 产物所在月前缀（yyyy-MM · Asia/Shanghai） */
   storageMonth: string;
 }
 
@@ -156,36 +138,32 @@ function buildReportCsv(errors: readonly ImportIssue[], warnings: readonly Impor
 }
 
 /**
- * 检测产物落盘（NDJSON gzip + 报告 CSV · .tmp → rename 原子替换）。
+ * 检测产物传 COS（NDJSON gzip + 报告 CSV · putObject 覆盖写）。
  * 报告仅在确有错误/警告时生成（无问题则无 report_path · 客户端不展示下载入口）。
+ * 落库的两列语义是 COS object key（非本地路径 · 私有桶，下载走 /report 签发预签名 URL）。
  */
-export function writeDetectArtifacts(input: {
+export async function writeDetectArtifacts(input: {
   detectId: string;
   createdAt: Date;
   rows: readonly NormalizedImportRow[];
   errors: readonly ImportIssue[];
   warnings: readonly ImportIssue[];
-}): DetectArtifactsResult {
+}): Promise<DetectArtifactsResult> {
   const storageMonth = DateTime.fromJSDate(input.createdAt).setZone('Asia/Shanghai').toFormat('yyyy-MM');
-  const dir = join(getImportStagingRoot(), storageMonth);
-  mkdirSync(dir, { recursive: true });
+  const cos = getCosClient();
 
   // 规范化行产物（NDJSON gzip）
   const ndjson = input.rows.map((r) => JSON.stringify(toArtifactWire(r))).join('\n') + '\n';
   const artifactBody = gzipSync(Buffer.from(ndjson, 'utf8'));
-  const artifactPath = join(dir, `${input.detectId}.rows.ndjson.gz`);
-  const artifactTmp = `${artifactPath}.tmp`;
-  writeFileSync(artifactTmp, artifactBody, { mode: 0o600 });
-  renameSync(artifactTmp, artifactPath);
+  const artifactPath = `staging/${storageMonth}/${input.detectId}.rows.ndjson.gz`;
+  await cos.putObject(artifactPath, artifactBody);
   const artifactSha256 = createHash('sha256').update(artifactBody).digest('hex');
 
   // 问题报告 CSV（UTF-8 BOM + CRLF + quote-all + formula 防护 · §9.3 三层规则同导出）
   let reportPath: string | null = null;
   if (input.errors.length + input.warnings.length > 0) {
-    reportPath = join(dir, `${input.detectId}.report.csv`);
-    const reportTmp = `${reportPath}.tmp`;
-    writeFileSync(reportTmp, buildReportCsv(input.errors, input.warnings), { mode: 0o600 });
-    renameSync(reportTmp, reportPath);
+    reportPath = `reports/${storageMonth}/${input.detectId}.report.csv`;
+    await cos.putObject(reportPath, Buffer.from(buildReportCsv(input.errors, input.warnings), 'utf8'));
   }
 
   return { artifactPath, artifactSha256, reportPath, storageMonth };
@@ -205,12 +183,18 @@ export interface ImportArtifactRow {
   note: string | null;
 }
 
-/** 读取并校验规范化行产物（R16：SHA 不匹配按产物损坏处理） */
-export function readDetectArtifactRows(expectedPath: string, expectedSha256: string | null): ImportArtifactRow[] {
-  if (!existsSync(expectedPath)) {
-    throw new ImportArtifactError(`detect artifact missing: ${expectedPath}`);
+/** 从 COS 读回并校验规范化行产物（R16：缺失/SHA 不匹配按产物损坏处理） */
+export async function readDetectArtifactRows(key: string, expectedSha256: string | null): Promise<ImportArtifactRow[]> {
+  let body: Buffer;
+  try {
+    body = await getCosClient().getObject(key);
+  } catch (err) {
+    // COS 404（NoSuchKey）⇒ 产物缺失终态；其余错误（网络/5xx）原样抛由调度层归类
+    if ((err as { statusCode?: number }).statusCode === 404) {
+      throw new ImportArtifactError(`detect artifact missing: ${key}`);
+    }
+    throw err;
   }
-  const body = readFileSync(expectedPath);
   if (expectedSha256 !== null) {
     const actual = createHash('sha256').update(body).digest('hex');
     if (actual !== expectedSha256) {
@@ -239,15 +223,13 @@ export function readDetectArtifactRows(expectedPath: string, expectedSha256: str
   return rows;
 }
 
-/** 删文件（best-effort · 文件不存在视为成功） */
-export async function deleteDetectFile(path: string | null, log: ServiceLogger): Promise<void> {
-  if (!path) return;
+/** 删 COS 对象（best-effort · 对象不存在视为成功） */
+export async function deleteDetectFile(key: string | null, log: ServiceLogger): Promise<void> {
+  if (!key) return;
   try {
-    await unlink(path);
+    await getCosClient().deleteObjects([key]);
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-      log.warn({ err, path }, 'delete detect file failed (ignored)');
-    }
+    log.warn({ err, key }, 'delete detect object failed (ignored)');
   }
 }
 
@@ -292,8 +274,8 @@ export async function runEntryImport(
     throw new ImportContextInvalidError('detect session not in consumed state for this job');
   }
 
-  // 1. 读产物 + SHA 校验（R16 · 事务外 IO）
-  const artifactRows = readDetectArtifactRows(session.artifactPath, session.artifactSha256);
+  // 1. 读产物 + SHA 校验（R16 · 事务外 IO · COS getObject）
+  const artifactRows = await readDetectArtifactRows(session.artifactPath, session.artifactSha256);
 
   // 2. 应用 member_mapping（§4.3 · 映射在 commit 时落入会话，执行期不再二次解析 CSV）：
   //    待映射行（created_by=null）：映射命中 → 映射值（'__self__' → 操作者）；未覆盖 → 跳过
@@ -529,9 +511,9 @@ function toPreviewItem(issue: ImportIssue): { row: number; field: string; code: 
 }
 
 /**
- * 检测主管道：解码 → 解析/校验（纯函数）→ 产物落盘 → 会话推进。
+ * 检测主管道：解码 → 解析/校验（纯函数）→ 产物传 COS → 会话推进。
  * 返回解析结果；文件级失败抛 ImportFileInvalidError（会话已转 failed，并发槽已释放）。
- * 非文件级异常（落盘 IO / markReady 写失败）原样抛出，会话仍是 detecting —— 由调用方
+ * 非文件级异常（产物 IO / markReady 写失败）原样抛出，会话仍是 detecting —— 由调用方
  * （importJobs detect 路由，即并发槽的申请者）兜底 markFailed 释放槽位。
  */
 export async function runDetectPipeline(input: DetectPipelineInput): Promise<ImportAnalysis> {
@@ -563,8 +545,8 @@ export async function runDetectPipeline(input: DetectPipelineInput): Promise<Imp
     return failSession(analysis.fileError?.message ?? '文件内容无法识别');
   }
 
-  // 3. 产物落盘（NDJSON gzip + 报告 CSV · 原始 CSV 全程不落盘 · §7.4）
-  const artifacts = writeDetectArtifacts({
+  // 3. 产物传 COS（NDJSON gzip + 报告 CSV · 原始 CSV 全程不落盘 · §7.4）
+  const artifacts = await writeDetectArtifacts({
     detectId: session.id,
     createdAt: session.createdAt,
     rows: analysis.rows,
@@ -605,9 +587,10 @@ export async function runDetectPipeline(input: DetectPipelineInput): Promise<Imp
 
 /**
  * 每分钟清理：
- *   1. 僵尸 detecting（>10min）→ failed（释放 §4.4 并发槽；半成品 .tmp 文件由 cron 兜底）；
+ *   1. 僵尸 detecting（>10min）→ failed（释放 §4.4 并发槽；未落库 key 的孤儿对象由
+ *      COS 30 天生命周期兜底）；
  *   2. ready 过期 → 删规范化行产物（15min 行产物寿命）；
- *   3. report 过期（24h）→ 删报告文件；ready/failed 且无关联 job 的行整行删除
+ *   3. report 过期（24h）→ 删报告对象；ready/failed 且无关联 job 的行整行删除
  *     （consumed 行与 data_jobs 元数据同寿 30 天，由 maintenance cron 收尾 · §7.4）。
  */
 export async function cleanupDetectSessions(log: ServiceLogger): Promise<void> {

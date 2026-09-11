@@ -7,7 +7,7 @@
  * 端点：
  *   POST /import-jobs/detect                      上传 CSV + 同步检测 → DetectReport
  *   POST /import-jobs/commit                      确认导入（原子消费会话 + 创建任务）→ 202
- *   GET  /import-detect-sessions/{detect_id}/report  下载问题报告 CSV（24h 独立寿命）
+ *   GET  /import-detect-sessions/{detect_id}/report  签发报告 COS 预签名下载 URL（24h 独立寿命）
  *   GET  /import-jobs/demo-csv                    下载导入示例 CSV（动态生成 · 含全分类 · 不落盘）
  *
  * 闸口与幂等：
@@ -22,8 +22,6 @@
  */
 
 import { createHash } from 'node:crypto';
-import { createReadStream } from 'node:fs';
-import { promises as fs } from 'node:fs';
 import { DateTime } from 'luxon';
 import type { FastifyInstance } from 'fastify';
 import { AppError } from '../errors/AppError.js';
@@ -39,6 +37,7 @@ import * as importDetectRepo from '../repositories/importDetectRepo.js';
 import type { ImportDetectSessionEntity } from '../repositories/importDetectRepo.js';
 import * as ledgerRepo from '../repositories/ledgerRepo.js';
 import { maxLedgerEntries } from '../config/defaults.js';
+import { getCosClient, PRESIGN_EXPIRES_SECONDS } from '../services/cosClient.js';
 import {
   ImportFileInvalidError,
   runDetectPipeline,
@@ -585,11 +584,10 @@ export async function registerImportJobsRoutes(app: FastifyInstance): Promise<vo
     }
   });
 
-  // ─── GET /import-detect-sessions/{detect_id}/report · 下载问题报告 CSV ───────
+  // ─── GET /import-detect-sessions/{detect_id}/report · 签发报告 COS 预签名下载 URL ───
+  // （两步下载第一步 · cos-offload-phase1 v0.2 §4.2/§5.2；报告现状不校验 sha256 ⇒ JSON 不含 sha256）
   app.get<{ Params: { detect_id: string } }>(
     '/import-detect-sessions/:detect_id/report',
-    // compress: false —— 磁盘 CSV 直发 + 保留 Content-Length（下载进度依赖），排除响应压缩
-    { compress: false },
     async (req, reply) => {
       const userId = await requireUserId(req);
       const session = await importDetectRepo.findById(req.params.detect_id);
@@ -607,22 +605,12 @@ export async function registerImportJobsRoutes(app: FastifyInstance): Promise<vo
       if (!session.reportExpiresAt || session.reportExpiresAt.getTime() <= Date.now()) {
         throw new AppError(ErrorCode.NOT_FOUND, { message: 'detect report is no longer available' });
       }
-      let size: number;
-      try {
-        size = (await fs.stat(session.reportPath)).size;
-      } catch {
-        // 磁盘产物已被清理（purge-import-staging / 运维手工清理）⇒ 同「报告不可用」
-        throw new AppError(ErrorCode.NOT_FOUND, { message: 'detect report has been purged' });
-      }
-
+      // 24h 窗口内对象必然在（reaper 清理由 report_expires_at 同刻驱动 · 先被本判定拦截）⇒ 直接签发
+      const url = await getCosClient().presignGet(session.reportPath, PRESIGN_EXPIRES_SECONDS);
       const ts = DateTime.fromJSDate(session.createdAt)
         .setZone(SHANGHAI_ZONE)
         .toFormat('yyyyMMddHHmmss');
-      reply
-        .header('Content-Type', 'text/csv; charset=utf-8')
-        .header('Content-Disposition', buildContentDisposition(`Costra_导入检测报告_${ts}.csv`))
-        .header('Content-Length', String(size));
-      return reply.send(createReadStream(session.reportPath));
+      return reply.code(200).send({ url, filename: `Costra_导入检测报告_${ts}.csv` });
     },
   );
 }

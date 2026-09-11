@@ -14,18 +14,15 @@
  *   MS*  migration 0021 导入侧静态断言（pg-mem 无部分索引/CHECK 载体 ⇒ 断言生产 SQL）
  */
 
-import { mkdtempSync, existsSync, readFileSync } from 'node:fs';
-import { unlink } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app.js';
 import { getPool } from '../src/db/pool.js';
 import { setWxFetchForTests } from '../src/wx/code2Session.js';
+import { __setCosForTests } from '../src/services/cosClient.js';
 import {
-  setImportStagingRootForTests,
   cleanupDetectSessions,
   runEntryImport,
   ImportClientRefConflictError,
@@ -35,16 +32,17 @@ import { ImportArtifactError, ImportContextInvalidError, ImportSuccessWriteBackR
 import * as importDetectRepo from '../src/repositories/importDetectRepo.js';
 import * as ledgerRepo from '../src/repositories/ledgerRepo.js';
 import type { DataJobEntity } from '../src/repositories/dataJobRepo.js';
+import { MemoryCosStore } from './helpers/memoryCos.js';
 
 let app: FastifyInstance;
-let stagingRoot: string;
+const cos = new MemoryCosStore();
 
 beforeAll(() => {
-  stagingRoot = mkdtempSync(join(tmpdir(), 'costra-import-test-'));
-  setImportStagingRootForTests(stagingRoot);
+  __setCosForTests(cos);
 });
 
 beforeEach(async () => {
+  cos.clear();
   app = await buildApp({ disableLogger: true });
   await app.ready();
 });
@@ -258,8 +256,10 @@ describe('D · POST /v1/import-jobs/detect', () => {
     const session = await getSessionRow(body['detect_id'] as string);
     expect(session.status).toBe('ready');
     expect(session.artifact_path).not.toBeNull();
-    expect(existsSync(session.artifact_path!)).toBe(true);
-    // 无错误/警告 ⇒ 不生成报告文件
+    // artifact_path 语义为 COS object key（staging/<yyyy-mm>/<id>.rows.ndjson.gz）
+    expect(session.artifact_path).toMatch(/^staging\/\d{4}-\d{2}\/.+\.rows\.ndjson\.gz$/);
+    expect(cos.has(session.artifact_path!)).toBe(true);
+    // 无错误/警告 ⇒ 不生成报告对象
     expect(session.report_path).toBeNull();
   });
 
@@ -668,8 +668,8 @@ describe('W · 导入 worker（大事务原子性 · §7.5）', () => {
     // 隐私与产物（§7.4 v0.9）：预览置 NULL · 行产物删除 · 报告保留
     const session = await getSessionRow(detectId);
     expect(session.report_preview).toBeNull();
-    expect(session.artifact_path).not.toBeNull(); // 路径仍在（审计），文件已删
-    expect(existsSync(session.artifact_path!)).toBe(false);
+    expect(session.artifact_path).not.toBeNull(); // key 仍在（审计），COS 对象已删
+    expect(cos.has(session.artifact_path!)).toBe(false);
   });
 
   it('W2: 自产文件未匹配昵称 → member_mapping __self__ 命中入库，未映射昵称跳过', async () => {
@@ -737,7 +737,7 @@ describe('W · 导入 worker（大事务原子性 · §7.5）', () => {
     await seedCategories();
     const { jobId, detectId } = await detectAndCommit(token, ledgerId, extCsv(['2026-06-01,10:00:00,支出,20.00,餐饮,外卖,,']));
     const session = await getSessionRow(detectId);
-    await unlink(session.artifact_path!);
+    await cos.deleteObjects([session.artifact_path!]);
 
     await app.dataJobScheduler!.tickOnce();
     const job = await getJobRow(jobId);
@@ -938,7 +938,7 @@ describe('H · sync-pull 导入钳制（§5.2.4 E2b）', () => {
 // ==============================================================================
 
 describe('R · GET /v1/import-detect-sessions/:id/report', () => {
-  it('R1: 有问题的检测 → 200 CSV（BOM + 逻辑序号 + 物理行号 + 层级 + 错误码）', async () => {
+  it('R1: 有问题的检测 → 200 签发预签名 URL（报告对象 BOM + 逻辑序号 + 物理行号 + 层级 + 错误码）', async () => {
     const { token, ledgerId } = await login('u-r1');
     await seedCategories();
     const csv = extCsv(['2026-02-30,14:30:00,支出,1,餐饮,,,', '2026-06-10,14:30:00,支出,2,餐饮,,,']);
@@ -950,9 +950,12 @@ describe('R · GET /v1/import-detect-sessions/:id/report', () => {
       headers: auth(token),
     });
     expect(res.statusCode).toBe(200);
-    expect(res.headers['content-type']).toContain('text/csv');
-    expect(res.headers['content-disposition']).toContain('Costra_');
-    const text = res.body;
+    // 两步下载第一步：签发 300s 预签名 URL 返回 JSON（报告现状不校验 sha256 ⇒ JSON 不含 sha256）
+    const body = res.json() as { url: string; filename: string };
+    expect(body.filename).toContain('Costra_');
+    const session = await getSessionRow(detectId);
+    expect(body.url).toBe(`${cos.downloadBase}/${session.report_path}?fake-sign=1&expires=300`);
+    const text = cos.content(session.report_path!)!.toString('utf8');
     expect(text.charCodeAt(0)).toBe(0xfeff); // BOM
     expect(text).toContain('逻辑序号');
     expect(text).toContain('DATE_INVALID');
@@ -1025,7 +1028,7 @@ describe('CL · cleanupDetectSessions（§7.4 生命周期）', () => {
     const d = await detect(token, extCsv(['2026-06-10,14:30:00,支出,1,餐饮,,,']), ledgerId);
     const detectId = (d.json() as { detect_id: string }).detect_id;
     const session = await getSessionRow(detectId);
-    expect(existsSync(session.artifact_path!)).toBe(true);
+    expect(cos.has(session.artifact_path!)).toBe(true);
 
     await getPool().query(
       `UPDATE import_detect_sessions SET expires_at = now() - interval '1 second' WHERE id = $1`,
@@ -1035,10 +1038,10 @@ describe('CL · cleanupDetectSessions（§7.4 生命周期）', () => {
     const after = await getSessionRow(detectId);
     expect(after.status).toBe('ready'); // 派生过期不改状态机
     expect(after.artifact_path).toBeNull();
-    expect(existsSync(session.artifact_path!)).toBe(false);
+    expect(cos.has(session.artifact_path!)).toBe(false);
   });
 
-  it('CL3: report 过期 → 删报告文件；无 job 的 ready/failed 行整行删除', async () => {
+  it('CL3: report 过期 → 删报告对象；无 job 的 ready/failed 行整行删除', async () => {
     const { token, ledgerId } = await login('u-cl3');
     await seedCategories();
     const d = await detect(token, extCsv(['2026-02-30,14:30:00,支出,1,餐饮,,,']), ledgerId);
@@ -1052,7 +1055,7 @@ describe('CL · cleanupDetectSessions（§7.4 生命周期）', () => {
       [detectId],
     );
     await cleanupDetectSessions(noopLog);
-    expect(existsSync(reportPath)).toBe(false);
+    expect(cos.has(reportPath)).toBe(false);
     const rows = (await getPool().query(`SELECT COUNT(*) AS n FROM import_detect_sessions WHERE id = $1`, [detectId])).rows[0] as { n: number };
     expect(Number(rows.n)).toBe(0); // 整行删除
   });
