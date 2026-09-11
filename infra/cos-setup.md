@@ -72,9 +72,13 @@
 ```
 桶内（prod / staging 各自独立）
   exports/<yyyy-MM>/<jobId>_<part>.csv          ← 导出分片
-  staging/<yyyy-mm>/<detectId>.rows.ndjson.gz   ← 导入规范化行产物（隐私 · 导入成功即删）
+  detect/<yyyy-mm>/<detectId>.rows.ndjson.gz    ← 导入规范化行产物（隐私 · 导入成功即删）
   reports/<yyyy-mm>/<detectId>.report.csv       ← 导入报告
 ```
+
+> 命名注记（2026-09-11）：导入产物前缀原定为 `staging/`（沿用旧本地目录 `import-staging` 的「暂存」语义），
+> 因与 staging 测试环境同形易误读（桶已按环境独立，key 不再承担环境区分），改为 `detect/`——
+> 对齐领域命名（`import_detect_sessions` / `detectId` / `purge-detect-sessions`）。
 
 ## 4. 服务端环境变量（写入 /data/conf/server.env · 两机各一套）
 
