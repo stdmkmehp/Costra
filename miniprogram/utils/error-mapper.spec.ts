@@ -6,7 +6,8 @@
 // 用户只会看到无信息量的兜底文案，本用例即是那道闸门。
 
 import { describe, it, expect } from 'vitest';
-import { describeDataJobError } from './error-mapper';
+import { describeDataJobError, mapError } from './error-mapper';
+import { maxLedgerEntries } from '../config/defaults';
 
 /** §9.5 值域（与 server/api/openapi.yaml DataJob.error.code enum 同源） */
 const ERROR_CODES = [
@@ -48,5 +49,21 @@ describe('describeDataJobError', () => {
     expect(describeDataJobError(null)).toBe(FALLBACK);
     expect(describeDataJobError(undefined)).toBe(FALLBACK);
     expect(describeDataJobError('')).toBe(FALLBACK);
+  });
+});
+
+describe('mapError · BUSINESS_RULE_VIOLATION 的 detail 分流', () => {
+  // 错误出口按「有 detail ⇒ wx.showModal / 无 detail ⇒ wx.showToast」分流：
+  // 有 detail 的 rule 恒走 modal，不再为其维护 toast 短文案（desc 落通用兜底，
+  // modal 不展示 desc），故对 desc 无长度约束。
+  it('ledger_entry_limit：detail 携带条数上限与优化排期（modal 出口）', () => {
+    const mapped = mapError({ code: 'BUSINESS_RULE_VIOLATION', details: { rule: 'ledger_entry_limit' } });
+    expect(mapped.detail).toContain(`${maxLedgerEntries} 条`);
+    expect(mapped.detail).toContain('2026.12.31');
+  });
+
+  it('未登记 detail 的 rule ⇒ detail 为 undefined（照旧 toast 出口）', () => {
+    const mapped = mapError({ code: 'BUSINESS_RULE_VIOLATION', details: { rule: 'budget_overlap' } });
+    expect(mapped.detail).toBeUndefined();
   });
 });

@@ -10,6 +10,12 @@ import { maxSharedFamilies, maxSharedFamiliesHardLimit, maxFamilyMembers, maxLed
 export interface MappedError {
   title: string;
   desc: string;
+  /**
+   * 完整说明（可选）：desc 是 wx.showToast 两行截断内的短文案，
+   * 需要用户完整理解的背景/排期/承诺等信息放这里，
+   * 错误出口检测到 detail 时应升级为 wx.showModal 承载（toast 装不下）。
+   */
+  detail?: string;
   /** 用户侧下一步动作提示（可选） */
   action?: 'navigate-login' | 'navigate-family-home' | 'refresh' | 'view-conflict';
 }
@@ -79,8 +85,19 @@ const BUSINESS_RULE_TEXT: Record<string, string> = {
   ledger_archived:           '该账本已归档，无法继续记账',
   entry_occurred_at_future:  '记账时间不能晚于当前时间 1 小时以上',
   currency_mismatch:         '流水币种与账本不一致',
-  // 【临时限制 · 2026-09-10】单账本条目软上限：优化完成后随服务端一并放宽/移除
-  ledger_entry_limit:     `当前账本条目将超过 ${maxLedgerEntries} 条，大账本存在性能退化问题，我们正在排期优化（预计两个月），期间暂无法继续导入`,
+  // 【临时限制 · 2026-09-10】ledger_entry_limit（单账本条目软上限）不在此登记：
+  // 该 rule 恒走 modal（见 BUSINESS_RULE_DETAIL），toast 短文案信息不足已废弃，
+  // desc 落通用兜底即可（modal 不展示 desc）。
+};
+
+/**
+ * BUSINESS_RULE_VIOLATION 的完整说明（按 details.rule 登记 · 可选）。
+ * 短文案装不下、需要用户完整理解的背景/排期信息登记于此；
+ * mapError 会并入 MappedError.detail，错误出口按「有 detail ⇒ modal」分流。
+ * 有 detail 的 rule 恒走 modal —— 不再为其维护 BUSINESS_RULE_TEXT 短文案。
+ */
+const BUSINESS_RULE_DETAIL: Record<string, string> = {
+  ledger_entry_limit: `导入后账本条目将超过 ${maxLedgerEntries} 条。\n\n大账本目前存在性能退化问题，预计2026.12.31前完成优化，期间暂无法继续导入。`,
 };
 
 /**
@@ -101,6 +118,7 @@ export function mapError(err: ApiErrorLike): MappedError {
     return {
       title: '操作未通过',
       desc: BUSINESS_RULE_TEXT[rule] || '业务规则未通过，请检查后重试',
+      detail: BUSINESS_RULE_DETAIL[rule],
     };
   }
 
