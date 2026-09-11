@@ -57,8 +57,6 @@ DIRS_TO_CREATE=(
   "${COSTRA_DATA}/certbot/www"
   "${COSTRA_DATA}/backups"
   "${COSTRA_DATA}/uploads/avatars"
-  "${COSTRA_DATA}/exports"
-  "${COSTRA_DATA}/import-staging"
 )
 
 for dir in "${DIRS_TO_CREATE[@]}"; do
@@ -92,8 +90,6 @@ RUN_AS_70=(
 RUN_AS_1000=(
   "${COSTRA_DATA}/logs/server"
   "${COSTRA_DATA}/uploads"
-  "${COSTRA_DATA}/exports"
-  "${COSTRA_DATA}/import-staging"
 )
 
 log_info "chown ${UID_REDIS}:${UID_REDIS} → ${RUN_AS_999[*]}"

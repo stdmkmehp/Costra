@@ -15,8 +15,8 @@
 #   purge-idempotency                                 清过期幂等键（每日）
 #   purge-sessions                                    清已过期 session（每日）
 #   purge-invites                                     清过期邀请（每日）
-#   purge-exports                                     清过期导出产物（>24h CSV 分片 + 空月目录）与 30 天前任务元数据
-#   purge-import-staging                              清导入暂存孤儿文件（>24h）+ 30 天前无关联任务的检测会话行
+#   purge-data-jobs                                   清 30 天前导入导出任务元数据（文件产物在 COS · 30 天生命周期自清）
+#   purge-detect-sessions                             清 30 天前无关联任务的检测会话行
 #   purge-all                                         顺序跑全部 purge-*
 #   renew-cert                                        certbot renew（到期才续 · 续到新证书才 reload nginx）
 #   error-report                                      扫 /data/logs ≥error 级日志并邮件推送（每日 05:17 · 委托 report-error-logs.sh）
@@ -63,8 +63,8 @@ declare -a CRON_SCHEDULE=(
   "purge-idempotency|7 4 * * *|maintenance-purge.log"
   "purge-sessions|17 4 * * *|maintenance-purge.log"
   "purge-invites|27 4 * * *|maintenance-purge.log"
-  "purge-exports|37 4 * * *|maintenance-purge.log"
-  "purge-import-staging|47 4 * * *|maintenance-purge.log"
+  "purge-data-jobs|37 4 * * *|maintenance-purge.log"
+  "purge-detect-sessions|47 4 * * *|maintenance-purge.log"
   "renew-cert|17 3 * * *|maintenance-cert.log"
   "error-report|17 5 * * *|maintenance-error-report.log"
   "perf-collect|3 * * * *|maintenance-perf.log"
@@ -78,7 +78,7 @@ TASK=""
 declare -a PASSTHRU=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    backup|backup-avatars|replication-check|purge-idempotency|purge-sessions|purge-invites|purge-exports|purge-import-staging|purge-all|renew-cert|error-report|perf-collect|perf-report|install-cron|list)
+    backup|backup-avatars|replication-check|purge-idempotency|purge-sessions|purge-invites|purge-data-jobs|purge-detect-sessions|purge-all|renew-cert|error-report|perf-collect|perf-report|install-cron|list)
       [[ -z "${TASK}" ]] || die "只能指定一个任务（已有：${TASK}）"
       TASK=$1; shift ;;
     --dry-run|-y|--yes) shift ;;       # common 已处理 · noop
@@ -148,46 +148,21 @@ do_purge_invites() {
   task_purge "invites" "family_invites" "expires_at < now() - interval '30 days'"
 }
 
-do_purge_exports() {
-  # 导出产物文件：24h TTL（与 data_jobs.file_expires_at 对齐）· 按 mtime 清理 + 空月目录收尾。
-  # 目录布局：${COSTRA_DATA}/exports/<yyyy-mm>/<job_id>_<part>.csv（容器内 /var/costra/exports）。
-  local dir="${COSTRA_DATA}/exports"
-  if [[ "${DRY_RUN}" == "1" ]]; then
-    local n
-    n=$(find "${dir}" -type f -mmin +1440 2>/dev/null | wc -l | tr -d ' ')
-    log_dry "[exports-files] 将删除 ${n} 个过期产物文件 · ${dir} mtime > 24h"
-    log_dry "[exports-files] 将清理空月目录 · ${dir}"
-  else
-    find "${dir}" -type f -mmin +1440 -delete
-    find "${dir}" -mindepth 1 -type d -empty -delete
-    log_success "[exports-files] 过期产物已清理（mtime > 24h）"
-  fi
+do_purge_data_jobs() {
   # 任务元数据：30 天保留期后物理删除。
+  # COS 化一期（cos-offload-phase1 v0.2）后导入导出文件产物全部在 COS 私有桶，
+  # 30 天生命周期规则自清，宿主机不再有文件清理职责（原 purge-exports 文件部分退役）。
   # 注意 FK 方向：data_jobs.detect_id REFERENCES import_detect_sessions ON DELETE CASCADE
   # （删会话才级联删任务，删任务不动会话）——本语句删任务行安全；
-  # 会话行的 30 天收尾在 purge-import-staging（必须排在本任务之后跑，先清任务再清会话）。
-  task_purge "exports-meta" "data_jobs" "created_at < now() - interval '30 days'"
+  # 会话行的 30 天收尾在 purge-detect-sessions（必须排在本任务之后跑，先清任务再清会话）。
+  task_purge "data-jobs" "data_jobs" "created_at < now() - interval '30 days'"
 }
 
-do_purge_import_staging() {
-  # 导入暂存文件：按 mtime > 24h 兜底清理（cron 兜底 · §7.4 生命周期）。
-  # 正常路径由应用侧每分钟清理（cleanupDetectSessions）按 expires_at/report_expires_at 精确删除；
-  # 这里兜住的是孤儿文件（僵尸 detecting 崩溃残留的 .tmp / 半成品 / 运维手工放入物）。
-  # 目录布局：${COSTRA_DATA}/import-staging/<yyyy-mm>/<detect_id>.rows.ndjson.gz|.report.csv（容器内 /var/costra/import-staging）。
-  local dir="${COSTRA_DATA}/import-staging"
-  if [[ "${DRY_RUN}" == "1" ]]; then
-    local n
-    n=$(find "${dir}" -type f -mmin +1440 2>/dev/null | wc -l | tr -d ' ')
-    log_dry "[import-staging-files] 将删除 ${n} 个过期暂存文件 · ${dir} mtime > 24h"
-    log_dry "[import-staging-files] 将清理空月目录 · ${dir}"
-  else
-    find "${dir}" -type f -mmin +1440 -delete 2>/dev/null || true
-    find "${dir}" -mindepth 1 -type d -empty -delete 2>/dev/null || true
-    log_success "[import-staging-files] 过期暂存已清理（mtime > 24h）"
-  fi
-  # 会话行 30 天收尾（§7.4「会话行最终删除条件」）：
+do_purge_detect_sessions() {
+  # 会话行 30 天收尾（§7.4「会话行最终删除条件」；文件产物已 COS 化 · 生命周期自清，
+  # 原 purge-import-staging 的孤儿文件兜底职责由 COS 30 天规则接管）：
   # 仅删"无关联 job"的会话行——NOT EXISTS 反连接保住 data_jobs 仍在 30 天保留期内的会话；
-  # 顺序约定：本任务必须在 purge-exports（先清 30 天前任务元数据）之后执行（purge-all 与 cron 表均如此）。
+  # 顺序约定：本任务必须在 purge-data-jobs（先清 30 天前任务元数据）之后执行（purge-all 与 cron 表均如此）。
   task_purge "import-detect-sessions" "import_detect_sessions" \
     "created_at < now() - interval '30 days' AND NOT EXISTS (SELECT 1 FROM data_jobs WHERE data_jobs.detect_id = import_detect_sessions.id)"
 }
@@ -354,7 +329,7 @@ do_push_avatars_offsite() {
 # backup / replication-check / install-cron / list 各用独立锁名。
 # =============================================================================
 case "${TASK}" in
-  purge-idempotency|purge-sessions|purge-invites|purge-exports|purge-import-staging|purge-all) LOCK_NAME="purge" ;;
+  purge-idempotency|purge-sessions|purge-invites|purge-data-jobs|purge-detect-sessions|purge-all) LOCK_NAME="purge" ;;
   *)                                          LOCK_NAME="${TASK}" ;;
 esac
 if command -v flock >/dev/null 2>&1; then
@@ -426,22 +401,22 @@ case "${TASK}" in
     require_cmd docker; _assert_pg_healthy; _load_pg_pw
     do_purge_invites
     ;;
-  purge-exports)
+  purge-data-jobs)
     require_cmd docker; _assert_pg_healthy; _load_pg_pw
-    do_purge_exports
+    do_purge_data_jobs
     ;;
-  purge-import-staging)
+  purge-detect-sessions)
     require_cmd docker; _assert_pg_healthy; _load_pg_pw
-    do_purge_import_staging
+    do_purge_detect_sessions
     ;;
   purge-all)
     require_cmd docker; _assert_pg_healthy; _load_pg_pw
     do_purge_idempotency
     do_purge_sessions
     do_purge_invites
-    do_purge_exports
+    do_purge_data_jobs
     # 会话行收尾依赖任务元数据先清（NOT EXISTS 反连接 · 顺序约束见函数注释）
-    do_purge_import_staging
+    do_purge_detect_sessions
     ;;
   install-cron)
     do_install_cron
@@ -451,7 +426,7 @@ case "${TASK}" in
     do_renew_cert
     ;;
   list)
-    log_info "可用任务：backup · backup-avatars · replication-check · purge-idempotency · purge-sessions · purge-invites · purge-exports · purge-import-staging · purge-all · renew-cert · error-report · perf-collect · perf-report · install-cron · list"
+    log_info "可用任务：backup · backup-avatars · replication-check · purge-idempotency · purge-sessions · purge-invites · purge-data-jobs · purge-detect-sessions · purge-all · renew-cert · error-report · perf-collect · perf-report · install-cron · list"
     ;;
 esac
 
