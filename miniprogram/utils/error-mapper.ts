@@ -85,11 +85,11 @@ const BUSINESS_RULE_TEXT: Record<string, string> = {
   ledger_archived:           '该账本已归档，无法继续记账',
   entry_occurred_at_future:  '记账时间不能晚于当前时间 1 小时以上',
   currency_mismatch:         '流水币种与账本不一致',
-  // 【临时限制 · 2026-09-10】ledger_entry_limit（单账本条目软上限）不在此登记：
-  // 该 rule 恒走 modal（见 BUSINESS_RULE_DETAIL），toast 短文案信息不足已废弃，
-  // desc 落通用兜底即可（modal 不展示 desc）。
 };
 
+// 【临时限制 · 2026-09-10】ledger_entry_limit（单账本条目软上限）不在此登记：
+// 该 rule 恒走 modal（见 BUSINESS_RULE_DETAIL），toast 短文案信息不足已废弃，
+// desc 落通用兜底即可（modal 不展示 desc）。
 /**
  * BUSINESS_RULE_VIOLATION 的完整说明（按 details.rule 登记 · 可选）。
  * 短文案装不下、需要用户完整理解的背景/排期信息登记于此；
