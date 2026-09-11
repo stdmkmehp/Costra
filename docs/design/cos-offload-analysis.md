@@ -2,6 +2,7 @@
 
 > 状态：**v0.5 · 待拍板（可行性评估，非施工方案）**（v0.5：存储形态定稿——**库存两列完整 URL**（`avatar_url` 不动作本地兼容锚点 + 新增 nullable `avatar_cos_url`），放弃相对 key（双 URL 本就是契约字段，key 是多余间接）；存量只回填 `avatar_cos_url` 一列、`avatar_url` 零改；v0.4：始终双写 + 双 URL 客户端降级定稿）
 > 日期：2026-09-09（v0.1 → v0.4）→ 2026-09-10（v0.5）
+> 2026-09-11 后置注记：本文 **P2 导入导出文件 COS 化已落地**（施工方案与实现事实见 `docs/design/cos-offload-phase1-import-export.md`，一步切 COS 无双写）；**P1 头像双 URL 双写方案仍为待施工状态**，本文 §4 头像部分继续有效。
 > 触发：账本导入导出文件下载与成员头像下载占用服务器出口带宽与磁盘；prod Lighthouse 出口带宽 2Mbps、staging 1Mbps 是硬顶，大文件（导出 ~500KB）与头像（5~10KB × 多成员）挤占同一带宽，影响 sync/pull 等在线请求。
 > 事实源（代码）：`server/src/routes/upload.ts`、`server/src/routes/dataJobs.ts`、`server/src/routes/importJobs.ts`、`server/src/services/entryExport.ts`、`server/src/services/entryImport.ts`、`server/src/repositories/userRepo.ts`、`miniprogram/services/fileTransfer.ts`、`infra/nginx/conf.d/costra.cloud.conf.prod`、`infra/docker-compose.prod.yml`、`infra/scripts/restore-staging-from-prod.sh`、`server/package.json`
 > 事实源（COS 官方）：腾讯云 COS Node.js SDK 快速入门（`cloud.tencent.com/document/product/436/8629`，2025-12-24）、使用预签名 URL 访问 COS（`.../436/68284`）、生成预签名 URL（`.../436/35153`，2026-06-11）
