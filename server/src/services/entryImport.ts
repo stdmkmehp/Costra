@@ -5,7 +5,7 @@
  *
  * 三块职责：
  *   1. 检测产物 IO：规范化行（NDJSON gzip）与问题报告 CSV 传 COS 私有桶
- *      （staging/<yyyy-mm>/<detectId>.rows.ndjson.gz · reports/<yyyy-mm>/<detectId>.report.csv ·
+ *      （detect/<yyyy-mm>/<detectId>.rows.ndjson.gz · reports/<yyyy-mm>/<detectId>.report.csv ·
  *      putObject 覆盖写 · 原始 CSV 全程不落盘 · §7.4 · cos-offload-phase1 v0.2 §5.2）；
  *   2. worker 执行（runEntryImport）：sync-hold 设置（独立短事务 · H1）→ 大事务
  *      （复核 FOR UPDATE → 批量 INSERT → releaseHoldAndApplyDelta 同语句释放 hold + 余额（H2）
@@ -86,7 +86,7 @@ interface ArtifactRowWire {
 }
 
 export interface DetectArtifactsResult {
-  /** 规范化行产物 COS object key（staging/<yyyy-mm>/<detectId>.rows.ndjson.gz） */
+  /** 规范化行产物 COS object key（detect/<yyyy-mm>/<detectId>.rows.ndjson.gz） */
   artifactPath: string;
   artifactSha256: string;
   /** 报告产物 COS object key（reports/<yyyy-mm>/<detectId>.report.csv · 无问题为 null） */
@@ -155,7 +155,7 @@ export async function writeDetectArtifacts(input: {
   // 规范化行产物（NDJSON gzip）
   const ndjson = input.rows.map((r) => JSON.stringify(toArtifactWire(r))).join('\n') + '\n';
   const artifactBody = gzipSync(Buffer.from(ndjson, 'utf8'));
-  const artifactPath = `staging/${storageMonth}/${input.detectId}.rows.ndjson.gz`;
+  const artifactPath = `detect/${storageMonth}/${input.detectId}.rows.ndjson.gz`;
   await cos.putObject(artifactPath, artifactBody);
   const artifactSha256 = createHash('sha256').update(artifactBody).digest('hex');
 

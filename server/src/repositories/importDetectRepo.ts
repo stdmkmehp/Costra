@@ -56,7 +56,7 @@ export interface ImportDetectSessionEntity {
   isCostraExport: boolean;
   formulaGuard: ImportFormulaGuard | null;
   memberMapping: Record<string, string> | null;
-  /** 规范化行产物 COS object key（staging/<yyyy-mm>/<id>.rows.ndjson.gz · 非本地路径） */
+  /** 规范化行产物 COS object key（detect/<yyyy-mm>/<id>.rows.ndjson.gz · 非本地路径） */
   artifactPath: string | null;
   artifactSha256: string | null;
   /** 报告产物 COS object key（reports/<yyyy-mm>/<id>.report.csv · 非本地路径） */

@@ -256,8 +256,8 @@ describe('D · POST /v1/import-jobs/detect', () => {
     const session = await getSessionRow(body['detect_id'] as string);
     expect(session.status).toBe('ready');
     expect(session.artifact_path).not.toBeNull();
-    // artifact_path 语义为 COS object key（staging/<yyyy-mm>/<id>.rows.ndjson.gz）
-    expect(session.artifact_path).toMatch(/^staging\/\d{4}-\d{2}\/.+\.rows\.ndjson\.gz$/);
+    // artifact_path 语义为 COS object key（detect/<yyyy-mm>/<id>.rows.ndjson.gz）
+    expect(session.artifact_path).toMatch(/^detect\/\d{4}-\d{2}\/.+\.rows\.ndjson\.gz$/);
     expect(cos.has(session.artifact_path!)).toBe(true);
     // 无错误/警告 ⇒ 不生成报告对象
     expect(session.report_path).toBeNull();
