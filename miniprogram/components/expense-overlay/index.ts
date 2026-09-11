@@ -34,6 +34,7 @@ import {
   type CalcState,
 } from './calc';
 import { parseClipboardToAmount } from '../../utils/money';
+import { combineDateKeyWithTimeOfDay } from '../../utils/time';
 
 // ─── 账本选项 ─────────────────────────────────────────────────────────────────
 
@@ -90,12 +91,6 @@ function formatRecordDateText(value: string): string {
   const parts = value.split('-');
   if (parts.length !== 3) return '日期';
   return `${parseInt(parts[1], 10)}/${parseInt(parts[2], 10)}`;
-}
-
-/** 将用户选择的自然日转为 occurred_at */
-function buildOccurredAt(recordDate: string): string {
-  if (recordDate === getLocalDateValue()) return new Date().toISOString();
-  return `${recordDate}T12:00:00.000Z`;
 }
 
 // ─── Component ─────────────────────────────────────────────────────────────────
@@ -654,9 +649,6 @@ Component({
       const originalEntry = (this as unknown as Record<string, unknown>)._editOriginalEntry as Entry | null;
       if (!originalEntry) return;
 
-      // 构建新 occurred_at
-      const newOccurredAt = buildOccurredAt(this.data.recordDate);
-
       // 解析原始日期为本地 YYYY-MM-DD（用于比较）
       const origDate = new Date(originalEntry.occurred_at);
       const origDateKey = `${origDate.getFullYear()}-${String(origDate.getMonth() + 1).padStart(2, '0')}-${String(origDate.getDate()).padStart(2, '0')}`;
@@ -672,8 +664,9 @@ Component({
       if (this.data.note.trim() !== (originalEntry.note || '').trim()) {
         changedFields.note = this.data.note.trim();
       }
+      // 仅改日期：时分秒保持原 occurred_at 的本地时分秒
       if (this.data.recordDate !== origDateKey) {
-        changedFields.occurred_at = newOccurredAt;
+        changedFields.occurred_at = combineDateKeyWithTimeOfDay(this.data.recordDate, origDate);
       }
       const newSharedType = this.data.isMultiMemberLedger && this.data.entryType === 'expense'
         ? this.data.sharedType
@@ -697,7 +690,7 @@ Component({
           amount: amountCents,
           category_id: this.data.selectedTier2Id,
           note: this.data.note.trim(),
-          occurred_at: changedFields.occurred_at ? newOccurredAt : undefined,
+          occurred_at: changedFields.occurred_at as string | undefined,
           shared_type: newSharedType,
           updated_at: new Date().toISOString(),
         });
@@ -1364,8 +1357,10 @@ Component({
 
       try {
         const clientRefId = newClientRefId();
-        const now = new Date().toISOString();
-        const occurredAt = buildOccurredAt(this.data.recordDate);
+        const nowDate = new Date();
+        const now = nowDate.toISOString();
+        // 新增：所选自然日 + 录入当下的时分秒（补记同样保留当前时间）
+        const occurredAt = combineDateKeyWithTimeOfDay(this.data.recordDate, nowDate);
 
         // COSTRA-220: 本地创建的 entry 写入当前用户 ID（用于成员筛选）
         const currentUserId = getToken()?.raw.user.id || null;

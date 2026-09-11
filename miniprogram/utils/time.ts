@@ -29,3 +29,21 @@ export function fmtLocal(iso: string): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
+
+/**
+ * 组装记账 occurred_at：本地自然日（YYYY-MM-DD）+ timeSource 的本地时分秒（含毫秒）。
+ *
+ * 语义（2026-09-11 起，取代旧的"非今天固定 UTC 12:00"兜底）：
+ *   - 新增记账：timeSource 传当前时刻 —— 补记也保留"录入当下"的时分秒；
+ *   - 编辑改期：timeSource 传原 occurred_at 解析出的 Date —— 仅换日期，时分秒原样保留。
+ *
+ * dateKey 取自日期选择器 / getLocalDateValue，恒为合法 YYYY-MM-DD，不做防御性校验。
+ */
+export function combineDateKeyWithTimeOfDay(dateKey: string, timeSource: Date): string {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  return new Date(
+    year, month - 1, day,
+    timeSource.getHours(), timeSource.getMinutes(),
+    timeSource.getSeconds(), timeSource.getMilliseconds(),
+  ).toISOString();
+}

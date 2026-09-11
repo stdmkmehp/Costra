@@ -16,6 +16,7 @@ import {
 import { newClientRefId } from '../../utils/id';
 import { scheduleDeferredLoading, type DeferredLoadingHandle } from '../../utils/deferredLoading';
 import { shanghaiDateKeyFromIso } from '../../utils/shanghaiDate';
+import { combineDateKeyWithTimeOfDay } from '../../utils/time';
 import {
   getActiveLedgerId,
   getActiveFamilyId,
@@ -2625,12 +2626,9 @@ Page({
     // 日期变更
     const origDate = new Date(entry.occurred_at);
     const origDateKey = `${origDate.getFullYear()}-${String(origDate.getMonth() + 1).padStart(2, '0')}-${String(origDate.getDate()).padStart(2, '0')}`;
+    // 仅改日期：时分秒保持原 occurred_at 的本地时分秒（对齐 expense-overlay 编辑语义）
     if (this.data.editAmountDate !== origDateKey) {
-      const current = new Date();
-      const todayKey = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}-${String(current.getDate()).padStart(2, '0')}`;
-      changedFields.occurred_at = this.data.editAmountDate === todayKey
-        ? current.toISOString()
-        : `${this.data.editAmountDate}T12:00:00.000Z`;
+      changedFields.occurred_at = combineDateKeyWithTimeOfDay(this.data.editAmountDate, origDate);
     }
 
     // shared_type 变更
