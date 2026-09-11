@@ -84,7 +84,7 @@ worker 生成产物
   → putObject 到 COS 对应私有 bucket（prod/staging 独立桶）：
        导出分片       exports/<yyyy-MM>/<jobId>_<part>.csv
        导入报告       reports/<yyyy-mm>/<detectId>.report.csv
-       导入隐私产物   staging/<yyyy-mm>/<detectId>.rows.ndjson.gz   ← 详见 §5.2（导入成功即删）
+       导入隐私产物   detect/<yyyy-mm>/<detectId>.rows.ndjson.gz    ← 详见 §5.2（导入成功即删）
   → 元数据存 COS object key（不再存本地路径/绝对路径）：
        导出：result_summary.storage_month 保留（仍作 key 前缀拼接，与命名约定一致）
        导入：importDetectRepo 的 artifactPath/reportPath 两列语义改为「COS object key」
@@ -143,7 +143,7 @@ worker 生成产物
 1. **新增 COS 依赖与单例**：`server/package.json` 加 `cos-nodejs-sdk-v5`；新增 `server/src/services/cosClient.ts` 惰性单例（对齐 `getPool()`/`getRedis()` 范式），读 `COS_SECRET_ID/KEY/REGION/BUCKET_EXPORTS/DOWNLOAD_BASE` 环境变量；封装 `putObject`/`deleteObjects`/`presignGet(key, 300)`（Promise 化 `getObjectUrl`，用 `COS_DOWNLOAD_BASE` 作 SignHost）。
 2. **导出 worker 改造**（`entryExport.ts`）：`flushPart` 由 `.tmp`+rename 本地写 **改 putObject**（key=`exports/<yyyy-MM>/<jobId>_<part>.csv`）；sha256/size 对内存 Buffer 算（不变）；`removeJobArtifacts` 由读目录 `fs.rm` **改 COS 按前缀 `deleteObjects`**（保留重试清场语义，去掉空目录回收）；下载路由不再用 `getExportRootForTests` 拼盘路径。
 3. **导入 worker 改造**（`entryImport.ts` · 比导出复杂，三类产物）：
-   - `writeDetectArtifacts` 的 `.rows.ndjson.gz` + `.report.csv` 由同步 `writeFileSync`+rename **改 putObject**（key=`staging/...rows.ndjson.gz`、`reports/...report.csv`）；`importDetectRepo` 的 `artifactPath`/`reportPath` 两列**语义改为存 COS object key**（不再是本地绝对路径）。
+   - `writeDetectArtifacts` 的 `.rows.ndjson.gz` + `.report.csv` 由同步 `writeFileSync`+rename **改 putObject**（key=`detect/...rows.ndjson.gz`、`reports/...report.csv`）；`importDetectRepo` 的 `artifactPath`/`reportPath` 两列**语义改为存 COS object key**（不再是本地绝对路径）。
    - `readDetectArtifactRows`（worker 事务外读回隐私产物做导入）由 `readFileSync` **改 COS getObject 取 Buffer**（sha256 校验逻辑不变）。
    - `deleteDetectFile`（commit 成功删隐私产物 + reaper 清过期）由 `unlink` **改 COS `deleteObject`**。
 4. **删除本地存储脚手架**：`EXPORT_DIR`/`IMPORT_STAGING_DIR` env、`setExportRootForTests`/`getExportRootForTests`、`getImportStagingRoot`/`__resetImportStagingRootForTests`、空目录回收整体移除；`docker-compose.prod.yml` 撤 `/var/costra/exports`、`/var/costra/import-staging` 两个 bind mount 卷（`/var/costra/uploads` 头像卷**保留**——本期不动头像）。
