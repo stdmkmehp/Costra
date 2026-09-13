@@ -74,10 +74,24 @@ function getUploadDir(): string {
 
 /**
  * 宿主机 URL 前缀：用于拼 avatar_url 返回给客户端
- * 从 env UPLOAD_URL_BASE 读取，默认 https://costra.cloud
+ *
+ * 解析顺序：
+ *   1. env UPLOAD_URL_BASE 显式配置（特殊部署形态如 CDN 域名时覆盖用）；
+ *   2. 按请求来源推导：X-Forwarded-Proto + Host（nginx /v1/ location 已透传
+ *      `proxy_set_header Host $host` / `X-Forwarded-Proto $scheme`）。
+ *
+ * 为何不再用「默认值 https://costra.cloud」（2026-09-13 实锤）：
+ *   文件恒写到**本机**磁盘，URL 必须与接收上传的环境同机。默认值把 staging 上传的
+ *   头像 URL 指到 prod 域名——prod 无此文件 → 全端 404，表象为"头像更新没成功"。
+ *   按请求来源推导后，staging/prod 各自天然正确，无需逐环境配置。
  */
-function getUrlBase(): string {
-  return process.env['UPLOAD_URL_BASE'] ?? 'https://costra.cloud';
+function resolveUrlBase(req: FastifyRequest): string {
+  const fromEnv = process.env['UPLOAD_URL_BASE'];
+  if (fromEnv) return fromEnv;
+  const protoHeader = req.headers['x-forwarded-proto'];
+  const proto = typeof protoHeader === 'string' && protoHeader ? protoHeader : 'https';
+  const host = req.headers.host ?? 'costra.cloud';
+  return `${proto}://${host}`;
 }
 
 export async function registerUploadRoutes(app: FastifyInstance): Promise<void> {
@@ -148,7 +162,7 @@ export async function registerUploadRoutes(app: FastifyInstance): Promise<void> 
 
     // URL 版本化：同名覆盖下裸 URL 恒定，附 ?v= 使每次上传的 URL 唯一，
     // 击穿微信 <image> 按 URL 键的持久缓存（详见文件头注释）
-    const url = `${getUrlBase()}/uploads/avatars/${filename}?v=${Date.now()}`;
+    const url = `${resolveUrlBase(req)}/uploads/avatars/${filename}?v=${Date.now()}`;
 
     app.log.info({ userId, filename, bytes: fileBuffer.length }, '[upload] avatar saved');
 
