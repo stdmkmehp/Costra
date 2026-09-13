@@ -48,7 +48,6 @@ Page({
     tipEntryVisible: false,
     supporterBadge: false,
     badgeVisible: false,
-    supportScore: 0,
     // 账本导入/导出入口绿点（§8.1）
     showDataJobDot: false,
   },
@@ -254,14 +253,12 @@ Page({
     tip_entry_visible?: boolean;
     supporter_badge?: boolean;
     badge_hidden?: boolean;
-    support_score?: number;
   }) {
     const supporterBadge = ov.supporter_badge === true;
     return {
       tipEntryVisible: ov.tip_entry_visible === true,
       supporterBadge,
       badgeVisible: supporterBadge && ov.badge_hidden !== true,
-      supportScore: Number(ov.support_score) || 0,
     };
   },
 

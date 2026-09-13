@@ -47,7 +47,6 @@
       />
       <view class="support-banner__body">
         <view class="support-banner__title">支持 Costra</view>
-        <view wx:if="{{supporterBadge}}" class="support-banner__sub">支持度 {{supportScore}} · 感谢你</view>
         <view class="support-banner__cta">{{supporterBadge ? '再次支持' : '去支持'}} ›</view>
       </view>
     </view>

@@ -116,12 +116,6 @@
   color: var(--color-text);
 }
 
-.support-banner__sub {
-  margin-top: 6rpx;
-  font-size: 24rpx;
-  color: rgba(28, 27, 26, 0.48);
-}
-
 .support-banner__cta {
   margin-top: 10rpx;
   font-size: 26rpx;
