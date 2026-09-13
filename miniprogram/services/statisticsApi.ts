@@ -208,6 +208,27 @@ export function clearStatisticsCache(): void {
   _drillCache.clear();
 }
 
+/**
+ * 就地 patch drill L3 缓存中某用户（条目创建者）的画像（nickname + avatar_url）。
+ *
+ * monthly/yearly 聚合响应不含画像，无需处理；仅 L3 明细条目携带创建者头像/昵称。
+ * 与 familyApi.patchCachedMemberProfile 配套：PROFILE_UPDATED 后缓存持有的旧头像 URL
+ * 一并换新（URL 自带 ?v= 版本参数），避免 SWR 重渲命中微信 <image> 的 URL 键持久缓存。
+ */
+export function patchCachedMemberProfile(
+  userId: string,
+  patch: { nickname: string; avatarUrl: string | null },
+): void {
+  for (const data of _drillCache.values()) {
+    if (data.level !== 3) continue;
+    data.items = data.items.map((it) =>
+      it.created_by === userId
+        ? { ...it, nickname: patch.nickname, avatar_url: patch.avatarUrl }
+        : it,
+    );
+  }
+}
+
 // ─── API 函数 ────────────────────────────────────────────────────────────────────
 
 /**

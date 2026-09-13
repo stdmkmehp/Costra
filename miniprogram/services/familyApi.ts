@@ -542,6 +542,50 @@ export function patchCachedMemberColorChoice(
 }
 
 /**
+ * 就地 patch 已缓存 summary/members/drill 中某用户的画像（nickname + avatar_url）。
+ *
+ * 与 patchCachedMemberColorChoice 同理：画像只改展示列，不动成员构成 / 金额 / 顺序，
+ * 无需 invalidate 后全量重拉。差异点：画像是用户级全局属性（同一用户可在多个家庭），
+ * 故遍历全部缓存条目而非按 familyId 过滤。
+ *
+ * 必要性（2026-09-13 头像不刷新 BUG）：头像 URL 自带 ?v= 版本参数（服务端 upload
+ * 每次上传生成新 URL），事件订阅方已就地刷新当前渲染；但 TTL 内再次切页会走 SWR
+ * 从缓存重建列表，若不 patch 缓存，旧 URL 会重新上屏并命中微信 <image> 按 URL 键的
+ * 持久缓存，表现为"换头像后反复切页仍是旧头像"。
+ */
+export function patchCachedMemberProfile(
+  userId: string,
+  patch: { nickname: string; avatarUrl: string | null },
+): void {
+  const fields = { nickname: patch.nickname, avatar_url: patch.avatarUrl };
+  // summary 缓存：members / paid_contributions / personal_by_member / income_by_member
+  for (const entry of _summaryCache.values()) {
+    const s = entry.data;
+    const mi = s.members.findIndex((m) => m.user_id === userId);
+    if (mi >= 0) s.members[mi] = { ...s.members[mi], ...fields };
+    const pi = s.shared.paid_contributions.findIndex((c) => c.user_id === userId);
+    if (pi >= 0) s.shared.paid_contributions[pi] = { ...s.shared.paid_contributions[pi], ...fields };
+    const ei = s.personal_by_member.findIndex((m) => m.user_id === userId);
+    if (ei >= 0) s.personal_by_member[ei] = { ...s.personal_by_member[ei], ...fields };
+    const ii = s.income_by_member.findIndex((m) => m.user_id === userId);
+    if (ii >= 0) s.income_by_member[ii] = { ...s.income_by_member[ii], ...fields };
+  }
+  // members 独立缓存（全部家庭）
+  for (const entry of _membersCache.values()) {
+    const idx = entry.data.findIndex((m) => m.user_id === userId);
+    if (idx < 0) continue;
+    entry.data = [...entry.data];
+    entry.data[idx] = { ...entry.data[idx], ...fields };
+  }
+  // drill-down 流水明细缓存：条目创建者画像
+  for (const data of _familyDrillCache.values()) {
+    data.items = data.items.map((it) =>
+      it.created_by === userId ? { ...it, ...fields } : it,
+    );
+  }
+}
+
+/**
  * 更新当前用户的自选代表色（color_choice）
  * PATCH /v1/families/{familyId}/members/me/color
  *

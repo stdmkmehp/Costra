@@ -11,6 +11,8 @@
 import { getToken, updateLocalUserProfile } from '../../services/auth';
 import { request } from '../../services/request';
 import { eventBus, EventNames, type ProfileUpdatedPayload } from '../../services/eventBus';
+import { patchCachedMemberProfile as patchFamilyMemberProfile } from '../../services/familyApi';
+import { patchCachedMemberProfile as patchStatisticsMemberProfile } from '../../services/statisticsApi';
 import { getEnv } from '../../services/env';
 import { logger } from '../../utils/logger';
 
@@ -163,6 +165,15 @@ Page({
         avatar_url: persistentAvatarUrl,
         has_completed_profile: true,
       });
+
+      // 就地 patch 家庭/统计缓存中的本人画像（members/summary/drill），
+      // 避免 PROFILE_UPDATED 之后 TTL 内 SWR 从缓存重建列表时旧头像 URL 重新上屏
+      const currentUserId = getToken()?.raw.user.id;
+      if (currentUserId) {
+        const profilePatch = { nickname: trimmedNickname, avatarUrl: persistentAvatarUrl };
+        patchFamilyMemberProfile(currentUserId, profilePatch);
+        patchStatisticsMemberProfile(currentUserId, profilePatch);
+      }
 
       // 广播"画像已完善"·  tabBar 红点 + mine 页红点同步清除
       eventBus.emit(EventNames.PROFILE_COMPLETED);
