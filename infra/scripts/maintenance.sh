@@ -44,7 +44,9 @@ PG_DB="costra"
 LOG_DIR="/data/logs/maintenance"
 
 # backup-avatars 异地副本的连接参数文件（0600 · 只在 prod 机器 · 绝不进仓库）
-# 需要四个键：SLAVE_HOST / SLAVE_USER / SLAVE_PASSWORD / SLAVE_BACKUP_DIR
+# 必需四键：SLAVE_HOST / SLAVE_USER / SLAVE_PASSWORD / SLAVE_BACKUP_DIR
+# 可选键：SLAVE_LAN_HOST（从库内网 IP · 配置后优先走 VPC 内网，不占公网出口带宽；
+# 每次推送前探测其 TCP 22，不可达自动回落 SLAVE_HOST 公网 · 见 _resolve_slave_host）
 SLAVE_ENV_FILE="${COSTRA_CONF_DIR}/slave.env"
 
 # =============================================================================
@@ -213,7 +215,7 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
   fi
   # backup-avatars 的异地副本依赖 slave.env · 缺失时预警（不阻断安装 · 本地备份仍有效）
   if [[ ! -f "${SLAVE_ENV_FILE}" ]]; then
-    log_warn "${SLAVE_ENV_FILE} 不存在 · backup-avatars 推送异地副本将失败 · 请创建（SLAVE_HOST/SLAVE_USER/SLAVE_PASSWORD/SLAVE_BACKUP_DIR）"
+    log_warn "${SLAVE_ENV_FILE} 不存在 · backup-avatars 推送异地副本将失败 · 请创建（SLAVE_HOST/SLAVE_USER/SLAVE_PASSWORD/SLAVE_BACKUP_DIR · 可选 SLAVE_LAN_HOST 内网优先）"
   fi
   for entry in "${CRON_SCHEDULE[@]}"; do
     IFS='|' read -r task sched logf <<< "${entry}"
@@ -272,6 +274,24 @@ _load_slave_env() {
     printf -v "${key}" '%s' "${val}"
   done
   [[ "${SLAVE_BACKUP_DIR}" == /* ]] || die "SLAVE_BACKUP_DIR 必须是绝对路径：${SLAVE_BACKUP_DIR}"
+  # SLAVE_LAN_HOST 可选：从库内网 IP，配置后优先走 VPC 内网（不占公网出口带宽）
+  SLAVE_LAN_HOST=$(grep "^SLAVE_LAN_HOST=" "${SLAVE_ENV_FILE}" 2>/dev/null | tail -1 | cut -d= -f2- || true)
+}
+
+# _resolve_slave_host：内网优先 · 不可达自动回落公网，结果写入 RESOLVED_SLAVE_HOST。
+# 探测用 bash 内建 /dev/tcp（免装 nc）· 2s 超时；host 先做字符集白名单校验，防配置手滑注入。
+# 语义：仅在"不可达"时回落；探测通过后 scp 失败不二次回落——认证/权限类失败走公网
+# 同样会发生，重试只会放大失败时间。
+_resolve_slave_host() {
+  RESOLVED_SLAVE_HOST="${SLAVE_HOST}"
+  [[ -n "${SLAVE_LAN_HOST:-}" ]] || return 0
+  [[ "${SLAVE_LAN_HOST}" =~ ^[a-zA-Z0-9.-]+$ ]] || die "SLAVE_LAN_HOST 含非法字符：${SLAVE_LAN_HOST}"
+  if timeout 2 bash -c "exec 3<>/dev/tcp/${SLAVE_LAN_HOST}/22" 2>/dev/null; then
+    RESOLVED_SLAVE_HOST="${SLAVE_LAN_HOST}"
+    log_info "从库内网可达（${SLAVE_LAN_HOST}:22）· 异地副本走 VPC 内网（不占公网出口带宽）"
+  else
+    log_warn "从库内网不可达（${SLAVE_LAN_HOST}:22 · 2s 超时）· 回落公网 ${SLAVE_HOST}"
+  fi
 }
 
 do_push_avatars_offsite() {
@@ -287,12 +307,14 @@ do_push_avatars_offsite() {
   require_cmd scp
   require_cmd expect "yum install -y expect / apt install -y expect"
   _load_slave_env
+  # 内网优先解析（dry-run 同样真实探测 · 只读无副作用，且能让预览反映实际路径）
+  _resolve_slave_host
 
   local latest
   latest=$(ls -t "${backup_dir}/${prefix}"-*.avatars.tar.gz 2>/dev/null | head -1 || true)
   if [[ -z "${latest}" ]]; then
     if [[ "${DRY_RUN}" == "1" ]]; then
-      log_dry "正式执行时将把新生成的 ${prefix}-*.avatars.tar.gz 推送至 ${SLAVE_USER}@${SLAVE_HOST}:${SLAVE_BACKUP_DIR}/"
+      log_dry "正式执行时将把新生成的 ${prefix}-*.avatars.tar.gz 推送至 ${SLAVE_USER}@${RESOLVED_SLAVE_HOST}:${SLAVE_BACKUP_DIR}/"
       return 0
     fi
     die "未找到 avatars 归档（${backup_dir}/${prefix}-*.avatars.tar.gz）· 无法推送异地副本"
@@ -303,11 +325,11 @@ do_push_avatars_offsite() {
   # accept-new 仅在首次连接时自动记录 host key，cron 下无交互；
   # expect 默认恒返回 0，末尾 catch wait + exit 把 scp 真实退出码带出，失败才能被 || die 捕获。
   if [[ "${DRY_RUN}" == "1" ]]; then
-    log_dry "expect: spawn scp -p ${latest} ${SLAVE_USER}@${SLAVE_HOST}:${SLAVE_BACKUP_DIR}/（password 提示由 expect 应答）"
+    log_dry "expect: spawn scp -p ${latest} ${SLAVE_USER}@${RESOLVED_SLAVE_HOST}:${SLAVE_BACKUP_DIR}/（password 提示由 expect 应答）"
     return 0
   fi
   SCP_SRC="${latest}" \
-  SCP_DEST="${SLAVE_USER}@${SLAVE_HOST}:${SLAVE_BACKUP_DIR}/" \
+  SCP_DEST="${SLAVE_USER}@${RESOLVED_SLAVE_HOST}:${SLAVE_BACKUP_DIR}/" \
   SCP_PASS="${SLAVE_PASSWORD}" \
   timeout 600 expect -c '
     set timeout -1
@@ -319,7 +341,7 @@ do_push_avatars_offsite() {
     catch wait result
     exit [lindex $result 3]
   ' || die "avatars 异地副本 scp 失败（本地备份完好：${latest}）"
-  log_success "异地副本已推送 → ${SLAVE_USER}@${SLAVE_HOST}:${SLAVE_BACKUP_DIR}/$(basename "${latest}")"
+  log_success "异地副本已推送 → ${SLAVE_USER}@${RESOLVED_SLAVE_HOST}:${SLAVE_BACKUP_DIR}/$(basename "${latest}")"
 }
 
 # =============================================================================
