@@ -14,8 +14,15 @@
  *   - 只接受 JPEG / PNG / GIF / WEBP（魔数校验，不信任 Content-Type）
  *   - 单文件限 2MB
  *   - 存储路径：UPLOAD_DIR（默认 /var/costra/uploads）/avatars/<userId>.<ext>
- *   - 返回 URL 格式：https://<host>/uploads/avatars/<userId>.<ext>
- *     由 nginx /uploads/ location 直接静态服务
+ *   - 返回 URL 格式：https://<host>/uploads/avatars/<userId>.<ext>?v=<毫秒时间戳>
+ *     由 nginx /uploads/ location 直接静态服务（query string 不参与静态文件寻址）
+ *
+ * 头像 URL 版本化（?v= 2026-09-13）：
+ *   文件按 userId 同名覆盖 ⇒ 裸 URL 恒定不变。微信 <image> 按 URL 做持久磁盘缓存，
+ *   内容更新而 URL 不变时客户端持续命中旧缓存（切页/重拉均无效，仅清数据可解）。
+ *   故每次上传返回带全新 ?v= 的版本化 URL，经 PATCH /users/me 落库 users.avatar_url，
+ *   随 sync/family/statistics 等全部下发点自然传播到所有渲染端，缓存即被新旧 URL 差异击穿。
+ *   存量无 ?v= 的 avatar_url 仍可正常访问（nginx 静态服务忽略 query）。
  */
 
 import type { FastifyInstance, FastifyRequest } from 'fastify';
@@ -139,7 +146,9 @@ export async function registerUploadRoutes(app: FastifyInstance): Promise<void> 
       writeFile(tmpPath, fileBuffer).then(() => rename(tmpPath, destPath))
     );
 
-    const url = `${getUrlBase()}/uploads/avatars/${filename}`;
+    // URL 版本化：同名覆盖下裸 URL 恒定，附 ?v= 使每次上传的 URL 唯一，
+    // 击穿微信 <image> 按 URL 键的持久缓存（详见文件头注释）
+    const url = `${getUrlBase()}/uploads/avatars/${filename}?v=${Date.now()}`;
 
     app.log.info({ userId, filename, bytes: fileBuffer.length }, '[upload] avatar saved');
 
