@@ -223,7 +223,7 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # avatars 备份：每 6h（0 分 · 2026-08-14 起 DB 备份迁从库，prod 仅打 avatars）
 0 0,6,12,18 * * * root /root/Costra/infra/scripts/maintenance.sh backup-avatars   >> /data/logs/maintenance/maintenance-backup.log 2>&1
 # 主库复制检查：仅 server.env 配置了 REPLICATOR_PW + 主从 IP 时生成
-47 * * * * root /root/Costra/infra/scripts/maintenance.sh replication-check >> /data/logs/maintenance/check-replication.log 2>&1
+57 * * * * root /root/Costra/infra/scripts/maintenance.sh replication-check >> /data/logs/maintenance/check-replication.log 2>&1
 # 幂等键 / session / invite：每日 04 点错峰
 7 4 * * * root /root/Costra/infra/scripts/maintenance.sh purge-idempotency >> /data/logs/maintenance/maintenance-purge.log 2>&1
 17 4 * * * root /root/Costra/infra/scripts/maintenance.sh purge-sessions >> /data/logs/maintenance/maintenance-purge.log 2>&1
@@ -246,7 +246,7 @@ SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 0 0,6,12,18 * * * root ${COSTRA_ROOT}/infra/scripts/maintenance.sh backup-avatars >> /data/logs/maintenance/maintenance-backup.log 2>&1
-47 * * * * root ${COSTRA_ROOT}/infra/scripts/maintenance.sh replication-check >> /data/logs/maintenance/check-replication.log 2>&1
+57 * * * * root ${COSTRA_ROOT}/infra/scripts/maintenance.sh replication-check >> /data/logs/maintenance/check-replication.log 2>&1
 7 4 * * * root ${COSTRA_ROOT}/infra/scripts/maintenance.sh purge-idempotency >> /data/logs/maintenance/maintenance-purge.log 2>&1
 17 4 * * * root ${COSTRA_ROOT}/infra/scripts/maintenance.sh purge-sessions >> /data/logs/maintenance/maintenance-purge.log 2>&1
 27 4 * * * root ${COSTRA_ROOT}/infra/scripts/maintenance.sh purge-invites >> /data/logs/maintenance/maintenance-purge.log 2>&1

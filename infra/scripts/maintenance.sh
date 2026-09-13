@@ -59,7 +59,7 @@ SLAVE_ENV_FILE="${COSTRA_CONF_DIR}/slave.env"
 # （连接参数读 /data/conf/slave.env · 见 do_push_avatars_offsite）。
 declare -a CRON_SCHEDULE=(
   "backup-avatars|0 0,6,12,18 * * *|maintenance-backup.log"
-  "replication-check|47 * * * *|check-replication.log"
+  "replication-check|57 * * * *|check-replication.log"
   "purge-idempotency|7 4 * * *|maintenance-purge.log"
   "purge-sessions|17 4 * * *|maintenance-purge.log"
   "purge-invites|27 4 * * *|maintenance-purge.log"
