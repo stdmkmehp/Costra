@@ -167,21 +167,27 @@
   padding: 16rpx 4rpx;
 }
 
+/* 三栏统一字号，靠颜色（muted / 主色 / 陶土色）+ 位置区分主次，避免 title 单峰 */
+.history__cell--time,
+.history__cell--title,
+.history__cell--delta {
+  font-size: 24rpx;
+}
+
 .history__cell--time {
   width: 170rpx;
-  font-size: 24rpx;
   color: var(--color-text-muted);
 }
 
 .history__cell--title {
   flex: 1;
   min-width: 0;
-  font-size: 26rpx;
   color: var(--color-text);
 }
 
 .history__cell--delta {
   margin-left: 16rpx;
-  font-size: 26rpx;
   color: #C08A7B;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
 }
