@@ -1,7 +1,7 @@
 <view class="mine">
   <!-- 内容区 · 顶部仅留状态栏安全区，无导航标题（"我的" Tab 已在 tabbar 体现）-->
   <view class="mine__content" style="padding-top: {{statusBarHeight}}px; padding-bottom: {{contentBottomPadding}}px;">
-    <!-- 顶部用户信息区：头像居中放大 · 昵称 · 已记账 X 天 -->
+    <!-- 顶部用户信息区：头像居中放大 · 昵称 · 支持度 X（仅已支持用户） -->
     <view class="profile" bindtap="onTapProfile" hover-class="profile--hover" hover-stay-time="60">
       <view class="profile__avatar-wrap">
         <image class="profile__avatar" src="{{avatarUrl}}" mode="aspectFill"></image>
@@ -16,7 +16,7 @@
       </view>
       <view class="profile__name">{{nickname}}</view>
       <view wx:if="{{showProfileBadge}}" class="profile__hint">点击完善头像和昵称</view>
-      <view wx:elif="{{overviewLoaded}}" class="profile__sub">已记账 {{ledgerDays}} 天</view>
+      <view wx:elif="{{overviewLoaded && supporterBadge}}" class="profile__sub">支持度 {{supportScore}}</view>
     </view>
 
     <!-- 宏观数据总览：横向 2 列网格 · 无卡片底色 -->

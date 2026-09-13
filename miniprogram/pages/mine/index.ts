@@ -5,7 +5,8 @@
 // 历史卡号：COSTRA-125（onLoad gate）/ COSTRA-127（onShow gate）/ COSTRA-201（custom-tab-bar + expense-overlay）/ COSTRA-216（safeArea）
 //
 // 改造要点（2026-06-08）：
-//   - 顶部用户区：头像居中放大（160rpx），昵称居中，下方"已记账 X 天"
+//   - 顶部用户区：头像居中放大（160rpx），昵称居中，下方"支持度 X"（仅已支持用户展示，
+//     其余用户无副标题——记账天数由宏观数据区承载，避免重复）
 //   - 宏观数据：横向 2 列（记账天数 / 记账笔数）· 走 GET /users/me/overview
 //   - 功能列表：创建协作 / 定时记账 / 账本导入导出 / 公告 / 意见反馈 / 关于 Costra / 设置 — 意见反馈使用无样式 button 承载 open-type=feedback，内层 view 复用普通菜单项布局
 //   - 账本导入/导出入口：小绿点 = 存在未读的已完成数据任务（data-import-export v1.0 §8.1）
@@ -48,6 +49,7 @@ Page({
     tipEntryVisible: false,
     supporterBadge: false,
     badgeVisible: false,
+    supportScore: 0,
     // 账本导入/导出入口绿点（§8.1）
     showDataJobDot: false,
   },
@@ -247,18 +249,21 @@ Page({
    * 从 overview 提取赞赏展示字段（tech-spec v1.2 §7.3）：
    *   - 横幅：tip_entry_visible=true 才展示（停购后已支持用户仍可见历史入口）；
    *   - 头像徽章：supporter_badge && !badge_hidden（"拥有"与"可见"不混淆）；
-   *   - 旧后端无这些字段 ⇒ 一律按 false 降级（不展示横幅/徽章）。
+   *   - 昵称下副标题"支持度 X"：仅 supporter_badge=true 展示（未支持用户无副标题）；
+   *   - 旧后端无这些字段 ⇒ 一律按 false/0 降级（不展示横幅/徽章/副标题）。
    */
   _tipFieldsFromOverview(ov: {
     tip_entry_visible?: boolean;
     supporter_badge?: boolean;
     badge_hidden?: boolean;
+    support_score?: number;
   }) {
     const supporterBadge = ov.supporter_badge === true;
     return {
       tipEntryVisible: ov.tip_entry_visible === true,
       supporterBadge,
       badgeVisible: supporterBadge && ov.badge_hidden !== true,
+      supportScore: Number(ov.support_score) || 0,
     };
   },
 
