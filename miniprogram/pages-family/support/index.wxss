@@ -144,22 +144,6 @@
   text-decoration: underline;
 }
 
-/* ─── 徽章可见性开关 ───────────────────────────────────── */
-.visibility {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: var(--color-surface);
-  border-radius: var(--radius-lg);
-  padding: 24rpx 32rpx;
-  margin-bottom: 32rpx;
-}
-
-.visibility__label {
-  font-size: 28rpx;
-  color: var(--color-text);
-}
-
 /* ─── 记录区 ──────────────────────────────────────────── */
 .history {
   margin-bottom: 32rpx;

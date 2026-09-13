@@ -5,7 +5,6 @@
 //   - fetchProducts：GET /tips/products（无 query 参数 · 无渠道维度）
 //   - createOrder：POST /tips/orders（body 仅 {product_key, code}）
 //   - fetchSummary：GET /tips/summary（派生权益聚合 · 触发服务端加速核实信号）
-//   - setBadgeHidden：PUT /tips/summary/badge-visibility
 //   - 商品目录缓存：只持久化公共字段，**不保存 purchasable**；
 //     离线回退时强制不可购买（tech-spec §7.5）
 //
@@ -88,7 +87,6 @@ export interface TipSummary {
   supporterBadge: boolean;
   tipCount: number;
   supportScore: number;
-  badgeHidden: boolean;
   hasPendingOrders: boolean;
   history: TipHistoryItem[];
 }
@@ -162,7 +160,6 @@ export function adaptSummary(w: TipSummaryWire): TipSummary {
     supporterBadge: w.supporter_badge === true,
     tipCount: Number(w.tip_count) || 0,
     supportScore: Number(w.support_score) || 0,
-    badgeHidden: w.badge_hidden === true,
     hasPendingOrders: w.has_pending_orders === true,
     history,
   };
@@ -237,12 +234,4 @@ export async function createOrder(productKey: string, code: string): Promise<Cre
 export async function fetchSummary(): Promise<TipSummary> {
   const wire = await request<TipSummaryWire>({ method: 'GET', path: '/tips/summary' });
   return adaptSummary(wire);
-}
-
-export async function setBadgeHidden(hidden: boolean): Promise<void> {
-  await request({
-    method: 'PUT',
-    path: '/tips/summary/badge-visibility',
-    body: { badge_hidden: hidden },
-  });
 }

@@ -43,7 +43,6 @@ Page({
     payingKey: '',
     errorText: '',
     settlingTimedOut: false,
-    badgeSwitchBusy: false,
   },
 
   _settlingCancelled: false,
@@ -205,24 +204,5 @@ Page({
   async onTapRefreshStatus() {
     this.setData({ settlingTimedOut: false });
     await this._refreshSummary();
-  },
-
-  /** 徽章可见性开关（"仅自己可见" · 没有徽章时 UI 不展示该开关） */
-  async onBadgeVisibilityChange(e: WechatMiniprogram.SwitchChange) {
-    if (this.data.badgeSwitchBusy) return;
-    // switch 打开 = 公开可见（hidden=false）；关闭 = 仅自己可见（hidden=true）
-    const hidden = !e.detail.value;
-    this.setData({ badgeSwitchBusy: true });
-    try {
-      await tipApi.setBadgeHidden(hidden);
-      if (this.data.summary) {
-        this.setData({ summary: { ...this.data.summary, badgeHidden: hidden } });
-      }
-      eventBus.emit(EventNames.TIP_SUMMARY_UPDATED);
-    } catch {
-      wx.showToast({ title: '设置失败，请重试', icon: 'none' });
-    } finally {
-      this.setData({ badgeSwitchBusy: false });
-    }
   },
 });

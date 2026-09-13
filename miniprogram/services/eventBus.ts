@@ -53,8 +53,8 @@ export const EventNames = {
   /** 公告未读状态变更（有新公告或公告被标记已读后广播） */
   ANNOUNCEMENT_UNREAD_CHANGED: 'announcement-unread-changed',
   /**
-   * 赞赏权益状态变更（支付交付完成 / 徽章可见性修改后由赞赏页广播）。
-   * mine 页订阅后重拉 overview 刷新横幅支持度与头像徽章。
+   * 赞赏权益状态变更（支付交付完成后由赞赏页广播）。
+   * mine 页订阅后重拉 overview 刷新赞赏横幅与头像徽章。
    * 权益不走 SYNC_DONE（tech-spec v1.2 §7.5）。
    */
   TIP_SUMMARY_UPDATED: 'tip-summary-updated',

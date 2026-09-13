@@ -96,7 +96,6 @@ describe('adaptSummary', () => {
     expect(s.supporterBadge).toBe(true);
     expect(s.tipCount).toBe(3);
     expect(s.supportScore).toBe(109);
-    expect(s.badgeHidden).toBe(false);
     expect(s.hasPendingOrders).toBe(true);
     expect(s.entitlements[0]).toEqual({ key: 'supporter_badge', grantedAt: '2026-09-01T00:00:00.000Z' });
     expect(s.history).toHaveLength(2);
@@ -117,7 +116,6 @@ describe('adaptSummary', () => {
       history: [],
     });
     expect(s.entitlements[0]?.grantedAt).toBeNull();
-    expect(s.badgeHidden).toBe(true);
   });
 });
 
