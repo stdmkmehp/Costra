@@ -250,6 +250,166 @@ export function fmtDuration(seconds) {
   return m > 0 ? `${h}小时${m}分` : `${h}小时`;
 }
 
+// ─── 数据任务 / 赞赏订单状态 ──────────────────────────────────────────────────
+
+/**
+ * 格式化数据任务（导入/导出）状态
+ * @param {'queued'|'processing'|'succeeded'|'failed'|string} status
+ * @param {string} [errorCode] - 失败时的服务端错误码
+ * @returns {string}
+ */
+export function fmtDataJobStatus(status, errorCode) {
+  switch (status) {
+    case 'succeeded':  return '✅ 成功';
+    case 'failed':     return errorCode ? `❌ 失败（${fmtText(errorCode)}）` : '❌ 失败';
+    case 'processing': return '🔄 处理中';
+    case 'queued':     return '⏳ 排队中';
+    default:           return fmtText(status) || '—';
+  }
+}
+
+/**
+ * 格式化赞赏订单状态
+ * @param {'created'|'delivered'|'refunded'|'expired'|string} status
+ * @returns {string}
+ */
+export function fmtTipStatus(status) {
+  const map = {
+    created:   '⏳ 待支付',
+    delivered: '✅ 已交付',
+    refunded:  '↩️ 已退款',
+    expired:   '⌛ 已过期',
+  };
+  return map[status] || fmtText(status) || '—';
+}
+
+// ─── 功能使用节（账本导入 / 账本导出 / 赞赏支持 · 三模板共用） ─────────────────
+
+/**
+ * 渲染「账本导入」节
+ * @param {any[]} jobs - 55-import-jobs.csv
+ * @param {number} threshold - 明细截断阈值
+ * @param {number} totalCount - 窗口内任务总数（= summary.new_imports）
+ * @returns {string}
+ */
+export function renderImportsSection(jobs, threshold, totalCount) {
+  const lines = [`## 📥 账本导入（${totalCount}）`, ''];
+
+  if (!jobs || jobs.length === 0) {
+    lines.push('窗口内无导入任务');
+    lines.push('');
+    return lines.join('\n');
+  }
+
+  const ok      = jobs.filter(j => j.status === 'succeeded').length;
+  const failed  = jobs.filter(j => j.status === 'failed').length;
+  const running = jobs.length - ok - failed;
+  const totalRows = jobs.reduce((s, j) => s + Number(j.imported_rows || 0), 0);
+  const runningPart = running > 0 ? ` / ⏳ 进行中 ${running}` : '';
+  lines.push(`> **汇总**：${jobs.length} 个任务 · ✅ 成功 ${ok} / ❌ 失败 ${failed}${runningPart} · 共导入流水 ${totalRows} 条`);
+  lines.push('');
+
+  lines.push('| 时间 | 用户 | 账本 | 文件 | 状态 | 导入/跳过 | 错误/警告 | 耗时 |');
+  lines.push('|:-----|:-----|:-----|:-----|:-----|----------:|----------:|-----:|');
+
+  const display = jobs.length > threshold ? jobs.slice(0, threshold) : jobs;
+  for (const j of display) {
+    const done = j.status === 'succeeded';
+    const rowsCell = done ? `${j.imported_rows}/${j.skipped_rows}` : '—';
+    const errCell  = done ? `${j.error_count}/${j.warning_count}` : '—';
+    const fileCell = j.file_name ? fmtText(j.file_name) : '—';
+    lines.push(`| ${fmtTime(j.created_at_cst)} | ${fmtNickname(j.user_nickname)} | ${fmtText(j.ledger_name)} ${fmtBadge(j.family_kind)} | ${fileCell} | ${fmtDataJobStatus(j.status, j.error_code)} | ${rowsCell} | ${errCell} | ${fmtDuration(j.duration_seconds)} |`);
+  }
+
+  if (jobs.length > threshold) {
+    lines.push(`| _…另 ${jobs.length - threshold} 个_ | | | | | | | |`);
+  }
+  lines.push('');
+  return lines.join('\n');
+}
+
+/**
+ * 渲染「账本导出」节
+ * @param {any[]} jobs - 56-export-jobs.csv
+ * @param {number} threshold - 明细截断阈值
+ * @param {number} totalCount - 窗口内任务总数（= summary.new_exports）
+ * @returns {string}
+ */
+export function renderExportsSection(jobs, threshold, totalCount) {
+  const lines = [`## 📤 账本导出（${totalCount}）`, ''];
+
+  if (!jobs || jobs.length === 0) {
+    lines.push('窗口内无导出任务');
+    lines.push('');
+    return lines.join('\n');
+  }
+
+  const ok      = jobs.filter(j => j.status === 'succeeded').length;
+  const failed  = jobs.filter(j => j.status === 'failed').length;
+  const running = jobs.length - ok - failed;
+  const totalEntries = jobs.reduce((s, j) => s + Number(j.entry_count || 0), 0);
+  const runningPart = running > 0 ? ` / ⏳ 进行中 ${running}` : '';
+  lines.push(`> **汇总**：${jobs.length} 个任务 · ✅ 成功 ${ok} / ❌ 失败 ${failed}${runningPart} · 共导出流水 ${totalEntries} 条`);
+  lines.push('');
+
+  lines.push('| 时间 | 用户 | 账本 | 导出范围 | 状态 | 流水数 | 分片 | 耗时 |');
+  lines.push('|:-----|:-----|:-----|:---------|:-----|-------:|-----:|-----:|');
+
+  const display = jobs.length > threshold ? jobs.slice(0, threshold) : jobs;
+  for (const j of display) {
+    const done = j.status === 'succeeded';
+    const entriesCell = done ? String(j.entry_count) : '—';
+    const partsCell   = done ? String(j.part_count) : '—';
+    lines.push(`| ${fmtTime(j.created_at_cst)} | ${fmtNickname(j.user_nickname)} | ${fmtText(j.ledger_name)} ${fmtBadge(j.family_kind)} | ${fmtText(j.export_range)} | ${fmtDataJobStatus(j.status, j.error_code)} | ${entriesCell} | ${partsCell} | ${fmtDuration(j.duration_seconds)} |`);
+  }
+
+  if (jobs.length > threshold) {
+    lines.push(`| _…另 ${jobs.length - threshold} 个_ | | | | | | |`);
+  }
+  lines.push('');
+  return lines.join('\n');
+}
+
+/**
+ * 渲染「赞赏支持」节
+ * @param {any[]} tips - 57-tip-orders.csv
+ * @param {number} threshold - 明细截断阈值
+ * @param {number} totalCount - 窗口内订单总数（= summary.new_tips）
+ * @returns {string}
+ */
+export function renderTipsSection(tips, threshold, totalCount) {
+  const lines = [`## ❤️ 赞赏支持（${totalCount}）`, ''];
+
+  if (!tips || tips.length === 0) {
+    lines.push('窗口内无赞赏订单');
+    lines.push('');
+    return lines.join('\n');
+  }
+
+  const delivered = tips.filter(t => t.status === 'delivered');
+  const pending   = tips.filter(t => t.status === 'created').length;
+  const refunded  = tips.filter(t => t.status === 'refunded').length;
+  const expired   = tips.filter(t => t.status === 'expired').length;
+  const amountSum  = delivered.reduce((s, t) => s + Number(t.price_cents || 0), 0);
+  const supportSum = delivered.reduce((s, t) => s + Number(t.support_delta || 0), 0);
+  lines.push(`> **汇总**：${tips.length} 单 · 已交付 ${delivered.length}（${fmtAmount(amountSum)} · 支持度 +${supportSum}）· 待支付 ${pending} · 已退款 ${refunded} · 已过期 ${expired}`);
+  lines.push('');
+
+  lines.push('| 时间 | 用户 | 商品 | 金额 | 支持度 | 状态 | 交付耗时 |');
+  lines.push('|:-----|:-----|:-----|-----:|-------:|:-----|:---------|');
+
+  const display = tips.length > threshold ? tips.slice(0, threshold) : tips;
+  for (const t of display) {
+    lines.push(`| ${fmtTime(t.created_at_cst)} | ${fmtNickname(t.user_nickname)} | ${fmtText(t.product_title)} | ${fmtAmount(t.price_cents)} | +${t.support_delta} | ${fmtTipStatus(t.status)} | ${fmtDuration(t.deliver_seconds)} |`);
+  }
+
+  if (tips.length > threshold) {
+    lines.push(`| _…另 ${tips.length - threshold} 单_ | | | | | | |`);
+  }
+  lines.push('');
+  return lines.join('\n');
+}
+
 // ─── 详略分级 ─────────────────────────────────────────────────────────────────
 
 /**

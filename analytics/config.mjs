@@ -1,5 +1,5 @@
 // config.mjs · 阈值配置（见 spec §7.1）
-// 展示阈值：users=10, ledgers=10, entries=20, invites=5, active=10
+// 展示阈值：users=10, ledgers=10, entries=20, invites=5, imports=10, exports=10, tips=10, active=10
 //
 // 活跃判定规则（不可配置）：
 //   活跃用户：最近 7 天内有 ≥2 天进行过记账（含高活跃）
@@ -11,6 +11,9 @@ export const DEFAULT_THRESHOLDS = {
   ledgers: 10,
   entries: 20,
   invites: 5,
+  imports: 10,
+  exports: 10,
+  tips:    10,
   active:  10,
 };
 
@@ -29,6 +32,9 @@ export function loadThresholds(env) {
     ledgers: parse(env.THRESHOLD_LEDGERS, DEFAULT_THRESHOLDS.ledgers),
     entries: parse(env.THRESHOLD_ENTRIES, DEFAULT_THRESHOLDS.entries),
     invites: parse(env.THRESHOLD_INVITES, DEFAULT_THRESHOLDS.invites),
+    imports: parse(env.THRESHOLD_IMPORTS, DEFAULT_THRESHOLDS.imports),
+    exports: parse(env.THRESHOLD_EXPORTS, DEFAULT_THRESHOLDS.exports),
+    tips:    parse(env.THRESHOLD_TIPS,    DEFAULT_THRESHOLDS.tips),
     active:  parse(env.THRESHOLD_ACTIVE,  DEFAULT_THRESHOLDS.active),
   };
 }

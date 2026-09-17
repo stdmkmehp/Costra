@@ -167,7 +167,7 @@ analytics/
 ├── Dockerfile.analyzer         # node + bash + gzip + postgresql-client
 ├── .env.example                # 配置示例（checked-in · 实际配置安装到 /data/conf/analytics.env）
 ├── package.json                # 依赖: nodemailer + marked
-├── config.mjs                  # 阈值配置（users=5/ledgers=5/entries=20/invites=5/active=8）
+├── config.mjs                  # 阈值配置（users=10/ledgers=10/entries=20/invites=5/imports=10/exports=10/tips=10/active=10）
 ├── scripts/
 │   ├── analyze.sh              # 宿主机薄 wrapper
 │   ├── analyze-in-container.sh # 容器内真实分析入口
@@ -186,6 +186,9 @@ analytics/
 │   ├── 30-new-ledgers.sql      # 新增账本明细（含已软删·家庭成员数·成员昵称）
 │   ├── 40-new-entries.sql      # 新增记账明细（含 source: auto/manual）
 │   ├── 50-new-invites.sql      # 新增邀请明细
+│   ├── 55-import-jobs.sql      # 账本导入任务明细（data_jobs type=import · 含文件名/导入行数/耗时）
+│   ├── 56-export-jobs.sql      # 账本导出任务明细（data_jobs type=export · 含导出范围/流水数/分片）
+│   ├── 57-tip-orders.sql       # 赞赏订单明细（tip_orders · 金额/支持度快照 · 状态机）
 │   ├── 60-active-users.sql     # 活跃/低活跃用户（7天≥5天/2~4天）
 │   ├── 65-auto-only-users.sql  # 仅自动记账预警（7d/14d/30d）
 │   ├── 70-retention.sql  # 留存率（7日/30日）
@@ -232,11 +235,14 @@ analytics/
 | `MAIL_FROM` | 发件人 | `yourqq@qq.com` |
 | `MAIL_TO` | 收件人 | `PLACEHOLDER@example.com` → 填真实邮箱 |
 | `MAIL_CC` | 抄送（可空） | |
-| `THRESHOLD_USERS` | 用户阈值（可选） | `5`（默认） |
-| `THRESHOLD_LEDGERS` | 账本阈值（可选） | `5`（默认） |
+| `THRESHOLD_USERS` | 用户阈值（可选） | `10`（默认） |
+| `THRESHOLD_LEDGERS` | 账本阈值（可选） | `10`（默认） |
 | `THRESHOLD_ENTRIES` | 记账阈值（可选） | `20`（默认） |
 | `THRESHOLD_INVITES` | 邀请阈值（可选） | `5`（默认） |
-| `THRESHOLD_ACTIVE` | 活跃用户阈值（可选） | `8`（默认） |
+| `THRESHOLD_IMPORTS` | 导入任务阈值（可选） | `10`（默认） |
+| `THRESHOLD_EXPORTS` | 导出任务阈值（可选） | `10`（默认） |
+| `THRESHOLD_TIPS` | 赞赏订单阈值（可选） | `10`（默认） |
+| `THRESHOLD_ACTIVE` | 活跃用户阈值（可选） | `10`（默认） |
 
 ---
 
@@ -263,9 +269,9 @@ analytics/
 
 ### 邮件 Subject 规则
 
-- 日报：`Costra 日报 · YYYY-MM-DD · dump@MM-DD HH:MM · +U用户 +L账本 +E记账（¥xxx）+I邀请`
-- 周报：`Costra 周报 · YYYY-Www · START→END · +U +L +E +I`
-- 区间：`Costra 报告 · Xd · START→END · +U +L +E +I`
+- 日报：`Costra 日报 · YYYY-MM-DD · dump@MM-DD HH:MM · +U用户 +L账本 +E记账（¥xxx）+I邀请 +IM导入 +EX导出 +T赞赏`
+- 周报：`Costra 周报 · YYYY-Www · START→END · +U +L +E +I +IM +EX +T`
+- 区间：`Costra 报告 · Xd · START→END · +U +L +E +I +IM +EX +T`
 
 Subject 中的 `dump@` 时间戳是**隐性活性指标**——连续两天时间戳不推进说明 standby 备份链路可能挂了。
 
@@ -383,4 +389,5 @@ docker compose exec postgres psql -U analyze -d analyze \
 
 ## 变更日志
 
+- **v0.2（2026-09-17）**：新增账本导入（55）、账本导出（56）、赞赏支持（57）三节统计，覆盖日报/周报/区间报告与邮件 subject；`10-summary` 增加对应聚合列；`config.mjs` 增加 imports/exports/tips 阈值；`restore-database.sh` 对 0020/0021 之前的历史 dump 兜底建最小空表
 - **v0.1（2026-07-21）**：首版实现，覆盖 spec v0.1.1 全部功能

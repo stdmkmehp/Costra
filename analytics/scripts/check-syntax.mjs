@@ -109,19 +109,23 @@ try {
 // ─── 检查 SQL 文件 ────────────────────────────────────────────────────────────
 
 console.log('\n=== SQL 文件检查 ===\n');
+// 清单与 run-queries.sh 的 SQL_FILES 保持一致（显式清单契约，见 spec §5.4）。
+// 窗口参数约定：窗口型文件用 :'window_start'+:'window_end'；
+// 滚动窗口型文件（60/65/70/80/90）只用 :'window_end' 作锚点。
 const sqlFiles = [
   '10-summary', '20-new-users', '30-new-ledgers', '40-new-entries',
-  '50-new-invites', '60-active-users', '90-anomaly',
+  '50-new-invites', '55-import-jobs', '56-export-jobs', '57-tip-orders',
+  '60-active-users', '65-auto-only-users', '70-retention', '80-daily-trend',
+  '90-anomaly',
 ];
 
 for (const name of sqlFiles) {
   const fullPath = join(projectRoot, 'sql', `${name}.sql`);
   try {
     const content = readFileSync(fullPath, 'utf8');
-    const hasWindowStart = content.includes(":'window_start'");
-    const hasWindowEnd = content.includes(":'window_end'");
+    const hasWindowParam = content.includes(":'window_start'") || content.includes(":'window_end'");
     const hasLegacySchema = content.includes(":'schema'") || content.includes('SET search_path');
-    if (!hasWindowStart || !hasWindowEnd || hasLegacySchema) {
+    if (!hasWindowParam || hasLegacySchema) {
       console.error(`  ✗ sql/${name}.sql 时间窗口参数缺失或仍含旧 schema 参数`);
       errors++;
     } else {

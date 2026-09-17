@@ -41,8 +41,45 @@ SANITY_RESULT=$(psql -h "${PG_HOST}" -U "${PG_USER}" -d "${REPORT_DB}" \
 
 log_info "Sanity check 通过: ${SANITY_RESULT}"
 
-log_info "补全分析所需列（兼容旧 dump）..."
+log_info "补全分析所需表/列（兼容旧 dump）..."
+# migration 0020/0021 之前的历史 dump 缺 tip_orders / data_jobs / import_detect_sessions，
+# 此处建最小列集空表兜底，使 55/56/57 查询返回空结果而非整轮分析报错；
+# 新 dump 已含真实表，CREATE TABLE IF NOT EXISTS 为 no-op。
 psql -h "${PG_HOST}" -U "${PG_USER}" -d "${REPORT_DB}" \
-  -v ON_ERROR_STOP=1 --quiet \
-  -c "ALTER TABLE entries ADD COLUMN IF NOT EXISTS source_recurring_id UUID;" >/dev/null
-log_info "列补全完成"
+  -v ON_ERROR_STOP=1 --quiet <<'SQL' >/dev/null
+ALTER TABLE entries ADD COLUMN IF NOT EXISTS source_recurring_id UUID;
+CREATE TABLE IF NOT EXISTS data_jobs (
+  id              UUID PRIMARY KEY,
+  type            TEXT NOT NULL,
+  status          TEXT NOT NULL,
+  user_id         UUID,
+  family_id       UUID,
+  ledger_id       UUID,
+  detect_id       UUID,
+  error_code      TEXT,
+  attempts        INTEGER NOT NULL DEFAULT 0,
+  result_summary  JSONB,
+  export_from     TIMESTAMPTZ,
+  export_to       TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  started_at      TIMESTAMPTZ,
+  finished_at     TIMESTAMPTZ
+);
+CREATE TABLE IF NOT EXISTS import_detect_sessions (
+  id         UUID PRIMARY KEY,
+  file_name  TEXT
+);
+CREATE TABLE IF NOT EXISTS tip_orders (
+  id            UUID PRIMARY KEY,
+  user_id       UUID,
+  product_key   TEXT,
+  product_title TEXT,
+  price_cents   BIGINT,
+  support_delta INTEGER,
+  status        TEXT NOT NULL,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  paid_at       TIMESTAMPTZ,
+  delivered_at  TIMESTAMPTZ
+);
+SQL
+log_info "表/列补全完成"

@@ -42,6 +42,39 @@ WITH
     FROM entries
     WHERE deleted_at IS NULL
       AND created_at >= :'window_start'::timestamptz AND created_at < :'window_end'::timestamptz
+  ),
+  -- 账本导入（data_jobs type='import' · imported 行数取自 result_summary）
+  im AS (
+    SELECT
+      count(*) c,
+      count(*) FILTER (WHERE status = 'succeeded') ok_c,
+      count(*) FILTER (WHERE status = 'failed')    failed_c,
+      coalesce(sum((result_summary->>'imported')::int), 0) rows_c
+    FROM data_jobs
+    WHERE type = 'import'
+      AND created_at >= :'window_start'::timestamptz AND created_at < :'window_end'::timestamptz
+  ),
+  -- 账本导出（data_jobs type='export' · entry_count 取自 result_summary）
+  ex AS (
+    SELECT
+      count(*) c,
+      count(*) FILTER (WHERE status = 'succeeded') ok_c,
+      count(*) FILTER (WHERE status = 'failed')    failed_c,
+      coalesce(sum((result_summary->>'entry_count')::int), 0) entries_c
+    FROM data_jobs
+    WHERE type = 'export'
+      AND created_at >= :'window_start'::timestamptz AND created_at < :'window_end'::timestamptz
+  ),
+  -- 赞赏（金额/支持度只计已交付单，对齐服务端 aggregateTipSummary 口径）
+  t AS (
+    SELECT
+      count(*) c,
+      count(*) FILTER (WHERE status = 'delivered') delivered_c,
+      count(*) FILTER (WHERE status = 'refunded')  refunded_c,
+      coalesce(sum(price_cents)   FILTER (WHERE status = 'delivered'), 0) amount_cents,
+      coalesce(sum(support_delta) FILTER (WHERE status = 'delivered'), 0) support_c
+    FROM tip_orders
+    WHERE created_at >= :'window_start'::timestamptz AND created_at < :'window_end'::timestamptz
   )
 SELECT
   u.c  AS new_users,
@@ -56,5 +89,18 @@ l.shared_c       AS shared_ledgers,
   e.auto_amount    AS auto_amount_cents,
   i.c         AS new_invites,
   i.used_c         AS new_invites_used,
-  a.c        AS active_users
-FROM u, l, e, i, a;
+  a.c        AS active_users,
+  im.c          AS new_imports,
+  im.ok_c       AS import_succeeded,
+  im.failed_c   AS import_failed,
+  im.rows_c     AS imported_rows,
+  ex.c          AS new_exports,
+  ex.ok_c       AS export_succeeded,
+  ex.failed_c   AS export_failed,
+  ex.entries_c  AS exported_entries,
+  t.c           AS new_tips,
+  t.delivered_c AS tip_delivered,
+  t.refunded_c  AS tip_refunded,
+  t.amount_cents AS tip_amount_cents,
+  t.support_c   AS support_delta_sum
+FROM u, l, e, i, a, im, ex, t;

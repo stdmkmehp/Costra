@@ -5,17 +5,18 @@ import {
   fmtAmount, fmtAmountShort, fmtBadge, fmtCategory, fmtNickname,
   fmtDuration, fmtText, fmtTime, fmtEntryType, renderSection,
   isoToShort,
+  renderImportsSection, renderExportsSection, renderTipsSection,
 } from './common.mjs';
 
 /**
  * 渲染区间报告 Markdown
- * @param {object} data - { summary, users, ledgers, entries, invites, active, autoOnly, retention, trend, anomaly }
+ * @param {object} data - { summary, users, ledgers, entries, invites, importJobs, exportJobs, tips, active, autoOnly, retention, trend, anomaly }
  * @param {object} meta - { anchorIso, windowMs, dumpMtimeIso, windowStartIso, windowEndIso }
  * @param {object} thresholds
  * @returns {{ md: string, subject: string }}
  */
 export function renderRange(data, meta, thresholds) {
-  const { summary, users, ledgers, entries, invites, active, autoOnly, retention, trend, anomaly } = data;
+  const { summary, users, ledgers, entries, invites, importJobs, exportJobs, tips, active, autoOnly, retention, trend, anomaly } = data;
   const { windowMs, dumpMtimeIso, windowStartIso, windowEndIso } = meta;
 
   const windowDays = Math.round(windowMs / 86400_000);
@@ -36,6 +37,18 @@ const autoEntries    = Number(s.auto_entries || 0);
   const newInvites     = Number(s.new_invites || 0);
   const usedInvites    = Number(s.new_invites_used || 0);
   const activeUsers    = Number(s.active_users || 0);
+  const newImports       = Number(s.new_imports || 0);
+  const importSucceeded  = Number(s.import_succeeded || 0);
+  const importFailed     = Number(s.import_failed || 0);
+  const importedRows     = Number(s.imported_rows || 0);
+  const newExports       = Number(s.new_exports || 0);
+  const exportSucceeded  = Number(s.export_succeeded || 0);
+  const exportFailed     = Number(s.export_failed || 0);
+  const exportedEntries  = Number(s.exported_entries || 0);
+  const newTips          = Number(s.new_tips || 0);
+  const tipDelivered     = Number(s.tip_delivered || 0);
+  const tipAmountCents   = Number(s.tip_amount_cents || 0);
+  const supportDeltaSum  = Number(s.support_delta_sum || 0);
 
   // 活跃用户分级
   const highActiveList = (active || []).filter(u => u.activity_level === 'high_active');
@@ -46,7 +59,7 @@ const autoEntries    = Number(s.auto_entries || 0);
   const retentionData = retention || [];
 
   // ─── subject ────────────────────────────────────────────────────────────────
-  const subject = `Costra 报告 · ${windowDays}d · ${startDate}→${endDate} · +${newUsers}用户 +${newLedgers}账本 +${newEntries}记账（${fmtAmountShort(entriesAmt)}）+${newInvites}邀请`;
+  const subject = `Costra 报告 · ${windowDays}d · ${startDate}→${endDate} · +${newUsers}用户 +${newLedgers}账本 +${newEntries}记账（${fmtAmountShort(entriesAmt)}）+${newInvites}邀请 +${newImports}导入 +${newExports}导出 +${newTips}赞赏`;
 
   // ─── 各节渲染 ──────────────────────────────────────────────────────────────
   const sections = [];
@@ -59,6 +72,9 @@ const autoEntries    = Number(s.auto_entries || 0);
     activeCount: activeList.length, highActiveCount: highActiveList.length,
     personalLedgers: Number(s.personal_ledgers || 0),
     sharedLedgers: Number(s.shared_ledgers || 0),
+    newImports, importSucceeded, importFailed, importedRows,
+    newExports, exportSucceeded, exportFailed, exportedEntries,
+    newTips, tipDelivered, tipAmountCents, supportDeltaSum,
   retentionData, windowDays,
   }));
 
@@ -78,6 +94,15 @@ const autoEntries    = Number(s.auto_entries || 0);
 
   // ── 新增邀请 ─────────────────────────────────────────────────────────────
   sections.push(renderInvitesSection(invites, thresholds.invites, newInvites));
+
+  // ── 账本导入 ─────────────────────────────────────────────────────────────
+  sections.push(renderImportsSection(importJobs, thresholds.imports, newImports));
+
+  // ── 账本导出 ─────────────────────────────────────────────────────────────
+  sections.push(renderExportsSection(exportJobs, thresholds.exports, newExports));
+
+  // ── 赞赏支持 ─────────────────────────────────────────────────────────────
+  sections.push(renderTipsSection(tips, thresholds.tips, newTips));
 
   // ── 活跃用户（分级） ─────────────────────────────────────────────────────
   sections.push(renderActiveSection(highActiveList, normalActiveList, thresholds.active));
@@ -123,6 +148,9 @@ function renderOverviewPanel(d) {
     `| 新增记账 | **${d.newEntries}** | 手动 ${d.manualEntries} + 自动 ${d.autoEntries} |`,
     `| 记账总额 | **${fmtAmount(d.entriesAmt)}** | 手动 ${fmtAmountShort(d.manualAmt)} / 自动 ${fmtAmountShort(d.autoAmt)} |`,
     `| 新增邀请 | **${d.newInvites}** | 已使用 ${d.usedInvites} |`,
+    `| 账本导入 | **${d.newImports}** | 成功 ${d.importSucceeded} / 失败 ${d.importFailed} · 导入流水 ${d.importedRows} 条 |`,
+    `| 账本导出 | **${d.newExports}** | 成功 ${d.exportSucceeded} / 失败 ${d.exportFailed} · 导出流水 ${d.exportedEntries} 条 |`,
+    `| 赞赏订单 | **${d.newTips}** | 已交付 ${d.tipDelivered}（${fmtAmount(d.tipAmountCents)} · 支持度 +${d.supportDeltaSum}） |`,
   ];
 
   for (const r of d.retentionData) {
