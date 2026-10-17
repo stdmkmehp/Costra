@@ -29,6 +29,7 @@ infra/scripts/
 ├── backup-db.sh               # DB/avatars 备份（pg_dump + gzip · 支持主/从库目标 · 原子发布 + flock）
 ├── import-holidays.sh         # 节假日 JSON → workday_calendars 表（--target prod|verify · 幂等 upsert）
 ├── migrate-ledger-asset.sh    # 停服迁移 · 账本资产回填（--target prod|verify · --verify 仅校验 · 幂等）
+├── migrate-avatars-to-cos.sh  # 头像迁移 COS（两段式：--upload-only 预搬 + --switch-only 切指针 · --verify 对账 · --revert 回退）
 ├── maintenance.sh             # ⭐ 主库定时任务入口（backup-avatars / replication-check / purge-* / error-report / perf-*）
 │
 ├── setup-replication-primary.sh  # PG 主库流复制配置（机器① · 幂等 · 见 pg-standby-backup 方案）
@@ -237,6 +238,42 @@ COSTRA_ENV_FILE=/data/conf/standby.env ./backup-db.sh --db-only \
 | `-y` / `--yes` | 跳过 confirm（prod 慎用） |
 
 幂等：回填后 `balance_baseline_seq` 已是 `MAX(change_seq)`，重跑 delta=0 无影响。
+
+---
+
+## 头像迁移 COS（migrate-avatars-to-cos.sh · 一次性 · 两段式）
+
+> 二期头像 COS 化（[`cos-offload-phase2-avatar.md`](../../docs/design/cos-offload-phase2-avatar.md) §8/§11）：新上传落 COS 头像桶后，把存量本地头像（`/data/uploads/avatars/`）预搬上桶，再秒级切 `users.avatar_url` 指针。
+>
+> **双层形态**（§8.1 公约偏离记录）：本脚本只做参数/防呆/回显/confirm，能力实现委托容器内 `server/scripts/migrate-avatars-to-cos.ts`（迁移必须复用 `cosClient.ts` 的 SDK 与凭据，纯 bash 得引入 coscmd 并再传一遍密钥——更差）。
+> **候选集 DB 驱动**（§8.0.1）：候选 = `avatar_url` 仍指本地的行；代码部署后换过头像的行已是 COS 域名、天然出候选集，故预搬在部署后执行也安全。
+> **预搬 = 无条件全量覆盖**（决策 D5）：同 key 覆盖语义，重跑天然全量刷新；刻意不做 ETag/MD5 跳过（180 文件 / 约 1.6 MB 量级下省不出成本）。
+
+```bash
+# 前置：代码已部署（新镜像在跑）+ server.env 已配 COS_BUCKET_AVATARS / COS_AVATAR_BASE（缺即早失败）
+./migrate-avatars-to-cos.sh --dry-run                     # 预演：候选集行数 / 本地缺源行 / 总字节 / 预计耗时
+./migrate-avatars-to-cos.sh --upload-only                 # 预搬（默认节流 200ms · 约 36s · 占出口约 18%）
+./migrate-avatars-to-cos.sh --upload-only --sleep-ms 500  # 更保守
+./migrate-avatars-to-cos.sh --switch-only --limit 10      # 切指针灰度：先 10 行真机核验
+./migrate-avatars-to-cos.sh --switch-only                 # 全量（候选集自动剔除已切行 · 重跑幂等）
+./migrate-avatars-to-cos.sh --verify                      # 只读对账（域名白名单 + 对象存在 + LastModified 新鲜度）
+
+# 回退（仅 2 周观察期内 · 本地文件与 nginx /uploads/ 未动才有效 · 精确匹配"切换时写入的 URL"）
+./migrate-avatars-to-cos.sh --revert --base https://costra.cloud
+```
+
+| 参数 | 含义 |
+|---|---|
+| `--upload-only` | 只预搬（对 DB 候选集全量覆盖，不写 DB · 可反复执行） |
+| `--switch-only` | 只切指针（`UPDATE users.avatar_url` · 每条先 `headObject` 确认对象存在，缺源/无对象即跳过该行） |
+| `--sleep-ms N` | 每文件处理后的节流间隔（默认 200 · 仅预搬消费） |
+| `--limit N` | 本次最多处理 N 行（切指针阶段的灰度） |
+| `--verify` | 只读对账，不写任何东西 |
+| `--revert` + `--base <url>` | 回退模式；本机 URL 前缀显式传入不猜 |
+| `--dry-run` | 只读预演（透传 TS 真跑一遍 · 不 putObject、不 UPDATE） |
+| `-y` / `--yes` | 跳过 confirm（慎用） |
+
+高危确认：仅 `switch` / `revert`（碰 DB）强制 confirm + 提示先 `backup-db.sh`；`upload` / `verify` 不改 DB，免 confirm。执行顺序与验收以方案 §11/§12 为准（staging 全流程通过后才动 prod）。
 
 ---
 

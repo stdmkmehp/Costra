@@ -1,8 +1,9 @@
 # 静态产物剥离对象存储（COS）可行性分析
 
-> 状态：**v0.5 · 待拍板（可行性评估，非施工方案）**（v0.5：存储形态定稿——**库存两列完整 URL**（`avatar_url` 不动作本地兼容锚点 + 新增 nullable `avatar_cos_url`），放弃相对 key（双 URL 本就是契约字段，key 是多余间接）；存量只回填 `avatar_cos_url` 一列、`avatar_url` 零改；v0.4：始终双写 + 双 URL 客户端降级定稿）
-> 日期：2026-09-09（v0.1 → v0.4）→ 2026-09-10（v0.5）
-> 2026-09-11 后置注记：本文 **P2 导入导出文件 COS 化已落地**（施工方案与实现事实见 `docs/design/cos-offload-phase1-import-export.md`，一步切 COS 无双写）；**P1 头像双 URL 双写方案仍为待施工状态**，本文 §4 头像部分继续有效。
+> 状态：**v0.6 · 可行性评估（已被后续施工文档接续）**（v0.6：**§4 的 P1 头像结论已被 `docs/design/cos-offload-phase2-avatar.md` v1.2 推翻**，其"始终双写 + 双 URL 客户端降级"方案**不采用**，改为一步切单列 `avatar_url`；§4 保留原文作为**决策演进存档**，但不可据以施工。v0.5：存储形态定稿——库存两列完整 URL（`avatar_url` 不动作本地兼容锚点 + 新增 nullable `avatar_cos_url`），放弃相对 key（双 URL 本就是契约字段，key 是多余间接）；存量只回填 `avatar_cos_url` 一列、`avatar_url` 零改；v0.4：始终双写 + 双 URL 客户端降级定稿）
+> 日期：2026-09-09（v0.1 → v0.4）→ 2026-09-10（v0.5）→ 2026-10-17（v0.6 状态修订）
+> 2026-09-11 后置注记：本文 **P2 导入导出文件 COS 化已落地**（施工方案与实现事实见 `docs/design/cos-offload-phase1-import-export.md`，一步切 COS 无双写）。
+> **2026-10-17 后置注记（重要）**：**P1 头像的终版方案是 `docs/design/cos-offload-phase2-avatar.md` v1.2**——一步切 COS（`avatar_url` 仍是单列、零 migration、零契约变更、零客户端改动）、新建独立公有读桶、**不做双写、不做双 URL、不需要 `avatar-image` 组件**。本文 §4 / C3 / C7 描述的双写方案**作废**，理由见 phase2 §4.1/§4.2（`<image>` 不校验小程序合法域名 ⇒ "老客户端兼容锚点"这个支柱前提本就不成立；且降级落点 nginx 的可用性低于 COS）。
 > 触发：账本导入导出文件下载与成员头像下载占用服务器出口带宽与磁盘；prod Lighthouse 出口带宽 2Mbps、staging 1Mbps 是硬顶，大文件（导出 ~500KB）与头像（5~10KB × 多成员）挤占同一带宽，影响 sync/pull 等在线请求。
 > 事实源（代码）：`server/src/routes/upload.ts`、`server/src/routes/dataJobs.ts`、`server/src/routes/importJobs.ts`、`server/src/services/entryExport.ts`、`server/src/services/entryImport.ts`、`server/src/repositories/userRepo.ts`、`miniprogram/services/fileTransfer.ts`、`infra/nginx/conf.d/costra.cloud.conf.prod`、`infra/docker-compose.prod.yml`、`infra/scripts/restore-staging-from-prod.sh`、`server/package.json`
 > 事实源（COS 官方）：腾讯云 COS Node.js SDK 快速入门（`cloud.tencent.com/document/product/436/8629`，2025-12-24）、使用预签名 URL 访问 COS（`.../436/68284`）、生成预签名 URL（`.../436/35153`，2026-06-11）
@@ -15,11 +16,11 @@
 |---|------|------|
 | C1 | **可行，且收益明确**：两类静态产物（头像、导入导出文件）均可剥离到 COS，把下行流量与磁盘从 Lighthouse 固定带宽/本地盘搬走。带宽剥离是核心价值——2Mbps 固定带宽是硬顶，一个用户下 500KB 导出即挤占全站在线请求 | §2 / §6 |
 | C2 | 两类产物**鉴权语义不同，须分别设计**：头像=公有读、URL 已入库、nginx 静态直服；导出/报告=私有（含用户全量流水）、JWT 鉴权、有 24h 寿命。头像走「公有读 bucket/CDN」，导出走「私有 bucket + 预签名 URL」 | §4 / §5 |
-| C3 | **头像已上线 ⇒ 始终双写 + 双 URL 客户端降级（用户终版决策）**：服务端本地+COS 始终双写；`avatar_url` **恒指服务器本地**（兼容锚点，**老客户端连新 server 照常从本地拿头像**）；新增 nullable `avatar_cos_url` 旁路下发 COS URL；新客户端 `cos_url||url` 主 src + `binderror` 降级本地。明确不采用 CDN 回源。客户端需改 10+ 处（建议抽 `avatar-image` 组件收敛） | §4 |
+| C3 | ~~**头像已上线 ⇒ 始终双写 + 双 URL 客户端降级（用户终版决策）**~~ **→ 已被推翻（2026-10-17）**：终版方案见 `docs/design/cos-offload-phase2-avatar.md` v1.2——**一步切单列 `avatar_url`**（无新列、无 migration、无契约变更、无客户端改动），公有读独立桶 + 不预签名 + Key 去后缀。原方案"`avatar_url` 必须恒指本地才兼容老客户端"的支柱前提不成立（`<image>` 不校验小程序合法域名），详见该文 §4 | §4（存档）|
 | C4 | **导入导出未上线 ⇒ 直接重构（不双写）**：存取全部走 COS，删除本地落盘/purge，一步到位；下载改预签名 URL、清理交 COS 生命周期。收益最大、改造面更大；`wx.downloadFile` 目标域名**必须**进小程序「downloadFile 合法域名」白名单 | §5 |
 | C5 | **前置依赖（阻塞项）**：① 开通 COS + 独立域名（COS 默认域名/CDN 域名）并完成 **ICP 备案 + HTTPS**；② 小程序后台配置 downloadFile 合法域名（仅导出下载需要，头像 `<image>` 不需要）；③ 新增 COS SDK 依赖与密钥管理（环境变量，不入库不入镜像明文） | §7 / §8 |
 | C6 | **成本模型翻转**：从「固定带宽包硬顶 + 本地磁盘 + 自维护 purge/跨环境 tar 同步」转为「COS 按量存储 + 按量下行流量 + 生命周期自动清理」。以当前量级，COS 流量/存储费预计远低于升带宽包，且把突发流量与固定带宽解耦（本质收益） | §6 |
-| C7 | 建议**分两期**：P1 头像（低风险、改动小、先验证 COS 接入范式）；P2 导入导出（收益大、依赖预签名与客户端改造）。两期解耦、可独立上线 | §7.1 |
+| C7 | 建议**分两期**：P1 头像（**终版：一步切 COS**，见 `cos-offload-phase2-avatar.md` v1.2——不做双写、不做双 URL）、P2 导入导出（收益大、依赖预签名与客户端改造 · **已落地**）。两期解耦、可独立上线 | §7.1 |
 | C8 | **接入路径已核验**：Node SDK `cos-nodejs-sdk-v5`（putObject 支持 async/await；`getObjectUrl` 仅回调式需 Promise 化，`Sign:true`+`Expires`+`Method:GET` 出预签名下载 URL）；平台侧需建桶（`name-APPID`、选地域、头像公有读/导出私有读写）、CAM 子账号最小权限密钥、自定义域名+HTTPS+ICP、生命周期规则替代 purge | §8 |
 
 ---
@@ -86,9 +87,15 @@ Costra 的所有服务（Fastify server、nginx、PostgreSQL、Redis）跑在**�
 
 ---
 
-## 4. P1 方案：头像迁移 COS（公有读 · 已上线 · 始终双写 + 双 URL 兼容）
+## 4. P1 方案：头像迁移 COS（公有读 · 已上线 · **本节结论已作废 · 仅存档**）
 
-> ⚠️ 头像**已上线**、是**不可丢失的重要数据**。**用户决策（2026-09-09 终版）**：**服务端始终双写（本地 + COS），下发双 URL，客户端优先 COS、加载失败降级本地；接受客户端改造，但硬约束是「老客户端连新 server 仍能从服务器本地正常拿到头像」。** 明确**不采用 CDN 回源方案**（对比见 §4.5）。
+> ⚠️ **2026-10-17 状态：本节的"始终双写 + 双 URL + 客户端 binderror 降级"方案不采用**，终版施工方案见 `docs/design/cos-offload-phase2-avatar.md` v1.2（一步切、零 migration、零客户端改动）。本节保留作为**决策演进存档**，用于回答"当初为什么考虑双写、后来为什么推翻"。推翻理由浓缩为两点，详见该文 §4：
+> 1. **支柱前提错误**：本节主张"老客户端无降级逻辑 ⇒ `avatar_url` 必须恒指本地"。但老客户端渲染头像走 `<image>`，而 `<image>` **不校验小程序合法域名**，拿到 COS URL 照样正常显示 ⇒ 该约束保护的是**COS 可用性**，不是**兼容性**，而"兼容性"恰恰是这条约束唯一的名义理由；
+> 2. **降级目标更不可靠**：双 URL 的兜底落点是本机 nginx，即本期要剥离流量的那台单点 Lighthouse（无冗余、带宽硬顶、维护即不可用），其可用性量级低于多 AZ 的 COS。
+>
+> 另：下文 §4.2/§4.3/§4.5 中出现的"9 处头像渲染"经代码复核实为 **11 处**（见 phase2 §3.3），不影响结论方向，但引用时应以 phase2 为准。
+
+> 原标题与原始论证（存档）：头像**已上线**、是**不可丢失的重要数据**。**当时决策（2026-09-09）**：**服务端始终双写（本地 + COS），下发双 URL，客户端优先 COS、加载失败降级本地；接受客户端改造，但硬约束是「老客户端连新 server 仍能从服务器本地正常拿到头像」。** 当时明确**不采用 CDN 回源方案**（对比见 §4.5）。
 
 ### 4.1 目标形态（终态）
 ```
@@ -178,21 +185,23 @@ staging 先验证再 prod；`avatar_url` 无需任何改写（它已是正确的
 
 **客户端（新版 · 已接受改造）**
 6. 数据结构：头像项 `avatarUrl: string` → `{ url: string, cosUrl: string|null }`（本地 URL 恒有值作兜底）。
-7. **强烈建议抽 `avatar-image` 自定义组件**封装「主 src = cosUrl||url + binderror 降级到 url」，替代在 6+ 文件 10+ 处（`mine`/`family`×3/`statistics`×2/`gm`×2/`filter-panel`/`color-picker`…）逐个手写 `binderror` + 列表按 index 回写（易错、后续新增头像点会漏）。**组件完整方案与评估见 `docs/design/avatar-image-component-design.md`（薄组件 + 具名 slot：只封降级，占位符/装饰交调用方 slot；全项目实为 9 处头像渲染，占位符有 4 种形态不可强统一）。**
+7. **强烈建议抽 `avatar-image` 自定义组件**封装「主 src = cosUrl||url + binderror 降级到 url」，替代在 6+ 文件 10+ 处（`mine`/`family`×3/`statistics`×2/`gm`×2/`filter-panel`/`color-picker`…）逐个手写 `binderror` + 列表按 index 回写（易错、后续新增头像点会漏）。**组件完整方案与评估见 `docs/design/avatar-image-component-design.md`（薄组件 + 具名 slot：只封降级，占位符/装饰交调用方 slot；全项目实为 ~~9 处~~ **11 处**头像渲染，占位符有 4 种形态不可强统一）。**（2026-10-17 核实：`family` 实为 6 处；`filter-panel`/`pages-gm/impersonate` 按 `avatarUrl` 检索无命中。本项随 §4 一并作废。）
 8. `auth.ts` 会话缓存、`eventBus` ProfileUpdatedPayload 等同步扩 `cosUrl`。
 
-### 4.6 关于 CDN 回源方案（已评估 · 用户决定不采用，存档备查）
+### 4.6 关于 CDN 回源方案（已评估 · 当时不采用 · 存档备查）
 
-曾建议「`avatar_url` 保持单 URL 指向 CDN，CDN 源站优先 COS、故障回源本地 nginx」——优点是客户端/契约零改动、切换对客户端透明、无破图。**用户明确不采用此方案，坚持服务端双写 + 客户端双 URL 降级。** 该决策的已知取舍：客户端需改造 10+ 处（已用 §4.5.7 自定义组件收敛）、契约新增字段（已用 §4.2 向后兼容字段解决）、COS 故障时新客户端有「先失败再降级」的一次破图闪烁（老客户端不受影响，恒本地）。均在可接受范围。
+曾建议「`avatar_url` 保持单 URL 指向 CDN，CDN 源站优先 COS、故障回源本地 nginx」——优点是客户端/契约零改动、切换对客户端透明、无破图。**当时明确不采用此方案，改为服务端双写 + 客户端双 URL 降级。**
+> 2026-10-17 补记：终版方案（phase2 v1.2）在形态上其实更接近这条被否掉的思路——**单 URL、客户端零改动、切换对客户端透明**，只是不做 CDN 回源（用 COS 自定义域名 + 对象级 1 年长缓存 + `?v=` 版本化代替），也不需要"回源本地"这条降级。即：当初对"CDN 回源"的取舍判断中，被否掉的不是"单 URL"本身，而是"多层回源链路"。
 
-### 4.7 风险/成本
+### 4.7 风险/成本（原 §4.6 · 编号重复已修）
 - 中风险：客户端 10+ 处改造（建议组件化收敛）、13+ 契约加字段（向后兼容）、双写失败策略、存量脚本正确性（staging 先验）。
 - 兼容性风险低：`avatar_url` 语义不变是硬保证，老客户端零感知。
 - 成本：头像小，存储/流量费极低；绝大多数流量走 COS，带宽剥离达成。
 
-### 4.6 风险/成本
+### 4.8 风险/成本（原始条目 · 与 §4.7 内容重叠 · 存档）
 - 中低风险：客户端零改动；每阶段可回滚；双写保证不丢数据。主要风险在双写失败策略（§4.3 已定：COS 写失败不阻断）与存量脚本的正确性（staging 先验）。
 - 成本：头像小（5~10KB），存储/流量费极低；收益是把多成员汇总页/统计页的头像批量拉取彻底移出固定带宽。
+> 注：本条与 §4.7 是同一节的两次修订残留（原文均编号 4.6），已按项目"不删原文、标注演进"的纪律保留并重编号。**二者均随 §4 一并作废**。
 
 ---
 
@@ -261,7 +270,7 @@ worker 生成 CSV 分片
 
 ### 7.1 分期建议
 
-- **P1 · 头像（已上线，先做）**：始终双写 + 双 URL 客户端降级（§4，`avatar_url` 恒本地保兼容、新增 `avatar_cos_url` 旁路、新客户端优先 COS + binderror 降级本地）。服务端双写+加字段可先上（老客户端零感知即满足兼容），客户端随后发版；建议抽 `avatar-image` 组件收敛 10+ 处改造。无微信白名单依赖。
+- ~~**P1 · 头像（已上线，先做）**：始终双写 + 双 URL 客户端降级（§4…）~~ **→ 终版：一步切 COS**（`docs/design/cos-offload-phase2-avatar.md` v1.2）：单列 `avatar_url`、零 migration、零契约变更、零客户端改动；公有读独立桶（禁止生命周期）+ 不预签名 + Key 去后缀 `avatars/<userId>` + `?v=` 版本化；存量迁移为「预搬 + 切指针」两段式、候选集 DB 驱动。无微信白名单依赖（`<image>` 不需要）。
 - **P2 · 导入导出（未上线，后做）**：直接重构（§5.3，存取全走 COS、删本地落盘与 purge、不双写）。收益最大，但依赖预签名 URL + 客户端下载改造 + 微信 downloadFile 白名单 + ICP。待 P1 验证 COS 接入无误、域名备案就绪后推进。demo-csv 维持现状不迁。若受阻可直接推迟该功能上线，不影响存量。
 - 两期与 `response-compression-design.md`（Fastify gzip）**正交且互补**：压缩省 JSON API 字节、COS 剥离静态大文件流量，分别针对不同流量构成，可并行推进。
 

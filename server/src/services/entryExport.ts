@@ -153,7 +153,7 @@ interface OpenPart {
  * （重试间隔 ≪ 1 个月），且 COS 30 天生命周期兜底。
  */
 export async function removeJobArtifacts(jobId: string): Promise<void> {
-  const cos = getCosClient();
+  const cos = getCosClient('exports');
   const now = DateTime.now().setZone(SHANGHAI_ZONE);
   const months = [now.toFormat('yyyy-MM'), now.minus({ months: 1 }).toFormat('yyyy-MM')];
   for (const month of months) {
@@ -230,7 +230,7 @@ export async function runEntryExport(
 
   const flushPart = async (p: OpenPart): Promise<void> => {
     const buffer = Buffer.from(p.chunks.join(''), 'utf8');
-    await getCosClient().putObject(`exports/${monthKey}/${job.id}_${p.part}.csv`, buffer);
+    await getCosClient('exports').putObject(`exports/${monthKey}/${job.id}_${p.part}.csv`, buffer);
     partSizes.push(buffer.byteLength);
     partSha256.push(createHash('sha256').update(buffer).digest('hex'));
     partCount = p.part;

@@ -326,6 +326,7 @@ CI：pre-commit lint+typecheck 照常；服务端全测在 server/ 跑。
 
 1. **entries 水合缓存**（决策 D）——暂不实施；若做，先评估补 `(ledger_id, updated_at)` 复合索引是否更治本（独立卡）。
 2. **头像 URL 版本化**——头像覆盖式写 `<userId>.<ext>` 导致 URL 不变、客户端/CDN 旧图缓存，与 Redis 无关；正确解法为 `avatar_url` 带版本参数（如 `?v={users.version}`）。建议单列卡。
+   > **2026-10-17 补记**：`?v=<上传时刻 ms>` 已落地（2026-09-13，`server/src/routes/upload.ts`），换头像即换 URL、天然击穿微信 `<image>` 的按 URL 持久缓存。头像 COS 化（`docs/design/cos-offload-phase2-avatar.md` v1.2）**继续沿用**该机制：Key 固定为 `avatars/<userId>`、对象覆盖写，仅 query 变 ⇒ 配合对象级 `Cache-Control: public, max-age=31536000` 实现"重复加载零请求、换头像立即可见"。该条不再是待办。
 3. **统计 drill-down 服务端缓存**——低频，客户端已有 `_drillCache`；视 P1 观测数据再定。
 4. **写后预热**——§5.2，视观测再定。
 5. **GM impersonate 路径**——管理操作不预热、不挂钩（读到的 members 缓存可能短暂过期语义，可接受）。

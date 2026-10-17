@@ -1,8 +1,10 @@
 # `avatar-image` 头像组件方案与评估
 
-> 状态：**v0.1 · 待拍板**
-> 日期：2026-09-10
-> 上游：`docs/design/cos-offload-analysis.md` v0.5 §4.5.7（P1 头像 COS 迁移 · 客户端双 URL 降级的收敛手段）
+> 状态：**已作废 · 随 `cos-offload-phase2-avatar.md` 的单 URL 方案一并取消**（2026-10-17 · 保留全文作决策存档，不据以施工）
+> 日期：2026-09-10（原文 v0.1 待拍板）→ 2026-10-17（状态作废）
+> 上游：`docs/design/cos-offload-analysis.md` v0.5 §4.5.7（P1 头像 COS 迁移 · 客户端双 URL 降级的收敛手段 · **该方案亦已作废**）
+> **为什么作废**：本组件的全部职责是"封装 `cos_url \|\| url` 主 src + `binderror` 降级本地"。而头像终版方案（`docs/design/cos-offload-phase2-avatar.md` v1.2）是**一步切单 URL**——`<image src>` 直接拿 COS URL，**没有第二个 URL 可降级**，组件因此没有职责。推翻"双 URL"的论证见该文 §4.1/§4.2（`<image>` 不校验小程序合法域名 ⇒ 兼容性从来不是问题；降级落点 nginx 的可用性低于 COS）。
+> **仍然有效的残留价值**：文中关于"9 处渲染实为 11 处""占位符有 4 种形态不可强统一""字段名混用 `avatarUrl`/`avatar_url`"的事实梳理仍可作为**独立 UI 一致性议题**的输入（该议题已被 phase2 §15 明确列为非目标）。
 > 目的：抽一个 `avatar-image` 自定义组件，统一封装「主 src（COS）+ `binderror` 降级本地」，替代在 9 处头像 `<image>` 逐个手写 `binderror` + 列表按 index 回写。
 > 事实源：`pages/mine/index.wxml`、`pages/profile-setup/index.wxml`、`pages/ledger/index.wxml`、`components/filter-panel/index.wxml`、`pages/statistics/index.wxml`、`pages/statistics/tpl-rank-section.wxml`、`pages/family/index.wxml`、`pages-gm/impersonate/index.wxml`、`components/ledger-switcher/`（组件范式）
 

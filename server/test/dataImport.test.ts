@@ -38,7 +38,7 @@ let app: FastifyInstance;
 const cos = new MemoryCosStore();
 
 beforeAll(() => {
-  __setCosForTests(cos);
+  __setCosForTests('exports', cos);
 });
 
 beforeEach(async () => {

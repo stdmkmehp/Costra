@@ -606,7 +606,7 @@ export async function registerImportJobsRoutes(app: FastifyInstance): Promise<vo
         throw new AppError(ErrorCode.NOT_FOUND, { message: 'detect report is no longer available' });
       }
       // 24h 窗口内对象必然在（reaper 清理由 report_expires_at 同刻驱动 · 先被本判定拦截）⇒ 直接签发
-      const url = await getCosClient().presignGet(session.reportPath, PRESIGN_EXPIRES_SECONDS);
+      const url = await getCosClient('exports').presignGet(session.reportPath, PRESIGN_EXPIRES_SECONDS);
       const ts = DateTime.fromJSDate(session.createdAt)
         .setZone(SHANGHAI_ZONE)
         .toFormat('yyyyMMddHHmmss');

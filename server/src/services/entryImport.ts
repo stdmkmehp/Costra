@@ -150,7 +150,7 @@ export async function writeDetectArtifacts(input: {
   warnings: readonly ImportIssue[];
 }): Promise<DetectArtifactsResult> {
   const storageMonth = DateTime.fromJSDate(input.createdAt).setZone('Asia/Shanghai').toFormat('yyyy-MM');
-  const cos = getCosClient();
+  const cos = getCosClient('exports');
 
   // 规范化行产物（NDJSON gzip）
   const ndjson = input.rows.map((r) => JSON.stringify(toArtifactWire(r))).join('\n') + '\n';
@@ -187,7 +187,7 @@ export interface ImportArtifactRow {
 export async function readDetectArtifactRows(key: string, expectedSha256: string | null): Promise<ImportArtifactRow[]> {
   let body: Buffer;
   try {
-    body = await getCosClient().getObject(key);
+    body = await getCosClient('exports').getObject(key);
   } catch (err) {
     // COS 404（NoSuchKey）⇒ 产物缺失终态；其余错误（网络/5xx）原样抛由调度层归类
     if ((err as { statusCode?: number }).statusCode === 404) {
@@ -227,7 +227,7 @@ export async function readDetectArtifactRows(key: string, expectedSha256: string
 export async function deleteDetectFile(key: string | null, log: ServiceLogger): Promise<void> {
   if (!key) return;
   try {
-    await getCosClient().deleteObjects([key]);
+    await getCosClient('exports').deleteObjects([key]);
   } catch (err) {
     log.warn({ err, key }, 'delete detect object failed (ignored)');
   }

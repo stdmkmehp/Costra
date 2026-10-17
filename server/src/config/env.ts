@@ -69,7 +69,7 @@ export interface AppEnv {
   /** 消息推送 Token（可选 · 配置了则 GET /tips/notify 启用签名校验握手） */
   wxMsgPushToken: string | undefined;
 
-  // ─── 腾讯云 COS（导入导出产物对象存储 · cos-offload-phase1 v0.2 · infra/cos-setup.md）───
+  // ─── 腾讯云 COS（一期导入导出产物桶 + 二期头像公有读桶 · infra/cos-setup.md）───
   // 全部可选：刻意不进启动必填（测试环境无 COS 配置），缺失在首次使用 COS 时才报错
   // （cosClient.ts 惰性单例 · 密钥为 CAM 子账号最小权限，只落 server.env 严禁入库）。
   /** CAM 子账号 SecretId */
@@ -82,6 +82,10 @@ export interface AppEnv {
   cosBucketExports: string | undefined;
   /** 自定义下载域名（预签名 SignHost 用 · https://cos[.stg].costra.cloud） */
   cosDownloadBase: string | undefined;
+  /** 头像桶名（costra-{prod,staging}-avatar-1309318695 · 公有读私有写 · 禁止生命周期 · 二期 §6.1） */
+  cosBucketAvatars: string | undefined;
+  /** 头像公有读域名（https://img[.stg].costra.cloud · objectUrl 出口 · 二期 §6.1） */
+  cosAvatarBase: string | undefined;
 }
 
 function parseWxPayMode(v: string): 'off' | 'allowlist' | 'on' {
@@ -191,6 +195,8 @@ export function loadEnv(env: NodeJS.ProcessEnv = process.env): Readonly<AppEnv> 
     cosRegion: env['COS_REGION'] === '' ? undefined : env['COS_REGION'],
     cosBucketExports: env['COS_BUCKET_EXPORTS'] === '' ? undefined : env['COS_BUCKET_EXPORTS'],
     cosDownloadBase: env['COS_DOWNLOAD_BASE'] === '' ? undefined : env['COS_DOWNLOAD_BASE'],
+    cosBucketAvatars: env['COS_BUCKET_AVATARS'] === '' ? undefined : env['COS_BUCKET_AVATARS'],
+    cosAvatarBase: env['COS_AVATAR_BASE'] === '' ? undefined : env['COS_AVATAR_BASE'],
   };
 
   // 虚拟支付：非 off 模式必须配齐 OfferID 与 AppKey（tech-spec v1.2 §2.5 启动校验）

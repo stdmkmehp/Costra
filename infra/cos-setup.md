@@ -1,6 +1,6 @@
 # COS 对象存储配置（导入导出文件 · staging/prod 独立桶）
 
-> 状态：**已在腾讯云完成平台配置（2026-09-10）**，等代码落地（`docs/design/cos-offload-phase1-import-export.md`）接入。
+> 状态：**一期平台配置已完成（2026-09-10）并随一期代码落地使用**；**二期头像桶平台侧已通（2026-10-17 · 见 §7）**。
 > 用途：记录 Costra 一期导入导出文件 COS 化的腾讯云实际配置，作为代码落地与运维的事实源。
 > 关联：`docs/design/cos-offload-phase1-import-export.md`、`docs/design/cos-offload-analysis.md`
 >
@@ -26,6 +26,7 @@
 - **APPID = `1309318695`**（桶名后缀 · 腾讯云控制台账号信息可查）。
 - **为什么独立桶**：权限 / 生命周期 / 误删 / 成本统计全部环境隔离；staging 可随意压测清空不影响 prod。
 - **为什么桶内不再加环境前缀**：独立桶已隔离环境，桶内对象直接 `exports/...`、`reports/...`。
+- 二期**头像桶**为另两桶（公有读 · `costra-{prod,staging}-avatar-1309318695` · `img[.stg].costra.cloud`），配置与验证见 §7。
 
 ## 1.1 落地决策（2026-09-10 拍板）
 
@@ -65,6 +66,8 @@
 - 权限说明：`PutObject`（worker 写 CSV 分片）、`GetObject`（预签名下载底层）、`Delete*`（worker 重试清场删旧分片，对应 `entryExport.ts` `removeJobArtifacts` 改造后行为）、`HeadObject`（可选校验对象存在）。**故意不授** `ListBucket`/`PutBucketACL` 等。
 - 一期用子账号永久密钥（最小权限）；STS 临时密钥留待二期收紧。
 
+> ⚠️ 实况注记（2026-10-17 · 二期）：实际控制台中该策略的 `resource` 为 `"*"`（与上文 JSON 不符），头像桶接入时**拍板保持 `"*"` 不收紧**——两新桶被天然覆盖，未做 resource 扩充。约束面仍在 action 白名单（5 个 · 不含 `ListBucket`/`PutObjectACL`）；上文 JSON 保留为最小权限参考形态。
+
 > ⚠️ **密钥泄露处置**：若 SecretId/SecretKey 曾出现在聊天/日志/代码等非 `server.env` 位置，须立即在 CAM 禁用该对密钥、新建一对并只写入 `server.env`。
 
 ## 3. 对象 Key 组织约定（代码落地按此写）
@@ -79,6 +82,8 @@
 > 命名注记（2026-09-11）：导入产物前缀原定为 `staging/`（沿用旧本地目录 `import-staging` 的「暂存」语义），
 > 因与 staging 测试环境同形易误读（桶已按环境独立，key 不再承担环境区分），改为 `detect/`——
 > 对齐领域命名（`import_detect_sessions` / `detectId` / `purge-detect-sessions`）。
+
+> 二期头像（**独立头像桶**内，不在上述两桶）：`avatars/<userId>`（无后缀 · 一人恒一对象覆盖写 · 类型由对象 ContentType 元数据承载）——见 §7。
 
 ## 4. 服务端环境变量（写入 /data/conf/server.env · 两机各一套）
 
@@ -162,3 +167,50 @@ echo | openssl s_client -connect cos.costra.cloud:443 -servername cos.costra.clo
 - 下载路由 `createReadStream` 直发 → 校验通过后签发预签名 URL 返回 JSON。
 - 客户端 `fileTransfer.ts` 两步下载（先带 Bearer 取 URL，再无 Bearer `wx.downloadFile` 直连 COS）。
 - 退役 `purge-exports`/`import-staging` 清理脚本；DB `file_expires_at` 判定保留维持 `410`。
+
+---
+
+## 7. 头像桶（二期 · 2026-10-17 平台侧已通）
+
+> 关联：`docs/design/cos-offload-phase2-avatar.md`（方案 §6 平台侧配置 · §11 步 0）。
+> 与一期桶的关键差异：**公有读私有写**（一期为私有读写 + 预签名）、**禁止生命周期规则**（一期桶有 30 天规则）。
+
+| 维度 | prod | staging |
+|------|------|---------|
+| 桶名 | `costra-prod-avatar-1309318695` | `costra-staging-avatar-1309318695` |
+| 地域 | `ap-shanghai` | `ap-shanghai` |
+| 访问权限 | **公有读私有写** | 同 |
+| 阻止公有访问 | 已关闭（否则公有读 ACL 不生效） | 同 |
+| 自定义域名 | `img.costra.cloud` | `img.stg.costra.cloud` |
+| HTTPS 证书 | ✅ 已部署（2026-10-17 实测无 SSL 错误） | ✅ 同 |
+| 生命周期规则 | **无 · 此桶禁止任何生命周期规则**（硬约束：误配即静默删头像且无从察觉） | 同 |
+| 通路验证 | ✅ 2026-10-17 `curl -I https://img.costra.cloud/avatars/probe` → **404**（`Server: tencent-cos`） | ✅ 同日 `img.stg.costra.cloud` → **404** |
+
+- **404 是预期信号（不是一期私有桶的 403）**：公有读桶放行匿名请求，对象不存在即回 404。若此处回 403，说明桶被建成私有或「阻止公有访问」未关，需返工。
+- **DNS**：prod CNAME 建在 `costra.cloud` 域（主机记录 `img`）；staging 建在 DNSPod **独立托管子域 `stg.costra.cloud`** 内（主机记录只填 `img`）——子域委派坑见 §5.3；证书 `_dnsauth.img` 验证记录同样放子域内。
+- **CAM**：策略 `resource` 保持 `"*"`（2026-10-17 拍板，见 §2 注记），未做扩充；action 仍 5 个、不授 `ListBucket`/`PutObjectACL`。
+- **对象 Key**：`avatars/<userId>`（无后缀 · 一人恒一对象 · 覆盖写），类型由对象 `ContentType` 元数据承载。
+
+### 7.1 服务端环境变量（待写入两机 `/data/conf/server.env`）
+
+prod（`49.235.216.20`）：
+```bash
+COS_BUCKET_AVATARS=costra-prod-avatar-1309318695
+COS_AVATAR_BASE=https://img.costra.cloud
+```
+
+staging（`106.54.173.55`）：
+```bash
+COS_BUCKET_AVATARS=costra-staging-avatar-1309318695
+COS_AVATAR_BASE=https://img.stg.costra.cloud
+```
+
+- 注入范式同 §4（`docker-compose.prod.yml` 从 `server.env` 注入），随二期代码部署 recreate server 容器生效。
+- ⚠️ **切勿配串环境**：staging 配 prod 桶 ⇒ staging 上传的头像进 prod 桶、URL 指 prod 域名（方案 §11 步 2.5 有双机交叉核验）。
+
+### 7.2 步 0 剩余待办
+
+- [ ] 两机 `server.env` 写入 §7.1 两键（保持 `chmod 0600`）
+- [ ] 云监控：两头像桶**外网下行流量 / 请求次数**告警（公有读下的成本护栏 · 方案 §14-2）
+- [ ] MP 后台 downloadFile 合法域名追加 `img.costra.cloud` / `img.stg.costra.cloud`
+- [ ] 两桶「生命周期为空」控制台截图留档（D1 硬约束核查）

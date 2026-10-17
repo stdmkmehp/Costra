@@ -349,7 +349,7 @@ export async function registerDataJobsRoutes(app: FastifyInstance): Promise<void
       }
       // 24h 窗口内对象必然在（生命周期 30 天 ≫ 24h · 无针对 succeeded 任务的删除路径）
       // ⇒ 不做存在性预检直接签发；每分片单独签发 300s（§4.0 决策）
-      const url = await getCosClient().presignGet(
+      const url = await getCosClient('exports').presignGet(
         `exports/${storageMonth}/${job.id}_${file.part}.csv`,
         PRESIGN_EXPIRES_SECONDS,
       );
