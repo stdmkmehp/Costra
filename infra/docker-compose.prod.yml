@@ -219,10 +219,9 @@ services:
       # → 宿主机 /data/logs/server · server 自身不做轮转，
       # 由宿主机 logrotate（costra-ops · copytruncate）作为唯一轮转事实源
       - /data/logs/server:/var/log/costra
-      # 用户上传文件（头像等）· server 写入 · nginx 只读服务
-      - /data/uploads:/var/costra/uploads
       # 账本导出/导入产物已 COS 化（cos-offload-phase1 v0.2 · 私有桶 + 30 天生命周期），
-      # 原 /data/exports、/data/import-staging 两个 bind mount 已撤除
+      # 用户头像已 COS 化（cos-offload-phase2-avatar · 公有读头像桶 img.costra.cloud），
+      # 原 /data/exports、/data/import-staging、/data/uploads 三个 bind mount 已撤除
 
     depends_on:
       postgres:
@@ -291,8 +290,6 @@ services:
       # webroot（certbot http-01 challenge 用 · ACME 续期）
       - /data/certbot/www:/var/www/certbot:ro
       - /data/logs/nginx:/var/log/nginx
-      # 用户上传文件（头像等）· nginx 只读静态服务
-      - /data/uploads:/data/uploads:ro
 
     environment:
       TZ: Asia/Shanghai

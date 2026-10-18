@@ -10,7 +10,7 @@
 #        组合：复制健康才产出，防"格式正常但陈旧"的备份；
 #        落 /data/slave/backups（= analytics DUMP_INBOX）
 #      - 每天 6:27 restore-staging-from-prod.sh -y（无人值守）
-#        在 6:00 备份窗口之后，用最新 standby-*.sql.gz + scheduled-*.avatars.tar.gz
+#        在 6:00 备份窗口之后，用最新 standby-*.sql.gz
 #        自动刷新本机 staging 栈（prod 数据 → stg.costra.cloud）
 #   2. /data/logs/maintenance 下 touch check-replication.log / standby-backup.log / staging-restore.log（0600）
 #   3. 安装共用 logrotate 模板 /etc/logrotate.d/costra-ops

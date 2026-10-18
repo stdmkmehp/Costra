@@ -1,6 +1,6 @@
 # 二期 COS 化方案：用户头像迁移对象存储
 
-> 状态：**v1.7 · 施工中（六决策已拍板 · 预搬改部署后执行（v1.4）· §11 步 0 平台侧已通 · §7 代码已落地：cosClient 多桶化 + upload 落点切 COS + 迁移脚本两件套 + upload.test.ts 补齐（typecheck 与 836 测试全绿）· 待部署与 staging 全流程演练）**
+> 状态：**v1.8 · 已完结（2026-10-17：staging 全流程演练 + prod 部署/预搬/切指针/`--verify` 对账 + 2 周观察期（D4）全部通过 · §9 运维清场已执行——bind mount / nginx `/uploads/` / `backup-avatars` cron / 恢复脚本 avatars 段 / 目录脚本全退役 · `--revert` 回退能力随清场关闭）**
 > 日期：2026-10-16（v0.1 初稿 → v1.0 决策关闭 + 脚本形态对齐 `infra/scripts/` 公约）→ 2026-10-17（v1.1：实测存量 180+ 文件 / 1.6 MB；迁移改**预搬 + 切指针**两段式、预搬全量覆盖、默认节流 200ms）→ 2026-10-17 二审（v1.2：**修正迁移候选集为 DB 驱动**——原目录驱动 + 全量覆盖在代码先上线时会静默把新头像覆盖成旧图，见 §8.0/§8.2/§8.7；补上传超时与错误码、WEBP 魔数收窄、11 处渲染点与 mine 页无占位兜底的事实纠正、清场前置断言，见 §7.3/§7.4/§9/§12/§13）→ 2026-10-17 晚（v1.3：**步 0 平台侧落地**——双桶 + 域名 + 证书 + DNS 全通；CAM 拍板保持 `resource:"*"`，见 §6.3 注记；`infra/cos-setup.md` §7 联动落笔）→ 2026-10-17（v1.4：**上线顺序重排为「部署 → 核验 → 预搬 → 切指针」**，取消"预搬须早于部署"硬约束——DB 谓词已使顺序与安全无关；预搬单行并发覆盖窗口拍板接受，见 §8.0.1/§11/§13）→ 2026-10-17（v1.5：**review 修订落笔**——渲染点 11→**13 处**（snake_case `avatar_url` 补漏 `filter-panel`/`pages-gm`）、§9.0 断言②改两域名白名单消除 staging 清场死锁、§5.1 带宽论证与 §11 回滚栏事实纠正、`--verify` 补秒级精度注记）
 > 上游：`docs/design/cos-offload-analysis.md` v0.5 §4（P1 头像 · **本文推翻其"双写 + 双 URL"结论**，见 §4）、`docs/design/cos-offload-phase1-import-export.md` v0.2（一期导入导出 · 已落地，COS 接入范式的事实源）
 > 平台事实源：`infra/cos-setup.md`（一期两私有桶 + 自定义域名 + CAM + DNS/证书三坑）
@@ -696,6 +696,15 @@ SELECT count(*) FROM users
 ---
 
 ## 16. 修订记录
+
+### v1.8（2026-10-17 · 上线完结 + 运维清场落地）
+
+| # | 修订 | 位置 | 性质 |
+|---|------|------|------|
+| 1 | staging 全流程演练（§12 十一条验收）+ prod 部署核验（步 2）、预搬（步 3）、切指针（步 4）、`--verify` 对账全部通过；2 周观察期（步 5 · D4）结束无异常 | §11 步 1–5 | 落地记录 |
+| 2 | §9 运维清场执行：`docker-compose.prod.yml` 撤两个 `/data/uploads` bind mount；nginx 双环境删 `location /uploads/`（防 dotfile 段保留）；`02-prepare-dirs.sh` 移除 uploads 目录与 uid 1000 属主；`backup-db.sh` 移除 `--avatars-only` 与打包段（`--db-only` 兼容保留给 redeploy.sh / 从库 cron，历史 avatars 归档仍按保留期自然老化）；`maintenance.sh` 退役 `backup-avatars` 及 slave.env 机制（`_load_slave_env` / `_resolve_slave_host` / `do_push_avatars_offsite` 全删，install-cron 预警与 `maintenance-backup.log` touch 同步移除）；`restore-staging-from-prod.sh` 移除 avatars 段（3 步降 2 步、`--skip-db`/`--skip-avatars` 移除）；`scp-latest-backup.sh` 去 avatars 段 | §9.1–§9.3 | 清场落地 |
+| 3 | 文档联动收尾：`docs/db/schema.md` `avatar_url` 取值形态、`infra/scripts/README.md` 退役注记、`infra/cos-setup.md` 状态头与 §7.2、`pg-standby-backup.md` 与 `maintenance-cron-plan.md` 的现行事实描述 | §9.4 / §10 | 文档联动 |
+| 4 | `--revert` 回退窗口随清场关闭（本地文件与 nginx `/uploads/` 不再保留 · §8.7 仅存档）；宿主机 `/data/uploads` 目录删除按 §9.2 约定单独执行 | §8.7 / §9.2 | 状态记录 |
 
 ### v1.7（2026-10-17 · §7 代码落地）
 

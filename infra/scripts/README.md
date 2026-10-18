@@ -26,11 +26,11 @@ infra/scripts/
 ├── 09-verify-gates.sh         # 闸门 5 条验证
 │
 ├── redeploy.sh                # ⭐ 安全重部署（备份镜像 + 构建 + migration +回滚）
-├── backup-db.sh               # DB/avatars 备份（pg_dump + gzip · 支持主/从库目标 · 原子发布 + flock）
+├── backup-db.sh               # DB 备份（pg_dump + gzip · 支持主/从库目标 · 原子发布 + flock）
 ├── import-holidays.sh         # 节假日 JSON → workday_calendars 表（--target prod|verify · 幂等 upsert）
 ├── migrate-ledger-asset.sh    # 停服迁移 · 账本资产回填（--target prod|verify · --verify 仅校验 · 幂等）
 ├── migrate-avatars-to-cos.sh  # 头像迁移 COS（两段式：--upload-only 预搬 + --switch-only 切指针 · --verify 对账 · --revert 回退）
-├── maintenance.sh             # ⭐ 主库定时任务入口（backup-avatars / replication-check / purge-* / error-report / perf-*）
+├── maintenance.sh             # ⭐ 主库定时任务入口（replication-check / purge-* / error-report / perf-*）
 │
 ├── setup-replication-primary.sh  # PG 主库流复制配置（机器① · 幂等 · 见 pg-standby-backup 方案）
 ├── setup-replication-standby.sh  # PG 从库搭建（机器② · pg_basebackup + hot standby）
@@ -56,8 +56,7 @@ infra/scripts/
 ./maintenance.sh install-cron          # 先 --dry-run 预览
 
 # 手动执行（cron 亦调这些）：
-./maintenance.sh backup                # 全量 DB+avatars（仅手动 · DB 备份职责已迁从库）
-./maintenance.sh backup-avatars        # 仅打包 avatars（prod cron 唯一备份任务）
+./maintenance.sh backup                # 备份 DB（仅手动 · DB 备份日常职责已迁从库）
 ./maintenance.sh replication-check     # 配置复制后检查槽/WAL/纯异步状态
 ./maintenance.sh purge-idempotency     # 清过期幂等键（每日 · 过期 +30 天审计保留）
 ./maintenance.sh purge-sessions        # 清已过期 session（每日 · 过期 +30 天审计保留）
@@ -143,16 +142,16 @@ COSTRA_ENV_FILE=/data/conf/standby.env ./backup-db.sh --db-only \
 
 ### 用 prod 最新备份刷新 staging（restore-staging-from-prod.sh · 机器② · 按需）
 
-> 消费 `/data/slave/backups` 的备份产物，把本机 staging 栈（project `costra`）刷成 prod 数据：avatars 原子替换 + Redis FLUSHALL + 委托 `restore-db.sh` 恢复 DB。防呆校验本机存在 `costra-standby-pg` 容器（机器① 误跑直接拒绝）。
+> 消费 `/data/slave/backups` 的备份产物，把本机 staging 栈（project `costra`）刷成 prod 数据：Redis FLUSHALL + 委托 `restore-db.sh` 恢复 DB。防呆校验本机存在 `costra-standby-pg` 容器（机器① 误跑直接拒绝）。
+> 头像已 COS 化（二期）：恢复后 staging 库内头像 URL 指向 prod 头像桶（公有读 · 正常显示），无需文件级同步。
 
 ```bash
-./restore-staging-from-prod.sh            # 自动取最新 standby-*.sql.gz + scheduled-*.avatars.tar.gz
+./restore-staging-from-prod.sh            # 自动取最新 standby-*.sql.gz
 ./restore-staging-from-prod.sh --dry-run  # 预览
 ```
 
 | 参数 | 含义 |
 |---|---|
-| `--skip-db` / `--skip-avatars` | 只恢复其中一项（互斥不能同时跳过） |
 | `--dry-run` / `-y` | 通用；`-y` 全链路自动确认（透传 `restore-db.sh` · 无人值守可用） |
 
 > 只做"自动取最新"；要恢复指定的备份文件，直接用 `restore-db.sh`。
@@ -274,6 +273,8 @@ COSTRA_ENV_FILE=/data/conf/standby.env ./backup-db.sh --db-only \
 | `-y` / `--yes` | 跳过 confirm（慎用） |
 
 高危确认：仅 `switch` / `revert`（碰 DB）强制 confirm + 提示先 `backup-db.sh`；`upload` / `verify` 不改 DB，免 confirm。执行顺序与验收以方案 §11/§12 为准（staging 全流程通过后才动 prod）。
+
+> ✅ **迁移已完成（2026-10-17）**：staging 演练 + prod 预搬/切指针/对账 + 2 周观察期全部通过；运维清场已执行（方案 §9）——本地 avatars 链路（`/data/uploads` bind mount、nginx `/uploads/` location、`backup-avatars` cron、`restore-staging-from-prod.sh` avatars 段）**已全部退役**，`--revert` 回退能力随之失效。本脚本保留存档。
 
 ---
 

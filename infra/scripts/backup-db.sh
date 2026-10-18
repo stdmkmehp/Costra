@@ -1,29 +1,30 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Costra · DB + Avatars 定时备份（pg_dump + gzip · tar · cron 每 6 小时 · 保留 14 天）
+# Costra · DB 定时备份（pg_dump + gzip · 保留 14 天）
 # =============================================================================
-# 适用场景：cron 定时调用 · 生成 gzip 压缩的 SQL 备份 + avatars 目录打包
-#           也可被 redeploy.sh 调用（--db-only 只备份 DB · 跳过 avatars · 最小化停机窗口）
+# 适用场景：cron 定时调用 · 生成 gzip 压缩的 SQL 备份
+#           也可被 redeploy.sh 调用（migration 前备份 · 最小化停机窗口）
+#
+# 头像（avatars）tar 打包备份已于 2026-10-17 随头像 COS 化退役
+# （cos-offload-phase2-avatar §9.2 · 头像在 COS 公有读桶 · 多 AZ 冗余无需 tar 备份）；
+# --avatars-only 与 Step 3 打包段一并移除。
 #
 # 流程：
-#   1. 前置检查（容器 healthy · 磁盘空间 · 源目录存在）
+#   1. 前置检查（容器 healthy · 磁盘空间）
 #   2. pg_dump + gzip（ionice 降低 I/O 优先级 · 不影响线上）+ 校验
-#   3. avatars 目录 tar + gzip 打包 + 校验（--db-only 时跳过）
-#   4. 清理过期备份（保留最近 N 天 · sql.gz 与 avatars.tar.gz 同规则）
-#   5. 输出摘要
+#   3. 清理过期备份（保留最近 N 天 · sql.gz；avatars.tar.gz 模式仅用于老化历史遗留归档）
+#   4. 输出摘要
 #
 # 用法：
 #   ./backup-db.sh                    # 标准执行
 #   ./backup-db.sh --retain-days 7    # 自定义保留天数
 #   ./backup-db.sh --no-cleanup       # 跳过清理旧备份
-#   ./backup-db.sh --db-only          # 只备份 DB · 跳过 avatars（被 redeploy.sh 调用）
-#   ./backup-db.sh --avatars-only     # 只打包 avatars（prod cron · DB 备份职责已迁从库）
+#   ./backup-db.sh --db-only          # 兼容保留（redeploy.sh / 从库 cron 调用 · 本脚本已只有 DB 一种产物）
 #   ./backup-db.sh --container costra-standby-pg --prefix standby \
 #     --backup-dir /data/slave/backups                            # 备份从库（机器②）
 #   ./backup-db.sh --dry-run          # 仅打印不执行
 #
-# cron 配置：prod 唯一事实源是 maintenance.sh 的 CRON_SCHEDULE（DB 备份已迁从库，
-# prod 仅保留 backup-avatars）；从库组合任务由 install-standby-cron.sh 安装，
+# cron 配置：DB 备份已迁从库，从库组合任务由 install-standby-cron.sh 安装，
 # 见 docs/ops/pg-standby-backup.md §5.2。不要从本文件复制另一套硬编码时间。
 #
 # 退出码：
@@ -41,11 +42,9 @@ umask 077
 # --- 默认参数 ---
 PG_CONTAINER="costra-postgres"
 BACKUP_DIR="${COSTRA_DATA}/backups"
-AVATARS_SRC="${COSTRA_DATA}/uploads/avatars"
 RETAIN_DAYS=14
 NO_CLEANUP=0
 DB_ONLY=0
-AVATARS_ONLY=0
 BACKUP_PREFIX="scheduled"
 
 # --- 解析参数 ---
@@ -62,10 +61,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     --db-only)
       DB_ONLY=1
-      shift
-      ;;
-    --avatars-only)
-      AVATARS_ONLY=1
       shift
       ;;
     --prefix)
@@ -103,13 +98,10 @@ done
 
 require_cmd docker
 require_cmd gzip
-require_cmd tar
 if [[ "${DRY_RUN}" != "1" ]]; then
   require_cmd ionice
   require_cmd flock "yum install -y util-linux / apt install -y util-linux"
 fi
-[[ "${DB_ONLY}" == "1" && "${AVATARS_ONLY}" == "1" ]] \
-  && die "--db-only 与 --avatars-only 互斥"
 [[ "${RETAIN_DAYS}" =~ ^[0-9]+$ ]] || die "--retain-days 必须是非负整数：${RETAIN_DAYS}"
 [[ "${BACKUP_PREFIX}" =~ ^[A-Za-z0-9_-]+$ ]] || die "--prefix 仅允许字母/数字/下划线/中划线：${BACKUP_PREFIX}"
 [[ "${PG_CONTAINER}" =~ ^[A-Za-z0-9_.-]+$ ]] || die "--container 含非法字符：${PG_CONTAINER}"
@@ -127,28 +119,22 @@ else
 fi
 
 BACKUP_TMP=""
-AVATARS_TMP=""
 _cleanup_partial_backups() {
   [[ -z "${BACKUP_TMP}" ]] || rm -f -- "${BACKUP_TMP}"
-  [[ -z "${AVATARS_TMP}" ]] || rm -f -- "${AVATARS_TMP}"
 }
 trap _cleanup_partial_backups EXIT
 
 # =============================================================================
 # Step 1: 前置检查
 # =============================================================================
-log_step "[1/4] 前置检查"
+log_step "[1/3] 前置检查"
 
-# 检查 postgres 容器 healthy（--avatars-only 不碰数据库 · 跳过容器检查）
-if [[ "${AVATARS_ONLY}" == "1" ]]; then
-  log_info "--avatars-only · 跳过 PG 容器健康检查"
-else
-  HEALTH=$(docker inspect --format '{{.State.Health.Status}}' "${PG_CONTAINER}" 2>/dev/null || echo "missing")
-  if [[ "${HEALTH}" != "healthy" ]]; then
-    die "${PG_CONTAINER} 状态异常（${HEALTH}）· 跳过本次备份"
-  fi
-  log_success "${PG_CONTAINER} healthy ✓"
+# 检查 postgres 容器 healthy
+HEALTH=$(docker inspect --format '{{.State.Health.Status}}' "${PG_CONTAINER}" 2>/dev/null || echo "missing")
+if [[ "${HEALTH}" != "healthy" ]]; then
+  die "${PG_CONTAINER} 状态异常（${HEALTH}）· 跳过本次备份"
 fi
+log_success "${PG_CONTAINER} healthy ✓"
 
 # 检查磁盘空间（至少留 500MB）并收紧备份目录权限。dry-run 只找最近
 # 已存在父目录做 df，不创建目录或改变权限。
@@ -172,28 +158,12 @@ log_success "磁盘空间: ${AVAIL_MB}MB 可用 ✓"
 
 # pg_dump 通过容器内 Unix socket 执行，不读取或传递 PG_COSTRA_PW。
 
-# avatars 源目录检查（缺失或 --db-only 时跳过 avatars 步骤 · 不阻断 DB 备份；
-# --avatars-only 时 avatars 是唯一职责 · 目录缺失直接失败）
-AVATARS_SKIP=0
-if [[ "${AVATARS_ONLY}" == "1" ]]; then
-  [[ -d "${AVATARS_SRC}" ]] || die "--avatars-only 但 avatars 目录不存在：${AVATARS_SRC}"
-elif [[ "${DB_ONLY}" == "1" ]]; then
-  log_info "--db-only · 跳过 avatars 备份"
-  AVATARS_SKIP=1
-elif [[ ! -d "${AVATARS_SRC}" ]]; then
-  log_warn "avatars 目录不存在：${AVATARS_SRC} · 将跳过 avatars 备份"
-  AVATARS_SKIP=1
-fi
-
 # =============================================================================
 # Step 2: pg_dump + gzip（ionice 降低 I/O 优先级）+ 校验
 # =============================================================================
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 
-if [[ "${AVATARS_ONLY}" == "1" ]]; then
-  log_step "[2/4] pg_dump 备份 → 已跳过（--avatars-only · DB 备份职责在从库）"
-else
-log_step "[2/4] pg_dump + gzip 备份"
+log_step "[2/3] pg_dump + gzip 备份"
 
 BACKUP_FILE="${BACKUP_DIR}/${BACKUP_PREFIX}-${TIMESTAMP}.sql.gz"
 BACKUP_TMP="${BACKUP_DIR}/.${BACKUP_PREFIX}-${TIMESTAMP}.sql.gz.partial.$$"
@@ -243,72 +213,21 @@ if [[ "${DRY_RUN}" != "1" ]]; then
   chmod 0600 "${BACKUP_TMP}"
   log_success "DB partial 大小: ${FILE_SIZE_KB}KB · gzip 完整性 ✓"
 fi
-fi  # AVATARS_ONLY
 
-# =============================================================================
-# Step 3: avatars 目录 tar + gzip 打包 + 校验
-# =============================================================================
-if [[ "${AVATARS_SKIP}" == "1" ]]; then
-  log_step "[3/4] Avatars 打包备份 → 已跳过（源目录不存在）"
-else
-  log_step "[3/4] Avatars 打包备份"
-
-  # -C 到 uploads 父目录打包 avatars/ · 解包时 tar -xzf -C /data/uploads 即可还原
-  AVATARS_PARENT="$(dirname "${AVATARS_SRC}")"
-  AVATARS_FILE="${BACKUP_DIR}/${BACKUP_PREFIX}-${TIMESTAMP}.avatars.tar.gz"
-  AVATARS_TMP="${BACKUP_DIR}/.${BACKUP_PREFIX}-${TIMESTAMP}.avatars.tar.gz.partial.$$"
-
-  log_info "临时输出: ${AVATARS_TMP}（校验后先于 SQL 完成标志发布）"
-
-  START_TS=$(date +%s)
-
-  if [[ "${DRY_RUN}" == "1" ]]; then
-    log_dry "ionice -c3 tar -czf ${AVATARS_TMP} -C ${AVATARS_PARENT} avatars"
-  else
-    if ! ionice -c3 tar -czf "${AVATARS_TMP}" -C "${AVATARS_PARENT}" avatars; then
-      die "tar 打包 avatars 失败 · 未发布最终文件"
-    fi
-  fi
-
-  ELAPSED=$(( $(date +%s) - START_TS ))
-  log_success "avatars 打包完成（耗时 ${ELAPSED}s）"
-
-  # 校验 avatars partial（gzip 层 + tar 结构 · 空目录也是合法归档）。
-  if [[ "${DRY_RUN}" != "1" ]]; then
-    [[ -f "${AVATARS_TMP}" ]] || die "avatars 临时归档不存在：${AVATARS_TMP}"
-    gzip -t "${AVATARS_TMP}" 2>/dev/null \
-      || die "avatars gzip 校验失败 · 归档损坏 · 未发布"
-    tar -tzf "${AVATARS_TMP}" >/dev/null 2>&1 \
-      || die "avatars tar 结构校验失败 · 归档损坏 · 未发布"
-
-    FILE_SIZE=$(stat -c%s "${AVATARS_TMP}" 2>/dev/null || stat -f%z "${AVATARS_TMP}" 2>/dev/null || echo "0")
-    FILE_SIZE_KB=$((FILE_SIZE / 1024))
-    chmod 0600 "${AVATARS_TMP}"
-    log_success "avatars partial 大小: ${FILE_SIZE_KB}KB · tar.gz 完整性 ✓"
-  fi
-fi
-
-# 先发布可选 avatars，再以 SQL 文件的原子 rename 作为整个备份完成标志
-#（--avatars-only 无 SQL 文件 · 发布 avatars 即完成）。
+# 校验通过后以 SQL 文件的原子 rename 发布
 if [[ "${DRY_RUN}" != "1" ]]; then
-  if [[ "${AVATARS_SKIP}" != "1" ]]; then
-    mv -f -- "${AVATARS_TMP}" "${AVATARS_FILE}"
-    AVATARS_TMP=""
-  fi
-  if [[ "${AVATARS_ONLY}" != "1" ]]; then
-    mv -f -- "${BACKUP_TMP}" "${BACKUP_FILE}"
-    BACKUP_TMP=""
-  fi
+  mv -f -- "${BACKUP_TMP}" "${BACKUP_FILE}"
+  BACKUP_TMP=""
   log_success "备份已原子发布 ✓"
 fi
 
 # =============================================================================
-# Step 4: 清理过期备份（sql.gz 与 avatars.tar.gz 同规则）
+# Step 3: 清理过期备份（保留 N 天）
 # =============================================================================
-# --avatars-only 同样按 prefix 清理 sql.gz：prod 的 /data/backups 里历史
-# scheduled-*.sql.gz 会随保留期自然老化，无需手工干预。
+# avatars.tar.gz 产物已随头像 COS 化退役 · find 模式保留它只为让
+# 历史遗留归档按同一保留期自然老化，无需手工干预。
 if [[ "${NO_CLEANUP}" != "1" ]]; then
-  log_step "[4/4] 清理过期备份（保留 ${RETAIN_DAYS} 天）"
+  log_step "[3/3] 清理过期备份（保留 ${RETAIN_DAYS} 天）"
 
   if [[ "${DRY_RUN}" == "1" ]]; then
     EXPIRED=$({ find "${BACKUP_DIR}" \( -name "${BACKUP_PREFIX}-*.sql.gz" -o -name "${BACKUP_PREFIX}-*.avatars.tar.gz" \) -mtime +${RETAIN_DAYS} -type f 2>/dev/null || true; } | wc -l | tr -d ' ')
@@ -328,7 +247,7 @@ if [[ "${NO_CLEANUP}" != "1" ]]; then
     fi
   fi
 else
-  log_step "[4/4] 清理 → 已 --no-cleanup 跳过"
+  log_step "[3/3] 清理 → 已 --no-cleanup 跳过"
 fi
 
 # =============================================================================
@@ -337,15 +256,9 @@ fi
 echo ""
 if [[ "${DRY_RUN}" != "1" ]]; then
   SQL_COUNT=$(find "${BACKUP_DIR}" -name "*.sql.gz" -type f 2>/dev/null | wc -l | tr -d ' ')
-  AVATARS_COUNT=$(find "${BACKUP_DIR}" -name "*.avatars.tar.gz" -type f 2>/dev/null | wc -l | tr -d ' ')
   TOTAL_SIZE=$(du -sh "${BACKUP_DIR}" 2>/dev/null | awk '{print $1}')
-  if [[ "${AVATARS_ONLY}" != "1" ]]; then
-    log_success "DB 备份完成 · ${BACKUP_FILE}"
-  fi
-  if [[ "${AVATARS_SKIP}" != "1" ]]; then
-    log_success "Avatars 备份完成 · ${AVATARS_FILE}"
-  fi
-  log_info "备份目录: ${BACKUP_DIR} · SQL ${SQL_COUNT} 个 · Avatars ${AVATARS_COUNT} 个 · 总计 ${TOTAL_SIZE}"
+  log_success "DB 备份完成 · ${BACKUP_FILE}"
+  log_info "备份目录: ${BACKUP_DIR} · SQL ${SQL_COUNT} 个 · 总计 ${TOTAL_SIZE}"
 fi
 
 exit 0

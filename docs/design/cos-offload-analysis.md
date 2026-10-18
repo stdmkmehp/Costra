@@ -4,6 +4,7 @@
 > 日期：2026-09-09（v0.1 → v0.4）→ 2026-09-10（v0.5）→ 2026-10-17（v0.6 状态修订）
 > 2026-09-11 后置注记：本文 **P2 导入导出文件 COS 化已落地**（施工方案与实现事实见 `docs/design/cos-offload-phase1-import-export.md`，一步切 COS 无双写）。
 > **2026-10-17 后置注记（重要）**：**P1 头像的终版方案是 `docs/design/cos-offload-phase2-avatar.md` v1.2**——一步切 COS（`avatar_url` 仍是单列、零 migration、零契约变更、零客户端改动）、新建独立公有读桶、**不做双写、不做双 URL、不需要 `avatar-image` 组件**。本文 §4 / C3 / C7 描述的双写方案**作废**，理由见 phase2 §4.1/§4.2（`<image>` 不校验小程序合法域名 ⇒ "老客户端兼容锚点"这个支柱前提本就不成立；且降级落点 nginx 的可用性低于 COS）。
+> 2026-10-17 后置注记（清场）：本文 §2/§4 描述的**本地头像链路已随 phase2 §9 运维清场全部退役**（`/var/costra/uploads` bind mount、nginx `location /uploads/` 静态直服、`backup-avatars` cron + scp 异地副本、恢复脚本 avatars 段均已移除）。头像 URL 唯一形态为 COS 公有读桶 `https://img[.stg].costra.cloud/avatars/<userId>?v=<ms>`；本文相关段落仅作决策演进存档，不可据以判断现状。
 > 触发：账本导入导出文件下载与成员头像下载占用服务器出口带宽与磁盘；prod Lighthouse 出口带宽 2Mbps、staging 1Mbps 是硬顶，大文件（导出 ~500KB）与头像（5~10KB × 多成员）挤占同一带宽，影响 sync/pull 等在线请求。
 > 事实源（代码）：`server/src/routes/upload.ts`、`server/src/routes/dataJobs.ts`、`server/src/routes/importJobs.ts`、`server/src/services/entryExport.ts`、`server/src/services/entryImport.ts`、`server/src/repositories/userRepo.ts`、`miniprogram/services/fileTransfer.ts`、`infra/nginx/conf.d/costra.cloud.conf.prod`、`infra/docker-compose.prod.yml`、`infra/scripts/restore-staging-from-prod.sh`、`server/package.json`
 > 事实源（COS 官方）：腾讯云 COS Node.js SDK 快速入门（`cloud.tencent.com/document/product/436/8629`，2025-12-24）、使用预签名 URL 访问 COS（`.../436/68284`）、生成预签名 URL（`.../436/35153`，2026-06-11）

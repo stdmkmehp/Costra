@@ -10,7 +10,7 @@
 #   1. server_name → stg.costra.cloud
 #   2. TLS 证书路径 → /etc/letsencrypt/live/stg.costra.cloud/{fullchain,privkey}.pem
 #   3. 顶部注释里的环境名标注
-# 其余（safety header / /healthz / /uploads/ / /v1/ / 日志）与 prod 一致，避免"staging 与
+# 其余（safety header / /healthz / /v1/ / 日志）与 prod 一致，避免"staging 与
 # prod 行为不一致"（D-026 §2.3 C1灰度隔离原则：staging 必须与 prod 同规格）
 #
 # 母决策：D-009（域名）/ D-023（stg 子域 Sprint-4 启用）
@@ -84,21 +84,14 @@ server {
     }
 
     # ============== 防扫探 · 拒绝所有 dotfile 访问（.env/.git/.htaccess 等）==============
-    # 扫描器常探 /uploads/.env、/.git/config 等 · 统一 404（不暴露存在性）
-    # 正则 location 优先级高于前缀 location /uploads/ · dotfile 请求在此截断
+    # 扫描器常探 /.env、/.git/config 等 · 统一 404（不暴露存在性）
+    # 正则 location 优先级高于前缀 location · dotfile 请求在此截断
     location ~ /\. {
         return 404;
     }
 
-    # ============== /uploads/ 静态文件（与 prod 一致 · 但 staging 上传的头像与 prod 隔离）==============
-    location /uploads/ {
-        alias /data/uploads/;
-        expires off;
-        add_header Cache-Control "no-cache" always;
-        etag on;
-        autoindex off;
-        limit_except GET HEAD { deny all; }
-    }
+    # 原 location /uploads/（本地头像静态服务）已随头像 COS 化退役（与 prod 一致 ·
+    # cos-offload-phase2-avatar §9.1 · 头像走 img.stg.costra.cloud 公有读桶 · 2026-10-17）
 
     # ============== /v1/* 业务路由（与 prod 一致）==============
     location /v1/ {

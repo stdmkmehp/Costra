@@ -45,6 +45,7 @@ print_section_header "02 · 建持久化目录 + chown（§3.3）"
 # --- Step 1: 建目录 ---
 log_step "[1/3] 建持久化目录树"
 
+# 注：${COSTRA_DATA}/uploads/avatars 已随头像 COS 化退役（cos-offload-phase2-avatar §9.2 · 2026-10-17）
 DIRS_TO_CREATE=(
   "${COSTRA_DATA}/conf"
   "${COSTRA_DATA}/pgsql"
@@ -56,7 +57,6 @@ DIRS_TO_CREATE=(
   "${COSTRA_DATA}/logs/maintenance"
   "${COSTRA_DATA}/certbot/www"
   "${COSTRA_DATA}/backups"
-  "${COSTRA_DATA}/uploads/avatars"
 )
 
 for dir in "${DIRS_TO_CREATE[@]}"; do
@@ -89,7 +89,6 @@ RUN_AS_70=(
 # uid=1000 → server 容器（node 用户 · Dockerfile USER node）
 RUN_AS_1000=(
   "${COSTRA_DATA}/logs/server"
-  "${COSTRA_DATA}/uploads"
 )
 
 log_info "chown ${UID_REDIS}:${UID_REDIS} → ${RUN_AS_999[*]}"

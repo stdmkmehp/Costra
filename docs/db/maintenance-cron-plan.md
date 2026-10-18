@@ -32,8 +32,7 @@ infra/scripts/maintenance.sh   ← 唯一入口 · 子命令分发器
 
 | 子命令 | 作用 | 频率建议 | 透传参数 |
 |---|---|---|---|
-| `backup` | 委托 `backup-db.sh` 全量 | 仅手动（不进 cron） | `--retain-days N` / `--no-cleanup` / `--prefix` |
-| `backup-avatars` | 委托 `backup-db.sh --avatars-only` + scp 异地副本到从库 | 每 6h（`0 0,6,12,18`） | — |
+| `backup` | 委托 `backup-db.sh` 备份 DB | 仅手动（不进 cron） | `--retain-days N` / `--no-cleanup` / `--prefix` |
 | `replication-check` | 主库复制槽/WAL/纯异步检查 | 每小时；仅 `server.env` 有完整复制三件套时生成 | 透传给 `check-replication.sh` |
 | `purge-idempotency` | 清过期幂等键（过期 +30 天审计保留） | 每日 | — |
 | `purge-sessions` | 清已过期 session（过期 +30 天审计保留） | 每日 | — |
@@ -45,6 +44,8 @@ infra/scripts/maintenance.sh   ← 唯一入口 · 子命令分发器
 | `perf-report` | 委托 `monitor-perf.sh report`：按行内 epoch 过滤 24h/7d 窗口（并集读 .1/.N.gz · 轮转兼容）· 24h 逐时+峰值、7d 日均、平均变化差值，复用 report.env 发邮件 | 每日 05:13 | `--test-send` |
 | `install-cron` | 用 `${COSTRA_ROOT}` 展开生成 `/etc/cron.d/costra-maintenance` | 一次性 | — |
 | `list` | 列出所有任务 | 手动 | — |
+
+> `backup-avatars`（委托 `backup-db.sh --avatars-only` + scp 异地副本到从库）已于 2026-10-17 随头像 COS 化退役（`docs/design/cos-offload-phase2-avatar.md` §9.2），下方 §3/§4 的脚本与 cron 快照为历史评审稿、不再含该任务。
 
 **通用选项**（复用 `common.sh`）：
 - `--dry-run`：purge 时跑 `SELECT count(*)` 预览将删行数（不真删）；backup 透传给 `backup-db.sh`。
@@ -220,8 +221,6 @@ SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # ── Costra 运维定时任务 · 全部走 maintenance.sh 统一入口（由 install-cron 生成）──
-# avatars 备份：每 6h（0 分 · 2026-08-14 起 DB 备份迁从库，prod 仅打 avatars）
-0 0,6,12,18 * * * root /root/Costra/infra/scripts/maintenance.sh backup-avatars   >> /data/logs/maintenance/maintenance-backup.log 2>&1
 # 主库复制检查：仅 server.env 配置了 REPLICATOR_PW + 主从 IP 时生成
 57 * * * * root /root/Costra/infra/scripts/maintenance.sh replication-check >> /data/logs/maintenance/check-replication.log 2>&1
 # 幂等键 / session / invite：每日 04 点错峰
@@ -245,7 +244,6 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-0 0,6,12,18 * * * root ${COSTRA_ROOT}/infra/scripts/maintenance.sh backup-avatars >> /data/logs/maintenance/maintenance-backup.log 2>&1
 57 * * * * root ${COSTRA_ROOT}/infra/scripts/maintenance.sh replication-check >> /data/logs/maintenance/check-replication.log 2>&1
 7 4 * * * root ${COSTRA_ROOT}/infra/scripts/maintenance.sh purge-idempotency >> /data/logs/maintenance/maintenance-purge.log 2>&1
 17 4 * * * root ${COSTRA_ROOT}/infra/scripts/maintenance.sh purge-sessions >> /data/logs/maintenance/maintenance-purge.log 2>&1
@@ -265,7 +263,7 @@ EOF
     ;;
 ```
 
-**日志分流**：备份写 `maintenance-backup.log`，复制检查写 `check-replication.log`，清理合并写 `maintenance-purge.log`。`install-cron` 同时安装 `infra/logrotate/costra-ops`，纯大小轮转（`size 20M` · 2026-08-16 起，稀疏日志不再按日切碎）、保留 14 轮并压缩；主从 PG 固定写 `postgresql.log`，server/redis/nginx 固定写 `/data/logs/{server/server.log,redis/redis.log,nginx/*.log}`，同样由该配置统一轮转（copytruncate），应用自身不做轮转，避免双事实源。
+**日志分流**：复制检查写 `check-replication.log`，清理合并写 `maintenance-purge.log`。`install-cron` 同时安装 `infra/logrotate/costra-ops`，纯大小轮转（`size 20M` · 2026-08-16 起，稀疏日志不再按日切碎）、保留 14 轮并压缩；主从 PG 固定写 `postgresql.log`，server/redis/nginx 固定写 `/data/logs/{server/server.log,redis/redis.log,nginx/*.log}`，同样由该配置统一轮转（copytruncate），应用自身不做轮转，避免双事实源。
 
 ---
 
@@ -275,7 +273,7 @@ EOF
 2. **旧 backup cron**：若此前已按 `backup-db.sh` 旧注释单独配过 backup 的 cron，落地本方案时必须**移除旧行**，避免与 `maintenance.sh backup` 重复备份（如何检查/删除见对话说明）。
 3. **`backup-db.sh` 保留独立可用**：它自身持有按容器+目录区分的 `flock`，因此经 maintenance、从库 cron 或人工直调都不会重入；归档以 partial 校验后原子发布。
 4. **复制任务条件生成**：只有 `REPLICATOR_PW`、`PG_PRIMARY_LAN_IP`、`PG_STANDBY_LAN_IP` 三项均非空才写入 `replication-check` cron；配置变化后必须重跑 `maintenance.sh install-cron`。
-5. **DB 备份迁从库（2026-08-14）**：从库上线后，prod cron 的 `backup` 改为 `backup-avatars`（`backup-db.sh --avatars-only`，仅打包 uploads/avatars——文件不经复制流，只有 prod 能备份）；DB 备份由机器② 的 `install-standby-cron.sh` 安装（check && backup 组合，落 `/data/slave/backups`）。`maintenance.sh backup` 全量入口保留为手动应急。落地时需在两机各重跑一次对应 install 脚本。
+5. **DB 备份迁从库（2026-08-14）**：从库上线后，prod cron 不再跑全量 `backup`；DB 备份由机器② 的 `install-standby-cron.sh` 安装（check && backup 组合，落 `/data/slave/backups`）。`maintenance.sh backup` 入口保留为手动应急。原 prod `backup-avatars`（仅打包 uploads/avatars）已于 2026-10-17 随头像 COS 化退役（`cos-offload-phase2-avatar.md` §9.2）。落地变更时需在两机各重跑一次对应 install 脚本。
 
 ---
 

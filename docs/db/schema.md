@@ -77,7 +77,7 @@
 | `wx_openid` | TEXT UNIQUE NOT NULL | 微信 openid（登录主键） |
 | `wx_unionid` | TEXT UNIQUE | 开放平台 unionid（可空） |
 | `nickname` | TEXT NOT NULL | 昵称 |
-| `avatar_url` | TEXT | 头像 URL |
+| `avatar_url` | TEXT | 头像 URL（2026-10-17 起唯一形态为 COS 公有读头像桶：`https://img[.stg].costra.cloud/avatars/<userId>?v=<ms>` · `?v=` 为上传时刻毫秒版本号；本地 `/uploads/avatars/` 形态已随二期清场退役，见 `docs/design/cos-offload-phase2-avatar.md`） |
 | `timezone` | TEXT NOT NULL DEFAULT `'Asia/Shanghai'` | IANA 时区 |
 | `created_at / updated_at / deleted_at / version` | 标准字段 | 见 P3/P4 |
 

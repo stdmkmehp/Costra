@@ -80,32 +80,14 @@ server {
     }
 
     # ============== 防扫探 · 拒绝所有 dotfile 访问（.env/.git/.htaccess 等）==============
-    # 扫描器常探 /uploads/.env、/.git/config 等 · 统一 404（不暴露存在性）
-    # 正则 location 优先级高于前缀 location /uploads/ · dotfile 请求在此截断
+    # 扫描器常探 /.env、/.git/config 等 · 统一 404（不暴露存在性）
+    # 正则 location 优先级高于前缀 location · dotfile 请求在此截断
     location ~ /\. {
         return 404;
     }
 
-    # ============== /uploads/ 静态文件（用户头像等持久化上传内容）==============
-    # server 容器写入 /var/costra/uploads，bind mount 到宿主机 /data/uploads
-    # nginx 容器只读挂载 /data/uploads，直接静态服务，不经过 Fastify
-    #
-    # 缓存策略：no-cache + etag
-    #   - no-cache：每次请求都带 If-None-Match 校验 ETag
-    #   - etag on（nginx 默认）：文件未变返回 304 Not Modified，节省传输
-    #   - 用户更新头像时文件内容变，ETag 变，客户端自动拿到新图片
-    location /uploads/ {
-        alias /data/uploads/;
-        # 每次校验，文件未变则 304（头像小文件，304 往返代价极低）
-        expires off;
-        add_header Cache-Control "no-cache" always;
-        # etag on 是 nginx 默认值，显式写出以明确意图
-        etag on;
-        # 禁止目录遍历
-        autoindex off;
-        # 只允许 GET / HEAD
-        limit_except GET HEAD { deny all; }
-    }
+    # 原 location /uploads/（本地头像静态服务）已随头像 COS 化退役
+    # （cos-offload-phase2-avatar §9.1 · 头像走 img.costra.cloud 公有读桶 · 2026-10-17）
 
     # ============== /v1/* 业务路由 ==============
     location /v1/ {

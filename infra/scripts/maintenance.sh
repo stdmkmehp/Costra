@@ -2,15 +2,14 @@
 # =============================================================================
 # Costra · 运维定时任务统一入口（cron 唯一入口 · 子命令分发）
 # =============================================================================
-# 主库定时任务（avatars 备份 + 复制检查 + 各表清理）统一走本脚本；standby 用独立
+# 主库定时任务（复制检查 + 各表清理）统一走本脚本；standby 用独立
 # cron（install-standby-cron.sh · DB 备份职责已迁从库，见 pg-standby-backup.md §5）。
 #
 # 用法：
 #   ./maintenance.sh <task> [options]
 #
 # 任务：
-#   backup [--retain-days N|--no-cleanup|--prefix P]  委托 backup-db.sh 全量（仅手动 · 不进 cron）
-#   backup-avatars                                    委托 backup-db.sh --avatars-only + scp 异地副本到从库（cron）
+#   backup [--retain-days N|--no-cleanup|--prefix P]  委托 backup-db.sh 备份 DB（仅手动 · 不进 cron）
 #   replication-check                                主库复制槽/WAL/异步状态检查
 #   purge-idempotency                                 清过期幂等键（每日）
 #   purge-sessions                                    清已过期 session（每日）
@@ -43,12 +42,6 @@ PG_DB="costra"
 # 数据同属本目录（monitor-perf.sh 直写）；logrotate 与 report-error-logs.sh 同步适配
 LOG_DIR="/data/logs/maintenance"
 
-# backup-avatars 异地副本的连接参数文件（0600 · 只在 prod 机器 · 绝不进仓库）
-# 必需四键：SLAVE_HOST / SLAVE_USER / SLAVE_PASSWORD / SLAVE_BACKUP_DIR
-# 可选键：SLAVE_LAN_HOST（从库内网 IP · 配置后优先走 VPC 内网，不占公网出口带宽；
-# 每次推送前探测其 TCP 22，不可达自动回落 SLAVE_HOST 公网 · 见 _resolve_slave_host）
-SLAVE_ENV_FILE="${COSTRA_CONF_DIR}/slave.env"
-
 # =============================================================================
 # ★ cron 调度表（统一管理执行时间 · 任务与时间解耦 · 改执行时间只改这里）
 # 格式：<任务名>|<cron 时间表达式>|<日志文件名（自动落在 ${LOG_DIR} 下）>
@@ -56,11 +49,10 @@ SLAVE_ENV_FILE="${COSTRA_CONF_DIR}/slave.env"
 # 调整时间 / 增删定时任务：只改本数组即可，无需改 install-cron 或任务逻辑。
 # =============================================================================
 # 注：DB 备份已迁往从库（/data/slave/backups · install-standby-cron.sh），
-# prod 不再跑全量 backup；backup-avatars 只打包 uploads/avatars（文件不经复制流，
-# 只有 prod 能备份），成功后把最新归档 scp 到从库 /data/slave/backups
-# （连接参数读 /data/conf/slave.env · 见 do_push_avatars_offsite）。
+# prod 不再跑定时备份；backup-avatars（avatars 打包 + scp 异地副本到从库）
+# 已随头像 COS 化退役（cos-offload-phase2-avatar §9.2 · 2026-10-17），
+# slave.env 四件套随之不再有消费者。
 declare -a CRON_SCHEDULE=(
-  "backup-avatars|0 0,6,12,18 * * *|maintenance-backup.log"
   "replication-check|57 * * * *|check-replication.log"
   "purge-idempotency|7 4 * * *|maintenance-purge.log"
   "purge-sessions|17 4 * * *|maintenance-purge.log"
@@ -80,12 +72,12 @@ TASK=""
 declare -a PASSTHRU=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    backup|backup-avatars|replication-check|purge-idempotency|purge-sessions|purge-invites|purge-data-jobs|purge-detect-sessions|purge-all|renew-cert|error-report|perf-collect|perf-report|install-cron|list)
+    backup|replication-check|purge-idempotency|purge-sessions|purge-invites|purge-data-jobs|purge-detect-sessions|purge-all|renew-cert|error-report|perf-collect|perf-report|install-cron|list)
       [[ -z "${TASK}" ]] || die "只能指定一个任务（已有：${TASK}）"
       TASK=$1; shift ;;
     --dry-run|-y|--yes) shift ;;       # common 已处理 · noop
     -h|--help)
-      grep '^#' "$0" | sed 's/^# \{0,1\}//' | head -26
+      grep '^#' "$0" | sed 's/^# \{0,1\}//' | head -25
       exit 0 ;;
     *) PASSTHRU+=("$1"); shift ;;       # 透传给委托脚本（如 backup 的 --retain-days）
   esac
@@ -213,10 +205,6 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       log_warn "复制三件套存在但运行态无 costra_standby 物理槽 · cron 仍保留 replication-check 以持续告警"
     fi
   fi
-  # backup-avatars 的异地副本依赖 slave.env · 缺失时预警（不阻断安装 · 本地备份仍有效）
-  if [[ ! -f "${SLAVE_ENV_FILE}" ]]; then
-    log_warn "${SLAVE_ENV_FILE} 不存在 · backup-avatars 推送异地副本将失败 · 请创建（SLAVE_HOST/SLAVE_USER/SLAVE_PASSWORD/SLAVE_BACKUP_DIR · 可选 SLAVE_LAN_HOST 内网优先）"
-  fi
   for entry in "${CRON_SCHEDULE[@]}"; do
     IFS='|' read -r task sched logf <<< "${entry}"
     if [[ "${task}" == "replication-check" ]] && [[ "${replication_enabled}" != "1" ]]; then
@@ -247,7 +235,7 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
   mkdir -p "${LOG_DIR}"
   local log_name
-  for log_name in maintenance-backup.log check-replication.log maintenance-purge.log maintenance-cert.log maintenance-error-report.log maintenance-perf.log; do
+  for log_name in check-replication.log maintenance-purge.log maintenance-cert.log maintenance-error-report.log maintenance-perf.log; do
     touch "${LOG_DIR}/${log_name}"
     chmod 0600 "${LOG_DIR}/${log_name}"
   done
@@ -257,91 +245,6 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
   else
     log_warn "crond 未运行 · 请手动 systemctl enable --now crond"
   fi
-}
-
-# =============================================================================
-# backup-avatars 异地副本：备份成功后把最新 avatars 归档 scp 到从库机器
-# （SLAVE_BACKUP_DIR=/data/slave/backups = analytics DUMP_INBOX · 与从库 DB 备份
-# 同目录，scheduled-*.avatars.tar.gz 与 standby-*.sql.gz 前缀不同互不干扰）。
-# =============================================================================
-# _load_slave_env：从 ${SLAVE_ENV_FILE} 读取 scp 连接四件套（缺失/空值即失败）
-_load_slave_env() {
-  require_file "${SLAVE_ENV_FILE}"
-  local key val
-  for key in SLAVE_HOST SLAVE_USER SLAVE_PASSWORD SLAVE_BACKUP_DIR; do
-    val=$(grep "^${key}=" "${SLAVE_ENV_FILE}" 2>/dev/null | tail -1 | cut -d= -f2- || true)
-    [[ -n "${val}" ]] || die "未能从 ${SLAVE_ENV_FILE} 读取 ${key}（或值为空）"
-    printf -v "${key}" '%s' "${val}"
-  done
-  [[ "${SLAVE_BACKUP_DIR}" == /* ]] || die "SLAVE_BACKUP_DIR 必须是绝对路径：${SLAVE_BACKUP_DIR}"
-  # SLAVE_LAN_HOST 可选：从库内网 IP，配置后优先走 VPC 内网（不占公网出口带宽）
-  SLAVE_LAN_HOST=$(grep "^SLAVE_LAN_HOST=" "${SLAVE_ENV_FILE}" 2>/dev/null | tail -1 | cut -d= -f2- || true)
-}
-
-# _resolve_slave_host：内网优先 · 不可达自动回落公网，结果写入 RESOLVED_SLAVE_HOST。
-# 探测用 bash 内建 /dev/tcp（免装 nc）· 2s 超时；host 先做字符集白名单校验，防配置手滑注入。
-# 语义：仅在"不可达"时回落；探测通过后 scp 失败不二次回落——认证/权限类失败走公网
-# 同样会发生，重试只会放大失败时间。
-_resolve_slave_host() {
-  RESOLVED_SLAVE_HOST="${SLAVE_HOST}"
-  [[ -n "${SLAVE_LAN_HOST:-}" ]] || return 0
-  [[ "${SLAVE_LAN_HOST}" =~ ^[a-zA-Z0-9.-]+$ ]] || die "SLAVE_LAN_HOST 含非法字符：${SLAVE_LAN_HOST}"
-  if timeout 2 bash -c "exec 3<>/dev/tcp/${SLAVE_LAN_HOST}/22" 2>/dev/null; then
-    RESOLVED_SLAVE_HOST="${SLAVE_LAN_HOST}"
-    log_info "从库内网可达（${SLAVE_LAN_HOST}:22）· 异地副本走 VPC 内网（不占公网出口带宽）"
-  else
-    log_warn "从库内网不可达（${SLAVE_LAN_HOST}:22 · 2s 超时）· 回落公网 ${SLAVE_HOST}"
-  fi
-}
-
-do_push_avatars_offsite() {
-  # 与 backup-db.sh 默认落盘位置/前缀对齐；透传的 --backup-dir/--prefix 同样生效
-  local backup_dir="${COSTRA_DATA}/backups" prefix="scheduled" i
-  for (( i=0; i<${#PASSTHRU[@]}; i++ )); do
-    case "${PASSTHRU[i]}" in
-      --backup-dir) backup_dir=${PASSTHRU[i+1]:-} ;;
-      --prefix)     prefix=${PASSTHRU[i+1]:-} ;;
-    esac
-  done
-
-  require_cmd scp
-  require_cmd expect "yum install -y expect / apt install -y expect"
-  _load_slave_env
-  # 内网优先解析（dry-run 同样真实探测 · 只读无副作用，且能让预览反映实际路径）
-  _resolve_slave_host
-
-  local latest
-  latest=$(ls -t "${backup_dir}/${prefix}"-*.avatars.tar.gz 2>/dev/null | head -1 || true)
-  if [[ -z "${latest}" ]]; then
-    if [[ "${DRY_RUN}" == "1" ]]; then
-      log_dry "正式执行时将把新生成的 ${prefix}-*.avatars.tar.gz 推送至 ${SLAVE_USER}@${RESOLVED_SLAVE_HOST}:${SLAVE_BACKUP_DIR}/"
-      return 0
-    fi
-    die "未找到 avatars 归档（${backup_dir}/${prefix}-*.avatars.tar.gz）· 无法推送异地副本"
-  fi
-
-  # expect 驱动 scp 交互应答密码（写法同 server/scripts/dev/scp-latest-backup.sh）：
-  # 参数经环境变量传入、expect 脚本内用 $env() 读取，避免密码/路径特殊字符注入 expect 语法；
-  # accept-new 仅在首次连接时自动记录 host key，cron 下无交互；
-  # expect 默认恒返回 0，末尾 catch wait + exit 把 scp 真实退出码带出，失败才能被 || die 捕获。
-  if [[ "${DRY_RUN}" == "1" ]]; then
-    log_dry "expect: spawn scp -p ${latest} ${SLAVE_USER}@${RESOLVED_SLAVE_HOST}:${SLAVE_BACKUP_DIR}/（password 提示由 expect 应答）"
-    return 0
-  fi
-  SCP_SRC="${latest}" \
-  SCP_DEST="${SLAVE_USER}@${RESOLVED_SLAVE_HOST}:${SLAVE_BACKUP_DIR}/" \
-  SCP_PASS="${SLAVE_PASSWORD}" \
-  timeout 600 expect -c '
-    set timeout -1
-    spawn scp -p -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new $env(SCP_SRC) $env(SCP_DEST)
-    expect {
-      -re {[Pp]assword:} { send -- "$env(SCP_PASS)\r"; exp_continue }
-      eof
-    }
-    catch wait result
-    exit [lindex $result 3]
-  ' || die "avatars 异地副本 scp 失败（本地备份完好：${latest}）"
-  log_success "异地副本已推送 → ${SLAVE_USER}@${RESOLVED_SLAVE_HOST}:${SLAVE_BACKUP_DIR}/$(basename "${latest}")"
 }
 
 # =============================================================================
@@ -383,13 +286,6 @@ case "${TASK}" in
     export DRY_RUN ASSUME_YES
     log_info "委托 → backup-db.sh ${PASSTHRU[*]:-}"
     "${SCRIPT_DIR}/backup-db.sh" ${PASSTHRU[@]+"${PASSTHRU[@]}"}
-    ;;
-  backup-avatars)
-    # prod cron 唯一备份任务：只打包 avatars（DB 备份已迁从库）· 成功后推送异地副本
-    export DRY_RUN ASSUME_YES
-    log_info "委托 → backup-db.sh --avatars-only ${PASSTHRU[*]:-}"
-    "${SCRIPT_DIR}/backup-db.sh" --avatars-only ${PASSTHRU[@]+"${PASSTHRU[@]}"}
-    do_push_avatars_offsite
     ;;
   replication-check)
     export DRY_RUN ASSUME_YES
@@ -448,7 +344,7 @@ case "${TASK}" in
     do_renew_cert
     ;;
   list)
-    log_info "可用任务：backup · backup-avatars · replication-check · purge-idempotency · purge-sessions · purge-invites · purge-data-jobs · purge-detect-sessions · purge-all · renew-cert · error-report · perf-collect · perf-report · install-cron · list"
+    log_info "可用任务：backup · replication-check · purge-idempotency · purge-sessions · purge-invites · purge-data-jobs · purge-detect-sessions · purge-all · renew-cert · error-report · perf-collect · perf-report · install-cron · list"
     ;;
 esac
 

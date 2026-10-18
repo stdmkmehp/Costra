@@ -40,7 +40,7 @@
    - 这两处是 docker 层改动，**落地时主库容器 recreate 一次**（PG 重启秒级~十几秒），建议低峰执行。
 3. **主库其余复制配置全部在线完成**（不重启）：建 `replicator` 复制账号、建物理复制槽、pg_hba 放行、reload——由 `setup-replication-primary.sh` 一键完成且幂等。
 4. **从库不 initdb、不跑 migration**：数据目录由 `pg_basebackup` 从主库物理复制；manifest 通过后，脚本确定性写入 `standby.signal`、`primary_conninfo` 和持久 passfile。之后 schema/数据全经复制流自动同步。
-5. **备份迁移（2026-08-14 定案）**：DB 备份职责整体迁到从库——机器② 复用 `backup-db.sh --db-only` 跑每 6h 的 `pg_dump` cron，落 `/data/slave/backups`；主库不再跑全量 DB 备份，仅保留 `backup-avatars`（avatars 是文件、不经复制流，只有 prod 能备份）。
+5. **备份迁移（2026-08-14 定案）**：DB 备份职责整体迁到从库——机器② 复用 `backup-db.sh --db-only` 跑每 6h 的 `pg_dump` cron，落 `/data/slave/backups`；主库不再跑定时备份（原 `backup-avatars` 已随头像 COS 化退役 · 2026-10-17 · 见 `docs/design/cos-offload-phase2-avatar.md` §9）。
 6. **不引入任何切换/降级机制**：主库宕机后原样恢复当主库（见 §8 恢复手册）；从库挂了主库毫无感知，从库回来自动追平。
 
 ---
@@ -318,8 +318,8 @@ docker exec costra-standby-pg psql -U costra -d costra -c \
 
 | 备份 | 位置 | 内容 | 输出目录 | 频率 | 状态 |
 |---|---|---|---|---|---|
-| `maintenance.sh backup-avatars` | 机器① 主库 | 仅 avatars 打包（`--avatars-only`） | `/data/backups` | 每 6h（cron 0 分） | **保留**（avatars 是文件、不经复制流，只有 prod 能备份；`maintenance.sh backup` 全量入口仍可手动执行） |
-| `backup-db.sh --db-only --container costra-standby-pg --prefix standby --backup-dir /data/slave/backups` | 机器② 从库 | pg_dump（无 avatars） | **`/data/slave/backups`** | 每 6h（cron 0 分 · 与 prod backup-avatars 同刻） | **DB 备份主责**（2026-08-14 起由 prod 迁入） |
+| ~~`maintenance.sh backup-avatars`~~ | 机器① 主库 | — | — | — | **已退役**（2026-10-17 · 头像 COS 化，对象多 AZ 冗余无需 tar 备份；`maintenance.sh backup` 入口仍可手动备份 DB） |
+| `backup-db.sh --db-only --container costra-standby-pg --prefix standby --backup-dir /data/slave/backups` | 机器② 从库 | pg_dump | **`/data/slave/backups`** | 每 6h（cron 27 分） | **DB 备份主责**（2026-08-14 起由 prod 迁入） |
 
 - 从库备份复用现有 `backup-db.sh`：`--container` 指定从库容器，`--prefix standby` 区分文件名，`--backup-dir` 直接落到分析栈的 `DUMP_INBOX`。三个参数默认值均保持原样，**主库既有调用零影响**。
 - **直接落 `/data/slave/backups` = analytics 链路即时打通**（团队决策）：`/data/conf/analytics.env` 的 `DUMP_INBOX=/data/slave/backups`，而 `analytics/scripts/pick-dump.sh` 是按 `*.sql.gz` + mtime 取最新、**不锁前缀**，因此 `standby-*.sql.gz` 天然被识别；compose 里该目录是 `:ro` 挂载，分析侧不会删改这些文件（符合"`analytics/` 只读 `.sql.gz`"的既有约定）。
@@ -327,7 +327,6 @@ docker exec costra-standby-pg psql -U costra -d costra -c \
   - `backup-db.sh` 的清理逻辑按 `${BACKUP_PREFIX}-*` 精确匹配，只会清 `standby-*`，**不会碰**历史 scp 过来的 `scheduled-*` 文件。
 - 从库 `pg_dump` 不停 replay，对主库零影响。`max_standby_streaming_delay=300s` 只降低 recovery conflict 取消概率，并不保证成功；脚本会捕获失败且不发布 `*.sql.gz`，下一轮重试。
 - `backup-db.sh` 以隐藏 partial 写入并校验，最后原子 rename；analytics 只会看到完整归档。脚本自身 `flock` 防 cron/人工重入，目录 `0700`、归档 `0600`。
-- `--db-only` 同时避免把同机 staging 栈的 `/data/uploads/avatars` 误打包进来。
 - **注意 `/data/slave/backups` 的权限**：既有 `02-prepare-dirs.sh` 对 `/data/backups` 设了 `chmod 0700`；`/data/slave/backups` 由分析栈约定管理，首次执行前确认 root 可写（`touch /data/slave/backups/.wtest && rm -f $_`）。
 
 ### §5.2 从库 cron 安装
@@ -344,9 +343,9 @@ cd /root/Costra/infra/scripts
 
 1. `COSTRA_ENV_FILE` 前缀只为读取 `standby.env` 的可选 webhook；SQL 走容器内 Unix socket，不读取 `PG_COSTRA_PW`。
 2. **备份前串联健康检查**：从库若失联或仍在追历史 WAL，`pg_dump` 依然可能产出格式正常但陈旧的文件；门禁用 latest-end/receive/replay 三段进度 fail closed。
-3. **与分析栈错峰**：备份固定在 27 分（2026-08-14 起与 prod backup-avatars 同刻——两机各自执行，不存在跨机错峰问题）；必须避开分析窗口——分析栈恢复 dump 时是全机内存峰值。
+3. **与分析栈错峰**：备份固定在 27 分；必须避开分析窗口——分析栈恢复 dump 时是全机内存峰值。
 4. `backup-db.sh` 自带 `flock`，cron 外层无需再加锁；整条组合用 `{ check && backup; } >>log 2>&1`，确保检查和备份输出进入同一日志（`/data/logs/maintenance/standby-backup.log`）。
-5. **staging 数据刷新（每天 6:27）**：`restore-staging-from-prod.sh -y` 紧跟 6:00 备份窗口之后，用 `/data/slave/backups` 最新 `standby-*.sql.gz` + `scheduled-*.avatars.tar.gz` 自动刷新本机 staging 栈（avatars 原子替换 → Redis FLUSHALL → 委托 restore-db.sh 单事务恢复），`-y` 全链路自动确认，无人值守；日志落 `/data/logs/maintenance/staging-restore.log`。恢复脚本自带机器②防呆（要求 `costra-standby-pg` 容器存在），不串联 check 门禁——备份 cron 已保证仅复制健康才产出新备份，即便当天未产出也只会用到更旧备份（对 staging 无害）。
+5. **staging 数据刷新（每天 6:27）**：`restore-staging-from-prod.sh -y` 紧跟 6:00 备份窗口之后，用 `/data/slave/backups` 最新 `standby-*.sql.gz` 自动刷新本机 staging 栈（Redis FLUSHALL → 委托 restore-db.sh 单事务恢复），`-y` 全链路自动确认，无人值守；日志落 `/data/logs/maintenance/staging-restore.log`。恢复脚本自带机器②防呆（要求 `costra-standby-pg` 容器存在），不串联 check 门禁——备份 cron 已保证仅复制健康才产出新备份，即便当天未产出也只会用到更旧备份（对 staging 无害）。头像已 COS 化（2026-10-17）：恢复后 staging 库内头像 URL 指向 prod 头像桶（公有读 · 正常显示），原 avatars 归档恢复段已移除。
 
 > 防呆：脚本要求本机存在 `costra-standby-pg` 容器与 `/data/conf/standby.env`，在机器① 或未搭建从库时直接拒绝。logrotate 模板与主库共用（`infra/logrotate/costra-ops`）由脚本一并安装。从库机器**不要**运行 `maintenance.sh install-cron`：其 purge-* 会误操作 staging 栈并在只读副本失败。
 
@@ -618,8 +617,8 @@ docker compose -f docker-compose.prod.yml --env-file /data/conf/server.env up -d
 | 机器① 日常发布 | `redeploy.sh` | **完全不变**（compose 定义已稳定，不再触发 postgres recreate → 复制不断） |
 | 机器① server/redis/nginx | — | **完全不变**（复制是 PG 层的事，server 仍连 compose service name `postgres`） |
 | 机器① migration | `06-migrate.sh` | **不变**（只在主库跑，DDL 经 WAL 自动到从库） |
-| 机器① 备份 | `maintenance.sh backup`（cron 27 分 · DB + avatars） | DB 备份迁从库；prod cron 改为 `backup-avatars`（仅 avatars 打包）；`backup` 全量入口仍可手动执行 |
-| 机器② 备份 | 无 | `install-standby-cron.sh` 幂等安装：check && backup 组合 cron（27 分 · 与 prod backup-avatars 同刻 · 落 `/data/slave/backups`） |
+| 机器① 备份 | `maintenance.sh backup`（cron 27 分 · DB + avatars） | DB 备份迁从库；prod 不再跑定时备份（`backup-avatars` 亦随头像 COS 化于 2026-10-17 退役）；`backup` 入口仍可手动执行 |
+| 机器② 备份 | 无 | `install-standby-cron.sh` 幂等安装：check && backup 组合 cron（27 分 · 落 `/data/slave/backups`） |
 | 机器① 监控 | 无复制监控 | `maintenance.sh install-cron` 在复制三件套完整时加入 `replication-check` |
 | 机器① 一次性变更 | — | ① `--apply-compose` 首次落地 ② 日常重跑不旋密 ③ lost 槽与密码轮换分别用显式 flag |
 | 机器② 从库启动 | 无 | ① `setup-replication-standby.sh`（一次性 basebackup）② 之后 `docker compose -f docker-compose.standby.yml --env-file /data/conf/standby.env up -d`（**不 initdb、不 migrate**） |

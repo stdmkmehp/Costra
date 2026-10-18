@@ -1,6 +1,6 @@
 # COS 对象存储配置（导入导出文件 · staging/prod 独立桶）
 
-> 状态：**一期平台配置已完成（2026-09-10）并随一期代码落地使用**；**二期头像桶平台侧已通（2026-10-17 · 见 §7）**。
+> 状态：**一期平台配置已完成（2026-09-10）并随一期代码落地使用**；**二期头像 COS 化已全量上线并完成运维清场（2026-10-17 · 见 §7 · 本地 avatars 链路已退役）**。
 > 用途：记录 Costra 一期导入导出文件 COS 化的腾讯云实际配置，作为代码落地与运维的事实源。
 > 关联：`docs/design/cos-offload-phase1-import-export.md`、`docs/design/cos-offload-analysis.md`
 >
@@ -208,9 +208,9 @@ COS_AVATAR_BASE=https://img.stg.costra.cloud
 - 注入范式同 §4（`docker-compose.prod.yml` 从 `server.env` 注入），随二期代码部署 recreate server 容器生效。
 - ⚠️ **切勿配串环境**：staging 配 prod 桶 ⇒ staging 上传的头像进 prod 桶、URL 指 prod 域名（方案 §11 步 2.5 有双机交叉核验）。
 
-### 7.2 步 0 剩余待办
+### 7.2 步 0 待办状态
 
-- [ ] 两机 `server.env` 写入 §7.1 两键（保持 `chmod 0600`）
+- [x] 两机 `server.env` 写入 §7.1 两键（保持 `chmod 0600`）——已随二期代码部署完成（线上新上传已落 COS）
 - [ ] 云监控：两头像桶**外网下行流量 / 请求次数**告警（公有读下的成本护栏 · 方案 §14-2）
 - [ ] MP 后台 downloadFile 合法域名追加 `img.costra.cloud` / `img.stg.costra.cloud`
 - [ ] 两桶「生命周期为空」控制台截图留档（D1 硬约束核查）

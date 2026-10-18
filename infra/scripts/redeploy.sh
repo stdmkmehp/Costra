@@ -409,7 +409,7 @@ if [[ "${DO_MIGRATE}" == "1" ]]; then
   # --- DB 备份（复用 backup-db.sh --db-only · 不可跳过 · 失败回滚依赖此备份）---
   # 使用唯一 prefix（含 PID）· 避免并发或同分钟内多次执行时拿错文件
   BACKUP_PREFIX="pre-redeploy-$(date +%Y%m%d-%H%M%S)-$$"
-  log_info "调用 backup-db.sh 备份当前 DB（--db-only · 跳过 avatars · 最小化停机）..."
+  log_info "调用 backup-db.sh 备份当前 DB（--db-only · 最小化停机）..."
 
   _phase_begin
   if ! "${SCRIPT_DIR}/backup-db.sh" \
